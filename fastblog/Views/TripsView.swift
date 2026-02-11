@@ -15,11 +15,6 @@ struct TripsView: View {
     @State private var sheetOffset: CGFloat = 0
     @State private var dragStartSheetOffset: CGFloat = 0
     @State private var mapPosition: MapCameraPosition = .automatic
-    /// Top of scroll content in sheet coordinate space. At top when >= -10.
-    @State private var scrollContentMinY: CGFloat = 0
-    /// Latch state for the drag gesture: true = we are pulling the sheet; false = we are scrolling the list; nil = undetermined (start of gesture).
-    @State private var isSheetGestureValid: Bool? = nil
-
     init(viewModel: TripsViewModel) {
         _viewModel = ObservedObject(wrappedValue: viewModel)
     }
@@ -70,14 +65,40 @@ struct TripsView: View {
     private static let listHorizontalPadding: CGFloat = 20
     /// Once sheet is pulled down (offset > this), list scroll is locked. Use small value so lock engages immediately.
     private static let scrollLockThreshold: CGFloat = 0
-    /// Scroll content minY >= this (in sheet space) means user is at top; then pull-down closes the sheet.
-    private static let scrollAtTopTolerance: CGFloat = 10
     /// Collapsed snap = this fraction of screen height (map revealed).
     private static let collapsedFraction: CGFloat = 0.42
 
-    private struct ScrollContentMinYKey: PreferenceKey {
-        static var defaultValue: CGFloat = 0
-        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+    /// Grabber that exclusively controls sheet drag. List scrolls freely—no gesture conflict.
+    /// Uses a 44pt-tall hit target for reliable touch handling.
+    @ViewBuilder
+    private func sheetGrabber(collapsedSnap: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 2.5)
+            .fill(Color.white.opacity(0.4))
+            .frame(width: 36, height: 5)
+            .padding(.vertical, 20)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 8)
+                    .onChanged { value in
+                        let proposed = dragStartSheetOffset + value.translation.height
+                        sheetOffset = min(collapsedSnap, max(0, proposed))
+                    }
+                    .onEnded { value in
+                        defer { dragStartSheetOffset = sheetOffset }
+                        let velocity = value.predictedEndTranslation.height - value.translation.height
+                        let mid = collapsedSnap / 2
+                        if velocity < -50 || (sheetOffset < mid && velocity <= 0) {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+                                sheetOffset = 0
+                            }
+                        } else if velocity > 50 || sheetOffset >= mid {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+                                sheetOffset = collapsedSnap
+                            }
+                        }
+                    }
+            )
     }
 
     /// Returns a region that fits all coordinates with padding. Places the latest trip (first in newest-first order) in the center-top area of the map.
@@ -147,12 +168,8 @@ struct TripsView: View {
 
                 // List sheet: grabber + scroll list + Find More button
                 VStack(spacing: 0) {
-                    // Grabber handle
-                    RoundedRectangle(cornerRadius: 2.5)
-                        .fill(Color.white.opacity(0.4))
-                        .frame(width: 36, height: 5)
-                        .padding(.top, 8)
-                        .padding(.bottom, 4)
+                    // Grabber handle – only this area controls sheet drag; list scrolls freely below
+                    sheetGrabber(collapsedSnap: collapsedSnap)
 
                     ScrollView(.vertical, showsIndicators: true) {
                         VStack(alignment: .leading, spacing: 0) {
@@ -160,19 +177,9 @@ struct TripsView: View {
                             readyToStartSection
                             Spacer(minLength: 100)
                         }
-                        .background(
-                            GeometryReader { g in
-                                Color.clear.preference(
-                                    key: ScrollContentMinYKey.self,
-                                    value: g.frame(in: .named("sheetScroll")).minY
-                                )
-                            }
-                        )
                     }
-                    .coordinateSpace(name: "sheetScroll")
                     .scrollBounceBehavior(.basedOnSize)
                     .scrollDisabled(isScrollLocked)
-                    .onPreferenceChange(ScrollContentMinYKey.self) { scrollContentMinY = $0 }
 
                     findMoreTripsButton
                 }
@@ -187,48 +194,6 @@ struct TripsView: View {
                 )
                 .offset(y: sheetOffset)
                 .animation(.interactiveSpring(response: 0.35, dampingFraction: 0.86), value: sheetOffset)
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 8)
-                        .onChanged { value in
-                            // Latching logic: decide intent at the start of the gesture
-                            if isSheetGestureValid == nil {
-                                let atTop = scrollContentMinY >= -Self.scrollAtTopTolerance
-                                // Valid if already pulled down OR at the top of the list
-                                isSheetGestureValid = (sheetOffset > 0) || atTop
-                            }
-                            
-                            guard isSheetGestureValid == true else { return }
-
-                            // If we started at top but drag UP (scroll down), clamp to 0. 
-                            // If we started at top and drag DOWN (pull release), move sheet.
-                            // If we started with sheet open, move sheet.
-                            
-                            let proposed = dragStartSheetOffset + value.translation.height
-                            // Only allow pulling down (positive offset)
-                            sheetOffset = min(collapsedSnap, max(0, proposed))
-                        }
-                        .onEnded { value in
-                            defer {
-                                isSheetGestureValid = nil
-                                dragStartSheetOffset = sheetOffset
-                            }
-                            
-                            guard isSheetGestureValid == true else { return }
-                            
-                            let velocity = value.predictedEndTranslation.height - value.translation.height
-                            let mid = collapsedSnap / 2
-                            
-                            if velocity < -50 || (sheetOffset < mid && velocity <= 0) {
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
-                                    sheetOffset = 0
-                                }
-                            } else if velocity > 50 || sheetOffset >= mid {
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
-                                    sheetOffset = collapsedSnap
-                                }
-                            }
-                        }
-                )
                 .onChange(of: sheetOffset) { _, newValue in
                     if newValue == 0 {
                         dragStartSheetOffset = 0
