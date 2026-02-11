@@ -1,0 +1,620 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		BB000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000101 /* ContentView.swift */; };
+		BB000104 /* fastblogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000103 /* fastblogApp.swift */; };
+		BB000106 /* MyBlogsProfileViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000105 /* MyBlogsProfileViewModel.swift */; };
+		BB000108 /* ProfileMapViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000107 /* ProfileMapViewModel.swift */; };
+		BB00010A /* TripCreationViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000109 /* TripCreationViewModel.swift */; };
+		BB00010C /* TripsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00010B /* TripsViewModel.swift */; };
+		BB00010E /* DayCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00010D /* DayCluster.swift */; };
+		BB000110 /* MockPhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00010F /* MockPhoto.swift */; };
+		BB000112 /* PlaceCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000111 /* PlaceCluster.swift */; };
+		BB000114 /* RecapBlogDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000113 /* RecapBlogDetail.swift */; };
+		BB000116 /* RecapDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000115 /* RecapDraft.swift */; };
+		BB000118 /* RecentRecap.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000117 /* RecentRecap.swift */; };
+		BB00011A /* ScanConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000119 /* ScanConfig.swift */; };
+		BB00011C /* TripDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00011B /* TripDay.swift */; };
+		BB00011E /* TripDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00011D /* TripDraft.swift */; };
+		BB000120 /* BlogPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00011F /* BlogPreviewView.swift */; };
+		BB000122 /* BlogSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000121 /* BlogSettingsSheet.swift */; };
+		BB000124 /* ClusterRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000123 /* ClusterRowView.swift */; };
+		BB000126 /* CountryBlogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000125 /* CountryBlogsView.swift */; };
+		BB000128 /* CountryCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000127 /* CountryCardView.swift */; };
+		BB00012A /* CoverPhotoSelectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000129 /* CoverPhotoSelectView.swift */; };
+		BB00012C /* CreateBlogFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00012B /* CreateBlogFlowView.swift */; };
+		BB00012E /* CreatingRecapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00012D /* CreatingRecapView.swift */; };
+		BB000130 /* DayChipsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00012F /* DayChipsView.swift */; };
+		BB000132 /* EditPlaceStopNameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000131 /* EditPlaceStopNameSheet.swift */; };
+		BB000134 /* FindMoreTripsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000133 /* FindMoreTripsSheet.swift */; };
+		BB000136 /* LandingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000135 /* LandingView.swift */; };
+		BB000138 /* LoadingScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000137 /* LoadingScanView.swift */; };
+		BB00013A /* ManagePhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000139 /* ManagePhotosView.swift */; };
+		BB00013C /* MapDayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00013B /* MapDayView.swift */; };
+		BB00013E /* MockPhotoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00013D /* MockPhotoView.swift */; };
+		BB000140 /* MyBlogsProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00013F /* MyBlogsProfileView.swift */; };
+		BB000142 /* MyMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000141 /* MyMapView.swift */; };
+		BB000144 /* PhotoSelectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000143 /* PhotoSelectView.swift */; };
+		BB000146 /* PhotosPermissionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000145 /* PhotosPermissionView.swift */; };
+		BB000148 /* PlacePhotoModalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000147 /* PlacePhotoModalView.swift */; };
+		BB00014A /* PlaceStopActionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000149 /* PlaceStopActionSheet.swift */; };
+		BB00014C /* PlaceStopRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00014B /* PlaceStopRowView.swift */; };
+		BB00014E /* PrivacyPolicyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00014D /* PrivacyPolicyView.swift */; };
+		BB000150 /* ProfileMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00014F /* ProfileMapView.swift */; };
+		BB000152 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000151 /* ProfileView.swift */; };
+		BB000154 /* RecapBlogPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000153 /* RecapBlogPageView.swift */; };
+		BB000156 /* RecapBuilderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000155 /* RecapBuilderView.swift */; };
+		BB000158 /* RecapPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000157 /* RecapPreviewView.swift */; };
+		BB00015A /* RecapSavedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000159 /* RecapSavedView.swift */; };
+		BB00015C /* RenamePlaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00015B /* RenamePlaceView.swift */; };
+		BB00015E /* ScanningAnimationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00015D /* ScanningAnimationView.swift */; };
+		BB000160 /* SelectPhotosIntroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00015F /* SelectPhotosIntroView.swift */; };
+		BB000162 /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000161 /* ShareSheet.swift */; };
+		BB000164 /* TermsOfServiceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000163 /* TermsOfServiceView.swift */; };
+		BB000166 /* TitleInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000165 /* TitleInputView.swift */; };
+		BB000168 /* TripDayPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000167 /* TripDayPickerView.swift */; };
+		BB00016A /* TripsMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000169 /* TripsMapView.swift */; };
+		BB00016C /* TripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00016B /* TripsView.swift */; };
+		BB00016E /* CitySearchHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00016D /* CitySearchHelper.swift */; };
+		BB000170 /* LocationManagerForOnboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00016F /* LocationManagerForOnboarding.swift */; };
+		BB000172 /* MapWithCenterSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000171 /* MapWithCenterSelector.swift */; };
+		BB000174 /* NeighborhoodSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000173 /* NeighborhoodSelection.swift */; };
+		BB000176 /* NeighborhoodSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000175 /* NeighborhoodSelectionView.swift */; };
+		BB000178 /* OnboardingConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000177 /* OnboardingConstants.swift */; };
+		BB00017A /* OnboardingFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000179 /* OnboardingFlowView.swift */; };
+		BB00017C /* OnboardingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00017B /* OnboardingState.swift */; };
+		BB00017E /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00017D /* SplashView.swift */; };
+		BB000180 /* CreatedRecapBlogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00017F /* CreatedRecapBlogStore.swift */; };
+		BB000182 /* DayToTripGrouper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000181 /* DayToTripGrouper.swift */; };
+		BB000184 /* GeoDistanceHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000183 /* GeoDistanceHelper.swift */; };
+		BB000186 /* GeocodingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000185 /* GeocodingService.swift */; };
+		BB000188 /* ImageLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000187 /* ImageLoader.swift */; };
+		BB00018A /* LocalExclusion.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000189 /* LocalExclusion.swift */; };
+		BB00018C /* LocalExclusionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00018B /* LocalExclusionTests.swift */; };
+		BB00018E /* MockTripDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00018D /* MockTripDataService.swift */; };
+		BB000190 /* NeighborhoodStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00018F /* NeighborhoodStore.swift */; };
+		BB000192 /* OnboardingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000191 /* OnboardingStore.swift */; };
+		BB000194 /* PhotoAssetService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000193 /* PhotoAssetService.swift */; };
+		BB000196 /* PhotoLibraryTripService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000195 /* PhotoLibraryTripService.swift */; };
+		BB000198 /* PhotosAuthorizationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000197 /* PhotosAuthorizationManager.swift */; };
+		BB00019A /* PlaceClusteringService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000199 /* PlaceClusteringService.swift */; };
+		BB00019C /* PlaceStopClusteringService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00019B /* PlaceStopClusteringService.swift */; };
+		BB00019E /* RecentRecapStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00019D /* RecentRecapStore.swift */; };
+		BB0001A0 /* TripClusteringDebug.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00019F /* TripClusteringDebug.swift */; };
+		BB0001A2 /* TripClusteringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001A1 /* TripClusteringTests.swift */; };
+		BB0001A4 /* TripDraftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001A3 /* TripDraftStore.swift */; };
+		BB0001A6 /* TripPhotoFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001A5 /* TripPhotoFilter.swift */; };
+		BB0001A8 /* TripPhotoFilterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001A7 /* TripPhotoFilterTests.swift */; };
+		BB0001AA /* TripPhotoSelectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001A9 /* TripPhotoSelectionService.swift */; };
+		BB0001AC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB0001AB /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		BB000101 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		BB000103 /* fastblogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = fastblogApp.swift; sourceTree = "<group>"; };
+		BB000105 /* MyBlogsProfileViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyBlogsProfileViewModel.swift; sourceTree = "<group>"; };
+		BB000107 /* ProfileMapViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileMapViewModel.swift; sourceTree = "<group>"; };
+		BB000109 /* TripCreationViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCreationViewModel.swift; sourceTree = "<group>"; };
+		BB00010B /* TripsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsViewModel.swift; sourceTree = "<group>"; };
+		BB00010D /* DayCluster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayCluster.swift; sourceTree = "<group>"; };
+		BB00010F /* MockPhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockPhoto.swift; sourceTree = "<group>"; };
+		BB000111 /* PlaceCluster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceCluster.swift; sourceTree = "<group>"; };
+		BB000113 /* RecapBlogDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapBlogDetail.swift; sourceTree = "<group>"; };
+		BB000115 /* RecapDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapDraft.swift; sourceTree = "<group>"; };
+		BB000117 /* RecentRecap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentRecap.swift; sourceTree = "<group>"; };
+		BB000119 /* ScanConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanConfig.swift; sourceTree = "<group>"; };
+		BB00011B /* TripDay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDay.swift; sourceTree = "<group>"; };
+		BB00011D /* TripDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDraft.swift; sourceTree = "<group>"; };
+		BB00011F /* BlogPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogPreviewView.swift; sourceTree = "<group>"; };
+		BB000121 /* BlogSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogSettingsSheet.swift; sourceTree = "<group>"; };
+		BB000123 /* ClusterRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterRowView.swift; sourceTree = "<group>"; };
+		BB000125 /* CountryBlogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryBlogsView.swift; sourceTree = "<group>"; };
+		BB000127 /* CountryCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryCardView.swift; sourceTree = "<group>"; };
+		BB000129 /* CoverPhotoSelectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverPhotoSelectView.swift; sourceTree = "<group>"; };
+		BB00012B /* CreateBlogFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateBlogFlowView.swift; sourceTree = "<group>"; };
+		BB00012D /* CreatingRecapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreatingRecapView.swift; sourceTree = "<group>"; };
+		BB00012F /* DayChipsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayChipsView.swift; sourceTree = "<group>"; };
+		BB000131 /* EditPlaceStopNameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditPlaceStopNameSheet.swift; sourceTree = "<group>"; };
+		BB000133 /* FindMoreTripsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FindMoreTripsSheet.swift; sourceTree = "<group>"; };
+		BB000135 /* LandingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandingView.swift; sourceTree = "<group>"; };
+		BB000137 /* LoadingScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingScanView.swift; sourceTree = "<group>"; };
+		BB000139 /* ManagePhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagePhotosView.swift; sourceTree = "<group>"; };
+		BB00013B /* MapDayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapDayView.swift; sourceTree = "<group>"; };
+		BB00013D /* MockPhotoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockPhotoView.swift; sourceTree = "<group>"; };
+		BB00013F /* MyBlogsProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyBlogsProfileView.swift; sourceTree = "<group>"; };
+		BB000141 /* MyMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyMapView.swift; sourceTree = "<group>"; };
+		BB000143 /* PhotoSelectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSelectView.swift; sourceTree = "<group>"; };
+		BB000145 /* PhotosPermissionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotosPermissionView.swift; sourceTree = "<group>"; };
+		BB000147 /* PlacePhotoModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacePhotoModalView.swift; sourceTree = "<group>"; };
+		BB000149 /* PlaceStopActionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceStopActionSheet.swift; sourceTree = "<group>"; };
+		BB00014B /* PlaceStopRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceStopRowView.swift; sourceTree = "<group>"; };
+		BB00014D /* PrivacyPolicyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyPolicyView.swift; sourceTree = "<group>"; };
+		BB00014F /* ProfileMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileMapView.swift; sourceTree = "<group>"; };
+		BB000151 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
+		BB000153 /* RecapBlogPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapBlogPageView.swift; sourceTree = "<group>"; };
+		BB000155 /* RecapBuilderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapBuilderView.swift; sourceTree = "<group>"; };
+		BB000157 /* RecapPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapPreviewView.swift; sourceTree = "<group>"; };
+		BB000159 /* RecapSavedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapSavedView.swift; sourceTree = "<group>"; };
+		BB00015B /* RenamePlaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenamePlaceView.swift; sourceTree = "<group>"; };
+		BB00015D /* ScanningAnimationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanningAnimationView.swift; sourceTree = "<group>"; };
+		BB00015F /* SelectPhotosIntroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectPhotosIntroView.swift; sourceTree = "<group>"; };
+		BB000161 /* ShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheet.swift; sourceTree = "<group>"; };
+		BB000163 /* TermsOfServiceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermsOfServiceView.swift; sourceTree = "<group>"; };
+		BB000165 /* TitleInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleInputView.swift; sourceTree = "<group>"; };
+		BB000167 /* TripDayPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDayPickerView.swift; sourceTree = "<group>"; };
+		BB000169 /* TripsMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsMapView.swift; sourceTree = "<group>"; };
+		BB00016B /* TripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsView.swift; sourceTree = "<group>"; };
+		BB00016D /* CitySearchHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitySearchHelper.swift; sourceTree = "<group>"; };
+		BB00016F /* LocationManagerForOnboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManagerForOnboarding.swift; sourceTree = "<group>"; };
+		BB000171 /* MapWithCenterSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapWithCenterSelector.swift; sourceTree = "<group>"; };
+		BB000173 /* NeighborhoodSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodSelection.swift; sourceTree = "<group>"; };
+		BB000175 /* NeighborhoodSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodSelectionView.swift; sourceTree = "<group>"; };
+		BB000177 /* OnboardingConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingConstants.swift; sourceTree = "<group>"; };
+		BB000179 /* OnboardingFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlowView.swift; sourceTree = "<group>"; };
+		BB00017B /* OnboardingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingState.swift; sourceTree = "<group>"; };
+		BB00017D /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
+		BB00017F /* CreatedRecapBlogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreatedRecapBlogStore.swift; sourceTree = "<group>"; };
+		BB000181 /* DayToTripGrouper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayToTripGrouper.swift; sourceTree = "<group>"; };
+		BB000183 /* GeoDistanceHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeoDistanceHelper.swift; sourceTree = "<group>"; };
+		BB000185 /* GeocodingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeocodingService.swift; sourceTree = "<group>"; };
+		BB000187 /* ImageLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageLoader.swift; sourceTree = "<group>"; };
+		BB000189 /* LocalExclusion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalExclusion.swift; sourceTree = "<group>"; };
+		BB00018B /* LocalExclusionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalExclusionTests.swift; sourceTree = "<group>"; };
+		BB00018D /* MockTripDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockTripDataService.swift; sourceTree = "<group>"; };
+		BB00018F /* NeighborhoodStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodStore.swift; sourceTree = "<group>"; };
+		BB000191 /* OnboardingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingStore.swift; sourceTree = "<group>"; };
+		BB000193 /* PhotoAssetService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoAssetService.swift; sourceTree = "<group>"; };
+		BB000195 /* PhotoLibraryTripService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryTripService.swift; sourceTree = "<group>"; };
+		BB000197 /* PhotosAuthorizationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotosAuthorizationManager.swift; sourceTree = "<group>"; };
+		BB000199 /* PlaceClusteringService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceClusteringService.swift; sourceTree = "<group>"; };
+		BB00019B /* PlaceStopClusteringService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceStopClusteringService.swift; sourceTree = "<group>"; };
+		BB00019D /* RecentRecapStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentRecapStore.swift; sourceTree = "<group>"; };
+		BB00019F /* TripClusteringDebug.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripClusteringDebug.swift; sourceTree = "<group>"; };
+		BB0001A1 /* TripClusteringTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripClusteringTests.swift; sourceTree = "<group>"; };
+		BB0001A3 /* TripDraftStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDraftStore.swift; sourceTree = "<group>"; };
+		BB0001A5 /* TripPhotoFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPhotoFilter.swift; sourceTree = "<group>"; };
+		BB0001A7 /* TripPhotoFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPhotoFilterTests.swift; sourceTree = "<group>"; };
+		BB0001A9 /* TripPhotoSelectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPhotoSelectionService.swift; sourceTree = "<group>"; };
+		BB0001AB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AA000003 /* fastblog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = fastblog.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AA000022 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		BB0001AD /* main */ = {
+			isa = PBXGroup;
+			children = (
+				BB0001AE /* fastblog */,
+				BB0001AF /* Products */,
+			);
+			name = main;
+			sourceTree = "<group>";
+		};
+		BB0001AE /* fastblog */ = {
+			isa = PBXGroup;
+			children = (
+				BB000101 /* ContentView.swift */,
+				BB000103 /* fastblogApp.swift */,
+				BB0001B0 /* Models */,
+				BB0001B1 /* ViewModels */,
+				BB0001B2 /* Views */,
+				BB0001B4 /* Services */,
+				BB0001AB /* Assets.xcassets */,
+			);
+			path = fastblog;
+			sourceTree = "<group>";
+		};
+		BB0001AF /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AA000003 /* fastblog.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		BB0001B0 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				BB00010D /* DayCluster.swift */,
+				BB00010F /* MockPhoto.swift */,
+				BB000111 /* PlaceCluster.swift */,
+				BB000113 /* RecapBlogDetail.swift */,
+				BB000115 /* RecapDraft.swift */,
+				BB000117 /* RecentRecap.swift */,
+				BB000119 /* ScanConfig.swift */,
+				BB00011B /* TripDay.swift */,
+				BB00011D /* TripDraft.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		BB0001B1 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				BB000105 /* MyBlogsProfileViewModel.swift */,
+				BB000107 /* ProfileMapViewModel.swift */,
+				BB000109 /* TripCreationViewModel.swift */,
+				BB00010B /* TripsViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		BB0001B2 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				BB00011F /* BlogPreviewView.swift */,
+				BB000121 /* BlogSettingsSheet.swift */,
+				BB000123 /* ClusterRowView.swift */,
+				BB000125 /* CountryBlogsView.swift */,
+				BB000127 /* CountryCardView.swift */,
+				BB000129 /* CoverPhotoSelectView.swift */,
+				BB00012B /* CreateBlogFlowView.swift */,
+				BB00012D /* CreatingRecapView.swift */,
+				BB00012F /* DayChipsView.swift */,
+				BB000131 /* EditPlaceStopNameSheet.swift */,
+				BB000133 /* FindMoreTripsSheet.swift */,
+				BB000135 /* LandingView.swift */,
+				BB000137 /* LoadingScanView.swift */,
+				BB000139 /* ManagePhotosView.swift */,
+				BB00013B /* MapDayView.swift */,
+				BB00013D /* MockPhotoView.swift */,
+				BB00013F /* MyBlogsProfileView.swift */,
+				BB000141 /* MyMapView.swift */,
+				BB000143 /* PhotoSelectView.swift */,
+				BB000145 /* PhotosPermissionView.swift */,
+				BB000147 /* PlacePhotoModalView.swift */,
+				BB000149 /* PlaceStopActionSheet.swift */,
+				BB00014B /* PlaceStopRowView.swift */,
+				BB00014D /* PrivacyPolicyView.swift */,
+				BB00014F /* ProfileMapView.swift */,
+				BB000151 /* ProfileView.swift */,
+				BB000153 /* RecapBlogPageView.swift */,
+				BB000155 /* RecapBuilderView.swift */,
+				BB000157 /* RecapPreviewView.swift */,
+				BB000159 /* RecapSavedView.swift */,
+				BB00015B /* RenamePlaceView.swift */,
+				BB00015D /* ScanningAnimationView.swift */,
+				BB00015F /* SelectPhotosIntroView.swift */,
+				BB000161 /* ShareSheet.swift */,
+				BB000163 /* TermsOfServiceView.swift */,
+				BB000165 /* TitleInputView.swift */,
+				BB000167 /* TripDayPickerView.swift */,
+				BB000169 /* TripsMapView.swift */,
+				BB00016B /* TripsView.swift */,
+				BB0001B3 /* Onboarding */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		BB0001B3 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				BB00016D /* CitySearchHelper.swift */,
+				BB00016F /* LocationManagerForOnboarding.swift */,
+				BB000171 /* MapWithCenterSelector.swift */,
+				BB000173 /* NeighborhoodSelection.swift */,
+				BB000175 /* NeighborhoodSelectionView.swift */,
+				BB000177 /* OnboardingConstants.swift */,
+				BB000179 /* OnboardingFlowView.swift */,
+				BB00017B /* OnboardingState.swift */,
+				BB00017D /* SplashView.swift */,
+			);
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
+		BB0001B4 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				BB00017F /* CreatedRecapBlogStore.swift */,
+				BB000181 /* DayToTripGrouper.swift */,
+				BB000183 /* GeoDistanceHelper.swift */,
+				BB000185 /* GeocodingService.swift */,
+				BB000187 /* ImageLoader.swift */,
+				BB000189 /* LocalExclusion.swift */,
+				BB00018B /* LocalExclusionTests.swift */,
+				BB00018D /* MockTripDataService.swift */,
+				BB00018F /* NeighborhoodStore.swift */,
+				BB000191 /* OnboardingStore.swift */,
+				BB000193 /* PhotoAssetService.swift */,
+				BB000195 /* PhotoLibraryTripService.swift */,
+				BB000197 /* PhotosAuthorizationManager.swift */,
+				BB000199 /* PlaceClusteringService.swift */,
+				BB00019B /* PlaceStopClusteringService.swift */,
+				BB00019D /* RecentRecapStore.swift */,
+				BB00019F /* TripClusteringDebug.swift */,
+				BB0001A1 /* TripClusteringTests.swift */,
+				BB0001A3 /* TripDraftStore.swift */,
+				BB0001A5 /* TripPhotoFilter.swift */,
+				BB0001A7 /* TripPhotoFilterTests.swift */,
+				BB0001A9 /* TripPhotoSelectionService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AA000020 /* fastblog */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA000030 /* Build configuration list for PBXNativeTarget "fastblog" */;
+			buildPhases = (
+				AA000021 /* Sources */,
+				AA000022 /* Frameworks */,
+				AA000023 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = fastblog;
+			productName = fastblog;
+			productReference = AA000003 /* fastblog.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AA000040 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+			};
+			buildConfigurationList = AA000041 /* Build configuration list for PBXProject "fastblog" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = BB0001AD;
+			productRefGroup = BB0001AF /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AA000020 /* fastblog */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AA000023 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BB0001AC /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AA000021 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BB000102 /* ContentView.swift in Sources */,
+				BB000104 /* fastblogApp.swift in Sources */,
+				BB000106 /* MyBlogsProfileViewModel.swift in Sources */,
+				BB000108 /* ProfileMapViewModel.swift in Sources */,
+				BB00010A /* TripCreationViewModel.swift in Sources */,
+				BB00010C /* TripsViewModel.swift in Sources */,
+				BB00010E /* DayCluster.swift in Sources */,
+				BB000110 /* MockPhoto.swift in Sources */,
+				BB000112 /* PlaceCluster.swift in Sources */,
+				BB000114 /* RecapBlogDetail.swift in Sources */,
+				BB000116 /* RecapDraft.swift in Sources */,
+				BB000118 /* RecentRecap.swift in Sources */,
+				BB00011A /* ScanConfig.swift in Sources */,
+				BB00011C /* TripDay.swift in Sources */,
+				BB00011E /* TripDraft.swift in Sources */,
+				BB000120 /* BlogPreviewView.swift in Sources */,
+				BB000122 /* BlogSettingsSheet.swift in Sources */,
+				BB000124 /* ClusterRowView.swift in Sources */,
+				BB000126 /* CountryBlogsView.swift in Sources */,
+				BB000128 /* CountryCardView.swift in Sources */,
+				BB00012A /* CoverPhotoSelectView.swift in Sources */,
+				BB00012C /* CreateBlogFlowView.swift in Sources */,
+				BB00012E /* CreatingRecapView.swift in Sources */,
+				BB000130 /* DayChipsView.swift in Sources */,
+				BB000132 /* EditPlaceStopNameSheet.swift in Sources */,
+				BB000134 /* FindMoreTripsSheet.swift in Sources */,
+				BB000136 /* LandingView.swift in Sources */,
+				BB000138 /* LoadingScanView.swift in Sources */,
+				BB00013A /* ManagePhotosView.swift in Sources */,
+				BB00013C /* MapDayView.swift in Sources */,
+				BB00013E /* MockPhotoView.swift in Sources */,
+				BB000140 /* MyBlogsProfileView.swift in Sources */,
+				BB000142 /* MyMapView.swift in Sources */,
+				BB000144 /* PhotoSelectView.swift in Sources */,
+				BB000146 /* PhotosPermissionView.swift in Sources */,
+				BB000148 /* PlacePhotoModalView.swift in Sources */,
+				BB00014A /* PlaceStopActionSheet.swift in Sources */,
+				BB00014C /* PlaceStopRowView.swift in Sources */,
+				BB00014E /* PrivacyPolicyView.swift in Sources */,
+				BB000150 /* ProfileMapView.swift in Sources */,
+				BB000152 /* ProfileView.swift in Sources */,
+				BB000154 /* RecapBlogPageView.swift in Sources */,
+				BB000156 /* RecapBuilderView.swift in Sources */,
+				BB000158 /* RecapPreviewView.swift in Sources */,
+				BB00015A /* RecapSavedView.swift in Sources */,
+				BB00015C /* RenamePlaceView.swift in Sources */,
+				BB00015E /* ScanningAnimationView.swift in Sources */,
+				BB000160 /* SelectPhotosIntroView.swift in Sources */,
+				BB000162 /* ShareSheet.swift in Sources */,
+				BB000164 /* TermsOfServiceView.swift in Sources */,
+				BB000166 /* TitleInputView.swift in Sources */,
+				BB000168 /* TripDayPickerView.swift in Sources */,
+				BB00016A /* TripsMapView.swift in Sources */,
+				BB00016C /* TripsView.swift in Sources */,
+				BB00016E /* CitySearchHelper.swift in Sources */,
+				BB000170 /* LocationManagerForOnboarding.swift in Sources */,
+				BB000172 /* MapWithCenterSelector.swift in Sources */,
+				BB000174 /* NeighborhoodSelection.swift in Sources */,
+				BB000176 /* NeighborhoodSelectionView.swift in Sources */,
+				BB000178 /* OnboardingConstants.swift in Sources */,
+				BB00017A /* OnboardingFlowView.swift in Sources */,
+				BB00017C /* OnboardingState.swift in Sources */,
+				BB00017E /* SplashView.swift in Sources */,
+				BB000180 /* CreatedRecapBlogStore.swift in Sources */,
+				BB000182 /* DayToTripGrouper.swift in Sources */,
+				BB000184 /* GeoDistanceHelper.swift in Sources */,
+				BB000186 /* GeocodingService.swift in Sources */,
+				BB000188 /* ImageLoader.swift in Sources */,
+				BB00018A /* LocalExclusion.swift in Sources */,
+				BB00018C /* LocalExclusionTests.swift in Sources */,
+				BB00018E /* MockTripDataService.swift in Sources */,
+				BB000190 /* NeighborhoodStore.swift in Sources */,
+				BB000192 /* OnboardingStore.swift in Sources */,
+				BB000194 /* PhotoAssetService.swift in Sources */,
+				BB000196 /* PhotoLibraryTripService.swift in Sources */,
+				BB000198 /* PhotosAuthorizationManager.swift in Sources */,
+				BB00019A /* PlaceClusteringService.swift in Sources */,
+				BB00019C /* PlaceStopClusteringService.swift in Sources */,
+				BB00019E /* RecentRecapStore.swift in Sources */,
+				BB0001A0 /* TripClusteringDebug.swift in Sources */,
+				BB0001A2 /* TripClusteringTests.swift in Sources */,
+				BB0001A4 /* TripDraftStore.swift in Sources */,
+				BB0001A6 /* TripPhotoFilter.swift in Sources */,
+				BB0001A8 /* TripPhotoFilterTests.swift in Sources */,
+				BB0001AA /* TripPhotoSelectionService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AA000050 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AA000051 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		AA000052 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = N3L5LBGNK2;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "fastblog uses your location to identify your neighborhood and group travel photos.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "fastblog needs access to your photos to create trip blogs.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fastblog.fastblog;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AA000053 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = N3L5LBGNK2;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "fastblog uses your location to identify your neighborhood and group travel photos.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "fastblog needs access to your photos to create trip blogs.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fastblog.fastblog;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AA000030 /* Build configuration list for PBXNativeTarget "fastblog" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA000052 /* Debug */,
+				AA000053 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA000041 /* Build configuration list for PBXProject "fastblog" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA000050 /* Debug */,
+				AA000051 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = AA000040 /* Project object */;
+}
