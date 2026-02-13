@@ -647,7 +647,111 @@ final class PhotoLibraryTripService {
         return "\(topCity), \(countryName)"
     }
 
+    // MARK: - Library Summary Scan
+
+    /// Quickly scans the library (last 5 years) to find active trip months.
+    /// Returns a summary with top active months and suggestions.
+    func scanLibrarySummary() async -> LibrarySummary {
+        let now = Date()
+        let fiveYearsAgo = calendar.date(byAdding: .year, value: -5, to: now) ?? .distantPast
+        
+        let options = PHFetchOptions()
+        options.predicate = NSPredicate(format: "creationDate >= %@", fiveYearsAgo as NSDate)
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        options.includeAssetSourceTypes = [.typeUserLibrary, .typeCloudShared, .typeiTunesSynced]
+        
+        let fetchResult = PHAsset.fetchAssets(with: .image, options: options)
+        var allAssets: [PHAsset] = []
+        fetchResult.enumerateObjects { asset, _, _ in
+            if asset.mediaSubtypes.contains(.photoScreenshot) { return }
+            allAssets.append(asset)
+        }
+        
+        // Filter for "Trip" photos (non-local)
+        // We do a lighter pass here: just check logic, maybe skip complex clustering
+        let home = NeighborhoodStore.getNeighborhoodCenter()
+        let minMiles = NeighborhoodStore.localExclusionMiles
+        
+        var tripAssets: [PHAsset] = []
+        if let homeLocation = home {
+            for asset in allAssets {
+                guard asset.location != nil else { continue }
+                if TripPhotoFilter.shouldIncludeInTrips(assetLocation: asset.location, home: homeLocation, minMiles: minMiles) {
+                    tripAssets.append(asset)
+                }
+            }
+        } else {
+            // If no home set, maybe just take everything? or empty?
+            // "Scan" implies looking for trips. If no home, everything is a trip?
+            // Let's assume everything with location is a trip candidate if no home set (unlikely in app flow but possible)
+            tripAssets = allAssets.filter { $0.location != nil }
+        }
+        
+        // Group by Year-Month
+        var monthCounts: [String: Int] = [:] // "2024-05": 45
+        var yearCounts: [Int: Int] = [:]
+        
+        for asset in tripAssets {
+            guard let date = asset.creationDate else { continue }
+            let year = calendar.component(.year, from: date)
+            let month = calendar.component(.month, from: date)
+            let key = String(format: "%04d-%02d", year, month)
+            
+            monthCounts[key, default: 0] += 1
+            yearCounts[year, default: 0] += 1
+        }
+        
+        // Top 3 Active Months
+        let sortedMonths = monthCounts.sorted { $0.value > $1.value }.prefix(3)
+        var mostActiveMonths: [(year: Int, month: Int, count: Int)] = []
+        for (key, count) in sortedMonths {
+            let parts = key.split(separator: "-")
+            if parts.count == 2, let y = Int(parts[0]), let m = Int(parts[1]) {
+                mostActiveMonths.append((year: y, month: m, count: count))
+            }
+        }
+        
+        // Prominent Years (more than 20 photos)
+        let prominentYears = yearCounts.filter { $0.value > 20 }.keys.sorted(by: >)
+        
+        // Recent Trip Suggestions (Recent 2 months with > 10 photos, not current month)
+        // Sort keys descending (time)
+        let chronologicallySortedMonths = monthCounts.keys.sorted(by: >)
+        var count = 0
+        var recentSuggestions: [String] = []
+        let currentMonthKey = String(format: "%04d-%02d", calendar.component(.year, from: now), calendar.component(.month, from: now))
+        
+        let monthNameFormatter = DateFormatter()
+        monthNameFormatter.dateFormat = "MMMM yyyy"
+        
+        for key in chronologicallySortedMonths {
+            if key == currentMonthKey { continue } // Skip current in-progress month
+            if let c = monthCounts[key], c > 10 {
+                let parts = key.split(separator: "-")
+                if parts.count == 2, let y = Int(parts[0]), let m = Int(parts[1]) {
+                    var comps = DateComponents()
+                    comps.year = y
+                    comps.month = m
+                    if let date = calendar.date(from: comps) {
+                        recentSuggestions.append(monthNameFormatter.string(from: date))
+                        count += 1
+                    }
+                }
+            }
+            if count >= 2 { break }
+        }
+        
+        return LibrarySummary(
+            totalPhotos: tripAssets.count,
+            prominentYears: prominentYears,
+            mostActiveMonths: mostActiveMonths,
+            recentTripSuggestions: recentSuggestions,
+            monthCounts: monthCounts
+        )
+    }
+
     // MARK: - Trip filter debug (DEBUG only)
+
 
     #if DEBUG
     private static func logTripFilterSample(assets: [PHAsset], home: CLLocation, minMiles: Double, sampleSize: Int) {

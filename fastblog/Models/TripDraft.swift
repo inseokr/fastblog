@@ -6,7 +6,7 @@
 import CoreLocation
 import Foundation
 
-struct TripDraft: Identifiable, Equatable, Hashable {
+struct TripDraft: Identifiable, Equatable, Hashable, Codable {
     let id: UUID
     var title: String
     var dateRangeText: String

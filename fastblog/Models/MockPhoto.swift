@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct MockPhoto: Identifiable, Equatable, Hashable {
+struct MockPhoto: Identifiable, Equatable, Hashable, Codable {
     let id: UUID
     var imageName: String  // SF Symbol name or placeholder id for gradient
     var timestamp: Date

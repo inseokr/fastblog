@@ -30,7 +30,7 @@ struct fastblogApp: App {
                 }
             }
             .onAppear {
-                hasCompletedOnboarding = false
+                DraftReminderNotificationManager.requestPermissionIfNeeded()
             }
         }
     }

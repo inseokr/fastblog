@@ -9,7 +9,7 @@ import Foundation
 /// Created blog content ready to display and edit. Editable draft; Save writes back to store.
 /// Trip title is set once on creation (default "Trip To [City]"); user can edit and Save persists it.
 /// Cover photo selection is stored in selectedCoverPhotoIdentifier (persisted with draft).
-struct RecapBlogDetail: Identifiable, Equatable {
+struct RecapBlogDetail: Identifiable, Equatable, Codable {
     let id: UUID
     var title: String
     var days: [RecapBlogDay]
@@ -28,7 +28,7 @@ struct RecapBlogDetail: Identifiable, Equatable {
     }
 }
 
-struct RecapBlogDay: Identifiable, Equatable {
+struct RecapBlogDay: Identifiable, Equatable, Codable {
     let id: UUID
     var dayIndex: Int
     var date: Date
@@ -60,7 +60,7 @@ struct RecapBlogDay: Identifiable, Equatable {
     }
 }
 
-struct PlaceStop: Identifiable, Equatable {
+struct PlaceStop: Identifiable, Equatable, Codable {
     let id: UUID
     var orderIndex: Int
     var placeTitle: String
@@ -97,13 +97,13 @@ struct PlaceStop: Identifiable, Equatable {
 }
 
 /// Location stored as lat/lon for Equatable. Convert to CLLocationCoordinate2D for MapKit.
-struct PhotoCoordinate: Equatable, Hashable {
+struct PhotoCoordinate: Equatable, Hashable, Codable {
     let latitude: Double
     let longitude: Double
     var clCoordinate: CLLocationCoordinate2D { CLLocationCoordinate2D(latitude: latitude, longitude: longitude) }
 }
 
-struct RecapPhoto: Identifiable, Equatable {
+struct RecapPhoto: Identifiable, Equatable, Codable {
     let id: UUID
     var timestamp: Date
     var location: PhotoCoordinate?

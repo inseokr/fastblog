@@ -19,10 +19,12 @@ struct PlacePhotoModalView: View {
     let placeSubtitle: String?
     let photos: [RecapPhoto]
     let initialPhotoId: UUID
+    var blogIsEditMode: Bool = false
     var photoCaption: (UUID) -> Binding<String>
     var onDismiss: () -> Void
 
     @State private var currentPhotoId: UUID
+    @State private var isOverlayHidden = false
     @State private var isEditing = false
     @State private var editedCaptionText: String = ""
     @State private var editedPlaceTitle: String = ""
@@ -43,6 +45,7 @@ struct PlacePhotoModalView: View {
         placeSubtitle: String?,
         photos: [RecapPhoto],
         initialPhotoId: UUID,
+        blogIsEditMode: Bool = false,
         photoCaption: @escaping (UUID) -> Binding<String>,
         onDismiss: @escaping () -> Void
     ) {
@@ -50,6 +53,7 @@ struct PlacePhotoModalView: View {
         self.placeSubtitle = placeSubtitle
         self.photos = photos
         self.initialPhotoId = initialPhotoId
+        self.blogIsEditMode = blogIsEditMode
         self.photoCaption = photoCaption
         self.onDismiss = onDismiss
         _currentPhotoId = State(initialValue: initialPhotoId)
@@ -69,6 +73,13 @@ struct PlacePhotoModalView: View {
                 fullScreenPhotoView
                     .blur(radius: isEditing ? 6 : 0)
                     .overlay(isEditing ? Color.black.opacity(0.4) : Color.clear)
+                    .onTapGesture {
+                        if !blogIsEditMode && !isEditing {
+                            withAnimation {
+                                isOverlayHidden.toggle()
+                            }
+                        }
+                    }
 
                 // 2. Bottom overlay (or top when editing so caption stays visible above keyboard)
             VStack {
@@ -110,37 +121,50 @@ struct PlacePhotoModalView: View {
                         isEditing: $isEditing,
                         captionText: $editedCaptionText,
                         placeholder: "Leave a story for this photo...",
+                        blogIsEditMode: blogIsEditMode,
                         onCommitCaption: { commitCaption() }
                     )
                 }
-                if photos.count > 1 {
-                    PlacePhotoThumbnailStrip(
-                        photos: photos,
-                        currentPhotoId: currentPhotoId,
-                        onSelectPhoto: { currentPhotoId = $0 }
-                    )
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    .padding(.bottom, 24)
-                } else if let single = photos.first {
-                    RecapPhotoThumbnail(photo: single, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 160, height: 160))
-                        .frame(width: 56, height: 56)
-                        .clipped()
-                        .cornerRadius(8)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.white.opacity(0.6), lineWidth: 1)
+                if !blogIsEditMode {
+                    if photos.count > 1 {
+                        PlacePhotoThumbnailStrip(
+                            photos: photos,
+                            currentPhotoId: currentPhotoId,
+                            onSelectPhoto: { currentPhotoId = $0 }
                         )
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
                         .padding(.bottom, 24)
+                    } else if let single = photos.first {
+                        RecapPhotoThumbnail(photo: single, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 160, height: 160))
+                            .frame(width: 56, height: 56)
+                            .clipped()
+                            .cornerRadius(8)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.white.opacity(0.6), lineWidth: 1)
+                            )
+                            .padding(.bottom, 24)
+                    }
                 }
             }
+            .opacity(isOverlayHidden ? 0 : 1)
 
             // 3. Top bar + bottom-right action stack (drawn on top so never covered when modal is small)
-            ZStack(alignment: .topLeading) {
-                Color.clear
+            ZStack(alignment: .top) {
+                // Drag Handle
+                Capsule()
+                    .fill(Color.white.opacity(0.4))
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 10)
+                
                 VStack(spacing: 0) {
                     HStack {
-                        if isEditing {
+                        if blogIsEditMode {
+                            // In Blog Edit Mode: No "Back" button, no "Edit" button.
+                            // User dismisses by dragging down or tapping background.
+                             Color.clear.frame(width: 44, height: 44)
+                        } else if isEditing && !blogIsEditMode {
                              Button("Cancel") {
                                  // Revert changes
                                  editedCaptionText = captionWhenEditingStarted
@@ -154,7 +178,7 @@ struct PlacePhotoModalView: View {
                              .padding(.vertical, 6)
                              .background(Color.black.opacity(0.35))
                              .clipShape(Capsule())
-                        } else {
+                        } else if !isEditing {
                             Button(action: {
                                 captionWhenEditingStarted = currentCaption
                                 titleWhenEditingStarted = placeTitle
@@ -187,11 +211,12 @@ struct PlacePhotoModalView: View {
                             .background(Color.blue)
                             .clipShape(Capsule())
                         } else {
+                            // Close Button (X) - Always visible when not editing caption
                             Button(action: onDismiss) {
                                 Image(systemName: "xmark")
-                                    .font(.system(size: 18, weight: .semibold))
+                                    .font(.system(size: 16, weight: .semibold))
                                     .foregroundColor(.white)
-                                    .frame(width: 44, height: 44)
+                                    .frame(width: 32, height: 32)
                                     .background(Color.black.opacity(0.35))
                                     .clipShape(Circle())
                             }
@@ -202,8 +227,8 @@ struct PlacePhotoModalView: View {
                     .padding(.top, 4)
                     Spacer()
                 }
-                // Right side actions - only visible when NOT editing
-                if !isEditing {
+                // Right side actions - only visible when NOT editing AND NOT in blog edit mode
+                if !isEditing && !blogIsEditMode {
                     VStack {
                         Spacer()
                         HStack {
@@ -220,6 +245,7 @@ struct PlacePhotoModalView: View {
                 }
             }
             .allowsHitTesting(true)
+            .opacity(isOverlayHidden ? 0 : 1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
@@ -227,6 +253,11 @@ struct PlacePhotoModalView: View {
         .onAppear {
             editedCaptionText = currentCaption
             editedPlaceTitle = placeTitle
+            if blogIsEditMode {
+                // captionWhenEditingStarted = currentCaption
+                // titleWhenEditingStarted = placeTitle
+                // isEditing = true
+            }
         }
         .onChange(of: currentPhotoId) { _, _ in
             editedCaptionText = currentCaption
@@ -378,6 +409,7 @@ struct BottomInfoOverlay: View {
     @Binding var isEditing: Bool
     @Binding var captionText: String
     let placeholder: String
+    var blogIsEditMode: Bool = false
     var onCommitCaption: () -> Void
 
     var body: some View {
@@ -411,30 +443,30 @@ struct BottomInfoOverlay: View {
                 .font(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundColor(.white)
-            } else {
-                Button {
-                    isEditing = true
-                } label: {
-                    Group {
-                        if captionText.isEmpty {
-                            Text(placeholder)
-                                .foregroundColor(.white.opacity(0.7))
-                        } else {
-                            Text(captionText)
-                                .foregroundColor(.white)
-                                .lineLimit(2)
-                        }
-                    }
+            } else if !captionText.isEmpty {
+                Text(captionText)
                     .font(.body)
+                    .foregroundColor(.white)
+                    .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .multilineTextAlignment(.leading)
-                }
-                .buttonStyle(.plain)
+            } else if blogIsEditMode {
+                // Just show placeholder text, tap to edit
+                Text(placeholder)
+                    .font(.body)
+                    .foregroundColor(.white.opacity(0.7))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .multilineTextAlignment(.leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        isEditing = true
+                    }
             }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Make the whole background tap-to-edit in blog edit mode
         .background(
             LinearGradient(
                 colors: [Color.black.opacity(0.35), Color.clear],
@@ -442,6 +474,11 @@ struct BottomInfoOverlay: View {
                 endPoint: .top
             )
         )
+        .onTapGesture {
+            if blogIsEditMode && !isEditing {
+                isEditing = true
+            }
+        }
     }
 }
 

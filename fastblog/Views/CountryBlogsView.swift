@@ -16,7 +16,7 @@ struct CountryBlogsView: View {
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "MMM yyyy"
+        f.dateFormat = "MMM d, h:mm a"
         return f
     }()
 
@@ -39,6 +39,13 @@ struct CountryBlogsView: View {
                                 .foregroundColor(.secondary)
                         }
                         Spacer()
+                        VStack(alignment: .trailing, spacing: 4) {
+                            if let editedAt = blog.lastEditedAt {
+                                Text("Edited \(editedAt.timeAgoDisplay())")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                         Image(systemName: "chevron.right")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -76,5 +83,13 @@ struct CountryBlogsView: View {
 
     private func displayCountryName(_ name: String) -> String {
         name.isEmpty || name == "Unknown" ? "Other" : name
+    }
+}
+
+extension Date {
+    func timeAgoDisplay() -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: self, relativeTo: Date())
     }
 }

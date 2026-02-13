@@ -221,8 +221,7 @@ private struct CreatedRecapCard: View {
 
     private static let lastEditedFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateStyle = .medium
-        f.doesRelativeDateFormatting = true
+        f.dateFormat = "MMM d, h:mm a"
         return f
     }()
 
@@ -249,7 +248,7 @@ private struct CreatedRecapCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(width: 220)
+        .frame(width: 280)
         .padding(10)
         .background(Color.white.opacity(0.1))
         .cornerRadius(12)
@@ -333,9 +332,11 @@ private struct SettingsView: View {
                 }
             }
             .sheet(isPresented: $showNeighborhoodSheet) {
-                NeighborhoodIntroView(onDismiss: {
-                    showNeighborhoodSheet = false
-                })
+                NavigationStack {
+                    NeighborhoodSearchView(onDismiss: {
+                        showNeighborhoodSheet = false
+                    })
+                }
             }
         }
     }
@@ -362,7 +363,7 @@ struct AllRecentsSheet: View {
                                 Text(recap.title)
                                     .font(.headline)
                                     .foregroundColor(.primary)
-                                Text(recap.createdAt, style: .date)
+                                Text("\(recap.tripDurationDays) Day\(recap.tripDurationDays == 1 ? "" : "s")")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                             }

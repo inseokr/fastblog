@@ -24,6 +24,21 @@ struct ProfileMapView: View {
         ZStack(alignment: .top) {
             profileMap
             countryFilterBar
+            VStack {
+                Spacer()
+                RecapBlogCarousel(
+                    blogs: viewModel.orderedBlogs,
+                    selectedBlog: $viewModel.selectedBlog,
+                    centeredBlogID: $centeredBlogID,
+                    onSelect: { blog in
+                        viewModel.selectBlog(blog)
+                    },
+                    onNavigate: { blog in
+                        selectedBlogForNavigation = blog
+                    },
+                    formatDateRange: viewModel.formatDateRange
+                )
+            }
         }
         .ignoresSafeArea(edges: .bottom)
         .navigationTitle("My Map")
@@ -55,7 +70,14 @@ struct ProfileMapView: View {
         }
         .mapStyle(.standard(elevation: .realistic))
         .onMapCameraChange(frequency: .onEnd) { context in
-            viewModel.mapRegion = context.region
+            // Only update region if not animating from our selection
+            if viewModel.animatedRegion == nil {
+                 viewModel.mapRegion = context.region
+            } else {
+                // If we were animating, check if we reached target?
+                // For simplicity, just update backing state.
+                viewModel.mapRegion = context.region
+            }
         }
     }
 
@@ -100,6 +122,119 @@ struct ProfileMapView: View {
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - RecapBlogCarousel
+
+struct RecapBlogCarousel: View {
+    let blogs: [CreatedRecapBlog]
+    @Binding var selectedBlog: CreatedRecapBlog?
+    @Binding var centeredBlogID: UUID?
+    let onSelect: (CreatedRecapBlog) -> Void
+    let onNavigate: (CreatedRecapBlog) -> Void
+    let formatDateRange: (Date?, Date?) -> String
+
+    var body: some View {
+        if blogs.isEmpty {
+            EmptyView()
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 12) {
+                    ForEach(blogs, id: \.sourceTripId) { blog in
+                        RecapBlogCard(
+                            blog: blog,
+                            isSelected: selectedBlog?.sourceTripId == blog.sourceTripId,
+                            formatDateRange: formatDateRange
+                        )
+                        .id(blog.sourceTripId)
+                        .onTapGesture {
+                            onSelect(blog)
+                            onNavigate(blog)
+                        }
+                    }
+                    // Spacer to allow the last item to be centered if needed, 
+                    // though .viewAligned usually handles this well with content margins.
+                    // Adding specific padding to center the first and last items if needed.
+                }
+                .scrollTargetLayout()
+                .padding(.horizontal, 24) // Initial padding
+            }
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $centeredBlogID)
+            .onChange(of: centeredBlogID) { _, newID in
+                if let newID, let blog = blogs.first(where: { $0.sourceTripId == newID }) {
+                    if selectedBlog?.sourceTripId != newID {
+                        onSelect(blog)
+                    }
+                }
+            }
+            .frame(height: 140)
+            .background(
+                LinearGradient(colors: [.clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 180)
+                    .offset(y: 20)
+            )
+        }
+    }
+}
+
+// MARK: - RecapBlogCard
+
+struct RecapBlogCard: View {
+    let blog: CreatedRecapBlog
+    let isSelected: Bool
+    let formatDateRange: (Date?, Date?) -> String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Cover Photo
+            TripCoverImage(
+                theme: blog.coverImageName,
+                coverAssetIdentifier: blog.coverAssetIdentifier
+            )
+            .frame(width: 80, height: 100)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
+
+            // Info
+            VStack(alignment: .leading, spacing: 4) {
+                Text(blog.title)
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .lineLimit(2)
+                
+                Text(formatDateRange(blog.tripStartDate, blog.tripEndDate))
+                    .font(.caption)
+                    .foregroundColor(.gray)
+
+                HStack(spacing: 8) {
+                    Label("\(blog.totalPlaceVisitCount)", systemImage: "mappin.circle.fill")
+                    Label("\(blog.tripDurationDays)d", systemImage: "clock.fill")
+                }
+                .font(.caption2)
+                .foregroundColor(.gray)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            
+            Spacer()
+        }
+        .padding(12)
+        .frame(width: 280, height: 124)
+        .background {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.ultraThinMaterial) // Glassmorphism
+                .shadow(color: .black.opacity(0.4), radius: 8, x: 0, y: 4)
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(isSelected ? Color.blue : Color.white.opacity(0.2), lineWidth: isSelected ? 2 : 1)
+        )
+        .scaleEffect(isSelected ? 1.05 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
     }
 }
 

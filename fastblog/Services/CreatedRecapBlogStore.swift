@@ -9,7 +9,7 @@ import Foundation
 import SwiftUI
 
 /// A recap blog that was created from a draft trip. Stored so we can hide the draft from Trips and show it in Landing Recents.
-struct CreatedRecapBlog: Identifiable, Equatable, Hashable {
+struct CreatedRecapBlog: Identifiable, Equatable, Hashable, Codable {
     let id: UUID
     let sourceTripId: UUID
     let title: String
@@ -50,12 +50,76 @@ final class CreatedRecapBlogStore: ObservableObject {
     @Published private(set) var recents: [CreatedRecapBlog] = []
     /// When true, landing shows "Recap Blog has been created!" banner; clear after 5–7 sec.
     @Published var showRecapCreatedBanner = false
+    /// Set to true when a blog is created. Consumed by the view (TripsView) to trigger the banner at the appropriate time.
+    @Published var pendingRecapCreated = false
+    /// Set to true when a draft is saved on back navigation. Consumed by TripsView to show a toast.
+    @Published var showDraftSavedToast = false
     private var tripDraftsBySourceId: [UUID: TripDraft] = [:]
     /// Persisted editable blog details; Save in RecapBlogPageView writes here.
     private var blogDetailsBySourceId: [UUID: RecapBlogDetail] = [:]
     private let clusteringService = PlaceStopClusteringService()
 
-    private init() {}
+    // MARK: - Persistence
+
+    private static let storageDirectory: URL = {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dir = docs.appendingPathComponent("CreatedBlogs", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    private static let recentsURL = storageDirectory.appendingPathComponent("recents.json")
+    private static let tripDraftsURL = storageDirectory.appendingPathComponent("tripDrafts.json")
+    private static let blogDetailsURL = storageDirectory.appendingPathComponent("blogDetails.json")
+
+    private static let encoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        return e
+    }()
+
+    private static let decoder: JSONDecoder = {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }()
+
+    private init() {
+        loadFromDisk()
+    }
+
+    private func loadFromDisk() {
+        if let data = try? Data(contentsOf: Self.recentsURL),
+           let decoded = try? Self.decoder.decode([CreatedRecapBlog].self, from: data) {
+            recents = decoded
+        }
+        if let data = try? Data(contentsOf: Self.tripDraftsURL),
+           let decoded = try? Self.decoder.decode([UUID: TripDraft].self, from: data) {
+            tripDraftsBySourceId = decoded
+        }
+        if let data = try? Data(contentsOf: Self.blogDetailsURL),
+           let decoded = try? Self.decoder.decode([UUID: RecapBlogDetail].self, from: data) {
+            blogDetailsBySourceId = decoded
+        }
+    }
+
+    private func persistRecents() {
+        if let data = try? Self.encoder.encode(recents) {
+            try? data.write(to: Self.recentsURL, options: .atomic)
+        }
+    }
+
+    private func persistTripDrafts() {
+        if let data = try? Self.encoder.encode(tripDraftsBySourceId) {
+            try? data.write(to: Self.tripDraftsURL, options: .atomic)
+        }
+    }
+
+    private func persistBlogDetails() {
+        if let data = try? Self.encoder.encode(blogDetailsBySourceId) {
+            try? data.write(to: Self.blogDetailsURL, options: .atomic)
+        }
+    }
 
     /// Call when user completes the Create Blog sequence (before showing RecapSavedView).
     func addCreatedBlog(trip: TripDraft) {
@@ -76,7 +140,9 @@ final class CreatedRecapBlogStore: ObservableObject {
         )
         tripDraftsBySourceId[trip.id] = trip
         recents.insert(blog, at: 0)
-        showRecapCreatedBanner = true
+        pendingRecapCreated = true
+        // Do not show banner immediately; let the UI trigger it when ready (e.g. after backing out to Trips).
+        // showRecapCreatedBanner = true
     }
 
     /// Dismiss the "Recap Blog has been created!" banner (called after auto-hide or tap).
@@ -119,6 +185,7 @@ final class CreatedRecapBlogStore: ObservableObject {
             trip.days[dayIdx] = day
         }
         tripDraftsBySourceId[blogId] = trip
+        persistTripDrafts()
         return trip
     }
 
@@ -144,6 +211,9 @@ final class CreatedRecapBlogStore: ObservableObject {
             tripStartDate: trip.earliestDate,
             tripEndDate: trip.latestDate
             )
+            persistRecents()
+            persistTripDrafts()
+            persistBlogDetails()
         }
     }
 
@@ -177,8 +247,18 @@ final class CreatedRecapBlogStore: ObservableObject {
             tripDateRangeText: old.tripDateRangeText,
             lastEditedAt: Date(),
             tripStartDate: old.tripStartDate,
-            tripEndDate: old.tripEndDate
+            tripEndDate: old.tripEndDate,
+            totalPlaceVisitCount: detail.days.reduce(0) { $0 + $1.placeStops.count },
+            tripDurationDays: detail.days.count
         )
+    }
+
+    /// Deletes a created blog. The underlying trip draft remains in TripDraftStore (or is re-discovered by scan) and will reappear in the Trips list because hasCreatedBlog(id) will return false.
+    func deleteBlog(sourceTripId: UUID) {
+        recents.removeAll { $0.sourceTripId == sourceTripId }
+        blogDetailsBySourceId.removeValue(forKey: sourceTripId)
+        // If there was a pending banner for this blog (unlikely but possible), clear it.
+        if pendingRecapCreated { pendingRecapCreated = false }
     }
 
     /// Build RecapBlogDetail from a TripDraft (selected photos only, clustered into place stops). Use when no saved detail exists.

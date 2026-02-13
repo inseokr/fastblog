@@ -345,7 +345,6 @@ struct TripDraftRow: View {
     private var coverSection: some View {
         ZStack(alignment: .topLeading) {
             TripCoverImage(theme: trip.coverTheme, coverAssetIdentifier: trip.coverAssetIdentifier)
-                .aspectRatio(16/10, contentMode: .fill)
                 .frame(height: 180)
                 .clipped()
 
@@ -361,6 +360,7 @@ struct TripDraftRow: View {
                 .cornerRadius(6)
                 .padding(Self.draftBadgePadding)
         }
+        .contentShape(Rectangle())
     }
 
     private var textSection: some View {

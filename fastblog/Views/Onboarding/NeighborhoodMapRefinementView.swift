@@ -51,7 +51,7 @@ struct NeighborhoodMapRefinementView: View {
                 VStack(spacing: 8) {
                     Text("Refine Your Neighborhood")
                         .font(.headline)
-                        .foregroundColor(.black)
+                        .foregroundColor(.white)
                     Text("Move the map to position your neighborhood.")
                         .font(.caption)
                         .foregroundColor(.gray)
@@ -221,6 +221,7 @@ private struct MapWithRegionBinding: UIViewRepresentable {
 
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
+                self.parent.region = MKCoordinateRegion(center: newCenter, span: newSpan)
                 self.parent.center = newCenter
                 self.parent.span = newSpan
             }

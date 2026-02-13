@@ -12,6 +12,7 @@ import SwiftUI
 @MainActor
 final class ProfileMapViewModel: ObservableObject {
     @Published var selectedCountryID: String?
+    @Published var selectedBlog: CreatedRecapBlog?
     @Published var selectedTripID: UUID?
     @Published var mapRegion: MKCoordinateRegion
     @Published var animatedRegion: MKCoordinateRegion?
@@ -56,6 +57,18 @@ final class ProfileMapViewModel: ObservableObject {
         return visibleTrips.first
     }
 
+    /// Default map region.
+    var defaultMapRegion: MKCoordinateRegion {
+        defaultRegion
+    }
+
+    /// Ordered blogs for carousel: latest start date first.
+    var orderedBlogs: [CreatedRecapBlog] {
+        visibleTrips.sorted {
+            ($0.tripStartDate ?? $0.tripEndDate ?? Date.distantPast) > ($1.tripStartDate ?? $1.tripEndDate ?? Date.distantPast)
+        }
+    }
+
     /// Representative coordinate for a blog; nil if no location data.
     func coordinate(for blog: CreatedRecapBlog) -> CLLocationCoordinate2D? {
         store.coordinate(for: blog.sourceTripId)
@@ -82,6 +95,17 @@ final class ProfileMapViewModel: ObservableObject {
     /// Select a trip (from map or list); used for highlight and optional callout.
     func selectTrip(_ sourceTripId: UUID?) {
         selectedTripID = sourceTripId
+        if let blog = visibleTrips.first(where: { $0.sourceTripId == sourceTripId }) {
+            selectedBlog = blog
+            recenterToTrip(blog)
+        }
+    }
+
+    /// Select a blog from carousel.
+    func selectBlog(_ blog: CreatedRecapBlog) {
+        selectedBlog = blog
+        selectedTripID = blog.sourceTripId
+        recenterToTrip(blog)
     }
 
     /// Recenter map to latest trip overall (with animation).
@@ -130,8 +154,43 @@ final class ProfileMapViewModel: ObservableObject {
 
     /// Call when view appears to center on latest trip.
     func onAppear() {
-        if selectedCountryID == nil {
-            recenterToLatestTrip()
+        if selectedCountryID == nil && selectedBlog == nil {
+            if let first = orderedBlogs.first {
+                selectBlog(first)
+            } else {
+                recenterToLatestTrip()
+            }
         }
+    }
+
+    // MARK: - Helpers
+
+    func computeRegion(for blog: CreatedRecapBlog) -> MKCoordinateRegion {
+        // 1. Try to get explicit bounding region from detail if available (not currently storing region in CreatedRecapBlog, so we'd need to fetch detail or compute from places)
+        // For now, fallback to representative coordinate with default span.
+        // If we had a list of coordinates for the blog easily accessible here without fetching detail, we could compute bbox.
+        // CreatedRecapBlog has `sourceTripId`. We can check `CreatedRecapBlogStore` for coordinate.
+
+        if let coord = coordinate(for: blog) {
+             return MKCoordinateRegion(
+                center: coord,
+                span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
+            )
+        }
+
+        return defaultRegion
+    }
+
+    func formatDateRange(start: Date?, end: Date?) -> String {
+        guard let start = start else { return "" }
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        let startStr = f.string(from: start)
+        guard let end = end else { return startStr }
+        if Calendar.current.isDate(start, inSameDayAs: end) {
+            return startStr
+        }
+        let endStr = f.string(from: end)
+        return "\(startStr) – \(endStr)"
     }
 }
