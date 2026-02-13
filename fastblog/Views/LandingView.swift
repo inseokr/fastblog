@@ -333,7 +333,7 @@ private struct SettingsView: View {
                 }
             }
             .sheet(isPresented: $showNeighborhoodSheet) {
-                NeighborhoodSelectionView(onSelect: {
+                NeighborhoodIntroView(onDismiss: {
                     showNeighborhoodSheet = false
                 })
             }

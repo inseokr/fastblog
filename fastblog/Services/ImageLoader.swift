@@ -9,7 +9,11 @@ import UIKit
 
 @MainActor
 final class ImageLoader {
+    static let shared = ImageLoader()
+
     private let imageManager = PHCachingImageManager()
+
+    private init() {}
 
     func loadThumbnail(assetIdentifier: String, targetSize: CGSize = CGSize(width: 200, height: 200)) async -> UIImage? {
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: [assetIdentifier], options: nil)
@@ -21,12 +25,15 @@ final class ImageLoader {
         options.isSynchronous = false
 
         return await withCheckedContinuation { continuation in
+            var hasResumed = false
             imageManager.requestImage(
                 for: asset,
                 targetSize: targetSize,
                 contentMode: .aspectFill,
                 options: options
-            ) { image, _ in
+            ) { image, info in
+                guard !hasResumed else { return }
+                hasResumed = true
                 continuation.resume(returning: image)
             }
         }
@@ -41,12 +48,15 @@ final class ImageLoader {
         options.isNetworkAccessAllowed = true
 
         return await withCheckedContinuation { continuation in
+            var hasResumed = false
             imageManager.requestImage(
                 for: asset,
                 targetSize: targetSize,
                 contentMode: .aspectFit,
                 options: options
-            ) { image, _ in
+            ) { image, info in
+                guard !hasResumed else { return }
+                hasResumed = true
                 continuation.resume(returning: image)
             }
         }

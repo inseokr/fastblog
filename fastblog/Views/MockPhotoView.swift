@@ -58,8 +58,7 @@ struct AssetPhotoView: View {
         .task(id: assetIdentifier) {
             image = nil
             displayedIdentifier = nil
-            let loader = ImageLoader()
-            let loadedImage = await loader.loadThumbnail(assetIdentifier: assetIdentifier, targetSize: targetSize)
+            let loadedImage = await ImageLoader.shared.loadThumbnail(assetIdentifier: assetIdentifier, targetSize: targetSize)
             if !Task.isCancelled {
                 image = loadedImage
                 displayedIdentifier = assetIdentifier

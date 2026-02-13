@@ -13,6 +13,30 @@ enum NeighborhoodStore {
     private static let lonKey = "blogify.neighborhoodLon"
     private static let radiusMilesKey = "blogify.neighborhoodRadiusMiles"
     private static let displayNameKey = "blogify.neighborhoodDisplayName"
+    private static let recentSearchesKey = "blogify.neighborhood.recentSearches"
+
+    /// Returns the list of recent search queries.
+    static var recentSearches: [String] {
+        get {
+            UserDefaults.standard.stringArray(forKey: recentSearchesKey) ?? []
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: recentSearchesKey)
+        }
+    }
+
+    /// Adds a search query to the recent searches list, keeping only the unique last 5.
+    static func addRecentSearch(_ query: String) {
+        var searches = recentSearches
+        if let index = searches.firstIndex(of: query) {
+            searches.remove(at: index)
+        }
+        searches.insert(query, at: 0)
+        if searches.count > 5 {
+            searches = Array(searches.prefix(5))
+        }
+        recentSearches = searches
+    }
 
     /// Returns the neighborhood center as a CLLocation, or nil if not set (exclusion disabled).
     static func getNeighborhoodCenter() -> CLLocation? {

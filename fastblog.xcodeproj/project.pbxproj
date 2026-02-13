@@ -93,6 +93,12 @@
 		BB0001A8 /* TripPhotoFilterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001A7 /* TripPhotoFilterTests.swift */; };
 		BB0001AA /* TripPhotoSelectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001A9 /* TripPhotoSelectionService.swift */; };
 		BB0001AC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB0001AB /* Assets.xcassets */; };
+		BB0001C0 /* PlaceSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001BF /* PlaceSearchViewModel.swift */; };
+		BB0001C2 /* KeyboardCaptionToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C1 /* KeyboardCaptionToolbar.swift */; };
+		BB0001C4 /* UndoOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C3 /* UndoOverlayView.swift */; };
+		BB0001C6 /* NeighborhoodIntroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C5 /* NeighborhoodIntroView.swift */; };
+		BB0001C8 /* NeighborhoodMapRefinementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C7 /* NeighborhoodMapRefinementView.swift */; };
+		BB0001CA /* NeighborhoodSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C9 /* NeighborhoodSearchView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -182,6 +188,12 @@
 		BB0001A7 /* TripPhotoFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPhotoFilterTests.swift; sourceTree = "<group>"; };
 		BB0001A9 /* TripPhotoSelectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripPhotoSelectionService.swift; sourceTree = "<group>"; };
 		BB0001AB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		BB0001BF /* PlaceSearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSearchViewModel.swift; sourceTree = "<group>"; };
+		BB0001C1 /* KeyboardCaptionToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardCaptionToolbar.swift; sourceTree = "<group>"; };
+		BB0001C3 /* UndoOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoOverlayView.swift; sourceTree = "<group>"; };
+		BB0001C5 /* NeighborhoodIntroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodIntroView.swift; sourceTree = "<group>"; };
+		BB0001C7 /* NeighborhoodMapRefinementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodMapRefinementView.swift; sourceTree = "<group>"; };
+		BB0001C9 /* NeighborhoodSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodSearchView.swift; sourceTree = "<group>"; };
 		AA000003 /* fastblog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = fastblog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -248,6 +260,7 @@
 			children = (
 				BB000105 /* MyBlogsProfileViewModel.swift */,
 				BB000107 /* ProfileMapViewModel.swift */,
+				BB0001BF /* PlaceSearchViewModel.swift */,
 				BB000109 /* TripCreationViewModel.swift */,
 				BB00010B /* TripsViewModel.swift */,
 			);
@@ -296,7 +309,9 @@
 				BB000167 /* TripDayPickerView.swift */,
 				BB000169 /* TripsMapView.swift */,
 				BB00016B /* TripsView.swift */,
+				BB0001C3 /* UndoOverlayView.swift */,
 				BB0001B3 /* Onboarding */,
+				BB0001CB /* Components */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -309,12 +324,23 @@
 				BB000171 /* MapWithCenterSelector.swift */,
 				BB000173 /* NeighborhoodSelection.swift */,
 				BB000175 /* NeighborhoodSelectionView.swift */,
+				BB0001C5 /* NeighborhoodIntroView.swift */,
+				BB0001C7 /* NeighborhoodMapRefinementView.swift */,
+				BB0001C9 /* NeighborhoodSearchView.swift */,
 				BB000177 /* OnboardingConstants.swift */,
 				BB000179 /* OnboardingFlowView.swift */,
 				BB00017B /* OnboardingState.swift */,
 				BB00017D /* SplashView.swift */,
 			);
 			path = Onboarding;
+			sourceTree = "<group>";
+		};
+		BB0001CB /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				BB0001C1 /* KeyboardCaptionToolbar.swift */,
+			);
+			path = Components;
 			sourceTree = "<group>";
 		};
 		BB0001B4 /* Services */ = {
@@ -495,6 +521,12 @@
 				BB0001A6 /* TripPhotoFilter.swift in Sources */,
 				BB0001A8 /* TripPhotoFilterTests.swift in Sources */,
 				BB0001AA /* TripPhotoSelectionService.swift in Sources */,
+				BB0001C0 /* PlaceSearchViewModel.swift in Sources */,
+				BB0001C2 /* KeyboardCaptionToolbar.swift in Sources */,
+				BB0001C4 /* UndoOverlayView.swift in Sources */,
+				BB0001C6 /* NeighborhoodIntroView.swift in Sources */,
+				BB0001C8 /* NeighborhoodMapRefinementView.swift in Sources */,
+				BB0001CA /* NeighborhoodSearchView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

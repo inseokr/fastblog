@@ -14,7 +14,7 @@ struct RecapBuilderView: View {
     @State private var permissionDenied = false
     @State private var showRename: PlaceCluster?
     @State private var navigateToPreview = false
-    @State private var imageLoader = ImageLoader()
+    private let imageLoader = ImageLoader.shared
 
     private let clusteringService = PlaceClusteringService()
     private let photoService = PhotoAssetService.shared

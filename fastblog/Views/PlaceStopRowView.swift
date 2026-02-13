@@ -5,7 +5,6 @@
 
 import SwiftUI
 
-private let captionToolbarBlue = Color(red: 0, green: 122/255, blue: 1)
 
 struct PlaceStopRowView: View {
     let day: RecapBlogDay
@@ -183,41 +182,29 @@ struct PlaceStopRowView: View {
         }
         .background(Color(white: 0.12))
         .cornerRadius(12)
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                HStack(spacing: 12) {
-                    Button("Cancel") {
+        .toolbar(content: {
+            ToolbarItem(placement: .keyboard) {
+                KeyboardCaptionToolbar(
+                    onCancel: {
                         focusedPlaceNote = false
                         focusedPhotoId = nil
-                    }
-                    .foregroundColor(.white)
-                    Spacer()
-                    Button("Clear") {
+                    },
+                    onClear: {
                         if focusedPlaceNote {
                             placeNote = ""
                         } else if let id = focusedPhotoId {
                             photoCaption(id).wrappedValue = ""
                         }
-                    }
-                    .foregroundColor(clearButtonIsRed ? .red : .white)
-                    Spacer()
-                    Button("Save") {
+                    },
+                    onDone: {
                         focusedPlaceNote = false
                         focusedPhotoId = nil
-                    }
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(captionToolbarBlue)
-                    .clipShape(Capsule())
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .frame(maxWidth: .infinity)
-                .background(.ultraThinMaterial.opacity(0.75))
+                    },
+                    isClearRed: clearButtonIsRed,
+                    doneButtonTitle: "Done"
+                )
             }
-        }
+        })
     }
 
     private var stopBadge: some View {

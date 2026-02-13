@@ -7,7 +7,7 @@ import SwiftUI
 
 struct ClusterRowView: View {
     let cluster: PlaceCluster
-    var imageLoader: ImageLoader
+    var imageLoader: ImageLoader = .shared
     @State private var coverImage: UIImage?
 
     var body: some View {
@@ -70,7 +70,7 @@ struct ClusterRowView: View {
                 coverAssetIdentifier: "",
                 assetIdentifiers: []
             ),
-            imageLoader: ImageLoader()
+            imageLoader: .shared
         )
     }
 }

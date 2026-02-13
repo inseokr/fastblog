@@ -1,6 +1,6 @@
 //
 //  PlacePhotoModalView.swift
-//  Capper
+//  fastblog
 //
 
 import SwiftUI
@@ -15,7 +15,7 @@ struct PlacePhotoModalItem: Identifiable {
 
 /// Presents when user taps a photo in a Place. Full-screen photo viewer with overlays.
 struct PlacePhotoModalView: View {
-    let placeTitle: String
+    @Binding var placeTitle: String
     let placeSubtitle: String?
     let photos: [RecapPhoto]
     let initialPhotoId: UUID
@@ -25,11 +25,10 @@ struct PlacePhotoModalView: View {
     @State private var currentPhotoId: UUID
     @State private var isEditing = false
     @State private var editedCaptionText: String = ""
-    /// Caption when user entered edit mode; used by Cancel to revert with no save.
+    @State private var editedPlaceTitle: String = ""
+    /// Caption and Title when user entered edit mode; used by Cancel to revert with no save.
     @State private var captionWhenEditingStarted: String = ""
-    @State private var isPinnedByPhotoId: [UUID: Bool] = [:]
-    @State private var isLikedByPhotoId: [UUID: Bool] = [:]
-    @State private var likeCountByPhotoId: [UUID: Int] = [:]
+    @State private var titleWhenEditingStarted: String = ""
     @State private var debounceTask: Task<Void, Never>?
 
     private static let dateTimeFormatter: DateFormatter = {
@@ -40,14 +39,14 @@ struct PlacePhotoModalView: View {
     }()
 
     init(
-        placeTitle: String,
+        placeTitle: Binding<String>,
         placeSubtitle: String?,
         photos: [RecapPhoto],
         initialPhotoId: UUID,
         photoCaption: @escaping (UUID) -> Binding<String>,
         onDismiss: @escaping () -> Void
     ) {
-        self.placeTitle = placeTitle
+        self._placeTitle = placeTitle
         self.placeSubtitle = placeSubtitle
         self.photos = photos
         self.initialPhotoId = initialPhotoId
@@ -64,25 +63,25 @@ struct PlacePhotoModalView: View {
         photoCaption(currentPhotoId).wrappedValue
     }
 
-    private var currentPhotoIndex: Int {
-        photos.firstIndex(where: { $0.id == currentPhotoId }) ?? 0
-    }
-
-    @ViewBuilder
     var body: some View {
-        Group {
-            ZStack {
+        ZStack {
                 // 1. Full screen media viewer
                 fullScreenPhotoView
+                    .blur(radius: isEditing ? 6 : 0)
+                    .overlay(isEditing ? Color.black.opacity(0.4) : Color.clear)
 
                 // 2. Bottom overlay (or top when editing so caption stays visible above keyboard)
             VStack {
                 if isEditing {
                     // Caption input at top for clearance above keyboard
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(placeTitle)
+                        TextField("Place Name", text: $editedPlaceTitle)
                             .font(.headline)
                             .foregroundColor(.white)
+                            .padding(8)
+                            .background(Color.white.opacity(0.15))
+                            .cornerRadius(8)
+
                         TextField("Leave a story for this photo...", text: $editedCaptionText, axis: .vertical)
                             .textFieldStyle(.plain)
                             .font(.body)
@@ -141,47 +140,82 @@ struct PlacePhotoModalView: View {
                 Color.clear
                 VStack(spacing: 0) {
                     HStack {
-                        TopControlsRow(
-                            onEdit: {
+                        if isEditing {
+                             Button("Cancel") {
+                                 // Revert changes
+                                 editedCaptionText = captionWhenEditingStarted
+                                 editedPlaceTitle = titleWhenEditingStarted
+                                 isEditing = false
+                             }
+                             .font(.subheadline)
+                             .fontWeight(.semibold)
+                             .foregroundColor(.white)
+                             .padding(.horizontal, 12)
+                             .padding(.vertical, 6)
+                             .background(Color.black.opacity(0.35))
+                             .clipShape(Capsule())
+                        } else {
+                            Button(action: {
                                 captionWhenEditingStarted = currentCaption
+                                titleWhenEditingStarted = placeTitle
+                                editedCaptionText = currentCaption
+                                editedPlaceTitle = placeTitle
                                 isEditing = true
-                            },
-                            isPinned: isPinnedByPhotoId[currentPhotoId] ?? false,
-                            onPin: { togglePin() },
-                            isLiked: isLikedByPhotoId[currentPhotoId] ?? false,
-                            onLike: { toggleLike() },
-                            onRotate: { cycleCoverOrMode() }
-                        )
-                        Spacer()
-                        Button(action: onDismiss) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(.white)
-                                .frame(width: 44, height: 44)
-                                .background(Color.black.opacity(0.35))
-                                .clipShape(Circle())
+                            }) {
+                                Text("Edit")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color.black.opacity(0.35))
+                                    .clipShape(Capsule())
+                            }
+                            .shadow(color: .black.opacity(0.4), radius: 2)
                         }
-                        .buttonStyle(.plain)
+
+                        Spacer()
+                        
+                        if isEditing {
+                            Button("Done") {
+                                commitCaption()
+                            }
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.blue)
+                            .clipShape(Capsule())
+                        } else {
+                            Button(action: onDismiss) {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 44, height: 44)
+                                    .background(Color.black.opacity(0.35))
+                                    .clipShape(Circle())
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 4)
                     Spacer()
                 }
-                VStack {
-                    Spacer()
-                    HStack {
+                // Right side actions - only visible when NOT editing
+                if !isEditing {
+                    VStack {
                         Spacer()
-                        RightActionStack(
-                            onSparkles: { /* AI assist */ },
-                            likeCount: likeCountByPhotoId[currentPhotoId] ?? 0,
-                            onHeart: { toggleLike() },
-                            onComment: { },
-                            onBookmark: { },
-                            onShare: { },
-                            onLink: { }
-                        )
-                        .padding(.trailing, 16)
-                        .padding(.bottom, photos.count > 1 ? 100 : 24)
+                        HStack {
+                            Spacer()
+                            RightActionStack(
+                                onSparkles: { /* AI assist */ },
+                                onNavigate: { openNavigation() },
+                                onLink: { openGoogleSearch() }
+                            )
+                            .padding(.trailing, 16)
+                            .padding(.bottom, photos.count > 1 ? 100 : 24)
+                        }
                     }
                 }
             }
@@ -190,52 +224,15 @@ struct PlacePhotoModalView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
         .statusBar(hidden: false)
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                HStack(spacing: 12) {
-                    // Cancel (far left): revert with no save to captions
-                    Button("Cancel") {
-                        editedCaptionText = captionWhenEditingStarted
-                        photoCaption(currentPhotoId).wrappedValue = captionWhenEditingStarted
-                        isEditing = false
-                    }
-                    .foregroundColor(.white)
-
-                    Spacer()
-
-                    // Clear (center): remove caption, start from empty. Red when input has text.
-                    Button("Clear") {
-                        editedCaptionText = ""
-                    }
-                    .foregroundColor(editedCaptionText.isEmpty ? .white : .red)
-
-                    Spacer()
-
-                    // Save (As IS) (far right): save caption and preserve on blog
-                    Button("Save (As IS)") {
-                        commitCaption()
-                    }
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color(red: 0, green: 122/255, blue: 1))
-                    .clipShape(Capsule())
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .frame(maxWidth: .infinity)
-                .background(.ultraThinMaterial.opacity(0.75))
-            }
-        }
-        }
         .onAppear {
             editedCaptionText = currentCaption
+            editedPlaceTitle = placeTitle
         }
         .onChange(of: currentPhotoId) { _, _ in
             editedCaptionText = currentCaption
             if isEditing {
                 captionWhenEditingStarted = currentCaption
+                // Place Title is same for all photos in this modal
             }
         }
         .onChange(of: editedCaptionText) { _, newValue in
@@ -250,17 +247,14 @@ struct PlacePhotoModalView: View {
     }
 
     private var fullScreenPhotoView: some View {
-        TabView(selection: $currentPhotoId, content: tabViewContent)
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .ignoresSafeArea()
-    }
-
-    @ViewBuilder
-    private func tabViewContent() -> some View {
-        ForEach(photos) { photo in
-            photoFullScreenImage(photo)
-                .tag(photo.id)
+        TabView(selection: $currentPhotoId) {
+            ForEach(photos) { photo in
+                photoFullScreenImage(photo)
+                    .tag(photo.id)
+            }
         }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .ignoresSafeArea()
     }
 
     private func photoFullScreenImage(_ photo: RecapPhoto) -> some View {
@@ -274,29 +268,35 @@ struct PlacePhotoModalView: View {
         currentPhoto.map { Self.dateTimeFormatter.string(from: $0.timestamp) } ?? ""
     }
 
-    private func togglePin() {
-        isPinnedByPhotoId[currentPhotoId] = !(isPinnedByPhotoId[currentPhotoId] ?? false)
+    private func openNavigation() {
+        guard let location = currentPhoto?.location else { return }
+        let lat = location.latitude
+        let lon = location.longitude
+        // Open Apple Maps navigation to this coordinate
+        let urlString = "http://maps.apple.com/?daddr=\(lat),\(lon)"
+        if let url = URL(string: urlString) {
+            UIApplication.shared.open(url)
+        }
     }
-
-    private func toggleLike() {
-        let id = currentPhotoId
-        let isLiked = !(isLikedByPhotoId[id] ?? false)
-        isLikedByPhotoId[id] = isLiked
-        let current = likeCountByPhotoId[id] ?? 0
-        likeCountByPhotoId[id] = current + (isLiked ? 1 : -1)
-    }
-
-    private func cycleCoverOrMode() {
-        // Cycle to next photo as simple implementation
-        let next = (currentPhotoIndex + 1) % photos.count
-        if photos.indices.contains(next) {
-            currentPhotoId = photos[next].id
+    
+    private func openGoogleSearch() {
+        // Query: "Place Name, City Name"
+        let query = [placeTitle, placeSubtitle].compactMap { $0 }.joined(separator: ", ")
+        var components = URLComponents(string: "https://www.google.com/search")
+        components?.queryItems = [URLQueryItem(name: "q", value: query)]
+        
+        if let url = components?.url {
+            UIApplication.shared.open(url)
         }
     }
 
     private func commitCaption() {
         let text = editedCaptionText.trimmingCharacters(in: .whitespacesAndNewlines)
         photoCaption(currentPhotoId).wrappedValue = text
+        let titleText = editedPlaceTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !titleText.isEmpty {
+            placeTitle = titleText
+        }
         isEditing = false
     }
 }
@@ -305,41 +305,24 @@ struct PlacePhotoModalView: View {
 
 struct TopControlsRow: View {
     var onEdit: () -> Void
-    var isPinned: Bool
-    var onPin: () -> Void
-    var isLiked: Bool
-    var onLike: () -> Void
-    var onRotate: () -> Void
 
     var body: some View {
         HStack {
-            Button("Edit", action: onEdit)
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundColor(.white)
-                .shadow(color: .black.opacity(0.4), radius: 2)
+            Button(action: onEdit) {
+                Text("Edit")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.black.opacity(0.35))
+                    .clipShape(Capsule())
+            }
+            .shadow(color: .black.opacity(0.4), radius: 2)
 
             Spacer()
-
-            HStack(spacing: 12) {
-                circleIconButton(systemName: "mappin.circle.fill", isHighlighted: isPinned, action: onPin)
-                circleIconButton(systemName: "hand.thumbsup.fill", isHighlighted: isLiked, action: onLike)
-                circleIconButton(systemName: "arrow.clockwise", isHighlighted: false, action: onRotate)
-            }
         }
         .padding(.vertical, 8)
-    }
-
-    private func circleIconButton(systemName: String, isHighlighted: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 18))
-                .foregroundColor(.white)
-                .frame(width: 44, height: 44)
-                .background(isHighlighted ? Color.teal.opacity(0.9) : Color.black.opacity(0.35))
-                .clipShape(Circle())
-        }
-        .buttonStyle(.plain)
     }
 }
 
@@ -347,11 +330,7 @@ struct TopControlsRow: View {
 
 struct RightActionStack: View {
     var onSparkles: () -> Void
-    var likeCount: Int
-    var onHeart: () -> Void
-    var onComment: () -> Void
-    var onBookmark: () -> Void
-    var onShare: () -> Void
+    var onNavigate: () -> Void
     var onLink: () -> Void
 
     private let spacing: CGFloat = 20
@@ -368,37 +347,12 @@ struct RightActionStack: View {
             }
             .buttonStyle(.plain)
 
-            VStack(spacing: 4) {
-                Button(action: onHeart) {
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(.white)
-                }
-                .buttonStyle(.plain)
-                Text("\(likeCount)")
-                    .font(.caption2)
-                    .foregroundColor(.white)
-                    .shadow(color: .black.opacity(0.5), radius: 1)
-            }
-
-            Button(action: onComment) {
-                Image(systemName: "bubble.right.fill")
-                    .font(.system(size: 20))
-                    .foregroundColor(.white)
-            }
-            .buttonStyle(.plain)
-
-            Button(action: onBookmark) {
-                Image(systemName: "bookmark.fill")
-                    .font(.system(size: 20))
-                    .foregroundColor(.white)
-            }
-            .buttonStyle(.plain)
-
-            Button(action: onShare) {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 20))
-                    .foregroundColor(.white)
+            Button(action: onNavigate) {
+                // Navigation icon replacing Share, and removed Heart/Comment/Bookmark
+                Image(systemName: "arrow.triangle.turn.up.right.circle.fill")
+                    .font(.system(size: 44))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, Color.green)
             }
             .buttonStyle(.plain)
 
@@ -406,6 +360,9 @@ struct RightActionStack: View {
                 Image(systemName: "link")
                     .font(.system(size: 20))
                     .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Color.gray.opacity(0.85))
+                    .clipShape(Circle())
             }
             .buttonStyle(.plain)
         }

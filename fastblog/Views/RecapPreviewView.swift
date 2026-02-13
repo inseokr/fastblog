@@ -7,7 +7,7 @@ import SwiftUI
 
 struct RecapPreviewView: View {
     let draft: RecapDraft
-    var imageLoader: ImageLoader
+    var imageLoader: ImageLoader = .shared
     @State private var shareItems: [Any] = []
     @State private var showShare = false
 
@@ -85,7 +85,7 @@ struct RecapPreviewView: View {
 
 private struct ClusterPreviewThumb: View {
     let id: String
-    var imageLoader: ImageLoader
+    var imageLoader: ImageLoader = .shared
     @State private var image: UIImage?
 
     var body: some View {
@@ -122,7 +122,7 @@ private struct ClusterPreviewThumb: View {
                     assetIdentifiers: ["", "", ""]
                 )
             ]),
-            imageLoader: ImageLoader()
+            imageLoader: .shared
         )
     }
 }

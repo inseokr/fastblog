@@ -30,6 +30,23 @@ struct RecapBlogPageView: View {
     @State private var hasShownUnsavedAlert = false
     @State private var showCoverPhotoPicker = false
 
+    // Undo State
+    @State private var lastUndoAction: UndoAction?
+    @State private var showUndoOverlay = false
+    @State private var isUndoMinimized = false
+
+    private enum UndoAction {
+        case deletePlace(dayId: UUID, stop: PlaceStop, index: Int)
+        case deletePhoto(dayId: UUID, stopId: UUID, photo: RecapPhoto, index: Int)
+
+        var text: String {
+            switch self {
+            case .deletePlace: return "Place deleted"
+            case .deletePhoto: return "Photo removed"
+            }
+        }
+    }
+
     init(blogId: UUID, initialTrip: TripDraft?) {
         self.blogId = blogId
         self.initialTrip = initialTrip
@@ -136,9 +153,13 @@ struct RecapBlogPageView: View {
             )
         }
         .sheet(item: $showEditNameForStop) { stop in
-            EditPlaceStopNameSheet(placeTitle: bindingForPlaceTitle(stopId: stop.id), onSave: { newTitle in
-                updatePlaceTitle(stopId: stop.id, to: newTitle)
-            })
+            EditPlaceStopNameSheet(
+                placeTitle: bindingForPlaceTitle(stopId: stop.id),
+                location: stop.representativeLocation?.clCoordinate,
+                onSave: { newTitle in
+                    updatePlaceTitle(stopId: stop.id, to: newTitle)
+                }
+            )
         }
         .sheet(item: $showManagePhotosForStop) { pair in
             ManagePhotosView(
@@ -159,7 +180,7 @@ struct RecapBlogPageView: View {
             Group {
                 if let stop = placeStop(dayId: item.dayId, stopId: item.stopId), !stop.photos.isEmpty {
                     PlacePhotoModalView(
-                        placeTitle: stop.placeTitle,
+                        placeTitle: bindingForPlaceTitle(stopId: item.stopId),
                         placeSubtitle: stop.placeSubtitle,
                         photos: stop.photos,
                         initialPhotoId: stop.photos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : stop.photos[0].id,
@@ -220,6 +241,21 @@ struct RecapBlogPageView: View {
                     scrollToStopId = nil
                 }
                 dayFilterSection
+
+                if showUndoOverlay {
+                    UndoOverlayView(
+                        text: lastUndoAction?.text ?? "Item deleted",
+                        isMinimized: $isUndoMinimized,
+                        onUndo: { performUndo() },
+                        onDismiss: {
+                            withAnimation {
+                                showUndoOverlay = false
+                                lastUndoAction = nil
+                            }
+                        }
+                    )
+                    .padding(.bottom, 52)
+                }
             }
         }
         .background(Color.black)
@@ -396,20 +432,71 @@ struct RecapBlogPageView: View {
     }
 
     private func removePlaceStop(dayId: UUID, stopId: UUID) {
-        guard let dayIndex = draft.days.firstIndex(where: { $0.id == dayId }) else { return }
-        var day = draft.days[dayIndex]
-        day.placeStops.removeAll { $0.id == stopId }
-        draft.days[dayIndex] = day
+        guard let dayIndex = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIndex = draft.days[dayIndex].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+        let day = draft.days[dayIndex]
+        let stop = day.placeStops[stopIndex]
+
+        withAnimation {
+            lastUndoAction = .deletePlace(dayId: dayId, stop: stop, index: stopIndex)
+            showUndoOverlay = true
+            isUndoMinimized = false
+        }
+
+        var updatedDay = day
+        updatedDay.placeStops.remove(at: stopIndex)
+        draft.days[dayIndex] = updatedDay
     }
 
     private func removePhoto(dayId: UUID, stopId: UUID, photoId: UUID) {
         guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
-              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
-        var day = draft.days[dayIdx]
-        var stop = day.placeStops[stopIdx]
-        stop.photos.removeAll { $0.id == photoId }
-        day.placeStops[stopIdx] = stop
-        draft.days[dayIdx] = day
+              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }),
+              let photoIdx = draft.days[dayIdx].placeStops[stopIdx].photos.firstIndex(where: { $0.id == photoId }) else { return }
+        let day = draft.days[dayIdx]
+        let stop = day.placeStops[stopIdx]
+        let photo = stop.photos[photoIdx]
+
+        withAnimation {
+            lastUndoAction = .deletePhoto(dayId: dayId, stopId: stopId, photo: photo, index: photoIdx)
+            showUndoOverlay = true
+            isUndoMinimized = false
+        }
+
+        var updatedDay = day
+        var updatedStop = stop
+        updatedStop.photos.remove(at: photoIdx)
+        updatedDay.placeStops[stopIdx] = updatedStop
+        draft.days[dayIdx] = updatedDay
+    }
+
+    private func performUndo() {
+        guard let action = lastUndoAction else { return }
+
+        withAnimation {
+            switch action {
+            case .deletePlace(let dayId, let stop, let index):
+                if let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }) {
+                    var day = draft.days[dayIdx]
+                    if index <= day.placeStops.count {
+                        day.placeStops.insert(stop, at: index)
+                        draft.days[dayIdx] = day
+                    }
+                }
+            case .deletePhoto(let dayId, let stopId, let photo, let index):
+                if let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+                   let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) {
+                    var day = draft.days[dayIdx]
+                    var stop = day.placeStops[stopIdx]
+                    if index <= stop.photos.count {
+                        stop.photos.insert(photo, at: index)
+                        day.placeStops[stopIdx] = stop
+                        draft.days[dayIdx] = day
+                    }
+                }
+            }
+            showUndoOverlay = false
+            lastUndoAction = nil
+        }
     }
 
     private func updatePlaceTitle(stopId: UUID, to title: String) {
@@ -436,7 +523,9 @@ struct RecapBlogPageView: View {
                 }
                 return ""
             },
-            set: { _ in }
+            set: { newValue in
+                updatePlaceTitle(stopId: stopId, to: newValue)
+            }
         )
     }
 
