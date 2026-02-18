@@ -104,20 +104,6 @@ actor TripPhotoSelectionService {
             centroid = nil
         }
         
-        // Score each asset
-        let scoredAssets = assets.map { asset -> (asset: PHAsset, score: Double) in
-            var score: Double = 0
-            
-            // 1. Resolution (pixel count) - Normalized roughly. 
-            // 12MP = 12,000,000. Let's say max score component is 1000.
-            let pixels = Double(asset.pixelWidth * asset.pixelHeight)
-            let resScore = min(pixels / 10000.0, 1000.0) // Cap to avoid overflow dominance? No, just use raw.
-            // Actually, simply sorting by tuple is easier for strict priority.
-            
-            // Let's implement a comparator instead of a single scalar score, for strict priority.
-            return (asset, 0) 
-        }
-        
         // Sort using the prompt's priority list
         let sorted = assets.sorted { a, b in
             // 1. Photo quality proxy (Resolution)
@@ -159,8 +145,8 @@ actor TripPhotoSelectionService {
         // Then we pick the next best one that is "sufficiently different" in time from the selected ones?
         // Or we just penalize temporal proximity in the scoring of subsequent picks.
         
-        var candidates = sorted // Already sorted by Quality -> Centroid -> Date
-        var selected: [PHAsset] = []
+        let candidates = sorted // Already sorted by Quality -> Centroid -> Date
+        let selected: [PHAsset] = []
         
         while selected.count < maxCount && !candidates.isEmpty {
             // Pick the first one (highest quality static score)

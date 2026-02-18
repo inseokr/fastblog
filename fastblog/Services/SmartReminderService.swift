@@ -41,12 +41,15 @@ final class SmartReminderService {
         let assets = await fetchRecentAssets(start: start, end: end)
         
         // 3. Filter out photos already in blogs
-        let usedIdentifiers = CreatedRecapBlogStore.shared.displayRecents.reduce(into: Set<String>()) { set, blog in
-            // We need to fetch the detail to get all photo identifiers
-            if let detail = CreatedRecapBlogStore.shared.getBlogDetail(blogId: blog.sourceTripId) {
-                let ids = detail.days.flatMap { $0.placeStops.flatMap { $0.photos.compactMap(\.localIdentifier) } }
-                set.formUnion(ids)
+        let usedIdentifiers: Set<String> = await MainActor.run {
+            var set = Set<String>()
+            for blog in CreatedRecapBlogStore.shared.displayRecents {
+                if let detail = CreatedRecapBlogStore.shared.getBlogDetail(blogId: blog.sourceTripId) {
+                    let ids = detail.days.flatMap { $0.placeStops.flatMap { $0.photos.compactMap(\.localIdentifier) } }
+                    set.formUnion(ids)
+                }
             }
+            return set
         }
         
         let availableAssets = assets.filter { !usedIdentifiers.contains($0.localIdentifier) }

@@ -1,6 +1,6 @@
 //
 //  SubscriptionSettingsView.swift
-//  Capper
+//  fastblog
 //
 //  Subscription section for the Settings page. Displays current plan,
 //  upgrade options, lifetime blog purchase, restore purchases,

@@ -1,6 +1,6 @@
 //
 //  AppLaunchSplashView.swift
-//  Capper
+//  fastblog
 //
 
 import SwiftUI

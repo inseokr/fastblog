@@ -44,7 +44,7 @@ final class MemoryRecallService {
     // MARK: - On This Day
     
     private func generateOnThisDayRecall(for date: Date) async -> RecallTrigger? {
-        let occupied = CreatedRecapBlogStore.shared.occupiedDateRanges()
+        let occupied = await CreatedRecapBlogStore.shared.occupiedDateRanges()
         let years = Array(1...10) // Check last 10 years (expanded history)
         
         for yearOffset in years {
@@ -95,7 +95,7 @@ final class MemoryRecallService {
     
     private func generateSeasonalRecall(for date: Date) async -> RecallTrigger? {
         guard let lastYear = calendar.date(byAdding: .year, value: -1, to: date) else { return nil }
-        let occupied = CreatedRecapBlogStore.shared.occupiedDateRanges()
+        let occupied = await CreatedRecapBlogStore.shared.occupiedDateRanges()
         
         let season = currentSeason(for: date)
         let (start, end) = seasonRange(for: lastYear)
@@ -125,7 +125,7 @@ final class MemoryRecallService {
     private func generateActiveMonthRecall() async -> RecallTrigger? {
         let summary = await PhotoLibraryTripService.shared.scanLibrarySummary()
         guard let top = summary.mostActiveMonths.first else { return nil }
-        let occupied = CreatedRecapBlogStore.shared.occupiedDateRanges()
+        let occupied = await CreatedRecapBlogStore.shared.occupiedDateRanges()
         
         var comps = DateComponents()
         comps.year = top.year

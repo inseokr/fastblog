@@ -1,6 +1,6 @@
 //
 //  PaywallView.swift
-//  Capper
+//  fastblog
 //
 
 import SwiftUI

@@ -99,6 +99,20 @@
 		BB0001C6 /* NeighborhoodIntroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C5 /* NeighborhoodIntroView.swift */; };
 		BB0001C8 /* NeighborhoodMapRefinementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C7 /* NeighborhoodMapRefinementView.swift */; };
 		BB0001CA /* NeighborhoodSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C9 /* NeighborhoodSearchView.swift */; };
+		BB0001CC /* RecallTrigger.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001D1 /* RecallTrigger.swift */; };
+		BB0001CE /* SmartReminderService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001CD /* SmartReminderService.swift */; };
+		BB0001D0 /* FindMoreTripsAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001CF /* FindMoreTripsAgent.swift */; };
+		BB0001D3 /* MemoryRecallViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001D2 /* MemoryRecallViewModel.swift */; };
+		BB0001D5 /* MemoryRecallService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001D4 /* MemoryRecallService.swift */; };
+		BB0001D7 /* MemoryRecallModal.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001D6 /* MemoryRecallModal.swift */; };
+		BB0001DD /* AppLaunchSplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001DA /* AppLaunchSplashView.swift */; };
+		BB0001DE /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001DB /* PaywallView.swift */; };
+		BB0001DF /* SubscriptionSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001DC /* SubscriptionSettingsView.swift */; };
+		BB0001E1 /* RecallCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001E0 /* RecallCard.swift */; };
+		BB0001E3 /* StoreKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001E2 /* StoreKitManager.swift */; };
+		BB0001E5 /* EntitlementManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001E4 /* EntitlementManager.swift */; };
+		BB0001E7 /* DraftReminderNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001E6 /* DraftReminderNotificationManager.swift */; };
+		BB0001E9 /* PlaceCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001E8 /* PlaceCardView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -194,6 +208,20 @@
 		BB0001C5 /* NeighborhoodIntroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodIntroView.swift; sourceTree = "<group>"; };
 		BB0001C7 /* NeighborhoodMapRefinementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodMapRefinementView.swift; sourceTree = "<group>"; };
 		BB0001C9 /* NeighborhoodSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodSearchView.swift; sourceTree = "<group>"; };
+		BB0001D1 /* RecallTrigger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecallTrigger.swift; sourceTree = "<group>"; };
+		BB0001CD /* SmartReminderService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartReminderService.swift; sourceTree = "<group>"; };
+		BB0001CF /* FindMoreTripsAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FindMoreTripsAgent.swift; sourceTree = "<group>"; };
+		BB0001D2 /* MemoryRecallViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryRecallViewModel.swift; sourceTree = "<group>"; };
+		BB0001D4 /* MemoryRecallService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryRecallService.swift; sourceTree = "<group>"; };
+		BB0001D6 /* MemoryRecallModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryRecallModal.swift; sourceTree = "<group>"; };
+		BB0001DA /* AppLaunchSplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLaunchSplashView.swift; sourceTree = "<group>"; };
+		BB0001DB /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
+		BB0001DC /* SubscriptionSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionSettingsView.swift; sourceTree = "<group>"; };
+		BB0001E0 /* RecallCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecallCard.swift; sourceTree = "<group>"; };
+		BB0001E2 /* StoreKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitManager.swift; sourceTree = "<group>"; };
+		BB0001E4 /* EntitlementManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntitlementManager.swift; sourceTree = "<group>"; };
+		BB0001E6 /* DraftReminderNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftReminderNotificationManager.swift; sourceTree = "<group>"; };
+		BB0001E8 /* PlaceCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceCardView.swift; sourceTree = "<group>"; };
 		AA000003 /* fastblog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = fastblog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -248,6 +276,7 @@
 				BB000113 /* RecapBlogDetail.swift */,
 				BB000115 /* RecapDraft.swift */,
 				BB000117 /* RecentRecap.swift */,
+				BB0001D1 /* RecallTrigger.swift */,
 				BB000119 /* ScanConfig.swift */,
 				BB00011B /* TripDay.swift */,
 				BB00011D /* TripDraft.swift */,
@@ -263,6 +292,7 @@
 				BB0001BF /* PlaceSearchViewModel.swift */,
 				BB000109 /* TripCreationViewModel.swift */,
 				BB00010B /* TripsViewModel.swift */,
+				BB0001D2 /* MemoryRecallViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -270,6 +300,7 @@
 		BB0001B2 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				BB0001DA /* AppLaunchSplashView.swift */,
 				BB00011F /* BlogPreviewView.swift */,
 				BB000121 /* BlogSettingsSheet.swift */,
 				BB000123 /* ClusterRowView.swift */,
@@ -284,6 +315,7 @@
 				BB000135 /* LandingView.swift */,
 				BB000137 /* LoadingScanView.swift */,
 				BB000139 /* ManagePhotosView.swift */,
+				BB0001D6 /* MemoryRecallModal.swift */,
 				BB00013B /* MapDayView.swift */,
 				BB00013D /* MockPhotoView.swift */,
 				BB00013F /* MyBlogsProfileView.swift */,
@@ -296,6 +328,7 @@
 				BB00014D /* PrivacyPolicyView.swift */,
 				BB00014F /* ProfileMapView.swift */,
 				BB000151 /* ProfileView.swift */,
+				BB0001DB /* PaywallView.swift */,
 				BB000153 /* RecapBlogPageView.swift */,
 				BB000155 /* RecapBuilderView.swift */,
 				BB000157 /* RecapPreviewView.swift */,
@@ -304,6 +337,7 @@
 				BB00015D /* ScanningAnimationView.swift */,
 				BB00015F /* SelectPhotosIntroView.swift */,
 				BB000161 /* ShareSheet.swift */,
+				BB0001DC /* SubscriptionSettingsView.swift */,
 				BB000163 /* TermsOfServiceView.swift */,
 				BB000165 /* TitleInputView.swift */,
 				BB000167 /* TripDayPickerView.swift */,
@@ -339,6 +373,8 @@
 			isa = PBXGroup;
 			children = (
 				BB0001C1 /* KeyboardCaptionToolbar.swift */,
+				BB0001E8 /* PlaceCardView.swift */,
+				BB0001E0 /* RecallCard.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -348,12 +384,16 @@
 			children = (
 				BB00017F /* CreatedRecapBlogStore.swift */,
 				BB000181 /* DayToTripGrouper.swift */,
+				BB0001E6 /* DraftReminderNotificationManager.swift */,
+				BB0001E4 /* EntitlementManager.swift */,
+				BB0001CF /* FindMoreTripsAgent.swift */,
 				BB000183 /* GeoDistanceHelper.swift */,
 				BB000185 /* GeocodingService.swift */,
 				BB000187 /* ImageLoader.swift */,
 				BB000189 /* LocalExclusion.swift */,
 				BB00018B /* LocalExclusionTests.swift */,
 				BB00018D /* MockTripDataService.swift */,
+				BB0001D4 /* MemoryRecallService.swift */,
 				BB00018F /* NeighborhoodStore.swift */,
 				BB000191 /* OnboardingStore.swift */,
 				BB000193 /* PhotoAssetService.swift */,
@@ -362,6 +402,8 @@
 				BB000199 /* PlaceClusteringService.swift */,
 				BB00019B /* PlaceStopClusteringService.swift */,
 				BB00019D /* RecentRecapStore.swift */,
+				BB0001CD /* SmartReminderService.swift */,
+				BB0001E2 /* StoreKitManager.swift */,
 				BB00019F /* TripClusteringDebug.swift */,
 				BB0001A1 /* TripClusteringTests.swift */,
 				BB0001A3 /* TripDraftStore.swift */,
@@ -527,6 +569,20 @@
 				BB0001C6 /* NeighborhoodIntroView.swift in Sources */,
 				BB0001C8 /* NeighborhoodMapRefinementView.swift in Sources */,
 				BB0001CA /* NeighborhoodSearchView.swift in Sources */,
+				BB0001CC /* RecallTrigger.swift in Sources */,
+				BB0001CE /* SmartReminderService.swift in Sources */,
+				BB0001D0 /* FindMoreTripsAgent.swift in Sources */,
+				BB0001D3 /* MemoryRecallViewModel.swift in Sources */,
+				BB0001D5 /* MemoryRecallService.swift in Sources */,
+				BB0001D7 /* MemoryRecallModal.swift in Sources */,
+				BB0001DD /* AppLaunchSplashView.swift in Sources */,
+				BB0001DE /* PaywallView.swift in Sources */,
+				BB0001DF /* SubscriptionSettingsView.swift in Sources */,
+				BB0001E1 /* RecallCard.swift in Sources */,
+				BB0001E3 /* StoreKitManager.swift in Sources */,
+				BB0001E5 /* EntitlementManager.swift in Sources */,
+				BB0001E7 /* DraftReminderNotificationManager.swift in Sources */,
+				BB0001E9 /* PlaceCardView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

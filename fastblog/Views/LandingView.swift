@@ -20,7 +20,6 @@ struct LandingView: View {
     
     private let landingBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
     private let ctaInterval: TimeInterval = 5
-    @State private var smartReminder: SmartReminder?
 
     var body: some View {
         ZStack {
@@ -55,26 +54,7 @@ struct LandingView: View {
                 .padding(.bottom, 12)
                 Spacer(minLength: 40)
                 
-                if let reminder = smartReminder {
-                    ReminderCardView(reminder: reminder) {
-                        // Create it now CTA
-                        let draft = tripsViewModel.createDraft(from: reminder)
-                        tripsViewModel.addDraft(draft)
-                        showTrips = true
-                        withAnimation {
-                            smartReminder = nil
-                        }
-                    } onDismiss: {
-                        SmartReminderService.shared.dismissReminder()
-                        withAnimation {
-                            smartReminder = nil
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                } else {
-                    scanCTA
-                }
+                scanCTA
                 
                 Spacer(minLength: 32)
                 recentRecapsSection
@@ -91,7 +71,6 @@ struct LandingView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
-<<<<<<< HEAD:fastblog/Views/LandingView.swift
         .overlay(alignment: .top) {
             if createdRecapStore.showRecapCreatedBanner {
                 recapCreatedBanner
@@ -102,12 +81,6 @@ struct LandingView: View {
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: createdRecapStore.showRecapCreatedBanner)
-=======
-        .task {
-            // Check for smart reminders once on load
-            smartReminder = await SmartReminderService.shared.checkReminders()
-        }
->>>>>>> 9a9eb62 (FEb 17 merger):Capper/Views/LandingView.swift
     }
 
     /// Success notification card: icon, title, "Tap to view", optional dismiss. Auto-dismisses after 6s; tap opens latest blog.
@@ -293,7 +266,6 @@ private struct CreatedRecapCard: View {
 private struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showNeighborhoodSheet = false
-    @ObservedObject private var storeKit = StoreKitManager.shared
     #if DEBUG
     @AppStorage("capper.tripClustering.debugLogging") private var tripClusteringDebug = false
     #endif
@@ -301,9 +273,6 @@ private struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                // Subscription section at top
-                SubscriptionSettingsView()
-
                 Section {
                     Button {
                         showNeighborhoodSheet = true
@@ -371,17 +340,6 @@ private struct SettingsView: View {
                     })
                 }
             }
-            // Show error alert from StoreKit
-            .alert("Purchase Error", isPresented: Binding(
-                get: { storeKit.errorMessage != nil },
-                set: { if !$0 { storeKit.errorMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                if let msg = storeKit.errorMessage {
-                    Text(msg)
-                }
-            }
         }
     }
 }
@@ -391,10 +349,14 @@ struct AllRecentsSheet: View {
     @Binding var selectedRecap: CreatedRecapBlog?
     @Environment(\.dismiss) private var dismiss
 
+    private func tripDurationDays(for recap: CreatedRecapBlog) -> Int {
+        createdRecapStore.getBlogDetail(blogId: recap.sourceTripId)?.days.count ?? 1
+    }
+
     var body: some View {
         NavigationStack {
             List {
-                ForEach(createdRecapStore.recents) { recap in
+                ForEach(createdRecapStore.recents, id: \.id) { recap in
                     Button {
                         selectedRecap = recap
                         dismiss()
@@ -407,10 +369,10 @@ struct AllRecentsSheet: View {
                                 Text(recap.title)
                                     .font(.headline)
                                     .foregroundColor(.primary)
-                                Text("\(recap.tripDurationDays) Day\(recap.tripDurationDays == 1 ? "" : "s")")
+                                Text("\(tripDurationDays(for: recap)) Day\(tripDurationDays(for: recap) == 1 ? "" : "s")")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
-                                    .lineLimit(1) // Added line limit
+                                    .lineLimit(1)
                             }
                             Spacer()
                         }

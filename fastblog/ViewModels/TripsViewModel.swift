@@ -214,7 +214,7 @@ final class TripsViewModel: ObservableObject {
         createdRecapStore.$needsRescan
             .receive(on: RunLoop.main)
             .filter { $0 }
-            .sink { [weak self] _ in
+            .sink { [weak self] (_: Bool) in
                 guard let self else { return }
                 createdRecapStore.needsRescan = false
                 self.tripDrafts = []

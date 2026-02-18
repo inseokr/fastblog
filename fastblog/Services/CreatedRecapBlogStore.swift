@@ -36,8 +36,12 @@ struct CreatedRecapBlog: Identifiable, Equatable, Hashable, Codable {
     var isCloud: Bool
     /// Cloud status: activePublic or archived. Only meaningful for cloud blogs.
     var cloudStatus: BlogCloudStatus
+    /// Total place stops across all days. Used for display.
+    var totalPlaceVisitCount: Int
+    /// Number of days in the trip. Used for display.
+    var tripDurationDays: Int
 
-    init(id: UUID = UUID(), sourceTripId: UUID, title: String, createdAt: Date, coverImageName: String, coverAssetIdentifier: String? = nil, selectedPhotoCount: Int, countryName: String? = nil, tripDateRangeText: String? = nil, lastEditedAt: Date? = nil, tripStartDate: Date? = nil, tripEndDate: Date? = nil) {
+    init(id: UUID = UUID(), sourceTripId: UUID, title: String, createdAt: Date, coverImageName: String, coverAssetIdentifier: String? = nil, selectedPhotoCount: Int, countryName: String? = nil, tripDateRangeText: String? = nil, lastEditedAt: Date? = nil, tripStartDate: Date? = nil, tripEndDate: Date? = nil, isCloud: Bool = false, cloudStatus: BlogCloudStatus = .activePublic, totalPlaceVisitCount: Int = 0, tripDurationDays: Int = 1) {
         self.id = id
         self.sourceTripId = sourceTripId
         self.title = title
@@ -50,6 +54,56 @@ struct CreatedRecapBlog: Identifiable, Equatable, Hashable, Codable {
         self.lastEditedAt = lastEditedAt
         self.tripStartDate = tripStartDate
         self.tripEndDate = tripEndDate
+        self.isCloud = isCloud
+        self.cloudStatus = cloudStatus
+        self.totalPlaceVisitCount = totalPlaceVisitCount
+        self.tripDurationDays = tripDurationDays
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        sourceTripId = try c.decode(UUID.self, forKey: .sourceTripId)
+        title = try c.decode(String.self, forKey: .title)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        coverImageName = try c.decode(String.self, forKey: .coverImageName)
+        coverAssetIdentifier = try c.decodeIfPresent(String.self, forKey: .coverAssetIdentifier)
+        selectedPhotoCount = try c.decode(Int.self, forKey: .selectedPhotoCount)
+        countryName = try c.decodeIfPresent(String.self, forKey: .countryName)
+        tripDateRangeText = try c.decodeIfPresent(String.self, forKey: .tripDateRangeText)
+        lastEditedAt = try c.decodeIfPresent(Date.self, forKey: .lastEditedAt)
+        tripStartDate = try c.decodeIfPresent(Date.self, forKey: .tripStartDate)
+        tripEndDate = try c.decodeIfPresent(Date.self, forKey: .tripEndDate)
+        isCloud = try c.decodeIfPresent(Bool.self, forKey: .isCloud) ?? false
+        cloudStatus = try c.decodeIfPresent(BlogCloudStatus.self, forKey: .cloudStatus) ?? .activePublic
+        totalPlaceVisitCount = try c.decodeIfPresent(Int.self, forKey: .totalPlaceVisitCount) ?? 0
+        tripDurationDays = try c.decodeIfPresent(Int.self, forKey: .tripDurationDays) ?? 1
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(sourceTripId, forKey: .sourceTripId)
+        try c.encode(title, forKey: .title)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(coverImageName, forKey: .coverImageName)
+        try c.encodeIfPresent(coverAssetIdentifier, forKey: .coverAssetIdentifier)
+        try c.encode(selectedPhotoCount, forKey: .selectedPhotoCount)
+        try c.encodeIfPresent(countryName, forKey: .countryName)
+        try c.encodeIfPresent(tripDateRangeText, forKey: .tripDateRangeText)
+        try c.encodeIfPresent(lastEditedAt, forKey: .lastEditedAt)
+        try c.encodeIfPresent(tripStartDate, forKey: .tripStartDate)
+        try c.encodeIfPresent(tripEndDate, forKey: .tripEndDate)
+        try c.encode(isCloud, forKey: .isCloud)
+        try c.encode(cloudStatus, forKey: .cloudStatus)
+        try c.encode(totalPlaceVisitCount, forKey: .totalPlaceVisitCount)
+        try c.encode(tripDurationDays, forKey: .tripDurationDays)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, sourceTripId, title, createdAt, coverImageName, coverAssetIdentifier, selectedPhotoCount
+        case countryName, tripDateRangeText, lastEditedAt, tripStartDate, tripEndDate
+        case isCloud, cloudStatus, totalPlaceVisitCount, tripDurationDays
     }
 }
 
@@ -64,6 +118,10 @@ final class CreatedRecapBlogStore: ObservableObject {
     @Published var pendingRecapCreated = false
     /// Set to true when a draft is saved on back navigation. Consumed by TripsView to show a toast.
     @Published var showDraftSavedToast = false
+    /// Date ranges of active drafts (from TripsViewModel) to exclude from scans. Written by TripsViewModel.updateOccupiedRanges().
+    var draftOccupiedRanges: [(start: Date, end: Date)] = []
+    /// When true, TripsViewModel clears trips and re-runs default scan (e.g. after archive rules change).
+    @Published var needsRescan: Bool = false
     private var tripDraftsBySourceId: [UUID: TripDraft] = [:]
     /// Persisted editable blog details; Save in RecapBlogPageView writes here.
     private var blogDetailsBySourceId: [UUID: RecapBlogDetail] = [:]
@@ -210,18 +268,22 @@ final class CreatedRecapBlogStore: ObservableObject {
             guard let idx = recents.firstIndex(where: { $0.sourceTripId == blogId }) else { return }
             let old = recents[idx]
             recents[idx] = CreatedRecapBlog(
-            id: old.id,
-            sourceTripId: old.sourceTripId,
-            title: detail.title,
-            createdAt: old.createdAt,
-            coverImageName: trip.coverImageName,
-            coverAssetIdentifier: trip.coverAssetIdentifier,
-            selectedPhotoCount: trip.selectedPhotoCount,
-            countryName: detail.countryName ?? old.countryName,
-            tripDateRangeText: trip.tripDateRangeDisplayText,
-            lastEditedAt: Date(),
-            tripStartDate: trip.earliestDate,
-            tripEndDate: trip.latestDate
+                id: old.id,
+                sourceTripId: old.sourceTripId,
+                title: detail.title,
+                createdAt: old.createdAt,
+                coverImageName: trip.coverImageName,
+                coverAssetIdentifier: trip.coverAssetIdentifier,
+                selectedPhotoCount: trip.selectedPhotoCount,
+                countryName: detail.countryName ?? old.countryName,
+                tripDateRangeText: trip.tripDateRangeDisplayText,
+                lastEditedAt: Date(),
+                tripStartDate: trip.earliestDate,
+                tripEndDate: trip.latestDate,
+                isCloud: old.isCloud,
+                cloudStatus: old.cloudStatus,
+                totalPlaceVisitCount: detail.days.reduce(0) { $0 + $1.placeStops.count },
+                tripDurationDays: detail.days.count
             )
             persistRecents()
             persistTripDrafts()
@@ -303,10 +365,10 @@ final class CreatedRecapBlogStore: ObservableObject {
             lastEditedAt: Date(),
             tripStartDate: old.tripStartDate,
             tripEndDate: old.tripEndDate,
-            totalPlaceVisitCount: detail.days.reduce(0) { $0 + $1.placeStops.count },
-            tripDurationDays: detail.days.count,
             isCloud: old.isCloud,
-            cloudStatus: old.cloudStatus
+            cloudStatus: old.cloudStatus,
+            totalPlaceVisitCount: detail.days.reduce(0) { $0 + $1.placeStops.count },
+            tripDurationDays: detail.days.count
         )
     }
 

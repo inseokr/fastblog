@@ -14,6 +14,7 @@ struct ProfileMapView: View {
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @StateObject private var viewModel: ProfileMapViewModel
     @State private var mapPosition: MapCameraPosition = .automatic
+    @State private var centeredBlogID: UUID?
 
     init(createdRecapStore: CreatedRecapBlogStore, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         _viewModel = StateObject(wrappedValue: ProfileMapViewModel(createdRecapStore: createdRecapStore))
@@ -34,7 +35,7 @@ struct ProfileMapView: View {
                         viewModel.selectBlog(blog)
                     },
                     onNavigate: { blog in
-                        selectedBlogForNavigation = blog
+                        selectedCreatedRecap = blog
                     },
                     formatDateRange: viewModel.formatDateRange
                 )
