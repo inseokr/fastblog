@@ -11,6 +11,7 @@ struct RecapBlogPageView: View {
     let initialTrip: TripDraft?
 
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
+    @ObservedObject private var entitlements = EntitlementManager.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var draft: RecapBlogDetail
@@ -21,6 +22,7 @@ struct RecapBlogPageView: View {
     @State private var isEditMode = true
     @State private var showBlogSettings = false
     @State private var showShareSheet = false
+    @State private var showProRequiredForShare = false
     @State private var showEditPhotoFlow = false
     @State private var fullScreenMapDay: RecapBlogDay?
     @State private var showTitleChange = false
@@ -43,13 +45,15 @@ struct RecapBlogPageView: View {
     @State private var showStickyTitle = false
 
     private enum UndoAction {
-        case deletePlace(dayId: UUID, stop: PlaceStop, index: Int)
+        case deletePlace(dayId: UUID, stop: PlaceStop, index: Int, removedDay: RecapBlogDay?, dayIndex: Int?)
         case deletePhoto(dayId: UUID, stopId: UUID, photo: RecapPhoto, index: Int)
 
         var text: String {
             switch self {
-            case .deletePlace: return "Place deleted"
-            case .deletePhoto: return "Photo removed"
+            case .deletePlace(_, _, _, let removedDay, _):
+                return removedDay != nil ? "Day deleted" : "Place deleted"
+            case .deletePhoto:
+                return "Photo removed"
             }
         }
     }
@@ -71,7 +75,7 @@ struct RecapBlogPageView: View {
                 }
             }
             .navigationBarBackButtonHidden(true)
-            .navigationTitle(showStickyTitle ? draft.title : (createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil ? "Draft" : "Recap Blog"))
+            .navigationTitle(isEditMode ? "Edit Mode" : (showStickyTitle ? draft.title : (createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil ? "Draft" : "Recap Blog")))
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(showStickyTitle ? .visible : .hidden, for: .navigationBar)
             .toolbar {
@@ -108,12 +112,28 @@ struct RecapBlogPageView: View {
                         .buttonStyle(.plain)
                     } else {
                         HStack(spacing: 16) {
-                            Button {
-                                showShareSheet = true
-                            } label: {
-                                Image(systemName: "square.and.arrow.up")
+                            if isCloudBlog {
+                                Button {
+                                    if canShare {
+                                        showShareSheet = true
+                                    } else {
+                                        showProRequiredForShare = true
+                                    }
+                                } label: {
+                                    Image(systemName: "square.and.arrow.up")
+                                        .foregroundColor(canShare ? nil : .secondary)
+                                }
+                                .buttonStyle(.plain)
+                            } else {
+                                Button {
+                                    uploadToCloud()
+                                } label: {
+                                    Image(systemName: "icloud.and.arrow.up")
+                                        .foregroundColor(.blue)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
+                            
                             Button {
                                 showBlogSettings = true
                             } label: {
@@ -189,6 +209,11 @@ struct RecapBlogPageView: View {
                     Text("Would you like to save your blog before leaving?")
                 }
             }
+            .alert("Sharing Unavailable", isPresented: $showProRequiredForShare) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("This blog is archived. Upgrade to Pro or purchase a Lifetime Blog slot in Settings to reactivate sharing.")
+            }
             .sheet(isPresented: $showCoverPhotoPicker) {
                 BlogCoverPhotoPickerView(
                     photos: allIncludedPhotos,
@@ -246,9 +271,15 @@ struct RecapBlogPageView: View {
             .sheet(item: $overflowStop) { item in
                 PlaceStopActionSheet(
                     placeTitle: item.stop.placeTitle,
-                    onEditName: { showEditNameForStop = item.stop },
+                    onEditName: {
+                        isEditMode = true
+                        showEditNameForStop = item.stop
+                    },
                     onEditPlace: { isEditMode = true },
-                    onRemoveFromBlog: { removePlaceStop(dayId: item.dayId, stopId: item.stop.id) }
+                    onRemoveFromBlog: {
+                        isEditMode = true
+                        removePlaceStop(dayId: item.dayId, stopId: item.stop.id)
+                    }
                 )
             }
             .sheet(item: $showEditNameForStop) { stop in
@@ -351,6 +382,9 @@ struct RecapBlogPageView: View {
                         if !isEditMode {
                             mapOrPreviewCard
                                 .id("RecapMapSection")
+                        } else {
+                            // Ensure there is an ID to scroll to even in Edit mode
+                            Color.clear.frame(height: 0).id("RecapMapSection")
                         }
                         timelineContent
                         
@@ -380,6 +414,12 @@ struct RecapBlogPageView: View {
                         proxy.scrollTo(id, anchor: .top)
                     }
                     scrollToStopId = nil
+                }
+                .onChange(of: selectedDayIndex) { _, _ in
+                    // When day changes via bottom filter, scroll map to top.
+                    withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                        proxy.scrollTo("RecapMapSection", anchor: .top)
+                    }
                 }
                 
                 if !isKeyboardVisible {
@@ -795,6 +835,40 @@ struct RecapBlogPageView: View {
         createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt != nil
     }
 
+    /// The current blog entry from the store (for status checks).
+    private var currentBlog: CreatedRecapBlog? {
+        createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })
+    }
+
+    /// Whether this blog is a cloud blog.
+    private var isCloudBlog: Bool {
+        currentBlog?.isCloud ?? false
+    }
+
+    /// Toggles the blog to cloud status.
+    private func uploadToCloud() {
+        createdRecapStore.markAsUploaded(sourceTripId: blogId)
+    }
+
+    /// Whether sharing is allowed for this blog.
+    private var canShare: Bool {
+        guard let blog = currentBlog, blog.isCloud else { return true }
+        let sortedCloud = createdRecapStore.recents
+            .filter(\.isCloud)
+            .sorted { $0.createdAt > $1.createdAt }
+        let index = sortedCloud.firstIndex(where: { $0.sourceTripId == blogId }) ?? 0
+        return entitlements.canShareBlog(
+            blogID: blog.sourceTripId,
+            isActive: blog.cloudStatus == .activePublic,
+            blogIndex: index
+        )
+    }
+
+    /// Whether editing is allowed for this blog (Allowed for everyone).
+    private var canEdit: Bool {
+        true
+    }
+
     private var shareText: String {
         let placeCount = draft.days.flatMap(\.placeStops).count
         if placeCount > 0 {
@@ -839,19 +913,32 @@ struct RecapBlogPageView: View {
         guard let dayIndex = draft.days.firstIndex(where: { $0.id == dayId }),
               let stopIndex = draft.days[dayIndex].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
         
-        // Prepare Undo
         let day = draft.days[dayIndex]
         let stop = day.placeStops[stopIndex]
+        
+        // If this is the last stop in the day, the entire day will be removed.
+        let isLastStopInDay = day.placeStops.count == 1
+        let removedDay = isLastStopInDay ? day : nil
+        
+        // Prepare Undo
         withAnimation {
-            lastUndoAction = .deletePlace(dayId: dayId, stop: stop, index: stopIndex)
+            lastUndoAction = .deletePlace(dayId: dayId, stop: stop, index: stopIndex, removedDay: removedDay, dayIndex: dayIndex)
             showUndoOverlay = true
             isUndoMinimized = false
         }
         
         // Perform Deletion
-        var updatedDay = day
-        updatedDay.placeStops.remove(at: stopIndex)
-        draft.days[dayIndex] = updatedDay
+        if isLastStopInDay {
+            draft.days.remove(at: dayIndex)
+            // Adjust selectedDayIndex if out of bounds
+            if selectedDayIndex >= draft.days.count {
+                selectedDayIndex = max(0, draft.days.count - 1)
+            }
+        } else {
+            var updatedDay = day
+            updatedDay.placeStops.remove(at: stopIndex)
+            draft.days[dayIndex] = updatedDay
+        }
     }
 
     fileprivate struct ScrollOffsetKey: PreferenceKey {
@@ -891,8 +978,15 @@ struct RecapBlogPageView: View {
         
         withAnimation {
             switch action {
-            case .deletePlace(let dayId, let stop, let index):
-                if let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }) {
+            case .deletePlace(let dayId, let stop, let index, let removedDay, let dayIdxOpt):
+                if let removedDay = removedDay, let dIdx = dayIdxOpt {
+                    // Restore the entire day
+                    if dIdx <= draft.days.count {
+                        draft.days.insert(removedDay, at: dIdx)
+                        selectedDayIndex = dIdx
+                    }
+                } else if let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }) {
+                    // Restore just the place stop
                     var day = draft.days[dayIdx]
                     if index <= day.placeStops.count {
                         day.placeStops.insert(stop, at: index)

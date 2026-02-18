@@ -15,7 +15,20 @@ struct ScanResult {
     let remainingForTripsCount: Int
 }
 
-/// Scans the photo library for the last N days (ScanConfig.windowDays, default 60) and builds trip drafts.
+struct TripScanResult {
+    let assets: [PHAsset]
+    let draft: TripDraft
+}
+
+struct LibrarySummary {
+    let totalPhotos: Int
+    let prominentYears: [Int]
+    let mostActiveMonths: [(year: Int, month: Int, count: Int)] // Top 3
+    let recentTripSuggestions: [String] // "April 2024", "Dec 2023"
+    let monthCounts: [String: Int] // "2024-05": 12
+}
+
+/// Scans the photo library for the last 90 days and builds trip drafts.
 /// Only photos with valid location and strictly > minMiles from neighborhood center are included.
 /// Photos without location are excluded. When neighborhood is not set, no trips are returned.
 final class PhotoLibraryTripService {
@@ -232,6 +245,122 @@ final class PhotoLibraryTripService {
     func scanLast3Months(occupiedDateRanges: [(start: Date, end: Date)] = []) async -> [TripDraft] {
         let result = await scanLast90Days(occupiedDateRanges: occupiedDateRanges)
         return result.trips
+    }
+
+    /// Flexible scan for memories. Returns TripScanResult (assets + draft) for better recall handling.
+    func scanFlexibleRange(start: Date, end: Date, occupiedDateRanges: [(start: Date, end: Date)] = []) async -> [TripScanResult] {
+        let options = PHFetchOptions()
+        options.predicate = NSPredicate(format: "creationDate >= %@ AND creationDate <= %@", start as NSDate, end as NSDate)
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+
+        let fetchResult = PHAsset.fetchAssets(with: .image, options: options)
+        var allAssets: [PHAsset] = []
+        fetchResult.enumerateObjects { asset, _, _ in
+            if asset.mediaSubtypes.contains(.photoScreenshot) { return }
+            allAssets.append(asset)
+        }
+        allAssets = filterOutAssetsInOccupiedRanges(allAssets, occupiedDateRanges: occupiedDateRanges)
+
+        let home = NeighborhoodStore.getNeighborhoodCenter()
+        let minMiles = NeighborhoodStore.localExclusionMiles
+        var remaining: [PHAsset] = []
+        if let homeLocation = home {
+            for asset in allAssets {
+                guard asset.location != nil else { continue }
+                if TripPhotoFilter.shouldIncludeInTrips(assetLocation: asset.location, home: homeLocation, minMiles: minMiles) {
+                    remaining.append(asset)
+                }
+            }
+        } else {
+            remaining = allAssets.filter { $0.location != nil }
+        }
+
+        guard !remaining.isEmpty else { return [] }
+
+        let sortedByDate = remaining.sorted { (a, b) in
+            (a.creationDate ?? .distantPast) < (b.creationDate ?? .distantPast)
+        }
+        let dayGroups = groupAssetsByDay(sortedByDate)
+        let sortedDayGroups = dayGroups.sorted { $0.date < $1.date }
+        guard !sortedDayGroups.isEmpty else { return [] }
+
+        let dayClusters = await buildDayClusters(from: sortedDayGroups)
+        let groupingResult = DayToTripGrouper.groupDaysIntoTrips(
+            days: dayClusters,
+            neighborhoodRadiusMiles: ScanConfig.neighborhoodRadiusMiles,
+            countryFallbackMaxMiles: ScanConfig.countryFallbackMaxMiles,
+            maxGapDaysToBridge: ScanConfig.maxGapDaysToBridge,
+            multiCityDayMaxMiles: ScanConfig.multiCityDayMaxMiles,
+            debugLogging: TripClusteringDebug.isEnabled
+        )
+
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        let monthYearFormatter = DateFormatter()
+        monthYearFormatter.dateFormat = "MMM yyyy"
+
+        var results: [TripScanResult] = []
+        for tripDays in groupingResult.trips {
+            guard !tripDays.isEmpty else { continue }
+            let assets = tripDays.flatMap { $0.assets }
+            let firstDate = tripDays.first!.dayDate
+            let lastDate = tripDays.last!.dayDate
+            let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
+            let title = defaultTripTitle(for: tripDays)
+            let coverAsset = assets.first
+            let coverIdentifier = coverAsset?.localIdentifier
+
+            let locationNames = await resolveLocationNames(for: assets)
+
+            let tripDaysModels: [TripDay] = tripDays.enumerated().map { dayIndex, dayCluster in
+                let dateText = formatter.string(from: dayCluster.dayDate)
+                let photos: [MockPhoto] = dayCluster.assets.map { asset in
+                    let coord = asset.location.map { loc in
+                        PhotoCoordinate(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude)
+                    }
+                    var placeName: String?
+                    var countryName: String?
+                    if let loc = asset.location {
+                        let key = locationCacheKey(for: loc)
+                        if let place = locationNames[key] {
+                            placeName = place.bestPlaceLabel.isEmpty || place.bestPlaceLabel == "Unknown Place" ? nil : place.bestPlaceLabel
+                            countryName = (place.countryName.isEmpty || place.countryName == "Unknown") ? nil : place.countryName
+                        }
+                    }
+                    return MockPhoto(
+                        imageName: "photo",
+                        timestamp: asset.creationDate ?? Date(),
+                        locationName: placeName,
+                        countryName: countryName,
+                        isSelected: false,
+                        localIdentifier: asset.localIdentifier,
+                        location: coord
+                    )
+                }
+                return TripDay(
+                    dayIndex: dayIndex + 1,
+                    dateText: dateText,
+                    photos: photos,
+                    countryCode: dayCluster.countryCode,
+                    countryName: dayCluster.countryName,
+                    cityName: dayCluster.cityName
+                )
+            }
+
+            let draft = TripDraft(
+                title: title,
+                dateRangeText: dateRangeText,
+                days: tripDaysModels,
+                coverImageName: "default",
+                isScannedFromDefaultRange: false,
+                draftCreatedAgoText: "From your photo library",
+                daysSeasonText: "\(tripDaysModels.count) days • \(monthYearFormatter.string(from: firstDate))",
+                coverTheme: "default",
+                coverAssetIdentifier: coverIdentifier
+            )
+            results.append(TripScanResult(assets: assets, draft: draft))
+        }
+        return results
     }
 
     /// Excludes assets whose creation date falls within any occupied range (start...end inclusive).

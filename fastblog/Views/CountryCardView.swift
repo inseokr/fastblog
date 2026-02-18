@@ -35,6 +35,27 @@ struct CountryCardView: View {
                 )
                 .allowsHitTesting(false)
             )
+            .overlay(alignment: .topLeading) {
+                HStack(spacing: 4) {
+                    Image(systemName: "book.fill")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("\(section.blogs.count)")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.black.opacity(0.3))
+                        .background(.ultraThinMaterial)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                )
+                .padding(12)
+            }
             .overlay(alignment: .bottom) {
                 VStack(spacing: 6) {
                     Text(displayCountryName(section.countryName))

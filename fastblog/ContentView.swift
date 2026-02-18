@@ -29,8 +29,13 @@ struct ContentView: View {
                 TripsView(viewModel: tripsViewModel)
             }
             .navigationDestination(isPresented: $showProfile) {
-                ProfileView(selectedCreatedRecap: $selectedCreatedRecap)
-                    .environmentObject(createdRecapStore)
+                ProfileView(
+                    showTrips: $showTrips,
+                    showProfile: $showProfile,
+                    tripsViewModel: tripsViewModel,
+                    selectedCreatedRecap: $selectedCreatedRecap
+                )
+                .environmentObject(createdRecapStore)
             }
             .navigationDestination(item: $selectedCreatedRecap) { recap in
                 RecapBlogPageView(
@@ -45,14 +50,15 @@ struct ContentView: View {
         })
         .onChange(of: dismissToLandingRequested) { _, requested in
             if requested {
-                dismissToLandingRequested = false
-                // After blog creation, navigate to the new recap blog on top of TripsView
-                // so back button returns to Trips page for creating more blogs
+                // After blog creation, navigate to the new recap blog
                 if let latest = createdRecapStore.recents.first {
                     selectedCreatedRecap = latest
                 } else {
                     showTrips = false
+                    showProfile = false
+                    selectedCreatedRecap = nil
                 }
+                dismissToLandingRequested = false // Reset the request
             }
         }
     }

@@ -10,27 +10,58 @@ import UIKit
 struct fastblogApp: App {
     @StateObject private var photoAuth = PhotosAuthorizationManager()
     @AppStorage("blogify.hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var isAppReady = false
 
     var body: some Scene {
         WindowGroup {
-            Group {
-                if !hasCompletedOnboarding {
-                    OnboardingFlowView {
-                        hasCompletedOnboarding = true
-                        photoAuth.refreshStatus()
-                    }
-                } else if photoAuth.isAuthorized {
-                    ContentView()
+            ZStack {
+                if !isAppReady {
+                    AppLaunchSplashView()
+                        .transition(.opacity)
                 } else {
-                    PhotosPermissionView(
-                        status: photoAuth.status,
-                        onRequest: { await photoAuth.requestAccess() },
-                        onOpenSettings: { openSettings() }
-                    )
+                    Group {
+                        if !hasCompletedOnboarding {
+                            OnboardingFlowView {
+                                hasCompletedOnboarding = true
+                                photoAuth.refreshStatus()
+                            }
+                        } else if photoAuth.isAuthorized {
+                            ContentView()
+                        } else {
+                            PhotosPermissionView(
+                                status: photoAuth.status,
+                                onRequest: { await photoAuth.requestAccess() },
+                                onOpenSettings: { openSettings() }
+                            )
+                        }
+                    }
+                    .transition(.opacity)
                 }
             }
             .onAppear {
                 DraftReminderNotificationManager.requestPermissionIfNeeded()
+                // Refresh entitlements and enforce archive rules on app launch.
+                Task {
+                    await EntitlementManager.shared.refreshEntitlements()
+                    CreatedRecapBlogStore.shared.enforceArchiveRules()
+                    
+                    // Minor delay to ensure splash is visible for a moment if init is too fast.
+                    try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s
+                    
+                    withAnimation {
+                        isAppReady = true
+                    }
+                }
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    // Refresh entitlements and enforce archive rules when returning to foreground.
+                    Task {
+                        await EntitlementManager.shared.refreshEntitlements()
+                        CreatedRecapBlogStore.shared.enforceArchiveRules()
+                    }
+                }
             }
         }
     }

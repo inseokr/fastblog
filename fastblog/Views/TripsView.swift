@@ -372,6 +372,7 @@ struct TripDraftRow: View {
             Text(trip.tripDateRangeDisplayText)
                 .font(.subheadline)
                 .foregroundColor(Color(white: 0.6))
+                .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Self.contentPadding)

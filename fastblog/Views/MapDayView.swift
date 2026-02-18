@@ -50,7 +50,8 @@ struct MapDayView: View {
                 }
             }
         }
-        .frame(height: height)
+        .frame(height: height == .infinity ? nil : height)
+        .frame(maxWidth: height == .infinity ? .infinity : nil, maxHeight: height == .infinity ? .infinity : nil)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .contentShape(Rectangle())
         .onTapGesture {
@@ -221,105 +222,41 @@ struct FullScreenMapView: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .topTrailing) {
-                MapDayView(
-                    placeStops: day.placeStops,
-                    height: geo.size.height,
-                    onTap: nil,
-                    focusedPlaceId: focusedPlaceId
-                )
-                .ignoresSafeArea(edges: .all)
+        ZStack(alignment: .bottom) {
+            MapDayView(
+                placeStops: day.placeStops,
+                height: .infinity,
+                onTap: nil,
+                focusedPlaceId: focusedPlaceId
+            )
+            .ignoresSafeArea()
 
-                Button(action: onDismiss) {
-                    Text("Done")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .background(Color.blue)
-                        .clipShape(Capsule())
-                }
-                .padding(.top, 56)
-                .padding(.trailing, 20)
+            // Dismiss Button (Top Leading)
+            Button(action: onDismiss) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 32))
+                    .foregroundColor(.white)
+                    .shadow(radius: 4)
+                    .padding(12) // Larger hit area
+                    .background(.ultraThinMaterial)
+                    .clipShape(Circle())
+            }
+            .padding(.top, 44)
+            .padding(.leading, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .buttonStyle(.plain)
 
-                if !day.placeStops.isEmpty {
-                    VStack {
-                        Spacer()
-                        placeCardsStrip(in: geo)
-                            .padding(.bottom, geo.safeAreaInsets.bottom + 12)
-                    }
-                }
+            if !day.placeStops.isEmpty {
+                PlaceCardCarousel(stops: day.placeStops, selectedIndex: $selectedPlaceIndex)
+                    .padding(.bottom, 34) // Safe area padding
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .background(Color.black)
-        .ignoresSafeArea(edges: .all)
+        .ignoresSafeArea()
         .preferredColorScheme(.dark)
     }
 
-    private func placeCardsStrip(in geo: GeometryProxy) -> some View {
-        let cardWidth = min(geo.size.width * 0.88, 340)
-        let cardHeight: CGFloat = 120
-
-        return TabView(selection: $selectedPlaceIndex) {
-            ForEach(Array(day.placeStops.enumerated()), id: \.element.id) { index, stop in
-                PlaceMapCardView(stop: stop, stopNumber: index + 1, isSelected: selectedPlaceIndex == index)
-                    .frame(width: cardWidth, height: cardHeight)
-                    .tag(index)
-            }
-        }
-        .tabViewStyle(.page(indexDisplayMode: .never))
-        .frame(height: cardHeight)
-    }
-}
-
-/// Single place card for full-screen map bottom strip: number + title, description, photo on right; blue border when selected.
-private struct PlaceMapCardView: View {
-    let stop: PlaceStop
-    let stopNumber: Int
-    let isSelected: Bool
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("\(stopNumber) \(stop.placeTitle)")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-                Text(descriptionText)
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.85))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            if let photo = stop.photos.first {
-                RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 160, height: 160))
-                    .frame(width: 72, height: 72)
-                    .clipped()
-                    .cornerRadius(8)
-            }
-        }
-        .padding(14)
-        .background(Color(white: 0.18))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 3)
-        )
-    }
-
-    private var descriptionText: String {
-        if let note = stop.noteText, !note.isEmpty {
-            return note
-        }
-        if let subtitle = stop.placeSubtitle, !subtitle.isEmpty {
-            return subtitle
-        }
-        return "\(stop.photos.count) photo\(stop.photos.count == 1 ? "" : "s")"
-    }
 }
 
 #Preview {

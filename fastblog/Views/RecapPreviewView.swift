@@ -26,12 +26,10 @@ struct RecapPreviewView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    Task {
-                        await prepareShareContent()
-                        showShare = true
-                    }
+                    // Upload stub
                 } label: {
-                    Label("Share", systemImage: "square.and.arrow.up")
+                    Label("Upload", systemImage: "icloud.and.arrow.up")
+                        .foregroundColor(.blue)
                 }
             }
         }

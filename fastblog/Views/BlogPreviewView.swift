@@ -36,9 +36,10 @@ struct BlogPreviewView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    // Share stub
+                    // Upload stub
                 } label: {
-                    Label("Share", systemImage: "square.and.arrow.up")
+                    Label("Upload", systemImage: "icloud.and.arrow.up")
+                        .foregroundColor(.blue)
                 }
             }
         }

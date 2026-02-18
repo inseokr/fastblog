@@ -5,6 +5,7 @@
 
 import Combine
 import Foundation
+import Photos
 import SwiftUI
 
 /// Result of a Find More scan: no result yet, no new trips in range, or success with count of new trips appended.
@@ -138,6 +139,70 @@ final class TripsViewModel: ObservableObject {
     /// Remove a trip from the list (e.g. after it was turned into a created blog). Keeps tripDrafts in sync.
     func removeTrip(id: UUID) {
         tripDrafts.removeAll { $0.id == id }
+        updateOccupiedRanges()
+    }
+
+    func addDraft(_ draft: TripDraft) {
+        tripDrafts.insert(draft, at: 0)
+        updateOccupiedRanges()
+    }
+
+    func createDraft(from recall: RecallTrigger) -> TripDraft {
+        createDraft(from: recall.assets, title: recall.title)
+    }
+
+    func createDraft(from reminder: SmartReminder) -> TripDraft {
+        createDraft(from: reminder.assets, title: reminder.title)
+    }
+
+    private func createDraft(from assets: [PHAsset], title: String) -> TripDraft {
+        let calendar = Calendar.current
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        
+        let groups = Dictionary(grouping: assets) { asset in
+            calendar.startOfDay(for: asset.creationDate ?? Date())
+        }
+        let sortedDates = groups.keys.sorted()
+        
+        var tripDays: [TripDay] = []
+        for (index, date) in sortedDates.enumerated() {
+            let dayAssets = (groups[date] ?? []).sorted { ($0.creationDate ?? .distantPast) < ($1.creationDate ?? .distantPast) }
+            let photos = dayAssets.map { asset in
+                MockPhoto(
+                    imageName: "photo",
+                    timestamp: asset.creationDate ?? Date(),
+                    isSelected: false,
+                    localIdentifier: asset.localIdentifier
+                )
+            }
+            tripDays.append(TripDay(
+                dayIndex: index + 1,
+                dateText: formatter.string(from: date),
+                photos: photos
+            ))
+        }
+        
+        let firstDate = sortedDates.first ?? Date()
+        let lastDate = sortedDates.last ?? Date()
+        let dateRange = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
+        
+        return TripDraft(
+            title: title,
+            dateRangeText: dateRange,
+            days: tripDays,
+            coverImageName: "default",
+            isScannedFromDefaultRange: false,
+            coverAssetIdentifier: assets.first?.localIdentifier
+        )
+    }
+
+    private func updateOccupiedRanges() {
+        let ranges = tripDrafts.compactMap { draft -> (start: Date, end: Date)? in
+            guard let start = draft.earliestDate, let end = draft.latestDate else { return nil }
+            return (start, end)
+        }
+        CreatedRecapBlogStore.shared.draftOccupiedRanges = ranges
     }
 
     init(createdRecapStore: CreatedRecapBlogStore) {
@@ -172,6 +237,7 @@ final class TripsViewModel: ObservableObject {
         Task {
             let trips = await photoLibraryService.scanLast3Months(occupiedDateRanges: occupiedRanges)
             tripDrafts = trips
+            updateOccupiedRanges()
             scanState = .idle
         }
     }
@@ -242,6 +308,7 @@ final class TripsViewModel: ObservableObject {
             } else {
                 withAnimation {
                     tripDrafts.append(contentsOf: deduped)
+                    updateOccupiedRanges()
                 }
                 findMoreScanResult = .success(deduped.count)
                 showSelectPhotosIntroAfterScan = true

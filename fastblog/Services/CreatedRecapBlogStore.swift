@@ -8,6 +8,12 @@ import CoreLocation
 import Foundation
 import SwiftUI
 
+
+enum BlogCloudStatus: String, Codable {
+    case activePublic
+    case archived
+}
+
 /// A recap blog that was created from a draft trip. Stored so we can hide the draft from Trips and show it in Landing Recents.
 struct CreatedRecapBlog: Identifiable, Equatable, Hashable, Codable {
     let id: UUID
@@ -26,6 +32,10 @@ struct CreatedRecapBlog: Identifiable, Equatable, Hashable, Codable {
     /// Trip date range (start/end) for excluding these dates from future scans. Nil if not set (e.g. older blogs).
     let tripStartDate: Date?
     let tripEndDate: Date?
+    /// Whether this is a cloud blog (true) or local-only (false). Defaults to false (local-only).
+    var isCloud: Bool
+    /// Cloud status: activePublic or archived. Only meaningful for cloud blogs.
+    var cloudStatus: BlogCloudStatus
 
     init(id: UUID = UUID(), sourceTripId: UUID, title: String, createdAt: Date, coverImageName: String, coverAssetIdentifier: String? = nil, selectedPhotoCount: Int, countryName: String? = nil, tripDateRangeText: String? = nil, lastEditedAt: Date? = nil, tripStartDate: Date? = nil, tripEndDate: Date? = nil) {
         self.id = id
@@ -156,11 +166,13 @@ final class CreatedRecapBlogStore: ObservableObject {
     }
 
     /// Date ranges (start, end) of all created blogs. Used by scan to exclude these dates and reduce memory. Each range is inclusive of the trip's earliest and latest day.
+    /// Date ranges (start, end) of all created blogs AND active drafts.
     func occupiedDateRanges() -> [(start: Date, end: Date)] {
-        recents.compactMap { blog in
+        let blogRanges: [(start: Date, end: Date)] = recents.compactMap { blog in
             guard let start = blog.tripStartDate, let end = blog.tripEndDate else { return nil }
-            return (start, end)
+            return (start: start, end: end)
         }
+        return blogRanges + draftOccupiedRanges
     }
 
     /// TripDraft snapshot for opening BlogPreviewView. Nil if not found.
@@ -214,7 +226,50 @@ final class CreatedRecapBlogStore: ObservableObject {
             persistRecents()
             persistTripDrafts()
             persistBlogDetails()
+            enforceArchiveRules()
         }
+    }
+
+    /// Marks a blog as uploaded to the cloud. Toggles isCloud to true.
+    func markAsUploaded(sourceTripId: UUID) {
+        if let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }) {
+            recents[idx].isCloud = true
+            recents[idx].cloudStatus = .activePublic
+            persistRecents()
+            enforceArchiveRules()
+        }
+    }
+
+    /// Enforces cloud storage limits based on entitlements.
+    func enforceArchiveRules() {
+        let limit = EntitlementManager.shared.activeCloudBlogLimit
+        guard let maxCloud = limit else {
+            // Pro user: ensure all cloud blogs are activePublic
+            var changed = false
+            for i in recents.indices where recents[i].isCloud && recents[i].cloudStatus != .activePublic {
+                recents[i].cloudStatus = .activePublic
+                changed = true
+            }
+            if changed { persistRecents() }
+            return
+        }
+
+        // Free tier: sort cloud blogs by date and archive those beyond the limit
+        let cloudBlogs = recents.filter(\.isCloud).sorted { $0.createdAt > $1.createdAt }
+        var changed = false
+        for (index, blog) in cloudBlogs.enumerated() {
+            guard let idx = recents.firstIndex(where: { $0.id == blog.id }) else { continue }
+            
+            let hasLifetime = EntitlementManager.shared.lifetimeAllocatedBlogIDs.contains(blog.sourceTripId)
+            let isWithinLimit = index < maxCloud
+            
+            let targetStatus: BlogCloudStatus = (isWithinLimit || hasLifetime) ? .activePublic : .archived
+            if recents[idx].cloudStatus != targetStatus {
+                recents[idx].cloudStatus = targetStatus
+                changed = true
+            }
+        }
+        if changed { persistRecents() }
     }
 
     /// Representative coordinate for a blog (first photo with location in its trip draft). Nil if no draft or no location.
@@ -249,7 +304,9 @@ final class CreatedRecapBlogStore: ObservableObject {
             tripStartDate: old.tripStartDate,
             tripEndDate: old.tripEndDate,
             totalPlaceVisitCount: detail.days.reduce(0) { $0 + $1.placeStops.count },
-            tripDurationDays: detail.days.count
+            tripDurationDays: detail.days.count,
+            isCloud: old.isCloud,
+            cloudStatus: old.cloudStatus
         )
     }
 

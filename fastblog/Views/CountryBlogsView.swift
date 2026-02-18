@@ -37,6 +37,11 @@ struct CountryBlogsView: View {
                             Text(Self.dateFormatter.string(from: blog.createdAt))
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
+                                .lineLimit(1)
+                            Text("\(blog.tripDurationDays) Day\(blog.tripDurationDays == 1 ? "" : "s") • \(blog.tripDateRangeText ?? "")")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 4) {
@@ -90,6 +95,11 @@ extension Date {
     func timeAgoDisplay() -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
-        return formatter.localizedString(for: self, relativeTo: Date())
+        let fullString = formatter.localizedString(for: self, relativeTo: Date())
+        return fullString
+            .replacingOccurrences(of: " hours", with: " hrs")
+            .replacingOccurrences(of: " hour", with: " hr")
+            .replacingOccurrences(of: " minutes", with: " min")
+            .replacingOccurrences(of: " minute", with: " min")
     }
 }

@@ -17,9 +17,10 @@ struct LandingView: View {
     /// CTA text cycles every 5 seconds: "Tap to Scan" ↔ "Create A Blog Today"
     @State private var ctaIsAlternate = false
     @State private var ctaOpacity: Double = 1
-
+    
     private let landingBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
     private let ctaInterval: TimeInterval = 5
+    @State private var smartReminder: SmartReminder?
 
     var body: some View {
         ZStack {
@@ -53,7 +54,28 @@ struct LandingView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 12)
                 Spacer(minLength: 40)
-                scanCTA
+                
+                if let reminder = smartReminder {
+                    ReminderCardView(reminder: reminder) {
+                        // Create it now CTA
+                        let draft = tripsViewModel.createDraft(from: reminder)
+                        tripsViewModel.addDraft(draft)
+                        showTrips = true
+                        withAnimation {
+                            smartReminder = nil
+                        }
+                    } onDismiss: {
+                        SmartReminderService.shared.dismissReminder()
+                        withAnimation {
+                            smartReminder = nil
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                } else {
+                    scanCTA
+                }
+                
                 Spacer(minLength: 32)
                 recentRecapsSection
             }
@@ -69,6 +91,7 @@ struct LandingView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
+<<<<<<< HEAD:fastblog/Views/LandingView.swift
         .overlay(alignment: .top) {
             if createdRecapStore.showRecapCreatedBanner {
                 recapCreatedBanner
@@ -79,6 +102,12 @@ struct LandingView: View {
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: createdRecapStore.showRecapCreatedBanner)
+=======
+        .task {
+            // Check for smart reminders once on load
+            smartReminder = await SmartReminderService.shared.checkReminders()
+        }
+>>>>>>> 9a9eb62 (FEb 17 merger):Capper/Views/LandingView.swift
     }
 
     /// Success notification card: icon, title, "Tap to view", optional dismiss. Auto-dismisses after 6s; tap opens latest blog.
@@ -236,11 +265,11 @@ private struct CreatedRecapCard: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
-                    .lineLimit(2)
                 if let range = recap.tripDateRangeText, !range.isEmpty {
                     Text(range)
                         .font(.caption)
                         .foregroundColor(.white.opacity(0.85))
+                        .lineLimit(1)
                 }
                 Text(lastEditedText)
                     .font(.caption2)
@@ -260,10 +289,11 @@ private struct CreatedRecapCard: View {
     }
 }
 
-/// Settings sheet from the home page (gear icon). Includes neighborhood selection.
+/// Settings sheet from the home page (gear icon). Includes neighborhood selection and subscription management.
 private struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showNeighborhoodSheet = false
+    @ObservedObject private var storeKit = StoreKitManager.shared
     #if DEBUG
     @AppStorage("capper.tripClustering.debugLogging") private var tripClusteringDebug = false
     #endif
@@ -271,6 +301,9 @@ private struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                // Subscription section at top
+                SubscriptionSettingsView()
+
                 Section {
                     Button {
                         showNeighborhoodSheet = true
@@ -338,6 +371,17 @@ private struct SettingsView: View {
                     })
                 }
             }
+            // Show error alert from StoreKit
+            .alert("Purchase Error", isPresented: Binding(
+                get: { storeKit.errorMessage != nil },
+                set: { if !$0 { storeKit.errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                if let msg = storeKit.errorMessage {
+                    Text(msg)
+                }
+            }
         }
     }
 }
@@ -366,6 +410,7 @@ struct AllRecentsSheet: View {
                                 Text("\(recap.tripDurationDays) Day\(recap.tripDurationDays == 1 ? "" : "s")")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
+                                    .lineLimit(1) // Added line limit
                             }
                             Spacer()
                         }

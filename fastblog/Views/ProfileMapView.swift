@@ -38,6 +38,7 @@ struct ProfileMapView: View {
                     },
                     formatDateRange: viewModel.formatDateRange
                 )
+                .padding(.bottom, 30) // Move cards up from the bottom
             }
         }
         .ignoresSafeArea(edges: .bottom)

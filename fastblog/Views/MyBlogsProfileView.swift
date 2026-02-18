@@ -21,10 +21,21 @@ struct MyBlogsProfileView: View {
     @State private var showViewAll = false
     @State private var isSearchActive = false
     @FocusState private var isSearchFocused: Bool
+    
+    @Binding var showTrips: Bool
+    @Binding var showProfile: Bool
+    @ObservedObject var tripsViewModel: TripsViewModel
+    @StateObject private var recallViewModel = MemoryRecallViewModel()
+    @State private var showingRecallModal = false
+    @State private var showingCreateFlow = false
+    @State private var draftToCreate: TripDraft?
 
-    init(createdRecapStore: CreatedRecapBlogStore, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
+    init(createdRecapStore: CreatedRecapBlogStore, showTrips: Binding<Bool>, showProfile: Binding<Bool>, tripsViewModel: TripsViewModel, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         _viewModel = StateObject(wrappedValue: MyBlogsProfileViewModel())
         _selectedCreatedRecap = selectedCreatedRecap
+        _showTrips = showTrips
+        _showProfile = showProfile
+        self.tripsViewModel = tripsViewModel
     }
 
     private let backgroundBlue = Color(red: 0.05, green: 0.08, blue: 0.22)
@@ -35,9 +46,18 @@ struct MyBlogsProfileView: View {
                 .ignoresSafeArea()
 
             ScrollView {
-                let allSections = MyBlogsProfileViewModel.sections(from: createdRecapStore.countrySummaries)
-                let sections = viewModel.filteredSections(from: allSections)
-                Group {
+                VStack(spacing: 0) {
+                    revisitSection
+                        .padding(.top, 16)
+                    
+                    let allSections = MyBlogsProfileViewModel.sections(from: createdRecapStore.countrySummaries)
+                    let sections = viewModel.filteredSections(from: allSections)
+                    
+                    if !sections.isEmpty {
+                        countriesHeader
+                    }
+                    
+                    Group {
                     if isSearchActive && !viewModel.isSearching {
                         // Search mode active but nothing typed yet
                         VStack(spacing: 12) {
@@ -64,8 +84,9 @@ struct MyBlogsProfileView: View {
                 .padding(.top, 12)
                 .padding(.bottom, searchBarHeight + myMapButtonSize + 24)
             }
+        }
 
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
                 Spacer()
                 HStack {
                     Spacer()
@@ -102,6 +123,36 @@ struct MyBlogsProfileView: View {
                 selectedRecap: $selectedCreatedRecap
             )
         }
+        .fullScreenCover(isPresented: $showingRecallModal) {
+            if let recall = recallViewModel.currentRecall {
+                MemoryRecallModal(recall: recall) {
+                    // Create blog CTA
+                    let draft = tripsViewModel.createDraft(from: recall)
+                    draftToCreate = draft
+                    createdRecapStore.dismissToProfileRequested = true
+                    showingRecallModal = false
+                    
+                    // Delay slightly to allow modal dismissal before presenting flow
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        showingCreateFlow = true
+                    }
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showingCreateFlow) {
+            if let draft = draftToCreate {
+                CreateBlogFlowView(trip: draft, startDirectlyCreating: true) { id in
+                    // onClose: remove from drafts if any
+                    tripsViewModel.removeTrip(id: id)
+                    draftToCreate = nil
+                    showingCreateFlow = false
+                    recallViewModel.refreshRecall()
+                }
+            }
+        }
+        .onAppear {
+            recallViewModel.onAppear()
+        }
     }
 
     private var emptyState: some View {
@@ -117,6 +168,36 @@ struct MyBlogsProfileView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 48)
+    }
+
+    @ViewBuilder
+    private var revisitSection: some View {
+        if let recall = recallViewModel.currentRecall {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Revisit")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, horizontalPadding)
+                
+                RecallCard(recall: recall) {
+                    showingRecallModal = true
+                }
+                .padding(.horizontal, horizontalPadding)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            .padding(.bottom, 24)
+        }
+    }
+
+    private var countriesHeader: some View {
+        HStack {
+            Text("Countries")
+                .font(.headline)
+                .foregroundColor(.white)
+            Spacer()
+        }
+        .padding(.horizontal, horizontalPadding)
+        .padding(.vertical, 12)
     }
 
     private var searchBar: some View {
@@ -144,7 +225,11 @@ struct MyBlogsProfileView: View {
         }
         .padding(.horizontal, 16)
         .frame(height: searchBarHeight)
-        .background(Color.white.opacity(0.12))
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.black.opacity(0.4))
+                .background(.ultraThinMaterial)
+        )
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal, horizontalPadding)
         .padding(.bottom, 12)
@@ -175,6 +260,9 @@ private struct MyMapButton: View {
     NavigationStack {
         MyBlogsProfileView(
             createdRecapStore: CreatedRecapBlogStore.shared,
+            showTrips: .constant(false),
+            showProfile: .constant(true),
+            tripsViewModel: TripsViewModel(createdRecapStore: CreatedRecapBlogStore.shared),
             selectedCreatedRecap: .constant(nil)
         )
         .environmentObject(CreatedRecapBlogStore.shared)
