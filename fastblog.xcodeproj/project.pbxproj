@@ -113,6 +113,7 @@
 		BB0001E5 /* EntitlementManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001E4 /* EntitlementManager.swift */; };
 		BB0001E7 /* DraftReminderNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001E6 /* DraftReminderNotificationManager.swift */; };
 		BB0001E9 /* PlaceCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001E8 /* PlaceCardView.swift */; };
+		BB0001EC /* PhotoQualityScorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001EB /* PhotoQualityScorer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -222,6 +223,7 @@
 		BB0001E4 /* EntitlementManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntitlementManager.swift; sourceTree = "<group>"; };
 		BB0001E6 /* DraftReminderNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftReminderNotificationManager.swift; sourceTree = "<group>"; };
 		BB0001E8 /* PlaceCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceCardView.swift; sourceTree = "<group>"; };
+		BB0001EB /* PhotoQualityScorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoQualityScorer.swift; sourceTree = "<group>"; };
 		AA000003 /* fastblog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = fastblog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -410,6 +412,7 @@
 				BB0001A5 /* TripPhotoFilter.swift */,
 				BB0001A7 /* TripPhotoFilterTests.swift */,
 				BB0001A9 /* TripPhotoSelectionService.swift */,
+				BB0001EB /* PhotoQualityScorer.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -563,6 +566,7 @@
 				BB0001A6 /* TripPhotoFilter.swift in Sources */,
 				BB0001A8 /* TripPhotoFilterTests.swift in Sources */,
 				BB0001AA /* TripPhotoSelectionService.swift in Sources */,
+				BB0001EC /* PhotoQualityScorer.swift in Sources */,
 				BB0001C0 /* PlaceSearchViewModel.swift in Sources */,
 				BB0001C2 /* KeyboardCaptionToolbar.swift in Sources */,
 				BB0001C4 /* UndoOverlayView.swift in Sources */,

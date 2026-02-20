@@ -112,11 +112,11 @@ struct PlaceStopRowView: View {
             .padding(.trailing, 16)
             .padding(.bottom, 12)
 
-            // Photo strip: large thumbnails; one full photo visible + peek of next so users know they can scroll
+            // Photo strip: top-rated (included) photos only; Manage Photos adds more
             if !stop.photos.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 10) {
-                        ForEach(stop.photos) { photo in
+                        ForEach(stop.includedPhotos) { photo in
                             VStack(alignment: .leading, spacing: 6) {
                                 ZStack(alignment: .topTrailing) {
                                     RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 480, height: 480))

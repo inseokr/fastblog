@@ -178,12 +178,12 @@ struct RecapBlogPageView: View {
         }
         .sheet(item: $placePhotoModalItem) { item in
             Group {
-                if let stop = placeStop(dayId: item.dayId, stopId: item.stopId), !stop.photos.isEmpty {
+                if let stop = placeStop(dayId: item.dayId, stopId: item.stopId), !stop.includedPhotos.isEmpty {
                     PlacePhotoModalView(
                         placeTitle: bindingForPlaceTitle(stopId: item.stopId),
                         placeSubtitle: stop.placeSubtitle,
-                        photos: stop.photos,
-                        initialPhotoId: stop.photos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : stop.photos[0].id,
+                        photos: stop.includedPhotos,
+                        initialPhotoId: stop.includedPhotos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : stop.includedPhotos[0].id,
                         photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
                         onDismiss: { placePhotoModalItem = nil }
                     )
@@ -348,7 +348,7 @@ struct RecapBlogPageView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.bottom, 32)
+        .padding(.bottom, 120)
     }
 
     private func daySection(day: RecapBlogDay) -> some View {
