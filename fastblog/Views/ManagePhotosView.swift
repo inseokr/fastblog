@@ -18,10 +18,10 @@ struct ManagePhotosView: View {
 
     private static let thumbnailSize: CGFloat = 60
     private static let thumbnailSpacing: CGFloat = 12
-    private static let stripHeight: CGFloat = 88
-    private static let bottomBarPadding: CGFloat = 16
+    private static let stripHeight: CGFloat = 50
+    private static let bottomBarPadding: CGFloat = 10
     /// Extra bottom padding so the strip sits above home indicator and isn’t cut off.
-    private static let bottomBarBottomPadding: CGFloat = 28
+    private static let bottomBarBottomPadding: CGFloat = 10
 
     private var currentPhoto: RecapPhoto? {
         if let id = currentPhotoId, let p = photos.first(where: { $0.id == id }) { return p }
@@ -50,7 +50,7 @@ struct ManagePhotosView: View {
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 bottomBar
-                    .padding(.bottom, 30)
+                    .ignoresSafeArea(edges: .bottom)
             }
             .navigationTitle(placeTitle)
             .navigationBarTitleDisplayMode(.inline)
@@ -89,6 +89,7 @@ struct ManagePhotosView: View {
                         showIcon: false,
                         targetSize: CGSize(width: 800, height: 800)
                     )
+                    .aspectRatio(contentMode: .fit)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                     if photo.isIncluded {
@@ -101,7 +102,6 @@ struct ManagePhotosView: View {
                             .padding(.bottom, 20)
                     }
                 }
-                .id(photo.id)
                 .contentShape(Rectangle())
                 .onTapGesture { toggleInclusion() }
                 .gesture(
@@ -208,10 +208,13 @@ private struct ThumbnailStripScrollView: View {
             }
             .onChange(of: currentPhotoId) { _, newId in
                 guard let id = newId else { return }
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    proxy.scrollTo(id, anchor: .center)
-                }
+                    DispatchQueue.main.async {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            proxy.scrollTo(id, anchor: .center)
+                        }
+                    }
             }
+            .id("thumbnail-scroll")
         }
     }
 }
@@ -277,13 +280,48 @@ private struct ThumbnailCellView: View {
     }
 }
 
+#if DEBUG
+/// Standalone wrapper for live development — holds mutable @State so toggle/swipe gestures work
+/// in both the preview canvas and simulator.
+/// Flip `kDevBypassToManagePhotos` in fastblogApp.swift to launch straight here on app start.
+struct ManagePhotosDevWrapper: View {
+    @State private var photos: [RecapPhoto] = RecapPhoto.devMockPhotos
+
+    var body: some View {
+        ManagePhotosView(placeTitle: "Gyeongbokgung Palace", photos: $photos)
+    }
+}
+
+private extension RecapPhoto {
+    static var devMockPhotos: [RecapPhoto] {
+        // Each item uses a different gradient-palette seed via id.hashValue (see MockPhotoView).
+        // No localIdentifier → gradient placeholder, works offline and in canvas.
+        let score: (Double) -> PhotoScore = { t in
+            PhotoScore(aesthetics: t * 0.78, sharpness: t * 0.92, facePenalty: 0, totalScore: t)
+        }
+        return [
+            RecapPhoto(timestamp: Date(), imageName: "mountain.2.fill",   isIncluded: true,  qualityScore: score(0.92)),
+            RecapPhoto(timestamp: Date(), imageName: "sun.max.fill",       isIncluded: true,  qualityScore: score(0.85)),
+            RecapPhoto(timestamp: Date(), imageName: "camera.fill",        isIncluded: false, qualityScore: score(0.71)),
+            RecapPhoto(timestamp: Date(), imageName: "photo.fill",         isIncluded: true,  qualityScore: score(0.68)),
+            RecapPhoto(timestamp: Date(), imageName: "building.2.fill",    isIncluded: false, qualityScore: score(0.55)),
+            RecapPhoto(timestamp: Date(), imageName: "leaf.fill",          isIncluded: true,  qualityScore: score(0.48)),
+            RecapPhoto(timestamp: Date(), imageName: "cloud.fill",         isIncluded: false, qualityScore: score(0.35)),
+            RecapPhoto(timestamp: Date(), imageName: "mappin.circle.fill", isIncluded: false, qualityScore: nil),
+            RecapPhoto(timestamp: Date(), imageName: "star.fill",          isIncluded: false, qualityScore: nil),
+            RecapPhoto(timestamp: Date(), imageName: "star.fill",          isIncluded: false, qualityScore: nil),
+        ]
+    }
+}
+#endif
+
 #Preview {
+    #if DEBUG
+    ManagePhotosDevWrapper()
+    #else
     ManagePhotosView(
         placeTitle: "Gyeongbokgung Palace",
-        photos: .constant([
-            RecapPhoto(timestamp: Date(), imageName: "photo", isIncluded: true),
-            RecapPhoto(timestamp: Date(), imageName: "camera", isIncluded: false),
-            RecapPhoto(timestamp: Date(), imageName: "mountain.2", isIncluded: true)
-        ])
+        photos: .constant([])
     )
+    #endif
 }
