@@ -13,11 +13,15 @@ struct ManagePhotosView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var currentPhotoId: UUID?
+    /// Cached so the thumbnail strip doesn’t re-render when only selection changes.
+    @State private var cachedAiRanks: [UUID: Int] = [:]
 
-    private static let thumbnailSize: CGFloat = 56
+    private static let thumbnailSize: CGFloat = 60
     private static let thumbnailSpacing: CGFloat = 12
-    private static let stripHeight: CGFloat = 72
-    private static let bottomBarPadding: CGFloat = 20
+    private static let stripHeight: CGFloat = 88
+    private static let bottomBarPadding: CGFloat = 16
+    /// Extra bottom padding so the strip sits above home indicator and isn’t cut off.
+    private static let bottomBarBottomPadding: CGFloat = 28
 
     private var currentPhoto: RecapPhoto? {
         if let id = currentPhotoId, let p = photos.first(where: { $0.id == id }) { return p }
@@ -28,8 +32,8 @@ struct ManagePhotosView: View {
         photos.filter(\.isIncluded).count
     }
 
-    /// Top-rated rank (1–3) by quality score for badge.
-    private var aiRanks: [UUID: Int] { photos.aiRanksByPhotoId() }
+    /// Top-rated rank (1–3) by quality score for badge (cached to avoid strip re-renders).
+    private var aiRanks: [UUID: Int] { cachedAiRanks }
 
     private func shouldDimThumbnail(photoId: UUID) -> Bool {
         if photoId == currentPhotoId { return false }
@@ -46,6 +50,7 @@ struct ManagePhotosView: View {
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 bottomBar
+                    .padding(.bottom, 30)
             }
             .navigationTitle(placeTitle)
             .navigationBarTitleDisplayMode(.inline)
@@ -64,6 +69,10 @@ struct ManagePhotosView: View {
                 if currentPhotoId == nil {
                     currentPhotoId = photos.first?.id
                 }
+                cachedAiRanks = photos.aiRanksByPhotoId()
+            }
+            .onChange(of: photos.map(\.id)) { _, _ in
+                cachedAiRanks = photos.aiRanksByPhotoId()
             }
         }
     }
@@ -88,6 +97,8 @@ struct ManagePhotosView: View {
                             .foregroundStyle(.white)
                             .shadow(color: .black.opacity(0.4), radius: 6)
                             .transition(.scale.combined(with: .opacity))
+                            .frame(maxHeight: .infinity, alignment: .bottom) // Fills the space and sits at the bottom
+                            .padding(.bottom, 20)
                     }
                 }
                 .id(photo.id)
@@ -133,25 +144,63 @@ struct ManagePhotosView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, Self.bottomBarPadding)
-        .padding(.bottom, Self.bottomBarPadding)
+        .padding(.bottom, Self.bottomBarPadding + Self.bottomBarBottomPadding)
         .background(Color.black)
     }
 
     // MARK: - Thumbnail Strip
 
     private var thumbnailStrip: some View {
+        ThumbnailStripScrollView(
+            photos: photos,
+            currentPhotoId: currentPhotoId,
+            thumbnailSize: Self.thumbnailSize,
+            thumbnailSpacing: Self.thumbnailSpacing,
+            stripHeight: Self.stripHeight,
+            aiRanks: aiRanks,
+            shouldDim: shouldDimThumbnail,
+            onSelect: { id in
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    currentPhotoId = id
+                }
+            }
+        )
+    }
+}
+
+// MARK: - Thumbnail strip (separate view to avoid full re-render when only selection changes)
+
+private struct ThumbnailStripScrollView: View {
+    let photos: [RecapPhoto]
+    let currentPhotoId: UUID?
+    let thumbnailSize: CGFloat
+    let thumbnailSpacing: CGFloat
+    let stripHeight: CGFloat
+    let aiRanks: [UUID: Int]
+    let shouldDim: (UUID) -> Bool
+    let onSelect: (UUID) -> Void
+
+    var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: Self.thumbnailSpacing) {
+                HStack(spacing: thumbnailSpacing) {
                     ForEach(photos) { photo in
-                        managePhotoThumbnail(photo: photo)
-                            .id(photo.id)
+                        ThumbnailCellView(
+                            photo: photo,
+                            isCurrent: photo.id == currentPhotoId,
+                            isIncluded: photo.isIncluded,
+                            dim: shouldDim(photo.id),
+                            rank: aiRanks[photo.id],
+                            size: thumbnailSize,
+                            onTap: { onSelect(photo.id) }
+                        )
+                        .id(photo.id)
                     }
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 6)
             }
-            .frame(height: Self.stripHeight)
+            .frame(height: stripHeight)
             .onAppear {
                 if let id = currentPhotoId {
                     proxy.scrollTo(id, anchor: .center)
@@ -165,22 +214,24 @@ struct ManagePhotosView: View {
             }
         }
     }
+}
 
-    private func managePhotoThumbnail(photo: RecapPhoto) -> some View {
-        let isCurrent = photo.id == currentPhotoId
-        let isIncluded = photo.isIncluded
-        let dim = shouldDimThumbnail(photoId: photo.id)
-        let rank = aiRanks[photo.id]
+/// Single thumbnail cell; takes fixed props so only selection/dim changes trigger redraw.
+private struct ThumbnailCellView: View {
+    let photo: RecapPhoto
+    let isCurrent: Bool
+    let isIncluded: Bool
+    let dim: Bool
+    let rank: Int?
+    let size: CGFloat
+    let onTap: () -> Void
 
-        return Button {
-            withAnimation(.easeInOut(duration: 0.22)) {
-                currentPhotoId = photo.id
-            }
-        } label: {
+    var body: some View {
+        Button(action: onTap) {
             ZStack(alignment: .topLeading) {
                 RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false)
                     .aspectRatio(1, contentMode: .fill)
-                    .frame(width: Self.thumbnailSize, height: Self.thumbnailSize)
+                    .frame(width: size, height: size)
                     .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
@@ -220,7 +271,7 @@ struct ManagePhotosView: View {
                         lineWidth: isCurrent ? 3 : 2
                     )
             )
-            .frame(width: Self.thumbnailSize, height: Self.thumbnailSize)
+            .frame(width: size, height: size)
         }
         .buttonStyle(.plain)
     }
