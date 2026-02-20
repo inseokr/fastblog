@@ -114,6 +114,7 @@
 		BB0001E7 /* DraftReminderNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001E6 /* DraftReminderNotificationManager.swift */; };
 		BB0001E9 /* PlaceCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001E8 /* PlaceCardView.swift */; };
 		BB0001EC /* PhotoQualityScorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001EB /* PhotoQualityScorer.swift */; };
+		BB0001EE /* GoogleAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001ED /* GoogleAuthManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -224,6 +225,8 @@
 		BB0001E6 /* DraftReminderNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftReminderNotificationManager.swift; sourceTree = "<group>"; };
 		BB0001E8 /* PlaceCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceCardView.swift; sourceTree = "<group>"; };
 		BB0001EB /* PhotoQualityScorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoQualityScorer.swift; sourceTree = "<group>"; };
+		BB0001ED /* GoogleAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleAuthManager.swift; sourceTree = "<group>"; };
+		BB0001EF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA000003 /* fastblog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = fastblog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -252,6 +255,7 @@
 			children = (
 				BB000101 /* ContentView.swift */,
 				BB000103 /* fastblogApp.swift */,
+				BB0001EF /* Info.plist */,
 				BB0001B0 /* Models */,
 				BB0001B1 /* ViewModels */,
 				BB0001B2 /* Views */,
@@ -413,6 +417,7 @@
 				BB0001A7 /* TripPhotoFilterTests.swift */,
 				BB0001A9 /* TripPhotoSelectionService.swift */,
 				BB0001EB /* PhotoQualityScorer.swift */,
+				BB0001ED /* GoogleAuthManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -433,6 +438,9 @@
 			dependencies = (
 			);
 			name = fastblog;
+			packageProductDependencies = (
+				AA000061 /* GoogleSignIn */,
+			);
 			productName = fastblog;
 			productReference = AA000003 /* fastblog.app */;
 			productType = "com.apple.product-type.application";
@@ -456,6 +464,9 @@
 				Base,
 			);
 			mainGroup = BB0001AD;
+			packageReferences = (
+				AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+			);
 			productRefGroup = BB0001AF /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -587,6 +598,7 @@
 				BB0001E5 /* EntitlementManager.swift in Sources */,
 				BB0001E7 /* DraftReminderNotificationManager.swift in Sources */,
 				BB0001E9 /* PlaceCardView.swift in Sources */,
+				BB0001EE /* GoogleAuthManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -643,6 +655,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = fastblog/Info.plist;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "fastblog uses your location to identify your neighborhood and group travel photos.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "fastblog needs access to your photos to create trip blogs.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -668,6 +681,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = fastblog/Info.plist;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "fastblog uses your location to identify your neighborhood and group travel photos.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "fastblog needs access to your photos to create trip blogs.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -685,6 +699,25 @@
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AA000061 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCConfigurationList section */
 		AA000030 /* Build configuration list for PBXNativeTarget "fastblog" */ = {

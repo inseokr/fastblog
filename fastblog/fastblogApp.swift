@@ -21,16 +21,24 @@ struct fastblogApp: App {
 
     var body: some Scene {
         WindowGroup {
-#if DEBUG
-            if Self.kDevBypassToManagePhotos {
-                ManagePhotosDevWrapper()
-            } else {
-                normalAppRoot
-            }
-#else
-            normalAppRoot
-#endif
+            appContent
+                .onOpenURL { url in
+                    _ = GoogleAuthManager.handleURL(url)
+                }
         }
+    }
+
+    @ViewBuilder
+    private var appContent: some View {
+#if DEBUG
+        if Self.kDevBypassToManagePhotos {
+            ManagePhotosDevWrapper()
+        } else {
+            normalAppRoot
+        }
+#else
+        normalAppRoot
+#endif
     }
 
     @ViewBuilder
@@ -61,6 +69,7 @@ struct fastblogApp: App {
         }
         .onAppear {
             DraftReminderNotificationManager.requestPermissionIfNeeded()
+            GoogleAuthManager.shared.restorePreviousSignIn()
             // Refresh entitlements and enforce archive rules on app launch.
             Task {
                 await EntitlementManager.shared.refreshEntitlements()
