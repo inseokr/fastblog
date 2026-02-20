@@ -16,6 +16,12 @@ struct ManagePhotosView: View {
     /// Cached so the thumbnail strip doesn’t re-render when only selection changes.
     @State private var cachedAiRanks: [UUID: Int] = [:]
 
+    // Zoom state for main photo
+    @State private var zoomScale: CGFloat = 1.0
+    @State private var baseZoomScale: CGFloat = 1.0
+    @State private var zoomOffset: CGSize = .zero
+    @State private var lastZoomOffset: CGSize = .zero
+
     private static let thumbnailSize: CGFloat = 60
     private static let thumbnailSpacing: CGFloat = 12
     private static let stripHeight: CGFloat = 50
@@ -74,6 +80,14 @@ struct ManagePhotosView: View {
             .onChange(of: photos.map(\.id)) { _, _ in
                 cachedAiRanks = photos.aiRanksByPhotoId()
             }
+            .onChange(of: currentPhotoId) { _, _ in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    zoomScale = 1.0
+                    baseZoomScale = 1.0
+                    zoomOffset = .zero
+                    lastZoomOffset = .zero
+                }
+            }
         }
     }
 
@@ -91,6 +105,8 @@ struct ManagePhotosView: View {
                     )
                     .aspectRatio(contentMode: .fit)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .scaleEffect(zoomScale)
+                    .offset(zoomOffset)
 
                     if photo.isIncluded {
                         Image(systemName: "checkmark.circle.fill")
@@ -98,25 +114,65 @@ struct ManagePhotosView: View {
                             .foregroundStyle(.white)
                             .shadow(color: .black.opacity(0.4), radius: 6)
                             .transition(.scale.combined(with: .opacity))
-                            .frame(maxHeight: .infinity, alignment: .bottom) // Fills the space and sits at the bottom
+                            .frame(maxHeight: .infinity, alignment: .bottom)
                             .padding(.bottom, 20)
                     }
                 }
                 .contentShape(Rectangle())
-                .onTapGesture { toggleInclusion() }
+                .onTapGesture {
+                    if zoomScale > 1.01 {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            zoomScale = 1.0
+                            baseZoomScale = 1.0
+                            zoomOffset = .zero
+                            lastZoomOffset = .zero
+                        }
+                    } else {
+                        toggleInclusion()
+                    }
+                }
                 .gesture(
-                    DragGesture(minimumDistance: 40)
+                    DragGesture(minimumDistance: 10)
+                        .onChanged { value in
+                            guard zoomScale > 1.01 else { return }
+                            zoomOffset = CGSize(
+                                width: lastZoomOffset.width + value.translation.width,
+                                height: lastZoomOffset.height + value.translation.height
+                            )
+                        }
                         .onEnded { value in
-                            let idx = photos.firstIndex(where: { $0.id == currentPhotoId }) ?? 0
-                            let dx = value.translation.width
-                            if dx < -40, idx + 1 < photos.count {
-                                withAnimation(.easeInOut(duration: 0.22)) {
-                                    currentPhotoId = photos[idx + 1].id
+                            if zoomScale > 1.01 {
+                                lastZoomOffset = zoomOffset
+                            } else {
+                                let idx = photos.firstIndex(where: { $0.id == currentPhotoId }) ?? 0
+                                let dx = value.translation.width
+                                if dx < -40, idx + 1 < photos.count {
+                                    withAnimation(.easeInOut(duration: 0.22)) {
+                                        currentPhotoId = photos[idx + 1].id
+                                    }
+                                } else if dx > 40, idx > 0 {
+                                    withAnimation(.easeInOut(duration: 0.22)) {
+                                        currentPhotoId = photos[idx - 1].id
+                                    }
                                 }
-                            } else if dx > 40, idx > 0 {
-                                withAnimation(.easeInOut(duration: 0.22)) {
-                                    currentPhotoId = photos[idx - 1].id
+                            }
+                        }
+                )
+                .simultaneousGesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            zoomScale = max(1.0, baseZoomScale * value)
+                        }
+                        .onEnded { _ in
+                            if zoomScale < 1.1 {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    zoomScale = 1.0
+                                    baseZoomScale = 1.0
+                                    zoomOffset = .zero
+                                    lastZoomOffset = .zero
                                 }
+                            } else {
+                                baseZoomScale = zoomScale
                             }
                         }
                 )
