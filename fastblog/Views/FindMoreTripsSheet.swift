@@ -141,9 +141,6 @@ struct FindMoreTripsSheet: View {
                 viewModel.dismissFindMoreSheet()
             }
         }
-        .onChange(of: viewModel.findMoreYear) { _, _ in viewModel.loadFindMoreCities() }
-        .onChange(of: viewModel.findMoreStartMonth) { _, _ in viewModel.loadFindMoreCities() }
-        .onChange(of: viewModel.findMoreEndMonth) { _, _ in viewModel.loadFindMoreCities() }
     }
     
     private func submit() {

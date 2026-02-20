@@ -380,15 +380,18 @@ final class CreatedRecapBlogStore: ObservableObject {
         if pendingRecapCreated { pendingRecapCreated = false }
     }
 
-    /// Build RecapBlogDetail from a TripDraft (selected photos only, clustered into place stops). Use when no saved detail exists.
+    /// Build RecapBlogDetail from a TripDraft, clustered into place stops. Use when no saved detail exists.
+    /// All photos in a day are clustered together; isIncluded reflects the user's original selection.
+    /// This lets ManagePhotos show the full pool of photos for each stop so the user can add/remove freely.
     func buildBlogDetail(from trip: TripDraft) -> RecapBlogDetail {
         let calendar = Calendar.current
         var days: [RecapBlogDay] = []
         for day in trip.days {
-            let selectedPhotos = day.photos.filter(\.isSelected)
-            guard !selectedPhotos.isEmpty else { continue }
+            // Skip days where the user selected nothing.
+            guard day.photos.contains(where: \.isSelected) else { continue }
 
-            let clusterInputs: [ClusterPhotoInput] = selectedPhotos.map { photo in
+            // Cluster ALL photos (selected + unselected) by time/location.
+            let clusterInputs: [ClusterPhotoInput] = day.photos.map { photo in
                 ClusterPhotoInput(id: photo.id, timestamp: photo.timestamp, location: photo.location)
             }
 
@@ -396,19 +399,22 @@ final class CreatedRecapBlogStore: ObservableObject {
                 "Stop \(index + 1)"
             }
 
-            let placeStops: [PlaceStop] = stopGroups.map { orderIndex, inputs in
+            // Build stops; isIncluded mirrors the user's photo selection.
+            // Stops where no photo was selected are hidden from the blog by default.
+            let placeStops: [PlaceStop] = stopGroups.compactMap { orderIndex, inputs -> PlaceStop? in
                 let photos: [RecapPhoto] = inputs.map { input in
-                    let photo = selectedPhotos.first { $0.id == input.id }!
+                    let photo = day.photos.first { $0.id == input.id }!
                     return RecapPhoto(
                         id: photo.id,
                         timestamp: photo.timestamp,
                         location: photo.location,
                         imageName: photo.imageName,
-                        isIncluded: true,
+                        isIncluded: photo.isSelected,
                         localIdentifier: photo.localIdentifier,
                         caption: nil
                     )
                 }
+                guard photos.contains(where: \.isIncluded) else { return nil }
                 let repLoc = inputs.compactMap(\.location).first
                 return PlaceStop(
                     orderIndex: orderIndex,
@@ -420,12 +426,13 @@ final class CreatedRecapBlogStore: ObservableObject {
                 )
             }
 
-            let dayDate = selectedPhotos.map(\.timestamp).min().map { calendar.startOfDay(for: $0) } ?? Date()
+            guard !placeStops.isEmpty else { continue }
+            let dayDate = day.photos.filter(\.isSelected).map(\.timestamp).min().map { calendar.startOfDay(for: $0) } ?? Date()
             days.append(RecapBlogDay(dayIndex: day.dayIndex, date: dayDate, placeStops: placeStops))
         }
 
-        // Default cover: trip's cover asset or first photo's localIdentifier (used in blog 1x1 preview).
-        let firstPhotoId = days.flatMap(\.placeStops).flatMap(\.photos).compactMap(\.localIdentifier).first
+        // Default cover: trip's cover asset or first included photo's localIdentifier.
+        let firstPhotoId = days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).compactMap(\.localIdentifier).first
         let coverId = trip.coverAssetIdentifier ?? firstPhotoId
         return RecapBlogDetail(id: trip.id, title: trip.title, days: days, coverTheme: trip.coverTheme, selectedCoverPhotoIdentifier: coverId)
     }
@@ -473,7 +480,53 @@ final class CreatedRecapBlogStore: ObservableObject {
         if !primaryCountry.isEmpty && primaryCountry != "Unknown" {
             detail.countryName = primaryCountry
         }
+
+        // Score photos with iOS Vision AI and auto-select best per place stop.
+        detail = await applyPhotoQualitySelection(to: detail)
+
         return detail
+    }
+
+    /// Scores every photo in the blog detail using Vision AI, then auto-selects the best ones
+    /// per place stop based on count rules:
+    ///   - >5 photos  → include top 3
+    ///   - 3–5 photos → include top 2
+    ///   - 1–2 photos → include all
+    private func applyPhotoQualitySelection(to detail: RecapBlogDetail) async -> RecapBlogDetail {
+        var updated = detail
+        let scorer = PhotoQualityScorer.shared
+
+        for dayIdx in updated.days.indices {
+            for stopIdx in updated.days[dayIdx].placeStops.indices {
+                let photos = updated.days[dayIdx].placeStops[stopIdx].photos
+                let identifiers = photos.compactMap(\.localIdentifier)
+                guard !identifiers.isEmpty else { continue }
+
+                // Score all photos in this stop via Vision AI
+                let scores = await scorer.scorePhotos(identifiers: identifiers)
+                guard !scores.isEmpty else { continue }
+
+                // Attach scores to photos
+                for photoIdx in updated.days[dayIdx].placeStops[stopIdx].photos.indices {
+                    let photo = updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
+                    if let id = photo.localIdentifier, let score = scores[id] {
+                        updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].qualityScore = score
+                    }
+                }
+
+                // Auto-select best photos based on count rules
+                let scoredPhotos = updated.days[dayIdx].placeStops[stopIdx].photos
+                let topIds = scoredPhotos.autoSelectedIds()
+                if !topIds.isEmpty {
+                    for photoIdx in updated.days[dayIdx].placeStops[stopIdx].photos.indices {
+                        let photo = updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
+                        updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = topIds.contains(photo.id)
+                    }
+                }
+            }
+        }
+
+        return updated
     }
 
     private func primaryFromCandidates(_ candidates: [(country: String, order: Int)]) -> String {

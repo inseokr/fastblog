@@ -105,6 +105,7 @@ final class GeocodingService {
 
     private var geocodeCallCount = 0
     private var cacheHitCount = 0
+    private var newEntryCount = 0
 
     private init() {
         loadPersistedCache()
@@ -129,7 +130,8 @@ final class GeocodingService {
         }
         let place = await performGeocode(location: location)
         memoryCache[key] = place
-        persistCache()
+        newEntryCount += 1
+        if newEntryCount % 10 == 0 { persistCache() }
         return place
     }
 
@@ -159,6 +161,13 @@ final class GeocodingService {
         let isoCountryCode = pm.isoCountryCode ?? ""
         let bestPlaceLabel = bestPlaceLabel(from: pm)
         return GeocodedPlace(title: title, subtitle: subtitle, areaName: areaName, cityName: cityName, countryName: countryName, isoCountryCode: isoCountryCode, bestPlaceLabel: bestPlaceLabel)
+    }
+
+    /// Flush any pending cache entries to disk. Call once after a bulk geocoding pass (e.g. end of scan).
+    func flushCache() {
+        guard newEntryCount > 0 else { return }
+        persistCache()
+        newEntryCount = 0
     }
 
     private func persistCache() {

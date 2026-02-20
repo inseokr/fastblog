@@ -252,7 +252,6 @@ final class TripsViewModel: ObservableObject {
         findMoreStartMonth = max(1, currentMonth - 1)
         findMoreEndMonth = currentMonth
         showFindMoreSheet = true
-        loadFindMoreCities()
     }
 
     /// Loads cities visited in the selected year/month range (for "Cities Visited" section). Call when sheet opens or when year/start/end month changes.
@@ -313,6 +312,7 @@ final class TripsViewModel: ObservableObject {
                 findMoreScanResult = .success(deduped.count)
                 showSelectPhotosIntroAfterScan = true
             }
+            loadFindMoreCities()
             isFindMoreScanning = false
         }
     }

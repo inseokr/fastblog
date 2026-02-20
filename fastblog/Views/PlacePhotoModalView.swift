@@ -489,6 +489,9 @@ struct PlacePhotoThumbnailStrip: View {
     let currentPhotoId: UUID
     var onSelectPhoto: (UUID) -> Void
 
+    /// AI rank badges (1–3) computed from quality scores.
+    private var aiRanks: [UUID: Int] { photos.aiRanksByPhotoId() }
+
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
@@ -496,14 +499,32 @@ struct PlacePhotoThumbnailStrip: View {
                     Button {
                         onSelectPhoto(photo.id)
                     } label: {
-                        RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 300, height: 300))
-                            .frame(width: 56, height: 56)
-                            .clipped()
-                            .cornerRadius(8)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(photo.id == currentPhotoId ? Color.white : Color.white.opacity(0.35), lineWidth: photo.id == currentPhotoId ? 2 : 1)
-                            )
+                        ZStack(alignment: .topLeading) {
+                            RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 300, height: 300))
+                                .frame(width: 56, height: 56)
+                                .clipped()
+                                .cornerRadius(8)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(photo.id == currentPhotoId ? Color.white : Color.white.opacity(0.35), lineWidth: photo.id == currentPhotoId ? 2 : 1)
+                                )
+                            // AI rank badge on thumbnails
+                            if let rank = aiRanks[photo.id] {
+                                HStack(spacing: 1) {
+                                    Image(systemName: "star.fill")
+                                        .font(.system(size: 6, weight: .bold))
+                                        .foregroundColor(Color(red: 1.0, green: 0.84, blue: 0.0))
+                                    Text("\(rank)")
+                                        .font(.system(size: 7, weight: .heavy))
+                                        .foregroundColor(Color(red: 1.0, green: 0.84, blue: 0.0))
+                                }
+                                .padding(.horizontal, 3)
+                                .padding(.vertical, 2)
+                                .background(Color.black.opacity(0.72))
+                                .cornerRadius(3)
+                                .padding(3)
+                            }
+                        }
                     }
                     .buttonStyle(.plain)
                 }

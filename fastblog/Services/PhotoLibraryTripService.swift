@@ -146,6 +146,7 @@ final class PhotoLibraryTripService {
 
         debugPrint("[Scan] Building day clusters (geocoding unique locations)...")
         let dayClusters = await buildDayClusters(from: sortedDayGroups)
+        await GeocodingService.shared.flushCache()
         debugPrint("[Scan] Day clusters built: \(dayClusters.count). Starting trip grouping...")
         let debugLogging = TripClusteringDebug.isEnabled
         let groupingResult = DayToTripGrouper.groupDaysIntoTrips(
@@ -699,6 +700,13 @@ final class PhotoLibraryTripService {
     private func buildDayClusters(from dayGroups: [(date: Date, assets: [PHAsset])]) async -> [DayCluster] {
         var clusters: [DayCluster] = []
         let total = dayGroups.count
+
+        // Pre-resolve all unique locations across the entire scan window in one pass.
+        // Each unique ~111m grid cell is geocoded at most once, regardless of how many days it appears in.
+        debugPrint("[Scan] Pre-resolving unique locations across \(total) day groups...")
+        let globalLocationMap = await resolveLocationNames(for: dayGroups.flatMap { $0.assets })
+        debugPrint("[Scan] Pre-resolved \(globalLocationMap.count) unique location cells.")
+
         for (idx, group) in dayGroups.enumerated() {
             let assetsWithLocation = group.assets.filter { $0.location != nil }
             guard !assetsWithLocation.isEmpty else { continue }
@@ -706,7 +714,6 @@ final class PhotoLibraryTripService {
             if (idx + 1) % 5 == 0 || idx == 0 {
                 debugPrint("[Scan] buildDayClusters: day \(idx + 1)/\(total) (\(assetsWithLocation.count) photos with location)")
             }
-            let locationNames = await resolveLocationNames(for: group.assets)
             var latSum = 0.0, lonSum = 0.0
             var countryCodeCounts: [String: Int] = [:]
             var countryCodeToName: [String: String] = [:]
@@ -715,7 +722,7 @@ final class PhotoLibraryTripService {
             for asset in assetsWithLocation {
                 guard let loc = asset.location else { continue }
                 let key = locationCacheKey(for: loc)
-                let place = locationNames[key]
+                let place = globalLocationMap[key]
                 let code = place?.isoCountryCode.isEmpty == false ? place!.isoCountryCode : (place?.countryName ?? "?")
                 countryCodeCounts[code, default: 0] += 1
                 if let name = place?.countryName { countryCodeToName[code] = name }

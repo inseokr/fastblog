@@ -14,6 +14,11 @@ struct ManagePhotosView: View {
 
     @State private var currentPhotoId: UUID?
 
+    private static let thumbnailSize: CGFloat = 56
+    private static let thumbnailSpacing: CGFloat = 12
+    private static let stripHeight: CGFloat = 72
+    private static let bottomBarPadding: CGFloat = 20
+
     private var currentPhoto: RecapPhoto? {
         if let id = currentPhotoId, let p = photos.first(where: { $0.id == id }) { return p }
         return photos.first
@@ -22,6 +27,9 @@ struct ManagePhotosView: View {
     private var includedCount: Int {
         photos.filter(\.isIncluded).count
     }
+
+    /// Top-rated rank (1–3) by quality score for badge.
+    private var aiRanks: [UUID: Int] { photos.aiRanksByPhotoId() }
 
     private func shouldDimThumbnail(photoId: UUID) -> Bool {
         if photoId == currentPhotoId { return false }
@@ -33,20 +41,11 @@ struct ManagePhotosView: View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
-
-                VStack(spacing: 0) {
-                    mainPhotoArea
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    VStack(spacing: 12) {
-                        Text("\(includedCount) of \(photos.count) selected")
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.8))
-                        thumbnailStrip
-                    }
-                    .padding(.vertical, 12)
-                    .background(Color.black)
-                }
+                mainPhotoArea
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                bottomBar
             }
             .navigationTitle(placeTitle)
             .navigationBarTitleDisplayMode(.inline)
@@ -57,6 +56,11 @@ struct ManagePhotosView: View {
             }
             .preferredColorScheme(.dark)
             .onAppear {
+                // Reorder by quality score: best first (so bottom strip shows best at left)
+                let sorted = photos.sorted { ($0.qualityScore?.totalScore ?? 0) > ($1.qualityScore?.totalScore ?? 0) }
+                if sorted.map(\.id) != photos.map(\.id) {
+                    photos = sorted
+                }
                 if currentPhotoId == nil {
                     currentPhotoId = photos.first?.id
                 }
@@ -118,20 +122,36 @@ struct ManagePhotosView: View {
         }
     }
 
+    // MARK: - Bottom Bar (fixed; does not move when swiping main photo)
+
+    private var bottomBar: some View {
+        VStack(spacing: 10) {
+            Text("\(includedCount) of \(photos.count) selected")
+                .font(.subheadline)
+                .foregroundColor(.white.opacity(0.8))
+            thumbnailStrip
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, Self.bottomBarPadding)
+        .padding(.bottom, Self.bottomBarPadding)
+        .background(Color.black)
+    }
+
     // MARK: - Thumbnail Strip
 
     private var thumbnailStrip: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 8) {
+                HStack(spacing: Self.thumbnailSpacing) {
                     ForEach(photos) { photo in
                         managePhotoThumbnail(photo: photo)
                             .id(photo.id)
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 6)
             }
-            .frame(height: 72)
+            .frame(height: Self.stripHeight)
             .onAppear {
                 if let id = currentPhotoId {
                     proxy.scrollTo(id, anchor: .center)
@@ -148,33 +168,59 @@ struct ManagePhotosView: View {
 
     private func managePhotoThumbnail(photo: RecapPhoto) -> some View {
         let isCurrent = photo.id == currentPhotoId
+        let isIncluded = photo.isIncluded
         let dim = shouldDimThumbnail(photoId: photo.id)
+        let rank = aiRanks[photo.id]
 
         return Button {
             withAnimation(.easeInOut(duration: 0.22)) {
                 currentPhotoId = photo.id
             }
         } label: {
-            ZStack(alignment: .topTrailing) {
+            ZStack(alignment: .topLeading) {
                 RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false)
-                    .frame(width: 56, height: 56)
-                if photo.isIncluded {
+                    .aspectRatio(1, contentMode: .fill)
+                    .frame(width: Self.thumbnailSize, height: Self.thumbnailSize)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                if let rank = rank {
+                    HStack(spacing: 2) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 8, weight: .bold))
+                        Text("\(rank)")
+                            .font(.system(size: 9, weight: .heavy))
+                    }
+                    .foregroundColor(Color(red: 1.0, green: 0.84, blue: 0.0))
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Color.black.opacity(0.72))
+                    .cornerRadius(4)
+                    .padding(4)
+                }
+
+                if isIncluded {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 14))
-                        .foregroundColor(.white)
-                        .background(Circle().fill(.black.opacity(0.5)))
-                        .padding(4)
+                        .font(.system(size: 16))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.5), radius: 2)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .padding(6)
                 }
                 if dim {
-                    Color.black.opacity(0.2)
+                    Color.black.opacity(0.35)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .allowsHitTesting(false)
                 }
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(isCurrent ? Color.white : Color.clear, lineWidth: 3)
+                    .strokeBorder(
+                        isCurrent ? Color.white : (isIncluded ? Color.green.opacity(0.9) : Color.clear),
+                        lineWidth: isCurrent ? 3 : 2
+                    )
             )
+            .frame(width: Self.thumbnailSize, height: Self.thumbnailSize)
         }
         .buttonStyle(.plain)
     }

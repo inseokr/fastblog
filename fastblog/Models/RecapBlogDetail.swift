@@ -112,8 +112,10 @@ struct RecapPhoto: Identifiable, Equatable, Codable {
     var localIdentifier: String?
     /// Caption per photo; persisted with blog detail when user taps Save.
     var caption: String?
+    /// AI quality score from PhotoQualityScorer. Nil until scored after blog creation.
+    var qualityScore: PhotoScore?
 
-    init(id: UUID = UUID(), timestamp: Date, location: PhotoCoordinate? = nil, imageName: String, isIncluded: Bool = true, localIdentifier: String? = nil, caption: String? = nil) {
+    init(id: UUID = UUID(), timestamp: Date, location: PhotoCoordinate? = nil, imageName: String, isIncluded: Bool = true, localIdentifier: String? = nil, caption: String? = nil, qualityScore: PhotoScore? = nil) {
         self.id = id
         self.timestamp = timestamp
         self.location = location
@@ -121,5 +123,6 @@ struct RecapPhoto: Identifiable, Equatable, Codable {
         self.isIncluded = isIncluded
         self.localIdentifier = localIdentifier
         self.caption = caption
+        self.qualityScore = qualityScore
     }
 }
