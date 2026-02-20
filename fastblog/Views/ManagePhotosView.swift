@@ -113,9 +113,9 @@ struct ManagePhotosView: View {
                             .font(.system(size: 72))
                             .foregroundStyle(.white)
                             .shadow(color: .black.opacity(0.4), radius: 6)
-                            .transition(.scale.combined(with: .opacity))
                             .frame(maxHeight: .infinity, alignment: .bottom)
                             .padding(.bottom, 20)
+                            .transaction { $0.animation = nil }
                     }
                 }
                 .contentShape(Rectangle())
