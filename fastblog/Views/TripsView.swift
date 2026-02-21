@@ -107,6 +107,8 @@ struct TripsView: View {
     private static let scrollAtTopTolerance: CGFloat = 1
     /// Collapsed snap = this fraction of screen height (map revealed).
     private static let collapsedFraction: CGFloat = 0.85
+    /// Height of the grabber handle zone (top of sheet). Drags starting here always control the sheet, not the inner scroll.
+    private static let grabberZoneHeight: CGFloat = 60
 
     private struct ScrollContentMinYKey: PreferenceKey {
         static var defaultValue: CGFloat = 0
@@ -280,9 +282,11 @@ struct TripsView: View {
                 .onChanged { value in
                     // Latching logic: decide intent at the start of the gesture
                     if isSheetGestureValid == nil {
-                        let atTop = scrollContentMinY >= -Self.scrollAtTopTolerance
-                        // Valid if already pulled down OR at the top of the list
-                        isSheetGestureValid = (sheetOffset > 0) || atTop
+                        // Grabber zone: top portion of sheet always controls sheet drag (not inner scroll)
+                        let inGrabberZone = value.startLocation.y < Self.grabberZoneHeight
+                        let isDraggingDown = value.translation.height > 0
+                        // Valid if: already pulled down (scroll is locked), or dragging down from grabber zone
+                        isSheetGestureValid = (sheetOffset > 0) || (inGrabberZone && isDraggingDown)
                     }
                     
                     guard isSheetGestureValid == true else { return }
