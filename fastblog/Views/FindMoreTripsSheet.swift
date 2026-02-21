@@ -64,13 +64,9 @@ struct FindMoreTripsSheet: View {
                 titleSection
                 yearSection
                 monthRangeSection
-                citiesVisitedSection
                 emptyResultSection
             }
         }
-        .onChange(of: viewModel.findMoreYear) { _, _ in viewModel.loadFindMoreCities() }
-        .onChange(of: viewModel.findMoreStartMonth) { _, _ in viewModel.loadFindMoreCities() }
-        .onChange(of: viewModel.findMoreEndMonth) { _, _ in viewModel.loadFindMoreCities() }
     }
 
     private var titleSection: some View {
@@ -102,41 +98,6 @@ struct FindMoreTripsSheet: View {
             .background(Color.white.opacity(0.12))
             .cornerRadius(12)
         }
-    }
-
-    /// Cities visited in the selected year and month range. Updates when year or month range changes.
-    private var citiesVisitedSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Cities Visited")
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundColor(.white)
-
-            if viewModel.findMoreCitiesLoading {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    Text("Loading cities…")
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.8))
-                }
-                .padding(.vertical, 12)
-            } else if viewModel.findMoreCities.isEmpty {
-                Text("No photos with location in this range, or set your neighborhood in Settings to filter local photos.")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.vertical, 8)
-            } else {
-                Text(viewModel.findMoreCities.joined(separator: ", "))
-                    .font(.subheadline)
-                    .foregroundColor(.white)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.08))
-        .cornerRadius(12)
     }
 
     private var monthRangeSection: some View {

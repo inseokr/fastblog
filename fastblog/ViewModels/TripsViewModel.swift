@@ -34,9 +34,6 @@ final class TripsViewModel: ObservableObject {
     @Published var findMoreYear: Int = Calendar.current.component(.year, from: Date())
     @Published var findMoreStartMonth: Int = 1
     @Published var findMoreEndMonth: Int = 12
-    /// Cities visited in the selected year/month range (for "Cities Visited" section). Loaded when sheet opens or range changes.
-    @Published var findMoreCities: [String] = []
-    @Published var findMoreCitiesLoading: Bool = false
 
     private let photoLibraryService = PhotoLibraryTripService.shared
     private let mockService = MockTripDataService.shared
@@ -186,22 +183,6 @@ final class TripsViewModel: ObservableObject {
         findMoreStartMonth = cal.component(.month, from: now)
         findMoreEndMonth = cal.component(.month, from: now)
         showFindMoreSheet = true
-        loadFindMoreCities()
-    }
-
-    /// Loads cities visited in the selected year/month range (for "Cities Visited" section). Call when sheet opens or when year/start/end month changes.
-    func loadFindMoreCities() {
-        findMoreCitiesLoading = true
-        findMoreCities = []
-        let year = findMoreYear
-        let startMonth = min(findMoreStartMonth, findMoreEndMonth)
-        let endMonth = max(findMoreStartMonth, findMoreEndMonth)
-        let occupiedRanges = createdRecapStore.occupiedDateRanges()
-        Task {
-            let cities = await photoLibraryService.fetchCityNamesInRange(year: year, startMonth: startMonth, endMonth: endMonth, occupiedDateRanges: occupiedRanges)
-            findMoreCities = cities
-            findMoreCitiesLoading = false
-        }
     }
 
     /// Scan for trips in the selected year/month range using the photo library. Dedupes against existing list. Updates tripDrafts and findMoreScanResult. Dismisses sheet on success.
