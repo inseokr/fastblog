@@ -607,15 +607,21 @@ struct RecapBlogPageView: View {
     @ViewBuilder
     private func placePhotoModalSheet(item: PlacePhotoModalItem) -> some View {
         Group {
-            if let stop = placeStop(dayId: item.dayId, stopId: item.stopId), !stop.photos.isEmpty {
-                PlacePhotoModalView(
-                    placeTitle: bindingForPlaceTitle(stopId: item.stopId),
-                    placeSubtitle: stop.placeSubtitle,
-                    photos: stop.photos,
-                    initialPhotoId: stop.photos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : stop.photos[0].id,
-                    photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
-                    onDismiss: { placePhotoModalItem = nil }
-                )
+            if let stop = placeStop(dayId: item.dayId, stopId: item.stopId) {
+                let includedPhotos = stop.photos.filter(\.isIncluded)
+                if !includedPhotos.isEmpty {
+                    PlacePhotoModalView(
+                        placeTitle: bindingForPlaceTitle(stopId: item.stopId),
+                        placeSubtitle: stop.placeSubtitle,
+                        photos: includedPhotos,
+                        initialPhotoId: includedPhotos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : includedPhotos[0].id,
+                        photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
+                        onDismiss: { placePhotoModalItem = nil }
+                    )
+                } else {
+                    Color.white
+                        .onAppear { placePhotoModalItem = nil }
+                }
             } else {
                 Color.white
                     .onAppear { placePhotoModalItem = nil }

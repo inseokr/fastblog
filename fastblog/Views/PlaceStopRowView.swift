@@ -150,10 +150,11 @@ struct PlaceStopRowView: View {
             }
 
             // Photo strip: large thumbnails; one full photo visible + peek of next so users know they can scroll
-            if !stop.photos.isEmpty {
+            let includedPhotos = stop.photos.filter(\.isIncluded)
+            if !includedPhotos.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 10) {
-                        ForEach(stop.photos) { photo in
+                        ForEach(includedPhotos) { photo in
                             VStack(alignment: .leading, spacing: 6) {
                                 ZStack(alignment: .topTrailing) {
                                     RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 480, height: 480))
@@ -200,7 +201,7 @@ struct PlaceStopRowView: View {
                                 .frame(width: thumbnailSize)
                             }
                             // Manage Photos card at end of scroll
-                            if isEditMode && stop.photos.count > 1 {
+                            if isEditMode && includedPhotos.count > 1 {
                                 Button(action: onManagePhotos) {
                                     RoundedRectangle(cornerRadius: 8)
                                         .strokeBorder(Color.white.opacity(0.6), lineWidth: 1.5)
