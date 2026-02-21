@@ -21,6 +21,8 @@ struct MapDayView: View {
     var onTap: (() -> Void)?
     /// When set, map region centers on this place's coordinate (e.g. for full-screen card sync).
     var focusedPlaceId: UUID? = nil
+    
+    @State private var cameraPosition: MapCameraPosition = .automatic
 
     init(placeStops: [PlaceStop], height: CGFloat = 220, onTap: (() -> Void)? = nil, focusedPlaceId: UUID? = nil) {
         self.placeStops = placeStops
@@ -30,7 +32,7 @@ struct MapDayView: View {
     }
 
     var body: some View {
-        Map(position: .constant(.region(region))) {
+        Map(position: $cameraPosition) {
             if routeCoordinates.count >= 2 {
                 MapPolyline(coordinates: routeCoordinates)
                     .stroke(Color(red: 0, green: 122/255, blue: 1), lineWidth: 4)
@@ -49,13 +51,46 @@ struct MapDayView: View {
                     )
                 }
             }
+            
+            // Mileage markers between points
+            ForEach(0..<markers.count - 1, id: \.self) { i in
+                let start = markers[i]
+                let end = markers[i+1]
+                if let dist = distanceString(from: start.coordinate, to: end.coordinate) {
+                    Annotation("", coordinate: midPoint(from: start.coordinate, to: end.coordinate)) {
+                        Text(dist)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.black.opacity(0.6)))
+                            .shadow(radius: 1)
+                    }
+                }
+            }
         }
-        .frame(height: height == .infinity ? nil : height)
-        .frame(maxWidth: height == .infinity ? .infinity : nil, maxHeight: height == .infinity ? .infinity : nil)
+        .frame(height: height)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .contentShape(Rectangle())
         .onTapGesture {
             onTap?()
+        }
+        .onAppear {
+            updateCameraPosition(animated: false)
+        }
+        .onChange(of: focusedPlaceId) { _, _ in
+            updateCameraPosition(animated: true)
+        }
+    }
+
+    private func updateCameraPosition(animated: Bool) {
+        let newPosition = MapCameraPosition.region(region)
+        if animated {
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+                cameraPosition = newPosition
+            }
+        } else {
+            cameraPosition = newPosition
         }
     }
 
@@ -85,12 +120,24 @@ struct MapDayView: View {
                 span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)
             )
         }
+        
+        // If a specific place is focused, center on it.
         if let focusId = focusedPlaceId, let marker = markers.first(where: { $0.id == focusId }) {
             return MKCoordinateRegion(
                 center: marker.coordinate,
                 span: MKCoordinateSpan(latitudeDelta: 0.0035, longitudeDelta: 0.0035)
             )
         }
+        
+        // Otherwise, center on the "Start" (first place) of the day.
+        if let startMarker = markers.first {
+            return MKCoordinateRegion(
+                center: startMarker.coordinate,
+                span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+            )
+        }
+        
+        // Fallback
         let lats = coords.map(\.latitude)
         let lons = coords.map(\.longitude)
         let minLat = lats.min()!
@@ -107,6 +154,22 @@ struct MapDayView: View {
             longitude: (minLon + maxLon) / 2
         )
         return MKCoordinateRegion(center: center, span: span)
+    }
+
+    private func distanceString(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D) -> String? {
+         let loc1 = CLLocation(latitude: from.latitude, longitude: from.longitude)
+         let loc2 = CLLocation(latitude: to.latitude, longitude: to.longitude)
+         let distanceInMeters = loc2.distance(from: loc1)
+         let distanceInMiles = distanceInMeters / 1609.34
+         if distanceInMiles < 0.1 { return nil }
+         return String(format: "%.1f mi", distanceInMiles)
+    }
+
+    private func midPoint(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D) -> CLLocationCoordinate2D {
+        CLLocationCoordinate2D(
+            latitude: (from.latitude + to.latitude) / 2,
+            longitude: (from.longitude + to.longitude) / 2
+        )
     }
 }
 
@@ -165,8 +228,12 @@ private struct PlaceMarkerView: View {
                 .foregroundColor(.white)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
-                .shadow(color: .black.opacity(0.6), radius: 1)
-                .frame(maxWidth: 76)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(.ultraThinMaterial)
+                .background(Color.black.opacity(0.75))
+                .cornerRadius(6)
+                .frame(maxWidth: 90)
 
             Text(orderLabel)
                 .font(.system(size: 9, weight: .semibold))
@@ -222,42 +289,178 @@ struct FullScreenMapView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            MapDayView(
-                placeStops: day.placeStops,
-                height: .infinity,
-                onTap: nil,
-                focusedPlaceId: focusedPlaceId
-            )
-            .ignoresSafeArea()
+        GeometryReader { geo in
+            ZStack(alignment: .topTrailing) {
+                MapDayView(
+                    placeStops: day.placeStops,
+                    height: geo.size.height,
+                    onTap: nil,
+                    focusedPlaceId: focusedPlaceId
+                )
+                .ignoresSafeArea(edges: .all)
 
-            // Dismiss Button (Top Leading)
-            Button(action: onDismiss) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 32))
-                    .foregroundColor(.white)
-                    .shadow(radius: 4)
-                    .padding(12) // Larger hit area
-                    .background(.ultraThinMaterial)
-                    .clipShape(Circle())
-            }
-            .padding(.top, 44)
-            .padding(.leading, 16)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .buttonStyle(.plain)
+                Button(action: onDismiss) {
+                    Text("Done")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .background(Color.blue)
+                        .clipShape(Capsule())
+                }
+                .padding(.top, 56)
+                .padding(.trailing, 20)
 
-            if !day.placeStops.isEmpty {
-                PlaceCardCarousel(stops: day.placeStops, selectedIndex: $selectedPlaceIndex)
-                    .padding(.bottom, 34) // Safe area padding
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                if !day.placeStops.isEmpty {
+                    VStack {
+                        Spacer()
+                        placeCardsStrip(in: geo)
+                            .padding(.bottom, geo.safeAreaInsets.bottom + 12)
+                    }
+                }
             }
         }
         .background(Color.black)
-        .ignoresSafeArea()
+        .ignoresSafeArea(edges: .all)
         .preferredColorScheme(.dark)
     }
 
+    @State private var scrolledPlaceID: UUID?
+
+    private func placeCardsStrip(in geo: GeometryProxy) -> some View {
+        let cardWidth = min(geo.size.width * 0.80, 340)
+        let cardHeight: CGFloat = 130
+
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 16) {
+                ForEach(Array(day.placeStops.enumerated()), id: \.element.id) { index, stop in
+                    PlaceMapCardView(stop: stop, stopNumber: index + 1, isSelected: selectedPlaceIndex == index)
+                        .frame(width: cardWidth, height: cardHeight)
+                        .id(stop.id)
+                        .scaleEffect(selectedPlaceIndex == index ? 1.02 : 0.95)
+                        .opacity(selectedPlaceIndex == index ? 1.0 : 0.6)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: selectedPlaceIndex)
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .safeAreaPadding(.horizontal, (geo.size.width - cardWidth) / 2)
+        .scrollTargetBehavior(.viewAligned)
+        .scrollPosition(id: $scrolledPlaceID)
+        .onChange(of: scrolledPlaceID) { _, newID in
+            // Card snapped — update index and recenter map
+            if let newID,
+               let newIndex = day.placeStops.firstIndex(where: { $0.id == newID }),
+               newIndex != selectedPlaceIndex {
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+                    selectedPlaceIndex = newIndex
+                }
+            }
+        }
+        .onChange(of: selectedPlaceIndex) { _, newIndex in
+            // Annotation/button tap drives scroll position
+            if let id = day.placeStops[safe: newIndex]?.id, scrolledPlaceID != id {
+                scrolledPlaceID = id
+            }
+        }
+        .onAppear {
+            // Seed initial scroll position to first card
+            scrolledPlaceID = day.placeStops.first?.id
+        }
+        .frame(height: cardHeight + 20)
+    }
 }
+
+/// Single place card for full-screen map bottom strip: number + title, description, photo on right; blue border when selected.
+    /// Single place card for full-screen map bottom strip: Premium layout with image left, badge, and text right.
+    private struct PlaceMapCardView: View {
+        let stop: PlaceStop
+        let stopNumber: Int
+        let isSelected: Bool
+
+        var body: some View {
+            HStack(spacing: 16) {
+                // Left: Photo + Badge
+                ZStack(alignment: .topLeading) {
+                    if let photo = stop.photos.first {
+                        RecapPhotoThumbnail(photo: photo, cornerRadius: 12, showIcon: false, targetSize: CGSize(width: 200, height: 200))
+                            .frame(width: 96, height: 96)
+                            .clipped()
+                            .cornerRadius(12)
+                            .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+                    } else {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.white.opacity(0.1))
+                            .frame(width: 96, height: 96)
+                            .overlay(Image(systemName: "photo").foregroundStyle(.white.opacity(0.5)))
+                    }
+
+                    // Order Badge
+                    Text("\(stopNumber)")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .frame(width: 28, height: 28)
+                        .background(
+                            Circle()
+                                .fill(LinearGradient(colors: [.blue, .blue.opacity(0.8)], startPoint: .top, endPoint: .bottom))
+                        )
+                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                        .offset(x: -8, y: -8)
+                        .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 2)
+                }
+                .padding(.leading, 8)
+
+                // Right: Text Content
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(stop.placeTitle)
+                        .font(.system(.headline, design: .serif))
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+
+                    if let desc = descriptionText, !desc.isEmpty {
+                        Text(desc)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .lineSpacing(2)
+                    }
+                    
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white.opacity(0.3))
+                    .padding(.trailing, 4)
+            }
+            .padding(12)
+            .background(.ultraThinMaterial)
+            .cornerRadius(20)
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(isSelected ? Color.blue.opacity(0.5) : Color.white.opacity(0.12), lineWidth: isSelected ? 2 : 1)
+            )
+            .shadow(color: .black.opacity(isSelected ? 0.3 : 0.1), radius: 10, x: 0, y: 5)
+        }
+
+        private var descriptionText: String? {
+            if let note = stop.noteText, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return note
+            }
+            if let photoCaption = stop.photos.first?.caption, !photoCaption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return photoCaption
+            }
+            if let subtitle = stop.placeSubtitle, !subtitle.isEmpty {
+                return subtitle
+            }
+            return nil
+        }
+    }
 
 #Preview {
     MapDayView(photos: [

@@ -9,7 +9,7 @@ import Foundation
 /// Created blog content ready to display and edit. Editable draft; Save writes back to store.
 /// Trip title is set once on creation (default "Trip To [City]"); user can edit and Save persists it.
 /// Cover photo selection is stored in selectedCoverPhotoIdentifier (persisted with draft).
-struct RecapBlogDetail: Identifiable, Equatable, Codable {
+struct RecapBlogDetail: Identifiable, Equatable, Codable, Sendable {
     let id: UUID
     var title: String
     var days: [RecapBlogDay]
@@ -28,7 +28,7 @@ struct RecapBlogDetail: Identifiable, Equatable, Codable {
     }
 }
 
-struct RecapBlogDay: Identifiable, Equatable, Codable {
+struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
     let id: UUID
     var dayIndex: Int
     var date: Date
@@ -60,7 +60,7 @@ struct RecapBlogDay: Identifiable, Equatable, Codable {
     }
 }
 
-struct PlaceStop: Identifiable, Equatable, Codable {
+struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
     let id: UUID
     var orderIndex: Int
     var placeTitle: String
@@ -97,13 +97,13 @@ struct PlaceStop: Identifiable, Equatable, Codable {
 }
 
 /// Location stored as lat/lon for Equatable. Convert to CLLocationCoordinate2D for MapKit.
-struct PhotoCoordinate: Equatable, Hashable, Codable {
+struct PhotoCoordinate: Equatable, Hashable, Codable, Sendable {
     let latitude: Double
     let longitude: Double
     var clCoordinate: CLLocationCoordinate2D { CLLocationCoordinate2D(latitude: latitude, longitude: longitude) }
 }
 
-struct RecapPhoto: Identifiable, Equatable, Codable {
+struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
     let id: UUID
     var timestamp: Date
     var location: PhotoCoordinate?
@@ -114,8 +114,10 @@ struct RecapPhoto: Identifiable, Equatable, Codable {
     var caption: String?
     /// AI quality score from PhotoQualityScorer. Nil until scored after blog creation.
     var qualityScore: PhotoScore?
+    /// Cloud URL returned by the file server after upload. Nil means not yet uploaded.
+    var cloudURL: String?
 
-    init(id: UUID = UUID(), timestamp: Date, location: PhotoCoordinate? = nil, imageName: String, isIncluded: Bool = true, localIdentifier: String? = nil, caption: String? = nil, qualityScore: PhotoScore? = nil) {
+    init(id: UUID = UUID(), timestamp: Date, location: PhotoCoordinate? = nil, imageName: String, isIncluded: Bool = true, localIdentifier: String? = nil, caption: String? = nil, qualityScore: PhotoScore? = nil, cloudURL: String? = nil) {
         self.id = id
         self.timestamp = timestamp
         self.location = location
@@ -124,5 +126,6 @@ struct RecapPhoto: Identifiable, Equatable, Codable {
         self.localIdentifier = localIdentifier
         self.caption = caption
         self.qualityScore = qualityScore
+        self.cloudURL = cloudURL
     }
 }

@@ -56,8 +56,25 @@ struct AssetPhotoView: View {
         .clipped()
         .cornerRadius(cornerRadius)
         .task(id: assetIdentifier) {
-            image = nil
-            displayedIdentifier = nil
+            // if image is already loaded and identifier matches, do nothing (prevents flicker on view update)
+            if let currentImage = image, displayedIdentifier == assetIdentifier {
+                return
+            }
+
+            // If we have a cached image, show it immediately without flashing the placeholder
+            if let cached = ImageLoader.shared.cachedThumbnail(assetIdentifier: assetIdentifier, targetSize: targetSize) {
+                image = cached
+                displayedIdentifier = assetIdentifier
+                return
+            }
+            
+            // Otherwise, show placeholder and fetch
+            // Only clear if we are actually changing the image or if it was nil
+            if displayedIdentifier != assetIdentifier {
+                image = nil
+                displayedIdentifier = nil
+            }
+            
             let loadedImage = await ImageLoader.shared.loadThumbnail(assetIdentifier: assetIdentifier, targetSize: targetSize)
             if !Task.isCancelled {
                 image = loadedImage

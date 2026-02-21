@@ -9,21 +9,38 @@ import UIKit
 @main
 struct fastblogApp: App {
     @StateObject private var photoAuth = PhotosAuthorizationManager()
+    @StateObject private var authService = AuthService.shared
+    @StateObject private var authStateManager = AuthStateManager.shared
+    @StateObject private var createdRecapStore = CreatedRecapBlogStore.shared
     @AppStorage("blogify.hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @Environment(\.scenePhase) private var scenePhase
     @State private var isAppReady = false
 
 #if DEBUG
     /// Flip to `true` to skip splash + onboarding and land directly on ManagePhotosView.
-    /// Useful for rapid UI iteration without rerunning the full app flow each time.
     private static let kDevBypassToManagePhotos = false
 #endif
 
     var body: some Scene {
         WindowGroup {
             appContent
+                .environmentObject(authService)
+                .environmentObject(authStateManager)
+                .environmentObject(createdRecapStore)
                 .onOpenURL { url in
                     _ = GoogleAuthManager.handleURL(url)
+                }
+                // Import drafts modal presented at app root so it overlays any screen
+                .sheet(isPresented: $authStateManager.showImportDraftsModal) {
+                    ImportDraftsModalView()
+                        .environmentObject(authStateManager)
+                        .environmentObject(createdRecapStore)
+                }
+                // Sync + import prompt on login
+                .onChange(of: authStateManager.authState) { _, newState in
+                    if case .loggedIn = newState {
+                        authStateManager.checkAndPromptImportIfNeeded()
+                    }
                 }
         }
     }
@@ -70,10 +87,9 @@ struct fastblogApp: App {
         .onAppear {
             DraftReminderNotificationManager.requestPermissionIfNeeded()
             GoogleAuthManager.shared.restorePreviousSignIn()
-            // Refresh entitlements and enforce archive rules on app launch.
             Task {
                 await EntitlementManager.shared.refreshEntitlements()
-                CreatedRecapBlogStore.shared.enforceArchiveRules()
+                createdRecapStore.enforceArchiveRules()
 
                 // Minor delay to ensure splash is visible for a moment if init is too fast.
                 try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s
@@ -85,10 +101,9 @@ struct fastblogApp: App {
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
-                // Refresh entitlements and enforce archive rules when returning to foreground.
                 Task {
                     await EntitlementManager.shared.refreshEntitlements()
-                    CreatedRecapBlogStore.shared.enforceArchiveRules()
+                    createdRecapStore.enforceArchiveRules()
                 }
             }
         }

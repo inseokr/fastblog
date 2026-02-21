@@ -16,122 +16,21 @@ struct FindMoreTripsSheet: View {
 
     private let monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     private let years: [Int] = (2022...2027).reversed()
-    
-    @State private var chatInput: String = ""
-    @FocusState private var isInputFocused: Bool
-    
-    // Auto-scroll to bottom of chat
-    @Namespace private var bottomID
 
     var body: some View {
         ZStack {
             sheetBackground
                 .ignoresSafeArea()
 
-            VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
                 header
-                
-                // Main Content (Manual Controls)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        titleSection
-                        yearSection
-                        monthRangeSection
-                        citiesVisitedSection
-                        emptyResultSection
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 20)
-                }
-                .scrollDismissesKeyboard(.interactively)
-                
-                // Chat Interface
-                VStack(spacing: 0) {
-                    Divider().background(Color.white.opacity(0.1))
-                    
-                    if !viewModel.chatMessages.isEmpty {
-                        ScrollViewReader { proxy in
-                            ScrollView {
-                                LazyVStack(spacing: 12) {
-                                    ForEach(viewModel.chatMessages) { msg in
-                                        ChatBubble(message: msg) { chip in
-                                            submitSuggestion(chip)
-                                        }
-                                    }
-                                    Spacer().frame(height: 1).id(bottomID)
-                                }
-                                .padding(16)
-                            }
-                            .frame(maxHeight: 250) // Limit chat height so controls stay visible
-                            .onChange(of: viewModel.chatMessages) { _ in
-                                withAnimation {
-                                    proxy.scrollTo(bottomID, anchor: .bottom)
-                                }
-                            }
-                        }
-                    } else {
-                        // Empty state hints
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                suggestionChip("Show trips from March 2025")
-                                suggestionChip("My Korea trip")
-                                suggestionChip("Last Summer")
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                        }
-                    }
-                    
-                    
-                    
-                    // Scan Button (Fixed above input)
-                    Button {
-                        viewModel.scanFindMoreTripsInRange()
-                    } label: {
-                        Text("Scan Trips from Range")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                    }
-                    .background(Color(red: 0, green: 122/255, blue: 1))
-                    .cornerRadius(12)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
-                    
-                    // Input Bar
-                    HStack(spacing: 12) {
-                        HStack {
-                            Image(systemName: "sparkles")
-                                .foregroundColor(.purple)
-                            TextField("Ask questions to find your trips", text: $chatInput)
-                                .focused($isInputFocused)
-                                .submitLabel(.send)
-                                .onSubmit {
-                                    submit()
-                                }
-                                .foregroundColor(.black)
-                        }
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 12)
-                        .background(Color.white)
-                        .cornerRadius(20)
-                        
-                        Button {
-                            submit()
-                        } label: {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .font(.system(size: 32))
-                                .foregroundColor(chatInput.isEmpty ? .gray : .blue)
-                        }
-                        .disabled(chatInput.isEmpty)
-                    }
-                    .padding(12)
-                    .background(Color.black.opacity(0.2))
-                }
+                content
+                Spacer(minLength: 20)
+                ctaSection
             }
+            .padding(.horizontal, 20)
 
-            if viewModel.isFindMoreScanning || viewModel.isAgentScanning {
+            if viewModel.isFindMoreScanning {
                 loadingOverlay
             }
         }
@@ -140,31 +39,6 @@ struct FindMoreTripsSheet: View {
             if case .success = result {
                 viewModel.dismissFindMoreSheet()
             }
-        }
-    }
-    
-    private func submit() {
-        guard !chatInput.isEmpty else { return }
-        viewModel.submitChatMessage(chatInput)
-        chatInput = ""
-        isInputFocused = false
-    }
-    
-    private func submitSuggestion(_ text: String) {
-        viewModel.submitChatMessage(text)
-    }
-    
-    private func suggestionChip(_ text: String) -> some View {
-        Button {
-            submitSuggestion(text)
-        } label: {
-            Text(text)
-                .font(.caption)
-                .foregroundColor(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color.white.opacity(0.15))
-                .cornerRadius(16)
         }
     }
 
@@ -179,12 +53,24 @@ struct FindMoreTripsSheet: View {
                     .foregroundColor(Color(white: 0.7))
             }
             Spacer()
-            
-
         }
-        .padding(.horizontal, 20)
         .padding(.top, 12)
-        .padding(.bottom, 12)
+        .padding(.bottom, 24)
+    }
+
+    private var content: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                titleSection
+                yearSection
+                monthRangeSection
+                citiesVisitedSection
+                emptyResultSection
+            }
+        }
+        .onChange(of: viewModel.findMoreYear) { _, _ in viewModel.loadFindMoreCities() }
+        .onChange(of: viewModel.findMoreStartMonth) { _, _ in viewModel.loadFindMoreCities() }
+        .onChange(of: viewModel.findMoreEndMonth) { _, _ in viewModel.loadFindMoreCities() }
     }
 
     private var titleSection: some View {
@@ -236,7 +122,7 @@ struct FindMoreTripsSheet: View {
                 }
                 .padding(.vertical, 12)
             } else if viewModel.findMoreCities.isEmpty {
-                Text("No photos with location in this range.")
+                Text("No photos with location in this range, or set your neighborhood in Settings to filter local photos.")
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.7))
                     .padding(.vertical, 8)
@@ -255,9 +141,6 @@ struct FindMoreTripsSheet: View {
 
     private var monthRangeSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Month range")
-                .font(.subheadline)
-                .foregroundColor(.white)
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Start")
@@ -313,12 +196,30 @@ struct FindMoreTripsSheet: View {
         }
     }
 
+    private var ctaSection: some View {
+        VStack(spacing: 12) {
+            Button {
+                viewModel.scanFindMoreTripsInRange()
+            } label: {
+                Text("Scan For New Blogs")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+            }
+            .background(Color(red: 0, green: 122/255, blue: 1))
+            .cornerRadius(12)
+            .disabled(viewModel.isFindMoreScanning)
+        }
+        .padding(.bottom, 28)
+    }
+
     private var loadingOverlay: some View {
         ZStack {
             Color.black.opacity(0.5)
                 .ignoresSafeArea()
             VStack(spacing: 20) {
-                Text(viewModel.isAgentScanning ? "Analyzing Library..." : "Scanning Photos...")
+                Text("Scanning Photos...")
                     .font(.title2)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
@@ -328,69 +229,6 @@ struct FindMoreTripsSheet: View {
                     .frame(width: 56, height: 56)
             }
         }
-    }
-}
-
-// MARK: - Chat Components
-
-struct ChatBubble: View {
-    let message: TripsViewModel.ChatMessage
-    let onChipTap: (String) -> Void
-    
-    var body: some View {
-        VStack(alignment: message.isUser ? .trailing : .leading, spacing: 6) {
-            HStack {
-                if message.isUser { Spacer() }
-                
-                Text(message.text)
-                    .font(.subheadline)
-                    .foregroundColor(message.isUser ? .black : .white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(message.isUser ? Color.white : Color.white.opacity(0.15))
-                    .cornerRadius(16)
-                    .cornerRadius(message.isUser ? 2 : 16, corners: .bottomRight)
-                    .cornerRadius(!message.isUser ? 2 : 16, corners: .bottomLeft)
-                
-                if !message.isUser { Spacer() }
-            }
-            
-            if !message.suggestions.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack {
-                        ForEach(message.suggestions, id: \.self) { chip in
-                            Button {
-                                onChipTap(chip)
-                            } label: {
-                                Text(chip)
-                                    .font(.caption)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
-                                    .background(Color.blue.opacity(0.6))
-                                    .cornerRadius(12)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-extension View {
-    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
-        clipShape(RoundedCorner(radius: radius, corners: corners))
-    }
-}
-
-struct RoundedCorner: Shape {
-    var radius: CGFloat = .infinity
-    var corners: UIRectCorner = .allCorners
-
-    func path(in rect: CGRect) -> Path {
-        let path = UIBezierPath(roundedRect: rect, byRoundingCorners: corners, cornerRadii: CGSize(width: radius, height: radius))
-        return Path(path.cgPath)
     }
 }
 

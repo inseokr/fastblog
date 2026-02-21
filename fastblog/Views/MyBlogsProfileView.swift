@@ -5,7 +5,6 @@
 //  My Blogs: dark blue background, vertical list of Country Cards, fixed search bar and My Map button.
 //
 
-import Photos
 import SwiftUI
 
 private let searchBarHeight: CGFloat = 56
@@ -16,27 +15,16 @@ private let horizontalPadding: CGFloat = 20
 struct MyBlogsProfileView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
-    @StateObject private var viewModel: MyBlogsProfileViewModel
+    @StateObject private var viewModel = MyBlogsProfileViewModel()
     @State private var selectedSection: CountrySection?
     @State private var showMyMap = false
     @State private var showViewAll = false
     @State private var isSearchActive = false
     @FocusState private var isSearchFocused: Bool
-    
-    @Binding var showTrips: Bool
-    @Binding var showProfile: Bool
-    @ObservedObject var tripsViewModel: TripsViewModel
-    @StateObject private var recallViewModel = MemoryRecallViewModel()
-    @State private var showingRecallModal = false
-    @State private var showingCreateFlow = false
-    @State private var draftToCreate: TripDraft?
+    @State private var selectedUnsavedTripPhotos: TripDraft?
 
-    init(createdRecapStore: CreatedRecapBlogStore, showTrips: Binding<Bool>, showProfile: Binding<Bool>, tripsViewModel: TripsViewModel, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
-        _viewModel = StateObject(wrappedValue: MyBlogsProfileViewModel())
+    init(createdRecapStore: CreatedRecapBlogStore, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         _selectedCreatedRecap = selectedCreatedRecap
-        _showTrips = showTrips
-        _showProfile = showProfile
-        self.tripsViewModel = tripsViewModel
     }
 
     private let backgroundBlue = Color(red: 0.05, green: 0.08, blue: 0.22)
@@ -47,18 +35,13 @@ struct MyBlogsProfileView: View {
                 .ignoresSafeArea()
 
             ScrollView {
-                VStack(spacing: 0) {
-                    revisitSection
-                        .padding(.top, 16)
-                    
-                    let allSections = MyBlogsProfileViewModel.sections(from: createdRecapStore.countrySummaries)
-                    let sections = viewModel.filteredSections(from: allSections)
-                    
-                    if !sections.isEmpty {
-                        countriesHeader
+                let allSections = MyBlogsProfileViewModel.sections(from: createdRecapStore.countrySummaries)
+                let sections = viewModel.filteredSections(from: allSections)
+                Group {
+                    if !isSearchActive && !viewModel.unsavedTrips.isEmpty {
+                        unsavedTripsSection
                     }
-                    
-                    Group {
+
                     if isSearchActive && !viewModel.isSearching {
                         // Search mode active but nothing typed yet
                         VStack(spacing: 12) {
@@ -85,17 +68,16 @@ struct MyBlogsProfileView: View {
                 .padding(.top, 12)
                 .padding(.bottom, searchBarHeight + myMapButtonSize + 24)
             }
-        }
 
-        VStack(spacing: 0) {
+            VStack(spacing: 0) {
                 Spacer()
                 HStack {
                     Spacer()
                     MyMapButton {
                         showMyMap = true
                     }
-                    .padding(.trailing, horizontalPadding + 12)
-                    .padding(.bottom, searchBarHeight + 24)
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 16)
                 }
                 searchBar
             }
@@ -106,7 +88,7 @@ struct MyBlogsProfileView: View {
         .preferredColorScheme(.dark)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button("View All") {
+                Button("Recent") {
                     showViewAll = true
                 }
                 .foregroundColor(.white)
@@ -118,41 +100,58 @@ struct MyBlogsProfileView: View {
         .navigationDestination(isPresented: $showMyMap) {
             MyMapView(selectedCreatedRecap: $selectedCreatedRecap)
         }
+        .navigationDestination(item: $selectedCreatedRecap) { recap in
+            RecapBlogPageView(
+                blogId: recap.sourceTripId,
+                initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId)
+            )
+        }
+        .navigationDestination(item: $createBlogFlowTrip) { trip in
+            CreateBlogFlowView(trip: trip, startDirectlyCreating: true) { createdTripId in
+                TripDraftStore.clearSelection(tripId: createdTripId)
+                createBlogFlowTrip = nil
+                viewModel.loadUnsavedTrips() // Refresh after creation
+            }
+            .environmentObject(createdRecapStore)
+        }
+        .navigationDestination(item: $selectedUnsavedTripPhotos) { trip in
+            UnsavedTripPhotosView(trip: trip) {
+                selectedUnsavedTripPhotos = nil
+                createBlogFlowTrip = trip
+            }
+        }
         .sheet(isPresented: $showViewAll) {
             AllRecentsSheet(
                 createdRecapStore: createdRecapStore,
                 selectedRecap: $selectedCreatedRecap
             )
         }
-        .fullScreenCover(isPresented: $showingRecallModal) {
-            if let recall = recallViewModel.currentRecall {
-                MemoryRecallModal(recall: recall) {
-                    // Create blog CTA
-                    let draft = tripsViewModel.createDraft(from: recall)
-                    draftToCreate = draft
-                    showingRecallModal = false
-                    
-                    // Delay slightly to allow modal dismissal before presenting flow
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                        showingCreateFlow = true
+        .onAppear {
+            viewModel.loadUnsavedTrips()
+        }
+    }
+
+    @State private var createBlogFlowTrip: TripDraft?
+
+    private var unsavedTripsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Trips Not Saved Yet")
+                .font(.headline)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .padding(.top, 16)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(viewModel.unsavedTrips) { trip in
+                        UnsavedTripCard(trip: trip) {
+                            selectedUnsavedTripPhotos = trip
+                        }
                     }
                 }
             }
         }
-        .fullScreenCover(isPresented: $showingCreateFlow) {
-            if let draft = draftToCreate {
-                CreateBlogFlowView(trip: draft, startDirectlyCreating: true) { id in
-                    // onClose: remove from drafts if any
-                    tripsViewModel.removeTrip(id: id)
-                    draftToCreate = nil
-                    showingCreateFlow = false
-                    recallViewModel.refreshRecall()
-                }
-            }
-        }
-        .onAppear {
-            recallViewModel.onAppear()
-        }
+        .padding(.bottom, 24)
     }
 
     private var emptyState: some View {
@@ -168,36 +167,6 @@ struct MyBlogsProfileView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 48)
-    }
-
-    @ViewBuilder
-    private var revisitSection: some View {
-        if let recall = recallViewModel.currentRecall {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Revisit")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, horizontalPadding)
-                
-                RevisitRecallCard(recall: recall) {
-                    showingRecallModal = true
-                }
-                .padding(.horizontal, horizontalPadding)
-                .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
-            }
-            .padding(.bottom, 24)
-        }
-    }
-
-    private var countriesHeader: some View {
-        HStack {
-            Text("Countries")
-                .font(.headline)
-                .foregroundColor(.white)
-            Spacer()
-        }
-        .padding(.horizontal, horizontalPadding)
-        .padding(.vertical, 12)
     }
 
     private var searchBar: some View {
@@ -225,92 +194,9 @@ struct MyBlogsProfileView: View {
         }
         .padding(.horizontal, 16)
         .frame(height: searchBarHeight)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.black.opacity(0.4))
-                .background(.ultraThinMaterial)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal, horizontalPadding)
         .padding(.bottom, 12)
-    }
-}
-
-private struct RevisitRecallCard: View {
-    let recall: RecallTrigger
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.blue.opacity(0.1))
-                            .frame(width: 40, height: 40)
-                        Image(systemName: iconName)
-                            .foregroundColor(.blue)
-                            .font(.system(size: 18, weight: .semibold))
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(recall.title)
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundColor(.white)
-                            .lineLimit(2)
-                        Text(recall.subtitle)
-                            .font(.system(size: 13))
-                            .foregroundColor(.white.opacity(0.6))
-                    }
-                }
-                HStack(spacing: 8) {
-                    ForEach(recall.thumbnailAssets, id: \.localIdentifier) { asset in
-                        AssetPhotoView(assetIdentifier: asset.localIdentifier, cornerRadius: 8, targetSize: CGSize(width: 200, height: 200))
-                            .frame(width: 80, height: 80)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    if recall.photoCount > 3 {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.white.opacity(0.1))
-                                .frame(width: 80, height: 80)
-                            Text("+\(recall.photoCount - 3)")
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundColor(.white.opacity(0.7))
-                        }
-                    }
-                }
-                HStack {
-                    Spacer()
-                    Text("View Photos")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.blue)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(Color.blue.opacity(0.1))
-                        .clipShape(Capsule())
-                }
-            }
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color(white: 0.1))
-                    .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var iconName: String {
-        switch recall.type {
-        case .onThisDay: return "calendar"
-        case .seasonal: return "leaf.fill"
-        case .cityRepeat: return "mappin.and.ellipse"
-        case .activeMonth: return "chart.bar.fill"
-        }
     }
 }
 
@@ -323,12 +209,9 @@ private struct MyMapButton: View {
                 .font(.title2)
                 .foregroundColor(.white)
                 .frame(width: myMapButtonSize, height: myMapButtonSize)
-                .background(Color.white.opacity(0.2))
+                .background(Color.blue)
                 .clipShape(Capsule())
-                .overlay(
-                    Capsule()
-                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                )
+                .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
         }
         .buttonStyle(.plain)
     }
@@ -338,9 +221,6 @@ private struct MyMapButton: View {
     NavigationStack {
         MyBlogsProfileView(
             createdRecapStore: CreatedRecapBlogStore.shared,
-            showTrips: .constant(false),
-            showProfile: .constant(true),
-            tripsViewModel: TripsViewModel(createdRecapStore: CreatedRecapBlogStore.shared),
             selectedCreatedRecap: .constant(nil)
         )
         .environmentObject(CreatedRecapBlogStore.shared)

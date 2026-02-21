@@ -1,6 +1,6 @@
 //
 //  CreatedRecapBlogStore.swift
-//  Capper
+//  fastblog
 //
 
 import Combine
@@ -8,40 +8,101 @@ import CoreLocation
 import Foundation
 import SwiftUI
 
+// MARK: - Blog Ownership & Sync Enums
 
-enum BlogCloudStatus: String, Codable {
-    case activePublic
-    case archived
+/// Whether the blog belongs to an anonymous (logged-out) session or a signed-in account.
+enum OwnerScope: String, Codable, Sendable {
+    case anonymous
+    case account
+}
+
+/// The cloud lifecycle state of a local blog.
+enum CloudState: String, Codable, Sendable {
+    /// Never uploaded; exists on-device only.
+    case localOnly
+    /// Uploaded and currently active (visible to public if published).
+    case uploadedActive
+    /// Uploaded but archived (hidden from public).
+    case uploadedArchived
+}
+
+/// Sync reconciliation status for merge operations.
+enum SyncStatus: String, Codable, Sendable {
+    case clean
+    case localOnly   // reassigned anon draft; needs explicit upload first
+    case needsUpload
+    case needsSync   // remote is newer; pull would update local
+    case conflict    // diverged on both sides
 }
 
 /// A recap blog that was created from a draft trip. Stored so we can hide the draft from Trips and show it in Landing Recents.
-struct CreatedRecapBlog: Identifiable, Equatable, Hashable, Codable {
+struct CreatedRecapBlog: Identifiable, Equatable, Hashable, Codable, Sendable {
     let id: UUID
     let sourceTripId: UUID
-    let title: String
+    var title: String
     let createdAt: Date
-    let coverImageName: String
-    let coverAssetIdentifier: String?
-    let selectedPhotoCount: Int
-    /// Country for Profile grouping; set when blog detail is built/saved.
-    let countryName: String?
-    /// Trip date range for display (e.g. "Jan 15 – 20, 2025"). Set when blog is created.
-    let tripDateRangeText: String?
-    /// When the blog was last saved/edited. Nil until user taps Save on the blog page.
-    let lastEditedAt: Date?
-    /// Trip date range (start/end) for excluding these dates from future scans. Nil if not set (e.g. older blogs).
-    let tripStartDate: Date?
-    let tripEndDate: Date?
-    /// Whether this is a cloud blog (true) or local-only (false). Defaults to false (local-only).
-    var isCloud: Bool
-    /// Cloud status: activePublic or archived. Only meaningful for cloud blogs.
-    var cloudStatus: BlogCloudStatus
-    /// Total place stops across all days. Used for display.
+    var coverImageName: String
+    var coverAssetIdentifier: String?
+    /// Number of places visited (stops).
     var totalPlaceVisitCount: Int
-    /// Number of days in the trip. Used for display.
+    /// Duration of the trip in days.
     var tripDurationDays: Int
+    /// Number of selected photos
+    var selectedPhotoCount: Int
+    /// Primary country name
+    var countryName: String?
+    /// Display text for date range
+    var tripDateRangeText: String?
+    /// Last edit timestamp
+    var lastEditedAt: Date?
+    /// Start date of the trip
+    var tripStartDate: Date?
+    /// End date of the trip
+    var tripEndDate: Date?
+    /// First available note or caption
+    var caption: String?
+    /// Server-assigned blog key from createBlogWithPlaces. Used for share links.
+    var blogKey: Int?
 
-    init(id: UUID = UUID(), sourceTripId: UUID, title: String, createdAt: Date, coverImageName: String, coverAssetIdentifier: String? = nil, selectedPhotoCount: Int, countryName: String? = nil, tripDateRangeText: String? = nil, lastEditedAt: Date? = nil, tripStartDate: Date? = nil, tripEndDate: Date? = nil, isCloud: Bool = false, cloudStatus: BlogCloudStatus = .activePublic, totalPlaceVisitCount: Int = 0, tripDurationDays: Int = 1) {
+    // MARK: - Ownership & Sync
+
+    /// Whether this blog was created while logged out (anonymous) or by a signed-in account.
+    var ownerScope: OwnerScope
+    /// The userId that owns this blog. Nil when ownerScope == .anonymous.
+    var ownerUserId: String?
+    /// Server-assigned id once the blog has been uploaded. Nil until first upload.
+    var cloudId: String?
+    /// Cloud lifecycle state.
+    var cloudState: CloudState
+    /// Sync reconciliation status.
+    var syncStatus: SyncStatus
+    /// Timestamp of the last autosave.
+    var lastAutosaveAt: Date?
+
+    init(
+        id: UUID = UUID(),
+        sourceTripId: UUID,
+        title: String,
+        createdAt: Date,
+        coverImageName: String,
+        coverAssetIdentifier: String? = nil,
+        selectedPhotoCount: Int,
+        countryName: String? = nil,
+        tripDateRangeText: String? = nil,
+        lastEditedAt: Date? = nil,
+        tripStartDate: Date? = nil,
+        tripEndDate: Date? = nil,
+        totalPlaceVisitCount: Int = 0,
+        tripDurationDays: Int = 1,
+        caption: String? = nil,
+        blogKey: Int? = nil,
+        ownerScope: OwnerScope = .anonymous,
+        ownerUserId: String? = nil,
+        cloudId: String? = nil,
+        cloudState: CloudState = .localOnly,
+        syncStatus: SyncStatus = .clean,
+        lastAutosaveAt: Date? = nil
+    ) {
         self.id = id
         self.sourceTripId = sourceTripId
         self.title = title
@@ -54,65 +115,58 @@ struct CreatedRecapBlog: Identifiable, Equatable, Hashable, Codable {
         self.lastEditedAt = lastEditedAt
         self.tripStartDate = tripStartDate
         self.tripEndDate = tripEndDate
-        self.isCloud = isCloud
-        self.cloudStatus = cloudStatus
         self.totalPlaceVisitCount = totalPlaceVisitCount
         self.tripDurationDays = tripDurationDays
+        self.caption = caption
+        self.blogKey = blogKey
+        self.ownerScope = ownerScope
+        self.ownerUserId = ownerUserId
+        self.cloudId = cloudId
+        self.cloudState = cloudState
+        self.syncStatus = syncStatus
+        self.lastAutosaveAt = lastAutosaveAt
     }
+
+    // MARK: - Codable with safe defaults for v1 → v2 migration
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(UUID.self, forKey: .id)
-        sourceTripId = try c.decode(UUID.self, forKey: .sourceTripId)
-        title = try c.decode(String.self, forKey: .title)
-        createdAt = try c.decode(Date.self, forKey: .createdAt)
-        coverImageName = try c.decode(String.self, forKey: .coverImageName)
+        id                   = try c.decode(UUID.self, forKey: .id)
+        sourceTripId         = try c.decode(UUID.self, forKey: .sourceTripId)
+        title                = try c.decode(String.self, forKey: .title)
+        createdAt            = try c.decode(Date.self, forKey: .createdAt)
+        coverImageName       = try c.decode(String.self, forKey: .coverImageName)
         coverAssetIdentifier = try c.decodeIfPresent(String.self, forKey: .coverAssetIdentifier)
-        selectedPhotoCount = try c.decode(Int.self, forKey: .selectedPhotoCount)
-        countryName = try c.decodeIfPresent(String.self, forKey: .countryName)
-        tripDateRangeText = try c.decodeIfPresent(String.self, forKey: .tripDateRangeText)
-        lastEditedAt = try c.decodeIfPresent(Date.self, forKey: .lastEditedAt)
-        tripStartDate = try c.decodeIfPresent(Date.self, forKey: .tripStartDate)
-        tripEndDate = try c.decodeIfPresent(Date.self, forKey: .tripEndDate)
-        isCloud = try c.decodeIfPresent(Bool.self, forKey: .isCloud) ?? false
-        cloudStatus = try c.decodeIfPresent(BlogCloudStatus.self, forKey: .cloudStatus) ?? .activePublic
         totalPlaceVisitCount = try c.decodeIfPresent(Int.self, forKey: .totalPlaceVisitCount) ?? 0
-        tripDurationDays = try c.decodeIfPresent(Int.self, forKey: .tripDurationDays) ?? 1
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(id, forKey: .id)
-        try c.encode(sourceTripId, forKey: .sourceTripId)
-        try c.encode(title, forKey: .title)
-        try c.encode(createdAt, forKey: .createdAt)
-        try c.encode(coverImageName, forKey: .coverImageName)
-        try c.encodeIfPresent(coverAssetIdentifier, forKey: .coverAssetIdentifier)
-        try c.encode(selectedPhotoCount, forKey: .selectedPhotoCount)
-        try c.encodeIfPresent(countryName, forKey: .countryName)
-        try c.encodeIfPresent(tripDateRangeText, forKey: .tripDateRangeText)
-        try c.encodeIfPresent(lastEditedAt, forKey: .lastEditedAt)
-        try c.encodeIfPresent(tripStartDate, forKey: .tripStartDate)
-        try c.encodeIfPresent(tripEndDate, forKey: .tripEndDate)
-        try c.encode(isCloud, forKey: .isCloud)
-        try c.encode(cloudStatus, forKey: .cloudStatus)
-        try c.encode(totalPlaceVisitCount, forKey: .totalPlaceVisitCount)
-        try c.encode(tripDurationDays, forKey: .tripDurationDays)
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case id, sourceTripId, title, createdAt, coverImageName, coverAssetIdentifier, selectedPhotoCount
-        case countryName, tripDateRangeText, lastEditedAt, tripStartDate, tripEndDate
-        case isCloud, cloudStatus, totalPlaceVisitCount, tripDurationDays
+        tripDurationDays     = try c.decodeIfPresent(Int.self, forKey: .tripDurationDays) ?? 1
+        selectedPhotoCount   = try c.decodeIfPresent(Int.self, forKey: .selectedPhotoCount) ?? 0
+        countryName          = try c.decodeIfPresent(String.self, forKey: .countryName)
+        tripDateRangeText    = try c.decodeIfPresent(String.self, forKey: .tripDateRangeText)
+        lastEditedAt         = try c.decodeIfPresent(Date.self, forKey: .lastEditedAt)
+        tripStartDate        = try c.decodeIfPresent(Date.self, forKey: .tripStartDate)
+        tripEndDate          = try c.decodeIfPresent(Date.self, forKey: .tripEndDate)
+        caption              = try c.decodeIfPresent(String.self, forKey: .caption)
+        blogKey              = try c.decodeIfPresent(Int.self, forKey: .blogKey)
+        // v2 fields – default gracefully for v1 data on disk
+        ownerScope           = try c.decodeIfPresent(OwnerScope.self, forKey: .ownerScope) ?? .anonymous
+        ownerUserId          = try c.decodeIfPresent(String.self, forKey: .ownerUserId)
+        cloudId              = try c.decodeIfPresent(String.self, forKey: .cloudId)
+        cloudState           = try c.decodeIfPresent(CloudState.self, forKey: .cloudState) ?? .localOnly
+        syncStatus           = try c.decodeIfPresent(SyncStatus.self, forKey: .syncStatus) ?? .clean
+        lastAutosaveAt       = try c.decodeIfPresent(Date.self, forKey: .lastAutosaveAt)
     }
 }
+
+// MARK: - Store
 
 @MainActor
 final class CreatedRecapBlogStore: ObservableObject {
     static let shared = CreatedRecapBlogStore()
 
     @Published private(set) var recents: [CreatedRecapBlog] = []
-    /// When true, landing shows "Recap Blog has been created!" banner; clear after 5–7 sec.
+    /// Always false — data loads synchronously in init(). Exposed so TripsViewModel can observe it.
+    @Published private(set) var isLoading = false
+    /// When true, landing shows "Recap Blog has been created!" banner; clear after 5-7 sec.
     @Published var showRecapCreatedBanner = false
     /// Set to true when a blog is created. Consumed by the view (TripsView) to trigger the banner at the appropriate time.
     @Published var pendingRecapCreated = false
@@ -154,6 +208,7 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     private init() {
         loadFromDisk()
+        migrateOwnerScopeIfNeeded()
     }
 
     private func loadFromDisk() {
@@ -189,10 +244,69 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
     }
 
+    // MARK: - Auth-Aware Migration
+
+    /// Claims any blogs that are still `.anonymous` without an ownerUserId and assigns them to
+    /// the currently signed-in user. Safe to call on every launch; it's a no-op once all blogs have been properly assigned.
+    private func migrateOwnerScopeIfNeeded() {
+        guard let userId = AuthService.shared.currentUser?.id else { return }
+        var didChange = false
+        for idx in recents.indices
+        where recents[idx].ownerScope == .anonymous && recents[idx].ownerUserId == nil {
+            recents[idx].ownerScope = .account
+            recents[idx].ownerUserId = userId
+            didChange = true
+        }
+        if didChange { persistRecents() }
+    }
+
+    // MARK: - Auth-Aware Filtering
+
+    /// Blogs visible for the given auth state.
+    func visibleBlogs(for authState: AuthState) -> [CreatedRecapBlog] {
+        switch authState {
+        case .loggedOut:
+            return recents.filter { $0.ownerScope == .anonymous }
+        case .loggedIn(let userId):
+            return recents.filter { $0.ownerScope == .account && $0.ownerUserId == userId }
+        }
+    }
+
+    /// All blogs created while the user was signed out.
+    var anonymousDrafts: [CreatedRecapBlog] {
+        recents.filter { $0.ownerScope == .anonymous }
+    }
+
+    /// Reassigns every anonymous draft to the given userId.
+    func importAnonymousDrafts(into userId: String) {
+        for idx in recents.indices where recents[idx].ownerScope == .anonymous {
+            recents[idx].ownerScope = .account
+            recents[idx].ownerUserId = userId
+            recents[idx].syncStatus = .localOnly
+        }
+        persistRecents()
+    }
+
+    /// Reassigns a single anonymous draft to the given userId.
+    func importSingleAnonymousDraft(_ draft: CreatedRecapBlog, into userId: String) {
+        guard let idx = recents.firstIndex(where: { $0.id == draft.id }),
+              recents[idx].ownerScope == .anonymous else { return }
+        recents[idx].ownerScope = .account
+        recents[idx].ownerUserId = userId
+        recents[idx].syncStatus = .localOnly
+        persistRecents()
+    }
+
+    // MARK: - Public API
+
     /// Call when user completes the Create Blog sequence (before showing RecapSavedView).
-    func addCreatedBlog(trip: TripDraft) {
+    func addCreatedBlog(trip: TripDraft, ownerScope: OwnerScope = .anonymous, ownerUserId: String? = nil) {
         let startDate = trip.earliestDate
         let endDate = trip.latestDate
+        let tempDetail = buildBlogDetail(from: trip)
+        let placeCount = tempDetail.days.reduce(0) { $0 + $1.placeStops.count }
+        let duration = trip.days.count
+
         let blog = CreatedRecapBlog(
             sourceTripId: trip.id,
             title: trip.title,
@@ -204,16 +318,21 @@ final class CreatedRecapBlogStore: ObservableObject {
             tripDateRangeText: trip.tripDateRangeDisplayText,
             lastEditedAt: nil,
             tripStartDate: startDate,
-            tripEndDate: endDate
+            tripEndDate: endDate,
+            totalPlaceVisitCount: placeCount,
+            tripDurationDays: duration,
+            caption: nil,
+            ownerScope: ownerScope,
+            ownerUserId: ownerUserId
         )
         tripDraftsBySourceId[trip.id] = trip
         recents.insert(blog, at: 0)
         pendingRecapCreated = true
-        // Do not show banner immediately; let the UI trigger it when ready (e.g. after backing out to Trips).
-        // showRecapCreatedBanner = true
+        persistRecents()
+        persistTripDrafts()
     }
 
-    /// Dismiss the "Recap Blog has been created!" banner (called after auto-hide or tap).
+    /// Dismiss the "Recap Blog has been created!" banner.
     func dismissRecapCreatedBanner() {
         showRecapCreatedBanner = false
     }
@@ -223,7 +342,6 @@ final class CreatedRecapBlogStore: ObservableObject {
         recents.contains { $0.sourceTripId == sourceTripId }
     }
 
-    /// Date ranges (start, end) of all created blogs. Used by scan to exclude these dates and reduce memory. Each range is inclusive of the trip's earliest and latest day.
     /// Date ranges (start, end) of all created blogs AND active drafts.
     func occupiedDateRanges() -> [(start: Date, end: Date)] {
         let blogRanges: [(start: Date, end: Date)] = recents.compactMap { blog in
@@ -280,10 +398,12 @@ final class CreatedRecapBlogStore: ObservableObject {
                 lastEditedAt: Date(),
                 tripStartDate: trip.earliestDate,
                 tripEndDate: trip.latestDate,
-                isCloud: old.isCloud,
-                cloudStatus: old.cloudStatus,
                 totalPlaceVisitCount: detail.days.reduce(0) { $0 + $1.placeStops.count },
-                tripDurationDays: detail.days.count
+                tripDurationDays: detail.days.count,
+                caption: self.primaryCaption(from: detail),
+                blogKey: old.blogKey,
+                ownerScope: old.ownerScope,
+                ownerUserId: old.ownerUserId
             )
             persistRecents()
             persistTripDrafts()
@@ -292,11 +412,10 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
     }
 
-    /// Marks a blog as uploaded to the cloud. Toggles isCloud to true.
+    /// Marks a blog as uploaded to the cloud.
     func markAsUploaded(sourceTripId: UUID) {
         if let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }) {
-            recents[idx].isCloud = true
-            recents[idx].cloudStatus = .activePublic
+            recents[idx].cloudState = .uploadedActive
             persistRecents()
             enforceArchiveRules()
         }
@@ -306,28 +425,28 @@ final class CreatedRecapBlogStore: ObservableObject {
     func enforceArchiveRules() {
         let limit = EntitlementManager.shared.activeCloudBlogLimit
         guard let maxCloud = limit else {
-            // Pro user: ensure all cloud blogs are activePublic
+            // Pro user: ensure all uploaded blogs are uploadedActive
             var changed = false
-            for i in recents.indices where recents[i].isCloud && recents[i].cloudStatus != .activePublic {
-                recents[i].cloudStatus = .activePublic
+            for i in recents.indices where recents[i].cloudState == .uploadedArchived {
+                recents[i].cloudState = .uploadedActive
                 changed = true
             }
             if changed { persistRecents() }
             return
         }
 
-        // Free tier: sort cloud blogs by date and archive those beyond the limit
-        let cloudBlogs = recents.filter(\.isCloud).sorted { $0.createdAt > $1.createdAt }
+        // Free tier: sort uploaded blogs by date and archive those beyond the limit
+        let uploadedBlogs = recents.filter { $0.cloudState != .localOnly }.sorted { $0.createdAt > $1.createdAt }
         var changed = false
-        for (index, blog) in cloudBlogs.enumerated() {
+        for (index, blog) in uploadedBlogs.enumerated() {
             guard let idx = recents.firstIndex(where: { $0.id == blog.id }) else { continue }
-            
+
             let hasLifetime = EntitlementManager.shared.lifetimeAllocatedBlogIDs.contains(blog.sourceTripId)
             let isWithinLimit = index < maxCloud
-            
-            let targetStatus: BlogCloudStatus = (isWithinLimit || hasLifetime) ? .activePublic : .archived
-            if recents[idx].cloudStatus != targetStatus {
-                recents[idx].cloudStatus = targetStatus
+
+            let targetState: CloudState = (isWithinLimit || hasLifetime) ? .uploadedActive : .uploadedArchived
+            if recents[idx].cloudState != targetState {
+                recents[idx].cloudState = targetState
                 changed = true
             }
         }
@@ -346,8 +465,9 @@ final class CreatedRecapBlogStore: ObservableObject {
         blogDetailsBySourceId[blogId]
     }
 
-    /// Persist edited blog detail. Call when user taps Save on RecapBlogPageView. Updates the corresponding recents entry (title, country, cover, lastEditedAt).
-    func saveBlogDetail(_ detail: RecapBlogDetail) {
+    /// Persist edited blog detail. Call when user taps Save on RecapBlogPageView. Updates the corresponding recents entry.
+    /// - Parameter asDraft: If true, preserves the existing lastEditedAt (keeping it nil if it was a draft).
+    func saveBlogDetail(_ detail: RecapBlogDetail, asDraft: Bool = false) {
         blogDetailsBySourceId[detail.id] = detail
         guard let idx = recents.firstIndex(where: { $0.sourceTripId == detail.id }) else { return }
         let old = recents[idx]
@@ -362,23 +482,60 @@ final class CreatedRecapBlogStore: ObservableObject {
             selectedPhotoCount: old.selectedPhotoCount,
             countryName: country,
             tripDateRangeText: old.tripDateRangeText,
-            lastEditedAt: Date(),
+            lastEditedAt: asDraft ? old.lastEditedAt : Date(),
             tripStartDate: old.tripStartDate,
             tripEndDate: old.tripEndDate,
-            isCloud: old.isCloud,
-            cloudStatus: old.cloudStatus,
             totalPlaceVisitCount: detail.days.reduce(0) { $0 + $1.placeStops.count },
-            tripDurationDays: detail.days.count
+            tripDurationDays: detail.days.count,
+            caption: primaryCaption(from: detail),
+            blogKey: old.blogKey,
+            ownerScope: old.ownerScope,
+            ownerUserId: old.ownerUserId
         )
+        persistRecents()
+        persistBlogDetails()
     }
 
-    /// Deletes a created blog. The underlying trip draft remains in TripDraftStore (or is re-discovered by scan) and will reappear in the Trips list because hasCreatedBlog(id) will return false.
+    /// Deletes a created blog.
     func deleteBlog(sourceTripId: UUID) {
         recents.removeAll { $0.sourceTripId == sourceTripId }
         blogDetailsBySourceId.removeValue(forKey: sourceTripId)
-        // If there was a pending banner for this blog (unlikely but possible), clear it.
         if pendingRecapCreated { pendingRecapCreated = false }
+        persistRecents()
+        persistBlogDetails()
     }
+
+    // MARK: - Cloud URL Management
+
+    /// Returns true if every included photo in the blog has been uploaded to the cloud.
+    func isBlogInCloud(blogId: UUID) -> Bool {
+        guard let detail = blogDetailsBySourceId[blogId] else { return false }
+        let included = detail.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded)
+        return !included.isEmpty && included.allSatisfy { $0.cloudURL != nil }
+    }
+
+    /// Stores the server-assigned blogKey on the blog entry for share links.
+    func setBlogKey(blogId: UUID, blogKey: Int) {
+        guard let idx = recents.firstIndex(where: { $0.sourceTripId == blogId }) else { return }
+        recents[idx].blogKey = blogKey
+        persistRecents()
+    }
+
+    /// Clears all cloud URLs from a blog's photos (removes from cloud).
+    func removeFromCloud(blogId: UUID) {
+        guard var detail = blogDetailsBySourceId[blogId] else { return }
+        for dayIdx in detail.days.indices {
+            for stopIdx in detail.days[dayIdx].placeStops.indices {
+                for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
+                    detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].cloudURL = nil
+                }
+            }
+        }
+        blogDetailsBySourceId[blogId] = detail
+        persistBlogDetails()
+    }
+
+    // MARK: - Build Blog Detail
 
     /// Build RecapBlogDetail from a TripDraft, clustered into place stops. Use when no saved detail exists.
     /// All photos in a day are clustered together; isIncluded reflects the user's original selection.
@@ -400,7 +557,6 @@ final class CreatedRecapBlogStore: ObservableObject {
             }
 
             // Build stops; isIncluded mirrors the user's photo selection.
-            // Stops where no photo was selected are hidden from the blog by default.
             let placeStops: [PlaceStop] = stopGroups.compactMap { orderIndex, inputs -> PlaceStop? in
                 let photos: [RecapPhoto] = inputs.map { input in
                     let photo = day.photos.first { $0.id == input.id }!
@@ -437,7 +593,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         return RecapBlogDetail(id: trip.id, title: trip.title, days: days, coverTheme: trip.coverTheme, selectedCoverPhotoIdentifier: coverId)
     }
 
-    /// Builds blog detail and resolves place names from reverse-geocoded metadata. Sets default Trip Blog title to "Trip To [City Name] in [Season]" (e.g. "Trip To Busan in Winter") or "Trip To New Place" when city is unknown. Title is generated once here; if user edits and saves, getBlogDetail returns the saved title and we do not overwrite.
+    /// Builds blog detail, resolves place names from reverse-geocoding, generates a title, and scores photos via Vision AI.
     func buildBlogDetailAsync(from trip: TripDraft) async -> RecapBlogDetail {
         var detail = buildBlogDetail(from: trip)
         var cityCandidates: [(city: String, order: Int)] = []
@@ -487,11 +643,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         return detail
     }
 
-    /// Scores every photo in the blog detail using Vision AI, then auto-selects the best ones
-    /// per place stop based on count rules:
-    ///   - >5 photos  → include top 3
-    ///   - 3–5 photos → include top 2
-    ///   - 1–2 photos → include all
+    /// Scores every photo using Vision AI, then auto-selects the best per place stop.
     private func applyPhotoQualitySelection(to detail: RecapBlogDetail) async -> RecapBlogDetail {
         var updated = detail
         let scorer = PhotoQualityScorer.shared
@@ -502,11 +654,9 @@ final class CreatedRecapBlogStore: ObservableObject {
                 let identifiers = photos.compactMap(\.localIdentifier)
                 guard !identifiers.isEmpty else { continue }
 
-                // Score all photos in this stop via Vision AI
                 let scores = await scorer.scorePhotos(identifiers: identifiers)
                 guard !scores.isEmpty else { continue }
 
-                // Attach scores to photos
                 for photoIdx in updated.days[dayIdx].placeStops[stopIdx].photos.indices {
                     let photo = updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
                     if let id = photo.localIdentifier, let score = scores[id] {
@@ -514,7 +664,6 @@ final class CreatedRecapBlogStore: ObservableObject {
                     }
                 }
 
-                // Auto-select best photos based on count rules
                 let scoredPhotos = updated.days[dayIdx].placeStops[stopIdx].photos
                 let topIds = scoredPhotos.autoSelectedIds()
                 if !topIds.isEmpty {
@@ -528,6 +677,8 @@ final class CreatedRecapBlogStore: ObservableObject {
 
         return updated
     }
+
+    // MARK: - Private Helpers
 
     private func primaryFromCandidates(_ candidates: [(country: String, order: Int)]) -> String {
         guard !candidates.isEmpty else { return "" }
@@ -546,7 +697,6 @@ final class CreatedRecapBlogStore: ObservableObject {
         return sorted.first?.key ?? ""
     }
 
-    /// Season name from trip photo dates (most frequent month → season). Northern hemisphere: Dec/Jan/Feb Winter, Mar–May Spring, Jun–Aug Summer, Sep–Nov Fall.
     private func seasonFromDetail(_ detail: RecapBlogDetail) -> String? {
         let months = detail.days.flatMap(\.placeStops).flatMap(\.photos).map { Calendar.current.component(.month, from: $0.timestamp) }
         guard !months.isEmpty else { return nil }
@@ -566,7 +716,6 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
     }
 
-    /// Primary city: most frequent city in list; if tie, first chronologically (by order).
     private func primaryCityFromCandidates(_ candidates: [(city: String, order: Int)]) -> String {
         guard !candidates.isEmpty else { return "" }
         var count: [String: (count: Int, firstOrder: Int)] = [:]
@@ -584,12 +733,57 @@ final class CreatedRecapBlogStore: ObservableObject {
         return sorted.first?.key ?? ""
     }
 
+    private func primaryCaption(from detail: RecapBlogDetail) -> String? {
+        for day in detail.days {
+            for stop in day.placeStops {
+                if let note = stop.noteText, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return note
+                }
+            }
+        }
+        for day in detail.days {
+            for stop in day.placeStops {
+                for photo in stop.photos {
+                    if let caption = photo.caption, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        return caption
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
+    // MARK: - Display Helpers
+
+    /// Blogs that have been fully uploaded to the cloud.
+    var cloudPublishedBlogs: [CreatedRecapBlog] {
+        recents.filter { isBlogInCloud(blogId: $0.sourceTripId) }
+    }
+
+    /// Country summaries using only cloud-published blogs (for Profile page).
+    var cloudCountrySummaries: [CountryRecapSummary] {
+        let published = cloudPublishedBlogs
+        let grouped = Dictionary(grouping: published) { blog -> String in
+            let name = blog.countryName ?? "Unknown"
+            return name.isEmpty || name == "Unknown" ? "Unknown" : name
+        }
+        return grouped.compactMap { countryName, blogs in
+            guard let mostRecent = blogs.max(by: { $0.createdAt < $1.createdAt }) else { return nil }
+            return CountryRecapSummary(
+                countryName: countryName,
+                mostRecentBlog: mostRecent,
+                blogs: blogs.sorted { $0.createdAt > $1.createdAt }
+            )
+        }
+        .sorted { $0.mostRecentBlog.createdAt > $1.mostRecentBlog.createdAt }
+    }
+
     /// For Landing Recents section (newest first).
     var displayRecents: [CreatedRecapBlog] {
         Array(recents)
     }
 
-    /// Group recents by country for Profile. Each summary uses the most recent trip in that country for cover and "Last Trip" date. Sorted by most recent trip date descending.
+    /// Group recents by country for Profile.
     var countrySummaries: [CountryRecapSummary] {
         let grouped = Dictionary(grouping: recents) { blog -> String in
             let name = blog.countryName ?? "Unknown"

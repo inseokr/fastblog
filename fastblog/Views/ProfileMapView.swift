@@ -14,7 +14,10 @@ struct ProfileMapView: View {
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @StateObject private var viewModel: ProfileMapViewModel
     @State private var mapPosition: MapCameraPosition = .automatic
-    @State private var centeredBlogID: UUID?
+    @State private var selectedBlogForNavigation: CreatedRecapBlog?
+    
+    @State private var isSearchActive = false
+    @FocusState private var isSearchFocused: Bool
 
     init(createdRecapStore: CreatedRecapBlogStore, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         _viewModel = StateObject(wrappedValue: ProfileMapViewModel(createdRecapStore: createdRecapStore))
@@ -24,61 +27,96 @@ struct ProfileMapView: View {
     var body: some View {
         ZStack(alignment: .top) {
             profileMap
-            countryFilterBar
+            
+            if !isSearchActive {
+                countryFilterBar
+            }
+            
+            // Bottom UI
             VStack {
                 Spacer()
-                RecapBlogCarousel(
-                    blogs: viewModel.orderedBlogs,
-                    selectedBlog: $viewModel.selectedBlog,
-                    centeredBlogID: $centeredBlogID,
-                    onSelect: { blog in
-                        viewModel.selectBlog(blog)
-                    },
-                    onNavigate: { blog in
-                        selectedCreatedRecap = blog
-                    },
-                    formatDateRange: viewModel.formatDateRange
-                )
-                .padding(.bottom, 30) // Move cards up from the bottom
+                if isSearchActive {
+                    searchBar
+                        .padding(.bottom, 20)
+                } else {
+                    bottomTripList
+                }
             }
         }
-        .ignoresSafeArea(edges: .bottom)
+        .ignoresSafeArea(.container, edges: .bottom)
         .navigationTitle("My Map")
         .navigationBarTitleDisplayMode(.inline)
         .preferredColorScheme(.dark)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    withAnimation {
+                        isSearchActive.toggle()
+                        if isSearchActive {
+                            isSearchFocused = true
+                        } else {
+                            viewModel.searchText = ""
+                        }
+                    }
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.primary)
+                }
+            }
+        }
         .onAppear {
             viewModel.onAppear()
+            // mapPosition is set reactively via onChange(of: mapRegionChangeCounter),
+            // but seed it here too so there's no blank frame.
             mapPosition = .region(viewModel.mapRegion)
+            // Seed scroll position synchronously — onChange(of: selectedTripID)
+            // may not fire in the same run loop tick as the view appearing.
+            scrolledTripID = viewModel.visibleTrips.first?.sourceTripId
         }
         .onChange(of: viewModel.mapRegionChangeCounter) { _, _ in
-            mapPosition = .region(viewModel.mapRegion)
+            withAnimation {
+                mapPosition = .region(viewModel.mapRegion)
+            }
+        }
+        .navigationDestination(item: $selectedBlogForNavigation) { blog in
+            RecapBlogPageView(
+                blogId: blog.sourceTripId,
+                initialTrip: _createdRecapStore.wrappedValue.tripDraft(for: blog.sourceTripId)
+            )
         }
     }
 
     private var profileMap: some View {
         Map(position: $mapPosition) {
             ForEach(viewModel.tripsWithCoordinates, id: \.blog.sourceTripId) { item in
-                Annotation("", coordinate: item.coordinate) {
-                    TripAnnotationView(
-                        blog: item.blog,
-                        isSelected: viewModel.selectedTripID == item.blog.sourceTripId
-                    )
-                    .onTapGesture {
-                        viewModel.selectTrip(item.blog.sourceTripId)
-                        selectedCreatedRecap = item.blog
-                    }
-                }
+                annotation(for: item)
             }
         }
         .mapStyle(.standard(elevation: .realistic))
         .onMapCameraChange(frequency: .onEnd) { context in
-            // Only update region if not animating from our selection
-            if viewModel.animatedRegion == nil {
-                 viewModel.mapRegion = context.region
-            } else {
-                // If we were animating, check if we reached target?
-                // For simplicity, just update backing state.
-                viewModel.mapRegion = context.region
+            viewModel.mapRegion = context.region
+        }
+        .ignoresSafeArea(.keyboard)
+    }
+
+    @MapContentBuilder
+    private func annotation(for item: (blog: CreatedRecapBlog, coordinate: CLLocationCoordinate2D)) -> some MapContent {
+        Annotation("", coordinate: item.coordinate) {
+            TripAnnotationView(
+                blog: item.blog,
+                isSelected: viewModel.selectedTripID == item.blog.sourceTripId
+            )
+            .onTapGesture {
+                if viewModel.selectedTripID == item.blog.sourceTripId {
+                    // Already selected — second tap opens the blog
+                    selectedBlogForNavigation = item.blog
+                } else {
+                    // First tap — select and scroll card into view
+                    withAnimation {
+                        viewModel.selectTrip(item.blog.sourceTripId)
+                        viewModel.recenterToTrip(item.blog)
+                    }
+                }
             }
         }
     }
@@ -111,6 +149,89 @@ struct ProfileMapView: View {
             )
         )
     }
+    
+    // MARK: - Search Bar
+    
+    private var searchBar: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.white.opacity(0.7))
+            TextField("Search city or blog title", text: $viewModel.searchText)
+                .foregroundColor(.white)
+                .autocorrectionDisabled()
+                .focused($isSearchFocused)
+            
+            if isSearchActive {
+                Button {
+                    withAnimation {
+                        viewModel.searchText = ""
+                        isSearchFocused = false
+                        isSearchActive = false
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 56)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 20)
+    }
+    
+    @State private var scrolledTripID: UUID?
+
+    private var bottomTripList: some View {
+        GeometryReader { geo in
+            let cardWidth = min(geo.size.width * 0.80, 340)
+            let cardHeight: CGFloat = 104
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) {
+                    ForEach(viewModel.visibleTrips, id: \.sourceTripId) { trip in
+                        ProfileMapCardView(
+                            blog: trip,
+                            isSelected: viewModel.selectedTripID == trip.sourceTripId,
+                            onTap: {
+                                // Card tap always navigates to the blog
+                                selectedBlogForNavigation = trip
+                            },
+                            onNavigate: {
+                                selectedBlogForNavigation = trip
+                            }
+                        )
+                        .id(trip.sourceTripId)
+                        .frame(width: cardWidth, height: cardHeight)
+                        .scaleEffect(viewModel.selectedTripID == trip.sourceTripId ? 1.0 : 0.95)
+                        .opacity(viewModel.selectedTripID == trip.sourceTripId ? 1.0 : 0.6)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: viewModel.selectedTripID)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .safeAreaPadding(.horizontal, (geo.size.width - cardWidth) / 2)
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $scrolledTripID)
+            .onChange(of: scrolledTripID) { _, newID in
+                if let id = newID, viewModel.selectedTripID != id {
+                    if let trip = viewModel.visibleTrips.first(where: { $0.sourceTripId == id }) {
+                        withAnimation {
+                            viewModel.selectTrip(id)
+                            viewModel.recenterToTrip(trip)
+                        }
+                    }
+                }
+            }
+            .onChange(of: viewModel.selectedTripID) { _, newID in
+                if let id = newID {
+                    scrolledTripID = id
+                }
+            }
+        }
+        .frame(height: 124)
+    }
 
     private func countryPill(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -127,116 +248,99 @@ struct ProfileMapView: View {
     }
 }
 
-// MARK: - RecapBlogCarousel
+// MARK: - Safe Collection Subscript (shared by map views)
 
-struct RecapBlogCarousel: View {
-    let blogs: [CreatedRecapBlog]
-    @Binding var selectedBlog: CreatedRecapBlog?
-    @Binding var centeredBlogID: UUID?
-    let onSelect: (CreatedRecapBlog) -> Void
-    let onNavigate: (CreatedRecapBlog) -> Void
-    let formatDateRange: (Date?, Date?) -> String
-
-    var body: some View {
-        if blogs.isEmpty {
-            EmptyView()
-        } else {
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 12) {
-                    ForEach(blogs, id: \.sourceTripId) { blog in
-                        RecapBlogCard(
-                            blog: blog,
-                            isSelected: selectedBlog?.sourceTripId == blog.sourceTripId,
-                            formatDateRange: formatDateRange
-                        )
-                        .id(blog.sourceTripId)
-                        .onTapGesture {
-                            onSelect(blog)
-                            onNavigate(blog)
-                        }
-                    }
-                    // Spacer to allow the last item to be centered if needed, 
-                    // though .viewAligned usually handles this well with content margins.
-                    // Adding specific padding to center the first and last items if needed.
-                }
-                .scrollTargetLayout()
-                .padding(.horizontal, 24) // Initial padding
-            }
-            .scrollTargetBehavior(.viewAligned)
-            .scrollPosition(id: $centeredBlogID)
-            .onChange(of: centeredBlogID) { _, newID in
-                if let newID, let blog = blogs.first(where: { $0.sourceTripId == newID }) {
-                    if selectedBlog?.sourceTripId != newID {
-                        onSelect(blog)
-                    }
-                }
-            }
-            .frame(height: 140)
-            .background(
-                LinearGradient(colors: [.clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 180)
-                    .offset(y: 20)
-            )
-        }
+extension Collection {
+    subscript(safe index: Index) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }
 
-// MARK: - RecapBlogCard
-
-struct RecapBlogCard: View {
+// MARK: - ProfileMapCardView (Bottom List Item)
+private struct ProfileMapCardView: View {
     let blog: CreatedRecapBlog
     let isSelected: Bool
-    let formatDateRange: (Date?, Date?) -> String
+    let onTap: () -> Void
+    let onNavigate: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Cover Photo
-            TripCoverImage(
-                theme: blog.coverImageName,
-                coverAssetIdentifier: blog.coverAssetIdentifier
-            )
-            .frame(width: 80, height: 100)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
-            )
-
-            // Info
-            VStack(alignment: .leading, spacing: 4) {
-                Text(blog.title)
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .lineLimit(2)
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                coverImage
                 
-                Text(formatDateRange(blog.tripStartDate, blog.tripEndDate))
-                    .font(.caption)
-                    .foregroundColor(.gray)
-
-                HStack(spacing: 8) {
-                    Label("\(blog.totalPlaceVisitCount)", systemImage: "mappin.circle.fill")
-                    Label("\(blog.tripDurationDays)d", systemImage: "clock.fill")
+                VStack(alignment: .leading, spacing: 4) {
+                    tripInfo
                 }
-                .font(.caption2)
-                .foregroundColor(.gray)
+                .padding(.vertical, 12)
+                
+                Spacer()
+                
+                chevronButton
+                    .padding(.trailing, 12)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            
-            Spacer()
+            .frame(height: 104)
+            .background(.ultraThinMaterial)
+            .cornerRadius(20)
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(isSelected ? Color.blue.opacity(0.5) : Color.white.opacity(0.12), lineWidth: isSelected ? 2 : 1)
+            )
+            .shadow(color: .black.opacity(isSelected ? 0.3 : 0.1), radius: 10, x: 0, y: 5)
         }
-        .padding(12)
-        .frame(width: 280, height: 124)
-        .background {
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial) // Glassmorphism
-                .shadow(color: .black.opacity(0.4), radius: 8, x: 0, y: 4)
-        }
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(isSelected ? Color.blue : Color.white.opacity(0.2), lineWidth: isSelected ? 2 : 1)
+        .buttonStyle(.plain)
+    }
+
+    private var coverImage: some View {
+        TripCoverImage(
+            theme: blog.coverImageName,
+            coverAssetIdentifier: blog.coverAssetIdentifier,
+            targetSize: CGSize(width: 200, height: 200)
         )
-        .scaleEffect(isSelected ? 1.05 : 1.0)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+        .frame(width: 104, height: 104)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipped()
+    }
+
+    private var tripInfo: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(blog.title)
+                .font(.system(.subheadline, design: .serif))
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+            
+            HStack(spacing: 4) {
+                if let country = blog.countryName {
+                    Text(country)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white.opacity(0.8))
+                    Text("•")
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.4))
+                }
+                Text(blog.tripDateRangeText ?? "")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+
+            if let caption = blog.caption, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(caption)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white.opacity(0.5))
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private var chevronButton: some View {
+        Button(action: onNavigate) {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(.white)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(Color.white.opacity(0.15)))
+        }
     }
 }
 
@@ -254,7 +358,8 @@ struct TripAnnotationView: View {
         VStack(spacing: 4) {
             TripCoverImage(
                 theme: blog.coverImageName,
-                coverAssetIdentifier: blog.coverAssetIdentifier
+                coverAssetIdentifier: blog.coverAssetIdentifier,
+                targetSize: CGSize(width: 104, height: 144)
             )
             .frame(width: Self.width, height: Self.height)
             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -262,7 +367,7 @@ struct TripAnnotationView: View {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(isSelected ? Color.white : Color.white.opacity(0.6), lineWidth: isSelected ? 3 : 1.5)
             )
-            .shadow(color: .black.opacity(0.4), radius: 3, x: 0, y: 2)
+            .shadow(color: Color.black.opacity(0.4), radius: 3, x: 0, y: 2)
 
             Text(blog.title)
                 .font(.caption2)
@@ -284,7 +389,9 @@ struct CountryMapView: View {
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @StateObject private var viewModel: ProfileMapViewModel
+
     @State private var mapPosition: MapCameraPosition = .automatic
+    @State private var selectedBlogForNavigation: CreatedRecapBlog?
 
     init(countryName: String, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         self.countryName = countryName
@@ -295,16 +402,7 @@ struct CountryMapView: View {
     var body: some View {
         Map(position: $mapPosition) {
             ForEach(viewModel.tripsWithCoordinates, id: \.blog.sourceTripId) { item in
-                Annotation("", coordinate: item.coordinate) {
-                    TripAnnotationView(
-                        blog: item.blog,
-                        isSelected: viewModel.selectedTripID == item.blog.sourceTripId
-                    )
-                    .onTapGesture {
-                        viewModel.selectTrip(item.blog.sourceTripId)
-                        selectedCreatedRecap = item.blog
-                    }
-                }
+                annotation(for: item)
             }
         }
         .mapStyle(.standard(elevation: .realistic))
@@ -320,7 +418,29 @@ struct CountryMapView: View {
             mapPosition = .region(viewModel.mapRegion)
         }
         .onChange(of: viewModel.mapRegionChangeCounter) { _, _ in
-            mapPosition = .region(viewModel.mapRegion)
+            withAnimation {
+                mapPosition = .region(viewModel.mapRegion)
+            }
+        }
+        .navigationDestination(item: $selectedBlogForNavigation) { blog in
+            RecapBlogPageView(
+                blogId: blog.sourceTripId,
+                initialTrip: _createdRecapStore.wrappedValue.tripDraft(for: blog.sourceTripId)
+            )
+        }
+    }
+
+    @MapContentBuilder
+    private func annotation(for item: (blog: CreatedRecapBlog, coordinate: CLLocationCoordinate2D)) -> some MapContent {
+        Annotation("", coordinate: item.coordinate) {
+            TripAnnotationView(
+                blog: item.blog,
+                isSelected: viewModel.selectedTripID == item.blog.sourceTripId
+            )
+            .onTapGesture {
+                viewModel.selectTrip(item.blog.sourceTripId)
+                selectedBlogForNavigation = item.blog
+            }
         }
     }
 }

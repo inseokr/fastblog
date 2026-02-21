@@ -1,26 +1,27 @@
 //
 //  NeighborhoodMapRefinementView.swift
-//  fastblog
+//  Capper
+//
+//  Created by Capper AI
 //
 
 import MapKit
 import SwiftUI
-import UIKit
 
 struct NeighborhoodMapRefinementView: View {
     var initialRegion: MKCoordinateRegion
     var onDismiss: () -> Void
-
+    
     @State private var mapRegion: MKCoordinateRegion
     @State private var currentCenter: CLLocationCoordinate2D
     @State private var currentSpan: MKCoordinateSpan
     @State private var isResolvingPlace = false
     @State private var showSuccess = false
     @State private var savedName: String?
-
+    
+    // Dependencies
     @StateObject private var onboardingState = OnboardingState()
-    @Environment(\.dismiss) var dismiss
-
+    
     init(initialRegion: MKCoordinateRegion, onDismiss: @escaping () -> Void) {
         self.initialRegion = initialRegion
         self.onDismiss = onDismiss
@@ -28,30 +29,37 @@ struct NeighborhoodMapRefinementView: View {
         _currentCenter = State(initialValue: initialRegion.center)
         _currentSpan = State(initialValue: initialRegion.span)
     }
-
+    
     var body: some View {
         ZStack {
+            // Map
             MapWithRegionBinding(
                 region: $mapRegion,
                 center: $currentCenter,
                 span: $currentSpan
             )
             .ignoresSafeArea()
-
+            
+            // Map Overlay (Circle)
             ZStack {
+                // Glow
                 Circle()
                     .fill(Color.orange.opacity(0.3))
                     .frame(width: 140, height: 140)
                     .blur(radius: 20)
+                
+                // Pulsing Core
                 RefinementPulsingCircle()
             }
-            .allowsHitTesting(false)
-
+            .allowsHitTesting(false) // Let touches pass to map
+            
+            // UI Overlay
             VStack {
+                // Header
                 VStack(spacing: 8) {
                     Text("Refine Your Neighborhood")
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundColor(.black)
                     Text("Move the map to position your neighborhood.")
                         .font(.caption)
                         .foregroundColor(.gray)
@@ -60,10 +68,11 @@ struct NeighborhoodMapRefinementView: View {
                 .background(.regularMaterial)
                 .cornerRadius(12)
                 .shadow(radius: 4)
-                .padding(.top, 60)
-
+                .padding(.top, 60) // Space for status bar/safe area
+                
                 Spacer()
-
+                
+                // Footer Buttons
                 VStack(spacing: 16) {
                     Button {
                         confirmArea()
@@ -84,8 +93,15 @@ struct NeighborhoodMapRefinementView: View {
                         .cornerRadius(16)
                     }
                     .disabled(isResolvingPlace)
-
+                    
                     Button("Search Again") {
+                        // Pop back to search (SwiftUI NavigationStack handles this via dismiss?)
+                        // "Search Again" implies going back.
+                        // Since we are pushed, we can just use Environment dismiss, 
+                        // but here we are presumably at top of stack inside navigation?
+                        // No, Intro -> Search -> Refinement.
+                        // So we want to go back to Search.
+                        // We can use @Environment(\.dismiss)
                         dismiss()
                     }
                     .font(.subheadline)
@@ -97,7 +113,8 @@ struct NeighborhoodMapRefinementView: View {
                 .cornerRadius(20, corners: [.topLeft, .topRight])
             }
             .ignoresSafeArea(edges: .bottom)
-
+            
+            // Success Overlay
             if showSuccess {
                 Color.black.opacity(0.4).ignoresSafeArea()
                 VStack(spacing: 16) {
@@ -118,15 +135,20 @@ struct NeighborhoodMapRefinementView: View {
         }
         .navigationBarHidden(true)
     }
-
+    
+    @Environment(\.dismiss) var dismiss
+    
     private func confirmArea() {
         isResolvingPlace = true
+        
+        // Reverse Geocode to get name (or use what we had if we passed it? But map moved)
         let location = CLLocation(latitude: currentCenter.latitude, longitude: currentCenter.longitude)
-
+        
         Task { @MainActor in
             let place = await GeocodingService.shared.place(for: location)
             let cityName = place.areaName
-
+            
+            // Save logic
             let selection = NeighborhoodSelection(
                 cityName: cityName,
                 centerLatitude: currentCenter.latitude,
@@ -136,14 +158,15 @@ struct NeighborhoodMapRefinementView: View {
             )
             onboardingState.saveSelection(selection)
             NeighborhoodStore.saveCenter(currentCenter)
-
+            
             isResolvingPlace = false
             savedName = cityName
-
+            
             withAnimation {
                 showSuccess = true
             }
-
+            
+            // Delay dismissal
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             onDismiss()
         }
@@ -154,7 +177,7 @@ struct NeighborhoodMapRefinementView: View {
 
 private struct RefinementPulsingCircle: View {
     @State private var isExpanded = false
-
+    
     var body: some View {
         Circle()
             .fill(Color.orange.opacity(0.75))
@@ -170,6 +193,7 @@ private struct RefinementPulsingCircle: View {
     }
 }
 
+// Reuse MapWithRegionBinding (private copy since original is private)
 private struct MapWithRegionBinding: UIViewRepresentable {
     @Binding var region: MKCoordinateRegion
     @Binding var center: CLLocationCoordinate2D
@@ -221,10 +245,10 @@ private struct MapWithRegionBinding: UIViewRepresentable {
 
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.parent.region = MKCoordinateRegion(center: newCenter, span: newSpan)
                 self.parent.center = newCenter
                 self.parent.span = newSpan
             }
         }
     }
 }
+

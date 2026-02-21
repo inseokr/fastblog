@@ -18,7 +18,6 @@
 		BB000112 /* PlaceCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000111 /* PlaceCluster.swift */; };
 		BB000114 /* RecapBlogDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000113 /* RecapBlogDetail.swift */; };
 		BB000116 /* RecapDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000115 /* RecapDraft.swift */; };
-		BB000118 /* RecentRecap.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000117 /* RecentRecap.swift */; };
 		BB00011A /* ScanConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000119 /* ScanConfig.swift */; };
 		BB00011C /* TripDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00011B /* TripDay.swift */; };
 		BB00011E /* TripDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00011D /* TripDraft.swift */; };
@@ -85,7 +84,6 @@
 		BB000198 /* PhotosAuthorizationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000197 /* PhotosAuthorizationManager.swift */; };
 		BB00019A /* PlaceClusteringService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000199 /* PlaceClusteringService.swift */; };
 		BB00019C /* PlaceStopClusteringService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00019B /* PlaceStopClusteringService.swift */; };
-		BB00019E /* RecentRecapStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00019D /* RecentRecapStore.swift */; };
 		BB0001A0 /* TripClusteringDebug.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00019F /* TripClusteringDebug.swift */; };
 		BB0001A2 /* TripClusteringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001A1 /* TripClusteringTests.swift */; };
 		BB0001A4 /* TripDraftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001A3 /* TripDraftStore.swift */; };
@@ -115,6 +113,22 @@
 		BB0001E9 /* PlaceCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001E8 /* PlaceCardView.swift */; };
 		BB0001EC /* PhotoQualityScorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001EB /* PhotoQualityScorer.swift */; };
 		BB0001EE /* GoogleAuthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001ED /* GoogleAuthManager.swift */; };
+		BB0001F1 /* AuthUser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001F0 /* AuthUser.swift */; };
+		BB0001F3 /* APIManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001F2 /* APIManager.swift */; };
+		BB0001F5 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001F4 /* AuthService.swift */; };
+		BB0001F7 /* AuthStateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001F6 /* AuthStateManager.swift */; };
+		BB0001F9 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001F8 /* KeychainHelper.swift */; };
+		BB0001FB /* TripMatchingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001FA /* TripMatchingService.swift */; };
+		BB0001FE /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001FD /* AuthView.swift */; };
+		BB000200 /* EmailLoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001FF /* EmailLoginView.swift */; };
+		BB000202 /* EmailSignUpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000201 /* EmailSignUpView.swift */; };
+		BB000204 /* BottomSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000203 /* BottomSheetView.swift */; };
+		BB000206 /* ImportDraftsModalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000205 /* ImportDraftsModalView.swift */; };
+		BB000208 /* ProfileManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000207 /* ProfileManagementView.swift */; };
+		BB00020A /* ProfilePageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000209 /* ProfilePageView.swift */; };
+		BB00020C /* TrackableScrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00020B /* TrackableScrollView.swift */; };
+		BB00020E /* UnsavedTripCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00020D /* UnsavedTripCard.swift */; };
+		BB000210 /* UnsavedTripPhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00020F /* UnsavedTripPhotosView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -129,7 +143,6 @@
 		BB000111 /* PlaceCluster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceCluster.swift; sourceTree = "<group>"; };
 		BB000113 /* RecapBlogDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapBlogDetail.swift; sourceTree = "<group>"; };
 		BB000115 /* RecapDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapDraft.swift; sourceTree = "<group>"; };
-		BB000117 /* RecentRecap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentRecap.swift; sourceTree = "<group>"; };
 		BB000119 /* ScanConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanConfig.swift; sourceTree = "<group>"; };
 		BB00011B /* TripDay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDay.swift; sourceTree = "<group>"; };
 		BB00011D /* TripDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDraft.swift; sourceTree = "<group>"; };
@@ -196,7 +209,6 @@
 		BB000197 /* PhotosAuthorizationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotosAuthorizationManager.swift; sourceTree = "<group>"; };
 		BB000199 /* PlaceClusteringService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceClusteringService.swift; sourceTree = "<group>"; };
 		BB00019B /* PlaceStopClusteringService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceStopClusteringService.swift; sourceTree = "<group>"; };
-		BB00019D /* RecentRecapStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentRecapStore.swift; sourceTree = "<group>"; };
 		BB00019F /* TripClusteringDebug.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripClusteringDebug.swift; sourceTree = "<group>"; };
 		BB0001A1 /* TripClusteringTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripClusteringTests.swift; sourceTree = "<group>"; };
 		BB0001A3 /* TripDraftStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDraftStore.swift; sourceTree = "<group>"; };
@@ -227,6 +239,22 @@
 		BB0001EB /* PhotoQualityScorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoQualityScorer.swift; sourceTree = "<group>"; };
 		BB0001ED /* GoogleAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleAuthManager.swift; sourceTree = "<group>"; };
 		BB0001EF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		BB0001F0 /* AuthUser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthUser.swift; sourceTree = "<group>"; };
+		BB0001F2 /* APIManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIManager.swift; sourceTree = "<group>"; };
+		BB0001F4 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
+		BB0001F6 /* AuthStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthStateManager.swift; sourceTree = "<group>"; };
+		BB0001F8 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
+		BB0001FA /* TripMatchingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripMatchingService.swift; sourceTree = "<group>"; };
+		BB0001FD /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
+		BB0001FF /* EmailLoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailLoginView.swift; sourceTree = "<group>"; };
+		BB000201 /* EmailSignUpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailSignUpView.swift; sourceTree = "<group>"; };
+		BB000203 /* BottomSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomSheetView.swift; sourceTree = "<group>"; };
+		BB000205 /* ImportDraftsModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportDraftsModalView.swift; sourceTree = "<group>"; };
+		BB000207 /* ProfileManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileManagementView.swift; sourceTree = "<group>"; };
+		BB000209 /* ProfilePageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilePageView.swift; sourceTree = "<group>"; };
+		BB00020B /* TrackableScrollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackableScrollView.swift; sourceTree = "<group>"; };
+		BB00020D /* UnsavedTripCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnsavedTripCard.swift; sourceTree = "<group>"; };
+		BB00020F /* UnsavedTripPhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnsavedTripPhotosView.swift; sourceTree = "<group>"; };
 		AA000003 /* fastblog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = fastblog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -276,12 +304,12 @@
 		BB0001B0 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				BB0001F0 /* AuthUser.swift */,
 				BB00010D /* DayCluster.swift */,
 				BB00010F /* MockPhoto.swift */,
 				BB000111 /* PlaceCluster.swift */,
 				BB000113 /* RecapBlogDetail.swift */,
 				BB000115 /* RecapDraft.swift */,
-				BB000117 /* RecentRecap.swift */,
 				BB0001D1 /* RecallTrigger.swift */,
 				BB000119 /* ScanConfig.swift */,
 				BB00011B /* TripDay.swift */,
@@ -309,6 +337,7 @@
 				BB0001DA /* AppLaunchSplashView.swift */,
 				BB00011F /* BlogPreviewView.swift */,
 				BB000121 /* BlogSettingsSheet.swift */,
+				BB000203 /* BottomSheetView.swift */,
 				BB000123 /* ClusterRowView.swift */,
 				BB000125 /* CountryBlogsView.swift */,
 				BB000127 /* CountryCardView.swift */,
@@ -318,6 +347,7 @@
 				BB00012F /* DayChipsView.swift */,
 				BB000131 /* EditPlaceStopNameSheet.swift */,
 				BB000133 /* FindMoreTripsSheet.swift */,
+				BB000205 /* ImportDraftsModalView.swift */,
 				BB000135 /* LandingView.swift */,
 				BB000137 /* LoadingScanView.swift */,
 				BB000139 /* ManagePhotosView.swift */,
@@ -333,6 +363,8 @@
 				BB00014B /* PlaceStopRowView.swift */,
 				BB00014D /* PrivacyPolicyView.swift */,
 				BB00014F /* ProfileMapView.swift */,
+				BB000207 /* ProfileManagementView.swift */,
+				BB000209 /* ProfilePageView.swift */,
 				BB000151 /* ProfileView.swift */,
 				BB0001DB /* PaywallView.swift */,
 				BB000153 /* RecapBlogPageView.swift */,
@@ -346,14 +378,28 @@
 				BB0001DC /* SubscriptionSettingsView.swift */,
 				BB000163 /* TermsOfServiceView.swift */,
 				BB000165 /* TitleInputView.swift */,
+				BB00020B /* TrackableScrollView.swift */,
 				BB000167 /* TripDayPickerView.swift */,
 				BB000169 /* TripsMapView.swift */,
 				BB00016B /* TripsView.swift */,
 				BB0001C3 /* UndoOverlayView.swift */,
+				BB00020D /* UnsavedTripCard.swift */,
+				BB00020F /* UnsavedTripPhotosView.swift */,
+				BB0001FC /* Auth */,
 				BB0001B3 /* Onboarding */,
 				BB0001CB /* Components */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		BB0001FC /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				BB0001FD /* AuthView.swift */,
+				BB0001FF /* EmailLoginView.swift */,
+				BB000201 /* EmailSignUpView.swift */,
+			);
+			path = Auth;
 			sourceTree = "<group>";
 		};
 		BB0001B3 /* Onboarding */ = {
@@ -388,6 +434,9 @@
 		BB0001B4 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				BB0001F2 /* APIManager.swift */,
+				BB0001F4 /* AuthService.swift */,
+				BB0001F6 /* AuthStateManager.swift */,
 				BB00017F /* CreatedRecapBlogStore.swift */,
 				BB000181 /* DayToTripGrouper.swift */,
 				BB0001E6 /* DraftReminderNotificationManager.swift */,
@@ -395,7 +444,9 @@
 				BB0001CF /* FindMoreTripsAgent.swift */,
 				BB000183 /* GeoDistanceHelper.swift */,
 				BB000185 /* GeocodingService.swift */,
+				BB0001ED /* GoogleAuthManager.swift */,
 				BB000187 /* ImageLoader.swift */,
+				BB0001F8 /* KeychainHelper.swift */,
 				BB000189 /* LocalExclusion.swift */,
 				BB00018B /* LocalExclusionTests.swift */,
 				BB00018D /* MockTripDataService.swift */,
@@ -404,20 +455,19 @@
 				BB000191 /* OnboardingStore.swift */,
 				BB000193 /* PhotoAssetService.swift */,
 				BB000195 /* PhotoLibraryTripService.swift */,
+				BB0001EB /* PhotoQualityScorer.swift */,
 				BB000197 /* PhotosAuthorizationManager.swift */,
 				BB000199 /* PlaceClusteringService.swift */,
 				BB00019B /* PlaceStopClusteringService.swift */,
-				BB00019D /* RecentRecapStore.swift */,
 				BB0001CD /* SmartReminderService.swift */,
 				BB0001E2 /* StoreKitManager.swift */,
 				BB00019F /* TripClusteringDebug.swift */,
 				BB0001A1 /* TripClusteringTests.swift */,
 				BB0001A3 /* TripDraftStore.swift */,
+				BB0001FA /* TripMatchingService.swift */,
 				BB0001A5 /* TripPhotoFilter.swift */,
 				BB0001A7 /* TripPhotoFilterTests.swift */,
 				BB0001A9 /* TripPhotoSelectionService.swift */,
-				BB0001EB /* PhotoQualityScorer.swift */,
-				BB0001ED /* GoogleAuthManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -503,7 +553,6 @@
 				BB000112 /* PlaceCluster.swift in Sources */,
 				BB000114 /* RecapBlogDetail.swift in Sources */,
 				BB000116 /* RecapDraft.swift in Sources */,
-				BB000118 /* RecentRecap.swift in Sources */,
 				BB00011A /* ScanConfig.swift in Sources */,
 				BB00011C /* TripDay.swift in Sources */,
 				BB00011E /* TripDraft.swift in Sources */,
@@ -570,7 +619,6 @@
 				BB000198 /* PhotosAuthorizationManager.swift in Sources */,
 				BB00019A /* PlaceClusteringService.swift in Sources */,
 				BB00019C /* PlaceStopClusteringService.swift in Sources */,
-				BB00019E /* RecentRecapStore.swift in Sources */,
 				BB0001A0 /* TripClusteringDebug.swift in Sources */,
 				BB0001A2 /* TripClusteringTests.swift in Sources */,
 				BB0001A4 /* TripDraftStore.swift in Sources */,
@@ -599,6 +647,22 @@
 				BB0001E7 /* DraftReminderNotificationManager.swift in Sources */,
 				BB0001E9 /* PlaceCardView.swift in Sources */,
 				BB0001EE /* GoogleAuthManager.swift in Sources */,
+				BB0001F1 /* AuthUser.swift in Sources */,
+				BB0001F3 /* APIManager.swift in Sources */,
+				BB0001F5 /* AuthService.swift in Sources */,
+				BB0001F7 /* AuthStateManager.swift in Sources */,
+				BB0001F9 /* KeychainHelper.swift in Sources */,
+				BB0001FB /* TripMatchingService.swift in Sources */,
+				BB0001FE /* AuthView.swift in Sources */,
+				BB000200 /* EmailLoginView.swift in Sources */,
+				BB000202 /* EmailSignUpView.swift in Sources */,
+				BB000204 /* BottomSheetView.swift in Sources */,
+				BB000206 /* ImportDraftsModalView.swift in Sources */,
+				BB000208 /* ProfileManagementView.swift in Sources */,
+				BB00020A /* ProfilePageView.swift in Sources */,
+				BB00020C /* TrackableScrollView.swift in Sources */,
+				BB00020E /* UnsavedTripCard.swift in Sources */,
+				BB000210 /* UnsavedTripPhotosView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

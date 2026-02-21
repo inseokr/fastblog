@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct TripDay: Identifiable, Equatable, Hashable, Codable {
+struct TripDay: Identifiable, Equatable, Hashable, Codable, Sendable {
     let id: UUID
     var dayIndex: Int
     var dateText: String

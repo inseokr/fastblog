@@ -12,8 +12,8 @@ import SwiftUI
 @MainActor
 final class ProfileMapViewModel: ObservableObject {
     @Published var selectedCountryID: String?
-    @Published var selectedBlog: CreatedRecapBlog?
     @Published var selectedTripID: UUID?
+    @Published var searchText: String = ""
     @Published var mapRegion: MKCoordinateRegion
     @Published var animatedRegion: MKCoordinateRegion?
     /// Incremented whenever mapRegion is set; use in onChange since MKCoordinateRegion is not Equatable.
@@ -30,43 +30,44 @@ final class ProfileMapViewModel: ObservableObject {
         self.mapRegion = defaultRegion
     }
 
-    /// All recap blogs (trips) from the store.
+    /// Only cloud-published blogs appear on the Profile map, matching the Profile page list.
     var allTrips: [CreatedRecapBlog] {
-        store.recents
+        store.cloudPublishedBlogs
     }
 
-    /// Country summaries for modal Mode A. Sorted by last trip date descending.
+    /// Country summaries for the filter bar — only cloud-published blogs.
     var countrySummaries: [CountryRecapSummary] {
-        store.countrySummaries
+        store.cloudCountrySummaries
     }
 
-    /// Trips to show on map and in modal; filtered by selected country when set.
+    /// Trips to show on map and in modal; filtered by selected country and search text when set. Sorted newest to oldest.
     var visibleTrips: [CreatedRecapBlog] {
-        guard let id = selectedCountryID else { return allTrips }
-        return allTrips.filter { blog in (blog.countryName ?? "Unknown") == id }
+        var trips = selectedCountryID == nil ? allTrips : allTrips.filter { ($0.countryName ?? "Unknown") == selectedCountryID }
+        
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !query.isEmpty {
+            trips = trips.filter { blog in
+                blog.title.lowercased().contains(query) || (blog.countryName?.lowercased().contains(query) ?? false)
+            }
+        }
+        
+        return trips.sorted { $0.createdAt > $1.createdAt }
+    }
+    
+    var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// Latest trip overall (for initial map center and "back to all" recenter).
+    /// Uses visibleTrips which is already sorted newest → oldest.
     var latestTripOverall: CreatedRecapBlog? {
-        allTrips.first
+        visibleTrips.first
     }
 
     /// Latest trip in the selected country (for recenter when country is selected).
     var latestTripForSelectedCountry: CreatedRecapBlog? {
         guard selectedCountryID != nil else { return nil }
         return visibleTrips.first
-    }
-
-    /// Default map region.
-    var defaultMapRegion: MKCoordinateRegion {
-        defaultRegion
-    }
-
-    /// Ordered blogs for carousel: latest start date first.
-    var orderedBlogs: [CreatedRecapBlog] {
-        visibleTrips.sorted {
-            ($0.tripStartDate ?? $0.tripEndDate ?? Date.distantPast) > ($1.tripStartDate ?? $1.tripEndDate ?? Date.distantPast)
-        }
     }
 
     /// Representative coordinate for a blog; nil if no location data.
@@ -82,7 +83,7 @@ final class ProfileMapViewModel: ObservableObject {
         }
     }
 
-    /// Set country filter and recenter map to latest trip in that country.
+    /// Set country filter and recenter map + scroll card list to latest trip in that country.
     func selectCountry(_ countryID: String?) {
         selectedCountryID = countryID
         if countryID != nil {
@@ -90,22 +91,13 @@ final class ProfileMapViewModel: ObservableObject {
         } else {
             recenterToLatestTrip()
         }
+        // Always select the first (latest) visible trip so the card list scrolls to it.
+        selectedTripID = visibleTrips.first?.sourceTripId
     }
 
     /// Select a trip (from map or list); used for highlight and optional callout.
     func selectTrip(_ sourceTripId: UUID?) {
         selectedTripID = sourceTripId
-        if let blog = visibleTrips.first(where: { $0.sourceTripId == sourceTripId }) {
-            selectedBlog = blog
-            recenterToTrip(blog)
-        }
-    }
-
-    /// Select a blog from carousel.
-    func selectBlog(_ blog: CreatedRecapBlog) {
-        selectedBlog = blog
-        selectedTripID = blog.sourceTripId
-        recenterToTrip(blog)
     }
 
     /// Recenter map to latest trip overall (with animation).
@@ -152,45 +144,13 @@ final class ProfileMapViewModel: ObservableObject {
         mapRegionChangeCounter += 1
     }
 
-    /// Call when view appears to center on latest trip.
+    /// Call when view appears to center on latest trip and select it in the card list.
     func onAppear() {
-        if selectedCountryID == nil && selectedBlog == nil {
-            if let first = orderedBlogs.first {
-                selectBlog(first)
-            } else {
-                recenterToLatestTrip()
-            }
+        if selectedCountryID == nil {
+            // Select the latest (newest) trip first so the card scroll receives it
+            // via onChange(of: selectedTripID), then recenter the map.
+            selectedTripID = visibleTrips.first?.sourceTripId
+            recenterToLatestTrip()
         }
-    }
-
-    // MARK: - Helpers
-
-    func computeRegion(for blog: CreatedRecapBlog) -> MKCoordinateRegion {
-        // 1. Try to get explicit bounding region from detail if available (not currently storing region in CreatedRecapBlog, so we'd need to fetch detail or compute from places)
-        // For now, fallback to representative coordinate with default span.
-        // If we had a list of coordinates for the blog easily accessible here without fetching detail, we could compute bbox.
-        // CreatedRecapBlog has `sourceTripId`. We can check `CreatedRecapBlogStore` for coordinate.
-
-        if let coord = coordinate(for: blog) {
-             return MKCoordinateRegion(
-                center: coord,
-                span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
-            )
-        }
-
-        return defaultRegion
-    }
-
-    func formatDateRange(start: Date?, end: Date?) -> String {
-        guard let start = start else { return "" }
-        let f = DateFormatter()
-        f.dateFormat = "MMM d"
-        let startStr = f.string(from: start)
-        guard let end = end else { return startStr }
-        if Calendar.current.isDate(start, inSameDayAs: end) {
-            return startStr
-        }
-        let endStr = f.string(from: end)
-        return "\(startStr) – \(endStr)"
     }
 }

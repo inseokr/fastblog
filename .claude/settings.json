@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/inseo/Documents/GitHub/shazam/shazam/Capper/**)"
+    ],
+    "additionalDirectories": [
+      "/Users/inseo/Documents/GitHub/shazam/shazam/Capper/Views"
+    ]
+  }
+}
