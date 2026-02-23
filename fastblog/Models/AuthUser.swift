@@ -19,12 +19,14 @@ struct AuthUser: Codable, Equatable, Sendable {
     let provider: AuthProvider
 
     var initials: String {
-        guard let name = displayName, !name.isEmpty else {
-            return email.flatMap { String($0.prefix(1)) }?.uppercased() ?? "?"
+        // Priority: username → displayName → first letter of email → "?"
+        let source = username ?? displayName
+        if let name = source, !name.isEmpty {
+            let parts = name.split(separator: " ")
+            let first = parts.first.map { String($0.prefix(1)) } ?? ""
+            let last = parts.count > 1 ? (parts.last.map { String($0.prefix(1)) } ?? "") : ""
+            return (first + last).uppercased()
         }
-        let parts = name.split(separator: " ")
-        let first = parts.first.map { String($0.prefix(1)) } ?? ""
-        let last = parts.count > 1 ? (parts.last.map { String($0.prefix(1)) } ?? "") : ""
-        return (first + last).uppercased()
+        return email.flatMap { String($0.prefix(1)) }?.uppercased() ?? "?"
     }
 }

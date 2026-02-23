@@ -260,7 +260,7 @@ struct ProfilePageView: View {
         }
         
         // Include the profile photo if available
-        if let data = UserDefaults.standard.data(forKey: "customProfileImageData"), let uiImage = UIImage(data: data) {
+        if let uiImage = authService.profileImageData.flatMap({ UIImage(data: $0) }) {
             items.append(uiImage)
         }
         
@@ -312,10 +312,10 @@ struct ProfileHeroSection: View {
     @State private var showPhotoViewer = false
     @State private var showManagement = false
     @State private var showEditBio = false
-    
-    // For local persistence of the selected avatar
-    @AppStorage("customProfileImageData") private var customProfileImageData: Data?
-    
+
+    /// Per-user profile image data — loaded from AuthService on appear.
+    @State private var customProfileImageData: Data?
+
     // For local persistence of the user's bio
     @AppStorage("userBio") private var userBio: String = "Write your bio"
     
@@ -401,9 +401,12 @@ struct ProfileHeroSection: View {
             .padding(.top, ProfileTheme.Spacing.sm)
         }
         .sheet(isPresented: $showPhotoViewer) {
-            ProfilePhotoViewer(customProfileImageData: $customProfileImageData)
-                .environmentObject(authService)
-                .presentationDragIndicator(.visible)
+            ProfilePhotoViewer(
+                customProfileImageData: $customProfileImageData,
+                onSave: { data in authService.profileImageData = data }
+            )
+            .environmentObject(authService)
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showManagement) {
             ProfileManagementView()
@@ -413,6 +416,13 @@ struct ProfileHeroSection: View {
         .sheet(isPresented: $showEditBio) {
             EditBioView(bio: $userBio)
                 .presentationDragIndicator(.visible)
+        }
+        .onAppear {
+            // Load photo for the current user on every appear
+            customProfileImageData = authService.profileImageData
+        }
+        .onChange(of: authService.currentUser?.id) { _, _ in
+            customProfileImageData = authService.profileImageData
         }
     }
 }
@@ -467,6 +477,8 @@ struct ProfilePhotoViewer: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var authService: AuthService
     @Binding var customProfileImageData: Data?
+    /// Called when the user saves a new photo so the caller can persist it.
+    var onSave: ((Data?) -> Void)? = nil
     
     @State private var selectedItem: PhotosPickerItem?
     
@@ -512,6 +524,7 @@ struct ProfilePhotoViewer: View {
                         if let data = try? await newItem?.loadTransferable(type: Data.self) {
                             DispatchQueue.main.async {
                                 self.customProfileImageData = data
+                                self.onSave?(data)
                             }
                         }
                     }
@@ -520,6 +533,7 @@ struct ProfilePhotoViewer: View {
                 if customProfileImageData != nil {
                     Button("Remove Photo", role: .destructive) {
                         customProfileImageData = nil
+                        onSave?(nil)
                     }
                     .padding(.top, 8)
                 }
@@ -649,12 +663,11 @@ struct StoryFeedSection: View {
     var body: some View {
         VStack(spacing: ProfileTheme.Spacing.xxl) {
             ForEach(blogs) { blog in
-                Button {
-                    selectedBlog = blog
-                } label: {
-                    BlogCard(blog: blog)
-                }
-                .buttonStyle(.plain)
+                BlogCard(blog: blog)
+                    .contentShape(Rectangle()) // Ensures tap target exactly matches bounds
+                    .onTapGesture {
+                        selectedBlog = blog
+                    }
             }
         }
     }

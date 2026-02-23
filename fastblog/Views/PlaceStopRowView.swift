@@ -201,7 +201,7 @@ struct PlaceStopRowView: View {
                                 .frame(width: thumbnailSize)
                             }
                             // Manage Photos card at end of scroll
-                            if isEditMode && includedPhotos.count > 1 {
+                            if isEditMode && stop.photos.count > 1 {
                                 Button(action: onManagePhotos) {
                                     RoundedRectangle(cornerRadius: 8)
                                         .strokeBorder(Color.white.opacity(0.6), lineWidth: 1.5)

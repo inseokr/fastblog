@@ -22,7 +22,7 @@ struct CreateBlogFlowView: View {
     @State private var flowCoverAssetIdentifier: String?
 
     /// Duration to show the Creating Recap animation before navigating home.
-    private let creatingAnimationDuration: TimeInterval = 2.8
+    private let creatingAnimationDuration: TimeInterval = 5.0
 
     private enum Step {
         case title

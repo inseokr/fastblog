@@ -752,7 +752,7 @@ struct RecapBlogPageView: View {
         // Perform Deletion
         var updatedDay = day
         var updatedStop = stop
-        updatedStop.photos.remove(at: photoIdx)
+        updatedStop.photos[photoIdx].isIncluded = false
         updatedDay.placeStops[stopIdx] = updatedStop
         draft.days[dayIdx] = updatedDay
     }
@@ -771,13 +771,13 @@ struct RecapBlogPageView: View {
                     }
                 }
                 
-            case .deletePhoto(let dayId, let stopId, let photo, let index):
+            case .deletePhoto(let dayId, let stopId, let photo, _):
                 if let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
                    let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) {
                     var day = draft.days[dayIdx]
                     var stop = day.placeStops[stopIdx]
-                    if index <= stop.photos.count {
-                        stop.photos.insert(photo, at: index)
+                    if let pIdx = stop.photos.firstIndex(where: { $0.id == photo.id }) {
+                        stop.photos[pIdx].isIncluded = true
                         day.placeStops[stopIdx] = stop
                         draft.days[dayIdx] = day
                     }
@@ -995,8 +995,7 @@ struct RecapBlogPageView: View {
                                 .tint(.white)
                                 .frame(width: 22, height: 22)
                         } else {
-                            Image("Upload Cloud Icon")
-                                .renderingMode(.template)
+                            Image(systemName: blogIsInCloud ? "checkmark.icloud.fill" : "icloud.and.arrow.up")
                                 .resizable()
                                 .scaledToFit()
                                 .frame(width: 22, height: 22)
@@ -1141,6 +1140,20 @@ struct RecapBlogPageView: View {
     }
 
     private func removeCloudURLsFromDraft() {
+        // 1. Update backend to hide the blog if we have a blogKey
+        if let existing = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }),
+           let key = existing.blogKey {
+            Task {
+                do {
+                    try await APIManager.shared.setBlogPrivacy(blogKey: key, level: "hidden")
+                    print("✅ Successfully hid blog (key: \(key)) from cloud on backend.")
+                } catch {
+                    print("🚨 Failed to hide blog on backend: \(error)")
+                }
+            }
+        }
+
+        // 2. Clear local cloudURLs
         for dayIdx in draft.days.indices {
             for stopIdx in draft.days[dayIdx].placeStops.indices {
                 for photoIdx in draft.days[dayIdx].placeStops[stopIdx].photos.indices {

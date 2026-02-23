@@ -21,8 +21,8 @@ struct LandingView: View {
     @State private var ctaIsAlternate = false
     @State private var ctaOpacity: Double = 1
     
-    // For local persistence of the selected avatar
-    @AppStorage("customProfileImageData") private var customProfileImageData: Data?
+    /// Per-user profile photo — loaded from authService on appear/user-change.
+    @State private var avatarImageData: Data?
 
     private let landingBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
     private let ctaInterval: TimeInterval = 5
@@ -56,7 +56,7 @@ struct LandingView: View {
                     } label: {
                         if let user = authService.currentUser {
                             // Signed-in avatar
-                            if let data = customProfileImageData, let uiImage = UIImage(data: data) {
+                            if let data = avatarImageData, let uiImage = UIImage(data: data) {
                                 Image(uiImage: uiImage)
                                     .resizable()
                                     .scaledToFill()
@@ -108,6 +108,12 @@ struct LandingView: View {
                 showProfile = true
             })
             .environmentObject(authService)
+        }
+        .onAppear {
+            avatarImageData = authService.profileImageData
+        }
+        .onChange(of: authService.currentUser?.id) { _, _ in
+            avatarImageData = authService.profileImageData
         }
     }
 
@@ -339,8 +345,8 @@ private struct SettingsView: View {
     @AppStorage("capper.tripClustering.debugLogging") private var tripClusteringDebug = false
     #endif
 
-    // For local persistence of the selected avatar
-    @AppStorage("customProfileImageData") private var customProfileImageData: Data?
+    // Per-user profile photo — loaded from authService on appear.
+    @State private var customProfileImageData: Data?
 
     var body: some View {
         NavigationStack {
@@ -478,6 +484,12 @@ private struct SettingsView: View {
             .fullScreenCover(isPresented: $showAuth) {
                 AuthView()
                     .environmentObject(authService)
+            }
+            .onAppear {
+                customProfileImageData = authService.profileImageData
+            }
+            .onChange(of: authService.currentUser?.id) { _, _ in
+                customProfileImageData = authService.profileImageData
             }
         }
     }

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000061 /* GoogleSignIn */; };
 		BB000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000101 /* ContentView.swift */; };
 		BB000104 /* fastblogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000103 /* fastblogApp.swift */; };
 		BB000106 /* MyBlogsProfileViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000105 /* MyBlogsProfileViewModel.swift */; };
@@ -132,6 +133,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AA000003 /* fastblog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = fastblog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB000101 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		BB000103 /* fastblogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = fastblogApp.swift; sourceTree = "<group>"; };
 		BB000105 /* MyBlogsProfileViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyBlogsProfileViewModel.swift; sourceTree = "<group>"; };
@@ -222,9 +224,9 @@
 		BB0001C5 /* NeighborhoodIntroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodIntroView.swift; sourceTree = "<group>"; };
 		BB0001C7 /* NeighborhoodMapRefinementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodMapRefinementView.swift; sourceTree = "<group>"; };
 		BB0001C9 /* NeighborhoodSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodSearchView.swift; sourceTree = "<group>"; };
-		BB0001D1 /* RecallTrigger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecallTrigger.swift; sourceTree = "<group>"; };
 		BB0001CD /* SmartReminderService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartReminderService.swift; sourceTree = "<group>"; };
 		BB0001CF /* FindMoreTripsAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FindMoreTripsAgent.swift; sourceTree = "<group>"; };
+		BB0001D1 /* RecallTrigger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecallTrigger.swift; sourceTree = "<group>"; };
 		BB0001D2 /* MemoryRecallViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryRecallViewModel.swift; sourceTree = "<group>"; };
 		BB0001D4 /* MemoryRecallService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryRecallService.swift; sourceTree = "<group>"; };
 		BB0001D6 /* MemoryRecallModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryRecallModal.swift; sourceTree = "<group>"; };
@@ -255,7 +257,6 @@
 		BB00020B /* TrackableScrollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackableScrollView.swift; sourceTree = "<group>"; };
 		BB00020D /* UnsavedTripCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnsavedTripCard.swift; sourceTree = "<group>"; };
 		BB00020F /* UnsavedTripPhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnsavedTripPhotosView.swift; sourceTree = "<group>"; };
-		AA000003 /* fastblog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = fastblog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -263,6 +264,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -392,16 +394,6 @@
 			path = Views;
 			sourceTree = "<group>";
 		};
-		BB0001FC /* Auth */ = {
-			isa = PBXGroup;
-			children = (
-				BB0001FD /* AuthView.swift */,
-				BB0001FF /* EmailLoginView.swift */,
-				BB000201 /* EmailSignUpView.swift */,
-			);
-			path = Auth;
-			sourceTree = "<group>";
-		};
 		BB0001B3 /* Onboarding */ = {
 			isa = PBXGroup;
 			children = (
@@ -419,16 +411,6 @@
 				BB00017D /* SplashView.swift */,
 			);
 			path = Onboarding;
-			sourceTree = "<group>";
-		};
-		BB0001CB /* Components */ = {
-			isa = PBXGroup;
-			children = (
-				BB0001C1 /* KeyboardCaptionToolbar.swift */,
-				BB0001E8 /* PlaceCardView.swift */,
-				BB0001E0 /* RecallCard.swift */,
-			);
-			path = Components;
 			sourceTree = "<group>";
 		};
 		BB0001B4 /* Services */ = {
@@ -472,6 +454,26 @@
 			path = Services;
 			sourceTree = "<group>";
 		};
+		BB0001CB /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				BB0001C1 /* KeyboardCaptionToolbar.swift */,
+				BB0001E8 /* PlaceCardView.swift */,
+				BB0001E0 /* RecallCard.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		BB0001FC /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				BB0001FD /* AuthView.swift */,
+				BB0001FF /* EmailLoginView.swift */,
+				BB000201 /* EmailSignUpView.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -513,7 +515,7 @@
 				en,
 				Base,
 			);
-			mainGroup = BB0001AD;
+			mainGroup = BB0001AD /* main */;
 			packageReferences = (
 				AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
@@ -717,7 +719,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = N3L5LBGNK2;
+				DEVELOPMENT_TEAM = H9V9G4FU84;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "fastblog uses your location to identify your neighborhood and group travel photos.";
@@ -743,7 +745,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = N3L5LBGNK2;
+				DEVELOPMENT_TEAM = H9V9G4FU84;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "fastblog uses your location to identify your neighborhood and group travel photos.";
@@ -763,25 +765,6 @@
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 9.0.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		AA000061 /* GoogleSignIn */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
-			productName = GoogleSignIn;
-		};
-/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCConfigurationList section */
 		AA000030 /* Build configuration list for PBXNativeTarget "fastblog" */ = {
@@ -804,6 +787,24 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AA000061 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = AA000040 /* Project object */;
 }

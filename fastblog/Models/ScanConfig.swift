@@ -7,8 +7,8 @@ import Foundation
 
 /// Central config for trip scan: window, local exclusion, and segmentation thresholds.
 enum ScanConfig {
-    /// Default scan window in days (e.g. last 60 days = ~2 months). Reduced to lower geocoding rate limit usage.
-    static let windowDays = 60
+    /// Default scan window in days (e.g. last 90 days = ~3 months). Restored to 90 days to include older trips like December.
+    static let windowDays = 90
 
     /// Photos within this many miles of neighborhood center are excluded from trips (non-trip / local).
     static let localExclusionMiles = 50.0

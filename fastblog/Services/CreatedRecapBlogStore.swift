@@ -521,8 +521,22 @@ final class CreatedRecapBlogStore: ObservableObject {
         persistRecents()
     }
 
-    /// Clears all cloud URLs from a blog's photos (removes from cloud).
+    /// Clears all cloud URLs from a blog's photos (removes from cloud) and updates the backend to hide the blog.
     func removeFromCloud(blogId: UUID) {
+        // 1. Update backend to hide the blog if we have a blogKey
+        if let idx = recents.firstIndex(where: { $0.sourceTripId == blogId }),
+           let key = recents[idx].blogKey {
+            Task {
+                do {
+                    try await APIManager.shared.setBlogPrivacy(blogKey: key, level: "hidden")
+                    print("✅ Successfully hid blog (key: \(key)) from cloud on backend.")
+                } catch {
+                    print("🚨 Failed to hide blog on backend: \(error)")
+                }
+            }
+        }
+
+        // 2. Clear local cloudURLs
         guard var detail = blogDetailsBySourceId[blogId] else { return }
         for dayIdx in detail.days.indices {
             for stopIdx in detail.days[dayIdx].placeStops.indices {
@@ -755,9 +769,14 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     // MARK: - Display Helpers
 
-    /// Blogs that have been fully uploaded to the cloud.
+    /// Blogs that have been fully uploaded to the cloud (filtered for current user).
     var cloudPublishedBlogs: [CreatedRecapBlog] {
-        recents.filter { isBlogInCloud(blogId: $0.sourceTripId) }
+        guard let userId = AuthService.shared.currentUser?.id else { return [] }
+        return recents.filter {
+            $0.ownerScope == .account &&
+            $0.ownerUserId == userId &&
+            isBlogInCloud(blogId: $0.sourceTripId)
+        }
     }
 
     /// Country summaries using only cloud-published blogs (for Profile page).

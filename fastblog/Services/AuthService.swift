@@ -99,6 +99,26 @@ final class AuthService: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Per-User Profile Photo
+
+    /// UserDefaults key scoped to the current user's ID so each account has its own photo.
+    private var profilePhotoKey: String {
+        guard let id = currentUser?.id else { return "profilePhoto.anonymous" }
+        return "profilePhoto.\(id)"
+    }
+
+    /// Reads or writes the locally-stored profile photo for the currently signed-in user.
+    var profileImageData: Data? {
+        get { UserDefaults.standard.data(forKey: profilePhotoKey) }
+        set {
+            if let data = newValue {
+                UserDefaults.standard.set(data, forKey: profilePhotoKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: profilePhotoKey)
+            }
+        }
+    }
+
     // MARK: - Sign Out
 
     func signOut() {
@@ -152,16 +172,20 @@ final class AuthService: NSObject, ObservableObject {
 // MARK: - Network Models
 
 private struct SignupRequest: Encodable {
+    let signupData: SignupData
+    
     struct SignupData: Encodable {
         let username: String
         let email: String
         let password: String
+        let userType: String
     }
-    let signupData: SignupData
 }
 
 private struct SignupResponse: Decodable {
     let result: String?
+    let message: String?
+    let status: String?   // some backends use "status" instead of "result"
 }
 
 private struct LoginRequest: Encodable {
@@ -217,7 +241,12 @@ extension AuthService {
         
         Analytics.track(.authProviderSelected(provider: "email_signup"))
         
-        let payload = SignupRequest(signupData: .init(username: username, email: email, password: password))
+        let payload = SignupRequest(signupData: .init(
+            username: username,
+            email: email,
+            password: password,
+            userType: "bloggo"
+        ))
         
         let response: SignupResponse = try await APIManager.shared.post(
             endpoint: "/signup/mobile/local",
@@ -225,11 +254,17 @@ extension AuthService {
             requiresAuth: false
         )
         
-        if response.result == "success" {
+        // Accept any of the common success signals different backends use.
+        // Debug: print the actual value so mismatches are easy to spot.
+        let resultValue = response.result ?? response.status ?? response.message ?? "(nil)"
+        print("📋 Signup response — result: \(resultValue)")
+
+        let isSuccess = ["success", "ok", "created"].contains(resultValue.lowercased())
+        if isSuccess || response.result == nil && response.message == nil {
             // Immediate Login (Hydration)
             try await login(email: username, password: password)
         } else {
-            throw AuthError.networkError("Signup failed securely.")
+            throw AuthError.networkError("Signup failed (server said: \(resultValue)).")
         }
     }
 

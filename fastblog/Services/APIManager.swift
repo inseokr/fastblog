@@ -98,21 +98,29 @@ final class APIManager {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            // Attempt to extract an error message from the response body
-            var errorMessage = "Unknown server error."
+            // Attempt to extract a human-readable error message from the response body
+            var errorMessage: String
             
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            // Friendly messages for common HTTP error codes
+            switch httpResponse.statusCode {
+            case 503: errorMessage = "The server is temporarily unavailable. Please try again in a moment."
+            case 502: errorMessage = "The server is unreachable. Please check your connection and try again."
+            case 401: errorMessage = "Incorrect username or password."
+            case 403: errorMessage = "You don't have permission to do that."
+            case 404: errorMessage = "The requested resource was not found."
+            case 409: errorMessage = "An account with this username or email already exists."
+            case 429: errorMessage = "Too many requests. Please wait a moment and try again."
+            default:  errorMessage = "Something went wrong (error \(httpResponse.statusCode)). Please try again."
+            }
+            
+            // Try to get a more specific message from the JSON body (if not HTML)
+            let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? ""
+            let isHTML = contentType.contains("text/html")
+            if !isHTML, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 print("🚨 API Error Data JSON: \(json)")
-                if let msg = json["message"] as? String {
-                    errorMessage = msg
-                } else if let err = json["error"] as? String {
-                    errorMessage = err
-                } else if let result = json["result"] as? String {
-                    errorMessage = result
-                }
-            } else if let stringError = String(data: data, encoding: .utf8) {
-                print("🚨 API Error Data String: \(stringError)")
-                errorMessage = stringError
+                if let msg = json["message"] as? String, !msg.isEmpty { errorMessage = msg }
+                else if let err = json["error"] as? String, !err.isEmpty { errorMessage = err }
+                else if let result = json["result"] as? String, !result.isEmpty { errorMessage = result }
             }
             
             print("🚨 HTTP Error \(httpResponse.statusCode): \(errorMessage)")
@@ -324,11 +332,11 @@ final class APIManager {
     }
 
     /// Sets the privacy of a blog on the Pocketverse backend.
-    func setBlogPrivacy(blogKey: Int, privacy: String = "public") async throws {
-        let payload: [String: Any] = ["blogKey": blogKey, "privacy": privacy]
+    func setBlogPrivacy(blogKey: Int, level: String = "public") async throws {
+        let payload: [String: Any] = ["blogKey": blogKey, "level": level]
         let body = try JSONSerialization.data(withJSONObject: payload)
         let _: GenericResponse = try await request(
-            endpoint: "/placeVisitHistory/privacy-control",
+            endpoint: "/trips/privacy-control",
             method: "POST",
             body: body,
             requiresAuth: true
