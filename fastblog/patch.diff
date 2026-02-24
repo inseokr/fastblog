@@ -1,0 +1,1683 @@
+diff --git a/fastblog.xcodeproj/project.pbxproj b/fastblog.xcodeproj/project.pbxproj
+index 777a3f0..96325f5 100644
+--- a/fastblog.xcodeproj/project.pbxproj
++++ b/fastblog.xcodeproj/project.pbxproj
+@@ -7,6 +7,7 @@
+ 	objects = {
+ 
+ /* Begin PBXBuildFile section */
++		7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000061 /* GoogleSignIn */; };
+ 		BB000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000101 /* ContentView.swift */; };
+ 		BB000104 /* fastblogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000103 /* fastblogApp.swift */; };
+ 		BB000106 /* MyBlogsProfileViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000105 /* MyBlogsProfileViewModel.swift */; };
+@@ -132,6 +133,7 @@
+ /* End PBXBuildFile section */
+ 
+ /* Begin PBXFileReference section */
++		AA000003 /* fastblog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = fastblog.app; sourceTree = BUILT_PRODUCTS_DIR; };
+ 		BB000101 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+ 		BB000103 /* fastblogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = fastblogApp.swift; sourceTree = "<group>"; };
+ 		BB000105 /* MyBlogsProfileViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyBlogsProfileViewModel.swift; sourceTree = "<group>"; };
+@@ -222,9 +224,9 @@
+ 		BB0001C5 /* NeighborhoodIntroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodIntroView.swift; sourceTree = "<group>"; };
+ 		BB0001C7 /* NeighborhoodMapRefinementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodMapRefinementView.swift; sourceTree = "<group>"; };
+ 		BB0001C9 /* NeighborhoodSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodSearchView.swift; sourceTree = "<group>"; };
+-		BB0001D1 /* RecallTrigger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecallTrigger.swift; sourceTree = "<group>"; };
+ 		BB0001CD /* SmartReminderService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartReminderService.swift; sourceTree = "<group>"; };
+ 		BB0001CF /* FindMoreTripsAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FindMoreTripsAgent.swift; sourceTree = "<group>"; };
++		BB0001D1 /* RecallTrigger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecallTrigger.swift; sourceTree = "<group>"; };
+ 		BB0001D2 /* MemoryRecallViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryRecallViewModel.swift; sourceTree = "<group>"; };
+ 		BB0001D4 /* MemoryRecallService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryRecallService.swift; sourceTree = "<group>"; };
+ 		BB0001D6 /* MemoryRecallModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryRecallModal.swift; sourceTree = "<group>"; };
+@@ -255,7 +257,6 @@
+ 		BB00020B /* TrackableScrollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackableScrollView.swift; sourceTree = "<group>"; };
+ 		BB00020D /* UnsavedTripCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnsavedTripCard.swift; sourceTree = "<group>"; };
+ 		BB00020F /* UnsavedTripPhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnsavedTripPhotosView.swift; sourceTree = "<group>"; };
+-		AA000003 /* fastblog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = fastblog.app; sourceTree = BUILT_PRODUCTS_DIR; };
+ /* End PBXFileReference section */
+ 
+ /* Begin PBXFrameworksBuildPhase section */
+@@ -263,6 +264,7 @@
+ 			isa = PBXFrameworksBuildPhase;
+ 			buildActionMask = 2147483647;
+ 			files = (
++				7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */,
+ 			);
+ 			runOnlyForDeploymentPostprocessing = 0;
+ 		};
+@@ -392,16 +394,6 @@
+ 			path = Views;
+ 			sourceTree = "<group>";
+ 		};
+-		BB0001FC /* Auth */ = {
+-			isa = PBXGroup;
+-			children = (
+-				BB0001FD /* AuthView.swift */,
+-				BB0001FF /* EmailLoginView.swift */,
+-				BB000201 /* EmailSignUpView.swift */,
+-			);
+-			path = Auth;
+-			sourceTree = "<group>";
+-		};
+ 		BB0001B3 /* Onboarding */ = {
+ 			isa = PBXGroup;
+ 			children = (
+@@ -421,16 +413,6 @@
+ 			path = Onboarding;
+ 			sourceTree = "<group>";
+ 		};
+-		BB0001CB /* Components */ = {
+-			isa = PBXGroup;
+-			children = (
+-				BB0001C1 /* KeyboardCaptionToolbar.swift */,
+-				BB0001E8 /* PlaceCardView.swift */,
+-				BB0001E0 /* RecallCard.swift */,
+-			);
+-			path = Components;
+-			sourceTree = "<group>";
+-		};
+ 		BB0001B4 /* Services */ = {
+ 			isa = PBXGroup;
+ 			children = (
+@@ -472,6 +454,26 @@
+ 			path = Services;
+ 			sourceTree = "<group>";
+ 		};
++		BB0001CB /* Components */ = {
++			isa = PBXGroup;
++			children = (
++				BB0001C1 /* KeyboardCaptionToolbar.swift */,
++				BB0001E8 /* PlaceCardView.swift */,
++				BB0001E0 /* RecallCard.swift */,
++			);
++			path = Components;
++			sourceTree = "<group>";
++		};
++		BB0001FC /* Auth */ = {
++			isa = PBXGroup;
++			children = (
++				BB0001FD /* AuthView.swift */,
++				BB0001FF /* EmailLoginView.swift */,
++				BB000201 /* EmailSignUpView.swift */,
++			);
++			path = Auth;
++			sourceTree = "<group>";
++		};
+ /* End PBXGroup section */
+ 
+ /* Begin PBXNativeTarget section */
+@@ -513,7 +515,7 @@
+ 				en,
+ 				Base,
+ 			);
+-			mainGroup = BB0001AD;
++			mainGroup = BB0001AD /* main */;
+ 			packageReferences = (
+ 				AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+ 			);
+@@ -717,7 +719,7 @@
+ 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+ 				CODE_SIGN_STYLE = Automatic;
+ 				CURRENT_PROJECT_VERSION = 1;
+-				DEVELOPMENT_TEAM = N3L5LBGNK2;
++				DEVELOPMENT_TEAM = H9V9G4FU84;
+ 				GENERATE_INFOPLIST_FILE = YES;
+ 				INFOPLIST_FILE = fastblog/Info.plist;
+ 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "fastblog uses your location to identify your neighborhood and group travel photos.";
+@@ -743,7 +745,7 @@
+ 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+ 				CODE_SIGN_STYLE = Automatic;
+ 				CURRENT_PROJECT_VERSION = 1;
+-				DEVELOPMENT_TEAM = N3L5LBGNK2;
++				DEVELOPMENT_TEAM = H9V9G4FU84;
+ 				GENERATE_INFOPLIST_FILE = YES;
+ 				INFOPLIST_FILE = fastblog/Info.plist;
+ 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "fastblog uses your location to identify your neighborhood and group travel photos.";
+@@ -764,25 +766,6 @@
+ 		};
+ /* End XCBuildConfiguration section */
+ 
+-/* Begin XCRemoteSwiftPackageReference section */
+-		AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+-			isa = XCRemoteSwiftPackageReference;
+-			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+-			requirement = {
+-				kind = upToNextMajorVersion;
+-				minimumVersion = 9.0.0;
+-			};
+-		};
+-/* End XCRemoteSwiftPackageReference section */
+-
+-/* Begin XCSwiftPackageProductDependency section */
+-		AA000061 /* GoogleSignIn */ = {
+-			isa = XCSwiftPackageProductDependency;
+-			package = AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+-			productName = GoogleSignIn;
+-		};
+-/* End XCSwiftPackageProductDependency section */
+-
+ /* Begin XCConfigurationList section */
+ 		AA000030 /* Build configuration list for PBXNativeTarget "fastblog" */ = {
+ 			isa = XCConfigurationList;
+@@ -804,6 +787,24 @@
+ 		};
+ /* End XCConfigurationList section */
+ 
++/* Begin XCRemoteSwiftPackageReference section */
++		AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
++			isa = XCRemoteSwiftPackageReference;
++			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
++			requirement = {
++				kind = upToNextMajorVersion;
++				minimumVersion = 9.0.0;
++			};
++		};
++/* End XCRemoteSwiftPackageReference section */
++
++/* Begin XCSwiftPackageProductDependency section */
++		AA000061 /* GoogleSignIn */ = {
++			isa = XCSwiftPackageProductDependency;
++			package = AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
++			productName = GoogleSignIn;
++		};
++/* End XCSwiftPackageProductDependency section */
+ 	};
+ 	rootObject = AA000040 /* Project object */;
+ }
+diff --git a/fastblog/Assets.xcassets/AppIcon.appiconset/AppIcon.png b/fastblog/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+deleted file mode 100644
+index dd2007b..0000000
+Binary files a/fastblog/Assets.xcassets/AppIcon.appiconset/AppIcon.png and /dev/null differ
+diff --git a/fastblog/Assets.xcassets/AppIcon.appiconset/Contents.json b/fastblog/Assets.xcassets/AppIcon.appiconset/Contents.json
+index caefc04..51f2c99 100644
+--- a/fastblog/Assets.xcassets/AppIcon.appiconset/Contents.json
++++ b/fastblog/Assets.xcassets/AppIcon.appiconset/Contents.json
+@@ -1,13 +1,14 @@
+ {
+-  "images": [
++  "images" : [
+     {
+-      "idiom": "universal",
+-      "platform": "ios",
+-      "size": "1024x1024"
++      "filename" : "Gemini_Generated_Image_l4tskol4tskol4ts.png",
++      "idiom" : "universal",
++      "platform" : "ios",
++      "size" : "1024x1024"
+     }
+   ],
+-  "info": {
+-    "author": "xcode",
+-    "version": 1
++  "info" : {
++    "author" : "xcode",
++    "version" : 1
+   }
+-}
+\ No newline at end of file
++}
+diff --git a/fastblog/Assets.xcassets/ScanIcon.imageset/Blogo.png b/fastblog/Assets.xcassets/ScanIcon.imageset/Blogo.png
+new file mode 100644
+index 0000000..d4ee768
+Binary files /dev/null and b/fastblog/Assets.xcassets/ScanIcon.imageset/Blogo.png differ
+diff --git a/fastblog/Assets.xcassets/ScanIcon.imageset/Contents.json b/fastblog/Assets.xcassets/ScanIcon.imageset/Contents.json
+index bb4e306..b730b1b 100644
+--- a/fastblog/Assets.xcassets/ScanIcon.imageset/Contents.json
++++ b/fastblog/Assets.xcassets/ScanIcon.imageset/Contents.json
+@@ -1,7 +1,7 @@
+ {
+   "images" : [
+     {
+-      "filename" : "ScanIcon.png",
++      "filename" : "Blogo.png",
+       "idiom" : "universal",
+       "scale" : "1x"
+     },
+diff --git a/fastblog/Assets.xcassets/ScanIcon.imageset/ScanIcon.png b/fastblog/Assets.xcassets/ScanIcon.imageset/ScanIcon.png
+deleted file mode 100644
+index 5b443fe..0000000
+Binary files a/fastblog/Assets.xcassets/ScanIcon.imageset/ScanIcon.png and /dev/null differ
+diff --git a/fastblog/Assets.xcassets/SplashIcon.imageset/Blogo.png b/fastblog/Assets.xcassets/SplashIcon.imageset/Blogo.png
+new file mode 100644
+index 0000000..d4ee768
+Binary files /dev/null and b/fastblog/Assets.xcassets/SplashIcon.imageset/Blogo.png differ
+diff --git a/fastblog/Assets.xcassets/SplashIcon.imageset/Contents.json b/fastblog/Assets.xcassets/SplashIcon.imageset/Contents.json
+index da6eafb..b730b1b 100644
+--- a/fastblog/Assets.xcassets/SplashIcon.imageset/Contents.json
++++ b/fastblog/Assets.xcassets/SplashIcon.imageset/Contents.json
+@@ -1,7 +1,7 @@
+ {
+   "images" : [
+     {
+-      "filename" : "SplashIcon.png",
++      "filename" : "Blogo.png",
+       "idiom" : "universal",
+       "scale" : "1x"
+     },
+diff --git a/fastblog/Assets.xcassets/SplashIcon.imageset/SplashIcon.png b/fastblog/Assets.xcassets/SplashIcon.imageset/SplashIcon.png
+deleted file mode 100644
+index dd2007b..0000000
+Binary files a/fastblog/Assets.xcassets/SplashIcon.imageset/SplashIcon.png and /dev/null differ
+diff --git a/fastblog/Models/AuthUser.swift b/fastblog/Models/AuthUser.swift
+index 5a0a496..7b71af2 100644
+--- a/fastblog/Models/AuthUser.swift
++++ b/fastblog/Models/AuthUser.swift
+@@ -19,12 +19,14 @@ struct AuthUser: Codable, Equatable, Sendable {
+     let provider: AuthProvider
+ 
+     var initials: String {
+-        guard let name = displayName, !name.isEmpty else {
+-            return email.flatMap { String($0.prefix(1)) }?.uppercased() ?? "?"
++        // Priority: username → displayName → first letter of email → "?"
++        let source = username ?? displayName
++        if let name = source, !name.isEmpty {
++            let parts = name.split(separator: " ")
++            let first = parts.first.map { String($0.prefix(1)) } ?? ""
++            let last = parts.count > 1 ? (parts.last.map { String($0.prefix(1)) } ?? "") : ""
++            return (first + last).uppercased()
+         }
+-        let parts = name.split(separator: " ")
+-        let first = parts.first.map { String($0.prefix(1)) } ?? ""
+-        let last = parts.count > 1 ? (parts.last.map { String($0.prefix(1)) } ?? "") : ""
+-        return (first + last).uppercased()
++        return email.flatMap { String($0.prefix(1)) }?.uppercased() ?? "?"
+     }
+ }
+diff --git a/fastblog/Models/ScanConfig.swift b/fastblog/Models/ScanConfig.swift
+index a8ebdad..2abcd10 100644
+--- a/fastblog/Models/ScanConfig.swift
++++ b/fastblog/Models/ScanConfig.swift
+@@ -7,8 +7,8 @@ import Foundation
+ 
+ /// Central config for trip scan: window, local exclusion, and segmentation thresholds.
+ enum ScanConfig {
+-    /// Default scan window in days (e.g. last 60 days = ~2 months). Reduced to lower geocoding rate limit usage.
+-    static let windowDays = 60
++    /// Default scan window in days (e.g. last 90 days = ~3 months). Restored to 90 days to include older trips like December.
++    static let windowDays = 90
+ 
+     /// Photos within this many miles of neighborhood center are excluded from trips (non-trip / local).
+     static let localExclusionMiles = 50.0
+diff --git a/fastblog/Services/APIManager.swift b/fastblog/Services/APIManager.swift
+index aa10016..2e47a11 100644
+--- a/fastblog/Services/APIManager.swift
++++ b/fastblog/Services/APIManager.swift
+@@ -98,21 +98,29 @@ final class APIManager {
+         }
+ 
+         guard (200...299).contains(httpResponse.statusCode) else {
+-            // Attempt to extract an error message from the response body
+-            var errorMessage = "Unknown server error."
++            // Attempt to extract a human-readable error message from the response body
++            var errorMessage: String
+             
+-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
++            // Friendly messages for common HTTP error codes
++            switch httpResponse.statusCode {
++            case 503: errorMessage = "The server is temporarily unavailable. Please try again in a moment."
++            case 502: errorMessage = "The server is unreachable. Please check your connection and try again."
++            case 401: errorMessage = "Incorrect username or password."
++            case 403: errorMessage = "You don't have permission to do that."
++            case 404: errorMessage = "The requested resource was not found."
++            case 409: errorMessage = "An account with this username or email already exists."
++            case 429: errorMessage = "Too many requests. Please wait a moment and try again."
++            default:  errorMessage = "Something went wrong (error \(httpResponse.statusCode)). Please try again."
++            }
++            
++            // Try to get a more specific message from the JSON body (if not HTML)
++            let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? ""
++            let isHTML = contentType.contains("text/html")
++            if !isHTML, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                 print("🚨 API Error Data JSON: \(json)")
+-                if let msg = json["message"] as? String {
+-                    errorMessage = msg
+-                } else if let err = json["error"] as? String {
+-                    errorMessage = err
+-                } else if let result = json["result"] as? String {
+-                    errorMessage = result
+-                }
+-            } else if let stringError = String(data: data, encoding: .utf8) {
+-                print("🚨 API Error Data String: \(stringError)")
+-                errorMessage = stringError
++                if let msg = json["message"] as? String, !msg.isEmpty { errorMessage = msg }
++                else if let err = json["error"] as? String, !err.isEmpty { errorMessage = err }
++                else if let result = json["result"] as? String, !result.isEmpty { errorMessage = result }
+             }
+             
+             print("🚨 HTTP Error \(httpResponse.statusCode): \(errorMessage)")
+@@ -324,11 +332,11 @@ final class APIManager {
+     }
+ 
+     /// Sets the privacy of a blog on the Pocketverse backend.
+-    func setBlogPrivacy(blogKey: Int, privacy: String = "public") async throws {
+-        let payload: [String: Any] = ["blogKey": blogKey, "privacy": privacy]
++    func setBlogPrivacy(blogKey: Int, level: String = "public") async throws {
++        let payload: [String: Any] = ["blogKey": blogKey, "level": level]
+         let body = try JSONSerialization.data(withJSONObject: payload)
+         let _: GenericResponse = try await request(
+-            endpoint: "/placeVisitHistory/privacy-control",
++            endpoint: "/trips/privacy-control",
+             method: "POST",
+             body: body,
+             requiresAuth: true
+diff --git a/fastblog/Services/AuthService.swift b/fastblog/Services/AuthService.swift
+index 81083ad..375f812 100644
+--- a/fastblog/Services/AuthService.swift
++++ b/fastblog/Services/AuthService.swift
+@@ -99,6 +99,26 @@ final class AuthService: NSObject, ObservableObject {
+         }
+     }
+ 
++    // MARK: - Per-User Profile Photo
++
++    /// UserDefaults key scoped to the current user's ID so each account has its own photo.
++    private var profilePhotoKey: String {
++        guard let id = currentUser?.id else { return "profilePhoto.anonymous" }
++        return "profilePhoto.\(id)"
++    }
++
++    /// Reads or writes the locally-stored profile photo for the currently signed-in user.
++    var profileImageData: Data? {
++        get { UserDefaults.standard.data(forKey: profilePhotoKey) }
++        set {
++            if let data = newValue {
++                UserDefaults.standard.set(data, forKey: profilePhotoKey)
++            } else {
++                UserDefaults.standard.removeObject(forKey: profilePhotoKey)
++            }
++        }
++    }
++
+     // MARK: - Sign Out
+ 
+     func signOut() {
+@@ -152,16 +172,20 @@ final class AuthService: NSObject, ObservableObject {
+ // MARK: - Network Models
+ 
+ private struct SignupRequest: Encodable {
++    let signupData: SignupData
++    
+     struct SignupData: Encodable {
+         let username: String
+         let email: String
+         let password: String
++        let userType: String
+     }
+-    let signupData: SignupData
+ }
+ 
+ private struct SignupResponse: Decodable {
+     let result: String?
++    let message: String?
++    let status: String?   // some backends use "status" instead of "result"
+ }
+ 
+ private struct LoginRequest: Encodable {
+@@ -217,7 +241,12 @@ extension AuthService {
+         
+         Analytics.track(.authProviderSelected(provider: "email_signup"))
+         
+-        let payload = SignupRequest(signupData: .init(username: username, email: email, password: password))
++        let payload = SignupRequest(signupData: .init(
++            username: username,
++            email: email,
++            password: password,
++            userType: "bloggo"
++        ))
+         
+         let response: SignupResponse = try await APIManager.shared.post(
+             endpoint: "/signup/mobile/local",
+@@ -225,11 +254,17 @@ extension AuthService {
+             requiresAuth: false
+         )
+         
+-        if response.result == "success" {
++        // Accept any of the common success signals different backends use.
++        // Debug: print the actual value so mismatches are easy to spot.
++        let resultValue = response.result ?? response.status ?? response.message ?? "(nil)"
++        print("📋 Signup response — result: \(resultValue)")
++
++        let isSuccess = ["success", "ok", "created"].contains(resultValue.lowercased())
++        if isSuccess || response.result == nil && response.message == nil {
+             // Immediate Login (Hydration)
+             try await login(email: username, password: password)
+         } else {
+-            throw AuthError.networkError("Signup failed securely.")
++            throw AuthError.networkError("Signup failed (server said: \(resultValue)).")
+         }
+     }
+ 
+diff --git a/fastblog/Services/CreatedRecapBlogStore.swift b/fastblog/Services/CreatedRecapBlogStore.swift
+index b6b596c..24d1756 100644
+--- a/fastblog/Services/CreatedRecapBlogStore.swift
++++ b/fastblog/Services/CreatedRecapBlogStore.swift
+@@ -521,8 +521,22 @@ final class CreatedRecapBlogStore: ObservableObject {
+         persistRecents()
+     }
+ 
+-    /// Clears all cloud URLs from a blog's photos (removes from cloud).
++    /// Clears all cloud URLs from a blog's photos (removes from cloud) and updates the backend to hide the blog.
+     func removeFromCloud(blogId: UUID) {
++        // 1. Update backend to hide the blog if we have a blogKey
++        if let idx = recents.firstIndex(where: { $0.sourceTripId == blogId }),
++           let key = recents[idx].blogKey {
++            Task {
++                do {
++                    try await APIManager.shared.setBlogPrivacy(blogKey: key, level: "hidden")
++                    print("✅ Successfully hid blog (key: \(key)) from cloud on backend.")
++                } catch {
++                    print("🚨 Failed to hide blog on backend: \(error)")
++                }
++            }
++        }
++
++        // 2. Clear local cloudURLs
+         guard var detail = blogDetailsBySourceId[blogId] else { return }
+         for dayIdx in detail.days.indices {
+             for stopIdx in detail.days[dayIdx].placeStops.indices {
+@@ -755,9 +769,14 @@ final class CreatedRecapBlogStore: ObservableObject {
+ 
+     // MARK: - Display Helpers
+ 
+-    /// Blogs that have been fully uploaded to the cloud.
++    /// Blogs that have been fully uploaded to the cloud (filtered for current user).
+     var cloudPublishedBlogs: [CreatedRecapBlog] {
+-        recents.filter { isBlogInCloud(blogId: $0.sourceTripId) }
++        guard let userId = AuthService.shared.currentUser?.id else { return [] }
++        return recents.filter {
++            $0.ownerScope == .account &&
++            $0.ownerUserId == userId &&
++            isBlogInCloud(blogId: $0.sourceTripId)
++        }
+     }
+ 
+     /// Country summaries using only cloud-published blogs (for Profile page).
+@@ -780,7 +799,11 @@ final class CreatedRecapBlogStore: ObservableObject {
+ 
+     /// For Landing Recents section (newest first).
+     var displayRecents: [CreatedRecapBlog] {
+-        Array(recents)
++        recents.sorted {
++            let d1 = $0.lastEditedAt ?? $0.createdAt
++            let d2 = $1.lastEditedAt ?? $1.createdAt
++            return d1 > d2
++        }
+     }
+ 
+     /// Group recents by country for Profile.
+diff --git a/fastblog/Services/PhotoLibraryTripService.swift b/fastblog/Services/PhotoLibraryTripService.swift
+index 73e46c3..59ea8e4 100644
+--- a/fastblog/Services/PhotoLibraryTripService.swift
++++ b/fastblog/Services/PhotoLibraryTripService.swift
+@@ -144,7 +144,7 @@ final class PhotoLibraryTripService {
+             return ScanResult(trips: [], totalFetched: totalFetched, excludedLocalCount: excludedWithin50Count + missingLocationCount, remainingForTripsCount: remainingForTripsCount)
+         }
+ 
+-        debugPrint("[Scan] Building day clusters (geocoding unique locations)...")
++        debugPrint("[Scan] Building day clusters (centroid geocoding, 1 call/day)...")
+         let dayClusters = await buildDayClusters(from: sortedDayGroups)
+         await GeocodingService.shared.flushCache()
+         debugPrint("[Scan] Day clusters built: \(dayClusters.count). Starting trip grouping...")
+@@ -170,7 +170,7 @@ final class PhotoLibraryTripService {
+         let monthYearFormatter = DateFormatter()
+         monthYearFormatter.dateFormat = "MMM yyyy"
+ 
+-        debugPrint("[Scan] Trip grouping done: \(groupingResult.trips.count) trip(s). Resolving photo-level locations...")
++        debugPrint("[Scan] Trip grouping done: \(groupingResult.trips.count) trip(s). Building trip models...")
+         var trips: [TripDraft] = []
+         for (tripIdx, tripDays) in groupingResult.trips.enumerated() {
+             guard !tripDays.isEmpty else { continue }
+@@ -183,7 +183,6 @@ final class PhotoLibraryTripService {
+             let coverIdentifier = coverAsset?.localIdentifier
+ 
+             debugPrint("[Scan] Trip \(tripIdx + 1)/\(groupingResult.trips.count): \"\(title)\" (\(segment.count) photos)")
+-            let locationNames = await resolveLocationNames(for: segment)
+ 
+             let tripDaysModels: [TripDay] = tripDays.enumerated().map { dayIndex, dayCluster in
+                 let dateText = formatter.string(from: dayCluster.dayDate)
+@@ -191,22 +190,14 @@ final class PhotoLibraryTripService {
+                     let coord: PhotoCoordinate? = asset.location.map { loc in
+                         PhotoCoordinate(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude)
+                     }
+-                    var placeName: String?
+-                    var countryName: String?
+-                    if let loc = asset.location {
+-                        let key = locationCacheKey(for: loc)
+-                        if let place = locationNames[key] {
+-                            placeName = place.bestPlaceLabel.isEmpty || place.bestPlaceLabel == "Unknown Place" ? nil : place.bestPlaceLabel
+-                            if placeName == nil, !place.cityName.isEmpty && place.cityName != "Unknown Place" { placeName = place.cityName }
+-                            if placeName == nil, !place.areaName.isEmpty && place.areaName != "Unknown Place" { placeName = place.areaName }
+-                            countryName = (place.countryName.isEmpty || place.countryName == "Unknown") ? nil : place.countryName
+-                        }
+-                    }
++                    // Use day-level geocoded data from cluster — no per-photo geocoding during scan phase
++                    let placeName: String? = (!dayCluster.cityName.isEmpty && dayCluster.cityName != "?") ? dayCluster.cityName : nil
++                    let photoCountryName: String? = (!dayCluster.countryName.isEmpty && dayCluster.countryName != "Unknown") ? dayCluster.countryName : nil
+                     return MockPhoto(
+                         imageName: "photo",
+                         timestamp: asset.creationDate ?? Date(),
+                         locationName: placeName,
+-                        countryName: countryName,
++                        countryName: photoCountryName,
+                         isSelected: false,
+                         localIdentifier: asset.localIdentifier,
+                         location: coord
+@@ -311,28 +302,20 @@ final class PhotoLibraryTripService {
+             let coverAsset = assets.first
+             let coverIdentifier = coverAsset?.localIdentifier
+ 
+-            let locationNames = await resolveLocationNames(for: assets)
+-
+             let tripDaysModels: [TripDay] = tripDays.enumerated().map { dayIndex, dayCluster in
+                 let dateText = formatter.string(from: dayCluster.dayDate)
+                 let photos: [MockPhoto] = dayCluster.assets.map { asset in
+                     let coord = asset.location.map { loc in
+                         PhotoCoordinate(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude)
+                     }
+-                    var placeName: String?
+-                    var countryName: String?
+-                    if let loc = asset.location {
+-                        let key = locationCacheKey(for: loc)
+-                        if let place = locationNames[key] {
+-                            placeName = place.bestPlaceLabel.isEmpty || place.bestPlaceLabel == "Unknown Place" ? nil : place.bestPlaceLabel
+-                            countryName = (place.countryName.isEmpty || place.countryName == "Unknown") ? nil : place.countryName
+-                        }
+-                    }
++                    // Use day-level geocoded data from cluster — no per-photo geocoding during scan phase
++                    let placeName: String? = (!dayCluster.cityName.isEmpty && dayCluster.cityName != "?") ? dayCluster.cityName : nil
++                    let photoCountryName: String? = (!dayCluster.countryName.isEmpty && dayCluster.countryName != "Unknown") ? dayCluster.countryName : nil
+                     return MockPhoto(
+                         imageName: "photo",
+                         timestamp: asset.creationDate ?? Date(),
+                         locationName: placeName,
+-                        countryName: countryName,
++                        countryName: photoCountryName,
+                         isSelected: false,
+                         localIdentifier: asset.localIdentifier,
+                         location: coord
+@@ -450,30 +433,20 @@ final class PhotoLibraryTripService {
+             let coverAsset = segment.first
+             let coverIdentifier = coverAsset?.localIdentifier
+ 
+-            let locationNames = await resolveLocationNames(for: segment)
+-
+             let tripDaysModels: [TripDay] = tripDays.enumerated().map { dayIndex, dayCluster in
+                 let dateText = formatter.string(from: dayCluster.dayDate)
+                 let photos: [MockPhoto] = dayCluster.assets.map { asset in
+                     let coord: PhotoCoordinate? = asset.location.map { loc in
+                         PhotoCoordinate(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude)
+                     }
+-                    var placeName: String?
+-                    var countryName: String?
+-                    if let loc = asset.location {
+-                        let key = locationCacheKey(for: loc)
+-                        if let place = locationNames[key] {
+-                            placeName = place.bestPlaceLabel.isEmpty || place.bestPlaceLabel == "Unknown Place" ? nil : place.bestPlaceLabel
+-                            if placeName == nil, !place.cityName.isEmpty && place.cityName != "Unknown Place" { placeName = place.cityName }
+-                            if placeName == nil, !place.areaName.isEmpty && place.areaName != "Unknown Place" { placeName = place.areaName }
+-                            countryName = (place.countryName.isEmpty || place.countryName == "Unknown") ? nil : place.countryName
+-                        }
+-                    }
++                    // Use day-level geocoded data from cluster — no per-photo geocoding during scan phase
++                    let placeName: String? = (!dayCluster.cityName.isEmpty && dayCluster.cityName != "?") ? dayCluster.cityName : nil
++                    let photoCountryName: String? = (!dayCluster.countryName.isEmpty && dayCluster.countryName != "Unknown") ? dayCluster.countryName : nil
+                     return MockPhoto(
+                         imageName: "photo",
+                         timestamp: asset.creationDate ?? Date(),
+                         locationName: placeName,
+-                        countryName: countryName,
++                        countryName: photoCountryName,
+                         isSelected: false,
+                         localIdentifier: asset.localIdentifier,
+                         location: coord
+@@ -505,53 +478,6 @@ final class PhotoLibraryTripService {
+         return trips
+     }
+ 
+-    /// Fetches unique city names from photos in the given year/month range (for "Cities Visited" preview). Applies same location and exclusion rules. Excludes photos in occupiedDateRanges.
+-    func fetchCityNamesInRange(year: Int, startMonth: Int, endMonth: Int, occupiedDateRanges: [(start: Date, end: Date)] = []) async -> [String] {
+-        var comps = DateComponents()
+-        comps.year = year
+-        comps.month = startMonth
+-        comps.day = 1
+-        guard let start = calendar.date(from: comps) else { return [] }
+-        let startDate = calendar.startOfDay(for: start)
+-        comps.month = endMonth
+-        guard let endMonthStart = calendar.date(from: comps) else { return [] }
+-        guard let endDate = calendar.date(byAdding: .month, value: 1, to: endMonthStart) else { return [] }
+-
+-        let options = PHFetchOptions()
+-        options.predicate = NSPredicate(format: "creationDate >= %@ AND creationDate < %@", startDate as NSDate, endDate as NSDate)
+-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+-
+-        let fetchResult = PHAsset.fetchAssets(with: .image, options: options)
+-        var allAssets: [PHAsset] = []
+-        fetchResult.enumerateObjects { asset, _, _ in
+-            if asset.mediaSubtypes.contains(.photoScreenshot) { return }
+-            allAssets.append(asset)
+-        }
+-        allAssets = filterOutAssetsInOccupiedRanges(allAssets, occupiedDateRanges: occupiedDateRanges)
+-
+-        let home = NeighborhoodStore.getNeighborhoodCenter()
+-        let minMiles = NeighborhoodStore.localExclusionMiles
+-        var remaining: [PHAsset] = []
+-        if let homeLocation = home {
+-            for asset in allAssets {
+-                guard asset.location != nil else { continue }
+-                if TripPhotoFilter.shouldIncludeInTrips(assetLocation: asset.location, home: homeLocation, minMiles: minMiles) {
+-                    remaining.append(asset)
+-                }
+-            }
+-        }
+-
+-        let locationNames = await resolveLocationNames(for: remaining)
+-        var citySet = Set<String>()
+-        for (_, place) in locationNames {
+-            let name = (!place.cityName.isEmpty && place.cityName != "Unknown Place") ? place.cityName : place.areaName
+-            if !name.isEmpty && name != "Unknown Place" {
+-                citySet.insert(name)
+-            }
+-        }
+-        return citySet.sorted()
+-    }
+-
+     /// Splits assets into segments: a gap larger than gapHours between consecutive photos starts a new segment (new trip).
+     private func segmentByTemporalGap(_ assets: [PHAsset], gapHours: Int) -> [[PHAsset]] {
+         guard !assets.isEmpty else { return [] }
+@@ -696,60 +622,61 @@ final class PhotoLibraryTripService {
+         return finalGroups
+     }
+ 
+-    /// Builds DayCluster for each day group: centroid, country/city from geocoding, city centroids, maxDistanceWithinDayMiles.
++    /// Builds DayCluster for each day group using centroid-only geocoding.
++    /// Geocodes only the coarsened day centroid (~1.1km grid) — 1 call per unique area per day
++    /// instead of 1 call per unique photo coordinate. Reduces geocoding calls by 10–50×.
+     private func buildDayClusters(from dayGroups: [(date: Date, assets: [PHAsset])]) async -> [DayCluster] {
+         var clusters: [DayCluster] = []
+         let total = dayGroups.count
+-
+-        // Pre-resolve all unique locations across the entire scan window in one pass.
+-        // Each unique ~111m grid cell is geocoded at most once, regardless of how many days it appears in.
+-        debugPrint("[Scan] Pre-resolving unique locations across \(total) day groups...")
+-        let globalLocationMap = await resolveLocationNames(for: dayGroups.flatMap { $0.assets })
+-        debugPrint("[Scan] Pre-resolved \(globalLocationMap.count) unique location cells.")
++        debugPrint("[Scan] Building \(total) day clusters (centroid-only geocoding)...")
+ 
+         for (idx, group) in dayGroups.enumerated() {
+             let assetsWithLocation = group.assets.filter { $0.location != nil }
+             guard !assetsWithLocation.isEmpty else { continue }
+ 
+-            if (idx + 1) % 5 == 0 || idx == 0 {
+-                debugPrint("[Scan] buildDayClusters: day \(idx + 1)/\(total) (\(assetsWithLocation.count) photos with location)")
+-            }
++            // 1. Compute day centroid from raw GPS — no geocoding needed
+             var latSum = 0.0, lonSum = 0.0
+-            var countryCodeCounts: [String: Int] = [:]
+-            var countryCodeToName: [String: String] = [:]
+-            var cityToCoords: [String: [(lat: Double, lon: Double)]] = [:]
+-
++            var rawCoords: [CLLocationCoordinate2D] = []
+             for asset in assetsWithLocation {
+-                guard let loc = asset.location else { continue }
+-                let key = locationCacheKey(for: loc)
+-                let place = globalLocationMap[key]
+-                let code = place?.isoCountryCode.isEmpty == false ? place!.isoCountryCode : (place?.countryName ?? "?")
+-                countryCodeCounts[code, default: 0] += 1
+-                if let name = place?.countryName { countryCodeToName[code] = name }
+-
+-                let city = (place?.cityName.isEmpty == false) ? place!.cityName : (place?.areaName ?? "?")
+-                let lat = loc.coordinate.latitude
+-                let lon = loc.coordinate.longitude
+-                cityToCoords[city, default: []].append((lat, lon))
+-                latSum += lat
+-                lonSum += lon
++                let coord = asset.location!.coordinate
++                latSum += coord.latitude
++                lonSum += coord.longitude
++                rawCoords.append(coord)
+             }
+-
+-            let n = Double(assetsWithLocation.count)
++            let n = Double(rawCoords.count)
+             let dayCentroid = CLLocationCoordinate2D(latitude: latSum / n, longitude: lonSum / n)
+-            let dominantCode = countryCodeCounts.max(by: { $0.value < $1.value })?.key ?? ""
+-            let countryCode = dominantCode
+-            let countryName = countryCodeToName[dominantCode] ?? "Unknown"
+-            let dominantCity = cityToCoords.max(by: { $0.value.count < $1.value.count })
+-            let cityName = dominantCity?.key ?? ""
+-
+-            var cityCentroids: [CLLocationCoordinate2D] = []
+-            for (_, coords) in cityToCoords {
+-                let clat = coords.map(\.lat).reduce(0, +) / Double(coords.count)
+-                let clon = coords.map(\.lon).reduce(0, +) / Double(coords.count)
+-                cityCentroids.append(CLLocationCoordinate2D(latitude: clat, longitude: clon))
++
++            // 2. Geocode ONLY the coarsened centroid (~1.1km grid).
++            // Days in the same city area share one cached result, cutting redundant API calls.
++            let coarseLat = (dayCentroid.latitude * 100).rounded() / 100
++            let coarseLon = (dayCentroid.longitude * 100).rounded() / 100
++            let centroidLocation = CLLocation(latitude: coarseLat, longitude: coarseLon)
++            let centroidPlace = await GeocodingService.shared.place(for: centroidLocation)
++            let countryCode = centroidPlace.isoCountryCode
++            let countryName = centroidPlace.countryName == "Unknown" ? "" : centroidPlace.countryName
++            let cityName: String
++            if !centroidPlace.cityName.isEmpty && centroidPlace.cityName != "Unknown Place" {
++                cityName = centroidPlace.cityName
++            } else if !centroidPlace.areaName.isEmpty && centroidPlace.areaName != "Unknown Place" {
++                cityName = centroidPlace.areaName
++            } else {
++                cityName = ""
++            }
++
++            // 3. Geographic spread via raw GPS — replaces geocoded city-centroid approach.
++            // Sampling keeps the O(n²) max-distance check fast for large photo days.
++            let sampleCoords: [CLLocationCoordinate2D]
++            if rawCoords.count > 30 {
++                let step = rawCoords.count / 30
++                sampleCoords = stride(from: 0, to: rawCoords.count, by: step).map { rawCoords[$0] }
++            } else {
++                sampleCoords = rawCoords
++            }
++            let maxDistanceWithinDayMiles = GeoDistanceHelper.maxPairwiseDistanceMiles(sampleCoords)
++
++            if (idx + 1) % 5 == 0 || idx == 0 || total <= 5 {
++                debugPrint("[Scan] Day \(idx + 1)/\(total): \(cityName.isEmpty ? "?" : cityName), \(countryCode.isEmpty ? "?" : countryCode) spread=\(String(format: "%.1f", maxDistanceWithinDayMiles))mi (\(rawCoords.count) photos)")
+             }
+-            let maxDistanceWithinDayMiles = GeoDistanceHelper.maxPairwiseDistanceMiles(cityCentroids)
+ 
+             clusters.append(DayCluster(
+                 dayDate: group.date,
+@@ -757,7 +684,7 @@ final class PhotoLibraryTripService {
+                 countryCode: countryCode,
+                 countryName: countryName,
+                 cityName: cityName,
+-                cityCentroids: cityCentroids,
++                cityCentroids: [dayCentroid],
+                 maxDistanceWithinDayMiles: maxDistanceWithinDayMiles,
+                 assets: group.assets
+             ))
+diff --git a/fastblog/ViewModels/TripsViewModel.swift b/fastblog/ViewModels/TripsViewModel.swift
+index ee87abf..fe8688b 100644
+--- a/fastblog/ViewModels/TripsViewModel.swift
++++ b/fastblog/ViewModels/TripsViewModel.swift
+@@ -34,9 +34,6 @@ final class TripsViewModel: ObservableObject {
+     @Published var findMoreYear: Int = Calendar.current.component(.year, from: Date())
+     @Published var findMoreStartMonth: Int = 1
+     @Published var findMoreEndMonth: Int = 12
+-    /// Cities visited in the selected year/month range (for "Cities Visited" section). Loaded when sheet opens or range changes.
+-    @Published var findMoreCities: [String] = []
+-    @Published var findMoreCitiesLoading: Bool = false
+ 
+     private let photoLibraryService = PhotoLibraryTripService.shared
+     private let mockService = MockTripDataService.shared
+@@ -186,22 +183,6 @@ final class TripsViewModel: ObservableObject {
+         findMoreStartMonth = cal.component(.month, from: now)
+         findMoreEndMonth = cal.component(.month, from: now)
+         showFindMoreSheet = true
+-        loadFindMoreCities()
+-    }
+-
+-    /// Loads cities visited in the selected year/month range (for "Cities Visited" section). Call when sheet opens or when year/start/end month changes.
+-    func loadFindMoreCities() {
+-        findMoreCitiesLoading = true
+-        findMoreCities = []
+-        let year = findMoreYear
+-        let startMonth = min(findMoreStartMonth, findMoreEndMonth)
+-        let endMonth = max(findMoreStartMonth, findMoreEndMonth)
+-        let occupiedRanges = createdRecapStore.occupiedDateRanges()
+-        Task {
+-            let cities = await photoLibraryService.fetchCityNamesInRange(year: year, startMonth: startMonth, endMonth: endMonth, occupiedDateRanges: occupiedRanges)
+-            findMoreCities = cities
+-            findMoreCitiesLoading = false
+-        }
+     }
+ 
+     /// Scan for trips in the selected year/month range using the photo library. Dedupes against existing list. Updates tripDrafts and findMoreScanResult. Dismisses sheet on success.
+diff --git a/fastblog/Views/CountryBlogsView.swift b/fastblog/Views/CountryBlogsView.swift
+index b5efdd4..e5a25f4 100644
+--- a/fastblog/Views/CountryBlogsView.swift
++++ b/fastblog/Views/CountryBlogsView.swift
+@@ -16,12 +16,6 @@ struct CountryBlogsView: View {
+     @State private var showRemoveCloudPopup = false
+     @State private var blogToRemove: CreatedRecapBlog?
+ 
+-    private static let dateFormatter: DateFormatter = {
+-        let f = DateFormatter()
+-        f.dateFormat = "MMM yyyy"
+-        return f
+-    }()
+-
+     var body: some View {
+         ScrollView {
+             LazyVStack(spacing: 24) {
+@@ -29,64 +23,14 @@ struct CountryBlogsView: View {
+                     Button {
+                         localSelectedBlog = blog
+                     } label: {
+-                        VStack(alignment: .leading, spacing: 12) {
+-                            TripCoverImage(theme: blog.coverImageName, coverAssetIdentifier: blog.coverAssetIdentifier)
+-                                .frame(height: 250)
+-                                .frame(maxWidth: .infinity)
+-                                .clipShape(RoundedRectangle(cornerRadius: 12))
+-                                .overlay(alignment: .topTrailing) {
+-                                    if createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId) {
+-                                        Image(systemName: "icloud.and.arrow.up")
+-                                            .font(.body)
+-                                            .foregroundColor(.green)
+-                                            .padding(8)
+-                                            .background(Circle().fill(Color.white))
+-                                            .clipShape(Circle())
+-                                            .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+-                                            .padding(12)
+-                                            .onTapGesture {
+-                                                blogToRemove = blog
+-                                                showRemoveCloudPopup = true
+-                                            }
+-                                    }
+-                                }
+-                                .overlay(alignment: .bottomLeading) {
+-                                    if blog.lastEditedAt == nil {
+-                                        Text("Draft")
+-                                            .font(.caption)
+-                                            .fontWeight(.bold)
+-                                            .foregroundColor(.white)
+-                                            .padding(.horizontal, 8)
+-                                            .padding(.vertical, 4)
+-                                            .background(Color.black.opacity(0.6))
+-                                            .cornerRadius(6)
+-                                            .padding(12)
+-                                    }
+-                                }
+-                            
+-                            VStack(alignment: .leading, spacing: 4) {
+-                                Text(blog.title)
+-                                    .font(.title3)
+-                                    .fontWeight(.semibold)
+-                                    .foregroundColor(.primary)
+-                                    .lineLimit(2)
+-                                    .multilineTextAlignment(.leading)
+-                                
+-                                HStack {
+-                                    Text("\(blog.totalPlaceVisitCount) Place\(blog.totalPlaceVisitCount == 1 ? "" : "s") • \(blog.tripDurationDays) Day\(blog.tripDurationDays == 1 ? "" : "s")")
+-                                        .font(.subheadline)
+-                                        .foregroundColor(.secondary)
+-                                    
+-                                    Spacer()
+-                                    
+-                                    Text("Edited \(Self.dateFormatter.string(from: blog.lastEditedAt ?? blog.createdAt))")
+-                                        .font(.caption)
+-                                        .foregroundColor(.secondary)
+-                                }
++                        CountryBlogRowView(
++                            blog: blog,
++                            isBlogInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
++                            onRemoveFromCloud: {
++                                blogToRemove = blog
++                                showRemoveCloudPopup = true
+                             }
+-                            .padding(.horizontal, 4)
+-                        }
+-                        .contentShape(Rectangle())
++                        )
+                     }
+                     .buttonStyle(.plain)
+                 }
+@@ -135,3 +79,88 @@ struct CountryBlogsView: View {
+         name.isEmpty || name == "Unknown" ? "Other" : name
+     }
+ }
++
++struct CountryBlogRowView: View {
++    let blog: CreatedRecapBlog
++    let isBlogInCloud: Bool
++    let onRemoveFromCloud: () -> Void
++    
++    private static let dateFormatter: DateFormatter = {
++        let f = DateFormatter()
++        f.dateFormat = "MMM yyyy"
++        return f
++    }()
++
++    var body: some View {
++        VStack(alignment: .leading, spacing: 12) {
++            TripCoverImage(theme: blog.coverImageName, coverAssetIdentifier: blog.coverAssetIdentifier)
++                .frame(height: 250)
++                .frame(maxWidth: .infinity)
++                .clipShape(RoundedRectangle(cornerRadius: 12))
++                .overlay(alignment: .topTrailing) {
++                    if isBlogInCloud {
++                        Image(systemName: "checkmark.icloud.fill")
++                            .font(.body)
++                            .foregroundColor(.white)
++                            .padding(8)
++                            .background(Circle().fill(Color.green))
++                            .clipShape(Circle())
++                            .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
++                            .padding(12)
++                            .onTapGesture(perform: onRemoveFromCloud)
++                    } else {
++                        Image(systemName: "icloud.and.arrow.up")
++                            .font(.body)
++                            .foregroundColor(.orange)
++                            .padding(8)
++                            .background(Circle().fill(Color.white))
++                            .clipShape(Circle())
++                            .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
++                            .padding(12)
++                    }
++                }
++                .overlay(alignment: .bottomLeading) {
++                    if blog.lastEditedAt == nil {
++                        Text("Draft")
++                            .font(.caption)
++                            .fontWeight(.bold)
++                            .foregroundColor(.white)
++                            .padding(.horizontal, 8)
++                            .padding(.vertical, 4)
++                            .background(Color.black.opacity(0.6))
++                            .cornerRadius(6)
++                            .padding(12)
++                    }
++                }
++            
++            VStack(alignment: .leading, spacing: 4) {
++                Text(blog.tripDateRangeText ?? "")
++                    .font(.subheadline)
++                    .fontWeight(.medium)
++                    .foregroundColor(.secondary)
++                    .textCase(.uppercase)
++
++                Text(blog.title)
++                    .font(.title3)
++                    .fontWeight(.semibold)
++                    .foregroundColor(.primary)
++                    .lineLimit(2)
++                    .multilineTextAlignment(.leading)
++                
++                HStack {
++                    Text("\(blog.totalPlaceVisitCount) Place\(blog.totalPlaceVisitCount == 1 ? "" : "s") • \(blog.tripDurationDays) Day\(blog.tripDurationDays == 1 ? "" : "s")")
++                        .font(.subheadline)
++                        .foregroundColor(.secondary)
++                    
++                    Spacer()
++                    
++                    Text("Edited \(Self.dateFormatter.string(from: blog.lastEditedAt ?? blog.createdAt))")
++                        .font(.caption)
++                        .foregroundColor(.secondary)
++                }
++            }
++            .padding(.horizontal, 4)
++        }
++        .contentShape(Rectangle())
++    }
++}
+diff --git a/fastblog/Views/CreateBlogFlowView.swift b/fastblog/Views/CreateBlogFlowView.swift
+index bb20d6a..faefcb2 100644
+--- a/fastblog/Views/CreateBlogFlowView.swift
++++ b/fastblog/Views/CreateBlogFlowView.swift
+@@ -22,7 +22,7 @@ struct CreateBlogFlowView: View {
+     @State private var flowCoverAssetIdentifier: String?
+ 
+     /// Duration to show the Creating Recap animation before navigating home.
+-    private let creatingAnimationDuration: TimeInterval = 2.8
++    private let creatingAnimationDuration: TimeInterval = 5.0
+ 
+     private enum Step {
+         case title
+diff --git a/fastblog/Views/EditPlaceStopNameSheet.swift b/fastblog/Views/EditPlaceStopNameSheet.swift
+index 4850a1b..1ba686e 100644
+--- a/fastblog/Views/EditPlaceStopNameSheet.swift
++++ b/fastblog/Views/EditPlaceStopNameSheet.swift
+@@ -14,22 +14,51 @@ struct EditPlaceStopNameSheet: View {
+ 
+     @StateObject private var searchViewModel = PlaceSearchViewModel()
+     @State private var editedTitle: String = ""
++    @FocusState private var isFocused: Bool
++    @State private var showSuggestions: Bool = true
+ 
+     var body: some View {
+         NavigationStack {
+             List {
+                 Section {
+-                    TextField("Place name", text: $editedTitle)
+-                        .autocorrectionDisabled()
+-                        .onChange(of: editedTitle) { _, newValue in
+-                            searchViewModel.query = newValue
++                    HStack {
++                        TextField("Place name", text: $editedTitle)
++                            .focused($isFocused)
++                            .autocorrectionDisabled()
++                            .onChange(of: isFocused) { _, focused in
++                                if focused {
++                                    showSuggestions = true
++                                    searchViewModel.query = editedTitle
++                                }
++                            }
++                            .onChange(of: editedTitle) { oldValue, newValue in
++                                if oldValue == placeTitle && newValue.hasPrefix(placeTitle) && newValue.count > oldValue.count {
++                                    editedTitle = String(newValue.dropFirst(placeTitle.count))
++                                } else if showSuggestions {
++                                    searchViewModel.query = newValue
++                                }
++                            }
++                        
++                        if !editedTitle.isEmpty {
++                            Button {
++                                editedTitle = ""
++                                searchViewModel.query = ""
++                                isFocused = true
++                            } label: {
++                                Image(systemName: "xmark.circle.fill")
++                                    .foregroundColor(.secondary)
++                            }
++                            .buttonStyle(.plain)
+                         }
++                    }
+                 }
+ 
+-                if !searchViewModel.suggestions.isEmpty {
++                if showSuggestions && !searchViewModel.suggestions.isEmpty {
+                     Section("Nearby Suggestions") {
+                         ForEach(Array(searchViewModel.suggestions.enumerated()), id: \.offset) { _, suggestion in
+                             Button {
++                                showSuggestions = false
++                                isFocused = false
+                                 editedTitle = suggestion.title
+                                 searchViewModel.suggestions = []
+                             } label: {
+@@ -46,20 +75,7 @@ struct EditPlaceStopNameSheet: View {
+                     }
+                 }
+ 
+-                if !editedTitle.isEmpty {
+-                    Section {
+-                        if let encoded = editedTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+-                           let url = URL(string: "https://www.google.com/search?q=\(encoded)") {
+-                            Link(destination: url) {
+-                                HStack {
+-                                    Image(systemName: "magnifyingglass")
+-                                    Text("Search on Google")
+-                                }
+-                                .foregroundColor(.blue)
+-                            }
+-                        }
+-                    }
+-                }
++
+             }
+             .navigationTitle("Edit Name")
+             .navigationBarTitleDisplayMode(.inline)
+@@ -76,6 +92,7 @@ struct EditPlaceStopNameSheet: View {
+                         dismiss()
+                     }
+                     .disabled(editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
++                    .foregroundStyle(editedTitle != placeTitle ? .blue : .primary)
+                 }
+             }
+             .onAppear {
+diff --git a/fastblog/Views/FindMoreTripsSheet.swift b/fastblog/Views/FindMoreTripsSheet.swift
+index 7c13477..12fcf11 100644
+--- a/fastblog/Views/FindMoreTripsSheet.swift
++++ b/fastblog/Views/FindMoreTripsSheet.swift
+@@ -64,13 +64,9 @@ struct FindMoreTripsSheet: View {
+                 titleSection
+                 yearSection
+                 monthRangeSection
+-                citiesVisitedSection
+                 emptyResultSection
+             }
+         }
+-        .onChange(of: viewModel.findMoreYear) { _, _ in viewModel.loadFindMoreCities() }
+-        .onChange(of: viewModel.findMoreStartMonth) { _, _ in viewModel.loadFindMoreCities() }
+-        .onChange(of: viewModel.findMoreEndMonth) { _, _ in viewModel.loadFindMoreCities() }
+     }
+ 
+     private var titleSection: some View {
+@@ -104,41 +100,6 @@ struct FindMoreTripsSheet: View {
+         }
+     }
+ 
+-    /// Cities visited in the selected year and month range. Updates when year or month range changes.
+-    private var citiesVisitedSection: some View {
+-        VStack(alignment: .leading, spacing: 10) {
+-            Text("Cities Visited")
+-                .font(.subheadline)
+-                .fontWeight(.semibold)
+-                .foregroundColor(.white)
+-
+-            if viewModel.findMoreCitiesLoading {
+-                HStack(spacing: 8) {
+-                    ProgressView()
+-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+-                    Text("Loading cities…")
+-                        .font(.subheadline)
+-                        .foregroundColor(.white.opacity(0.8))
+-                }
+-                .padding(.vertical, 12)
+-            } else if viewModel.findMoreCities.isEmpty {
+-                Text("No photos with location in this range, or set your neighborhood in Settings to filter local photos.")
+-                    .font(.caption)
+-                    .foregroundColor(.white.opacity(0.7))
+-                    .padding(.vertical, 8)
+-            } else {
+-                Text(viewModel.findMoreCities.joined(separator: ", "))
+-                    .font(.subheadline)
+-                    .foregroundColor(.white)
+-                    .fixedSize(horizontal: false, vertical: true)
+-            }
+-        }
+-        .padding(14)
+-        .frame(maxWidth: .infinity, alignment: .leading)
+-        .background(Color.white.opacity(0.08))
+-        .cornerRadius(12)
+-    }
+-
+     private var monthRangeSection: some View {
+         VStack(alignment: .leading, spacing: 12) {
+             HStack(spacing: 16) {
+diff --git a/fastblog/Views/LandingView.swift b/fastblog/Views/LandingView.swift
+index 458067e..43888e9 100644
+--- a/fastblog/Views/LandingView.swift
++++ b/fastblog/Views/LandingView.swift
+@@ -1,4 +1,4 @@
+-//
++                                                    //
+ //  LandingView.swift
+ //  Capper
+ //
+@@ -21,8 +21,8 @@ struct LandingView: View {
+     @State private var ctaIsAlternate = false
+     @State private var ctaOpacity: Double = 1
+     
+-    // For local persistence of the selected avatar
+-    @AppStorage("customProfileImageData") private var customProfileImageData: Data?
++    /// Per-user profile photo — loaded from authService on appear/user-change.
++    @State private var avatarImageData: Data?
+ 
+     private let landingBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
+     private let ctaInterval: TimeInterval = 5
+@@ -56,7 +56,7 @@ struct LandingView: View {
+                     } label: {
+                         if let user = authService.currentUser {
+                             // Signed-in avatar
+-                            if let data = customProfileImageData, let uiImage = UIImage(data: data) {
++                            if let data = avatarImageData, let uiImage = UIImage(data: data) {
+                                 Image(uiImage: uiImage)
+                                     .resizable()
+                                     .scaledToFill()
+@@ -109,6 +109,12 @@ struct LandingView: View {
+             })
+             .environmentObject(authService)
+         }
++        .onAppear {
++            avatarImageData = authService.profileImageData
++        }
++        .onChange(of: authService.currentUser?.id) { _, _ in
++            avatarImageData = authService.profileImageData
++        }
+     }
+ 
+     /// Success notification card: icon, title, "Tap to view", optional dismiss. Auto-dismisses after 6s; tap opens latest blog.
+@@ -279,16 +285,24 @@ private struct CreatedRecapCard: View {
+                         .background(Color.black.opacity(0.6))
+                         .cornerRadius(4)
+                         .padding(4)
+-                } else if createdRecapStore.isBlogInCloud(blogId: recap.sourceTripId) {
+-                    Image(systemName: "icloud.and.arrow.up")
+-                        .font(.caption2)
+-                        .foregroundColor(.green)
+-                        .padding(4)
+-                        .background(Circle().fill(Color.white))
+-                        .contentShape(Rectangle())
+-                        .onTapGesture {
+-                            showRemoveCloudPopup = true
+-                        }
++                } else {
++                    if createdRecapStore.isBlogInCloud(blogId: recap.sourceTripId) {
++                        Image(systemName: "checkmark.icloud.fill")
++                            .font(.caption2)
++                            .foregroundColor(.white)
++                            .padding(4)
++                            .background(Circle().fill(Color.green))
++                            .contentShape(Rectangle())
++                            .onTapGesture {
++                                showRemoveCloudPopup = true
++                            }
++                    } else {
++                        Image(systemName: "icloud.and.arrow.up")
++                            .font(.caption2)
++                            .foregroundColor(.orange)
++                            .padding(4)
++                            .background(Circle().fill(Color.white))
++                    }
+                 }
+             }
+ 
+@@ -339,8 +353,8 @@ private struct SettingsView: View {
+     @AppStorage("capper.tripClustering.debugLogging") private var tripClusteringDebug = false
+     #endif
+ 
+-    // For local persistence of the selected avatar
+-    @AppStorage("customProfileImageData") private var customProfileImageData: Data?
++    // Per-user profile photo — loaded from authService on appear.
++    @State private var customProfileImageData: Data?
+ 
+     var body: some View {
+         NavigationStack {
+@@ -479,6 +493,12 @@ private struct SettingsView: View {
+                 AuthView()
+                     .environmentObject(authService)
+             }
++            .onAppear {
++                customProfileImageData = authService.profileImageData
++            }
++            .onChange(of: authService.currentUser?.id) { _, _ in
++                customProfileImageData = authService.profileImageData
++            }
+         }
+     }
+ }
+@@ -514,17 +534,25 @@ struct AllRecentsSheet: View {
+                                         .background(Color.black.opacity(0.6))
+                                         .cornerRadius(4)
+                                         .padding(3)
+-                                } else if createdRecapStore.isBlogInCloud(blogId: recap.sourceTripId) {
+-                                    Image(systemName: "icloud.and.arrow.up")
+-                                        .font(.caption2)
+-                                        .foregroundColor(.green)
+-                                        .padding(4)
+-                                        .background(Circle().fill(Color.white))
+-                                        .contentShape(Rectangle())
+-                                        .onTapGesture {
+-                                            blogToRemove = recap
+-                                            showRemoveCloudPopup = true
+-                                        }
++                                } else {
++                                    if createdRecapStore.isBlogInCloud(blogId: recap.sourceTripId) {
++                                        Image(systemName: "checkmark.icloud.fill")
++                                            .font(.caption2)
++                                            .foregroundColor(.white)
++                                            .padding(4)
++                                            .background(Circle().fill(Color.green))
++                                            .contentShape(Rectangle())
++                                            .onTapGesture {
++                                                blogToRemove = recap
++                                                showRemoveCloudPopup = true
++                                            }
++                                    } else {
++                                        Image(systemName: "icloud.and.arrow.up")
++                                            .font(.caption2)
++                                            .foregroundColor(.orange)
++                                            .padding(4)
++                                            .background(Circle().fill(Color.white))
++                                    }
+                                 }
+                             }
+                             VStack(alignment: .leading, spacing: 4) {
+diff --git a/fastblog/Views/MyBlogsProfileView.swift b/fastblog/Views/MyBlogsProfileView.swift
+index 992c452..680138f 100644
+--- a/fastblog/Views/MyBlogsProfileView.swift
++++ b/fastblog/Views/MyBlogsProfileView.swift
+@@ -108,7 +108,6 @@ struct MyBlogsProfileView: View {
+         }
+         .navigationDestination(item: $createBlogFlowTrip) { trip in
+             CreateBlogFlowView(trip: trip, startDirectlyCreating: true) { createdTripId in
+-                TripDraftStore.clearSelection(tripId: createdTripId)
+                 createBlogFlowTrip = nil
+                 viewModel.loadUnsavedTrips() // Refresh after creation
+             }
+diff --git a/fastblog/Views/PlaceStopRowView.swift b/fastblog/Views/PlaceStopRowView.swift
+index 105e53e..bfaf235 100644
+--- a/fastblog/Views/PlaceStopRowView.swift
++++ b/fastblog/Views/PlaceStopRowView.swift
+@@ -150,10 +150,11 @@ struct PlaceStopRowView: View {
+             }
+ 
+             // Photo strip: large thumbnails; one full photo visible + peek of next so users know they can scroll
+-            if !stop.photos.isEmpty {
++            let includedPhotos = stop.photos.filter(\.isIncluded)
++            if !includedPhotos.isEmpty {
+                 ScrollView(.horizontal, showsIndicators: false) {
+                     HStack(alignment: .top, spacing: 10) {
+-                        ForEach(stop.photos) { photo in
++                        ForEach(includedPhotos) { photo in
+                             VStack(alignment: .leading, spacing: 6) {
+                                 ZStack(alignment: .topTrailing) {
+                                     RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 480, height: 480))
+diff --git a/fastblog/Views/ProfilePageView.swift b/fastblog/Views/ProfilePageView.swift
+index 3ddeb6f..65f22c2 100644
+--- a/fastblog/Views/ProfilePageView.swift
++++ b/fastblog/Views/ProfilePageView.swift
+@@ -260,7 +260,7 @@ struct ProfilePageView: View {
+         }
+         
+         // Include the profile photo if available
+-        if let data = UserDefaults.standard.data(forKey: "customProfileImageData"), let uiImage = UIImage(data: data) {
++        if let uiImage = authService.profileImageData.flatMap({ UIImage(data: $0) }) {
+             items.append(uiImage)
+         }
+         
+@@ -312,10 +312,10 @@ struct ProfileHeroSection: View {
+     @State private var showPhotoViewer = false
+     @State private var showManagement = false
+     @State private var showEditBio = false
+-    
+-    // For local persistence of the selected avatar
+-    @AppStorage("customProfileImageData") private var customProfileImageData: Data?
+-    
++
++    /// Per-user profile image data — loaded from AuthService on appear.
++    @State private var customProfileImageData: Data?
++
+     // For local persistence of the user's bio
+     @AppStorage("userBio") private var userBio: String = "Write your bio"
+     
+@@ -401,9 +401,12 @@ struct ProfileHeroSection: View {
+             .padding(.top, ProfileTheme.Spacing.sm)
+         }
+         .sheet(isPresented: $showPhotoViewer) {
+-            ProfilePhotoViewer(customProfileImageData: $customProfileImageData)
+-                .environmentObject(authService)
+-                .presentationDragIndicator(.visible)
++            ProfilePhotoViewer(
++                customProfileImageData: $customProfileImageData,
++                onSave: { data in authService.profileImageData = data }
++            )
++            .environmentObject(authService)
++            .presentationDragIndicator(.visible)
+         }
+         .sheet(isPresented: $showManagement) {
+             ProfileManagementView()
+@@ -414,6 +417,13 @@ struct ProfileHeroSection: View {
+             EditBioView(bio: $userBio)
+                 .presentationDragIndicator(.visible)
+         }
++        .onAppear {
++            // Load photo for the current user on every appear
++            customProfileImageData = authService.profileImageData
++        }
++        .onChange(of: authService.currentUser?.id) { _, _ in
++            customProfileImageData = authService.profileImageData
++        }
+     }
+ }
+ 
+@@ -467,6 +477,8 @@ struct ProfilePhotoViewer: View {
+     @Environment(\.dismiss) private var dismiss
+     @EnvironmentObject private var authService: AuthService
+     @Binding var customProfileImageData: Data?
++    /// Called when the user saves a new photo so the caller can persist it.
++    var onSave: ((Data?) -> Void)? = nil
+     
+     @State private var selectedItem: PhotosPickerItem?
+     
+@@ -512,6 +524,7 @@ struct ProfilePhotoViewer: View {
+                         if let data = try? await newItem?.loadTransferable(type: Data.self) {
+                             DispatchQueue.main.async {
+                                 self.customProfileImageData = data
++                                self.onSave?(data)
+                             }
+                         }
+                     }
+@@ -520,6 +533,7 @@ struct ProfilePhotoViewer: View {
+                 if customProfileImageData != nil {
+                     Button("Remove Photo", role: .destructive) {
+                         customProfileImageData = nil
++                        onSave?(nil)
+                     }
+                     .padding(.top, 8)
+                 }
+@@ -649,12 +663,11 @@ struct StoryFeedSection: View {
+     var body: some View {
+         VStack(spacing: ProfileTheme.Spacing.xxl) {
+             ForEach(blogs) { blog in
+-                Button {
+-                    selectedBlog = blog
+-                } label: {
+-                    BlogCard(blog: blog)
+-                }
+-                .buttonStyle(.plain)
++                BlogCard(blog: blog)
++                    .contentShape(Rectangle()) // Ensures tap target exactly matches bounds
++                    .onTapGesture {
++                        selectedBlog = blog
++                    }
+             }
+         }
+     }
+diff --git a/fastblog/Views/RecapBlogPageView.swift b/fastblog/Views/RecapBlogPageView.swift
+index 287819b..ded0221 100644
+--- a/fastblog/Views/RecapBlogPageView.swift
++++ b/fastblog/Views/RecapBlogPageView.swift
+@@ -139,12 +139,16 @@ struct RecapBlogPageView: View {
+                     }
+                 )
+             }
+-            .sheet(isPresented: $showTitleChange) {
++            .sheet(isPresented: $showTitleChange, onDismiss: {
++                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
++            }) {
+                 BlogTitleChangeSheet(title: $draft.title) {
+                     showTitleChange = false
+                 }
+             }
+-            .sheet(isPresented: $showCoverPhotoPicker) {
++            .sheet(isPresented: $showCoverPhotoPicker, onDismiss: {
++                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
++            }) {
+                 BlogCoverPhotoPickerView(
+                     photos: allIncludedPhotos,
+                     selectedIdentifier: $draft.selectedCoverPhotoIdentifier,
+@@ -166,13 +170,17 @@ struct RecapBlogPageView: View {
+                     updatePlaceTitle(stopId: stop.id, to: newTitle)
+                 })
+             }
+-            .sheet(item: $showManagePhotosForStop) { pair in
++            .sheet(item: $showManagePhotosForStop, onDismiss: {
++                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
++            }) { pair in
+                 ManagePhotosView(
+                     placeTitle: placeStop(dayId: pair.dayId, stopId: pair.stopId)?.placeTitle ?? "Photos",
+                     photos: bindingForPhotos(dayId: pair.dayId, stopId: pair.stopId)
+                 )
+             }
+-            .fullScreenCover(isPresented: $showEditPhotoFlow) {
++            .fullScreenCover(isPresented: $showEditPhotoFlow, onDismiss: {
++                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
++            }) {
+                 EditBlogPhotoFlowView(blogId: blogId, onDismiss: { showEditPhotoFlow = false })
+                     .environmentObject(createdRecapStore)
+             }
+@@ -181,7 +189,9 @@ struct RecapBlogPageView: View {
+                     fullScreenMapDay = nil
+                 }
+             }
+-            .sheet(item: $placePhotoModalItem) { item in
++            .sheet(item: $placePhotoModalItem, onDismiss: {
++                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
++            }) { item in
+                 placePhotoModalSheet(item: item)
+             }
+             .modifier(coreContentAlertsAndLifecycleModifier())
+@@ -607,15 +617,21 @@ struct RecapBlogPageView: View {
+     @ViewBuilder
+     private func placePhotoModalSheet(item: PlacePhotoModalItem) -> some View {
+         Group {
+-            if let stop = placeStop(dayId: item.dayId, stopId: item.stopId), !stop.photos.isEmpty {
+-                PlacePhotoModalView(
+-                    placeTitle: bindingForPlaceTitle(stopId: item.stopId),
+-                    placeSubtitle: stop.placeSubtitle,
+-                    photos: stop.photos,
+-                    initialPhotoId: stop.photos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : stop.photos[0].id,
+-                    photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
+-                    onDismiss: { placePhotoModalItem = nil }
+-                )
++            if let stop = placeStop(dayId: item.dayId, stopId: item.stopId) {
++                let includedPhotos = stop.photos.filter(\.isIncluded)
++                if !includedPhotos.isEmpty {
++                    PlacePhotoModalView(
++                        placeTitle: bindingForPlaceTitle(stopId: item.stopId),
++                        placeSubtitle: stop.placeSubtitle,
++                        photos: includedPhotos,
++                        initialPhotoId: includedPhotos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : includedPhotos[0].id,
++                        photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
++                        onDismiss: { placePhotoModalItem = nil }
++                    )
++                } else {
++                    Color.white
++                        .onAppear { placePhotoModalItem = nil }
++                }
+             } else {
+                 Color.white
+                     .onAppear { placePhotoModalItem = nil }
+@@ -678,6 +694,7 @@ struct RecapBlogPageView: View {
+ 
+ // AutosaveManager.shared.cancelPending() — removed
+         createdRecapStore.saveBlogDetail(draft)
++        syncWithCloudIfNeeded()
+ 
+         if isFirstSave {
+             withAnimation {
+@@ -725,6 +742,11 @@ struct RecapBlogPageView: View {
+         } else {
+             draft.days[dayIndex] = updatedDay
+         }
++        
++        if !isEditMode {
++            createdRecapStore.saveBlogDetail(draft)
++            syncWithCloudIfNeeded()
++        }
+     }
+ 
+     private func removePhoto(dayId: UUID, stopId: UUID, photoId: UUID) {
+@@ -746,9 +768,14 @@ struct RecapBlogPageView: View {
+         // Perform Deletion
+         var updatedDay = day
+         var updatedStop = stop
+-        updatedStop.photos.remove(at: photoIdx)
++        updatedStop.photos[photoIdx].isIncluded = false
+         updatedDay.placeStops[stopIdx] = updatedStop
+         draft.days[dayIdx] = updatedDay
++        
++        if !isEditMode {
++            createdRecapStore.saveBlogDetail(draft)
++            syncWithCloudIfNeeded()
++        }
+     }
+     
+     private func performUndo() {
+@@ -765,13 +792,13 @@ struct RecapBlogPageView: View {
+                     }
+                 }
+                 
+-            case .deletePhoto(let dayId, let stopId, let photo, let index):
++            case .deletePhoto(let dayId, let stopId, let photo, _):
+                 if let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+                    let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) {
+                     var day = draft.days[dayIdx]
+                     var stop = day.placeStops[stopIdx]
+-                    if index <= stop.photos.count {
+-                        stop.photos.insert(photo, at: index)
++                    if let pIdx = stop.photos.firstIndex(where: { $0.id == photo.id }) {
++                        stop.photos[pIdx].isIncluded = true
+                         day.placeStops[stopIdx] = stop
+                         draft.days[dayIdx] = day
+                     }
+@@ -780,6 +807,11 @@ struct RecapBlogPageView: View {
+             
+             showUndoOverlay = false
+             lastUndoAction = nil
++            
++            if !isEditMode {
++                createdRecapStore.saveBlogDetail(draft)
++                syncWithCloudIfNeeded()
++            }
+         }
+     }
+ 
+@@ -791,6 +823,11 @@ struct RecapBlogPageView: View {
+                 stop.placeTitle = title
+                 day.placeStops[j] = stop
+                 draft.days[i] = day
++                
++                if !isEditMode {
++                    createdRecapStore.saveBlogDetail(draft)
++                    syncWithCloudIfNeeded()
++                }
+                 break
+             }
+         }
+@@ -989,8 +1026,7 @@ struct RecapBlogPageView: View {
+                                 .tint(.white)
+                                 .frame(width: 22, height: 22)
+                         } else {
+-                            Image("Upload Cloud Icon")
+-                                .renderingMode(.template)
++                            Image(systemName: blogIsInCloud ? "checkmark.icloud.fill" : "icloud.and.arrow.up")
+                                 .resizable()
+                                 .scaledToFit()
+                                 .frame(width: 22, height: 22)
+@@ -1135,6 +1171,20 @@ struct RecapBlogPageView: View {
+     }
+ 
+     private func removeCloudURLsFromDraft() {
++        // 1. Update backend to hide the blog if we have a blogKey
++        if let existing = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }),
++           let key = existing.blogKey {
++            Task {
++                do {
++                    try await APIManager.shared.setBlogPrivacy(blogKey: key, level: "hidden")
++                    print("✅ Successfully hid blog (key: \(key)) from cloud on backend.")
++                } catch {
++                    print("🚨 Failed to hide blog on backend: \(error)")
++                }
++            }
++        }
++
++        // 2. Clear local cloudURLs
+         for dayIdx in draft.days.indices {
+             for stopIdx in draft.days[dayIdx].placeStops.indices {
+                 for photoIdx in draft.days[dayIdx].placeStops[stopIdx].photos.indices {
+@@ -1146,6 +1196,29 @@ struct RecapBlogPageView: View {
+         createdRecapStore.saveBlogDetail(draft)
+     }
+ 
++    private func syncWithCloudIfNeeded() {
++        guard blogIsInCloud else { return }
++        
++        let snapshot = draft
++        let currentBlogId = blogId
++        
++        // Hide existing cloud blog if we have its key
++        if let existingKey = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.blogKey {
++            Task {
++                try? await APIManager.shared.setBlogPrivacy(blogKey: existingKey, level: "hidden")
++            }
++        }
++        
++        // Publish new snapshot
++        Task {
++            if let newKey = await APIManager.shared.publishBlog(detail: snapshot) {
++                await MainActor.run {
++                    createdRecapStore.setBlogKey(blogId: currentBlogId, blogKey: newKey)
++                }
++            }
++        }
++    }
++
+     /// True if every included photo already has a cloud URL.
+     private var blogIsInCloud: Bool {
+         let included = draft.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded)
+diff --git a/fastblog/Views/TripsView.swift b/fastblog/Views/TripsView.swift
+index 2abdce9..f95ad11 100644
+--- a/fastblog/Views/TripsView.swift
++++ b/fastblog/Views/TripsView.swift
+@@ -65,8 +65,6 @@ struct TripsView: View {
+         }
+         .fullScreenCover(item: $createBlogFlowTrip) { trip in
+             CreateBlogFlowView(trip: trip, startDirectlyCreating: true) { createdTripId in
+-                TripDraftStore.clearSelection(tripId: createdTripId)
+-                viewModel.removeTrip(id: createdTripId)
+                 createBlogFlowTrip = nil
+                 selectedTrip = nil
+             }

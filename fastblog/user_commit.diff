@@ -1,0 +1,539 @@
+commit 77e3469422bc2aeb11ccfc551a8d63c5ede22fea
+Author: Justin Seo <carrier_mania@yahoo.com>
+Date:   Mon Feb 23 18:41:12 2026 -0800
+
+    Fixed to see trips not showing up
+
+diff --git a/fastblog/Services/CreatedRecapBlogStore.swift b/fastblog/Services/CreatedRecapBlogStore.swift
+index 1d981dd..24d1756 100644
+--- a/fastblog/Services/CreatedRecapBlogStore.swift
++++ b/fastblog/Services/CreatedRecapBlogStore.swift
+@@ -799,7 +799,11 @@ final class CreatedRecapBlogStore: ObservableObject {
+ 
+     /// For Landing Recents section (newest first).
+     var displayRecents: [CreatedRecapBlog] {
+-        Array(recents)
++        recents.sorted {
++            let d1 = $0.lastEditedAt ?? $0.createdAt
++            let d2 = $1.lastEditedAt ?? $1.createdAt
++            return d1 > d2
++        }
+     }
+ 
+     /// Group recents by country for Profile.
+diff --git a/fastblog/Views/CountryBlogsView.swift b/fastblog/Views/CountryBlogsView.swift
+index b5efdd4..e5a25f4 100644
+--- a/fastblog/Views/CountryBlogsView.swift
++++ b/fastblog/Views/CountryBlogsView.swift
+@@ -16,12 +16,6 @@ struct CountryBlogsView: View {
+     @State private var showRemoveCloudPopup = false
+     @State private var blogToRemove: CreatedRecapBlog?
+ 
+-    private static let dateFormatter: DateFormatter = {
+-        let f = DateFormatter()
+-        f.dateFormat = "MMM yyyy"
+-        return f
+-    }()
+-
+     var body: some View {
+         ScrollView {
+             LazyVStack(spacing: 24) {
+@@ -29,64 +23,14 @@ struct CountryBlogsView: View {
+                     Button {
+                         localSelectedBlog = blog
+                     } label: {
+-                        VStack(alignment: .leading, spacing: 12) {
+-                            TripCoverImage(theme: blog.coverImageName, coverAssetIdentifier: blog.coverAssetIdentifier)
+-                                .frame(height: 250)
+-                                .frame(maxWidth: .infinity)
+-                                .clipShape(RoundedRectangle(cornerRadius: 12))
+-                                .overlay(alignment: .topTrailing) {
+-                                    if createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId) {
+-                                        Image(systemName: "icloud.and.arrow.up")
+-                                            .font(.body)
+-                                            .foregroundColor(.green)
+-                                            .padding(8)
+-                                            .background(Circle().fill(Color.white))
+-                                            .clipShape(Circle())
+-                                            .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+-                                            .padding(12)
+-                                            .onTapGesture {
+-                                                blogToRemove = blog
+-                                                showRemoveCloudPopup = true
+-                                            }
+-                                    }
+-                                }
+-                                .overlay(alignment: .bottomLeading) {
+-                                    if blog.lastEditedAt == nil {
+-                                        Text("Draft")
+-                                            .font(.caption)
+-                                            .fontWeight(.bold)
+-                                            .foregroundColor(.white)
+-                                            .padding(.horizontal, 8)
+-                                            .padding(.vertical, 4)
+-                                            .background(Color.black.opacity(0.6))
+-                                            .cornerRadius(6)
+-                                            .padding(12)
+-                                    }
+-                                }
+-                            
+-                            VStack(alignment: .leading, spacing: 4) {
+-                                Text(blog.title)
+-                                    .font(.title3)
+-                                    .fontWeight(.semibold)
+-                                    .foregroundColor(.primary)
+-                                    .lineLimit(2)
+-                                    .multilineTextAlignment(.leading)
+-                                
+-                                HStack {
+-                                    Text("\(blog.totalPlaceVisitCount) Place\(blog.totalPlaceVisitCount == 1 ? "" : "s") • \(blog.tripDurationDays) Day\(blog.tripDurationDays == 1 ? "" : "s")")
+-                                        .font(.subheadline)
+-                                        .foregroundColor(.secondary)
+-                                    
+-                                    Spacer()
+-                                    
+-                                    Text("Edited \(Self.dateFormatter.string(from: blog.lastEditedAt ?? blog.createdAt))")
+-                                        .font(.caption)
+-                                        .foregroundColor(.secondary)
+-                                }
++                        CountryBlogRowView(
++                            blog: blog,
++                            isBlogInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
++                            onRemoveFromCloud: {
++                                blogToRemove = blog
++                                showRemoveCloudPopup = true
+                             }
+-                            .padding(.horizontal, 4)
+-                        }
+-                        .contentShape(Rectangle())
++                        )
+                     }
+                     .buttonStyle(.plain)
+                 }
+@@ -135,3 +79,88 @@ struct CountryBlogsView: View {
+         name.isEmpty || name == "Unknown" ? "Other" : name
+     }
+ }
++
++struct CountryBlogRowView: View {
++    let blog: CreatedRecapBlog
++    let isBlogInCloud: Bool
++    let onRemoveFromCloud: () -> Void
++    
++    private static let dateFormatter: DateFormatter = {
++        let f = DateFormatter()
++        f.dateFormat = "MMM yyyy"
++        return f
++    }()
++
++    var body: some View {
++        VStack(alignment: .leading, spacing: 12) {
++            TripCoverImage(theme: blog.coverImageName, coverAssetIdentifier: blog.coverAssetIdentifier)
++                .frame(height: 250)
++                .frame(maxWidth: .infinity)
++                .clipShape(RoundedRectangle(cornerRadius: 12))
++                .overlay(alignment: .topTrailing) {
++                    if isBlogInCloud {
++                        Image(systemName: "checkmark.icloud.fill")
++                            .font(.body)
++                            .foregroundColor(.white)
++                            .padding(8)
++                            .background(Circle().fill(Color.green))
++                            .clipShape(Circle())
++                            .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
++                            .padding(12)
++                            .onTapGesture(perform: onRemoveFromCloud)
++                    } else {
++                        Image(systemName: "icloud.and.arrow.up")
++                            .font(.body)
++                            .foregroundColor(.orange)
++                            .padding(8)
++                            .background(Circle().fill(Color.white))
++                            .clipShape(Circle())
++                            .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
++                            .padding(12)
++                    }
++                }
++                .overlay(alignment: .bottomLeading) {
++                    if blog.lastEditedAt == nil {
++                        Text("Draft")
++                            .font(.caption)
++                            .fontWeight(.bold)
++                            .foregroundColor(.white)
++                            .padding(.horizontal, 8)
++                            .padding(.vertical, 4)
++                            .background(Color.black.opacity(0.6))
++                            .cornerRadius(6)
++                            .padding(12)
++                    }
++                }
++            
++            VStack(alignment: .leading, spacing: 4) {
++                Text(blog.tripDateRangeText ?? "")
++                    .font(.subheadline)
++                    .fontWeight(.medium)
++                    .foregroundColor(.secondary)
++                    .textCase(.uppercase)
++
++                Text(blog.title)
++                    .font(.title3)
++                    .fontWeight(.semibold)
++                    .foregroundColor(.primary)
++                    .lineLimit(2)
++                    .multilineTextAlignment(.leading)
++                
++                HStack {
++                    Text("\(blog.totalPlaceVisitCount) Place\(blog.totalPlaceVisitCount == 1 ? "" : "s") • \(blog.tripDurationDays) Day\(blog.tripDurationDays == 1 ? "" : "s")")
++                        .font(.subheadline)
++                        .foregroundColor(.secondary)
++                    
++                    Spacer()
++                    
++                    Text("Edited \(Self.dateFormatter.string(from: blog.lastEditedAt ?? blog.createdAt))")
++                        .font(.caption)
++                        .foregroundColor(.secondary)
++                }
++            }
++            .padding(.horizontal, 4)
++        }
++        .contentShape(Rectangle())
++    }
++}
+diff --git a/fastblog/Views/EditPlaceStopNameSheet.swift b/fastblog/Views/EditPlaceStopNameSheet.swift
+index 4850a1b..1ba686e 100644
+--- a/fastblog/Views/EditPlaceStopNameSheet.swift
++++ b/fastblog/Views/EditPlaceStopNameSheet.swift
+@@ -14,22 +14,51 @@ struct EditPlaceStopNameSheet: View {
+ 
+     @StateObject private var searchViewModel = PlaceSearchViewModel()
+     @State private var editedTitle: String = ""
++    @FocusState private var isFocused: Bool
++    @State private var showSuggestions: Bool = true
+ 
+     var body: some View {
+         NavigationStack {
+             List {
+                 Section {
+-                    TextField("Place name", text: $editedTitle)
+-                        .autocorrectionDisabled()
+-                        .onChange(of: editedTitle) { _, newValue in
+-                            searchViewModel.query = newValue
++                    HStack {
++                        TextField("Place name", text: $editedTitle)
++                            .focused($isFocused)
++                            .autocorrectionDisabled()
++                            .onChange(of: isFocused) { _, focused in
++                                if focused {
++                                    showSuggestions = true
++                                    searchViewModel.query = editedTitle
++                                }
++                            }
++                            .onChange(of: editedTitle) { oldValue, newValue in
++                                if oldValue == placeTitle && newValue.hasPrefix(placeTitle) && newValue.count > oldValue.count {
++                                    editedTitle = String(newValue.dropFirst(placeTitle.count))
++                                } else if showSuggestions {
++                                    searchViewModel.query = newValue
++                                }
++                            }
++                        
++                        if !editedTitle.isEmpty {
++                            Button {
++                                editedTitle = ""
++                                searchViewModel.query = ""
++                                isFocused = true
++                            } label: {
++                                Image(systemName: "xmark.circle.fill")
++                                    .foregroundColor(.secondary)
++                            }
++                            .buttonStyle(.plain)
+                         }
++                    }
+                 }
+ 
+-                if !searchViewModel.suggestions.isEmpty {
++                if showSuggestions && !searchViewModel.suggestions.isEmpty {
+                     Section("Nearby Suggestions") {
+                         ForEach(Array(searchViewModel.suggestions.enumerated()), id: \.offset) { _, suggestion in
+                             Button {
++                                showSuggestions = false
++                                isFocused = false
+                                 editedTitle = suggestion.title
+                                 searchViewModel.suggestions = []
+                             } label: {
+@@ -46,20 +75,7 @@ struct EditPlaceStopNameSheet: View {
+                     }
+                 }
+ 
+-                if !editedTitle.isEmpty {
+-                    Section {
+-                        if let encoded = editedTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+-                           let url = URL(string: "https://www.google.com/search?q=\(encoded)") {
+-                            Link(destination: url) {
+-                                HStack {
+-                                    Image(systemName: "magnifyingglass")
+-                                    Text("Search on Google")
+-                                }
+-                                .foregroundColor(.blue)
+-                            }
+-                        }
+-                    }
+-                }
++
+             }
+             .navigationTitle("Edit Name")
+             .navigationBarTitleDisplayMode(.inline)
+@@ -76,6 +92,7 @@ struct EditPlaceStopNameSheet: View {
+                         dismiss()
+                     }
+                     .disabled(editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
++                    .foregroundStyle(editedTitle != placeTitle ? .blue : .primary)
+                 }
+             }
+             .onAppear {
+diff --git a/fastblog/Views/LandingView.swift b/fastblog/Views/LandingView.swift
+index d440761..43888e9 100644
+--- a/fastblog/Views/LandingView.swift
++++ b/fastblog/Views/LandingView.swift
+@@ -1,4 +1,4 @@
+-//
++                                                    //
+ //  LandingView.swift
+ //  Capper
+ //
+@@ -285,16 +285,24 @@ private struct CreatedRecapCard: View {
+                         .background(Color.black.opacity(0.6))
+                         .cornerRadius(4)
+                         .padding(4)
+-                } else if createdRecapStore.isBlogInCloud(blogId: recap.sourceTripId) {
+-                    Image(systemName: "icloud.and.arrow.up")
+-                        .font(.caption2)
+-                        .foregroundColor(.green)
+-                        .padding(4)
+-                        .background(Circle().fill(Color.white))
+-                        .contentShape(Rectangle())
+-                        .onTapGesture {
+-                            showRemoveCloudPopup = true
+-                        }
++                } else {
++                    if createdRecapStore.isBlogInCloud(blogId: recap.sourceTripId) {
++                        Image(systemName: "checkmark.icloud.fill")
++                            .font(.caption2)
++                            .foregroundColor(.white)
++                            .padding(4)
++                            .background(Circle().fill(Color.green))
++                            .contentShape(Rectangle())
++                            .onTapGesture {
++                                showRemoveCloudPopup = true
++                            }
++                    } else {
++                        Image(systemName: "icloud.and.arrow.up")
++                            .font(.caption2)
++                            .foregroundColor(.orange)
++                            .padding(4)
++                            .background(Circle().fill(Color.white))
++                    }
+                 }
+             }
+ 
+@@ -526,17 +534,25 @@ struct AllRecentsSheet: View {
+                                         .background(Color.black.opacity(0.6))
+                                         .cornerRadius(4)
+                                         .padding(3)
+-                                } else if createdRecapStore.isBlogInCloud(blogId: recap.sourceTripId) {
+-                                    Image(systemName: "icloud.and.arrow.up")
+-                                        .font(.caption2)
+-                                        .foregroundColor(.green)
+-                                        .padding(4)
+-                                        .background(Circle().fill(Color.white))
+-                                        .contentShape(Rectangle())
+-                                        .onTapGesture {
+-                                            blogToRemove = recap
+-                                            showRemoveCloudPopup = true
+-                                        }
++                                } else {
++                                    if createdRecapStore.isBlogInCloud(blogId: recap.sourceTripId) {
++                                        Image(systemName: "checkmark.icloud.fill")
++                                            .font(.caption2)
++                                            .foregroundColor(.white)
++                                            .padding(4)
++                                            .background(Circle().fill(Color.green))
++                                            .contentShape(Rectangle())
++                                            .onTapGesture {
++                                                blogToRemove = recap
++                                                showRemoveCloudPopup = true
++                                            }
++                                    } else {
++                                        Image(systemName: "icloud.and.arrow.up")
++                                            .font(.caption2)
++                                            .foregroundColor(.orange)
++                                            .padding(4)
++                                            .background(Circle().fill(Color.white))
++                                    }
+                                 }
+                             }
+                             VStack(alignment: .leading, spacing: 4) {
+diff --git a/fastblog/Views/MyBlogsProfileView.swift b/fastblog/Views/MyBlogsProfileView.swift
+index 992c452..680138f 100644
+--- a/fastblog/Views/MyBlogsProfileView.swift
++++ b/fastblog/Views/MyBlogsProfileView.swift
+@@ -108,7 +108,6 @@ struct MyBlogsProfileView: View {
+         }
+         .navigationDestination(item: $createBlogFlowTrip) { trip in
+             CreateBlogFlowView(trip: trip, startDirectlyCreating: true) { createdTripId in
+-                TripDraftStore.clearSelection(tripId: createdTripId)
+                 createBlogFlowTrip = nil
+                 viewModel.loadUnsavedTrips() // Refresh after creation
+             }
+diff --git a/fastblog/Views/RecapBlogPageView.swift b/fastblog/Views/RecapBlogPageView.swift
+index 936e9d0..ded0221 100644
+--- a/fastblog/Views/RecapBlogPageView.swift
++++ b/fastblog/Views/RecapBlogPageView.swift
+@@ -139,12 +139,16 @@ struct RecapBlogPageView: View {
+                     }
+                 )
+             }
+-            .sheet(isPresented: $showTitleChange) {
++            .sheet(isPresented: $showTitleChange, onDismiss: {
++                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
++            }) {
+                 BlogTitleChangeSheet(title: $draft.title) {
+                     showTitleChange = false
+                 }
+             }
+-            .sheet(isPresented: $showCoverPhotoPicker) {
++            .sheet(isPresented: $showCoverPhotoPicker, onDismiss: {
++                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
++            }) {
+                 BlogCoverPhotoPickerView(
+                     photos: allIncludedPhotos,
+                     selectedIdentifier: $draft.selectedCoverPhotoIdentifier,
+@@ -166,13 +170,17 @@ struct RecapBlogPageView: View {
+                     updatePlaceTitle(stopId: stop.id, to: newTitle)
+                 })
+             }
+-            .sheet(item: $showManagePhotosForStop) { pair in
++            .sheet(item: $showManagePhotosForStop, onDismiss: {
++                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
++            }) { pair in
+                 ManagePhotosView(
+                     placeTitle: placeStop(dayId: pair.dayId, stopId: pair.stopId)?.placeTitle ?? "Photos",
+                     photos: bindingForPhotos(dayId: pair.dayId, stopId: pair.stopId)
+                 )
+             }
+-            .fullScreenCover(isPresented: $showEditPhotoFlow) {
++            .fullScreenCover(isPresented: $showEditPhotoFlow, onDismiss: {
++                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
++            }) {
+                 EditBlogPhotoFlowView(blogId: blogId, onDismiss: { showEditPhotoFlow = false })
+                     .environmentObject(createdRecapStore)
+             }
+@@ -181,7 +189,9 @@ struct RecapBlogPageView: View {
+                     fullScreenMapDay = nil
+                 }
+             }
+-            .sheet(item: $placePhotoModalItem) { item in
++            .sheet(item: $placePhotoModalItem, onDismiss: {
++                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
++            }) { item in
+                 placePhotoModalSheet(item: item)
+             }
+             .modifier(coreContentAlertsAndLifecycleModifier())
+@@ -684,6 +694,7 @@ struct RecapBlogPageView: View {
+ 
+ // AutosaveManager.shared.cancelPending() — removed
+         createdRecapStore.saveBlogDetail(draft)
++        syncWithCloudIfNeeded()
+ 
+         if isFirstSave {
+             withAnimation {
+@@ -731,6 +742,11 @@ struct RecapBlogPageView: View {
+         } else {
+             draft.days[dayIndex] = updatedDay
+         }
++        
++        if !isEditMode {
++            createdRecapStore.saveBlogDetail(draft)
++            syncWithCloudIfNeeded()
++        }
+     }
+ 
+     private func removePhoto(dayId: UUID, stopId: UUID, photoId: UUID) {
+@@ -755,6 +771,11 @@ struct RecapBlogPageView: View {
+         updatedStop.photos[photoIdx].isIncluded = false
+         updatedDay.placeStops[stopIdx] = updatedStop
+         draft.days[dayIdx] = updatedDay
++        
++        if !isEditMode {
++            createdRecapStore.saveBlogDetail(draft)
++            syncWithCloudIfNeeded()
++        }
+     }
+     
+     private func performUndo() {
+@@ -786,6 +807,11 @@ struct RecapBlogPageView: View {
+             
+             showUndoOverlay = false
+             lastUndoAction = nil
++            
++            if !isEditMode {
++                createdRecapStore.saveBlogDetail(draft)
++                syncWithCloudIfNeeded()
++            }
+         }
+     }
+ 
+@@ -797,6 +823,11 @@ struct RecapBlogPageView: View {
+                 stop.placeTitle = title
+                 day.placeStops[j] = stop
+                 draft.days[i] = day
++                
++                if !isEditMode {
++                    createdRecapStore.saveBlogDetail(draft)
++                    syncWithCloudIfNeeded()
++                }
+                 break
+             }
+         }
+@@ -1165,6 +1196,29 @@ struct RecapBlogPageView: View {
+         createdRecapStore.saveBlogDetail(draft)
+     }
+ 
++    private func syncWithCloudIfNeeded() {
++        guard blogIsInCloud else { return }
++        
++        let snapshot = draft
++        let currentBlogId = blogId
++        
++        // Hide existing cloud blog if we have its key
++        if let existingKey = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.blogKey {
++            Task {
++                try? await APIManager.shared.setBlogPrivacy(blogKey: existingKey, level: "hidden")
++            }
++        }
++        
++        // Publish new snapshot
++        Task {
++            if let newKey = await APIManager.shared.publishBlog(detail: snapshot) {
++                await MainActor.run {
++                    createdRecapStore.setBlogKey(blogId: currentBlogId, blogKey: newKey)
++                }
++            }
++        }
++    }
++
+     /// True if every included photo already has a cloud URL.
+     private var blogIsInCloud: Bool {
+         let included = draft.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded)
+diff --git a/fastblog/Views/TripsView.swift b/fastblog/Views/TripsView.swift
+index 2abdce9..f95ad11 100644
+--- a/fastblog/Views/TripsView.swift
++++ b/fastblog/Views/TripsView.swift
+@@ -65,8 +65,6 @@ struct TripsView: View {
+         }
+         .fullScreenCover(item: $createBlogFlowTrip) { trip in
+             CreateBlogFlowView(trip: trip, startDirectlyCreating: true) { createdTripId in
+-                TripDraftStore.clearSelection(tripId: createdTripId)
+-                viewModel.removeTrip(id: createdTripId)
+                 createBlogFlowTrip = nil
+                 selectedTrip = nil
+             }
