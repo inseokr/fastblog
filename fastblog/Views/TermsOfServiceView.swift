@@ -5,19 +5,19 @@
 
 import SwiftUI
 
-/// Dedicated Terms of Service page for BlogGo. Shown from Settings.
+/// Dedicated Terms of Service page for Bloggo. Shown from Settings.
 struct TermsOfServiceView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Group {
                     sectionTitle("Agreement to Terms")
-                    bodyText("By downloading, installing, or using the BlogGo app (\"the App\"), you agree to be bound by these Terms of Service (\"Terms\"). If you do not agree to these Terms, do not use the App.")
+                    bodyText("By downloading, installing, or using the Bloggo app (\"the App\"), you agree to be bound by these Terms of Service (\"Terms\"). If you do not agree to these Terms, do not use the App.")
                 }
 
                 Group {
                     sectionTitle("Description of the Service")
-                    bodyText("BlogGo is a mobile application that helps you discover trips from your photo library (e.g., over the last 90 days), select photos, and create recap blogs. Features include trip scanning, neighborhood-based filtering, draft saving, and editing recap blog content. The service is provided for personal, non-commercial use.")
+                    bodyText("Bloggo is a mobile application that helps you discover trips from your photo library (e.g., over the last 90 days), select photos, and create recap blogs. Features include trip scanning, neighborhood-based filtering, draft saving, and editing recap blog content. The service is provided for personal, non-commercial use.")
                 }
 
                 Group {
@@ -42,7 +42,7 @@ struct TermsOfServiceView: View {
 
                 Group {
                     sectionTitle("Limitation of Liability")
-                    bodyText("To the maximum extent permitted by law, BlogGo and its providers shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of data, revenue, or profits, arising from your use of or inability to use the App. Our total liability shall not exceed the amount you paid to use the App in the past twelve months, if any.")
+                    bodyText("To the maximum extent permitted by law, Bloggo and its providers shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of data, revenue, or profits, arising from your use of or inability to use the App. Our total liability shall not exceed the amount you paid to use the App in the past twelve months, if any.")
                 }
 
                 Group {
@@ -57,7 +57,7 @@ struct TermsOfServiceView: View {
 
                 Group {
                     sectionTitle("General")
-                    bodyText("These Terms constitute the entire agreement between you and BlogGo regarding the App. If any part of these Terms is held unenforceable, the remaining provisions will remain in effect. Our failure to enforce any right or provision does not waive that right or provision.")
+                    bodyText("These Terms constitute the entire agreement between you and Bloggo regarding the App. If any part of these Terms is held unenforceable, the remaining provisions will remain in effect. Our failure to enforce any right or provision does not waive that right or provision.")
                 }
 
                 Group {

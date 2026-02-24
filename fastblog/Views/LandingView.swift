@@ -42,7 +42,7 @@ struct LandingView: View {
                             .foregroundColor(.white)
                     }
                     Spacer()
-                    Text("BlogGo")
+                    Text("Bloggo")
                         .font(.system(size: 34))
                         .fontWeight(.bold)
                         .foregroundColor(.white)
@@ -105,7 +105,7 @@ struct LandingView: View {
         }
         .fullScreenCover(isPresented: $showAuth) {
             AuthView(onAuthenticated: {
-                showProfile = true
+                // Stay on Landing (Home) View after sign in
             })
             .environmentObject(authService)
         }
@@ -162,7 +162,7 @@ struct LandingView: View {
         .padding(.top, 12)
         .padding(.bottom, 4)
         .onTapGesture {
-            if let latest = createdRecapStore.recents.first {
+            if let latest = createdRecapStore.displayRecents.first {
                 selectedCreatedRecap = latest
             }
             createdRecapStore.dismissRecapCreatedBanner()
@@ -474,6 +474,20 @@ private struct SettingsView: View {
                 } header: {
                     Text("Legal")
                 }
+                
+                Section {
+                    Button {
+                        OnboardingStore.hasCompletedOnboarding = false
+                        dismiss()
+                    } label: {
+                        Text("Test Onboarding (Temporary)")
+                            .foregroundColor(.blue)
+                    }
+                } header: {
+                    Text("Testing")
+                } footer: {
+                    Text("Temporarily jumps back into the full onboarding flow.")
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -514,7 +528,7 @@ struct AllRecentsSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                ForEach(createdRecapStore.recents) { recap in
+                ForEach(createdRecapStore.visibleRecents) { recap in
                     Button {
                         selectedRecap = recap
                         dismiss()

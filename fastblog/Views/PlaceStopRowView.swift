@@ -151,7 +151,7 @@ struct PlaceStopRowView: View {
 
             // Photo strip: large thumbnails; one full photo visible + peek of next so users know they can scroll
             let includedPhotos = stop.photos.filter(\.isIncluded)
-            if !includedPhotos.isEmpty {
+            if !includedPhotos.isEmpty || (isEditMode && stop.photos.count > 1) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 10) {
                         ForEach(includedPhotos) { photo in
