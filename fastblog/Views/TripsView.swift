@@ -417,7 +417,7 @@ struct TripsView: View {
         .padding(.horizontal, 20)
         .padding(.top, 8)
         .onTapGesture {
-            if let latest = createdRecapStore.recents.first {
+            if let latest = createdRecapStore.displayRecents.first {
                 selectedCreatedRecap = latest
             }
             createdRecapStore.dismissRecapCreatedBanner()

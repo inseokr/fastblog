@@ -8,9 +8,9 @@ import SwiftUI
 struct SplashView: View {
     var onFinish: () -> Void
 
-    @State private var iconOpacity: Double = 0
-    @State private var textOpacity: Double = 0
-    @State private var hasFinished = false
+    @State private var contentOpacity: Double = 0
+    @State private var showPrivacyPolicy = false
+    @State private var showTermsOfService = false
 
     var body: some View {
         ZStack {
@@ -18,27 +18,65 @@ struct SplashView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                Text("BlogGo")
+                Spacer()
+
+                Text("Welcome To")
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundColor(.white.opacity(0.85))
+                Text("Bloggo")
                     .font(.system(size: OnboardingConstants.Splash.titleFontSize, weight: .bold))
                     .foregroundColor(.white)
-                    .opacity(textOpacity)
-                    .padding(.top, OnboardingConstants.Layout.titleTopPadding)
+                    .padding(.top, 4)
 
                 Spacer()
 
                 splashLogo
-                    .opacity(iconOpacity)
 
                 Spacer()
+
+                Button(action: onFinish) {
+                    Text("Get Started")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color.blue)
+                        .clipShape(Capsule())
+                        .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 4)
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 12)
+
+                HStack(spacing: 4) {
+                    Button("Privacy Policy") {
+                        showPrivacyPolicy = true
+                    }
+                    .foregroundColor(.white.opacity(0.5))
+
+                    Text("and")
+                        .foregroundColor(.white.opacity(0.35))
+
+                    Button("Terms of Service") {
+                        showTermsOfService = true
+                    }
+                    .foregroundColor(.white.opacity(0.5))
+                }
+                .font(.caption)
+                .padding(.bottom, 32)
             }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            advanceImmediately()
+            .opacity(contentOpacity)
         }
         .preferredColorScheme(.dark)
         .onAppear {
-            startAnimation()
+            withAnimation(.easeOut(duration: OnboardingConstants.Splash.fadeInDuration).delay(OnboardingConstants.Splash.fadeInDelay)) {
+                contentOpacity = 1
+            }
+        }
+        .sheet(isPresented: $showPrivacyPolicy) {
+            PrivacyPolicyView()
+        }
+        .sheet(isPresented: $showTermsOfService) {
+            TermsOfServiceView()
         }
     }
 
@@ -53,28 +91,11 @@ struct SplashView: View {
         )
     }
 
-    /// Logo: same icon as the landing CTA (ScanIcon).
     private var splashLogo: some View {
-        Image("ScanIcon")
+        Image("SplashIcon")
             .resizable()
             .aspectRatio(contentMode: .fit)
-            .frame(width: OnboardingConstants.Splash.logoSize, height: OnboardingConstants.Splash.logoSize)
-    }
-
-    private func startAnimation() {
-        withAnimation(.easeOut(duration: OnboardingConstants.Splash.fadeInDuration).delay(OnboardingConstants.Splash.fadeInDelay)) {
-            iconOpacity = 1
-            textOpacity = 1
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + OnboardingConstants.Splash.autoAdvanceInterval) {
-            advanceImmediately()
-        }
-    }
-
-    private func advanceImmediately() {
-        guard !hasFinished else { return }
-        hasFinished = true
-        onFinish()
+            .frame(width: 140, height: 140)
+            .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
     }
 }

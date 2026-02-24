@@ -8,6 +8,7 @@ import SwiftUI
 
 enum OnboardingStep {
     case splash
+    case neighborhoodIntro
     case neighborhood
     case photoPermission
 }
@@ -22,6 +23,10 @@ struct OnboardingFlowView: View {
         Group {
             if step == .splash {
                 SplashView {
+                    step = .neighborhoodIntro
+                }
+            } else if step == .neighborhoodIntro {
+                NeighborhoodExplainerView {
                     step = .neighborhood
                 }
             } else if step == .neighborhood {

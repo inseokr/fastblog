@@ -162,7 +162,7 @@ struct LandingView: View {
         .padding(.top, 12)
         .padding(.bottom, 4)
         .onTapGesture {
-            if let latest = createdRecapStore.recents.first {
+            if let latest = createdRecapStore.displayRecents.first {
                 selectedCreatedRecap = latest
             }
             createdRecapStore.dismissRecapCreatedBanner()
@@ -514,7 +514,7 @@ struct AllRecentsSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                ForEach(createdRecapStore.recents) { recap in
+                ForEach(createdRecapStore.visibleRecents) { recap in
                     Button {
                         selectedRecap = recap
                         dismiss()
