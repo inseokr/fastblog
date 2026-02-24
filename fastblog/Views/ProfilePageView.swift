@@ -116,7 +116,8 @@ struct ProfilePageView: View {
                                 countryFilterBar
                                 StoryFeedSection(
                                     blogs: filteredBlogs,
-                                    selectedBlog: $selectedBlogToOpen
+                                    selectedBlog: $selectedBlogToOpen,
+                                    isSearchFocused: $isSearchFocused
                                 )
                             }
                         }
@@ -136,7 +137,8 @@ struct ProfilePageView: View {
                         } else {
                             StoryFeedSection(
                                 blogs: localBlogs,
-                                selectedBlog: $selectedBlogToOpen
+                                selectedBlog: $selectedBlogToOpen,
+                                isSearchFocused: $isSearchFocused
                             )
                         }
 
@@ -153,6 +155,7 @@ struct ProfilePageView: View {
             HStack {
                 Spacer()
                 Button {
+                    isSearchFocused = false
                     showMyMap = true
                 } label: {
                     Image(systemName: "map.fill")
@@ -174,26 +177,26 @@ struct ProfilePageView: View {
         .background(Color(uiColor: .systemBackground))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 16) {
-                    Button {
-                        Task {
-                            await prepareShareContent()
-                            showShare = true
-                        }
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                            .foregroundColor(.primary)
-                    }
-                    
-                    Button {
-                        // TODO: Open notifications
-                    } label: {
-                        Image(systemName: "bell")
-                            .foregroundColor(.primary)
-                    }
-                }
-            }
+//             ToolbarItem(placement: .topBarTrailing) {
+//                 HStack(spacing: 16) {
+//                     Button {
+//                         Task {
+//                             await prepareShareContent()
+//                             showShare = true
+//                         }
+//                     } label: {
+//                         Image(systemName: "square.and.arrow.up")
+//                             .foregroundColor(.primary)
+//                     }
+//                     
+//                     Button {
+//                         // TODO: Open notifications
+//                     } label: {
+//                         Image(systemName: "bell")
+//                             .foregroundColor(.primary)
+//                     }
+//                 }
+//             }
         }
         .sheet(isPresented: $showShare) {
             if !shareItems.isEmpty {
@@ -377,10 +380,8 @@ struct ProfileHeroSection: View {
                         .foregroundColor(.primary)
                         .padding(.horizontal, ProfileTheme.Spacing.lg)
                         .padding(.vertical, ProfileTheme.Spacing.sm)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
-                        )
+                        .background(Color(uiColor: .secondarySystemBackground))
+                        .clipShape(Capsule())
                 }
                 
                 // Manage Button
@@ -392,10 +393,8 @@ struct ProfileHeroSection: View {
                         .foregroundColor(.primary)
                         .padding(.horizontal, ProfileTheme.Spacing.lg)
                         .padding(.vertical, ProfileTheme.Spacing.sm)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
-                        )
+                        .background(Color(uiColor: .secondarySystemBackground))
+                        .clipShape(Capsule())
                 }
             }
             .padding(.top, ProfileTheme.Spacing.sm)
@@ -659,13 +658,14 @@ struct BlogCard: View {
 struct StoryFeedSection: View {
     let blogs: [CreatedRecapBlog]
     @Binding var selectedBlog: CreatedRecapBlog?
+    @FocusState.Binding var isSearchFocused: Bool
     
     var body: some View {
         VStack(spacing: ProfileTheme.Spacing.xxl) {
             ForEach(blogs) { blog in
                 BlogCard(blog: blog)
-                    .contentShape(Rectangle()) // Ensures tap target exactly matches bounds
                     .onTapGesture {
+                        isSearchFocused = false
                         selectedBlog = blog
                     }
             }

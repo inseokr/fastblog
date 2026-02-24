@@ -105,7 +105,7 @@ struct LandingView: View {
         }
         .fullScreenCover(isPresented: $showAuth) {
             AuthView(onAuthenticated: {
-                // Stay on Landing (Home) View after sign in
+                showProfile = true
             })
             .environmentObject(authService)
         }

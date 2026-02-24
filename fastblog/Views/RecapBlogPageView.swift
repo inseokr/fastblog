@@ -12,6 +12,7 @@ struct RecapBlogPageView: View {
     let initialTrip: TripDraft?
 
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
+    @EnvironmentObject private var authService: AuthService
     @Environment(\.dismiss) private var dismiss
 
     @State private var draft: RecapBlogDetail
@@ -49,6 +50,7 @@ struct RecapBlogPageView: View {
     @State private var showUploadErrorAlert = false
     @State private var uploadErrorMessage = ""
     @State private var showRemoveFromCloudAlert = false
+    @State private var showAuth = false
 
     private enum UndoAction {
         case deletePlace(dayId: UUID, stop: PlaceStop, index: Int)
@@ -83,7 +85,14 @@ struct RecapBlogPageView: View {
             .overlay(alignment: .top) { uploadSuccessBannerOverlay }
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showUploadSuccessBanner)
             .alert("Upload Failed", isPresented: $showUploadErrorAlert) {
-                Button("OK", role: .cancel) { }
+                if uploadErrorMessage == "Please sign in to upload photos." {
+                    Button("Sign In") {
+                        showAuth = true
+                    }
+                    Button("Close", role: .cancel) { }
+                } else {
+                    Button("OK", role: .cancel) { }
+                }
             } message: {
                 Text(uploadErrorMessage)
             }
@@ -94,6 +103,12 @@ struct RecapBlogPageView: View {
                 Button("No", role: .cancel) { }
             } message: {
                 Text("This will remove your blog from the cloud. Your local blog and photos will not be affected.")
+            }
+            .fullScreenCover(isPresented: $showAuth) {
+                AuthView(onAuthenticated: {
+                    showAuth = false
+                })
+                .environmentObject(authService)
             }
             .preferredColorScheme(.dark)
     }

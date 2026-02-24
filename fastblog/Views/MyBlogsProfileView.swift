@@ -57,6 +57,7 @@ struct MyBlogsProfileView: View {
                         LazyVStack(spacing: cardSpacing) {
                             ForEach(sections) { section in
                                 CountryCardView(section: section) {
+                                    isSearchFocused = false
                                     selectedSection = section
                                 }
                                 .frame(maxWidth: .infinity)
@@ -74,6 +75,7 @@ struct MyBlogsProfileView: View {
                 HStack {
                     Spacer()
                     MyMapButton {
+                        isSearchFocused = false
                         showMyMap = true
                     }
                     .padding(.trailing, 20)
@@ -89,6 +91,7 @@ struct MyBlogsProfileView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Recent") {
+                    isSearchFocused = false
                     showViewAll = true
                 }
                 .foregroundColor(.white)
