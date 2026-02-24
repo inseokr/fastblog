@@ -1,4 +1,4 @@
-//
+                                                    //
 //  LandingView.swift
 //  Capper
 //
@@ -285,16 +285,24 @@ private struct CreatedRecapCard: View {
                         .background(Color.black.opacity(0.6))
                         .cornerRadius(4)
                         .padding(4)
-                } else if createdRecapStore.isBlogInCloud(blogId: recap.sourceTripId) {
-                    Image(systemName: "icloud.and.arrow.up")
-                        .font(.caption2)
-                        .foregroundColor(.green)
-                        .padding(4)
-                        .background(Circle().fill(Color.white))
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            showRemoveCloudPopup = true
-                        }
+                } else {
+                    if createdRecapStore.isBlogInCloud(blogId: recap.sourceTripId) {
+                        Image(systemName: "checkmark.icloud.fill")
+                            .font(.caption2)
+                            .foregroundColor(.white)
+                            .padding(4)
+                            .background(Circle().fill(Color.green))
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                showRemoveCloudPopup = true
+                            }
+                    } else {
+                        Image(systemName: "icloud.and.arrow.up")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                            .padding(4)
+                            .background(Circle().fill(Color.white))
+                    }
                 }
             }
 
@@ -526,17 +534,25 @@ struct AllRecentsSheet: View {
                                         .background(Color.black.opacity(0.6))
                                         .cornerRadius(4)
                                         .padding(3)
-                                } else if createdRecapStore.isBlogInCloud(blogId: recap.sourceTripId) {
-                                    Image(systemName: "icloud.and.arrow.up")
-                                        .font(.caption2)
-                                        .foregroundColor(.green)
-                                        .padding(4)
-                                        .background(Circle().fill(Color.white))
-                                        .contentShape(Rectangle())
-                                        .onTapGesture {
-                                            blogToRemove = recap
-                                            showRemoveCloudPopup = true
-                                        }
+                                } else {
+                                    if createdRecapStore.isBlogInCloud(blogId: recap.sourceTripId) {
+                                        Image(systemName: "checkmark.icloud.fill")
+                                            .font(.caption2)
+                                            .foregroundColor(.white)
+                                            .padding(4)
+                                            .background(Circle().fill(Color.green))
+                                            .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                blogToRemove = recap
+                                                showRemoveCloudPopup = true
+                                            }
+                                    } else {
+                                        Image(systemName: "icloud.and.arrow.up")
+                                            .font(.caption2)
+                                            .foregroundColor(.orange)
+                                            .padding(4)
+                                            .background(Circle().fill(Color.white))
+                                    }
                                 }
                             }
                             VStack(alignment: .leading, spacing: 4) {

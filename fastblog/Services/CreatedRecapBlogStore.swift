@@ -799,7 +799,11 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// For Landing Recents section (newest first).
     var displayRecents: [CreatedRecapBlog] {
-        Array(recents)
+        recents.sorted {
+            let d1 = $0.lastEditedAt ?? $0.createdAt
+            let d2 = $1.lastEditedAt ?? $1.createdAt
+            return d1 > d2
+        }
     }
 
     /// Group recents by country for Profile.

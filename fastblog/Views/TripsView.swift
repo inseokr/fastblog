@@ -65,8 +65,6 @@ struct TripsView: View {
         }
         .fullScreenCover(item: $createBlogFlowTrip) { trip in
             CreateBlogFlowView(trip: trip, startDirectlyCreating: true) { createdTripId in
-                TripDraftStore.clearSelection(tripId: createdTripId)
-                viewModel.removeTrip(id: createdTripId)
                 createBlogFlowTrip = nil
                 selectedTrip = nil
             }

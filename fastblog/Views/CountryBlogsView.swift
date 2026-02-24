@@ -16,12 +16,6 @@ struct CountryBlogsView: View {
     @State private var showRemoveCloudPopup = false
     @State private var blogToRemove: CreatedRecapBlog?
 
-    private static let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "MMM yyyy"
-        return f
-    }()
-
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 24) {
@@ -29,64 +23,14 @@ struct CountryBlogsView: View {
                     Button {
                         localSelectedBlog = blog
                     } label: {
-                        VStack(alignment: .leading, spacing: 12) {
-                            TripCoverImage(theme: blog.coverImageName, coverAssetIdentifier: blog.coverAssetIdentifier)
-                                .frame(height: 250)
-                                .frame(maxWidth: .infinity)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                                .overlay(alignment: .topTrailing) {
-                                    if createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId) {
-                                        Image(systemName: "icloud.and.arrow.up")
-                                            .font(.body)
-                                            .foregroundColor(.green)
-                                            .padding(8)
-                                            .background(Circle().fill(Color.white))
-                                            .clipShape(Circle())
-                                            .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
-                                            .padding(12)
-                                            .onTapGesture {
-                                                blogToRemove = blog
-                                                showRemoveCloudPopup = true
-                                            }
-                                    }
-                                }
-                                .overlay(alignment: .bottomLeading) {
-                                    if blog.lastEditedAt == nil {
-                                        Text("Draft")
-                                            .font(.caption)
-                                            .fontWeight(.bold)
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(Color.black.opacity(0.6))
-                                            .cornerRadius(6)
-                                            .padding(12)
-                                    }
-                                }
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(blog.title)
-                                    .font(.title3)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.primary)
-                                    .lineLimit(2)
-                                    .multilineTextAlignment(.leading)
-                                
-                                HStack {
-                                    Text("\(blog.totalPlaceVisitCount) Place\(blog.totalPlaceVisitCount == 1 ? "" : "s") • \(blog.tripDurationDays) Day\(blog.tripDurationDays == 1 ? "" : "s")")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                    
-                                    Spacer()
-                                    
-                                    Text("Edited \(Self.dateFormatter.string(from: blog.lastEditedAt ?? blog.createdAt))")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
+                        CountryBlogRowView(
+                            blog: blog,
+                            isBlogInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
+                            onRemoveFromCloud: {
+                                blogToRemove = blog
+                                showRemoveCloudPopup = true
                             }
-                            .padding(.horizontal, 4)
-                        }
-                        .contentShape(Rectangle())
+                        )
                     }
                     .buttonStyle(.plain)
                 }
@@ -133,5 +77,90 @@ struct CountryBlogsView: View {
 
     private func displayCountryName(_ name: String) -> String {
         name.isEmpty || name == "Unknown" ? "Other" : name
+    }
+}
+
+struct CountryBlogRowView: View {
+    let blog: CreatedRecapBlog
+    let isBlogInCloud: Bool
+    let onRemoveFromCloud: () -> Void
+    
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM yyyy"
+        return f
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            TripCoverImage(theme: blog.coverImageName, coverAssetIdentifier: blog.coverAssetIdentifier)
+                .frame(height: 250)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(alignment: .topTrailing) {
+                    if isBlogInCloud {
+                        Image(systemName: "checkmark.icloud.fill")
+                            .font(.body)
+                            .foregroundColor(.white)
+                            .padding(8)
+                            .background(Circle().fill(Color.green))
+                            .clipShape(Circle())
+                            .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+                            .padding(12)
+                            .onTapGesture(perform: onRemoveFromCloud)
+                    } else {
+                        Image(systemName: "icloud.and.arrow.up")
+                            .font(.body)
+                            .foregroundColor(.orange)
+                            .padding(8)
+                            .background(Circle().fill(Color.white))
+                            .clipShape(Circle())
+                            .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+                            .padding(12)
+                    }
+                }
+                .overlay(alignment: .bottomLeading) {
+                    if blog.lastEditedAt == nil {
+                        Text("Draft")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.black.opacity(0.6))
+                            .cornerRadius(6)
+                            .padding(12)
+                    }
+                }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(blog.tripDateRangeText ?? "")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.secondary)
+                    .textCase(.uppercase)
+
+                Text(blog.title)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                
+                HStack {
+                    Text("\(blog.totalPlaceVisitCount) Place\(blog.totalPlaceVisitCount == 1 ? "" : "s") • \(blog.tripDurationDays) Day\(blog.tripDurationDays == 1 ? "" : "s")")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    Text("Edited \(Self.dateFormatter.string(from: blog.lastEditedAt ?? blog.createdAt))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+        .contentShape(Rectangle())
     }
 }

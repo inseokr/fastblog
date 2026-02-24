@@ -139,12 +139,16 @@ struct RecapBlogPageView: View {
                     }
                 )
             }
-            .sheet(isPresented: $showTitleChange) {
+            .sheet(isPresented: $showTitleChange, onDismiss: {
+                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
+            }) {
                 BlogTitleChangeSheet(title: $draft.title) {
                     showTitleChange = false
                 }
             }
-            .sheet(isPresented: $showCoverPhotoPicker) {
+            .sheet(isPresented: $showCoverPhotoPicker, onDismiss: {
+                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
+            }) {
                 BlogCoverPhotoPickerView(
                     photos: allIncludedPhotos,
                     selectedIdentifier: $draft.selectedCoverPhotoIdentifier,
@@ -166,13 +170,17 @@ struct RecapBlogPageView: View {
                     updatePlaceTitle(stopId: stop.id, to: newTitle)
                 })
             }
-            .sheet(item: $showManagePhotosForStop) { pair in
+            .sheet(item: $showManagePhotosForStop, onDismiss: {
+                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
+            }) { pair in
                 ManagePhotosView(
                     placeTitle: placeStop(dayId: pair.dayId, stopId: pair.stopId)?.placeTitle ?? "Photos",
                     photos: bindingForPhotos(dayId: pair.dayId, stopId: pair.stopId)
                 )
             }
-            .fullScreenCover(isPresented: $showEditPhotoFlow) {
+            .fullScreenCover(isPresented: $showEditPhotoFlow, onDismiss: {
+                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
+            }) {
                 EditBlogPhotoFlowView(blogId: blogId, onDismiss: { showEditPhotoFlow = false })
                     .environmentObject(createdRecapStore)
             }
@@ -181,7 +189,9 @@ struct RecapBlogPageView: View {
                     fullScreenMapDay = nil
                 }
             }
-            .sheet(item: $placePhotoModalItem) { item in
+            .sheet(item: $placePhotoModalItem, onDismiss: {
+                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
+            }) { item in
                 placePhotoModalSheet(item: item)
             }
             .modifier(coreContentAlertsAndLifecycleModifier())
@@ -684,6 +694,7 @@ struct RecapBlogPageView: View {
 
 // AutosaveManager.shared.cancelPending() — removed
         createdRecapStore.saveBlogDetail(draft)
+        syncWithCloudIfNeeded()
 
         if isFirstSave {
             withAnimation {
@@ -731,6 +742,11 @@ struct RecapBlogPageView: View {
         } else {
             draft.days[dayIndex] = updatedDay
         }
+        
+        if !isEditMode {
+            createdRecapStore.saveBlogDetail(draft)
+            syncWithCloudIfNeeded()
+        }
     }
 
     private func removePhoto(dayId: UUID, stopId: UUID, photoId: UUID) {
@@ -755,6 +771,11 @@ struct RecapBlogPageView: View {
         updatedStop.photos[photoIdx].isIncluded = false
         updatedDay.placeStops[stopIdx] = updatedStop
         draft.days[dayIdx] = updatedDay
+        
+        if !isEditMode {
+            createdRecapStore.saveBlogDetail(draft)
+            syncWithCloudIfNeeded()
+        }
     }
     
     private func performUndo() {
@@ -786,6 +807,11 @@ struct RecapBlogPageView: View {
             
             showUndoOverlay = false
             lastUndoAction = nil
+            
+            if !isEditMode {
+                createdRecapStore.saveBlogDetail(draft)
+                syncWithCloudIfNeeded()
+            }
         }
     }
 
@@ -797,6 +823,11 @@ struct RecapBlogPageView: View {
                 stop.placeTitle = title
                 day.placeStops[j] = stop
                 draft.days[i] = day
+                
+                if !isEditMode {
+                    createdRecapStore.saveBlogDetail(draft)
+                    syncWithCloudIfNeeded()
+                }
                 break
             }
         }
@@ -1163,6 +1194,29 @@ struct RecapBlogPageView: View {
         }
 // AutosaveManager.shared.cancelPending() — removed
         createdRecapStore.saveBlogDetail(draft)
+    }
+
+    private func syncWithCloudIfNeeded() {
+        guard blogIsInCloud else { return }
+        
+        let snapshot = draft
+        let currentBlogId = blogId
+        
+        // Hide existing cloud blog if we have its key
+        if let existingKey = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.blogKey {
+            Task {
+                try? await APIManager.shared.setBlogPrivacy(blogKey: existingKey, level: "hidden")
+            }
+        }
+        
+        // Publish new snapshot
+        Task {
+            if let newKey = await APIManager.shared.publishBlog(detail: snapshot) {
+                await MainActor.run {
+                    createdRecapStore.setBlogKey(blogId: currentBlogId, blogKey: newKey)
+                }
+            }
+        }
     }
 
     /// True if every included photo already has a cloud URL.

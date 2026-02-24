@@ -14,22 +14,51 @@ struct EditPlaceStopNameSheet: View {
 
     @StateObject private var searchViewModel = PlaceSearchViewModel()
     @State private var editedTitle: String = ""
+    @FocusState private var isFocused: Bool
+    @State private var showSuggestions: Bool = true
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    TextField("Place name", text: $editedTitle)
-                        .autocorrectionDisabled()
-                        .onChange(of: editedTitle) { _, newValue in
-                            searchViewModel.query = newValue
+                    HStack {
+                        TextField("Place name", text: $editedTitle)
+                            .focused($isFocused)
+                            .autocorrectionDisabled()
+                            .onChange(of: isFocused) { _, focused in
+                                if focused {
+                                    showSuggestions = true
+                                    searchViewModel.query = editedTitle
+                                }
+                            }
+                            .onChange(of: editedTitle) { oldValue, newValue in
+                                if oldValue == placeTitle && newValue.hasPrefix(placeTitle) && newValue.count > oldValue.count {
+                                    editedTitle = String(newValue.dropFirst(placeTitle.count))
+                                } else if showSuggestions {
+                                    searchViewModel.query = newValue
+                                }
+                            }
+                        
+                        if !editedTitle.isEmpty {
+                            Button {
+                                editedTitle = ""
+                                searchViewModel.query = ""
+                                isFocused = true
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
                         }
+                    }
                 }
 
-                if !searchViewModel.suggestions.isEmpty {
+                if showSuggestions && !searchViewModel.suggestions.isEmpty {
                     Section("Nearby Suggestions") {
                         ForEach(Array(searchViewModel.suggestions.enumerated()), id: \.offset) { _, suggestion in
                             Button {
+                                showSuggestions = false
+                                isFocused = false
                                 editedTitle = suggestion.title
                                 searchViewModel.suggestions = []
                             } label: {
@@ -46,20 +75,7 @@ struct EditPlaceStopNameSheet: View {
                     }
                 }
 
-                if !editedTitle.isEmpty {
-                    Section {
-                        if let encoded = editedTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-                           let url = URL(string: "https://www.google.com/search?q=\(encoded)") {
-                            Link(destination: url) {
-                                HStack {
-                                    Image(systemName: "magnifyingglass")
-                                    Text("Search on Google")
-                                }
-                                .foregroundColor(.blue)
-                            }
-                        }
-                    }
-                }
+
             }
             .navigationTitle("Edit Name")
             .navigationBarTitleDisplayMode(.inline)
@@ -76,6 +92,7 @@ struct EditPlaceStopNameSheet: View {
                         dismiss()
                     }
                     .disabled(editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .foregroundStyle(editedTitle != placeTitle ? .blue : .primary)
                 }
             }
             .onAppear {

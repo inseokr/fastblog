@@ -108,7 +108,6 @@ struct MyBlogsProfileView: View {
         }
         .navigationDestination(item: $createBlogFlowTrip) { trip in
             CreateBlogFlowView(trip: trip, startDirectlyCreating: true) { createdTripId in
-                TripDraftStore.clearSelection(tripId: createdTripId)
                 createBlogFlowTrip = nil
                 viewModel.loadUnsavedTrips() // Refresh after creation
             }
