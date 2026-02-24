@@ -101,6 +101,8 @@ final class GeocodingService {
     private let geocoder = CLGeocoder()
     private let rateLimiter = GeocodeRateLimiter()
     private var memoryCache: [String: GeocodedPlace] = [:]
+    /// Timezone at location (from CLPlacemark); populated when we reverse-geocode. Used for photo digitized time in local TZ.
+    private var timeZoneCache: [String: TimeZone] = [:]
     private let cacheKeyUD = "capper.geocode.persisted"
 
     private var geocodeCallCount = 0
@@ -128,24 +130,39 @@ final class GeocodingService {
         if geocodeCallCount % 10 == 0 || geocodeCallCount <= 3 {
             debugPrint("[Geocoding] API call #\(geocodeCallCount) (cacheHits=\(cacheHitCount)) key=\(key)")
         }
-        let place = await performGeocode(location: location)
+        let (place, tz) = await performGeocodeWithTimeZone(location: location)
         memoryCache[key] = place
+        if let tz = tz { timeZoneCache[key] = tz }
         newEntryCount += 1
         if newEntryCount % 10 == 0 { persistCache() }
         return place
     }
 
+    /// Returns timezone at the given location (where the photo was taken). Uses same reverse-geocode cache as place(for:).
+    /// Call place(for:) first for that location to populate the cache, or this will trigger one geocode and cache the result.
+    func timeZone(for location: CLLocation) async -> TimeZone? {
+        let key = geocodeCacheKey(for: location)
+        if let cached = timeZoneCache[key] { return cached }
+        _ = await place(for: location)
+        return timeZoneCache[key]
+    }
+
     /// Prefer stable fields: isoCountryCode, country, locality (fallback subAdministrativeArea), subLocality (fallback name/thoroughfare).
     /// Note: CLGeocoder/reverseGeocodeLocation deprecated in iOS 26 in favor of MKReverseGeocodingRequest.
     private func performGeocode(location: CLLocation) async -> GeocodedPlace {
+        let (place, _) = await performGeocodeWithTimeZone(location: location)
+        return place
+    }
+
+    private func performGeocodeWithTimeZone(location: CLLocation) async -> (GeocodedPlace, TimeZone?) {
         do {
             let placemarks = try await geocoder.reverseGeocodeLocation(location)
             guard let pm = placemarks.first else {
-                return GeocodedPlace(title: "Unknown Place", subtitle: "", areaName: "Unknown Place", cityName: "Unknown Place", countryName: "Unknown", isoCountryCode: "", bestPlaceLabel: "Unknown Place")
+                return (GeocodedPlace(title: "Unknown Place", subtitle: "", areaName: "Unknown Place", cityName: "Unknown Place", countryName: "Unknown", isoCountryCode: "", bestPlaceLabel: "Unknown Place"), nil)
             }
-            return geocodedPlace(from: pm)
+            return (geocodedPlace(from: pm), pm.timeZone)
         } catch {
-            return GeocodedPlace(title: "Unknown Place", subtitle: "", areaName: "Unknown Place", cityName: "Unknown Place", countryName: "Unknown", isoCountryCode: "", bestPlaceLabel: "Unknown Place")
+            return (GeocodedPlace(title: "Unknown Place", subtitle: "", areaName: "Unknown Place", cityName: "Unknown Place", countryName: "Unknown", isoCountryCode: "", bestPlaceLabel: "Unknown Place"), nil)
         }
     }
 

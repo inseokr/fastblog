@@ -6,7 +6,10 @@
 //  and automatically injects the JWT token into the Authorization header.
 //
 
+import CoreLocation
 import Foundation
+import ImageIO
+import Photos
 import UIKit
 
 enum APIError: LocalizedError {
@@ -248,6 +251,54 @@ final class APIManager {
 
     // MARK: - Blog Creation (Linkedspaces / Pocketverse)
 
+    /// Digitized time format for API: "2026:01:06 18:57:13" (yyyy:MM:dd HH:mm:ss). Timezone is the photo's capture location so the time reflects where it was taken.
+    private static func digitizedTimeString(from date: Date, timeZone: TimeZone = TimeZone(identifier: "UTC")!) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = timeZone
+        return f.string(from: date)
+    }
+
+    /// Parses EXIF OffsetTimeOriginal (e.g. "+09:00", "-05:30") into a TimeZone. Returns nil if invalid.
+    private static func timeZone(fromEXIFOffset offsetString: String) -> TimeZone? {
+        let s = offsetString.trimmingCharacters(in: .whitespaces)
+        guard let first = s.first else { return nil }
+        let sign: Int = (first == "-") ? -1 : (first == "+" ? 1 : 0)
+        guard sign != 0 else { return nil }
+        let rest = String(s.dropFirst())
+        let parts = rest.split(separator: ":")
+        guard parts.count >= 1,
+              let hours = Int(parts[0]),
+              hours >= 0, hours <= 23 else { return nil }
+        let minutes = parts.count >= 2 ? (Int(parts[1]) ?? 0) : 0
+        let secondsFromGMT = sign * (hours * 3600 + minutes * 60)
+        return TimeZone(secondsFromGMT: secondsFromGMT)
+    }
+
+    /// Reads EXIF OffsetTimeOriginal from the asset's image data to get the capture timezone (no geocoding). Falls back to nil so caller can use UTC.
+    private static func getLocalTimeZone(for asset: PHAsset) async -> TimeZone? {
+        let options = PHImageRequestOptions()
+        options.isSynchronous = false
+        options.deliveryMode = .fastFormat
+        options.isNetworkAccessAllowed = true
+
+        return await withCheckedContinuation { continuation in
+            PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, _, _, _ in
+                guard let data = data,
+                      let source = CGImageSourceCreateWithData(data as CFData, nil),
+                      let metadata = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+                      let exif = metadata[kCGImagePropertyExifDictionary as String] as? [String: Any],
+                      let offsetString = exif[kCGImagePropertyExifOffsetTimeOriginal as String] as? String,
+                      let tz = Self.timeZone(fromEXIFOffset: offsetString) else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: tz)
+            }
+        }
+    }
+
     /// Creates a blog with places on the Pocketverse backend.
     /// Maps RecapBlogDetail → Linkedspaces payload format and POSTs to /placeVisitHistory/createBlogWithPlaces.
     /// - Returns: `CreateBlogResponse` containing the server-assigned `blogKey`.
@@ -258,20 +309,39 @@ final class APIManager {
         let startMs = timestamps.min().map { Int64($0.timeIntervalSince1970 * 1000) } ?? 0
         let endMs = timestamps.max().map { Int64($0.timeIntervalSince1970 * 1000) } ?? 0
 
+        // Fetch PHAssets for all included photos so we use creationDate and location from the asset
+        let includedIds = allPhotos.compactMap(\.localIdentifier)
+        var assetMap: [String: PHAsset] = [:]
+        if !includedIds.isEmpty {
+            let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: includedIds, options: nil)
+            fetchResult.enumerateObjects { asset, _, _ in
+                assetMap[asset.localIdentifier] = asset
+            }
+        }
+
+        // Batch timezone from EXIF (no geocoding). One async read per asset in parallel.
+        var assetTimeZoneMap: [String: TimeZone] = [:]
+        await withTaskGroup(of: (String, TimeZone?).self) { group in
+            for (id, asset) in assetMap {
+                group.addTask {
+                    let tz = await Self.getLocalTimeZone(for: asset)
+                    return (id, tz)
+                }
+            }
+            for await (id, tz) in group {
+                if let tz = tz { assetTimeZoneMap[id] = tz }
+            }
+        }
+
+        let utc = TimeZone(identifier: "UTC")!
+        let defaultDigitizedTime = "1970:01:01 00:00:00"
+
         // Build placeList from all days/stops
         var placeList: [[String: Any]] = []
         for day in detail.days {
             for stop in day.placeStops {
                 let includedPhotos = stop.photos.filter(\.isIncluded)
                 guard !includedPhotos.isEmpty else { continue }
-
-                let photoList: [[String: Any]] = includedPhotos.compactMap { photo in
-                    guard let uri = photo.cloudURL else { return nil }
-                    return [
-                        "uri": uri,
-                        "creationTime": Int64(photo.timestamp.timeIntervalSince1970 * 1000)
-                    ]
-                }
 
                 let coord: [String: Double] = {
                     if let loc = stop.representativeLocation {
@@ -283,12 +353,42 @@ final class APIManager {
                     return ["latitude": 0, "longitude": 0]
                 }()
 
-                let visitedTime = Int64(includedPhotos[0].timestamp.timeIntervalSince1970 * 1000)
+                var photoList: [[String: Any]] = []
+                var firstPhotoVisitedTimeMs: Int64 = 0
+                for photo in includedPhotos {
+                    guard let uri = photo.cloudURL else { continue }
+                    let asset = photo.localIdentifier.flatMap { assetMap[$0] }
+                    let creationDate = asset?.creationDate ?? photo.timestamp
+                    let creationTimeMs = Int64(creationDate.timeIntervalSince1970 * 1000)
+                    if firstPhotoVisitedTimeMs == 0 { firstPhotoVisitedTimeMs = creationTimeMs }
+                    let tz = photo.localIdentifier.flatMap { assetTimeZoneMap[$0] }
+                    let digitizedTime = Self.digitizedTimeString(from: creationDate, timeZone: tz ?? utc)
+                    let location = asset?.location ?? photo.location.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
+                    let photoLocation: [String: Double] = location.map { ["latitude": $0.coordinate.latitude, "longitude": $0.coordinate.longitude] } ?? coord
+                    photoList.append([
+                        "uri": uri,
+                        "digitizedTime": digitizedTime,
+                        "creationTime": creationTimeMs,
+                        "location": photoLocation,
+                        "selected": true,
+                        "coverPhotoScore": (photo.qualityScore?.totalScore).map { $0 as Any } ?? NSNull(),
+                        "localUri": NSNull()
+                    ])
+                }
+
+                let visitedTime = firstPhotoVisitedTimeMs != 0 ? firstPhotoVisitedTimeMs : Int64(Date().timeIntervalSince1970 * 1000)
+                let placeVisitedTimeDigitized = (photoList.first?["digitizedTime"] as? String) ?? defaultDigitizedTime
 
                 let place: [String: Any] = [
-                    "placeName": stop.placeTitle,
-                    "coordinate": coord,
+                    "visitedTimeDigitized": placeVisitedTimeDigitized,
                     "visitedTime": visitedTime,
+                    "visitedCity": stop.placeSubtitle ?? "",
+                    "placeName": stop.placeTitle,
+                    "placeFormattedAddress": (stop.placeSubtitle).map { $0 as Any } ?? NSNull(),
+                    "coordinate": coord,
+                    "status": "active",
+                    "abstract": true,
+                    "categories": ["unknown"],
                     "photoList": photoList
                 ]
                 placeList.append(place)
