@@ -208,7 +208,6 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     private init() {
         loadFromDisk()
-        migrateOwnerScopeIfNeeded()
     }
 
     private func loadFromDisk() {
@@ -300,12 +299,23 @@ final class CreatedRecapBlogStore: ObservableObject {
     // MARK: - Public API
 
     /// Call when user completes the Create Blog sequence (before showing RecapSavedView).
-    func addCreatedBlog(trip: TripDraft, ownerScope: OwnerScope = .anonymous, ownerUserId: String? = nil) {
+    func addCreatedBlog(trip: TripDraft) {
         let startDate = trip.earliestDate
         let endDate = trip.latestDate
         let tempDetail = buildBlogDetail(from: trip)
         let placeCount = tempDetail.days.reduce(0) { $0 + $1.placeStops.count }
         let duration = trip.days.count
+
+        // Auto-detect ownership from current auth state
+        let resolvedScope: OwnerScope
+        let resolvedUserId: String?
+        if let user = AuthService.shared.currentUser {
+            resolvedScope = .account
+            resolvedUserId = user.id
+        } else {
+            resolvedScope = .anonymous
+            resolvedUserId = nil
+        }
 
         let blog = CreatedRecapBlog(
             sourceTripId: trip.id,
@@ -322,8 +332,8 @@ final class CreatedRecapBlogStore: ObservableObject {
             totalPlaceVisitCount: placeCount,
             tripDurationDays: duration,
             caption: nil,
-            ownerScope: ownerScope,
-            ownerUserId: ownerUserId
+            ownerScope: resolvedScope,
+            ownerUserId: resolvedUserId
         )
         tripDraftsBySourceId[trip.id] = trip
         recents.insert(blog, at: 0)
@@ -797,18 +807,34 @@ final class CreatedRecapBlogStore: ObservableObject {
         .sorted { $0.mostRecentBlog.createdAt > $1.mostRecentBlog.createdAt }
     }
 
-    /// For Landing Recents section (newest first).
+    // MARK: - Auth-Aware Display Helpers
+
+    /// Current auth state derived from AuthService for filtering.
+    private var currentAuthState: AuthState {
+        if let user = AuthService.shared.currentUser {
+            return .loggedIn(userId: user.id)
+        }
+        return .loggedOut
+    }
+
+    /// Auth-filtered recents list for views that need the raw filtered array.
+    var visibleRecents: [CreatedRecapBlog] {
+        visibleBlogs(for: currentAuthState)
+    }
+
+    /// For Landing Recents section (newest first, auth-filtered).
     var displayRecents: [CreatedRecapBlog] {
-        recents.sorted {
+        visibleRecents.sorted {
             let d1 = $0.lastEditedAt ?? $0.createdAt
             let d2 = $1.lastEditedAt ?? $1.createdAt
             return d1 > d2
         }
     }
 
-    /// Group recents by country for Profile.
+    /// Group recents by country for Profile (auth-filtered).
     var countrySummaries: [CountryRecapSummary] {
-        let grouped = Dictionary(grouping: recents) { blog -> String in
+        let filtered = visibleRecents
+        let grouped = Dictionary(grouping: filtered) { blog -> String in
             let name = blog.countryName ?? "Unknown"
             return name.isEmpty || name == "Unknown" ? "Unknown" : name
         }

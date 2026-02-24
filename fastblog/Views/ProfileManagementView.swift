@@ -27,14 +27,14 @@ struct ProfileManagementView: View {
     // MARK: - Derived lists
 
     private var publishedBlogs: [CreatedRecapBlog] {
-        createdRecapStore.recents
+        createdRecapStore.visibleRecents
             .filter { createdRecapStore.isBlogInCloud(blogId: $0.sourceTripId) }
             .sorted { ($0.tripStartDate ?? .distantPast) > ($1.tripStartDate ?? .distantPast) }
     }
 
     /// Blogs that have a saved detail on disk but haven't been uploaded yet.
     private var readyToUploadBlogs: [CreatedRecapBlog] {
-        createdRecapStore.recents
+        createdRecapStore.visibleRecents
             .filter { !createdRecapStore.isBlogInCloud(blogId: $0.sourceTripId)
                    && !isBlogDraft($0) }
             .sorted { ($0.tripStartDate ?? .distantPast) > ($1.tripStartDate ?? .distantPast) }
@@ -42,7 +42,7 @@ struct ProfileManagementView: View {
 
     /// Blogs that have NOT been saved yet (no RecapBlogDetail on disk). Upload is locked.
     private var draftBlogs: [CreatedRecapBlog] {
-        createdRecapStore.recents
+        createdRecapStore.visibleRecents
             .filter { isBlogDraft($0) }
             .sorted { $0.createdAt > $1.createdAt }
     }

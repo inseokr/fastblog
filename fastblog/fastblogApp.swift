@@ -36,9 +36,10 @@ struct fastblogApp: App {
                         .environmentObject(authStateManager)
                         .environmentObject(createdRecapStore)
                 }
-                // Sync + import prompt on login
+                // Migrate anonymous drafts + import prompt on login
                 .onChange(of: authStateManager.authState) { _, newState in
-                    if case .loggedIn = newState {
+                    if case .loggedIn(let userId) = newState {
+                        createdRecapStore.importAnonymousDrafts(into: userId)
                         authStateManager.checkAndPromptImportIfNeeded()
                     }
                 }
