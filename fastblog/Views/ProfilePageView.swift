@@ -2,7 +2,7 @@
 //  ProfilePageView.swift
 //  Capper
 //
-//  Premium editorial-style Profile page for BlogGo.
+//  Premium editorial-style Profile page for Bloggo.
 //  Minimal, calm, typography-driven.
 //
 import SwiftUI
@@ -256,7 +256,7 @@ struct ProfilePageView: View {
         // Simple share content for the profile
         var items: [Any] = []
         if let name = authService.currentUser?.displayName ?? authService.currentUser?.email {
-            items.append("Check out \(name)'s travel blogs on BlogGo!")
+            items.append("Check out \(name)'s travel blogs on Bloggo!")
         }
         
         // Include the profile photo if available

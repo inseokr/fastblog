@@ -30,22 +30,30 @@ struct NeighborhoodExplainerView: View {
                     .foregroundColor(.blue)
                     .padding(.bottom, 32)
 
-                Text("Set Your\nHome Area")
+                Text("Set Your Home Area")
                     .font(.system(size: 32, weight: .bold))
                     .multilineTextAlignment(.center)
                     .foregroundColor(.white)
                     .padding(.bottom, 16)
 
-                Text("We use your general neighborhood to tell the difference between everyday photos and your trips.\n\nIt doesn't need to be exact — just a rough area is all we need.")
-                    .font(.body)
-                    .multilineTextAlignment(.center)
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.horizontal, 32)
+                VStack(spacing: 24) {
+                    Text("This is your reference point for detecting trips.\nChoose your actual residential area.")
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.white.opacity(0.7))
+
+                    Text("Private. Never shared.")
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                .padding(.horizontal, 32)
 
                 Spacer()
 
                 Button(action: onContinue) {
-                    Text("Continue")
+                    Text("Set Home")
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)

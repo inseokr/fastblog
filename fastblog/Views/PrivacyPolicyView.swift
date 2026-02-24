@@ -5,19 +5,19 @@
 
 import SwiftUI
 
-/// Dedicated Privacy Policy page for BlogGo. Shown from Settings.
+/// Dedicated Privacy Policy page for Bloggo. Shown from Settings.
 struct PrivacyPolicyView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Group {
                     sectionTitle("Introduction")
-                    bodyText("BlogGo (\"we,\" \"our,\" or \"the app\") is committed to protecting your privacy. This Privacy Policy explains how we handle information when you use the BlogGo app on your device.")
+                    bodyText("Bloggo (\"we,\" \"our,\" or \"the app\") is committed to protecting your privacy. This Privacy Policy explains how we handle information when you use the Bloggo app on your device.")
                 }
 
                 Group {
                     sectionTitle("Information We Access")
-                    bodyText("To provide trip detection and recap blog features, BlogGo may access:")
+                    bodyText("To provide trip detection and recap blog features, Bloggo may access:")
                     bullet("Photos and metadata: We access your photo library to scan for trips (e.g., from the last 90 days), read creation dates and locations, and use selected photos to build your recap blogs.")
                     bullet("Location: If you set a neighborhood in Settings, we use your device location (or a location you choose on the map) to define an area. Photos taken near this area may be excluded from trip results so everyday photos are not counted as trips.")
                 }
@@ -43,17 +43,17 @@ struct PrivacyPolicyView: View {
 
                 Group {
                     sectionTitle("Your Choices")
-                    bodyText("You can revoke photo or location access at any time in your device Settings. Revoking access may limit or disable trip scanning and neighborhood-based filtering. You can clear or change your neighborhood in BlogGo Settings.")
+                    bodyText("You can revoke photo or location access at any time in your device Settings. Revoking access may limit or disable trip scanning and neighborhood-based filtering. You can clear or change your neighborhood in Bloggo Settings.")
                 }
 
                 Group {
                     sectionTitle("Changes to This Policy")
-                    bodyText("We may update this Privacy Policy from time to time. We will post the updated policy in the app (e.g., in Settings). Continued use of BlogGo after changes constitutes acceptance of the revised policy.")
+                    bodyText("We may update this Privacy Policy from time to time. We will post the updated policy in the app (e.g., in Settings). Continued use of Bloggo after changes constitutes acceptance of the revised policy.")
                 }
 
                 Group {
                     sectionTitle("Contact")
-                    bodyText("If you have questions about this Privacy Policy or BlogGo’s practices, please contact us through the support or feedback option in the app or the contact details provided in the App Store listing.")
+                    bodyText("If you have questions about this Privacy Policy or Bloggo’s practices, please contact us through the support or feedback option in the app or the contact details provided in the App Store listing.")
                 }
 
                 Spacer(minLength: 40)

@@ -42,7 +42,7 @@ struct LandingView: View {
                             .foregroundColor(.white)
                     }
                     Spacer()
-                    Text("BlogGo")
+                    Text("Bloggo")
                         .font(.system(size: 34))
                         .fontWeight(.bold)
                         .foregroundColor(.white)

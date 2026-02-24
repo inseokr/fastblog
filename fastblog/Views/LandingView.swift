@@ -42,7 +42,7 @@ struct LandingView: View {
                             .foregroundColor(.white)
                     }
                     Spacer()
-                    Text("BlogGo")
+                    Text("Bloggo")
                         .font(.system(size: 34))
                         .fontWeight(.bold)
                         .foregroundColor(.white)
@@ -105,7 +105,7 @@ struct LandingView: View {
         }
         .fullScreenCover(isPresented: $showAuth) {
             AuthView(onAuthenticated: {
-                showProfile = true
+                // Stay on Landing (Home) View after sign in
             })
             .environmentObject(authService)
         }
@@ -473,6 +473,20 @@ private struct SettingsView: View {
                     }
                 } header: {
                     Text("Legal")
+                }
+                
+                Section {
+                    Button {
+                        OnboardingStore.hasCompletedOnboarding = false
+                        dismiss()
+                    } label: {
+                        Text("Test Onboarding (Temporary)")
+                            .foregroundColor(.blue)
+                    }
+                } header: {
+                    Text("Testing")
+                } footer: {
+                    Text("Temporarily jumps back into the full onboarding flow.")
                 }
             }
             .navigationTitle("Settings")

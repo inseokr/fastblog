@@ -160,8 +160,10 @@ struct RecapBlogPageView: View {
             .sheet(item: $overflowStop) { item in
                 PlaceStopActionSheet(
                     placeTitle: item.stop.placeTitle,
+                    placeSubtitle: item.stop.placeSubtitle,
                     onEditName: { showEditNameForStop = item.stop },
                     onManagePhotos: { showManagePhotosForStop = ManagePhotosItem(dayId: item.dayId, stopId: item.stop.id) },
+                    onEditMode: { isEditMode = true },
                     onRemoveFromBlog: { removePlaceStop(dayId: item.dayId, stopId: item.stop.id) }
                 )
             }

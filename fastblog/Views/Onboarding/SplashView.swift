@@ -18,15 +18,20 @@ struct SplashView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                Spacer()
-
-                Text("Welcome To")
-                    .font(.system(size: 28, weight: .medium))
-                    .foregroundColor(.white.opacity(0.85))
-                Text("Bloggo")
-                    .font(.system(size: OnboardingConstants.Splash.titleFontSize, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(.top, 4)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Welcome")
+                        .font(.system(size: 44, weight: .heavy))
+                        .foregroundColor(.white)
+                    Text("to")
+                        .font(.system(size: 44, weight: .heavy))
+                        .foregroundColor(.white)
+                    Text("Bloggo")
+                        .font(.system(size: 44, weight: .heavy))
+                        .foregroundColor(Color(red: 200/255, green: 235/255, blue: 255/255))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 32)
+                .padding(.top, 80)
 
                 Spacer()
 
@@ -42,7 +47,6 @@ struct SplashView: View {
                         .padding(.vertical, 16)
                         .background(Color.blue)
                         .clipShape(Capsule())
-                        .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 4)
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 12)
@@ -79,6 +83,8 @@ struct SplashView: View {
             TermsOfServiceView()
         }
     }
+
+    // MARK: - Subviews
 
     private var splashBackground: some View {
         LinearGradient(

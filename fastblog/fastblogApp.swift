@@ -13,6 +13,7 @@ struct fastblogApp: App {
     @StateObject private var authStateManager = AuthStateManager.shared
     @StateObject private var createdRecapStore = CreatedRecapBlogStore.shared
     @AppStorage("blogify.hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage("blogify.hasCheckedExistingUser") private var hasCheckedExistingUser = false
     @Environment(\.scenePhase) private var scenePhase
     @State private var isAppReady = false
 
@@ -96,6 +97,13 @@ struct fastblogApp: App {
                 try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s
 
                 withAnimation {
+                    if !hasCheckedExistingUser {
+                        // Any user with a photo auth status other than notDetermined is an old user.
+                        if !hasCompletedOnboarding && photoAuth.status != .notDetermined {
+                            hasCompletedOnboarding = true
+                        }
+                        hasCheckedExistingUser = true
+                    }
                     isAppReady = true
                 }
             }

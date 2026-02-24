@@ -67,7 +67,7 @@ struct NeighborhoodSelectionView: View {
 
     private var topSection: some View {
         VStack(spacing: OnboardingConstants.Layout.spacingBetweenTitleAndSearch) {
-            Text("Neighborhood")
+            Text("Set Home")
                 .font(.title)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
