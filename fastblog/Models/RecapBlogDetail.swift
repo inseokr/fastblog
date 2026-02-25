@@ -17,14 +17,17 @@ struct RecapBlogDetail: Identifiable, Equatable, Codable, Sendable {
     var selectedCoverPhotoIdentifier: String?
     /// Country for this trip (from geocoding); used for Profile country grouping.
     var countryName: String?
+    /// Server-assigned blog key after a successful upload via createBlogWithPlaces.
+    var blogKey: Int?
 
-    init(id: UUID = UUID(), title: String, days: [RecapBlogDay], coverTheme: String = "default", selectedCoverPhotoIdentifier: String? = nil, countryName: String? = nil) {
+    init(id: UUID = UUID(), title: String, days: [RecapBlogDay], coverTheme: String = "default", selectedCoverPhotoIdentifier: String? = nil, countryName: String? = nil, blogKey: Int? = nil) {
         self.id = id
         self.title = title
         self.days = days
         self.coverTheme = coverTheme
         self.selectedCoverPhotoIdentifier = selectedCoverPhotoIdentifier
         self.countryName = countryName
+        self.blogKey = blogKey
     }
 }
 
@@ -68,6 +71,11 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
     var representativeLocation: PhotoCoordinate?
     var photos: [RecapPhoto]
     var noteText: String?
+    /// Server-assigned placeIndex in user.placeVisitHistory. Set after successful blog upload.
+    var cloudPlaceIndex: Int?
+    /// Digitized timestamp of the first included photo (EXIF format "yyyy:MM:dd HH:mm:ss").
+    /// Used as a cloud deduplication and update key alongside cloudPlaceIndex.
+    var visitedTimeDigitized: String?
 
     init(
         id: UUID = UUID(),
@@ -76,7 +84,9 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         placeSubtitle: String? = nil,
         representativeLocation: PhotoCoordinate? = nil,
         photos: [RecapPhoto],
-        noteText: String? = nil
+        noteText: String? = nil,
+        cloudPlaceIndex: Int? = nil,
+        visitedTimeDigitized: String? = nil
     ) {
         self.id = id
         self.orderIndex = orderIndex
@@ -85,6 +95,8 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         self.representativeLocation = representativeLocation
         self.photos = photos
         self.noteText = noteText
+        self.cloudPlaceIndex = cloudPlaceIndex
+        self.visitedTimeDigitized = visitedTimeDigitized
     }
 
     var coverPhoto: RecapPhoto? {

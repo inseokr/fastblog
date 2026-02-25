@@ -166,6 +166,8 @@ final class CreatedRecapBlogStore: ObservableObject {
     @Published private(set) var recents: [CreatedRecapBlog] = []
     /// Always false — data loads synchronously in init(). Exposed so TripsViewModel can observe it.
     @Published private(set) var isLoading = false
+    /// True while a cloud sync is in progress. Views can observe this to show a loading indicator.
+    @Published private(set) var isSyncing = false
     /// When true, landing shows "Recap Blog has been created!" banner; clear after 5-7 sec.
     @Published var showRecapCreatedBanner = false
     /// Set to true when a blog is created. Consumed by the view (TripsView) to trigger the banner at the appropriate time.
@@ -541,6 +543,45 @@ final class CreatedRecapBlogStore: ObservableObject {
         persistRecents()
     }
 
+    /// After a successful createBlogWithPlaces call, writes the server-assigned blogKey and per-stop
+    /// cloudPlaceIndex / visitedTimeDigitized back into the stored blog detail so future cloud
+    /// updates (edits, deletes, re-uploads) can reference the correct server-side records.
+    ///
+    /// - Parameters:
+    ///   - blogId:       The UUID of the blog (RecapBlogDetail.id / CreatedRecapBlog.sourceTripId).
+    ///   - blogKey:      The server-assigned trip key.
+    ///   - detail:       The in-memory detail used during publish, as a fallback if the detail is not
+    ///                   yet persisted in blogDetailsBySourceId.
+    ///   - placeMapping: Ordered list of (dayIdx, stopIdx, placeIndex, visitedTimeDigitized) produced
+    ///                   by APIManager.createBlogWithPlaces, one entry per successfully uploaded stop.
+    func applyCloudKeys(
+        blogId: UUID,
+        blogKey: Int,
+        detail: RecapBlogDetail,
+        placeMapping: [(dayIdx: Int, stopIdx: Int, placeIndex: Int, visitedTimeDigitized: String)]
+    ) {
+        // Update the recents entry so share links and cloud UI work immediately.
+        setBlogKey(blogId: blogId, blogKey: blogKey)
+
+        // Prefer the already-persisted detail (may have user edits); fall back to the provided one.
+        var updatedDetail = blogDetailsBySourceId[blogId] ?? detail
+        updatedDetail.blogKey = blogKey
+
+        for info in placeMapping {
+            guard info.dayIdx < updatedDetail.days.count,
+                  info.stopIdx < updatedDetail.days[info.dayIdx].placeStops.count else {
+                print("⚠️ applyCloudKeys: out-of-range mapping (day=\(info.dayIdx), stop=\(info.stopIdx)) — skipped")
+                continue
+            }
+            updatedDetail.days[info.dayIdx].placeStops[info.stopIdx].cloudPlaceIndex = info.placeIndex
+            updatedDetail.days[info.dayIdx].placeStops[info.stopIdx].visitedTimeDigitized = info.visitedTimeDigitized
+        }
+
+        blogDetailsBySourceId[blogId] = updatedDetail
+        persistBlogDetails()
+        print("✅ applyCloudKeys: blogKey=\(blogKey), \(placeMapping.count) stops updated in local storage")
+    }
+
     /// Clears all cloud URLs from a blog's photos (removes from cloud) and deletes the blog from the backend.
     func removeFromCloud(blogId: UUID) {
         // 1. Delete the blog on the backend and clear the local blogKey
@@ -569,6 +610,237 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
         blogDetailsBySourceId[blogId] = detail
         persistBlogDetails()
+    }
+
+    // MARK: - Cloud Sync
+
+    /// Fetches trips and placeVisitHistory from the backend and reconciles them with local storage.
+    /// - Existing local blogs (matched by blogKey): metadata and per-stop cloud keys are refreshed.
+    /// - Cloud-only blogs (no local match): a new stub blog + reconstructed detail are created.
+    /// Safe to call on every launch or on manual refresh; it is a no-op when not logged in.
+    func syncFromCloud() async {
+        guard let user = AuthService.shared.currentUser else { return }
+        let username = user.username ?? user.displayName ?? user.email ?? ""
+        guard !username.isEmpty else { return }
+
+        isSyncing = true
+        defer { isSyncing = false }
+
+        do {
+            // Fetch trips and place history in parallel.
+            async let tripsTask = APIManager.shared.fetchTrips(username: username)
+            async let historyTask = APIManager.shared.fetchPlaceVisitHistory(username: username)
+            let (tripsResp, historyResp) = try await (tripsTask, historyTask)
+
+            let serverTrips = (tripsResp.trips ?? []).filter { $0.status != "deleted" }
+            let allPlaces = historyResp.visitedHistory ?? []
+
+            // Index places by placeIndex for O(1) lookup.
+            let placeByIndex: [Int: ServerPlaceRecord] = Dictionary(
+                uniqueKeysWithValues: allPlaces.map { ($0.placeIndex, $0) }
+            )
+
+            var detailsChanged = false
+
+            for serverTrip in serverTrips {
+                if let localIdx = recents.firstIndex(where: { $0.blogKey == serverTrip.blogKey }) {
+                    // ── Existing local blog ──────────────────────────────────────────────
+                    // Update metadata from server (server is source of truth for cloud state).
+                    if let title = serverTrip.title, !title.isEmpty {
+                        recents[localIdx].title = title
+                    }
+                    if let country = serverTrip.country, !country.isEmpty {
+                        recents[localIdx].countryName = country
+                    }
+                    recents[localIdx].cloudState = .uploadedActive
+
+                    let blogId = recents[localIdx].sourceTripId
+                    if var detail = blogDetailsBySourceId[blogId] {
+                        detail.blogKey = serverTrip.blogKey
+                        // Update cloud keys + content on matching stops.
+                        for placeRef in serverTrip.placeList ?? [] {
+                            guard let serverPlace = placeByIndex[placeRef.placeIndex] else { continue }
+                            for dayIdx in detail.days.indices {
+                                for stopIdx in detail.days[dayIdx].placeStops.indices {
+                                    let stop = detail.days[dayIdx].placeStops[stopIdx]
+                                    let matchByIndex = stop.cloudPlaceIndex == placeRef.placeIndex
+                                    let matchByTime = serverPlace.visitedTimeDigitized != nil
+                                        && stop.visitedTimeDigitized == serverPlace.visitedTimeDigitized
+                                    guard matchByIndex || matchByTime else { continue }
+
+                                    // Cloud keys
+                                    detail.days[dayIdx].placeStops[stopIdx].cloudPlaceIndex = serverPlace.placeIndex
+                                    if let vtd = serverPlace.visitedTimeDigitized {
+                                        detail.days[dayIdx].placeStops[stopIdx].visitedTimeDigitized = vtd
+                                    }
+                                    // Place name
+                                    if let name = serverPlace.placeName, !name.isEmpty {
+                                        detail.days[dayIdx].placeStops[stopIdx].placeTitle = name
+                                    }
+                                    // Place-level story → noteText
+                                    if let story = serverPlace.story {
+                                        detail.days[dayIdx].placeStops[stopIdx].noteText = story
+                                    }
+                                    // Per-photo story → caption (matched by cloudURL == serverPhoto.uri)
+                                    for serverPhoto in serverPlace.photoList ?? [] {
+                                        guard let story = serverPhoto.story, !story.isEmpty,
+                                              let uri = serverPhoto.uri else { continue }
+                                        for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
+                                            if detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].cloudURL == uri {
+                                                detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].caption = story
+                                                break
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        blogDetailsBySourceId[blogId] = detail
+                        detailsChanged = true
+                    }
+
+                } else {
+                    // ── Cloud-only blog — create a local stub ────────────────────────────
+                    let userId = user.id
+
+                    let newBlogId = UUID()
+                    let tripPlaces = (serverTrip.placeList ?? [])
+                        .compactMap { placeByIndex[$0.placeIndex] }
+
+                    let detail = buildDetailFromServerPlaces(
+                        tripPlaces,
+                        blogId: newBlogId,
+                        blogKey: serverTrip.blogKey,
+                        title: serverTrip.title ?? "Trip",
+                        countryName: serverTrip.country
+                    )
+
+                    let startDate = serverTrip.startTimestamp.map { Date(timeIntervalSince1970: $0 / 1000) }
+                    let endDate   = serverTrip.endTimestamp.map   { Date(timeIntervalSince1970: $0 / 1000) }
+                    let photoCount = detail.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
+
+                    let stub = CreatedRecapBlog(
+                        id: UUID(),
+                        sourceTripId: newBlogId,
+                        title: serverTrip.title ?? "Trip",
+                        createdAt: startDate ?? Date(),
+                        coverImageName: "default",
+                        coverAssetIdentifier: nil,
+                        selectedPhotoCount: photoCount,
+                        countryName: serverTrip.country,
+                        tripDateRangeText: nil,
+                        lastEditedAt: nil,
+                        tripStartDate: startDate,
+                        tripEndDate: endDate,
+                        totalPlaceVisitCount: detail.days.reduce(0) { $0 + $1.placeStops.count },
+                        tripDurationDays: max(1, detail.days.count),
+                        caption: nil,
+                        blogKey: serverTrip.blogKey,
+                        ownerScope: .account,
+                        ownerUserId: userId,
+                        cloudState: .uploadedActive,
+                        syncStatus: .clean
+                    )
+
+                    recents.append(stub)
+                    blogDetailsBySourceId[newBlogId] = detail
+                    detailsChanged = true
+                }
+            }
+
+            persistRecents()
+            if detailsChanged { persistBlogDetails() }
+            enforceArchiveRules()
+            print("✅ syncFromCloud: \(serverTrips.count) trips processed")
+
+        } catch {
+            print("🚨 syncFromCloud failed: \(error)")
+        }
+    }
+
+    /// Reconstructs a RecapBlogDetail from server-side place records.
+    /// Used for cloud-only trips that have no local counterpart.
+    private func buildDetailFromServerPlaces(
+        _ places: [ServerPlaceRecord],
+        blogId: UUID,
+        blogKey: Int,
+        title: String,
+        countryName: String?
+    ) -> RecapBlogDetail {
+        let calendar = Calendar.current
+        let digitizedFormatter: DateFormatter = {
+            let f = DateFormatter()
+            f.dateFormat = "yyyy:MM:dd HH:mm:ss"
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.timeZone = TimeZone(identifier: "UTC")
+            return f
+        }()
+
+        // Group places by calendar day using visitedTimeDigitized.
+        var placesByDay: [Date: [ServerPlaceRecord]] = [:]
+        for place in places {
+            let dayDate: Date
+            if let vtd = place.visitedTimeDigitized,
+               let parsed = digitizedFormatter.date(from: vtd) {
+                dayDate = calendar.startOfDay(for: parsed)
+            } else {
+                dayDate = calendar.startOfDay(for: Date())
+            }
+            placesByDay[dayDate, default: []].append(place)
+        }
+
+        let sortedDays = placesByDay.keys.sorted()
+        var days: [RecapBlogDay] = []
+
+        for (dayIdx, dayDate) in sortedDays.enumerated() {
+            guard let dayPlaces = placesByDay[dayDate] else { continue }
+            let sortedPlaces = dayPlaces.sorted {
+                ($0.visitedTimeDigitized ?? "") < ($1.visitedTimeDigitized ?? "")
+            }
+
+            var stops: [PlaceStop] = []
+            for (stopIdx, serverPlace) in sortedPlaces.enumerated() {
+                let photos: [RecapPhoto] = (serverPlace.photoList ?? []).compactMap { photo in
+                    guard let uri = photo.uri, !uri.isEmpty else { return nil }
+                    let ts: Date = photo.digitizedTime.flatMap { digitizedFormatter.date(from: $0) } ?? Date()
+                    let loc = photo.coordinate.map { PhotoCoordinate(latitude: $0.latitude, longitude: $0.longitude) }
+                    let caption = (photo.story?.isEmpty == false) ? photo.story : nil
+                    return RecapPhoto(
+                        timestamp: ts,
+                        location: loc,
+                        imageName: "",
+                        isIncluded: photo.selected ?? true,
+                        localIdentifier: nil,
+                        caption: caption,
+                        cloudURL: uri
+                    )
+                }
+
+                let coord = serverPlace.coordinate.map { PhotoCoordinate(latitude: $0.latitude, longitude: $0.longitude) }
+                let noteText = (serverPlace.story?.isEmpty == false) ? serverPlace.story : nil
+                stops.append(PlaceStop(
+                    orderIndex: stopIdx,
+                    placeTitle: serverPlace.placeName ?? "Stop \(stopIdx + 1)",
+                    placeSubtitle: serverPlace.visitedCity,
+                    representativeLocation: coord,
+                    photos: photos,
+                    noteText: noteText,
+                    cloudPlaceIndex: serverPlace.placeIndex,
+                    visitedTimeDigitized: serverPlace.visitedTimeDigitized
+                ))
+            }
+
+            guard !stops.isEmpty else { continue }
+            days.append(RecapBlogDay(dayIndex: dayIdx, date: dayDate, placeStops: stops))
+        }
+
+        return RecapBlogDetail(
+            id: blogId,
+            title: title,
+            days: days,
+            countryName: countryName,
+            blogKey: blogKey
+        )
     }
 
     // MARK: - Build Blog Detail

@@ -177,26 +177,22 @@ struct ProfilePageView: View {
         .background(Color(uiColor: .systemBackground))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-//             ToolbarItem(placement: .topBarTrailing) {
-//                 HStack(spacing: 16) {
-//                     Button {
-//                         Task {
-//                             await prepareShareContent()
-//                             showShare = true
-//                         }
-//                     } label: {
-//                         Image(systemName: "square.and.arrow.up")
-//                             .foregroundColor(.primary)
-//                     }
-//                     
-//                     Button {
-//                         // TODO: Open notifications
-//                     } label: {
-//                         Image(systemName: "bell")
-//                             .foregroundColor(.primary)
-//                     }
-//                 }
-//             }
+            if authStateManager.isLoggedIn {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task { await createdRecapStore.syncFromCloud() }
+                    } label: {
+                        if createdRecapStore.isSyncing {
+                            ProgressView()
+                                .tint(.primary)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .foregroundColor(.primary)
+                        }
+                    }
+                    .disabled(createdRecapStore.isSyncing)
+                }
+            }
         }
         .sheet(isPresented: $showShare) {
             if !shareItems.isEmpty {
