@@ -6,6 +6,18 @@
 import CoreLocation
 import Foundation
 
+/// Stores a place stop that was removed by the user, preserving all caption data so it can be restored.
+struct RemovedPlaceEntry: Identifiable, Equatable, Codable, Sendable {
+    /// Matches the original `PlaceStop.id`.
+    var id: UUID { stop.id }
+    /// The day this stop originally belonged to (used to restore it to the correct day).
+    let dayId: UUID
+    /// Fallback dayIndex if the parent day was also removed.
+    let dayIndex: Int
+    /// Full stop including `noteText` and per-photo `caption` fields.
+    var stop: PlaceStop
+}
+
 /// Created blog content ready to display and edit. Editable draft; Save writes back to store.
 /// Trip title is set once on creation (default "Trip To [City]"); user can edit and Save persists it.
 /// Cover photo selection is stored in selectedCoverPhotoIdentifier (persisted with draft).
@@ -17,17 +29,28 @@ struct RecapBlogDetail: Identifiable, Equatable, Codable, Sendable {
     var selectedCoverPhotoIdentifier: String?
     /// Country for this trip (from geocoding); used for Profile country grouping.
     var countryName: String?
+<<<<<<< HEAD
     /// Server-assigned blog key after a successful upload via createBlogWithPlaces.
     var blogKey: Int?
 
     init(id: UUID = UUID(), title: String, days: [RecapBlogDay], coverTheme: String = "default", selectedCoverPhotoIdentifier: String? = nil, countryName: String? = nil, blogKey: Int? = nil) {
+=======
+    /// Places the user has removed from the blog. Preserved so they can be restored later.
+    var removedPlaceStops: [RemovedPlaceEntry]
+
+    init(id: UUID = UUID(), title: String, days: [RecapBlogDay], coverTheme: String = "default", selectedCoverPhotoIdentifier: String? = nil, countryName: String? = nil, removedPlaceStops: [RemovedPlaceEntry] = []) {
+>>>>>>> c43ef73 (https://linkedspaces.atlassian.net/browse/BLOGGO-80)
         self.id = id
         self.title = title
         self.days = days
         self.coverTheme = coverTheme
         self.selectedCoverPhotoIdentifier = selectedCoverPhotoIdentifier
         self.countryName = countryName
+<<<<<<< HEAD
         self.blogKey = blogKey
+=======
+        self.removedPlaceStops = removedPlaceStops
+>>>>>>> c43ef73 (https://linkedspaces.atlassian.net/browse/BLOGGO-80)
     }
 }
 

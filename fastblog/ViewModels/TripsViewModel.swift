@@ -205,9 +205,13 @@ final class TripsViewModel: ObservableObject {
         }
     }
 
-    /// Called by the UI when the user changes End month/year. If End is before Start in the same year,
+    /// Called by the UI when the user changes End month/year. If End year is before Start year,
+    /// auto-clamps Start year to match End year. If same year and End month is before Start month,
     /// auto-clamps Start month down to End month.
     func onEndSelectionChanged() {
+        if findMoreEndYear < findMoreStartYear {
+            findMoreStartYear = findMoreEndYear
+        }
         if findMoreEndYear == findMoreStartYear && findMoreEndMonth < findMoreStartMonth {
             findMoreStartMonth = findMoreEndMonth
         }

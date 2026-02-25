@@ -13,12 +13,15 @@ struct BlogSettingsSheet: View {
     var onEditMode: (() -> Void)? = nil
     var onDelete: () -> Void
     var onRemoveFromCloud: (() -> Void)? = nil
+    /// Called after the user restores a removed place so the parent can persist the draft.
+    var onRestore: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     @State private var showTitleChange = false
     @State private var showCoverChange = false
     @State private var showDeleteConfirmation = false
     @State private var showRemoveFromCloudConfirmation = false
+    @State private var showRestorePlaces = false
 
     private var hasCloudPhotos: Bool {
         draft.days.flatMap(\.placeStops).flatMap(\.photos).contains { $0.cloudURL != nil }
@@ -26,47 +29,56 @@ struct BlogSettingsSheet: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    Button {
-                        showTitleChange = true
-                    } label: {
-                        Label("Change Blog Title", systemImage: "textformat")
-                    }
-                    Button {
-                        showCoverChange = true
-                    } label: {
-                        Label("Change Cover Photo", systemImage: "photo")
-                    }
-                    if onEditMode != nil {
-                        Button {
-                            onEditMode?()
-                            dismiss()
-                        } label: {
-                            Label("Edit Mode", systemImage: "pencil")
-                        }
-                    }
-                }
-
-                if hasCloudPhotos {
+            VStack(spacing: 0) {
+                List {
+                    // Section 1: Quick Actions
                     Section {
-                        Button(role: .destructive) {
-                            showRemoveFromCloudConfirmation = true
-                        } label: {
-                            Label("Remove from Cloud", systemImage: "icloud.slash")
+                        if onEditMode != nil {
+                            Button {
+                                onEditMode?()
+                                dismiss()
+                            } label: {
+                                Label("Edit Mode", systemImage: "pencil")
+                            }
                         }
-                    } footer: {
-                        Text("This will remove uploaded photos from the cloud. Your local blog and photos are not affected.")
+                        if !draft.removedPlaceStops.isEmpty {
+                            Button {
+                                showRestorePlaces = true
+                            } label: {
+                                Label("Restore Places (\(draft.removedPlaceStops.count))", systemImage: "arrow.uturn.backward.circle")
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
+                        }
+                    }
+
+                    // Section 2: Content Editing
+                    Section {
+                        Button {
+                            showTitleChange = true
+                        } label: {
+                            Label("Change Blog Title", systemImage: "textformat")
+                        }
+                        Button {
+                            showCoverChange = true
+                        } label: {
+                            Label("Change Cover Photo", systemImage: "photo")
+                        }
                     }
                 }
 
-                Section {
-                    Button(role: .destructive) {
-                        showDeleteConfirmation = true
-                    } label: {
-                        Label("Delete Blog", systemImage: "trash")
-                    }
+                // Delete Blog — pinned to bottom
+                Divider()
+                Button(role: .destructive) {
+                    showDeleteConfirmation = true
+                } label: {
+                    Label("Delete Blog", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .foregroundStyle(.red)
                 }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
             }
             .navigationTitle("Blog Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -126,6 +138,12 @@ struct BlogSettingsSheet: View {
                 Button("No", role: .cancel) {}
             } message: {
                 Text("Are you sure you want to remove this blog from the cloud?")
+            }
+            .sheet(isPresented: $showRestorePlaces) {
+                RemovedPlacesSheet(draft: $draft) {
+                    onRestore?()
+                    onSave()
+                }
             }
             .preferredColorScheme(.dark)
         }

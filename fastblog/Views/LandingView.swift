@@ -504,8 +504,11 @@ private struct SettingsView: View {
                 })
             }
             .fullScreenCover(isPresented: $showAuth) {
-                AuthView()
-                    .environmentObject(authService)
+                AuthView(onAuthenticated: {
+                    showAuth = false
+                    dismiss()
+                })
+                .environmentObject(authService)
             }
             .onAppear {
                 customProfileImageData = authService.profileImageData

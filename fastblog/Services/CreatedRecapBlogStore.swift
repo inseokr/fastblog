@@ -349,16 +349,18 @@ final class CreatedRecapBlogStore: ObservableObject {
         showRecapCreatedBanner = false
     }
 
-    /// Whether a draft with this id has already been turned into a created blog.
+    /// Whether a draft with this id has already been turned into a created blog visible to the current user.
+    /// Logged-out users only see anonymous blogs; logged-in users only see their own account blogs.
     func hasCreatedBlog(sourceTripId: UUID) -> Bool {
-        recents.contains { $0.sourceTripId == sourceTripId }
+        visibleRecents.contains { $0.sourceTripId == sourceTripId }
     }
 
-    /// Date ranges (start, end) of all created blogs AND active drafts.
+    /// Date ranges (start, end) of created blogs visible to the current user AND active drafts.
+    /// Logged-out users only exclude anonymous blog ranges; logged-in users only exclude their own.
     func occupiedDateRanges() -> [(start: Date, end: Date)] {
         let calendar = Calendar.current
-        
-        let blogRanges: [(start: Date, end: Date)] = recents.compactMap { blog in
+
+        let blogRanges: [(start: Date, end: Date)] = visibleRecents.compactMap { blog in
             guard let start = blog.tripStartDate, let end = blog.tripEndDate else { return nil }
             let endOfDay = calendar.date(bySettingHour: 23, minute: 59, second: 59, of: end) ?? end
             return (start: start, end: endOfDay)

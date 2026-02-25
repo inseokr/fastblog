@@ -53,6 +53,7 @@ struct RecapBlogPageView: View {
     @State private var uploadErrorMessage = ""
     @State private var showRemoveFromCloudAlert = false
     @State private var showAuth = false
+    @State private var showRestorePlaces = false
 
     private enum UndoAction {
         case deletePlace(dayId: UUID, stop: PlaceStop, index: Int)
@@ -154,6 +155,11 @@ struct RecapBlogPageView: View {
                     },
                     onRemoveFromCloud: {
                         createdRecapStore.removeFromCloud(blogId: blogId)
+                    },
+                    onRestore: {
+                        // Persist after a place is restored from the Restore Places sheet
+                        createdRecapStore.saveBlogDetail(draft)
+                        syncWithCloudIfNeeded()
                     }
                 )
             }
@@ -214,6 +220,12 @@ struct RecapBlogPageView: View {
             }) { item in
                 placePhotoModalSheet(item: item)
             }
+            .sheet(isPresented: $showRestorePlaces) {
+                RemovedPlacesSheet(draft: $draft) {
+                    createdRecapStore.saveBlogDetail(draft)
+                    syncWithCloudIfNeeded()
+                }
+            }
             .modifier(coreContentAlertsAndLifecycleModifier())
     }
 
@@ -253,6 +265,13 @@ struct RecapBlogPageView: View {
                             coverPhotoHero(screenHeight: screenHeight)
                         } else {
                             blogTitleView
+                        }
+                        // Restore card sits right under the cover photo/title in edit mode
+                        if isEditMode && !draft.removedPlaceStops.isEmpty {
+                            restoreRemovedPlacesCard
+                                .padding(.horizontal, 16)
+                                .padding(.top, 8)
+                                .padding(.bottom, 12)
                         }
                         if !isEditMode {
                             mapOrPreviewCard
@@ -586,6 +605,53 @@ struct RecapBlogPageView: View {
         .padding(.bottom, 32)
     }
 
+    /// Inline card that shows how many places have been removed and lets the user jump to the restore sheet.
+    private var restoreRemovedPlacesCard: some View {
+        Button {
+            showRestorePlaces = true
+        } label: {
+            HStack(spacing: 12) {
+                // Icon
+                ZStack {
+                    Circle()
+                        .fill(Color.blue.opacity(0.15))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "arrow.uturn.backward.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(.blue)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Restore Removed Places")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                    Text(draft.removedPlaceStops.count == 1
+                         ? "1 place was removed — tap to bring it back"
+                         : "\(draft.removedPlaceStops.count) places were removed — tap to bring them back")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Color(white: 0.14))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.blue.opacity(0.25), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     private func daySection(day: RecapBlogDay) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 6) {
@@ -767,6 +833,10 @@ struct RecapBlogPageView: View {
             isUndoMinimized = false
         }
         
+        // Soft-delete: preserve stop in removedPlaceStops so it can be restored later
+        let removedEntry = RemovedPlaceEntry(dayId: dayId, dayIndex: day.dayIndex, stop: stop)
+        draft.removedPlaceStops.append(removedEntry)
+        
         // Perform Deletion
         var updatedDay = day
         updatedDay.placeStops.remove(at: stopIndex)
@@ -832,6 +902,8 @@ struct RecapBlogPageView: View {
                         draft.days[dayIdx] = day
                     }
                 }
+                // Remove from the soft-deleted list since user chose to undo (not just restore later)
+                draft.removedPlaceStops.removeAll { $0.stop.id == stop.id }
                 
             case .deletePhoto(let dayId, let stopId, let photo, _):
                 if let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),

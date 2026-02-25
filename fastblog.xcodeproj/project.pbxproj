@@ -131,6 +131,7 @@
 		BB00020E /* UnsavedTripCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00020D /* UnsavedTripCard.swift */; };
 		BB000210 /* UnsavedTripPhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00020F /* UnsavedTripPhotosView.swift */; };
 		BB000212 /* NeighborhoodExplainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000211 /* NeighborhoodExplainerView.swift */; };
+		BB000214 /* RemovedPlacesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000213 /* RemovedPlacesSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -259,6 +260,7 @@
 		BB00020D /* UnsavedTripCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnsavedTripCard.swift; sourceTree = "<group>"; };
 		BB00020F /* UnsavedTripPhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnsavedTripPhotosView.swift; sourceTree = "<group>"; };
 		BB000211 /* NeighborhoodExplainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodExplainerView.swift; sourceTree = "<group>"; };
+		BB000213 /* RemovedPlacesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemovedPlacesSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -388,6 +390,7 @@
 				BB00016B /* TripsView.swift */,
 				BB0001C3 /* UndoOverlayView.swift */,
 				BB00020D /* UnsavedTripCard.swift */,
+				BB000213 /* RemovedPlacesSheet.swift */,
 				BB00020F /* UnsavedTripPhotosView.swift */,
 				BB0001FC /* Auth */,
 				BB0001B3 /* Onboarding */,
@@ -669,6 +672,7 @@
 				BB00020E /* UnsavedTripCard.swift in Sources */,
 				BB000210 /* UnsavedTripPhotosView.swift in Sources */,
 				BB000212 /* NeighborhoodExplainerView.swift in Sources */,
+				BB000214 /* RemovedPlacesSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
