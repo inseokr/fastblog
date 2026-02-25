@@ -2,8 +2,8 @@
 //  FindMoreTripsSheet.swift
 //  Capper
 //
-//  Flow: Year first, then month range. Country summary updates on year change (instant mock).
-//  Scan only when user taps "Scan For New Blogs"; loading shown in sheet; empty result stays in sheet.
+//  Layout: Start (Month | Year) and End (Month | Year) in a 2-column grid.
+//  If End is before Start within the same year, Start month is auto-clamped to End month.
 //
 
 import SwiftUI
@@ -14,8 +14,9 @@ struct FindMoreTripsSheet: View {
     @ObservedObject var viewModel: TripsViewModel
     @Environment(\.dismiss) private var dismiss
 
-    private let monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    private let years: [Int] = (2022...2027).reversed()
+    private let monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    private let years: [Int] = (2018...2027).reversed()
 
     var body: some View {
         ZStack {
@@ -42,6 +43,8 @@ struct FindMoreTripsSheet: View {
         }
     }
 
+    // MARK: – Header
+
     private var header: some View {
         HStack {
             Button {
@@ -58,12 +61,13 @@ struct FindMoreTripsSheet: View {
         .padding(.bottom, 24)
     }
 
+    // MARK: – Main content
+
     private var content: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 28) {
                 titleSection
-                yearSection
-                monthRangeSection
+                dateRangeSection
                 emptyResultSection
             }
         }
@@ -79,65 +83,94 @@ struct FindMoreTripsSheet: View {
                 .font(.subheadline)
                 .foregroundColor(.white.opacity(0.9))
         }
-        .padding(.bottom, 8)
     }
 
-    private var yearSection: some View {
+    // MARK: – Start / End pickers
+
+    private var dateRangeSection: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            dateBlock(
+                label: "Start",
+                month: $viewModel.findMoreStartMonth,
+                year: $viewModel.findMoreStartYear,
+                onMonthChange: { viewModel.onStartSelectionChanged() },
+                onYearChange: { viewModel.onStartSelectionChanged() }
+            )
+            dateBlock(
+                label: "End",
+                month: $viewModel.findMoreEndMonth,
+                year: $viewModel.findMoreEndYear,
+                onMonthChange: { viewModel.onEndSelectionChanged() },
+                onYearChange: { viewModel.onEndSelectionChanged() }
+            )
+        }
+    }
+
+    /// Full-width date block: label on top, Month and Year pickers side-by-side on one row.
+    private func dateBlock(
+        label: String,
+        month: Binding<Int>,
+        year: Binding<Int>,
+        onMonthChange: (() -> Void)?,
+        onYearChange: (() -> Void)?
+    ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Year")
-                .font(.subheadline)
-                .foregroundColor(.white)
-            Picker("Year", selection: $viewModel.findMoreYear) {
-                ForEach(years, id: \.self) { year in
-                    Text(String(year)).tag(year)
+            Text(label)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.white.opacity(0.7))
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            HStack(spacing: 12) {
+                // Month picker
+                HStack {
+                    Text("Month")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.7))
+                    Spacer()
+                    Picker("Month", selection: month) {
+                        ForEach(1...12, id: \.self) { m in
+                            Text(monthNames[m - 1]).tag(m)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(.white)
+                    .onChange(of: month.wrappedValue) { _, _ in onMonthChange?() }
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity)
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(12)
+
+                // Year picker
+                HStack {
+                    Text("Year")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.7))
+                    Spacer()
+                    Picker("Year", selection: year) {
+                        ForEach(years, id: \.self) { y in
+                            Text(String(y)).tag(y)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .tint(.white)
+                    .onChange(of: year.wrappedValue) { _, _ in onYearChange?() }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity)
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(12)
             }
-            .pickerStyle(.menu)
-            .tint(.white)
-            .padding()
-            .background(Color.white.opacity(0.12))
-            .cornerRadius(12)
         }
     }
 
-    private var monthRangeSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Start")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.8))
-                    Picker("Start", selection: $viewModel.findMoreStartMonth) {
-                        ForEach(1...12, id: \.self) { m in
-                            Text(monthNames[m - 1]).tag(m)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .tint(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.12))
-                    .cornerRadius(12)
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("End")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.8))
-                    Picker("End", selection: $viewModel.findMoreEndMonth) {
-                        ForEach(1...12, id: \.self) { m in
-                            Text(monthNames[m - 1]).tag(m)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .tint(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.12))
-                    .cornerRadius(12)
-                }
-            }
-        }
-    }
+
+    // MARK: – Empty result
 
     @ViewBuilder
     private var emptyResultSection: some View {
@@ -153,9 +186,10 @@ struct FindMoreTripsSheet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.white.opacity(0.1))
             .cornerRadius(10)
-            .padding(.top, 16)
         }
     }
+
+    // MARK: – CTA
 
     private var ctaSection: some View {
         VStack(spacing: 12) {
@@ -174,6 +208,8 @@ struct FindMoreTripsSheet: View {
         }
         .padding(.bottom, 28)
     }
+
+    // MARK: – Loading overlay
 
     private var loadingOverlay: some View {
         ZStack {
