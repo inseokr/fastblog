@@ -128,6 +128,23 @@ final class AuthService: NSObject, ObservableObject {
         Analytics.track(.authCancelled) // reuse existing or add dedicated event
     }
 
+    // MARK: - Delete Account
+
+    /// Deletes all local account data and signs the user out.
+    /// Wire a backend API call here when an account-deletion endpoint is available.
+    func deleteAccount() {
+        // Clear profile photo for this user
+        UserDefaults.standard.removeObject(forKey: profilePhotoKey)
+        // Clear all app-local data from UserDefaults
+        if let bundleId = Bundle.main.bundleIdentifier {
+            UserDefaults.standard.removePersistentDomain(forName: bundleId)
+        }
+        // Clear auth credentials
+        persist(nil)
+        setJwtToken(nil)
+        currentUser = nil
+    }
+
     // MARK: - Apple Sign In
 
     func handleAppleSignIn(result: Result<ASAuthorization, Error>) {
