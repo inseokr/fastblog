@@ -29,28 +29,20 @@ struct RecapBlogDetail: Identifiable, Equatable, Codable, Sendable {
     var selectedCoverPhotoIdentifier: String?
     /// Country for this trip (from geocoding); used for Profile country grouping.
     var countryName: String?
-<<<<<<< HEAD
     /// Server-assigned blog key after a successful upload via createBlogWithPlaces.
     var blogKey: Int?
-
-    init(id: UUID = UUID(), title: String, days: [RecapBlogDay], coverTheme: String = "default", selectedCoverPhotoIdentifier: String? = nil, countryName: String? = nil, blogKey: Int? = nil) {
-=======
     /// Places the user has removed from the blog. Preserved so they can be restored later.
     var removedPlaceStops: [RemovedPlaceEntry]
 
-    init(id: UUID = UUID(), title: String, days: [RecapBlogDay], coverTheme: String = "default", selectedCoverPhotoIdentifier: String? = nil, countryName: String? = nil, removedPlaceStops: [RemovedPlaceEntry] = []) {
->>>>>>> c43ef73 (https://linkedspaces.atlassian.net/browse/BLOGGO-80)
+    init(id: UUID = UUID(), title: String, days: [RecapBlogDay], coverTheme: String = "default", selectedCoverPhotoIdentifier: String? = nil, countryName: String? = nil, blogKey: Int? = nil, removedPlaceStops: [RemovedPlaceEntry] = []) {
         self.id = id
         self.title = title
         self.days = days
         self.coverTheme = coverTheme
         self.selectedCoverPhotoIdentifier = selectedCoverPhotoIdentifier
         self.countryName = countryName
-<<<<<<< HEAD
         self.blogKey = blogKey
-=======
         self.removedPlaceStops = removedPlaceStops
->>>>>>> c43ef73 (https://linkedspaces.atlassian.net/browse/BLOGGO-80)
     }
 }
 
