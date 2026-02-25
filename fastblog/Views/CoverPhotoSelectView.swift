@@ -94,7 +94,7 @@ struct CoverPhotoPickerView: View {
                     // Cover preview — updates when user taps a photo in the grid
                     Group {
                         if let id = displayIdentifier {
-                            AssetPhotoView(assetIdentifier: id, cornerRadius: 0, targetSize: CGSize(width: 800, height: 800))
+                            AssetPhotoView(assetIdentifier: id, cornerRadius: 12, targetSize: CGSize(width: 800, height: 800))
                         } else {
                             RoundedRectangle(cornerRadius: 12)
                                 .fill(Color(white: 0.2))
@@ -104,7 +104,7 @@ struct CoverPhotoPickerView: View {
                     .id(displayIdentifier ?? "")
                     .frame(maxWidth: .infinity)
                     .frame(height: topHeight)
-                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
@@ -212,7 +212,7 @@ struct BlogCoverPhotoPickerView: View {
                 VStack(spacing: 0) {
                     Group {
                         if let id = displayIdentifier {
-                            AssetPhotoView(assetIdentifier: id, cornerRadius: 0, targetSize: CGSize(width: 800, height: 800))
+                            AssetPhotoView(assetIdentifier: id, cornerRadius: 12, targetSize: CGSize(width: 800, height: 800))
                         } else {
                             RoundedRectangle(cornerRadius: 12)
                                 .fill(Color(white: 0.2))
@@ -222,7 +222,7 @@ struct BlogCoverPhotoPickerView: View {
                     .id(displayIdentifier ?? "")
                     .frame(maxWidth: .infinity)
                     .frame(height: topHeight)
-                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 

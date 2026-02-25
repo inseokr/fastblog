@@ -492,21 +492,16 @@ struct RecapBlogPageView: View {
                             Button {
                                 showShareSheet = true
                             } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "paperplane.fill")
-                                        .font(.system(size: 13, weight: .semibold))
-                                    Text("Share")
-                                        .font(.system(size: 13, weight: .semibold))
-                                }
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 9)
-                                .background(Color.blue)
-                                .clipShape(Capsule())
-                                .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.white)
+                                    .frame(width: 40, height: 40)
+                                    .background(.ultraThinMaterial)
+                                    .clipShape(Circle())
+                                    .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
                             }
                             .buttonStyle(.plain)
-                            Spacer()
+                            .padding(.trailing, 16)
                         }
                         .padding(.bottom, 20)
                     }
@@ -1114,16 +1109,11 @@ struct RecapBlogPageView: View {
             Button {
                 if isEditMode {
                     let isFirstCreation = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
-                    let hasChanges = draftSnapshot != nil && draft != draftSnapshot
                     
-                    if hasChanges {
-                        if isFirstCreation {
-                            showNewBlogExitConfirmation = true
-                        } else {
-                            showUnsavedChangesAlert = true
-                        }
+                    if isFirstCreation {
+                        showNewBlogExitConfirmation = true
                     } else {
-                        dismiss()
+                        showUnsavedChangesAlert = true
                     }
                 } else {
                     dismiss()
@@ -1517,11 +1507,11 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
                 Text("Tap Save when you're done editing to keep your changes and unlock your map routes.")
             }
             .alert("Save Before Leaving?", isPresented: $showUnsavedChangesAlert) {
-                Button("Save & Leave") { saveDraft(); dismiss() }
-                Button("Leave Without Saving", role: .destructive) { dismiss() }
+                Button("Yes") { saveDraft(); dismiss() }
+                Button("No", role: .destructive) { dismiss() }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("You have unsaved changes. Would you like to save before leaving?")
+                Text("Would you like to save before leaving?")
             }
             .alert("Save Before Leaving?", isPresented: $showNewBlogExitConfirmation) {
                 Button("Save Draft") {

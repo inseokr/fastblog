@@ -9,6 +9,7 @@
 import SwiftUI
 
 private let sheetBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
+private let chatInputBackground = Color(red: 30/255, green: 35/255, blue: 73/255) // 10% lighter than sheetBackground
 
 struct FindMoreTripsSheet: View {
     @ObservedObject var viewModel: TripsViewModel
@@ -17,6 +18,11 @@ struct FindMoreTripsSheet: View {
     private let monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     private let years: [Int] = (2018...2027).reversed()
+    
+    // Chat Placeholders
+    @State private var placeholderIndex = 0
+    private let chatPlaceholders = ["\"last summer\"", "\"Spring 2024\"", "\"Korea trip last year\"", "\"Did I go to Korea last year?\""]
+    let timer = Timer.publish(every: 3.5, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ZStack {
@@ -67,6 +73,7 @@ struct FindMoreTripsSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 titleSection
+                chatSection
                 dateRangeSection
                 emptyResultSection
             }
@@ -82,6 +89,74 @@ struct FindMoreTripsSheet: View {
             Text("Where would you like to go?")
                 .font(.subheadline)
                 .foregroundColor(.white.opacity(0.9))
+        }
+    }
+
+    // MARK: – Chat Section
+    
+    private var chatSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles")
+                    .foregroundColor(Color(red: 0, green: 122/255, blue: 1)) // App Blue
+                    .font(.body.weight(.semibold))
+                
+                TextField(chatPlaceholders[placeholderIndex], text: $viewModel.findMoreChatInput)
+                    .font(.body)
+                    .foregroundColor(.white)
+                    .submitLabel(.search)
+                    .onSubmit {
+                        viewModel.submitFindMoreChat()
+                    }
+                
+                if viewModel.isParsingChat {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                } else if !viewModel.findMoreChatInput.isEmpty {
+                    Button {
+                        viewModel.findMoreChatInput = ""
+                        viewModel.cancelPendingParse()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.gray)
+                    }
+                }
+            }
+            .padding()
+            .background(chatInputBackground)
+            .cornerRadius(12)
+            .onReceive(timer) { _ in
+                if viewModel.findMoreChatInput.isEmpty {
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        placeholderIndex = (placeholderIndex + 1) % chatPlaceholders.count
+                    }
+                }
+            }
+            
+            if let response = viewModel.findMoreChatResponse {
+                HStack(alignment: .top) {
+                    Text(response)
+                        .font(.footnote)
+                        .foregroundColor(Color(red: 0, green: 122/255, blue: 1)) // Blue text for AI response
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                    Spacer()
+                    
+                    if viewModel.needsConfirmationForParse {
+                        Button("Confirm") {
+                            viewModel.confirmPendingParse()
+                        }
+                        .font(.footnote.bold())
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color(red: 0, green: 122/255, blue: 1))
+                        .foregroundColor(.white)
+                        .cornerRadius(6)
+                    }
+                }
+                .padding(.horizontal, 4)
+                .padding(.top, 2)
+            }
         }
     }
 

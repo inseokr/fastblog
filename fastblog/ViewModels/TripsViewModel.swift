@@ -30,11 +30,22 @@ final class TripsViewModel: ObservableObject {
     /// After scan completes: .empty = show empty state in sheet; .success(n) = dismiss sheet and list already updated.
     @Published var findMoreScanResult: FindMoreScanResult = .none
 
+    /// True if the user has performed at least one custom scan via the Find More sheet.
+    @Published var hasPerformedCustomScan: Bool = false
+
     /// Start/End year+month selected in the Find More sheet. Only scanned when user taps Scan.
     @Published var findMoreStartYear: Int = Calendar.current.component(.year, from: Date())
     @Published var findMoreStartMonth: Int = Calendar.current.component(.month, from: Date())
     @Published var findMoreEndYear: Int = Calendar.current.component(.year, from: Date())
     @Published var findMoreEndMonth: Int = Calendar.current.component(.month, from: Date())
+    
+    // MARK: - NLP Parsing State
+    @Published var findMoreChatInput: String = ""
+    @Published var findMoreChatResponse: String? = nil
+    @Published var isParsingChat: Bool = false
+    @Published var needsConfirmationForParse: Bool = false
+    @Published var pendingParseResult: NLPParseResult? = nil
+
     /// Tracks whether the Find More sheet has been opened at least once this session.
     /// Stays `false` until after the first open; reset only happens on first open (cold start).
     private var hasOpenedFindMoreSheet: Bool = false
@@ -217,6 +228,77 @@ final class TripsViewModel: ObservableObject {
         }
     }
 
+    // MARK: - NLP Parsing Chat
+
+    func submitFindMoreChat() {
+        guard !findMoreChatInput.isEmpty else { return }
+        
+        isParsingChat = true
+        findMoreChatResponse = "Thinking..."
+        needsConfirmationForParse = false
+        pendingParseResult = nil
+        
+        let inputText = findMoreChatInput
+        
+        Task {
+            let result = await FindMoreTripsAgent.process(
+                input: inputText,
+                currentStart: (year: findMoreStartYear, month: findMoreStartMonth),
+                currentEnd: (year: findMoreEndYear, month: findMoreEndMonth)
+            )
+            
+            await MainActor.run {
+                self.isParsingChat = false
+                self.findMoreChatResponse = result.answerText
+                
+                if let sY = result.startYear, let sM = result.startMonth,
+                   let eY = result.endYear, let eM = result.endMonth {
+                    
+                    if result.intent == .query_place_presence {
+                        // For yes/no checking, the agent has inferred the range.
+                        self.findMoreStartYear = sY
+                        self.findMoreStartMonth = sM
+                        self.findMoreEndYear = eY
+                        self.findMoreEndMonth = eM
+                        self.scanFindMoreTripsInRange()
+                    }
+                    else if result.intent == .set_range {
+                        if result.confidence >= 0.8 && !result.needsConfirmation {
+                            self.findMoreStartYear = sY
+                            self.findMoreStartMonth = sM
+                            self.findMoreEndYear = eY
+                            self.findMoreEndMonth = eM
+                            self.scanFindMoreTripsInRange()
+                        } else {
+                            self.needsConfirmationForParse = true
+                            self.pendingParseResult = result
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    func confirmPendingParse() {
+        if let result = pendingParseResult,
+           let sY = result.startYear, let sM = result.startMonth,
+           let eY = result.endYear, let eM = result.endMonth {
+            self.findMoreStartYear = sY
+            self.findMoreStartMonth = sM
+            self.findMoreEndYear = eY
+            self.findMoreEndMonth = eM
+            self.needsConfirmationForParse = false
+            self.pendingParseResult = nil
+            self.scanFindMoreTripsInRange()
+        }
+    }
+    
+    func cancelPendingParse() {
+        self.needsConfirmationForParse = false
+        self.pendingParseResult = nil
+        self.findMoreChatResponse = nil
+    }
+
     /// Scan for trips in the selected start/end year+month range. Dedupes against existing list.
     func scanFindMoreTripsInRange() {
         guard !isFindMoreScanning else { return }
@@ -237,6 +319,7 @@ final class TripsViewModel: ObservableObject {
                 endYear: endYear, endMonth: endMonth,
                 occupiedDateRanges: occupiedRanges
             )
+            hasPerformedCustomScan = true
             let existingKeys = Set(tripDrafts.map { "\($0.title)|\($0.dateRangeText)" })
             let deduped = newTrips.filter { !existingKeys.contains("\($0.title)|\($0.dateRangeText)") }
             if deduped.isEmpty {

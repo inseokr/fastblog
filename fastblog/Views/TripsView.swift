@@ -511,11 +511,11 @@ struct TripsView: View {
 
     private var emptyScanState: some View {
         VStack(spacing: 12) {
-            Text("No trips found in the last 90 days")
+            Text(viewModel.hasPerformedCustomScan ? "No trips found in this date range" : "No trips found in the last 90 days")
                 .font(.headline)
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
-            Text("Try changing the date range or scan older months")
+            Text(viewModel.hasPerformedCustomScan ? "Try changing the date range" : "Try changing the date range or scan older months")
                 .font(.subheadline)
                 .foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)

@@ -16,7 +16,6 @@ struct ProfileManagementView: View {
     @State private var showAuth = false
     @State private var uploadingBlogId: UUID?
     @State private var uploadProgress: (current: Int, total: Int) = (0, 0)
-    @State private var showUploadingFullScreen = false
     @State private var showUploadError = false
     @State private var uploadErrorMessage = ""
     @State private var selectedCountryFilter: String? = nil
@@ -297,9 +296,6 @@ struct ProfileManagementView: View {
                 })
                 .environmentObject(authService)
             }
-            .fullScreenCover(isPresented: $showUploadingFullScreen) {
-                UploadingBlogView(uploadProgress: $uploadProgress)
-            }
         }
     }
 
@@ -361,7 +357,6 @@ struct ProfileManagementView: View {
 
         uploadingBlogId = blog.sourceTripId
         uploadProgress = (0, photosToUpload.count)
-        showUploadingFullScreen = true
 
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
@@ -381,7 +376,6 @@ struct ProfileManagementView: View {
 
             createdRecapStore.saveBlogDetail(detail)
             uploadingBlogId = nil
-            showUploadingFullScreen = false
 
             if failCount == 0 {
                 let snapshot = detail

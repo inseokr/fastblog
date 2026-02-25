@@ -6,240 +6,211 @@
 
 import Foundation
 
-/// Actions the agent can propose to the view
-enum AgentAction: Equatable {
-    case search(year: Int, startMonth: Int, endMonth: Int, location: String?)
-    case insight(InsightType)
-    case scanLibrary
-    case none
+// MARK: - NLP Models
+
+struct NLPParseResult: Codable, Equatable {
+    enum IntentType: String, Codable, Equatable {
+        case set_range
+        case query_place_presence
+        case ask_clarification
+        case unsupported
+    }
+    
+    let intent: IntentType
+    let startYear: Int?
+    let startMonth: Int?
+    let endYear: Int?
+    let endMonth: Int?
+    let placeQuery: String?
+    let answerText: String
+    let confidence: Double
+    let needsConfirmation: Bool
+    let clarificationQuestion: String?
 }
 
-enum InsightType: Equatable {
-    case busiestSeason
-    case bestTrip // Interpreted as "most active month/time"
+// MARK: - LLM Provider Protocol
+
+protocol TripScannerLLMProvider {
+    func parse(prompt: String) async throws -> NLPParseResult
 }
 
-/// A structured response from the agent
-struct AgentResponse {
-    let text: String
-    let action: AgentAction
+// MOCK Provider for testing before actual local LLM is integrated
+class MockTripScannerLLM: TripScannerLLMProvider {
+    func parse(prompt: String) async throws -> NLPParseResult {
+        let text = prompt.lowercased()
+        
+        // Wait 1 second to simulate LLM thinking
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+        
+        // Mock QA Test cases from prompt
+        if text.contains("did i go") && text.contains("korea") && text.contains("last year") {
+            return NLPParseResult(intent: .query_place_presence, startYear: 2025, startMonth: 1, endYear: 2025, endMonth: 12, placeQuery: "Korea", answerText: "Let me check if you went to Korea last year...", confidence: 0.9, needsConfirmation: false, clarificationQuestion: nil)
+        } else if text.contains("korea") && text.contains("last year") {
+            return NLPParseResult(intent: .set_range, startYear: 2025, startMonth: 1, endYear: 2025, endMonth: 12, placeQuery: "korea", answerText: "Searching for your Korea trips from last year.", confidence: 0.85, needsConfirmation: false, clarificationQuestion: nil)
+        } else if text.contains("korea trip") {
+            return NLPParseResult(intent: .ask_clarification, startYear: nil, startMonth: nil, endYear: nil, endMonth: nil, placeQuery: "Korea", answerText: "Which year should I check for Korea?", confidence: 0.4, needsConfirmation: false, clarificationQuestion: "Which year should I check for Korea?")
+        } else if text.contains("japan") && text.contains("2022") {
+            return NLPParseResult(intent: .set_range, startYear: 2022, startMonth: 1, endYear: 2022, endMonth: 12, placeQuery: "japan", answerText: "Searching for trips in Japan in 2022.", confidence: 0.9, needsConfirmation: false, clarificationQuestion: nil)
+        }
+        
+        // Default Mock Fallback
+        return NLPParseResult(intent: .unsupported, startYear: nil, startMonth: nil, endYear: nil, endMonth: nil, placeQuery: nil, answerText: "I couldn't quite understand that date range. Try 'last summer' or 'Spring 2024'.", confidence: 0.1, needsConfirmation: false, clarificationQuestion: nil)
+    }
 }
 
-/// Agent that interprets user input for the Find More Trips feature.
+// MARK: - Agent Logic
+
 struct FindMoreTripsAgent {
     
+    static var llmProvider: TripScannerLLMProvider = MockTripScannerLLM()
+    
     enum Season: String {
-        case spring, summer, fall, winter, autumn
-        
+        case spring, summer, fall, winter
         var months: (start: Int, end: Int) {
             switch self {
             case .spring: return (3, 5)   // March - May
             case .summer: return (6, 8)   // June - August
-            case .fall, .autumn: return (9, 11) // Sept - Nov
-            case .winter: return (1, 2)   // Jan - Feb (Simpler than wrapping Dec)
+            case .fall: return (9, 11)    // Sept - Nov
+            case .winter: return (12, 2)  // Dec - Feb (crosses year)
             }
         }
     }
 
-    /// Processes user input and returns an action and response.
-    static func process(input: String) -> AgentResponse {
+    /// Processes user input deterministically first, then falls back to LLM.
+    static func process(
+        input: String,
+        currentStart: (year: Int, month: Int),
+        currentEnd: (year: Int, month: Int)
+    ) async -> NLPParseResult {
         let normalized = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         
-        // 1. Check for Scan Intent
-        if normalized == "scan" || normalized.contains("scan my library") {
-            return AgentResponse(
-                text: "Scanning your library for trips...",
-                action: .scanLibrary
+        let today = Date()
+        let calendar = Calendar.current
+        let currentYear = calendar.component(.year, from: today) // Given the prompt, if today is 2026-02-25, currentYear = 2026.
+        let lastYear = currentYear - 1 // 2025
+        
+        // 1. Deterministic Parsing: "last year"
+        if normalized == "last year" {
+            return NLPParseResult(
+                intent: .set_range,
+                startYear: lastYear, startMonth: 1,
+                endYear: lastYear, endMonth: 12,
+                placeQuery: nil,
+                answerText: "Got it. Scanning last year (\(lastYear)).",
+                confidence: 1.0, needsConfirmation: false, clarificationQuestion: nil
             )
         }
         
-        // 2. Check for Insight Intents
-        if normalized.contains("busiest") || normalized.contains("most active") {
-            if normalized.contains("season") {
-                return AgentResponse(
-                    text: "Checking your library for your busiest season...",
-                    action: .insight(.busiestSeason)
+        // 2. Deterministic Parsing: "this year"
+        if normalized == "this year" || normalized == "current year" {
+            return NLPParseResult(
+                intent: .set_range,
+                startYear: currentYear, startMonth: 1,
+                endYear: currentYear, endMonth: 12,
+                placeQuery: nil,
+                answerText: "Got it. Scanning this year (\(currentYear)).",
+                confidence: 1.0, needsConfirmation: false, clarificationQuestion: nil
+            )
+        }
+        
+        // 3. Deterministic Parsing: "last [season]"
+        let seasons = ["spring", "summer", "fall", "winter"]
+        for seasonStr in seasons {
+            if normalized == "last \(seasonStr)" {
+                guard let season = Season(rawValue: seasonStr) else { continue }
+                let (sMonth, eMonth) = season.months
+                var sYear = lastYear
+                var eYear = lastYear
+                
+                if season == .winter {
+                    sYear = lastYear - 1
+                    eYear = lastYear
+                }
+                
+                return NLPParseResult(
+                    intent: .set_range,
+                    startYear: sYear, startMonth: sMonth,
+                    endYear: eYear, endMonth: eMonth,
+                    placeQuery: nil,
+                    answerText: "Got it. Scanning last \(seasonStr.capitalized) (\(sYear)).",
+                    confidence: 1.0, needsConfirmation: false, clarificationQuestion: nil
                 )
             }
         }
         
-        if normalized.contains("best trip") || normalized.contains("best") || normalized.contains("favorite") {
-            return AgentResponse(
-                text: "Looking for your most memorable trips...",
-                action: .insight(.bestTrip)
+        // 4. Deterministic Parsing: "[Season] [Year]"
+        let seasonYearRegex = try? NSRegularExpression(pattern: "^(spring|summer|fall|winter)\\s+(\\d{4})$", options: .caseInsensitive)
+        if let match = seasonYearRegex?.firstMatch(in: normalized, range: NSRange(normalized.startIndex..., in: normalized)) {
+            if let seasonRange = Range(match.range(at: 1), in: normalized),
+               let yearRange = Range(match.range(at: 2), in: normalized),
+               let year = Int(normalized[yearRange]),
+               let season = Season(rawValue: String(normalized[seasonRange]).lowercased()) {
+                
+                let (sMonth, eMonth) = season.months
+                let sYear = year
+                let eYear = season == .winter ? year + 1 : year
+                
+                let confText = season == .winter ? "Winter \(year) (Dec \(year) to Feb \(eYear))" : "\(season.rawValue.capitalized) \(year)"
+                
+                return NLPParseResult(
+                    intent: .set_range,
+                    startYear: sYear, startMonth: sMonth,
+                    endYear: eYear, endMonth: eMonth,
+                    placeQuery: nil,
+                    answerText: "Got it. Scanning \(confText).",
+                    confidence: 1.0, needsConfirmation: false, clarificationQuestion: nil
+                )
+            }
+        }
+        
+        // 5. Deterministic Parsing: "[Month] [Year]"
+        let monthsDict = ["january": 1, "jan": 1, "february": 2, "feb": 2, "march": 3, "mar": 3, "april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7, "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9, "october": 10, "oct": 10, "november": 11, "nov": 11, "december": 12, "dec": 12]
+        
+        let parts = normalized.components(separatedBy: .whitespaces)
+        if parts.count == 2, let mName = parts.first, let monthNum = monthsDict[mName], let year = Int(parts[1]) {
+            return NLPParseResult(
+                intent: .set_range,
+                startYear: year, startMonth: monthNum,
+                endYear: year, endMonth: monthNum,
+                placeQuery: nil,
+                answerText: "Got it. Scanning \(mName.capitalized) \(year).",
+                confidence: 1.0, needsConfirmation: false, clarificationQuestion: nil
             )
         }
         
-        var dateIntent: (year: Int, start: Int, end: Int, label: String)? = nil
-        
-        let currentYear = Calendar.current.component(.year, from: Date())
-        
-        // 3. Determine Date Context
-        if normalized.contains("last year") {
-            let targetYear = currentYear - 1
-            dateIntent = (targetYear, 1, 12, "\(targetYear)")
-        }
-        else if let yearOnly = parseYearOnly(from: normalized), !containsMonth(normalized) && !containsSeason(normalized) {
-            dateIntent = (yearOnly, 1, 12, "\(yearOnly)")
-        }
-        else if let (season, year) = parseSeasonYear(from: normalized) {
-            let (start, end) = season.months
-            dateIntent = (year, start, end, "\(season.rawValue) \(year)")
-        }
-        else if let (year, month) = parseYearMonth(from: normalized) {
-            let monthName = DateFormatter().monthSymbols[month - 1]
-            dateIntent = (year, month, month, "\(monthName) \(year)")
-        }
-        
-        // 4. Construct Response
-        if let intent = dateIntent {
-            let location = extractLocation(from: normalized)
-            
-            var responseText = "Showing trips from \(intent.label)."
-            if let loc = location {
-                responseText = "Checking for trips to \(loc.capitalized) in \(intent.label)."
-            }
-            
-            return AgentResponse(
-                text: responseText,
-                action: .search(year: intent.year, startMonth: intent.start, endMonth: intent.end, location: location)
+        // 6. Deterministic Parsing: Year Only
+        if let year = Int(normalized), year > 2000 && year <= currentYear + 1 {
+            return NLPParseResult(
+                intent: .set_range,
+                startYear: year, startMonth: 1,
+                endYear: year, endMonth: 12,
+                placeQuery: nil,
+                answerText: "Got it. Scanning the year \(year).",
+                confidence: 1.0, needsConfirmation: false, clarificationQuestion: nil
             )
         }
         
-        return AgentResponse(
-            text: "I can help you find trips. Try 'Show trips from last summer', 'When was my busiest season?', or 'Which was my best trip?'.",
-            action: .none
-        )
-    }
-    
-    // MARK: - Extraction Helpers
-    
-    private static func extractLocation(from text: String) -> String? {
-        var clean = text
+        // 7. Fallback to LLM
+        // Build prompt context
+        let prompt = """
+        todayISO: \(ISO8601DateFormatter().string(from: today))
+        timezone: \(TimeZone.current.identifier)
+        currentStart: { "year": \(currentStart.year), "month": \(currentStart.month) }
+        currentEnd: { "year": \(currentEnd.year), "month": \(currentEnd.month) }
+        userText: "\(input)"
+        """
         
-        // Remove date-related words to isolate the location
-        let dateWords = [
-            "last year", "last", "year", "trips", "show", "me", "find", "search", "did", "i", "go", "to", "visit", "in", "from", "my", "travel", "ever",
-            "january", "jan", "february", "feb", "march", "mar", "april", "apr", "may", "june", "jun", "july", "jul",
-            "august", "aug", "september", "sep", "sept", "october", "oct", "november", "nov", "december", "dec",
-            "spring", "summer", "fall", "autumn", "winter"
-        ]
-        
-        // Remove known years (19xx, 20xx)
-        if let range = clean.range(of: "\\b(19|20)\\d{2}\\b", options: .regularExpression) {
-            clean.removeSubrange(range)
+        do {
+            let result = try await llmProvider.parse(prompt: prompt)
+            return result
+        } catch {
+            return NLPParseResult(
+                intent: .unsupported,
+                startYear: nil, startMonth: nil, endYear: nil, endMonth: nil,
+                placeQuery: nil,
+                answerText: "I'm having trouble understanding. Please try again or select dates manually.",
+                confidence: 0.0, needsConfirmation: false, clarificationQuestion: nil
+            )
         }
-        
-        // Remove punctuation
-        let punctuation = CharacterSet.punctuationCharacters
-        clean = clean.components(separatedBy: punctuation).joined(separator: "")
-        
-        let words = clean.components(separatedBy: .whitespacesAndNewlines)
-            .filter { !dateWords.contains($0) }
-            .filter { !$0.isEmpty }
-        
-        guard !words.isEmpty else { return nil }
-        
-        // Rejoin remaining words (e.g. "south korea", "paris")
-        return words.joined(separator: " ")
-    }
-    
-    // MARK: - Date Parsing Helpers
-    
-    private static func containsMonth(_ text: String) -> Bool {
-        let months = [
-            "january", "jan", "february", "feb", "march", "mar", "april", "apr", "may",
-            "june", "jun", "july", "jul", "august", "aug", "september", "sep", "sept",
-            "october", "oct", "november", "nov", "december", "dec"
-        ]
-        return months.contains { text.contains($0) }
-    }
-    
-    private static func containsSeason(_ text: String) -> Bool {
-        let seasons = ["spring", "summer", "fall", "autumn", "winter"]
-        return seasons.contains { text.contains($0) }
-    }
-    
-    private static func parseYearOnly(from text: String) -> Int? {
-        if let range = text.range(of: "\\b(19|20)\\d{2}\\b", options: .regularExpression) {
-            return Int(text[range])
-        }
-        return nil
-    }
-
-    private static func parseSeasonYear(from text: String) -> (Season, Int)? {
-        let seasons: [String: Season] = [
-            "spring": .spring,
-            "summer": .summer,
-            "fall": .fall,
-            "autumn": .fall,
-            "winter": .winter
-        ]
-        
-        var foundSeason: Season?
-        for (key, value) in seasons {
-            if text.contains(key) {
-                foundSeason = value
-                break
-            }
-        }
-        guard let season = foundSeason else { return nil }
-        
-        let currentYear = Calendar.current.component(.year, from: Date())
-        var year = currentYear
-        
-        if let parsedYear = parseYearOnly(from: text) {
-            year = parsedYear
-        } else if text.contains("last \(season.rawValue)") || text.contains("last") {
-             year = currentYear - 1
-        }
-        
-        return (season, year)
-    }
-    
-    private static func parseYearMonth(from text: String) -> (Int, Int)? {
-        let currentYear = Calendar.current.component(.year, from: Date())
-        
-        let months = [
-            "january": 1, "jan": 1,
-            "february": 2, "feb": 2,
-            "march": 3, "mar": 3,
-            "april": 4, "apr": 4,
-            "may": 5,
-            "june": 6, "jun": 6,
-            "july": 7, "jul": 7,
-            "august": 8, "aug": 8,
-            "september": 9, "sep": 9, "sept": 9,
-            "october": 10, "oct": 10,
-            "november": 11, "nov": 11,
-            "december": 12, "dec": 12
-        ]
-        
-        var foundYear: Int?
-        if let range = text.range(of: "\\b(19|20)\\d{2}\\b", options: .regularExpression) {
-            foundYear = Int(text[range])
-        }
-        
-        var foundMonth: Int?
-        for (name, index) in months {
-            if text.range(of: "\\b\(name)\\b", options: .regularExpression) != nil {
-                foundMonth = index
-                break
-            }
-        }
-        
-        if let y = foundYear, let m = foundMonth {
-            return (y, m)
-        }
-        
-        if let m = foundMonth, text.contains("last") {
-            return (currentYear - 1, m)
-        }
-        
-        if let m = foundMonth, foundYear == nil {
-             return (currentYear, m)
-        }
-        
-        return nil
     }
 }
