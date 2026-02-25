@@ -81,38 +81,8 @@ struct PlacePhotoModalView: View {
                         }
                     }
 
-                // 2. Bottom overlay (or top when editing so caption stays visible above keyboard)
+                // 2. Bottom overlay
             VStack {
-                if isEditing {
-                    // Caption input at top for clearance above keyboard
-                    VStack(alignment: .leading, spacing: 8) {
-                        TextField("Place Name", text: $editedPlaceTitle)
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .padding(8)
-                            .background(Color.white.opacity(0.15))
-                            .cornerRadius(8)
-
-                        TextField("Leave a story for this photo...", text: $editedCaptionText, axis: .vertical)
-                            .textFieldStyle(.plain)
-                            .font(.body)
-                            .foregroundColor(.white)
-                            .lineLimit(2...6)
-                            .padding(12)
-                            .background(Color.white.opacity(0.15))
-                            .cornerRadius(8)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 60)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        LinearGradient(
-                            colors: [Color.black.opacity(0.5), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                }
                 Spacer()
                 if !isEditing {
                     BottomInfoOverlay(
@@ -250,6 +220,32 @@ struct PlacePhotoModalView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
         .statusBar(hidden: false)
+        // Editing panel anchors just above the keyboard via safeAreaInset
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if isEditing {
+                VStack(alignment: .leading, spacing: 10) {
+                    TextField("Place Name", text: $editedPlaceTitle)
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Color.white.opacity(0.15))
+                        .cornerRadius(8)
+
+                    TextField("Leave a story for this photo...", text: $editedCaptionText, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.body)
+                        .foregroundColor(.white)
+                        .lineLimit(2...6)
+                        .padding(12)
+                        .background(Color.white.opacity(0.15))
+                        .cornerRadius(8)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.black.opacity(0.9))
+            }
+        }
         .onAppear {
             editedCaptionText = currentCaption
             editedPlaceTitle = placeTitle

@@ -23,6 +23,8 @@ struct PlaceStopRowView: View {
     var onCaptionFocus: (() -> Void)?
     var onNavigate: (() -> Void)?
     var onEditName: (() -> Void)?
+    /// Called when user taps Done on the keyboard toolbar; (stopId, isPlaceNote, photoId if photo caption).
+    var onDoneEditingStory: ((UUID, Bool, UUID?) -> Void)?
 
     @FocusState private var focusedPlaceNote: Bool
     @FocusState private var focusedPhotoId: UUID?
@@ -249,6 +251,7 @@ struct PlaceStopRowView: View {
                             }
                         },
                         onDone: {
+                            onDoneEditingStory?(stop.id, focusedPlaceNote, focusedPhotoId)
                             focusedPlaceNote = false
                             focusedPhotoId = nil
                         },
@@ -296,7 +299,10 @@ struct PlaceStopRowView: View {
             onManagePhotos: {},
             onRemovePhoto: nil,
             onPhotoTapped: nil,
-            onCaptionFocus: nil
+            onCaptionFocus: nil,
+            onNavigate: nil,
+            onEditName: nil,
+            onDoneEditingStory: nil
         )
         .padding()
     }

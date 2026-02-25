@@ -236,6 +236,8 @@ struct RecapBlogPageView: View {
     }
 
     @State private var scrollToStopId: UUID?
+    /// When the user focuses a story/caption field we store the row id here and scroll when the keyboard actually appears (no fixed delay).
+    @State private var pendingScrollToStopId: UUID?
 
     private static let dayFilterApproxHeight: CGFloat = 52
 
@@ -263,13 +265,27 @@ struct RecapBlogPageView: View {
                     .background(Color.black)
                 }
                 .background(Color.black)
-                .ignoresSafeArea(edges: .bottom)
+                .ignoresSafeArea(edges: isKeyboardVisible ? [] : .bottom)
                 .onChange(of: scrollToStopId) { _, newId in
                     guard let id = newId else { return }
-                    withAnimation(.easeOut(duration: 0.25)) {
-                        proxy.scrollTo(id, anchor: .top)
-                    }
                     scrollToStopId = nil
+                    if isKeyboardVisible {
+                        // Keyboard already up (e.g. switched to another field); scroll immediately.
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            proxy.scrollTo(id, anchor: .top)
+                        }
+                    } else {
+                        pendingScrollToStopId = id
+                    }
+                }
+                .onChange(of: isKeyboardVisible) { _, visible in
+                    if visible, let id = pendingScrollToStopId {
+                        pendingScrollToStopId = nil
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            // Anchor .top so the row sits at the top of the visible area and the text field stays well above the keyboard.
+                            proxy.scrollTo(id, anchor: .top)
+                        }
+                    }
                 }
                 .onChange(of: selectedDayIndex) { _, _ in
                     withAnimation(.easeOut(duration: 0.3)) {
@@ -607,7 +623,10 @@ struct RecapBlogPageView: View {
                     },
                     onCaptionFocus: { scrollToStopId = stop.id },
                     onNavigate: { openNavigation(for: stop) },
-                    onEditName: { showEditNameForStop = stop }
+                    onEditName: { showEditNameForStop = stop },
+                    onDoneEditingStory: { stopId, isPlaceNote, photoId in
+                        syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: isPlaceNote, photoId: photoId)
+                    }
                 )
                 .id(stop.id)
                 
@@ -945,6 +964,27 @@ struct RecapBlogPageView: View {
             }
         )
     }
+
+    /// Pushes the current place note or photo caption to the backend when the blog is in the cloud. Call when user taps Done on the keyboard toolbar.
+    private func syncStoryToCloudIfNeeded(stopId: UUID, isPlaceNote: Bool, photoId: UUID?) {
+        guard blogIsInCloud else { return }
+        guard let day = draft.days.first(where: { $0.placeStops.contains(where: { $0.id == stopId }) }),
+              let stop = day.placeStops.first(where: { $0.id == stopId }),
+              let placeKey = stop.visitedTimeDigitized else { return }
+        Task {
+            if isPlaceNote {
+                let storyText = stop.noteText ?? ""
+                try? await APIManager.shared.updateStory(placeKey: placeKey, storyText: storyText, photoIndex: nil)
+            } else if let pid = photoId,
+                      let photo = stop.photos.first(where: { $0.id == pid }) {
+                let included = stop.photos.filter(\.isIncluded)
+                guard let filteredIndex = included.firstIndex(where: { $0.id == pid }) else { return }
+                let storyText = photo.caption ?? ""
+                try? await APIManager.shared.updateStory(placeKey: placeKey, storyText: storyText, photoIndex: filteredIndex, photoIndexType: "filtered")
+            }
+        }
+    }
+
     private func distanceString(from: PlaceStop, to: PlaceStop) -> String? {
         guard let loc1 = from.representativeLocation?.clCoordinate ?? from.photos.first?.location?.clCoordinate,
               let loc2 = to.representativeLocation?.clCoordinate ?? to.photos.first?.location?.clCoordinate else {

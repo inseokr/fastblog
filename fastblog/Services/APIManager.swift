@@ -461,6 +461,30 @@ final class APIManager {
         )
     }
 
+    /// Updates place-level or photo-level story on the backend (placeVisitHistory).
+    /// - Parameters:
+    ///   - placeKey: visitedTimeDigitized for the place.
+    ///   - storyText: The story/caption text.
+    ///   - photoIndex: If nil, updates place-level story; if set, updates that photo's story (index in filtered/included list).
+    ///   - photoIndexType: "filtered" when photoIndex is index in included photos; "all" for full photoList index. Default "filtered".
+    func updateStory(placeKey: String, storyText: String, photoIndex: Int? = nil, photoIndexType: String = "filtered") async throws {
+        var payload: [String: Any] = [
+            "placeKey": placeKey,
+            "storyText": storyText
+        ]
+        if let idx = photoIndex {
+            payload["photoIndex"] = idx
+            payload["photoIndexType"] = photoIndexType
+        }
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let _: GenericResponse = try await request(
+            endpoint: "/placeVisitHistory/story",
+            method: "POST",
+            body: body,
+            requiresAuth: true
+        )
+    }
+
     // MARK: - Cloud Sync Fetch
 
     /// Fetches all trips (blogs) for the given username from the backend.
