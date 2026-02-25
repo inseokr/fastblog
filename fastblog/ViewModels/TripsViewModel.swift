@@ -30,10 +30,14 @@ final class TripsViewModel: ObservableObject {
     /// After scan completes: .empty = show empty state in sheet; .success(n) = dismiss sheet and list already updated.
     @Published var findMoreScanResult: FindMoreScanResult = .none
 
-    /// Year and month range selected in the sheet. Only scan when user taps Scan Trips.
-    @Published var findMoreYear: Int = Calendar.current.component(.year, from: Date())
-    @Published var findMoreStartMonth: Int = 1
-    @Published var findMoreEndMonth: Int = 12
+    /// Start/End year+month selected in the Find More sheet. Only scanned when user taps Scan.
+    @Published var findMoreStartYear: Int = Calendar.current.component(.year, from: Date())
+    @Published var findMoreStartMonth: Int = Calendar.current.component(.month, from: Date())
+    @Published var findMoreEndYear: Int = Calendar.current.component(.year, from: Date())
+    @Published var findMoreEndMonth: Int = Calendar.current.component(.month, from: Date())
+    /// Tracks whether the Find More sheet has been opened at least once this session.
+    /// Stays `false` until after the first open; reset only happens on first open (cold start).
+    private var hasOpenedFindMoreSheet: Bool = false
 
     private let photoLibraryService = PhotoLibraryTripService.shared
     private let mockService = MockTripDataService.shared
@@ -174,32 +178,61 @@ final class TripsViewModel: ObservableObject {
         }
     }
 
-    /// Opens the Find More Trips sheet. Defaults to current year and current month to current month. Does not scan.
+    /// Opens the Find More Trips sheet.
+    /// On the first open of a session (cold start), resets Start/End year+month to current month/year.
+    /// On subsequent opens within the same session, preserves the user's last selection.
     func openFindMoreSheet() {
         findMoreScanResult = .none
-        let now = Date()
-        let cal = Calendar.current
-        findMoreYear = cal.component(.year, from: now)
-        findMoreStartMonth = cal.component(.month, from: now)
-        findMoreEndMonth = cal.component(.month, from: now)
+        if !hasOpenedFindMoreSheet {
+            let now = Date()
+            let cal = Calendar.current
+            let year = cal.component(.year, from: now)
+            let month = cal.component(.month, from: now)
+            findMoreStartYear = year
+            findMoreStartMonth = month
+            findMoreEndYear = year
+            findMoreEndMonth = month
+            hasOpenedFindMoreSheet = true
+        }
         showFindMoreSheet = true
     }
 
-    /// Scan for trips in the selected year/month range using the photo library. Dedupes against existing list. Updates tripDrafts and findMoreScanResult. Dismisses sheet on success.
+    /// Called by the UI when the user changes Start month/year. If Start is after End in the same year,
+    /// auto-clamps End month up to Start month.
+    func onStartSelectionChanged() {
+        if findMoreStartYear == findMoreEndYear && findMoreStartMonth > findMoreEndMonth {
+            findMoreEndMonth = findMoreStartMonth
+        }
+    }
+
+    /// Called by the UI when the user changes End month/year. If End is before Start in the same year,
+    /// auto-clamps Start month down to End month.
+    func onEndSelectionChanged() {
+        if findMoreEndYear == findMoreStartYear && findMoreEndMonth < findMoreStartMonth {
+            findMoreStartMonth = findMoreEndMonth
+        }
+    }
+
+    /// Scan for trips in the selected start/end year+month range. Dedupes against existing list.
     func scanFindMoreTripsInRange() {
         guard !isFindMoreScanning else { return }
         isFindMoreScanning = true
         findMoreScanResult = .none
-        let year = findMoreYear
-        let startMonth = min(findMoreStartMonth, findMoreEndMonth)
-        let endMonth = max(findMoreStartMonth, findMoreEndMonth)
+        let startYear = findMoreStartYear
+        let startMonth = findMoreStartMonth
+        let endYear = findMoreEndYear
+        let endMonth = findMoreEndMonth
         let occupiedRanges = createdRecapStore.occupiedDateRanges()
         Task {
             // Clear "Ready to Start" trips (previous scan results), keeping only My Drafts
             let myDraftIds = TripDraftStore.draftTripIds()
             tripDrafts = tripDrafts.filter { myDraftIds.contains($0.id) }
 
-            let newTrips = await photoLibraryService.scanInDateRange(year: year, startMonth: startMonth, endMonth: endMonth, occupiedDateRanges: occupiedRanges)
+            let newTrips = await photoLibraryService.scanInDateRange(
+                startYear: startYear, startMonth: startMonth,
+                endYear: endYear, endMonth: endMonth,
+                occupiedDateRanges: occupiedRanges
+            )
             let existingKeys = Set(tripDrafts.map { "\($0.title)|\($0.dateRangeText)" })
             let deduped = newTrips.filter { !existingKeys.contains("\($0.title)|\($0.dateRangeText)") }
             if deduped.isEmpty {

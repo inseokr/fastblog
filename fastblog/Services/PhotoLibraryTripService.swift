@@ -359,21 +359,33 @@ final class PhotoLibraryTripService {
         }
     }
 
+    /// Scan for trips across a start year+month to end year+month (cross-year capable).
+    /// Falls through to the single-year variant when both years match.
+    func scanInDateRange(startYear: Int, startMonth: Int, endYear: Int, endMonth: Int, occupiedDateRanges: [(start: Date, end: Date)] = []) async -> [TripDraft] {
+        // Build the actual date span
+        var startComps = DateComponents(); startComps.year = startYear; startComps.month = startMonth; startComps.day = 1
+        guard let startDate = calendar.date(from: startComps).map({ calendar.startOfDay(for: $0) }) else { return [] }
+        var endComps = DateComponents(); endComps.year = endYear; endComps.month = endMonth; endComps.day = 1
+        guard let endMonthStart = calendar.date(from: endComps),
+              let endDate = calendar.date(byAdding: .month, value: 1, to: endMonthStart) else { return [] }
+
+        return await scanInDateRange(startDate: startDate, endDate: endDate, occupiedDateRanges: occupiedDateRanges)
+    }
+
     /// Scan for trips in a custom year/month range. Uses same local exclusion and segmentation as default scan. Does not use the default-scan cache. Excludes photos in occupiedDateRanges (already-created blogs).
     func scanInDateRange(year: Int, startMonth: Int, endMonth: Int, occupiedDateRanges: [(start: Date, end: Date)] = []) async -> [TripDraft] {
-        let startDate: Date
-        let endDate: Date
         var comps = DateComponents()
-        comps.year = year
-        comps.month = startMonth
-        comps.day = 1
-        guard let start = calendar.date(from: comps) else { return [] }
-        startDate = calendar.startOfDay(for: start)
+        comps.year = year; comps.month = startMonth; comps.day = 1
+        guard let start = calendar.date(from: comps).map({ calendar.startOfDay(for: $0) }) else { return [] }
         comps.month = endMonth
-        guard let endMonthStart = calendar.date(from: comps) else { return [] }
-        guard let end = calendar.date(byAdding: .month, value: 1, to: endMonthStart) else { return [] }
-        endDate = end
+        guard let endMonthStart = calendar.date(from: comps),
+              let end = calendar.date(byAdding: .month, value: 1, to: endMonthStart) else { return [] }
+        return await scanInDateRange(startDate: start, endDate: end, occupiedDateRanges: occupiedDateRanges)
+    }
 
+    /// Core date-range scanner used by all public overloads. Fetches photos in [startDate, endDate),
+    /// applies local exclusion, groups by day, and returns TripDraft array.
+    private func scanInDateRange(startDate: Date, endDate: Date, occupiedDateRanges: [(start: Date, end: Date)] = []) async -> [TripDraft] {
         let options = PHFetchOptions()
         options.predicate = NSPredicate(format: "creationDate >= %@ AND creationDate < %@", startDate as NSDate, endDate as NSDate)
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
@@ -439,7 +451,6 @@ final class PhotoLibraryTripService {
                     let coord: PhotoCoordinate? = asset.location.map { loc in
                         PhotoCoordinate(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude)
                     }
-                    // Use day-level geocoded data from cluster — no per-photo geocoding during scan phase
                     let placeName: String? = (!dayCluster.cityName.isEmpty && dayCluster.cityName != "?") ? dayCluster.cityName : nil
                     let photoCountryName: String? = (!dayCluster.countryName.isEmpty && dayCluster.countryName != "Unknown") ? dayCluster.countryName : nil
                     return MockPhoto(
@@ -477,6 +488,7 @@ final class PhotoLibraryTripService {
         }
         return trips
     }
+
 
     /// Splits assets into segments: a gap larger than gapHours between consecutive photos starts a new segment (new trip).
     private func segmentByTemporalGap(_ assets: [PHAsset], gapHours: Int) -> [[PHAsset]] {
