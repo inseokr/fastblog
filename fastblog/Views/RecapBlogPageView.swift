@@ -31,6 +31,8 @@ struct RecapBlogPageView: View {
     @State private var placePhotoModalItem: PlacePhotoModalItem?
     @State private var showUnsavedChangesAlert = false
     @State private var showCoverPhotoPicker = false
+    /// The cover photo asset identifier captured just before the cover picker opens, used to detect changes on dismiss.
+    @State private var coverPhotoIdentifierBeforeEdit: String? = nil
     /// Snapshot of the draft when edit mode was entered; compared to detect changes.
     @State private var draftSnapshot: RecapBlogDetail?
     @AppStorage("blogify.showFirstTimeSaveTip") private var showFirstTimeSaveTip = true
@@ -158,14 +160,21 @@ struct RecapBlogPageView: View {
                 )
             }
             .sheet(isPresented: $showTitleChange, onDismiss: {
-                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
+                createdRecapStore.saveBlogDetail(draft)
             }) {
                 BlogTitleChangeSheet(title: $draft.title, blogKey: currentBlogKey) {
                     showTitleChange = false
                 }
             }
             .sheet(isPresented: $showCoverPhotoPicker, onDismiss: {
-                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
+                createdRecapStore.saveBlogDetail(draft)
+                // Only push to cloud if the selection actually changed and the blog is published
+                if let blogKey = currentBlogKey,
+                   let newId = draft.selectedCoverPhotoIdentifier,
+                   newId != coverPhotoIdentifierBeforeEdit {
+                    Task { try? await APIManager.shared.uploadAndUpdateCoverPhoto(blogKey: blogKey, assetIdentifier: newId) }
+                }
+                coverPhotoIdentifierBeforeEdit = nil
             }) {
                 BlogCoverPhotoPickerView(
                     photos: allIncludedPhotos,
@@ -191,7 +200,8 @@ struct RecapBlogPageView: View {
                 })
             }
             .sheet(item: $showManagePhotosForStop, onDismiss: {
-                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncPhotoChangesWithCloud() }
+                createdRecapStore.saveBlogDetail(draft)
+                syncPhotoChangesWithCloud()
             }) { pair in
                 ManagePhotosView(
                     placeTitle: placeStop(dayId: pair.dayId, stopId: pair.stopId)?.placeTitle ?? "Photos",
@@ -199,7 +209,7 @@ struct RecapBlogPageView: View {
                 )
             }
             .fullScreenCover(isPresented: $showEditPhotoFlow, onDismiss: {
-                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
+                createdRecapStore.saveBlogDetail(draft)
             }) {
                 EditBlogPhotoFlowView(blogId: blogId, onDismiss: { showEditPhotoFlow = false })
                     .environmentObject(createdRecapStore)
@@ -210,7 +220,7 @@ struct RecapBlogPageView: View {
                 }
             }
             .sheet(item: $placePhotoModalItem, onDismiss: {
-                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
+                createdRecapStore.saveBlogDetail(draft)
             }) { item in
                 placePhotoModalSheet(item: item)
             }
@@ -379,6 +389,7 @@ struct RecapBlogPageView: View {
                         .clipped()
                         .contentShape(Rectangle())
                         .onTapGesture {
+                            coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
                             showCoverPhotoPicker = true
                         }
                 }
@@ -440,6 +451,7 @@ struct RecapBlogPageView: View {
                         HStack {
                             Spacer()
                             Button {
+                                coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
                                 showCoverPhotoPicker = true
                             } label: {
                                 HStack(spacing: 4) {
@@ -733,7 +745,6 @@ struct RecapBlogPageView: View {
 
 // AutosaveManager.shared.cancelPending() — removed
         createdRecapStore.saveBlogDetail(draft)
-        syncWithCloudIfNeeded()
 
         if isFirstSave {
             withAnimation {
@@ -782,10 +793,7 @@ struct RecapBlogPageView: View {
             draft.days[dayIndex] = updatedDay
         }
         
-        if !isEditMode {
-            createdRecapStore.saveBlogDetail(draft)
-            syncWithCloudIfNeeded()
-        }
+        createdRecapStore.saveBlogDetail(draft)
     }
 
     private func removePhoto(dayId: UUID, stopId: UUID, photoId: UUID) {
@@ -811,14 +819,12 @@ struct RecapBlogPageView: View {
         updatedDay.placeStops[stopIdx] = updatedStop
         draft.days[dayIdx] = updatedDay
 
-        if !isEditMode {
-            createdRecapStore.saveBlogDetail(draft)
-            if let placeKey = stop.visitedTimeDigitized, photo.cloudURL != nil {
-                Task { try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "delete") }
-            }
+        createdRecapStore.saveBlogDetail(draft)
+        if let placeKey = stop.visitedTimeDigitized, photo.cloudURL != nil {
+            Task { try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "delete") }
         }
     }
-    
+
     private func performUndo() {
         guard let action = lastUndoAction else { return }
         
@@ -842,8 +848,13 @@ struct RecapBlogPageView: View {
                         stop.photos[pIdx].isIncluded = true
                         day.placeStops[stopIdx] = stop
                         draft.days[dayIdx] = day
-                        if !isEditMode, let placeKey = stop.visitedTimeDigitized, photo.cloudURL != nil {
-                            Task { try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "add") }
+                        if let placeKey = stop.visitedTimeDigitized {
+                            if photo.cloudURL != nil {
+                                Task { try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "add") }
+                            } else {
+                                // Photo was never uploaded — upload first, then add to cloud
+                                Task { await uploadAndAddPhotoToCloud(photo: photo, placeKey: placeKey, stopId: stopId) }
+                            }
                         }
                     }
                 }
@@ -852,9 +863,7 @@ struct RecapBlogPageView: View {
             showUndoOverlay = false
             lastUndoAction = nil
 
-            if !isEditMode {
-                createdRecapStore.saveBlogDetail(draft)
-            }
+            createdRecapStore.saveBlogDetail(draft)
         }
     }
 
@@ -866,10 +875,10 @@ struct RecapBlogPageView: View {
                 stop.placeTitle = title
                 day.placeStops[j] = stop
                 draft.days[i] = day
-                
-                if !isEditMode {
-                    createdRecapStore.saveBlogDetail(draft)
-                    syncWithCloudIfNeeded()
+
+                createdRecapStore.saveBlogDetail(draft)
+                if let placeKey = stop.visitedTimeDigitized {
+                    Task { try? await APIManager.shared.updatePlaceName(visitedTimeDigitized: placeKey, placeName: title) }
                 }
                 break
             }

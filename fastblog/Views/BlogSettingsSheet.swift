@@ -17,6 +17,7 @@ struct BlogSettingsSheet: View {
 
     @State private var showTitleChange = false
     @State private var showCoverChange = false
+    @State private var coverPhotoIdentifierBeforeEdit: String? = nil
     @State private var showDeleteConfirmation = false
     @State private var showRemoveFromCloudConfirmation = false
 
@@ -34,6 +35,7 @@ struct BlogSettingsSheet: View {
                         Label("Change Blog Title", systemImage: "textformat")
                     }
                     Button {
+                        coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
                         showCoverChange = true
                     } label: {
                         Label("Change Cover Photo", systemImage: "photo")
@@ -86,17 +88,19 @@ struct BlogSettingsSheet: View {
                     showTitleChange = false
                 }
             }
-            .sheet(isPresented: $showCoverChange) {
+            .sheet(isPresented: $showCoverChange, onDismiss: {
+                if let key = blogKey,
+                   let newId = draft.selectedCoverPhotoIdentifier,
+                   newId != coverPhotoIdentifierBeforeEdit {
+                    Task { try? await APIManager.shared.uploadAndUpdateCoverPhoto(blogKey: key, assetIdentifier: newId) }
+                }
+                coverPhotoIdentifierBeforeEdit = nil
+            }) {
                 BlogCoverPhotoPickerView(
                     photos: draft.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded),
                     selectedIdentifier: $draft.selectedCoverPhotoIdentifier
                 ) {
                     showCoverChange = false
-                    // Update coverTheme slightly so `TripCoverImage` prioritizes the identifier if the old theme is still present
-                    // (Actually `TripCoverImage` already checks `coverAssetIdentifier` first, so we just dismiss.)
-                    if let key = blogKey {
-                        // Any future sync for cover goes here
-                    }
                 }
             }
             .alert("Delete Blog?", isPresented: $showDeleteConfirmation) {
