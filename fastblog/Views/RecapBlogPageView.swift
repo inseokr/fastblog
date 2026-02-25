@@ -48,6 +48,7 @@ struct RecapBlogPageView: View {
     // Cloud Upload State
     @State private var isUploading = false
     @State private var uploadProgress: (current: Int, total: Int) = (0, 0)
+    @State private var showUploadingFullScreen = false
     @State private var showUploadSuccessBanner = false
     @State private var showUploadErrorAlert = false
     @State private var uploadErrorMessage = ""
@@ -83,10 +84,11 @@ struct RecapBlogPageView: View {
         coreContent(screenHeight: screenHeight)
             .overlay(alignment: .top) { firstSaveBannerOverlay }
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showFirstSaveBanner)
-            .overlay(alignment: .top) { uploadingBannerOverlay }
-            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isUploading)
             .overlay(alignment: .top) { uploadSuccessBannerOverlay }
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showUploadSuccessBanner)
+            .fullScreenCover(isPresented: $showUploadingFullScreen) {
+                UploadingBlogView(uploadProgress: $uploadProgress)
+            }
             .alert("Upload Failed", isPresented: $showUploadErrorAlert) {
                 if uploadErrorMessage == "Please sign in to upload photos." {
                     Button("Sign In") {
@@ -1233,39 +1235,6 @@ struct RecapBlogPageView: View {
     }
 
     @ViewBuilder
-    private var uploadingBannerOverlay: some View {
-        if isUploading {
-            HStack(spacing: 12) {
-                ProgressView()
-                    .tint(.white)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Uploading to cloud…")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                    Text("\(uploadProgress.current) of \(uploadProgress.total) photos")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.75))
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                    )
-            )
-            .padding(.horizontal, 20)
-            .padding(.top, 50)
-            .transition(.opacity)
-        }
-    }
-
-    @ViewBuilder
     private var uploadSuccessBannerOverlay: some View {
         if showUploadSuccessBanner {
             HStack(spacing: 12) {
@@ -1463,6 +1432,7 @@ struct RecapBlogPageView: View {
 
         isUploading = true
         uploadProgress = (0, photosToUpload.count)
+        showUploadingFullScreen = true
 
         Task {
             var failCount = 0
@@ -1496,6 +1466,7 @@ struct RecapBlogPageView: View {
             }
 
             isUploading = false
+            showUploadingFullScreen = false
 
             if failCount > 0 {
                 uploadErrorMessage = "\(failCount) photo\(failCount == 1 ? "" : "s") failed to upload. Tap the cloud button to retry."

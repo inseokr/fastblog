@@ -30,6 +30,7 @@
 		BB00012A /* CoverPhotoSelectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000129 /* CoverPhotoSelectView.swift */; };
 		BB00012C /* CreateBlogFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00012B /* CreateBlogFlowView.swift */; };
 		BB00012E /* CreatingRecapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00012D /* CreatingRecapView.swift */; };
+		BB000215 /* UploadingBlogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000216 /* UploadingBlogView.swift */; };
 		BB000130 /* DayChipsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00012F /* DayChipsView.swift */; };
 		BB000132 /* EditPlaceStopNameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000131 /* EditPlaceStopNameSheet.swift */; };
 		BB000134 /* FindMoreTripsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000133 /* FindMoreTripsSheet.swift */; };
@@ -158,6 +159,7 @@
 		BB000129 /* CoverPhotoSelectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverPhotoSelectView.swift; sourceTree = "<group>"; };
 		BB00012B /* CreateBlogFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateBlogFlowView.swift; sourceTree = "<group>"; };
 		BB00012D /* CreatingRecapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreatingRecapView.swift; sourceTree = "<group>"; };
+		BB000216 /* UploadingBlogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadingBlogView.swift; sourceTree = "<group>"; };
 		BB00012F /* DayChipsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayChipsView.swift; sourceTree = "<group>"; };
 		BB000131 /* EditPlaceStopNameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditPlaceStopNameSheet.swift; sourceTree = "<group>"; };
 		BB000133 /* FindMoreTripsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FindMoreTripsSheet.swift; sourceTree = "<group>"; };
@@ -350,6 +352,7 @@
 				BB000129 /* CoverPhotoSelectView.swift */,
 				BB00012B /* CreateBlogFlowView.swift */,
 				BB00012D /* CreatingRecapView.swift */,
+				BB000216 /* UploadingBlogView.swift */,
 				BB00012F /* DayChipsView.swift */,
 				BB000131 /* EditPlaceStopNameSheet.swift */,
 				BB000133 /* FindMoreTripsSheet.swift */,
@@ -572,6 +575,7 @@
 				BB00012A /* CoverPhotoSelectView.swift in Sources */,
 				BB00012C /* CreateBlogFlowView.swift in Sources */,
 				BB00012E /* CreatingRecapView.swift in Sources */,
+				BB000215 /* UploadingBlogView.swift in Sources */,
 				BB000130 /* DayChipsView.swift in Sources */,
 				BB000132 /* EditPlaceStopNameSheet.swift in Sources */,
 				BB000134 /* FindMoreTripsSheet.swift in Sources */,
