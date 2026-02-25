@@ -20,6 +20,8 @@ struct RecapBlogPageView: View {
     @State private var overflowStop: OverflowItem?
     @State private var showEditNameForStop: PlaceStop?
     @State private var showManagePhotosForStop: ManagePhotosItem?
+    /// Snapshot taken when ManagePhotosView opens, used to diff on dismiss for targeted cloud sync.
+    @State private var managePhotosEditInfo: ManagePhotosEditInfo?
     @State private var isEditMode = true
     @State private var showBlogSettings = false
     @State private var showShareSheet = false
@@ -178,7 +180,7 @@ struct RecapBlogPageView: View {
                     placeTitle: item.stop.placeTitle,
                     placeSubtitle: item.stop.placeSubtitle,
                     onEditName: { showEditNameForStop = item.stop },
-                    onManagePhotos: { showManagePhotosForStop = ManagePhotosItem(dayId: item.dayId, stopId: item.stop.id) },
+                    onManagePhotos: { openManagePhotos(dayId: item.dayId, stopId: item.stop.id) },
                     onEditMode: { isEditMode = true },
                     onRemoveFromBlog: { removePlaceStop(dayId: item.dayId, stopId: item.stop.id) }
                 )
@@ -189,7 +191,7 @@ struct RecapBlogPageView: View {
                 })
             }
             .sheet(item: $showManagePhotosForStop, onDismiss: {
-                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
+                if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncPhotoChangesWithCloud() }
             }) { pair in
                 ManagePhotosView(
                     placeTitle: placeStop(dayId: pair.dayId, stopId: pair.stopId)?.placeTitle ?? "Photos",
@@ -613,7 +615,7 @@ struct RecapBlogPageView: View {
                         overflowStop = OverflowItem(dayId: day.id, stop: stop)
                     },
                     onManagePhotos: {
-                        showManagePhotosForStop = ManagePhotosItem(dayId: day.id, stopId: stop.id)
+                        openManagePhotos(dayId: day.id, stopId: stop.id)
                     },
                     onRemovePhoto: { photoId in
                         removePhoto(dayId: day.id, stopId: stop.id, photoId: photoId)
@@ -808,10 +810,12 @@ struct RecapBlogPageView: View {
         updatedStop.photos[photoIdx].isIncluded = false
         updatedDay.placeStops[stopIdx] = updatedStop
         draft.days[dayIdx] = updatedDay
-        
+
         if !isEditMode {
             createdRecapStore.saveBlogDetail(draft)
-            syncWithCloudIfNeeded()
+            if let placeKey = stop.visitedTimeDigitized, photo.cloudURL != nil {
+                Task { try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "delete") }
+            }
         }
     }
     
@@ -838,16 +842,18 @@ struct RecapBlogPageView: View {
                         stop.photos[pIdx].isIncluded = true
                         day.placeStops[stopIdx] = stop
                         draft.days[dayIdx] = day
+                        if !isEditMode, let placeKey = stop.visitedTimeDigitized, photo.cloudURL != nil {
+                            Task { try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "add") }
+                        }
                     }
                 }
             }
-            
+
             showUndoOverlay = false
             lastUndoAction = nil
-            
+
             if !isEditMode {
                 createdRecapStore.saveBlogDetail(draft)
-                syncWithCloudIfNeeded()
             }
         }
     }
@@ -1277,6 +1283,72 @@ struct RecapBlogPageView: View {
         }
     }
 
+    /// Captures photo inclusion state for a stop before ManagePhotosView opens so we can diff on dismiss.
+    private func openManagePhotos(dayId: UUID, stopId: UUID) {
+        if let stop = placeStop(dayId: dayId, stopId: stopId) {
+            managePhotosEditInfo = ManagePhotosEditInfo(
+                dayId: dayId, stopId: stopId,
+                photoInclusionBefore: Dictionary(uniqueKeysWithValues: stop.photos.map { ($0.id, $0.isIncluded) })
+            )
+        }
+        showManagePhotosForStop = ManagePhotosItem(dayId: dayId, stopId: stopId)
+    }
+
+    /// Diffs photo inclusion changes made in ManagePhotosView and fires targeted updatePhoto calls.
+    /// For newly included photos that have never been uploaded, uploads first then adds.
+    private func syncPhotoChangesWithCloud() {
+        guard let info = managePhotosEditInfo,
+              let stop = placeStop(dayId: info.dayId, stopId: info.stopId),
+              let placeKey = stop.visitedTimeDigitized else {
+            managePhotosEditInfo = nil
+            return
+        }
+
+        for photo in stop.photos {
+            guard let wasIncluded = info.photoInclusionBefore[photo.id] else { continue }
+            if wasIncluded && !photo.isIncluded {
+                // Removed — only relevant if the photo was already in the cloud
+                guard photo.cloudURL != nil else { continue }
+                Task { try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "delete") }
+            } else if !wasIncluded && photo.isIncluded {
+                if photo.cloudURL != nil {
+                    // Already uploaded — just re-include it
+                    Task { try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "add") }
+                } else {
+                    // New photo — upload to file server first, then add to the place
+                    Task { await uploadAndAddPhotoToCloud(photo: photo, placeKey: placeKey, stopId: stop.id) }
+                }
+            }
+        }
+        managePhotosEditInfo = nil
+    }
+
+    /// Uploads a photo that has no cloudURL yet, persists the URL locally, then calls updatePhoto(add).
+    private func uploadAndAddPhotoToCloud(photo: RecapPhoto, placeKey: String, stopId: UUID) async {
+        guard let assetId = photo.localIdentifier else { return }
+        do {
+            let cloudURL = try await APIManager.shared.uploadPhoto(assetIdentifier: assetId)
+
+            // Persist the new cloudURL in the draft so it survives future syncs
+            for dayIdx in draft.days.indices {
+                for stopIdx in draft.days[dayIdx].placeStops.indices
+                    where draft.days[dayIdx].placeStops[stopIdx].id == stopId {
+                    if let photoIdx = draft.days[dayIdx].placeStops[stopIdx].photos
+                        .firstIndex(where: { $0.id == photo.id }) {
+                        draft.days[dayIdx].placeStops[stopIdx].photos[photoIdx].cloudURL = cloudURL
+                        createdRecapStore.saveBlogDetail(draft)
+                    }
+                }
+            }
+
+            var uploaded = photo
+            uploaded.cloudURL = cloudURL
+            try await APIManager.shared.updatePhoto(placeKey: placeKey, photo: uploaded, operation: "add")
+        } catch {
+            print("🚨 uploadAndAddPhotoToCloud failed: \(error)")
+        }
+    }
+
     /// True if every included photo already has a cloud URL.
     private var blogIsInCloud: Bool {
         let included = draft.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded)
@@ -1460,6 +1532,13 @@ private struct ManagePhotosItem: Identifiable {
     let dayId: UUID
     let stopId: UUID
     var id: UUID { stopId }
+}
+
+private struct ManagePhotosEditInfo {
+    let dayId: UUID
+    let stopId: UUID
+    /// Inclusion state of each photo at the moment ManagePhotosView was opened.
+    let photoInclusionBefore: [UUID: Bool]
 }
 
 /// Presents the photo selection flow (TripDayPickerView) in edit mode, then Title → Cover with "Update". Used when user taps Edit on the Recap Blog page.

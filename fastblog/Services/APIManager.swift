@@ -485,6 +485,53 @@ final class APIManager {
         )
     }
 
+    /// Updates a single photo's inclusion state on the backend.
+    /// - Parameters:
+    ///   - placeKey: The `visitedTimeDigitized` of the containing place in placeVisitHistory.
+    ///   - photo: The photo to add or delete (must have a cloudURL).
+    ///   - operation: `"add"` to re-include, `"delete"` to exclude.
+    func updatePhoto(placeKey: String, photo: RecapPhoto, operation: String) async throws {
+        guard let cloudURL = photo.cloudURL else {
+            print("⚠️ updatePhoto: photo has no cloudURL — skipping")
+            return
+        }
+
+        // Recompute digitizedTime the same way createBlogWithPlaces does so the
+        // backend can locate the correct entry in the place's photoList.
+        let digitizedTime: String
+        if let assetId = photo.localIdentifier,
+           let asset = PHAsset.fetchAssets(withLocalIdentifiers: [assetId], options: nil).firstObject {
+            let tz = await Self.getLocalTimeZone(for: asset)
+            let creationDate = asset.creationDate ?? photo.timestamp
+            digitizedTime = Self.digitizedTimeString(from: creationDate, timeZone: tz ?? TimeZone(identifier: "UTC")!)
+        } else {
+            digitizedTime = Self.digitizedTimeString(from: photo.timestamp, timeZone: TimeZone(identifier: "UTC")!)
+        }
+
+        var photoDict: [String: Any] = [
+            "uri": cloudURL,
+            "digitizedTime": digitizedTime,
+        ]
+        // Include caption/story so the backend preserves it alongside the photo state change.
+        if let caption = photo.caption {
+            photoDict["story"] = caption
+        }
+
+        let payload: [String: Any] = [
+            "placeKey": placeKey,
+            "photo": photoDict,
+            "operation": operation
+        ]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let _: GenericResponse = try await request(
+            endpoint: "/placeVisitHistory/updatePhoto",
+            method: "POST",
+            body: body,
+            requiresAuth: true
+        )
+        print("✅ updatePhoto: \(operation) — placeKey=\(placeKey), digitizedTime=\(digitizedTime)")
+    }
+
     // MARK: - Cloud Sync Fetch
 
     /// Fetches all trips (blogs) for the given username from the backend.
