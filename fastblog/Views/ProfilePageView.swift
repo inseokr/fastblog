@@ -590,8 +590,7 @@ struct BlogCard: View {
                             
                             // Share Button overlay
                             if let key = blog.blogKey,
-                               let safeUsername = BlogCard.resolvedUsername.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-                               let url = URL(string: "https://ls-beta-84213e85e326.herokuapp.com/trip/\(safeUsername)/\(key)") {
+                               let url = SecureShareToken.shareURL(username: BlogCard.resolvedUsername, blogKey: key) {
                                 ShareLink(
                                     item: url,
                                     subject: Text(blog.title),

@@ -776,8 +776,7 @@ struct RecapBlogPageView: View {
            let key = blog.blogKey {
             let user = AuthService.shared.currentUser
             let username = user?.username ?? user?.displayName ?? user?.email ?? "user"
-            let safeUsername = username.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? "user"
-            if let url = URL(string: "https://ls-beta-84213e85e326.herokuapp.com/trip/\(safeUsername)/\(key)") {
+            if let url = SecureShareToken.shareURL(username: username, blogKey: key) {
                 return [url, shareText]
             }
         }
