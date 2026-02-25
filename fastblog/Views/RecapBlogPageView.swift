@@ -140,6 +140,7 @@ struct RecapBlogPageView: View {
             .sheet(isPresented: $showBlogSettings) {
                 BlogSettingsSheet(
                     draft: $draft,
+                    blogKey: currentBlogKey,
                     onSave: { saveDraft() },
                     onEditMode: {
                         showBlogSettings = false
@@ -157,7 +158,7 @@ struct RecapBlogPageView: View {
             .sheet(isPresented: $showTitleChange, onDismiss: {
                 if !isEditMode { createdRecapStore.saveBlogDetail(draft); syncWithCloudIfNeeded() }
             }) {
-                BlogTitleChangeSheet(title: $draft.title) {
+                BlogTitleChangeSheet(title: $draft.title, blogKey: currentBlogKey) {
                     showTitleChange = false
                 }
             }
@@ -1240,6 +1241,10 @@ struct RecapBlogPageView: View {
     private var blogIsInCloud: Bool {
         let included = draft.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded)
         return !included.isEmpty && included.allSatisfy { $0.cloudURL != nil }
+    }
+
+    private var currentBlogKey: Int? {
+        createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.blogKey
     }
 
     private func uploadBlogPhotos() {

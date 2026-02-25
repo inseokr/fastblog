@@ -506,8 +506,18 @@ final class CreatedRecapBlogStore: ObservableObject {
         persistBlogDetails()
     }
 
-    /// Deletes a created blog.
+    /// Deletes a created blog locally and from the cloud if it was published.
     func deleteBlog(sourceTripId: UUID) {
+        if let key = recents.first(where: { $0.sourceTripId == sourceTripId })?.blogKey {
+            Task {
+                do {
+                    try await APIManager.shared.deleteBlogFromCloud(blogKey: key)
+                    print("✅ Successfully deleted blog (key: \(key)) from cloud.")
+                } catch {
+                    print("🚨 Failed to delete blog from cloud: \(error)")
+                }
+            }
+        }
         recents.removeAll { $0.sourceTripId == sourceTripId }
         blogDetailsBySourceId.removeValue(forKey: sourceTripId)
         if pendingRecapCreated { pendingRecapCreated = false }
@@ -531,17 +541,19 @@ final class CreatedRecapBlogStore: ObservableObject {
         persistRecents()
     }
 
-    /// Clears all cloud URLs from a blog's photos (removes from cloud) and updates the backend to hide the blog.
+    /// Clears all cloud URLs from a blog's photos (removes from cloud) and deletes the blog from the backend.
     func removeFromCloud(blogId: UUID) {
-        // 1. Update backend to hide the blog if we have a blogKey
+        // 1. Delete the blog on the backend and clear the local blogKey
         if let idx = recents.firstIndex(where: { $0.sourceTripId == blogId }),
            let key = recents[idx].blogKey {
+            recents[idx].blogKey = nil
+            persistRecents()
             Task {
                 do {
-                    try await APIManager.shared.setBlogPrivacy(blogKey: key, level: "hidden")
-                    print("✅ Successfully hid blog (key: \(key)) from cloud on backend.")
+                    try await APIManager.shared.deleteBlogFromCloud(blogKey: key)
+                    print("✅ Successfully deleted blog (key: \(key)) from cloud.")
                 } catch {
-                    print("🚨 Failed to hide blog on backend: \(error)")
+                    print("🚨 Failed to delete blog from cloud: \(error)")
                 }
             }
         }

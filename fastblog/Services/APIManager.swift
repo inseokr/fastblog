@@ -432,6 +432,16 @@ final class APIManager {
     }
 
     /// Sets the privacy of a blog on the Pocketverse backend.
+    func updateBlogTitle(blogKey: Int, title: String) async throws {
+        struct Payload: Encodable { let blogKey: Int; let title: String }
+        let _: GenericResponse = try await post(endpoint: "/trips/update-title", body: Payload(blogKey: blogKey, title: title))
+    }
+
+    func deleteBlogFromCloud(blogKey: Int) async throws {
+        struct Payload: Encodable { let blogKey: Int }
+        let _: GenericResponse = try await post(endpoint: "/trips/delete", body: Payload(blogKey: blogKey))
+    }
+
     func setBlogPrivacy(blogKey: Int, level: String = "public") async throws {
         let payload: [String: Any] = ["blogKey": blogKey, "level": level]
         let body = try JSONSerialization.data(withJSONObject: payload)

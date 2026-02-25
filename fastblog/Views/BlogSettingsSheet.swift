@@ -8,6 +8,7 @@ import SwiftUI
 /// Shown from the blog page (RecapBlogPageView). Change title, cover, and manage photos.
 struct BlogSettingsSheet: View {
     @Binding var draft: RecapBlogDetail
+    var blogKey: Int?
     var onSave: () -> Void
     var onEditMode: (() -> Void)? = nil
     var onDelete: () -> Void
@@ -70,15 +71,18 @@ struct BlogSettingsSheet: View {
             .navigationTitle("Blog Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
                         onSave()
                         dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14))
                     }
                 }
             }
             .sheet(isPresented: $showTitleChange) {
-                BlogTitleChangeSheet(title: $draft.title) {
+                BlogTitleChangeSheet(title: $draft.title, blogKey: blogKey) {
                     showTitleChange = false
                 }
             }
@@ -106,6 +110,7 @@ struct BlogSettingsSheet: View {
                             }
                         }
                     }
+                    print("Removed cloud URLs from draft for blogKey \(blogKey ?? -1)")
                     onRemoveFromCloud?()
                     onSave()
                     dismiss()
@@ -122,6 +127,7 @@ struct BlogSettingsSheet: View {
 /// Single-purpose sheet to edit the blog title.
 struct BlogTitleChangeSheet: View {
     @Binding var title: String
+    var blogKey: Int? = nil
     var onDone: () -> Void
     @Environment(\.dismiss) private var dismiss
     @FocusState private var isFocused: Bool
@@ -146,6 +152,10 @@ struct BlogTitleChangeSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         title = tempTitle
+                        if let key = blogKey {
+                            let newTitle = tempTitle
+                            Task { try? await APIManager.shared.updateBlogTitle(blogKey: key, title: newTitle) }
+                        }
                         onDone()
                         dismiss()
                     }
