@@ -223,6 +223,19 @@ final class CreatedRecapBlogStore: ObservableObject {
            let decoded = try? Self.decoder.decode([UUID: RecapBlogDetail].self, from: data) {
             blogDetailsBySourceId = decoded
         }
+        
+        // 🔄 Migrate Legacy Blogs: Any blog that has a blogKey but was stuck in .localOnly
+        var migrated = false
+        for i in recents.indices {
+            if recents[i].blogKey != nil, recents[i].cloudState == .localOnly {
+                recents[i].cloudState = .uploadedActive
+                migrated = true
+            }
+        }
+        if migrated {
+            persistRecents()
+            enforceArchiveRules()
+        }
     }
 
     private func persistRecents() {
@@ -528,22 +541,29 @@ final class CreatedRecapBlogStore: ObservableObject {
     func setBlogKey(blogId: UUID, blogKey: Int) {
         guard let idx = recents.firstIndex(where: { $0.sourceTripId == blogId }) else { return }
         recents[idx].blogKey = blogKey
+        recents[idx].cloudState = .uploadedActive
         persistRecents()
+        enforceArchiveRules()
     }
 
     /// Clears all cloud URLs from a blog's photos (removes from cloud) and updates the backend to hide the blog.
     func removeFromCloud(blogId: UUID) {
         // 1. Update backend to hide the blog if we have a blogKey
-        if let idx = recents.firstIndex(where: { $0.sourceTripId == blogId }),
-           let key = recents[idx].blogKey {
-            Task {
-                do {
-                    try await APIManager.shared.setBlogPrivacy(blogKey: key, level: "hidden")
-                    print("✅ Successfully hid blog (key: \(key)) from cloud on backend.")
-                } catch {
-                    print("🚨 Failed to hide blog on backend: \(error)")
+        if let idx = recents.firstIndex(where: { $0.sourceTripId == blogId }) {
+            if let key = recents[idx].blogKey {
+                Task {
+                    do {
+                        try await APIManager.shared.setBlogPrivacy(blogKey: key, level: "hidden")
+                        print("✅ Successfully hid blog (key: \(key)) from cloud on backend.")
+                    } catch {
+                        print("🚨 Failed to hide blog on backend: \(error)")
+                    }
                 }
             }
+            // Mark it local only so upload limit checks accurately reflect it
+            recents[idx].blogKey = nil
+            recents[idx].cloudState = .localOnly
+            persistRecents()
         }
 
         // 2. Clear local cloudURLs

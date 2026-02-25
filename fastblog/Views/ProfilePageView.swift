@@ -383,6 +383,7 @@ struct ProfileHeroSection: View {
                         .background(Color(uiColor: .secondarySystemBackground))
                         .clipShape(Capsule())
                 }
+                .buttonStyle(.plain)
                 
                 // Manage Button
                 Button {
@@ -396,6 +397,7 @@ struct ProfileHeroSection: View {
                         .background(Color(uiColor: .secondarySystemBackground))
                         .clipShape(Capsule())
                 }
+                .buttonStyle(.plain)
             }
             .padding(.top, ProfileTheme.Spacing.sm)
         }
@@ -565,55 +567,59 @@ struct BlogCard: View {
         VStack(alignment: .leading, spacing: ProfileTheme.Spacing.md) {
 
             // 16:9 Cover Image
-            GeometryReader { proxy in
-                ZStack(alignment: .topTrailing) {
-                    Group {
-                        if let assetId = blog.coverAssetIdentifier, !assetId.isEmpty {
-                            AssetPhotoView(
-                                assetIdentifier: assetId,
-                                cornerRadius: 0,
-                                targetSize: CGSize(width: proxy.size.width * 2, height: proxy.size.width * 2 * (9/16))
-                            )
-                            .frame(width: proxy.size.width, height: proxy.size.width * (9/16))
-                            .clipped()
-                        } else if let uiImage = UIImage(named: blog.coverImageName) ?? UIImage(contentsOfFile: blog.coverImageName) {
-                            Image(uiImage: uiImage)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: proxy.size.width, height: proxy.size.width * (9/16))
-                                .clipped()
-                        } else {
-                            Rectangle()
-                                .fill(Color(uiColor: .secondarySystemBackground))
-                                .frame(width: proxy.size.width, height: proxy.size.width * (9/16))
+            Color.clear
+                .aspectRatio(16/9, contentMode: .fit)
+                .overlay(
+                    GeometryReader { proxy in
+                        ZStack(alignment: .topTrailing) {
+                            Group {
+                                if let assetId = blog.coverAssetIdentifier, !assetId.isEmpty {
+                                    AssetPhotoView(
+                                        assetIdentifier: assetId,
+                                        cornerRadius: 0,
+                                        targetSize: CGSize(width: proxy.size.width * 2, height: proxy.size.width * 2 * (9/16))
+                                    )
+                                    .frame(width: proxy.size.width, height: proxy.size.width * (9/16))
+                                    .clipped()
+                                } else if let uiImage = UIImage(named: blog.coverImageName) ?? UIImage(contentsOfFile: blog.coverImageName) {
+                                    Image(uiImage: uiImage)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: proxy.size.width, height: proxy.size.width * (9/16))
+                                        .clipped()
+                                } else {
+                                    Rectangle()
+                                        .fill(Color(uiColor: .secondarySystemBackground))
+                                        .frame(width: proxy.size.width, height: proxy.size.width * (9/16))
+                                }
+                            }
+                            
+                            // Share Button overlay
+                            if let key = blog.blogKey,
+                               let safeUsername = BlogCard.resolvedUsername.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+                               let url = URL(string: "https://ls-beta-84213e85e326.herokuapp.com/trip/\(safeUsername)/\(key)") {
+                                ShareLink(
+                                    item: url,
+                                    subject: Text(blog.title),
+                                    message: Text("\(blog.title) – My Recap Blog")
+                                ) {
+                                    Image(systemName: "square.and.arrow.up")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .padding(10)
+                                        .background(Color.black.opacity(0.4))
+                                        .clipShape(Circle())
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                        )
+                                }
+                                .padding(ProfileTheme.Spacing.sm)
+                            }
                         }
                     }
-                    
-                    // Share Button overlay
-                    if let key = blog.blogKey,
-                       let safeUsername = BlogCard.resolvedUsername.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-                       let url = URL(string: "https://ls-beta-84213e85e326.herokuapp.com/trip/\(safeUsername)/\(key)") {
-                        ShareLink(
-                            item: url,
-                            subject: Text(blog.title),
-                            message: Text("\(blog.title) – My Recap Blog")
-                        ) {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.white)
-                                .padding(10)
-                                .background(Color.black.opacity(0.4))
-                                .clipShape(Circle())
-                                .overlay(
-                                    Circle()
-                                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                                )
-                        }
-                        .padding(ProfileTheme.Spacing.sm)
-                    }
-                }
-            }
-            .aspectRatio(16/9, contentMode: .fit)
+                )
+                .clipped()
             
             // Story Meta & Content
             VStack(alignment: .leading, spacing: ProfileTheme.Spacing.sm) {
@@ -651,6 +657,7 @@ struct BlogCard: View {
             }
             .padding(.horizontal, ProfileTheme.Spacing.md)
         }
+        .contentShape(Rectangle())
     }
 }
 

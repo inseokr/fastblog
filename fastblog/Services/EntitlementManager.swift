@@ -31,6 +31,8 @@ final class EntitlementManager: ObservableObject {
     @Published private(set) var lifetimeAllocatedBlogIDs: Set<UUID> = []
     /// Timestamp of the last restore/refresh attempt.
     @Published private(set) var lastRestoreDate: Date?
+    /// Total storage used across all cloud blogs (in bytes).
+    @Published private(set) var usedBytes: Int64 = 0
     /// Result message from the most recent restore attempt.
     @Published var restoreResultMessage: String?
 
@@ -91,6 +93,8 @@ final class EntitlementManager: ObservableObject {
 
     /// Free tier allows 5 active public cloud blogs.
     static let freeTierLimit = 5
+    /// Free tier storage cap: 1GB in bytes.
+    static let freeTierStorageLimit: Int64 = 1073741824
 
     var isFreeTier: Bool { !isProActive }
 
@@ -142,6 +146,7 @@ final class EntitlementManager: ObservableObject {
         static let lifetimeBlogSlots = "bloggo.entitlement.lifetimeBlogSlots"
         static let lifetimeAllocatedBlogIDs = "bloggo.entitlement.lifetimeAllocatedBlogIDs"
         static let lastRestoreDate = "bloggo.entitlement.lastRestoreDate"
+        static let usedBytes = "bloggo.entitlement.usedBytes"
     }
 
     // MARK: - Init
@@ -162,6 +167,7 @@ final class EntitlementManager: ObservableObject {
         proPlanType = defaults.string(forKey: Keys.proPlanType)
         lifetimeBlogSlots = defaults.integer(forKey: Keys.lifetimeBlogSlots)
         lastRestoreDate = defaults.object(forKey: Keys.lastRestoreDate) as? Date
+        usedBytes = Int64(defaults.integer(forKey: Keys.usedBytes))
 
         if let data = defaults.data(forKey: Keys.lifetimeAllocatedBlogIDs),
            let ids = try? JSONDecoder().decode(Set<UUID>.self, from: data) {
@@ -176,6 +182,7 @@ final class EntitlementManager: ObservableObject {
         defaults.set(proPlanType, forKey: Keys.proPlanType)
         defaults.set(lifetimeBlogSlots, forKey: Keys.lifetimeBlogSlots)
         defaults.set(lastRestoreDate, forKey: Keys.lastRestoreDate)
+        defaults.set(Int(usedBytes), forKey: Keys.usedBytes)
 
         if let data = try? JSONEncoder().encode(lifetimeAllocatedBlogIDs) {
             defaults.set(data, forKey: Keys.lifetimeAllocatedBlogIDs)
@@ -277,5 +284,11 @@ final class EntitlementManager: ObservableObject {
     /// Whether cloud blog editing is allowed (Pro only).
     var canEditCloudBlogs: Bool {
         true
+    }
+    
+    /// Updates the local storage usage count.
+    func updateUsedBytes(_ bytes: Int64) {
+        usedBytes = bytes
+        saveToDefaults()
     }
 }

@@ -51,6 +51,7 @@ struct RecapBlogPageView: View {
     @State private var uploadErrorMessage = ""
     @State private var showRemoveFromCloudAlert = false
     @State private var showAuth = false
+    @State private var showProfileManagement = false
 
     private enum UndoAction {
         case deletePlace(dayId: UUID, stop: PlaceStop, index: Int)
@@ -90,6 +91,11 @@ struct RecapBlogPageView: View {
                         showAuth = true
                     }
                     Button("Close", role: .cancel) { }
+                } else if uploadErrorMessage == "Cloud storage limit reached.\nRemove a published blog to continue." {
+                    Button("Manage") {
+                        showProfileManagement = true
+                    }
+                    Button("OK", role: .cancel) { }
                 } else {
                     Button("OK", role: .cancel) { }
                 }
@@ -109,6 +115,14 @@ struct RecapBlogPageView: View {
                     showAuth = false
                 })
                 .environmentObject(authService)
+            }
+            .sheet(isPresented: $showProfileManagement, onDismiss: {
+                if let updatedDetail = createdRecapStore.getBlogDetail(blogId: blogId) {
+                    draft = updatedDetail
+                }
+            }) {
+                ProfileManagementView()
+                    .environmentObject(createdRecapStore)
             }
             .preferredColorScheme(.dark)
     }
@@ -1250,6 +1264,29 @@ struct RecapBlogPageView: View {
             return
         }
 
+        // 🚨 Free Tier Guardrails
+        if EntitlementManager.shared.isFreeTier {
+            // 1. Storage Limit Check
+            let currentUsage = AuthService.shared.currentUser?.storageUsedBytes ?? 0
+            if currentUsage >= EntitlementManager.freeTierStorageLimit {
+                uploadErrorMessage = "Cloud storage limit reached.\nRemove a published blog to continue."
+                showUploadErrorAlert = true
+                return
+            }
+            
+            // 2. Active Cloud Blogs Check
+            if let maxCloud = EntitlementManager.shared.activeCloudBlogLimit {
+                let currentCloudCount = createdRecapStore.recents.filter { $0.cloudState != .localOnly && $0.ownerUserId == AuthService.shared.currentUser?.id }.count
+                let isThisBlogAlreadyInCloud = (createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.cloudState ?? .localOnly) != .localOnly
+                
+                if !isThisBlogAlreadyInCloud && currentCloudCount >= maxCloud {
+                    uploadErrorMessage = "Cloud storage limit reached.\nRemove a published blog to continue."
+                    showUploadErrorAlert = true
+                    return
+                }
+            }
+        }
+
         // Collect all included photos that still need uploading
         var photosToUpload: [(dayIdx: Int, stopIdx: Int, photoIdx: Int, assetId: String)] = []
         for (dIdx, day) in draft.days.enumerated() {
@@ -1290,7 +1327,6 @@ struct RecapBlogPageView: View {
             }
 
             // Save updated draft with cloud URLs
-    // AutosaveManager.shared.cancelPending() — removed
             createdRecapStore.saveBlogDetail(draft)
 
             // Create blog on server (fire-and-forget)
