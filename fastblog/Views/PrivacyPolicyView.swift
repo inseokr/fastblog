@@ -29,9 +29,9 @@ struct PrivacyPolicyView: View {
                 Group {
                     sectionTitle("3. Web Blog Editor Usage")
                     bodyText("When you use the Bloggo web editor at bloggo.linkedspaces.com, we collect:")
-                    bullet("Session data — authentication tokens to verify your identity and keep you securely signed in.")
-                    bullet("Edit history — changes you make to blog posts are logged temporarily to support auto-save and conflict resolution across devices.")
-                    bullet("Browser & device information — browser type, operating system, and screen resolution to ensure the editor renders correctly for you.")
+                    bullet("Session data: authentication tokens to verify your identity and keep you securely signed in.")
+                    bullet("Edit history: changes you make to blog posts are logged temporarily to support auto-save and conflict resolution across devices.")
+                    bullet("Browser and device information: browser type, operating system, and screen resolution to ensure the editor renders correctly for you.")
                     bodyText("Content you write or edit in the web editor is saved to your cloud account and is subject to the same privacy protections as all other user content described in this policy.")
                 }
 
@@ -56,7 +56,7 @@ struct PrivacyPolicyView: View {
 
                 Group {
                     sectionTitle("6. Data Retention")
-                    bodyText("We retain your personal information and cloud-stored content for as long as your account is active or as needed to provide services. You may request deletion of your account and all associated data — including uploaded photos and blog posts — at any time by contacting our support team. Data is removed from active systems promptly and from backups within 30 days.")
+                    bodyText("We retain your personal information and cloud-stored content for as long as your account is active or as needed to provide services. You may request deletion of your account and all associated data, including uploaded photos and blog posts, at any time by contacting our support team. Data is removed from active systems promptly and from backups within 30 days.")
                 }
 
                 Group {

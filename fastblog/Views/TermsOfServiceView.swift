@@ -18,10 +18,10 @@ struct TermsOfServiceView: View {
                 Group {
                     sectionTitle("2. Description of Service")
                     bodyText("Bloggo is a travel blogging platform that allows users to create, edit, publish, and share blog posts from both the Bloggo iOS mobile app and the Bloggo web platform. Our service includes:")
-                    bullet("AI-powered blog generation — automatically create blog posts from your travel photos using on-device or cloud-based AI")
-                    bullet("Cloud upload & sync — upload and store your locally created blogs to the cloud so they are accessible from any device")
-                    bullet("Web blog editor — edit, format, and publish your blog posts directly from a web browser at bloggo.linkedspaces.com")
-                    bullet("Public sharing — share your published blogs via a unique public link")
+                    bullet("AI-powered blog generation: automatically create blog posts from your travel photos using on-device or cloud-based AI")
+                    bullet("Cloud upload and sync: upload and store your locally created blogs to the cloud so they are accessible from any device")
+                    bullet("Web blog editor: edit, format, and publish your blog posts directly from a web browser at bloggo.linkedspaces.com")
+                    bullet("Public sharing: share your published blogs via a unique public link")
                     bodyText("We reserve the right to modify, suspend, or discontinue any aspect of the service at any time.")
                 }
 
@@ -39,9 +39,7 @@ struct TermsOfServiceView: View {
                     bodyText("Bloggo offers the ability to upload locally created blogs and their associated photos to our cloud infrastructure. By using the cloud upload feature, you acknowledge and agree that:")
                     bullet("Uploaded content (including blog text and photos) will be stored on Bloggo's servers and may be accessible from any device where you are signed in")
                     bullet("You are solely responsible for ensuring you have the right to upload any photos or content you submit")
-                    bullet("Free (Starter) plan users may upload up to 10 cloud blogs over the lifetime of their account; you may remove or download existing cloud blogs to free up capacity")
-                    bullet("Paid plan subscribers receive unlimited cloud blog storage as described in the current pricing page")
-                    bullet("We may compress or optimize photos during the upload process; higher-resolution uploads are available on paid plans")
+                    bullet("We may compress or optimize photos during the upload process to ensure optimal performance")
                     bullet("Bloggo is not responsible for data loss due to user-initiated deletion, account termination for Terms violations, or unforeseen technical failures, though we take reasonable precautions to protect your data")
                 }
 
@@ -69,12 +67,6 @@ struct TermsOfServiceView: View {
                 Group {
                     sectionTitle("7. Intellectual Property")
                     bodyText("Bloggo and its original content, features, and functionality are owned by Bloggo and are protected by international copyright, trademark, and other intellectual property laws.")
-                }
-
-                Group {
-                    sectionTitle("8. Subscription and Billing")
-                    bodyText("Paid plans are billed in advance on a monthly or annual basis. All fees are non-refundable except as required by law. We reserve the right to change pricing with 30 days notice.")
-                    bodyText("In-app purchases made through the Apple App Store or Google Play Store are subject to the respective platform's refund and billing policies in addition to these Terms.")
                 }
 
                 Group {
