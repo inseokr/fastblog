@@ -89,26 +89,66 @@ struct FindMoreTripsAgent {
         let currentYear = calendar.component(.year, from: today) // Given the prompt, if today is 2026-02-25, currentYear = 2026.
         let lastYear = currentYear - 1 // 2025
         
+        let popularPlacesMapping: [String: String] = [
+            "south korea": "South Korea", "korea": "South Korea", "republic of korea": "South Korea", "seoul": "Seoul, South Korea",
+            "japan": "Japan", "tokyo": "Tokyo, Japan", "kyoto": "Kyoto, Japan", "osaka": "Osaka, Japan",
+            "france": "France", "paris": "Paris, France",
+            "italy": "Italy", "rome": "Rome, Italy", "milan": "Milan, Italy", "venice": "Venice, Italy",
+            "mexico": "Mexico", "cancun": "Cancun, Mexico", "mexico city": "Mexico City",
+            "canada": "Canada", "toronto": "Toronto, Canada", "vancouver": "Vancouver, Canada",
+            "spain": "Spain", "madrid": "Madrid, Spain", "barcelona": "Barcelona, Spain",
+            "uk": "UK", "united kingdom": "UK", "great britain": "UK", "london": "London, UK", "england": "England",
+            "us": "USA", "usa": "USA", "united states": "USA", "america": "USA", "nyc": "New York", "new york": "New York", "la": "Los Angeles", "los angeles": "Los Angeles", "hawaii": "Hawaii", "chicago": "Chicago", "miami": "Miami", "las vegas": "Las Vegas",
+            "china": "China", "beijing": "Beijing, China", "shanghai": "Shanghai, China", "hong kong": "Hong Kong",
+            "taiwan": "Taiwan", "taipei": "Taipei, Taiwan",
+            "thailand": "Thailand", "bangkok": "Bangkok, Thailand", "phuket": "Phuket, Thailand",
+            "vietnam": "Vietnam", "ho chi minh": "Ho Chi Minh, Vietnam", "hanoi": "Hanoi, Vietnam",
+            "indonesia": "Indonesia", "bali": "Bali, Indonesia",
+            "australia": "Australia", "sydney": "Sydney, Australia", "melbourne": "Melbourne, Australia",
+            "germany": "Germany", "berlin": "Berlin, Germany", "munich": "Munich, Germany",
+            "india": "India", "delhi": "Delhi, India", "mumbai": "Mumbai, India",
+            "brazil": "Brazil", "rio": "Rio de Janeiro, Brazil", "são paulo": "São Paulo, Brazil", "sao paulo": "São Paulo, Brazil",
+            "argentina": "Argentina", "buenos aires": "Buenos Aires, Argentina",
+            "switzerland": "Switzerland", "zurich": "Zurich, Switzerland", "geneva": "Geneva, Switzerland",
+            "netherlands": "Netherlands", "amsterdam": "Amsterdam, Netherlands",
+            "greece": "Greece", "athens": "Athens, Greece", "santorini": "Santorini, Greece",
+            "turkey": "Turkey", "istanbul": "Istanbul, Turkey",
+            "egypt": "Egypt", "cairo": "Cairo, Egypt",
+            "uae": "UAE", "united arab emirates": "UAE", "dubai": "Dubai, UAE",
+            "philippines": "Philippines", "manila": "Manila, Philippines", "palawan": "Palawan, Philippines",
+            "malaysia": "Malaysia", "kuala lumpur": "Kuala Lumpur, Malaysia",
+            "singapore": "Singapore"
+        ]
+
+        var extractedPlace: String? = nil
+        let sortedPlaceKeys = popularPlacesMapping.keys.sorted { $0.count > $1.count }
+        for key in sortedPlaceKeys {
+            if normalized.range(of: "\\b\(key)\\b", options: .regularExpression) != nil {
+                extractedPlace = popularPlacesMapping[key]
+                break
+            }
+        }
+
         // 1. Deterministic Parsing: "last year"
-        if normalized == "last year" {
+        if normalized.contains("last year") {
             return NLPParseResult(
                 intent: .set_range,
                 startYear: lastYear, startMonth: 1,
                 endYear: lastYear, endMonth: 12,
-                placeQuery: nil,
-                answerText: "Got it. Scanning last year (\(lastYear)).",
+                placeQuery: extractedPlace,
+                answerText: "Got it. Scanning last year (\(lastYear))\(extractedPlace != nil ? " for " + extractedPlace! : "").",
                 confidence: 1.0, needsConfirmation: false, clarificationQuestion: nil
             )
         }
         
         // 2. Deterministic Parsing: "this year"
-        if normalized == "this year" || normalized == "current year" {
+        if normalized.contains("this year") || normalized.contains("current year") {
             return NLPParseResult(
                 intent: .set_range,
                 startYear: currentYear, startMonth: 1,
                 endYear: currentYear, endMonth: 12,
-                placeQuery: nil,
-                answerText: "Got it. Scanning this year (\(currentYear)).",
+                placeQuery: extractedPlace,
+                answerText: "Got it. Scanning this year (\(currentYear))\(extractedPlace != nil ? " for " + extractedPlace! : "").",
                 confidence: 1.0, needsConfirmation: false, clarificationQuestion: nil
             )
         }
@@ -116,7 +156,7 @@ struct FindMoreTripsAgent {
         // 3. Deterministic Parsing: "last [season]"
         let seasons = ["spring", "summer", "fall", "winter"]
         for seasonStr in seasons {
-            if normalized == "last \(seasonStr)" {
+            if normalized.contains("last \(seasonStr)") {
                 guard let season = Season(rawValue: seasonStr) else { continue }
                 let (sMonth, eMonth) = season.months
                 var sYear = lastYear
@@ -131,15 +171,15 @@ struct FindMoreTripsAgent {
                     intent: .set_range,
                     startYear: sYear, startMonth: sMonth,
                     endYear: eYear, endMonth: eMonth,
-                    placeQuery: nil,
-                    answerText: "Got it. Scanning last \(seasonStr.capitalized) (\(sYear)).",
+                    placeQuery: extractedPlace,
+                    answerText: "Got it. Scanning last \(seasonStr.capitalized) (\(sYear))\(extractedPlace != nil ? " for " + extractedPlace! : "").",
                     confidence: 1.0, needsConfirmation: false, clarificationQuestion: nil
                 )
             }
         }
         
         // 4. Deterministic Parsing: "[Season] [Year]"
-        let seasonYearRegex = try? NSRegularExpression(pattern: "^(spring|summer|fall|winter)\\s+(\\d{4})$", options: .caseInsensitive)
+        let seasonYearRegex = try? NSRegularExpression(pattern: "\\b(spring|summer|fall|winter)\\s+(\\d{4})\\b", options: .caseInsensitive)
         if let match = seasonYearRegex?.firstMatch(in: normalized, range: NSRange(normalized.startIndex..., in: normalized)) {
             if let seasonRange = Range(match.range(at: 1), in: normalized),
                let yearRange = Range(match.range(at: 2), in: normalized),
@@ -156,8 +196,8 @@ struct FindMoreTripsAgent {
                     intent: .set_range,
                     startYear: sYear, startMonth: sMonth,
                     endYear: eYear, endMonth: eMonth,
-                    placeQuery: nil,
-                    answerText: "Got it. Scanning \(confText).",
+                    placeQuery: extractedPlace,
+                    answerText: "Got it. Scanning \(confText)\(extractedPlace != nil ? " for " + extractedPlace! : "").",
                     confidence: 1.0, needsConfirmation: false, clarificationQuestion: nil
                 )
             }
@@ -165,32 +205,57 @@ struct FindMoreTripsAgent {
         
         // 5. Deterministic Parsing: "[Month] [Year]"
         let monthsDict = ["january": 1, "jan": 1, "february": 2, "feb": 2, "march": 3, "mar": 3, "april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7, "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9, "october": 10, "oct": 10, "november": 11, "nov": 11, "december": 12, "dec": 12]
+        let monthNamesPattern = monthsDict.keys.joined(separator: "|")
+        let monthYearRegex = try? NSRegularExpression(pattern: "\\b(\(monthNamesPattern))\\s+(\\d{4})\\b", options: .caseInsensitive)
         
-        let parts = normalized.components(separatedBy: .whitespaces)
-        if parts.count == 2, let mName = parts.first, let monthNum = monthsDict[mName], let year = Int(parts[1]) {
-            return NLPParseResult(
-                intent: .set_range,
-                startYear: year, startMonth: monthNum,
-                endYear: year, endMonth: monthNum,
-                placeQuery: nil,
-                answerText: "Got it. Scanning \(mName.capitalized) \(year).",
-                confidence: 1.0, needsConfirmation: false, clarificationQuestion: nil
-            )
+        if let match = monthYearRegex?.firstMatch(in: normalized, range: NSRange(normalized.startIndex..., in: normalized)) {
+            if let mRange = Range(match.range(at: 1), in: normalized),
+               let yRange = Range(match.range(at: 2), in: normalized),
+               let mNum = monthsDict[String(normalized[mRange]).lowercased()],
+               let year = Int(normalized[yRange]) {
+                let mName = String(normalized[mRange]).capitalized
+                return NLPParseResult(
+                    intent: .set_range,
+                    startYear: year, startMonth: mNum,
+                    endYear: year, endMonth: mNum,
+                    placeQuery: extractedPlace,
+                    answerText: "Got it. Scanning \(mName) \(year)\(extractedPlace != nil ? " for " + extractedPlace! : "").",
+                    confidence: 1.0, needsConfirmation: false, clarificationQuestion: nil
+                )
+            }
         }
         
         // 6. Deterministic Parsing: Year Only
-        if let year = Int(normalized), year > 2000 && year <= currentYear + 1 {
+        let yearRegex = try? NSRegularExpression(pattern: "\\b(20\\d{2})\\b")
+        if let match = yearRegex?.firstMatch(in: normalized, range: NSRange(normalized.startIndex..., in: normalized)) {
+            if let yearRange = Range(match.range(at: 1), in: normalized),
+               let year = Int(normalized[yearRange]), year > 2000 && year <= currentYear + 1 {
+                return NLPParseResult(
+                    intent: .set_range,
+                    startYear: year, startMonth: 1,
+                    endYear: year, endMonth: 12,
+                    placeQuery: extractedPlace,
+                    answerText: "Got it. Scanning the year \(year)\(extractedPlace != nil ? " for " + extractedPlace! : "").",
+                    confidence: 1.0, needsConfirmation: false, clarificationQuestion: nil
+                )
+            }
+        }
+        
+        // 7. Deterministic Parsing: Place ONLY fallback (if no date was found above)
+        // Ask the user for a date/year rather than scanning a massive 8-year range automatically.
+        if let extractedPlace = extractedPlace {
             return NLPParseResult(
-                intent: .set_range,
-                startYear: year, startMonth: 1,
-                endYear: year, endMonth: 12,
-                placeQuery: nil,
-                answerText: "Got it. Scanning the year \(year).",
-                confidence: 1.0, needsConfirmation: false, clarificationQuestion: nil
+                intent: .ask_clarification,
+                startYear: nil, startMonth: nil,
+                endYear: nil, endMonth: nil,
+                placeQuery: extractedPlace,
+                answerText: "I found \(extractedPlace)! Which year or time period should I search? (e.g. \"last year\", \"2024\", \"last summer\")",
+                confidence: 0.7, needsConfirmation: false,
+                clarificationQuestion: "Which year or time period should I search for \(extractedPlace)?"
             )
         }
         
-        // 7. Fallback to LLM
+        // 8. Fallback to LLM
         // Build prompt context
         let prompt = """
         todayISO: \(ISO8601DateFormatter().string(from: today))

@@ -57,13 +57,13 @@ struct FindMoreTripsSheet: View {
                 viewModel.dismissFindMoreSheet()
                 dismiss()
             } label: {
-                Image(systemName: "chevron.left")
-                    .font(.body)
+                Image(systemName: "xmark")
+                    .font(.body.weight(.bold))
                     .foregroundColor(Color(white: 0.7))
             }
             Spacer()
         }
-        .padding(.top, 12)
+        .padding(.top, 36)
         .padding(.bottom, 24)
     }
 
