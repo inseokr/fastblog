@@ -87,8 +87,16 @@ struct BlogSettingsSheet: View {
                 }
             }
             .sheet(isPresented: $showCoverChange) {
-                BlogCoverChangeSheet(coverTheme: $draft.coverTheme) {
+                BlogCoverPhotoPickerView(
+                    photos: draft.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded),
+                    selectedIdentifier: $draft.selectedCoverPhotoIdentifier
+                ) {
                     showCoverChange = false
+                    // Update coverTheme slightly so `TripCoverImage` prioritizes the identifier if the old theme is still present
+                    // (Actually `TripCoverImage` already checks `coverAssetIdentifier` first, so we just dismiss.)
+                    if let key = blogKey {
+                        // Any future sync for cover goes here
+                    }
                 }
             }
             .alert("Delete Blog?", isPresented: $showDeleteConfirmation) {
