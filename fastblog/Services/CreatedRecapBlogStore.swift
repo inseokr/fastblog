@@ -354,11 +354,20 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Date ranges (start, end) of all created blogs AND active drafts.
     func occupiedDateRanges() -> [(start: Date, end: Date)] {
+        let calendar = Calendar.current
+        
         let blogRanges: [(start: Date, end: Date)] = recents.compactMap { blog in
             guard let start = blog.tripStartDate, let end = blog.tripEndDate else { return nil }
-            return (start: start, end: end)
+            let endOfDay = calendar.date(bySettingHour: 23, minute: 59, second: 59, of: end) ?? end
+            return (start: start, end: endOfDay)
         }
-        return blogRanges + draftOccupiedRanges
+        
+        let activeDraftRanges: [(start: Date, end: Date)] = draftOccupiedRanges.map { range in
+            let endOfDay = calendar.date(bySettingHour: 23, minute: 59, second: 59, of: range.end) ?? range.end
+            return (start: range.start, end: endOfDay)
+        }
+        
+        return blogRanges + activeDraftRanges
     }
 
     /// TripDraft snapshot for opening BlogPreviewView. Nil if not found.
