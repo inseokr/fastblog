@@ -109,11 +109,13 @@ struct ManagePhotosView: View {
                     .offset(zoomOffset)
 
                     if photo.isIncluded {
+                        Color.black.opacity(0.4)
+                            .allowsHitTesting(false)
+                            
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 72))
                             .foregroundStyle(.white)
                             .shadow(color: .black.opacity(0.4), radius: 6)
-                            .frame(maxHeight: .infinity, alignment: .bottom)
                             .padding(.bottom, 20)
                             .transaction { $0.animation = nil }
                     }

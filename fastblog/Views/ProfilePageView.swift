@@ -351,11 +351,15 @@ struct ProfileHeroSection: View {
             }
             .buttonStyle(.plain)
             
-            // Name & Bio
+            // Name, Stats & Bio
             VStack(spacing: ProfileTheme.Spacing.sm) {
                 Text(authService.currentUser?.displayName ?? authService.currentUser?.email ?? "Traveler")
                     .font(ProfileTheme.Typography.profileName)
                     .foregroundColor(.primary)
+                
+                // Subtle Stats Line
+                ProfileStatsLine()
+                    .padding(.bottom, ProfileTheme.Spacing.xs)
                 
                 Text(userBio)
                     .font(ProfileTheme.Typography.bio)
@@ -364,10 +368,6 @@ struct ProfileHeroSection: View {
                     .lineSpacing(4)
                     .padding(.horizontal, ProfileTheme.Spacing.xl)
             }
-            
-            // Subtle Stats Line
-            ProfileStatsLine()
-                .padding(.top, ProfileTheme.Spacing.xs)
             
             // Action Buttons
             HStack(spacing: ProfileTheme.Spacing.md) {

@@ -80,11 +80,12 @@ struct PhotoSelectView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 // Bottom: count label, horizontal strip, then optional Create button when embedded
-                VStack(spacing: 12) {
+                VStack(spacing: 24) {
                     selectedCountLabel
                     thumbnailStrip
                 }
-                .padding(.vertical, 12)
+                .padding(.top, 24)
+                .padding(.bottom, 12)
                 .background(Color.black)
 
                 if embedded, let content = embeddedBottomContent {
@@ -135,6 +136,8 @@ struct PhotoSelectView: View {
                 ZStack {
                     mainPhotoImage(photo: photo)
                     if photo.isSelected {
+                        Color.black.opacity(0.4)
+                            .allowsHitTesting(false)
                         selectionCheckOverlay
                     }
                 }

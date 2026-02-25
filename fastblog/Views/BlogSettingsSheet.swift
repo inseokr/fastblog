@@ -145,7 +145,9 @@ struct BlogTitleChangeSheet: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
                 TextField("Blog title", text: $tempTitle)
-                    .textFieldStyle(.roundedBorder)
+                    .padding(16)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+                    .cornerRadius(16)
                     .padding()
                     .focused($isFocused)
             }
