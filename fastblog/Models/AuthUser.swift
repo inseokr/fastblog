@@ -17,6 +17,7 @@ struct AuthUser: Codable, Equatable, Sendable {
     let displayName: String?
     let username: String?
     let provider: AuthProvider
+    var storageUsedBytes: Int64?
 
     var initials: String {
         // Priority: username → displayName → first letter of email → "?"

@@ -341,6 +341,29 @@ struct ProfileManagementView: View {
             return
         }
 
+        // 🚨 Free Tier Guardrails
+        if EntitlementManager.shared.isFreeTier {
+            // 1. Storage Limit Check
+            let currentUsage = AuthService.shared.currentUser?.storageUsedBytes ?? 0
+            if currentUsage >= EntitlementManager.freeTierStorageLimit {
+                uploadErrorMessage = "Cloud storage limit reached.\nRemove a published blog to continue."
+                showUploadError = true
+                return
+            }
+            
+            // 2. Active Cloud Blogs Check
+            if let maxCloud = EntitlementManager.shared.activeCloudBlogLimit {
+                let currentCloudCount = createdRecapStore.recents.filter { $0.cloudState != .localOnly && $0.ownerUserId == AuthService.shared.currentUser?.id }.count
+                let isThisBlogAlreadyInCloud = (createdRecapStore.recents.first(where: { $0.sourceTripId == blog.sourceTripId })?.cloudState ?? .localOnly) != .localOnly
+                
+                if !isThisBlogAlreadyInCloud && currentCloudCount >= maxCloud {
+                    uploadErrorMessage = "Cloud storage limit reached.\nRemove a published blog to continue."
+                    showUploadError = true
+                    return
+                }
+            }
+        }
+
         var photosToUpload: [(dayIdx: Int, stopIdx: Int, photoIdx: Int, assetId: String)] = []
         for (dIdx, day) in detail.days.enumerated() {
             for (sIdx, stop) in day.placeStops.enumerated() {

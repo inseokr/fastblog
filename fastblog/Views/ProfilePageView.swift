@@ -399,6 +399,7 @@ struct ProfileHeroSection: View {
                         .background(Color(uiColor: .secondarySystemBackground))
                         .clipShape(Capsule())
                 }
+                .buttonStyle(.plain)
                 
                 // Manage Button
                 Button {
@@ -412,6 +413,7 @@ struct ProfileHeroSection: View {
                         .background(Color(uiColor: .secondarySystemBackground))
                         .clipShape(Capsule())
                 }
+                .buttonStyle(.plain)
             }
             .padding(.top, ProfileTheme.Spacing.sm)
         }
@@ -691,6 +693,7 @@ struct BlogCard: View {
             }
             .padding(.horizontal, ProfileTheme.Spacing.md)
         }
+        .contentShape(Rectangle())
     }
 }
 

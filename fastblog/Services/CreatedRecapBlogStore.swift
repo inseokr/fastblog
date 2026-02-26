@@ -225,6 +225,19 @@ final class CreatedRecapBlogStore: ObservableObject {
            let decoded = try? Self.decoder.decode([UUID: RecapBlogDetail].self, from: data) {
             blogDetailsBySourceId = decoded
         }
+        
+        // 🔄 Migrate Legacy Blogs: Any blog that has a blogKey but was stuck in .localOnly
+        var migrated = false
+        for i in recents.indices {
+            if recents[i].blogKey != nil, recents[i].cloudState == .localOnly {
+                recents[i].cloudState = .uploadedActive
+                migrated = true
+            }
+        }
+        if migrated {
+            persistRecents()
+            enforceArchiveRules()
+        }
     }
 
     private func persistRecents() {
@@ -551,7 +564,9 @@ final class CreatedRecapBlogStore: ObservableObject {
     func setBlogKey(blogId: UUID, blogKey: Int) {
         guard let idx = recents.firstIndex(where: { $0.sourceTripId == blogId }) else { return }
         recents[idx].blogKey = blogKey
+        recents[idx].cloudState = .uploadedActive
         persistRecents()
+        enforceArchiveRules()
     }
 
     /// After a successful createBlogWithPlaces call, writes the server-assigned blogKey and per-stop
@@ -608,6 +623,10 @@ final class CreatedRecapBlogStore: ObservableObject {
                     print("🚨 Failed to delete blog from cloud: \(error)")
                 }
             }
+            // Mark it local only so upload limit checks accurately reflect it
+            recents[idx].blogKey = nil
+            recents[idx].cloudState = .localOnly
+            persistRecents()
         }
 
         // 2. Clear local cloudURLs

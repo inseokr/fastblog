@@ -218,7 +218,8 @@ final class AuthService: NSObject, ObservableObject {
                 email: cred.email,
                 displayName: name,
                 username: nil,
-                provider: .apple
+                provider: .apple,
+                storageUsedBytes: 0
             )
             finishSignIn(user: user)
         }
@@ -260,6 +261,7 @@ private struct UserPayload: Decodable {
     let email: String?
     let username: String?
     let name: String?
+    let storageUsedBytes: Int64?
 }
 
 private struct UsernameCheckResponse: Decodable {
@@ -359,9 +361,22 @@ extension AuthService {
             email: actualEmail,
             displayName: actualDisplayName,
             username: response.user?.username,
-            provider: .email
+            provider: .email,
+            storageUsedBytes: response.user?.storageUsedBytes ?? 0
         )
         finishSignIn(user: user)
+    }
+
+    // MARK: - Storage Tracking
+
+    func incrementStorageUsed(by bytes: Int64) {
+        // If not initialized, assume we start from 0 for local usage
+        let currentUsage = currentUser?.storageUsedBytes ?? 0
+        currentUser?.storageUsedBytes = currentUsage + bytes
+        persist(currentUser)
+        
+        // Let the general entitlements manager know as well for broad access
+        EntitlementManager.shared.updateUsedBytes(currentUser?.storageUsedBytes ?? 0)
     }
 
     // MARK: - Helpers

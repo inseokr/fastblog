@@ -19,6 +19,7 @@ enum APIError: LocalizedError {
     case invalidResponse
     case httpError(statusCode: Int, message: String)
     case decodingFailed(Error)
+    case limitReached(errorCode: String, message: String, details: [String: Any])
     
     var errorDescription: String? {
         switch self {
@@ -28,6 +29,7 @@ enum APIError: LocalizedError {
         case .invalidResponse: return "Received an invalid response from the server."
         case .httpError(let statusCode, let message): return "HTTP Error \(statusCode): \(message)"
         case .decodingFailed(let error): return "Failed to decode response: \(error.localizedDescription)"
+        case .limitReached(_, let message, _): return message
         }
     }
 }
@@ -121,6 +123,14 @@ final class APIManager {
             let isHTML = contentType.contains("text/html")
             if !isHTML, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 print("🚨 API Error Data JSON: \(json)")
+                
+                // Optimized enforcement check: Look for structured errorCode
+                if let errorCode = json["errorCode"] as? String {
+                    let msg = json["message"] as? String ?? errorMessage
+                    let details = json["details"] as? [String: Any] ?? [:]
+                    throw APIError.limitReached(errorCode: errorCode, message: msg, details: details)
+                }
+
                 if let msg = json["message"] as? String, !msg.isEmpty { errorMessage = msg }
                 else if let err = json["error"] as? String, !err.isEmpty { errorMessage = err }
                 else if let result = json["result"] as? String, !result.isEmpty { errorMessage = result }
@@ -163,8 +173,8 @@ final class APIManager {
             throw APIError.invalidURL
         }
 
-        // Compress to JPEG at 0.2 quality (matches LinkedSpaces compress: 0.2)
-        guard let imageData = image.jpegData(compressionQuality: 0.2) else {
+        // JPEG Quality: 0.72 as per new Free Tier rules
+        guard let imageData = image.jpegData(compressionQuality: 0.72) else {
             throw APIError.serializationFailed
         }
 
@@ -191,6 +201,10 @@ final class APIManager {
 
         // 🔍 DEBUG: Log photo upload
         print("🌐 [POST] \(fileServerURL)/place/file_upload — photo: \(filename) (\(imageData.count) bytes)")
+        
+        // 📊 Storage Tracking: Assume success for tracking. Actual failure handling can be refined.
+        print("Storage Tracking: Uploading \(imageData.count) bytes")
+        AuthService.shared.incrementStorageUsed(by: Int64(imageData.count))
 
         let (data, response): (Data, URLResponse)
         do {
@@ -238,9 +252,10 @@ final class APIManager {
     /// Convenience: uploads a photo from the iOS Photos library by asset identifier.
     /// Loads the image at up to 1920×1920, compresses, and uploads.
     func uploadPhoto(assetIdentifier: String) async throws -> String {
+        // Target dimension 2048px on longest edge as per new Free Tier rules
         let image = await ImageLoader.shared.loadImage(
             assetIdentifier: assetIdentifier,
-            targetSize: CGSize(width: 1920, height: 1920)
+            targetSize: CGSize(width: 2048, height: 2048)
         )
         guard let image else {
             throw APIError.serializationFailed
@@ -634,7 +649,67 @@ final class APIManager {
             return nil
         }
     }
+
+    // MARK: - Two-Phase Publish Flow (Free Tier Limits)
+
+    struct InitiatePublishPayload: Encodable {
+        let title: String
+        let photoCount: Int
+        let destinationName: String
+        // Add approx size if available (optional)
+        var estimatedBytes: Int64?
+    }
+
+    struct InitiatePublishResponse: Decodable {
+        let publishSessionId: String
+    }
+
+    /// Phase 1: Inform server of intent to publish and check limits.
+    func initiatePublish(detail: RecapBlogDetail) async throws -> String {
+        let allPhotos = detail.days.flatMap(\.placeStops).flatMap { $0.photos.filter(\.isIncluded) }
+        let payload = InitiatePublishPayload(
+            title: detail.title,
+            photoCount: allPhotos.count,
+            destinationName: detail.countryName ?? "",
+            estimatedBytes: nil // Client-side estimation could be added here
+        )
+        
+        let response: InitiatePublishResponse = try await post(endpoint: "/blog/initiatePublish", body: payload)
+        return response.publishSessionId
+    }
+
+
+    struct FinalizePublishPayload: Encodable {
+        let publishSessionId: String
+        let uploadedKeys: [String]
+        let title: String
+        let countryName: String
+    }
+
+    /// Phase 2: Confirm all photos are uploaded and atomicity commit.
+    func finalizePublish(publishSessionId: String, detail: RecapBlogDetail) async throws -> Int {
+        // Collect all cloud URLs to send as uploaded keys/verification
+        let allPhotos = detail.days.flatMap(\.placeStops).flatMap { $0.photos.filter(\.isIncluded) }
+        let uploadedKeys = allPhotos.compactMap { $0.cloudURL }
+        
+        let payload = FinalizePublishPayload(
+            publishSessionId: publishSessionId,
+            uploadedKeys: uploadedKeys,
+            title: detail.title,
+            countryName: detail.countryName ?? ""
+        )
+        
+        struct FinalizeResponse: Decodable {
+            let blogKey: Int
+        }
+        
+        let response: FinalizeResponse = try await post(endpoint: "/blog/finalizePublish", body: payload)
+        return response.blogKey
+    }
 }
+
+/// Helper for Any Codable if needed, but let's stick to concrete types for now.
+struct AnyCodable: Codable {}
 
 struct CreateBlogResponse: Decodable {
     let blogKey: Int
