@@ -42,10 +42,10 @@ struct LandingView: View {
                             .foregroundColor(.white)
                     }
                     Spacer()
-                    Text("Bloggo")
-                        .font(.system(size: 34))
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
+                    // Text("Bloggo")
+                    //     .font(.system(size: 34))
+                    //     .fontWeight(.bold)
+                    //     .foregroundColor(.white)
                     Spacer()
                     Button {
                         if authService.isSignedIn {
@@ -411,7 +411,9 @@ private struct SettingsView: View {
                         }
                         .alert("Delete Account?", isPresented: $showDeleteAccountAlert) {
                             Button("Delete", role: .destructive) {
-                                authService.deleteAccount()
+                                Task {
+                                    await authService.deleteAccount()
+                                }
                                 dismiss()
                             }
                             Button("Cancel", role: .cancel) { }
