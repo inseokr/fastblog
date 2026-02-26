@@ -666,8 +666,10 @@ final class CreatedRecapBlogStore: ObservableObject {
             let allPlaces = historyResp.visitedHistory ?? []
 
             // Index places by placeIndex for O(1) lookup.
+            // Use uniquingKeysWith to tolerate duplicate placeIndex from API (e.g. after logout/login).
             let placeByIndex: [Int: ServerPlaceRecord] = Dictionary(
-                uniqueKeysWithValues: allPlaces.map { ($0.placeIndex, $0) }
+                allPlaces.map { ($0.placeIndex, $0) },
+                uniquingKeysWith: { _, new in new }
             )
 
             var detailsChanged = false
