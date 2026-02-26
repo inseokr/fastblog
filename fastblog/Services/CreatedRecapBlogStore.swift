@@ -927,9 +927,9 @@ final class CreatedRecapBlogStore: ObservableObject {
             days.append(RecapBlogDay(dayIndex: day.dayIndex, date: dayDate, placeStops: placeStops))
         }
 
-        // Default cover: trip's cover asset or first included photo's localIdentifier.
+        // Default cover: first included photo's localIdentifier, fallback to trip's cover asset.
         let firstPhotoId = days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).compactMap(\.localIdentifier).first
-        let coverId = trip.coverAssetIdentifier ?? firstPhotoId
+        let coverId = firstPhotoId ?? trip.coverAssetIdentifier
         return RecapBlogDetail(id: trip.id, title: trip.title, days: days, coverTheme: trip.coverTheme, selectedCoverPhotoIdentifier: coverId)
     }
 

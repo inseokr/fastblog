@@ -36,6 +36,9 @@ struct RecapBlogPageView: View {
     /// Snapshot of the draft when edit mode was entered; compared to detect changes.
     @State private var draftSnapshot: RecapBlogDetail?
     @AppStorage("blogify.showFirstTimeSaveTip") private var showFirstTimeSaveTip = true
+    @AppStorage("hasUploadedFirstBlog") private var hasUploadedFirstBlog = false
+    @State private var showFirstUploadEmailModal = false
+    @State private var newlyUploadedBlogKey: Int? = nil
     @State private var showSaveTipAlert = false
     @State private var showFirstSaveBanner = false
     @State private var showNewBlogExitConfirmation = false
@@ -254,6 +257,11 @@ struct RecapBlogPageView: View {
                     syncWithCloudIfNeeded()
                 }
             }
+            .sheet(isPresented: $showFirstUploadEmailModal) {
+                firstUploadEmailModalContent()
+                    .presentationDetents([.fraction(0.35), .medium])
+                    .presentationDragIndicator(.visible)
+            }
             .modifier(coreContentAlertsAndLifecycleModifier())
     }
 
@@ -424,6 +432,7 @@ struct RecapBlogPageView: View {
                         .aspectRatio(contentMode: .fill)
                         .frame(width: geo.size.width, height: geo.size.height)
                         .clipped()
+                        .brightness(-0.05)
                         .contentShape(Rectangle())
                         .onTapGesture {
                             coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
@@ -444,7 +453,7 @@ struct RecapBlogPageView: View {
                 }
 
                 // Title + duration overlay at center
-                VStack(spacing: 6) {
+                VStack(spacing: 12) {
                     if isEditMode {
                         Button { showTitleChange = true } label: {
                             HStack(spacing: 6) {
@@ -466,51 +475,43 @@ struct RecapBlogPageView: View {
                         }
                         .buttonStyle(.plain)
                         .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
-                    } else {
-                        Text(draft.title)
-                            .font(.system(size: 26, weight: .bold))
+                        
+                        Button {
+                            coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
+                            showCoverPhotoPicker = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "photo")
+                                    .font(.subheadline)
+                                Text("Change Cover")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                            }
                             .foregroundColor(.white)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.center)
-                            .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
+                    } else {
+                        VStack(spacing: 6) {
+                            Text(draft.title)
+                                .font(.system(size: 26, weight: .bold))
+                                .foregroundColor(.white)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                                .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
 
-                        Text(tripDurationText)
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.85))
-                            .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+                            Text(tripDurationText)
+                                .font(.subheadline)
+                                .foregroundColor(.white.opacity(0.85))
+                                .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+                        }
                     }
                 }
                 .padding(.horizontal, 24)
-
-                // Edit mode: change cover button (top right)
-                if isEditMode {
-                    VStack {
-                        HStack {
-                            Spacer()
-                            Button {
-                                coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
-                                showCoverPhotoPicker = true
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "photo")
-                                        .font(.caption)
-                                    Text("Change Cover")
-                                        .font(.caption)
-                                        .fontWeight(.medium)
-                                }
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.trailing, 16)
-                            .padding(.top, 8)
-                        }
-                        Spacer()
-                    }
-                }
 
                 if !isEditMode {
                     VStack {
@@ -530,7 +531,7 @@ struct RecapBlogPageView: View {
                                     .font(.system(size: 16, weight: .medium))
                                     .foregroundColor(.white)
                                     .frame(width: 40, height: 40)
-                                    .background(.ultraThinMaterial)
+                                    .background(Color.white.opacity(0.15).background(.ultraThinMaterial))
                                     .clipShape(Circle())
                                     .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
                             }
@@ -889,6 +890,12 @@ struct RecapBlogPageView: View {
             draft.days[dayIndex] = updatedDay
         }
         
+        // Fallback for cover photo if the place containing it was removed
+        let allIncludedPhotos = draft.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded)
+        if let currentCover = draft.selectedCoverPhotoIdentifier, !allIncludedPhotos.contains(where: { $0.localIdentifier == currentCover }) {
+            draft.selectedCoverPhotoIdentifier = allIncludedPhotos.compactMap(\.localIdentifier).first
+        }
+        
         createdRecapStore.saveBlogDetail(draft)
     }
 
@@ -914,6 +921,12 @@ struct RecapBlogPageView: View {
         updatedStop.photos[photoIdx].isIncluded = false
         updatedDay.placeStops[stopIdx] = updatedStop
         draft.days[dayIdx] = updatedDay
+
+        // Fallback for cover photo if the specific photo was removed
+        let allIncludedPhotos = draft.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded)
+        if let currentCover = draft.selectedCoverPhotoIdentifier, !allIncludedPhotos.contains(where: { $0.localIdentifier == currentCover }) {
+            draft.selectedCoverPhotoIdentifier = allIncludedPhotos.compactMap(\.localIdentifier).first
+        }
 
         createdRecapStore.saveBlogDetail(draft)
         if let placeKey = stop.visitedTimeDigitized, photo.cloudURL != nil {
@@ -1151,7 +1164,14 @@ struct RecapBlogPageView: View {
                     if isFirstCreation {
                         showNewBlogExitConfirmation = true
                     } else {
-                        showUnsavedChangesAlert = true
+                        if draftSnapshot != nil && draft == draftSnapshot {
+                            // No changes made, leave uninterrupted
+                            isEditMode = false
+                            dismiss()
+                        } else {
+                            // Changes were made
+                            showUnsavedChangesAlert = true
+                        }
                     }
                 } else {
                     dismiss()
@@ -1300,6 +1320,65 @@ struct RecapBlogPageView: View {
             .padding(.horizontal, 20)
             .padding(.top, 50)
             .transition(.opacity)
+        }
+    }
+
+    @ViewBuilder
+    private func firstUploadEmailModalContent() -> some View {
+        VStack(spacing: 24) {
+            Image(systemName: "envelope.circle.fill")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 60, height: 60)
+                .foregroundColor(.blue)
+
+            VStack(spacing: 8) {
+                Text("Your First Upload!")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.primary)
+
+                Text("Would you like us to email you a link so you can easily access your blog on the web?")
+                    .font(.body)
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.secondary)
+            }
+            
+            Button {
+                sendEmailToSelf()
+                showFirstUploadEmailModal = false
+            } label: {
+                Text("Send Link via Email")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .cornerRadius(12)
+            }
+            .padding(.horizontal, 16)
+            
+            Button("Not right now") {
+                showFirstUploadEmailModal = false
+            }
+            .font(.subheadline)
+            .foregroundColor(.secondary)
+        }
+        .padding(24)
+        .preferredColorScheme(.dark)
+    }
+
+    private func sendEmailToSelf() {
+        guard let key = newlyUploadedBlogKey,
+              let user = AuthService.shared.currentUser,
+              let username = user.username,
+              let url = SecureShareToken.shareURL(username: username, blogKey: key) else { return }
+        
+        let subject = "My First Blog on Bloggo!".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let body = "Here is the link to my first blog:\n\(url.absoluteString)".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let mailtoUrl = URL(string: "mailto:?subject=\(subject)&body=\(body)") {
+            UIApplication.shared.open(mailtoUrl)
         }
     }
 
@@ -1510,6 +1589,11 @@ struct RecapBlogPageView: View {
                     if let blogKey = await APIManager.shared.publishBlog(detail: snapshot) {
                         await MainActor.run {
                             createdRecapStore.setBlogKey(blogId: currentBlogId, blogKey: blogKey)
+                            if !hasUploadedFirstBlog {
+                                hasUploadedFirstBlog = true
+                                newlyUploadedBlogKey = blogKey
+                                showFirstUploadEmailModal = true
+                            }
                         }
                     }
                 }
@@ -1566,12 +1650,12 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
             } message: {
                 Text("Tap Save when you're done editing to keep your changes and unlock your map routes.")
             }
-            .alert("Save Before Leaving?", isPresented: $showUnsavedChangesAlert) {
+            .alert("Unsaved Changes", isPresented: $showUnsavedChangesAlert) {
                 Button("Yes") { saveDraft(); dismiss() }
                 Button("No", role: .destructive) { dismiss() }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("Would you like to save before leaving?")
+                Text("Do you want to save your changes?")
             }
             .alert("Save Before Leaving?", isPresented: $showNewBlogExitConfirmation) {
                 Button("Save Draft") {

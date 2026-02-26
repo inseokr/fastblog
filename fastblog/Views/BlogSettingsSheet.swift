@@ -30,30 +30,8 @@ struct BlogSettingsSheet: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    Button {
-                        showTitleChange = true
-                    } label: {
-                        Label("Change Blog Title", systemImage: "textformat")
-                    }
-                    Button {
-                        coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
-                        showCoverChange = true
-                    } label: {
-                        Label("Change Cover Photo", systemImage: "photo")
-                    }
-                    if onEditMode != nil {
-                        Button {
-                            onEditMode?()
-                            dismiss()
-                        } label: {
-                            Label("Edit Mode", systemImage: "pencil")
-                        }
-                    }
-                }
-
-                if hasCloudPhotos {
+            VStack {
+                List {
                     Section {
                         if onEditMode != nil {
                             Button {
@@ -75,28 +53,45 @@ struct BlogSettingsSheet: View {
                     }
 
                     Section {
-                        Button(role: .destructive) {
-                            showRemoveFromCloudConfirmation = true
+                        Button {
+                            showTitleChange = true
                         } label: {
-                            Label("Remove from Cloud", systemImage: "icloud.slash")
+                            Label("Change Blog Title", systemImage: "textformat")
                         }
-                    } footer: {
-                        Text("This will remove uploaded photos from the cloud. Your local blog and photos are not affected.")
+                        Button {
+                            coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
+                            showCoverChange = true
+                        } label: {
+                            Label("Change Cover Photo", systemImage: "photo")
+                        }
+                    }
+
+                    if hasCloudPhotos {
+                        Section {
+                            Button(role: .destructive) {
+                                showRemoveFromCloudConfirmation = true
+                            } label: {
+                                Label("Remove from Cloud", systemImage: "icloud.slash")
+                            }
+                        } footer: {
+                            Text("This will remove uploaded photos from the cloud. Your local blog and photos are not affected.")
+                        }
                     }
                 }
-
-                // Delete Blog — pinned to bottom
-                Divider()
-                Button(role: .destructive) {
+                
+                Button {
                     showDeleteConfirmation = true
                 } label: {
-                    Label("Delete Blog", systemImage: "trash")
+                    Text("Delete Blog")
+                        .font(.headline)
+                        .foregroundColor(.red)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .foregroundStyle(.red)
+                        .padding()
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .cornerRadius(12)
                 }
-                .padding(.horizontal)
-                .padding(.bottom, 8)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
             }
             .navigationTitle("Blog Settings")
             .navigationBarTitleDisplayMode(.inline)

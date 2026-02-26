@@ -610,6 +610,7 @@ struct BlogCard: View {
                                         .frame(width: proxy.size.width, height: proxy.size.height)
                                 }
                             }
+                            .brightness(-0.05)
                             
                             // Share Button overlay
                             if let key = blog.blogKey,
@@ -623,7 +624,7 @@ struct BlogCard: View {
                                         .font(.system(size: 14, weight: .semibold))
                                         .foregroundColor(.white)
                                         .padding(10)
-                                        .background(Color.black.opacity(0.4))
+                                        .background(Color.white.opacity(0.15).background(.ultraThinMaterial))
                                         .clipShape(Circle())
                                         .overlay(
                                             Circle()

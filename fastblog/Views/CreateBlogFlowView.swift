@@ -24,6 +24,8 @@ struct CreateBlogFlowView: View {
     /// Duration to show the Creating Recap animation before navigating home.
     private let creatingAnimationDuration: TimeInterval = 5.0
 
+    @State private var showExitConfirmation = false
+
     private enum Step {
         case title
         case cover
@@ -40,7 +42,7 @@ struct CreateBlogFlowView: View {
                     trip: trip,
                     coverTheme: flowCoverTheme.isEmpty ? trip.coverTheme : flowCoverTheme,
                     coverAssetIdentifier: $flowCoverAssetIdentifier,
-                    onDone: finishFromCover,
+                    onDone: { finishFromCover() },
                     primaryButtonTitle: existingBlogId != nil ? "Update" : nil
                 )
             case .creating:
@@ -86,6 +88,28 @@ struct CreateBlogFlowView: View {
                 step = .creating
             }
         }
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            if step == .title || step == .cover {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showExitConfirmation = true
+                    }
+                    .foregroundColor(.blue)
+                }
+            }
+        }
+        .alert("Save Before Leaving?", isPresented: $showExitConfirmation) {
+            Button("Save Draft") {
+                finishFromCover(asDraft: true)
+            }
+            Button("Don't Save", role: .destructive) {
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Do you want to save this blog as a draft before leaving?")
+        }
     }
 
     private func goToCover() {
@@ -93,7 +117,7 @@ struct CreateBlogFlowView: View {
     }
 
     /// Called when user taps Done on Cover Photo. For new blog: add blog, show Creating animation, then go to landing. For update: update and dismiss.
-    private func finishFromCover() {
+    private func finishFromCover(asDraft: Bool = false) {
         var modifiedTrip = trip
         modifiedTrip.title = flowTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? trip.defaultBlogTitle : flowTitle
         modifiedTrip.coverTheme = flowCoverTheme.isEmpty ? trip.coverTheme : flowCoverTheme
@@ -109,8 +133,13 @@ struct CreateBlogFlowView: View {
             }
         } else {
             createdRecapStore.addCreatedBlog(trip: modifiedTrip)
-            // Deferred to goToLanding() so the "Creating" view isn't dismissed immediately.
-            step = .creating
+            if asDraft {
+                // If saving as draft, we don't show the "Creating" animation, just go home
+                goToLanding()
+            } else {
+                // Deferred to goToLanding() so the "Creating" view isn't dismissed immediately.
+                step = .creating
+            }
         }
     }
 
