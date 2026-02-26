@@ -85,9 +85,9 @@ struct LandingView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
                 .padding(.bottom, 12)
-                Spacer(minLength: 40)
+                Spacer()
                 scanCTA
-                Spacer(minLength: 32)
+                Spacer()
                 recentRecapsSection
             }
         }
@@ -182,16 +182,6 @@ struct LandingView: View {
             showTrips = true
         } label: {
             VStack(spacing: 20) {
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.08))
-                        .frame(width: 220, height: 220)
-                    Circle()
-                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                        .frame(width: 220, height: 220)
-                    ScanningAnimationView(ringCount: 4, ringSpacing: 28, pulseDuration: 1.8)
-                        .frame(width: 200, height: 200)
-                }
                 // Both lines in same spot so they stay centered when cross-fading
                 ZStack {
                     Text("Tap to Scan")
@@ -208,6 +198,17 @@ struct LandingView: View {
                 .frame(maxWidth: .infinity)
                 .animation(.easeInOut(duration: 0.5), value: ctaIsAlternate)
                 .animation(.easeInOut(duration: 0.5), value: ctaOpacity)
+
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(width: 220, height: 220)
+                    Circle()
+                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                        .frame(width: 220, height: 220)
+                    ScanningAnimationView(ringCount: 4, ringSpacing: 28, pulseDuration: 1.8)
+                        .frame(width: 200, height: 200)
+                }
             }
         }
         .buttonStyle(.plain)
@@ -402,17 +403,18 @@ private struct SettingsView: View {
                         }
                         .padding(.vertical, 4)
 
-                        Button(role: .destructive) {
+                        Button {
                             authService.signOut()
                         } label: {
                             Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                                .foregroundColor(.blue)
                         }
 
                         Button {
                             showDeleteAccountAlert = true
                         } label: {
                             Label("Delete Account", systemImage: "trash")
-                                .foregroundColor(.gray)
+                                .foregroundColor(.red)
                         }
                         .alert("Delete Account?", isPresented: $showDeleteAccountAlert) {
                             Button("Delete", role: .destructive) {

@@ -7,6 +7,13 @@ import SwiftUI
 import MapKit
 import Combine
 
+private struct TitleMinYPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = .greatestFiniteMagnitude
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = min(value, nextValue())
+    }
+}
+
 struct RecapBlogPageView: View {
     let blogId: UUID
     let initialTrip: TripDraft?
@@ -43,6 +50,7 @@ struct RecapBlogPageView: View {
     @State private var showFirstSaveBanner = false
     @State private var showNewBlogExitConfirmation = false
     @State private var showUploadPromptAlert = false
+    @State private var showNavBarTitle = false
 
     // Undo State
     @State private var lastUndoAction: UndoAction?
@@ -174,7 +182,7 @@ struct RecapBlogPageView: View {
             .navigationBarBackButtonHidden(true)
             .navigationTitle(navTitle)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarBackground(!isEditMode && showNavBarTitle ? .visible : .hidden, for: .navigationBar)
             .toolbar { toolbarContent }
             .sheet(isPresented: $showShareSheet) {
                 ShareSheet(items: shareItems)
@@ -328,12 +336,19 @@ struct RecapBlogPageView: View {
                                 .id("map-anchor")
                         }
                         timelineContent
-                        
+
                         // Spacer for bottom filter + Undo button
                         Color.clear
                             .frame(height: Self.dayFilterApproxHeight + 80)
                     }
                     .background(Color.black)
+                }
+                .coordinateSpace(name: "scroll")
+                .onPreferenceChange(TitleMinYPreferenceKey.self) { minY in
+                    let shouldShow = minY < 0
+                    if shouldShow != showNavBarTitle {
+                        showNavBarTitle = shouldShow
+                    }
                 }
                 .background(Color.black)
                 .ignoresSafeArea(edges: isKeyboardVisible ? [] : .bottom)
@@ -428,6 +443,14 @@ struct RecapBlogPageView: View {
                     .foregroundColor(.white)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
+                    .background(
+                        GeometryReader { titleGeo in
+                            Color.clear.preference(
+                                key: TitleMinYPreferenceKey.self,
+                                value: titleGeo.frame(in: .named("scroll")).maxY
+                            )
+                        }
+                    )
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 16)
                     .padding(.trailing, 32)
@@ -455,12 +478,12 @@ struct RecapBlogPageView: View {
                 }
 
                 // Dimmed overlay — stronger in edit mode for readability
-                Color.black.opacity(isEditMode ? 0.45 : 0.0)
+                Color.black.opacity(isEditMode ? 0.45 : 0.25)
 
                 // Gradient overlay for text legibility (view mode)
                 if !isEditMode {
                     LinearGradient(
-                        colors: [Color.black.opacity(0.5), Color.clear, Color.black.opacity(0.3)],
+                        colors: [Color.black.opacity(0.55), Color.black.opacity(0.1), Color.black.opacity(0.35)],
                         startPoint: .bottom,
                         endPoint: .top
                     )
@@ -517,21 +540,28 @@ struct RecapBlogPageView: View {
                                 .lineLimit(2)
                                 .multilineTextAlignment(.center)
                                 .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
+                                .background(
+                                    GeometryReader { titleGeo in
+                                        Color.clear.preference(
+                                            key: TitleMinYPreferenceKey.self,
+                                            value: titleGeo.frame(in: .named("scroll")).maxY
+                                        )
+                                    }
+                                )
 
                             Text(tripDurationText)
                                 .font(.subheadline)
-                                .foregroundColor(.white.opacity(0.85))
-                                .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
-                        }
-                    }
-                }
-                .padding(.horizontal, 24)
+                                .foregroundColor(.white.opacity(0.92))
+                                .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
 
-                if !isEditMode {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
+                            let placeCount = draft.days.flatMap(\.placeStops).count
+                            if placeCount > 0 {
+                                Text("\(placeCount) moment\(placeCount == 1 ? "" : "s")")
+                                    .font(.subheadline)
+                                    .foregroundColor(.white.opacity(0.92))
+                                    .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                            }
+
                             Button {
                                 print("SHARE BUTTON CLICKED in recap blog page. blogIsInCloud: \(blogIsInCloud)")
                                 if blogIsInCloud {
@@ -541,16 +571,22 @@ struct RecapBlogPageView: View {
                                     print("Setting showUploadPromptAlert = true")
                                 }
                             } label: {
-                                Image(systemName: "square.and.arrow.up")
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundColor(.white)
-                                    .frame(width: 40, height: 40)
-                                    .background(Color.white.opacity(0.15).background(.ultraThinMaterial))
-                                    .clipShape(Circle())
-                                    .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+                                HStack(spacing: 6) {
+                                    Image(systemName: "square.and.arrow.up")
+                                        .font(.system(size: 14, weight: .medium))
+                                    Text("Share")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(Color.white.opacity(0.15).background(.ultraThinMaterial))
+                                .clipShape(Capsule())
+                                .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
                             }
                             .buttonStyle(.plain)
-                            .padding(.trailing, 16)
+                            .padding(.top, 4)
                             .alert("Upload to Cloud?", isPresented: $showUploadPromptAlert) {
                                 Button("Yes") {
                                     uploadBlogPhotos()
@@ -560,9 +596,10 @@ struct RecapBlogPageView: View {
                                 Text("This blog needs to be uploaded to the cloud before you can share a link. Would you like to upload it now?")
                             }
                         }
-                        .padding(.bottom, 20)
                     }
                 }
+                .padding(.horizontal, 24)
+
             }
         }
         .frame(height: screenHeight * 0.55)
@@ -1163,8 +1200,11 @@ struct RecapBlogPageView: View {
         let hasBeenSaved = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt != nil
         if !hasBeenSaved {
             return "Draft"
+        } else if isEditMode {
+            return "Edit Mode"
         } else {
-            return isEditMode ? "Edit Mode" : "Recap Blog"
+            // Empty — the .principal toolbar item handles the title in read-only mode
+            return ""
         }
     }
 
@@ -1200,6 +1240,14 @@ struct RecapBlogPageView: View {
                 Image(systemName: "chevron.left")
                     .font(.body.weight(.semibold))
             }
+        }
+        ToolbarItem(placement: .principal) {
+            Text(draft.title)
+                .font(.headline)
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .opacity(!isEditMode && showNavBarTitle ? 1 : 0)
+                .animation(.easeInOut(duration: 0.2), value: showNavBarTitle)
         }
         ToolbarItem(placement: .topBarTrailing) {
             if isEditMode {
