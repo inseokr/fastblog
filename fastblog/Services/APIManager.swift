@@ -199,14 +199,17 @@ final class APIManager {
             throw APIError.invalidURL
         }
 
-        // JPEG Quality: 0.72 as per new Free Tier rules
-        guard let imageData = image.jpegData(compressionQuality: 0.72) else {
+        // JPEG Quality: 0.92 for high-quality web/large-screen display
+        guard let imageData = image.jpegData(compressionQuality: 0.92) else {
             throw APIError.serializationFailed
         }
 
-        // Build multipart/form-data body — field name MUST be "photo"
+        // Build multipart/form-data body — field name MUST be "photo"; backend accepts quality (1–100)
         let boundary = UUID().uuidString
         var body = Data()
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"quality\"\r\n\r\n".utf8))
+        body.append(Data("50\r\n".utf8))
         body.append(Data("--\(boundary)\r\n".utf8))
         body.append(Data("Content-Disposition: form-data; name=\"photo\"; filename=\"\(filename)\"\r\n".utf8))
         body.append(Data("Content-Type: image/jpeg\r\n\r\n".utf8))
