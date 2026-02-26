@@ -184,25 +184,43 @@ struct RemovedPlacesSheet: View {
         return hasNote || hasPhotoCaption
     }
 
+    /// Returns the earliest photo timestamp for a place stop, used for chronological ordering.
+    private func earliestTimestamp(of stop: PlaceStop) -> Date {
+        stop.photos.map(\.timestamp).min() ?? .distantFuture
+    }
+
+    /// Inserts a place stop into the day's placeStops array at the correct
+    /// chronological position based on its earliest photo timestamp.
+    private func insertChronologically(_ stop: PlaceStop, into placeStops: inout [PlaceStop]) {
+        let stopTime = earliestTimestamp(of: stop)
+        if let insertIndex = placeStops.firstIndex(where: { earliestTimestamp(of: $0) > stopTime }) {
+            placeStops.insert(stop, at: insertIndex)
+        } else {
+            placeStops.append(stop)
+        }
+    }
+
     private func restore(entry: RemovedPlaceEntry) {
         let feedbackGenerator = UIImpactFeedbackGenerator(style: .medium)
         feedbackGenerator.impactOccurred()
 
+        // Preserve the current cover photo so restoration doesn't change it
+        let currentCover = draft.selectedCoverPhotoIdentifier
+
         // Remove from the removed list
         draft.removedPlaceStops.removeAll { $0.stop.id == entry.stop.id }
 
-        // Find the original day and append to it
+        // Find the original day and insert at chronological position
         if let dayIdx = draft.days.firstIndex(where: { $0.id == entry.dayId }) {
-            draft.days[dayIdx].placeStops.append(entry.stop)
-        } else {
-            // The original day no longer exists — find a day with the same dayIndex
-            if let dayIdx = draft.days.firstIndex(where: { $0.dayIndex == entry.dayIndex }) {
-                draft.days[dayIdx].placeStops.append(entry.stop)
-            } else if !draft.days.isEmpty {
-                // Fallback: append to the last available day
-                draft.days[draft.days.count - 1].placeStops.append(entry.stop)
-            }
+            insertChronologically(entry.stop, into: &draft.days[dayIdx].placeStops)
+        } else if let dayIdx = draft.days.firstIndex(where: { $0.dayIndex == entry.dayIndex }) {
+            insertChronologically(entry.stop, into: &draft.days[dayIdx].placeStops)
+        } else if !draft.days.isEmpty {
+            insertChronologically(entry.stop, into: &draft.days[draft.days.count - 1].placeStops)
         }
+
+        // Restore cover photo to what it was before
+        draft.selectedCoverPhotoIdentifier = currentCover
 
         onRestore()
     }
