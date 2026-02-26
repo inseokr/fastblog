@@ -425,7 +425,18 @@ struct ProfileHeroSection: View {
         .sheet(isPresented: $showPhotoViewer) {
             ProfilePhotoViewer(
                 customProfileImageData: $customProfileImageData,
-                onSave: { data in authService.profileImageData = data }
+                onSave: { data in
+                    authService.profileImageData = data
+                    if let data, let userId = authService.currentUser?.id, let image = UIImage(data: data) {
+                        Task {
+                            do {
+                                _ = try await APIManager.shared.uploadProfilePicture(userId: userId, image: image)
+                            } catch {
+                                print("Profile picture upload failed: \(error)")
+                            }
+                        }
+                    }
+                }
             )
             .environmentObject(authService)
             .presentationDragIndicator(.visible)

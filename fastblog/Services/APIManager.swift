@@ -293,6 +293,77 @@ final class APIManager {
         return try await uploadPhoto(image: image, filename: filename)
     }
 
+    /// Uploads the user's profile picture (POST /profile/:user_id/file_upload on LS_API).
+    /// Backend expects multipart field name "file_name". Returns the server path on success.
+    func uploadProfilePicture(userId: String, image: UIImage) async throws -> String {
+        guard let url = URL(string: baseURL + "/profile/\(userId)/file_upload") else {
+            throw APIError.invalidURL
+        }
+
+        guard let imageData = image.jpegData(compressionQuality: 0.92) else {
+            throw APIError.serializationFailed
+        }
+
+        let filename = "profile_\(userId).jpg"
+        let boundary = UUID().uuidString
+        var body = Data()
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"file_name\"; filename=\"\(filename)\"\r\n".utf8))
+        body.append(Data("Content-Type: image/jpeg\r\n\r\n".utf8))
+        body.append(imageData)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        if let token = AuthService.shared.currentJwtToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        request.httpBody = body
+
+        print("🌐 [POST] \(baseURL)/profile/\(userId)/file_upload — profile picture (\(imageData.count) bytes)")
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw APIError.networkError(error)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            var errorMessage = "Profile picture upload failed."
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                errorMessage = (json["message"] as? String) ?? (json["error"] as? String) ?? errorMessage
+            }
+            throw APIError.httpError(statusCode: httpResponse.statusCode, message: errorMessage)
+        }
+
+        struct ProfileUploadResponse: Decodable {
+            let path: String?
+            let result: String?
+        }
+
+        let decoded: ProfileUploadResponse
+        do {
+            decoded = try JSONDecoder().decode(ProfileUploadResponse.self, from: data)
+        } catch {
+            throw APIError.decodingFailed(error)
+        }
+
+        guard decoded.result == "OK", let path = decoded.path, !path.isEmpty else {
+            throw APIError.invalidResponse
+        }
+
+        print("   ✅ Profile picture uploaded → \(path)")
+        return path
+    }
+
     // MARK: - Blog Creation (Linkedspaces / Pocketverse)
 
     /// Digitized time format for API: "2026:01:06 18:57:13" (yyyy:MM:dd HH:mm:ss). Timezone is the photo's capture location so the time reflects where it was taken.
