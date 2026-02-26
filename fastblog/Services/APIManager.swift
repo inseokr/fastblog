@@ -161,6 +161,32 @@ final class APIManager {
         return try await request(endpoint: endpoint, method: "GET", body: nil, requiresAuth: requiresAuth)
     }
 
+    // MARK: - User Cloud Storage
+
+    /// Response from GET /user/cloudStorage (authenticated user's cloud storage usage).
+    struct CloudStorageUsageResponse: Decodable {
+        let result: String
+        let cloudStorageUsage: CloudStorageUsageItem?
+    }
+
+    /// Current cloud storage usage for the authenticated user.
+    struct CloudStorageUsageItem: Decodable {
+        let totalBytes: Int64
+        let totalMB: Double
+        let photoCount: Int
+        /// ISO date string or null from server.
+        let lastUpdated: String?
+    }
+
+    /// Fetches the authenticated user's cloud storage usage.
+    func fetchCloudStorageUsage() async throws -> CloudStorageUsageItem {
+        let response: CloudStorageUsageResponse = try await get(endpoint: "/user/cloudStorage")
+        guard response.result == "OK", let usage = response.cloudStorageUsage else {
+            throw APIError.invalidResponse
+        }
+        return usage
+    }
+
     // MARK: - File Server Upload
 
     /// Uploads a UIImage to the file server as a compressed JPEG.

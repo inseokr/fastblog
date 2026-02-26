@@ -357,6 +357,11 @@ private struct SettingsView: View {
     // Per-user profile photo — loaded from authService on appear.
     @State private var customProfileImageData: Data?
 
+    // Cloud storage usage — fetched when Settings is shown and user is signed in.
+    @State private var cloudStorageUsage: APIManager.CloudStorageUsageItem?
+    @State private var cloudStorageLoading = false
+    @State private var cloudStorageError: String?
+
     var body: some View {
         NavigationStack {
             List {
@@ -440,6 +445,33 @@ private struct SettingsView: View {
                         Text("Your recaps sync to the cloud and can be edited on web.")
                     } else {
                         Text("Sign in to back up your recaps, access them on web, and restore Pro.")
+                    }
+                }
+
+                // Cloud Usage — only when signed in
+                if authService.isSignedIn {
+                    Section {
+                        if cloudStorageLoading {
+                            HStack {
+                                ProgressView()
+                                Text("Loading…")
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                        } else if let error = cloudStorageError {
+                            Text(error)
+                                .foregroundColor(.secondary)
+                        } else if let usage = cloudStorageUsage {
+                            LabeledContent("Storage used", value: String(format: "%.2f MB", usage.totalMB))
+                            LabeledContent("Photos", value: "\(usage.photoCount)")
+                            if let updated = usage.lastUpdated, !updated.isEmpty {
+                                LabeledContent("Last updated", value: formatCloudStorageDate(updated))
+                            }
+                        }
+                    } header: {
+                        Text("Cloud Usage")
+                    } footer: {
+                        Text("Storage used by your recap photos in the cloud.")
                     }
                 }
 
@@ -531,11 +563,54 @@ private struct SettingsView: View {
             }
             .onAppear {
                 customProfileImageData = authService.profileImageData
+                loadCloudStorageIfNeeded()
             }
             .onChange(of: authService.currentUser?.id) { _, _ in
                 customProfileImageData = authService.profileImageData
+                loadCloudStorageIfNeeded()
             }
         }
+    }
+
+    private func loadCloudStorageIfNeeded() {
+        guard authService.isSignedIn else {
+            cloudStorageUsage = nil
+            cloudStorageError = nil
+            return
+        }
+        cloudStorageLoading = true
+        cloudStorageError = nil
+        Task {
+            do {
+                let usage = try await APIManager.shared.fetchCloudStorageUsage()
+                await MainActor.run {
+                    cloudStorageUsage = usage
+                    cloudStorageError = nil
+                }
+            } catch {
+                await MainActor.run {
+                    cloudStorageUsage = nil
+                    cloudStorageError = error.localizedDescription
+                }
+            }
+            await MainActor.run {
+                cloudStorageLoading = false
+            }
+        }
+    }
+
+    private func formatCloudStorageDate(_ isoString: String) -> String {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = iso.date(from: isoString) {
+            return date.formatted(date: .abbreviated, time: .shortened)
+        }
+        let isoNoFrac = ISO8601DateFormatter()
+        isoNoFrac.formatOptions = [.withInternetDateTime]
+        if let date = isoNoFrac.date(from: isoString) {
+            return date.formatted(date: .abbreviated, time: .shortened)
+        }
+        return isoString
     }
 }
 
