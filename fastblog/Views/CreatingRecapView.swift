@@ -11,6 +11,9 @@ struct CreatingRecapView: View {
     @State private var assembledStep: Int = 0
     @State private var pulseScale: CGFloat = 1
     @State private var stepLabelIndex: Int = 0
+    @State private var colorProgress: CGFloat = 0
+
+    private let navyBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
 
     private let stepLabels = [
         "Selecting your photos…",
@@ -20,8 +23,11 @@ struct CreatingRecapView: View {
 
     var body: some View {
         ZStack {
-            Color(uiColor: .systemGroupedBackground)
-                .ignoresSafeArea()
+            ZStack {
+                Color(uiColor: .systemGroupedBackground)
+                navyBlue.opacity(colorProgress)
+            }
+            .ignoresSafeArea()
 
             VStack(spacing: 32) {
                 buildingAnimation
@@ -102,6 +108,11 @@ struct CreatingRecapView: View {
     }
 
     private func startAnimations() {
+        // Background slowly transitions to navy blue
+        withAnimation(.easeIn(duration: 4.5)) {
+            colorProgress = 1
+        }
+
         // Progress ring fills over ~1.8s
         withAnimation(.easeInOut(duration: 1.8)) {
             ringTrim = 1

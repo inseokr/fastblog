@@ -185,8 +185,13 @@ struct ProfilePageView: View {
         .allowsHitTesting(true)
         }
         .background(Color(uiColor: .systemBackground))
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Bloggo")
+                    .font(.system(size: 22, weight: .bold))
+            }
             if authStateManager.isLoggedIn {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
