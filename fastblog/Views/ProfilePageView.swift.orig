@@ -213,6 +213,16 @@ struct ProfilePageView: View {
             ProfileManagementView()
                 .environmentObject(createdRecapStore)
         }
+        .alert("Upload to Cloud?", isPresented: $showUploadPromptAlert) {
+            Button("Yes") {
+                if let blog = blogToUpload {
+                    selectedBlogToOpen = blog
+                }
+            }
+            Button("No", role: .cancel) { }
+        } message: {
+            Text("This blog needs to be uploaded to the cloud before you can share a link. Open the blog to upload it?")
+        }
         .onAppear {
             viewModel.loadUnsavedTrips()
         }
@@ -258,16 +268,6 @@ struct ProfilePageView: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal, 20)
         .padding(.bottom, 12)
-        .alert("Upload to Cloud?", isPresented: $showUploadPromptAlert) {
-            Button("Yes") {
-                if let blog = blogToUpload {
-                    selectedBlogToOpen = blog
-                }
-            }
-            Button("No", role: .cancel) { }
-        } message: {
-            Text("This blog needs to be uploaded to the cloud before you can share a link. Open the blog to upload it?")
-        }
     }
 
 
@@ -631,6 +631,7 @@ struct BlogCard: View {
                                 .padding(ProfileTheme.Spacing.sm)
                             } else {
                                 Button {
+                                    onShareUnuploaded?()
                                 } label: {
                                     Image(systemName: "square.and.arrow.up")
                                         .font(.system(size: 14, weight: .semibold))
@@ -645,10 +646,6 @@ struct BlogCard: View {
                                 }
                                 .padding(ProfileTheme.Spacing.sm)
                                 .buttonStyle(.plain)
-                                .highPriorityGesture(TapGesture().onEnded {
-                                    print("Share button tapped via HighPriorityGesture!")
-                                    onShareUnuploaded?()
-                                })
                             }
                         }
                     }
