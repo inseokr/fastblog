@@ -86,6 +86,22 @@ struct RecapBlogPageView: View {
         GeometryReader { screenGeo in
             bodyContent(screenHeight: screenGeo.size.height)
         }
+        .confirmationDialog(
+            "Do you want to save this blog as a draft before leaving?",
+            isPresented: $showNewBlogExitConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Save Draft") {
+                createdRecapStore.saveBlogDetail(draft, asDraft: true)
+                createdRecapStore.showDraftSavedToast = true
+                dismiss()
+            }
+            Button("Don't Save", role: .destructive) {
+                createdRecapStore.deleteBlog(sourceTripId: blogId)
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) { }
+        }
     }
 
     private func bodyContent(screenHeight: CGFloat) -> some View {
@@ -270,13 +286,11 @@ struct RecapBlogPageView: View {
             showSaveTipAlert: $showSaveTipAlert,
             showFirstTimeSaveTip: $showFirstTimeSaveTip,
             showUnsavedChangesAlert: $showUnsavedChangesAlert,
-            showNewBlogExitConfirmation: $showNewBlogExitConfirmation,
             draftSnapshot: $draftSnapshot,
             cancellables: $cancellables,
             isKeyboardVisible: $isKeyboardVisible,
             isEditMode: isEditMode,
             draft: draft,
-            blogId: blogId,
             saveDraft: saveDraft,
             loadDraftIfNeeded: loadDraftIfNeeded,
             checkFirstTimeTip: checkFirstTimeTip,
@@ -1158,22 +1172,28 @@ struct RecapBlogPageView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             Button {
+                print("🔙 Back button tapped — isEditMode: \(isEditMode)")
                 if isEditMode {
                     let isFirstCreation = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
-                    
+                    print("🔙 isFirstCreation: \(isFirstCreation)")
+
                     if isFirstCreation {
+                        print("🔙 Setting showNewBlogExitConfirmation = true")
                         showNewBlogExitConfirmation = true
                     } else {
                         if draftSnapshot != nil && draft == draftSnapshot {
                             // No changes made, leave uninterrupted
+                            print("🔙 No changes, dismissing")
                             isEditMode = false
                             dismiss()
                         } else {
                             // Changes were made
+                            print("🔙 Changes detected, showing unsaved alert")
                             showUnsavedChangesAlert = true
                         }
                     }
                 } else {
+                    print("🔙 View mode, dismissing")
                     dismiss()
                 }
             } label: {
@@ -1629,13 +1649,11 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
     @Binding var showSaveTipAlert: Bool
     @Binding var showFirstTimeSaveTip: Bool
     @Binding var showUnsavedChangesAlert: Bool
-    @Binding var showNewBlogExitConfirmation: Bool
     @Binding var draftSnapshot: RecapBlogDetail?
     @Binding var cancellables: Set<AnyCancellable>
     @Binding var isKeyboardVisible: Bool
     var isEditMode: Bool
     var draft: RecapBlogDetail
-    var blogId: UUID
     var saveDraft: () -> Void
     var loadDraftIfNeeded: () -> Void
     var checkFirstTimeTip: () -> Void
@@ -1656,20 +1674,6 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
                 Button("Cancel", role: .cancel) { }
             } message: {
                 Text("Do you want to save your changes?")
-            }
-            .alert("Save Before Leaving?", isPresented: $showNewBlogExitConfirmation) {
-                Button("Save Draft") {
-                    createdRecapStore.saveBlogDetail(draft, asDraft: true)
-                    createdRecapStore.showDraftSavedToast = true
-                    dismiss()
-                }
-                Button("Don't Save", role: .destructive) {
-                    createdRecapStore.deleteBlog(sourceTripId: blogId)
-                    dismiss()
-                }
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("Do you want to save this blog as a draft before leaving?")
             }
             .onAppear {
                 if createdRecapStore.isLoading {
