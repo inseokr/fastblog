@@ -6,6 +6,18 @@
 import CoreLocation
 import Foundation
 
+/// Stores a place stop that was removed by the user, preserving all caption data so it can be restored.
+struct RemovedPlaceEntry: Identifiable, Equatable, Codable, Sendable {
+    /// Matches the original `PlaceStop.id`.
+    var id: UUID { stop.id }
+    /// The day this stop originally belonged to (used to restore it to the correct day).
+    let dayId: UUID
+    /// Fallback dayIndex if the parent day was also removed.
+    let dayIndex: Int
+    /// Full stop including `noteText` and per-photo `caption` fields.
+    var stop: PlaceStop
+}
+
 /// Created blog content ready to display and edit. Editable draft; Save writes back to store.
 /// Trip title is set once on creation (default "Trip To [City]"); user can edit and Save persists it.
 /// Cover photo selection is stored in selectedCoverPhotoIdentifier (persisted with draft).
@@ -17,14 +29,20 @@ struct RecapBlogDetail: Identifiable, Equatable, Codable, Sendable {
     var selectedCoverPhotoIdentifier: String?
     /// Country for this trip (from geocoding); used for Profile country grouping.
     var countryName: String?
+    /// Server-assigned blog key after a successful upload via createBlogWithPlaces.
+    var blogKey: Int?
+    /// Places the user has removed from the blog. Preserved so they can be restored later.
+    var removedPlaceStops: [RemovedPlaceEntry]
 
-    init(id: UUID = UUID(), title: String, days: [RecapBlogDay], coverTheme: String = "default", selectedCoverPhotoIdentifier: String? = nil, countryName: String? = nil) {
+    init(id: UUID = UUID(), title: String, days: [RecapBlogDay], coverTheme: String = "default", selectedCoverPhotoIdentifier: String? = nil, countryName: String? = nil, blogKey: Int? = nil, removedPlaceStops: [RemovedPlaceEntry] = []) {
         self.id = id
         self.title = title
         self.days = days
         self.coverTheme = coverTheme
         self.selectedCoverPhotoIdentifier = selectedCoverPhotoIdentifier
         self.countryName = countryName
+        self.blogKey = blogKey
+        self.removedPlaceStops = removedPlaceStops
     }
 }
 
@@ -68,6 +86,11 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
     var representativeLocation: PhotoCoordinate?
     var photos: [RecapPhoto]
     var noteText: String?
+    /// Server-assigned placeIndex in user.placeVisitHistory. Set after successful blog upload.
+    var cloudPlaceIndex: Int?
+    /// Digitized timestamp of the first included photo (EXIF format "yyyy:MM:dd HH:mm:ss").
+    /// Used as a cloud deduplication and update key alongside cloudPlaceIndex.
+    var visitedTimeDigitized: String?
 
     init(
         id: UUID = UUID(),
@@ -76,7 +99,9 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         placeSubtitle: String? = nil,
         representativeLocation: PhotoCoordinate? = nil,
         photos: [RecapPhoto],
-        noteText: String? = nil
+        noteText: String? = nil,
+        cloudPlaceIndex: Int? = nil,
+        visitedTimeDigitized: String? = nil
     ) {
         self.id = id
         self.orderIndex = orderIndex
@@ -85,6 +110,8 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         self.representativeLocation = representativeLocation
         self.photos = photos
         self.noteText = noteText
+        self.cloudPlaceIndex = cloudPlaceIndex
+        self.visitedTimeDigitized = visitedTimeDigitized
     }
 
     var coverPhoto: RecapPhoto? {

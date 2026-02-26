@@ -51,3 +51,6 @@ playground.xcworkspace
 *.ipa
 *.dSYM.zip
 *.dSYM
+
+# Secrets — never commit real keys
+Secrets.xcconfig

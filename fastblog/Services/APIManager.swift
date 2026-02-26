@@ -316,8 +316,9 @@ final class APIManager {
 
     /// Creates a blog with places on the Pocketverse backend.
     /// Maps RecapBlogDetail → Linkedspaces payload format and POSTs to /placeVisitHistory/createBlogWithPlaces.
-    /// - Returns: `CreateBlogResponse` containing the server-assigned `blogKey`.
-    func createBlogWithPlaces(username: String, detail: RecapBlogDetail) async throws -> CreateBlogResponse {
+    /// - Returns: A tuple of the server response and a per-stop mapping (dayIdx, stopIdx, visitedTimeDigitized)
+    ///   in the same order as the placeList payload, used to write cloud keys back to local storage.
+    fileprivate func createBlogWithPlaces(username: String, detail: RecapBlogDetail) async throws -> (CreateBlogResponse, [PlaceStopBuildInfo]) {
         // Collect all timestamps to derive start/end
         let allPhotos = detail.days.flatMap(\.placeStops).flatMap { $0.photos.filter(\.isIncluded) }
         let timestamps = allPhotos.map { $0.timestamp }
@@ -351,10 +352,11 @@ final class APIManager {
         let utc = TimeZone(identifier: "UTC")!
         let defaultDigitizedTime = "1970:01:01 00:00:00"
 
-        // Build placeList from all days/stops
+        // Build placeList from all days/stops, tracking which (dayIdx, stopIdx) each entry maps to.
         var placeList: [[String: Any]] = []
-        for day in detail.days {
-            for stop in day.placeStops {
+        var placeStopMapping: [PlaceStopBuildInfo] = []
+        for (dayIdx, day) in detail.days.enumerated() {
+            for (stopIdx, stop) in day.placeStops.enumerated() {
                 let includedPhotos = stop.photos.filter(\.isIncluded)
                 guard !includedPhotos.isEmpty else { continue }
 
@@ -406,6 +408,11 @@ final class APIManager {
                     "categories": ["unknown"],
                     "photoList": photoList
                 ]
+                placeStopMapping.append(PlaceStopBuildInfo(
+                    dayIdx: dayIdx,
+                    stopIdx: stopIdx,
+                    visitedTimeDigitized: placeVisitedTimeDigitized
+                ))
                 placeList.append(place)
             }
         }
@@ -422,12 +429,13 @@ final class APIManager {
         ]
 
         let body = try JSONSerialization.data(withJSONObject: payload)
-        return try await request(
+        let response: CreateBlogResponse = try await request(
             endpoint: "/placeVisitHistory/createBlogWithPlaces",
             method: "POST",
             body: body,
             requiresAuth: true
         )
+        return (response, placeStopMapping)
     }
 
     /// Uploads a cover photo for a blog, then notifies the server.
@@ -447,6 +455,36 @@ final class APIManager {
     }
 
     /// Sets the privacy of a blog on the Pocketverse backend.
+    func updateBlogTitle(blogKey: Int, title: String) async throws {
+        struct Payload: Encodable { let blogKey: Int; let title: String }
+        let _: GenericResponse = try await post(endpoint: "/trips/update-title", body: Payload(blogKey: blogKey, title: title))
+    }
+
+    func deleteBlogFromCloud(blogKey: Int) async throws {
+        struct Payload: Encodable { let blogKey: Int }
+        let _: GenericResponse = try await post(endpoint: "/trips/delete", body: Payload(blogKey: blogKey))
+    }
+
+    /// Updates the cover photo URI for a blog on the backend.
+    func updateCoverPhoto(blogKey: Int, photoUri: String) async throws {
+        struct Payload: Encodable { let blogKey: Int; let photoUri: String }
+        let _: GenericResponse = try await post(endpoint: "/trips/update-cover-photo", body: Payload(blogKey: blogKey, photoUri: photoUri))
+    }
+
+    /// Uploads a photo asset and sets it as the blog's cover photo.
+    func uploadAndUpdateCoverPhoto(blogKey: Int, assetIdentifier: String) async throws {
+        let cloudURL = try await uploadPhoto(assetIdentifier: assetIdentifier)
+        try await updateCoverPhoto(blogKey: blogKey, photoUri: cloudURL)
+        print("✅ Cover photo updated for blogKey=\(blogKey)")
+    }
+
+    /// Updates the place name on the backend.
+    func updatePlaceName(visitedTimeDigitized: String, placeName: String) async throws {
+        struct Payload: Encodable { let visitedTimeDigitized: String; let placeName: String }
+        let _: GenericResponse = try await post(endpoint: "/placeVisitHistory/updatePlaceName", body: Payload(visitedTimeDigitized: visitedTimeDigitized, placeName: placeName))
+        print("✅ Place name updated: '\(placeName)' for key=\(visitedTimeDigitized)")
+    }
+
     func setBlogPrivacy(blogKey: Int, level: String = "public") async throws {
         let payload: [String: Any] = ["blogKey": blogKey, "level": level]
         let body = try JSONSerialization.data(withJSONObject: payload)
@@ -457,6 +495,92 @@ final class APIManager {
             requiresAuth: true
         )
     }
+
+    /// Updates place-level or photo-level story on the backend (placeVisitHistory).
+    /// - Parameters:
+    ///   - placeKey: visitedTimeDigitized for the place.
+    ///   - storyText: The story/caption text.
+    ///   - photoIndex: If nil, updates place-level story; if set, updates that photo's story (index in filtered/included list).
+    ///   - photoIndexType: "filtered" when photoIndex is index in included photos; "all" for full photoList index. Default "filtered".
+    func updateStory(placeKey: String, storyText: String, photoIndex: Int? = nil, photoIndexType: String = "filtered") async throws {
+        var payload: [String: Any] = [
+            "placeKey": placeKey,
+            "storyText": storyText
+        ]
+        if let idx = photoIndex {
+            payload["photoIndex"] = idx
+            payload["photoIndexType"] = photoIndexType
+        }
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let _: GenericResponse = try await request(
+            endpoint: "/placeVisitHistory/story",
+            method: "POST",
+            body: body,
+            requiresAuth: true
+        )
+    }
+
+    /// Updates a single photo's inclusion state on the backend.
+    /// - Parameters:
+    ///   - placeKey: The `visitedTimeDigitized` of the containing place in placeVisitHistory.
+    ///   - photo: The photo to add or delete (must have a cloudURL).
+    ///   - operation: `"add"` to re-include, `"delete"` to exclude.
+    func updatePhoto(placeKey: String, photo: RecapPhoto, operation: String) async throws {
+        guard let cloudURL = photo.cloudURL else {
+            print("⚠️ updatePhoto: photo has no cloudURL — skipping")
+            return
+        }
+
+        // Recompute digitizedTime the same way createBlogWithPlaces does so the
+        // backend can locate the correct entry in the place's photoList.
+        let digitizedTime: String
+        if let assetId = photo.localIdentifier,
+           let asset = PHAsset.fetchAssets(withLocalIdentifiers: [assetId], options: nil).firstObject {
+            let tz = await Self.getLocalTimeZone(for: asset)
+            let creationDate = asset.creationDate ?? photo.timestamp
+            digitizedTime = Self.digitizedTimeString(from: creationDate, timeZone: tz ?? TimeZone(identifier: "UTC")!)
+        } else {
+            digitizedTime = Self.digitizedTimeString(from: photo.timestamp, timeZone: TimeZone(identifier: "UTC")!)
+        }
+
+        var photoDict: [String: Any] = [
+            "uri": cloudURL,
+            "digitizedTime": digitizedTime,
+        ]
+        // Include caption/story so the backend preserves it alongside the photo state change.
+        if let caption = photo.caption {
+            photoDict["story"] = caption
+        }
+
+        let payload: [String: Any] = [
+            "placeKey": placeKey,
+            "photo": photoDict,
+            "operation": operation
+        ]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let _: GenericResponse = try await request(
+            endpoint: "/placeVisitHistory/updatePhoto",
+            method: "POST",
+            body: body,
+            requiresAuth: true
+        )
+        print("✅ updatePhoto: \(operation) — placeKey=\(placeKey), digitizedTime=\(digitizedTime)")
+    }
+
+    // MARK: - Cloud Sync Fetch
+
+    /// Fetches all trips (blogs) for the given username from the backend.
+    func fetchTrips(username: String) async throws -> TripsResponse {
+        return try await request(endpoint: "/trips?username=\(username)", method: "GET", requiresAuth: true)
+    }
+
+    /// Fetches the full placeVisitHistory for the given username.
+    /// Uses showAll=true so the owner sees all statuses.
+    func fetchPlaceVisitHistory(username: String) async throws -> PlaceVisitHistoryResponse {
+        return try await request(endpoint: "/placeVisitHistory?username=\(username)&showAll=true", method: "GET", requiresAuth: true)
+    }
+
+    // MARK: - Blog publish flow
 
     /// Full post-upload publish sequence: create blog → cover photo → privacy.
     /// Returns the server-assigned blogKey on success, nil on failure.
@@ -479,8 +603,34 @@ final class APIManager {
 
         do {
             print("🔍 Step 1/3: Calling createBlogWithPlaces...")
-            let response = try await createBlogWithPlaces(username: username, detail: detail)
+            let (response, placeStopMapping) = try await createBlogWithPlaces(username: username, detail: detail)
             print("✅ Blog created with blogKey: \(response.blogKey), placeIndices: \(response.placeIndices ?? [])")
+
+            // Build the per-stop cloud key mapping and persist it to local storage.
+            // Prefer placeMemories (has visitedTimeDigitized for robust matching) over positional placeIndices.
+            if let memories = response.placeMemories, !memories.isEmpty {
+                // Build a lookup from visitedTimeDigitized → (dayIdx, stopIdx)
+                let digestMap: [String: (dayIdx: Int, stopIdx: Int)] = Dictionary(
+                    uniqueKeysWithValues: placeStopMapping.map { ($0.visitedTimeDigitized, ($0.dayIdx, $0.stopIdx)) }
+                )
+                var placeMapping: [(dayIdx: Int, stopIdx: Int, placeIndex: Int, visitedTimeDigitized: String)] = []
+                for memory in memories {
+                    if let loc = digestMap[memory.visitedTimeDigitized] {
+                        placeMapping.append((dayIdx: loc.dayIdx, stopIdx: loc.stopIdx, placeIndex: memory.placeIndex, visitedTimeDigitized: memory.visitedTimeDigitized))
+                    }
+                }
+                CreatedRecapBlogStore.shared.applyCloudKeys(blogId: detail.id, blogKey: response.blogKey, detail: detail, placeMapping: placeMapping)
+            } else if let indices = response.placeIndices, !indices.isEmpty {
+                // Fall back to positional matching (zip truncates if server skipped some as duplicates)
+                let placeMapping: [(dayIdx: Int, stopIdx: Int, placeIndex: Int, visitedTimeDigitized: String)] =
+                    zip(placeStopMapping, indices).map { info, idx in
+                        (dayIdx: info.dayIdx, stopIdx: info.stopIdx, placeIndex: idx, visitedTimeDigitized: info.visitedTimeDigitized)
+                    }
+                CreatedRecapBlogStore.shared.applyCloudKeys(blogId: detail.id, blogKey: response.blogKey, detail: detail, placeMapping: placeMapping)
+            } else {
+                // No place-level info — at least store the blogKey
+                CreatedRecapBlogStore.shared.setBlogKey(blogId: detail.id, blogKey: response.blogKey)
+            }
 
             // TODO: Cover photo upload — endpoint not yet available on server
             // if let coverAssetId = detail.selectedCoverPhotoIdentifier {
@@ -564,9 +714,86 @@ struct AnyCodable: Codable {}
 struct CreateBlogResponse: Decodable {
     let blogKey: Int
     let placeIndices: [Int]?
+    /// Richer per-place info returned by the server (includes visitedTimeDigitized for robust matching).
+    let placeMemories: [PlaceMemory]?
+
+    struct PlaceMemory: Decodable {
+        let placeIndex: Int
+        let visitedTimeDigitized: String
+    }
+}
+
+/// Tracks which (dayIdx, stopIdx) in the local RecapBlogDetail contributed each entry to the
+/// placeList payload, along with the visitedTimeDigitized used as a cloud dedup key.
+private struct PlaceStopBuildInfo {
+    let dayIdx: Int
+    let stopIdx: Int
+    let visitedTimeDigitized: String
 }
 
 private struct GenericResponse: Decodable {
     let result: String?
     let message: String?
+}
+
+// MARK: - Cloud Sync Response Models
+
+struct TripsResponse: Decodable {
+    let result: String
+    let trips: [ServerTrip]?
+}
+
+struct ServerTrip: Decodable {
+    let blogKey: Int
+    let title: String?
+    /// Unix milliseconds stored as a Number in MongoDB (not a Date), so decoded as Double.
+    let startTimestamp: Double?
+    let endTimestamp: Double?
+    let country: String?
+    let countryCode: String?
+    let coverPhotoUri: String?
+    let placeList: [ServerTripPlace]?
+    let status: String?
+    let visitedPlaceName: [String]?
+    let startTimeString: String?
+    let endTimeString: String?
+}
+
+struct ServerTripPlace: Decodable {
+    let placeIndex: Int
+}
+
+struct PlaceVisitHistoryResponse: Decodable {
+    let result: String
+    let visitedHistory: [ServerPlaceRecord]?
+}
+
+struct ServerPlaceRecord: Decodable {
+    let placeIndex: Int
+    let visitedTimeDigitized: String?
+    /// blogKey of the trip this place belongs to. -1 or nil if not in a trip.
+    let blogKey: Int?
+    let placeName: String?
+    let visitedCity: String?
+    let country: String?
+    let coordinate: ServerCoordinate?
+    /// User-written story/note for this place.
+    let story: String?
+    let photoList: [ServerPhotoRecord]?
+}
+
+struct ServerCoordinate: Decodable {
+    let latitude: Double
+    let longitude: Double
+}
+
+struct ServerPhotoRecord: Decodable {
+    let uri: String?
+    /// EXIF digitized time: "yyyy:MM:dd HH:mm:ss"
+    let digitizedTime: String?
+    let coordinate: ServerCoordinate?
+    /// Whether this photo was selected/included in the blog.
+    let selected: Bool?
+    /// User-written caption/story for this individual photo.
+    let story: String?
 }

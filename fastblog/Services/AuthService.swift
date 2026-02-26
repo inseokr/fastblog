@@ -128,6 +128,62 @@ final class AuthService: NSObject, ObservableObject {
         Analytics.track(.authCancelled) // reuse existing or add dedicated event
     }
 
+    // MARK: - Delete Account
+
+    /// Deletes the user account from the backend (initiating a 30-day soft delete purge period)
+    /// and clears all local account data.
+    func deleteAccount() async {
+        struct BasicResponse: Decodable { let result: String? }
+        if let username = currentUser?.username {
+            let requestData = ["username": username]
+            do {
+                if let body = try? JSONEncoder().encode(requestData) {
+                    let _: BasicResponse = try await APIManager.shared.request(
+                        endpoint: "/user/delete",
+                        method: "POST",
+                        body: body,
+                        requiresAuth: true
+                    )
+                }
+            } catch {
+                print("Failed to notify backend about account deletion: \(error)")
+            }
+        }
+
+        await MainActor.run {
+            // --- Preserve Onboarding/Neighborhood Data ---
+            let defaults = UserDefaults.standard
+            let hasCompletedOnboarding = defaults.bool(forKey: "blogify.hasCompletedOnboarding")
+            let hasCheckedExistingUser = defaults.bool(forKey: "blogify.hasCheckedExistingUser")
+            let nLat = defaults.object(forKey: "blogify.neighborhoodLat")
+            let nLon = defaults.object(forKey: "blogify.neighborhoodLon")
+            let nRadius = defaults.object(forKey: "blogify.neighborhoodRadiusMiles")
+            let nDisplayName = defaults.string(forKey: "blogify.neighborhoodDisplayName")
+            let nRecentSearches = defaults.stringArray(forKey: "blogify.neighborhood.recentSearches")
+
+            // Clear profile photo for this user
+            defaults.removeObject(forKey: profilePhotoKey)
+            // Clear all app-local data from UserDefaults
+            if let bundleId = Bundle.main.bundleIdentifier {
+                defaults.removePersistentDomain(forName: bundleId)
+            }
+
+            // --- Restore Onboarding/Neighborhood Data ---
+            defaults.set(hasCompletedOnboarding, forKey: "blogify.hasCompletedOnboarding")
+            defaults.set(hasCheckedExistingUser, forKey: "blogify.hasCheckedExistingUser")
+            if let nLat { defaults.set(nLat, forKey: "blogify.neighborhoodLat") }
+            if let nLon { defaults.set(nLon, forKey: "blogify.neighborhoodLon") }
+            if let nRadius { defaults.set(nRadius, forKey: "blogify.neighborhoodRadiusMiles") }
+            if let nDisplayName { defaults.set(nDisplayName, forKey: "blogify.neighborhoodDisplayName") }
+            if let nRecentSearches { defaults.set(nRecentSearches, forKey: "blogify.neighborhood.recentSearches") }
+
+            // Clear auth credentials
+            persist(nil)
+            setJwtToken(nil)
+            currentUser = nil
+        }
+    }
+
     // MARK: - Apple Sign In
 
     func handleAppleSignIn(result: Result<ASAuthorization, Error>) {
@@ -174,7 +230,7 @@ final class AuthService: NSObject, ObservableObject {
 
 private struct SignupRequest: Encodable {
     let signupData: SignupData
-    
+
     struct SignupData: Encodable {
         let username: String
         let email: String
@@ -249,7 +305,7 @@ extension AuthService {
             password: password,
             userType: "bloggo"
         ))
-        
+
         let response: SignupResponse = try await APIManager.shared.post(
             endpoint: "/signup/mobile/local",
             body: payload,

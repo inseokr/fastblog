@@ -46,21 +46,32 @@ struct CreateBlogFlowView: View {
             case .creating:
                 CreatingRecapView()
                     .onAppear {
-                        if startDirectlyCreating {
-                            Task {
+                        Task {
+                            let animationStart = Date()
+
+                            // Determine the trip to build from
+                            let tripForBuild: TripDraft
+                            if startDirectlyCreating {
                                 let selectedTrip = await TripPhotoSelectionService.shared.selectTopPhotosPerCluster(trip: trip)
-                                await MainActor.run {
-                                    createdRecapStore.addCreatedBlog(trip: selectedTrip)
-                                    // Wait for animation then close
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + creatingAnimationDuration) {
-                                        goToLanding()
-                                    }
-                                }
+                                createdRecapStore.addCreatedBlog(trip: selectedTrip)
+                                tripForBuild = selectedTrip
+                            } else {
+                                tripForBuild = createdRecapStore.tripDraft(for: trip.id) ?? trip
                             }
-                        } else {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + creatingAnimationDuration) {
-                                goToLanding()
+
+                            // Build full blog detail (geocoding + Vision AI scoring) during animation
+                            let detail = await createdRecapStore.buildBlogDetailAsync(from: tripForBuild)
+
+                            // Ensure minimum animation duration has elapsed
+                            let elapsed = Date().timeIntervalSince(animationStart)
+                            let remaining = creatingAnimationDuration - elapsed
+                            if remaining > 0 {
+                                try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
                             }
+
+                            // Save pre-built detail so the blog page loads instantly
+                            createdRecapStore.saveBlogDetail(detail, asDraft: true)
+                            goToLanding()
                         }
                     }
             }

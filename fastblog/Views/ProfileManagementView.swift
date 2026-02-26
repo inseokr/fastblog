@@ -47,7 +47,8 @@ struct ProfileManagementView: View {
             .sorted { $0.createdAt > $1.createdAt }
     }
 
-    /// A blog is a draft when no RecapBlogDetail has been saved for it yet.
+    /// A blog is a draft only when no RecapBlogDetail has been saved for it yet.
+    /// Once any save occurs (including "Save Draft"), a detail exists and the blog moves to Not Uploaded.
     private func isBlogDraft(_ blog: CreatedRecapBlog) -> Bool {
         createdRecapStore.getBlogDetail(blogId: blog.sourceTripId) == nil
     }
@@ -249,7 +250,7 @@ struct ProfileManagementView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Cancel") { dismiss() }
                         .fontWeight(.semibold)
                 }
                 ToolbarItem(placement: .primaryAction) {

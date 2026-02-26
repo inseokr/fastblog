@@ -11,14 +11,6 @@ struct PrivacyPolicyView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Group {
-                    Text("Last updated: February 24, 2026")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    
-                    bodyText("At Bloggo, we take your privacy seriously. This policy explains what data we collect, how we use it, and your rights regarding your personal information — including data related to our cloud upload and web blog editing features.")
-                }
-
-                Group {
                     sectionTitle("1. Information We Collect")
                     bodyText("We collect information you provide directly to us, such as when you create an account, publish a blog post, or contact support. This includes your name, email address, and any content you create on our platform.")
                     bodyText("We also collect usage data automatically, including your IP address, browser type, pages visited, and time spent on the platform. This helps us improve Bloggo and diagnose technical issues.")
@@ -37,9 +29,9 @@ struct PrivacyPolicyView: View {
                 Group {
                     sectionTitle("3. Web Blog Editor Usage")
                     bodyText("When you use the Bloggo web editor at bloggo.linkedspaces.com, we collect:")
-                    bullet("Session data — authentication tokens to verify your identity and keep you securely signed in.")
-                    bullet("Edit history — changes you make to blog posts are logged temporarily to support auto-save and conflict resolution across devices.")
-                    bullet("Browser & device information — browser type, operating system, and screen resolution to ensure the editor renders correctly for you.")
+                    bullet("Session data: authentication tokens to verify your identity and keep you securely signed in.")
+                    bullet("Edit history: changes you make to blog posts are logged temporarily to support auto-save and conflict resolution across devices.")
+                    bullet("Browser and device information: browser type, operating system, and screen resolution to ensure the editor renders correctly for you.")
                     bodyText("Content you write or edit in the web editor is saved to your cloud account and is subject to the same privacy protections as all other user content described in this policy.")
                 }
 
@@ -64,7 +56,7 @@ struct PrivacyPolicyView: View {
 
                 Group {
                     sectionTitle("6. Data Retention")
-                    bodyText("We retain your personal information and cloud-stored content for as long as your account is active or as needed to provide services. You may request deletion of your account and all associated data — including uploaded photos and blog posts — at any time by contacting our support team. Data is removed from active systems promptly and from backups within 30 days.")
+                    bodyText("We retain your personal information and cloud-stored content for as long as your account is active or as needed to provide services. You may request deletion of your account and all associated data, including uploaded photos and blog posts, at any time by contacting our support team. Data is removed from active systems promptly and from backups within 30 days.")
                 }
 
                 Group {
@@ -73,28 +65,18 @@ struct PrivacyPolicyView: View {
                 }
 
                 Group {
-                    sectionTitle("8. Cookies & Local Storage")
-                    bodyText("We use cookies and similar tracking technologies to keep you signed in across sessions and to track activity on our web platform. The web blog editor may use browser local storage to preserve draft content temporarily. You can instruct your browser to refuse all cookies or to indicate when a cookie is being sent, though doing so may affect certain features such as staying signed in.")
-                }
-
-                Group {
-                    sectionTitle("9. Your Rights")
+                    sectionTitle("8. Your Rights")
                     bodyText("Depending on your location, you may have the right to access, correct, export, or delete your personal data and uploaded content. You may also have the right to object to or restrict certain processing of your data. To exercise these rights, please contact us at bloggo@linkedspaces.com.")
                 }
 
                 Group {
-                    sectionTitle("10. Children's Privacy")
-                    bodyText("Bloggo is not directed to children under 13. We do not knowingly collect personal information or photos from children under 13. If you become aware that a child has provided us with personal information, please contact us immediately so we can delete it.")
+                    sectionTitle("9. Changes to This Policy")
+                    bodyText("We may update this privacy policy from time to time. We will notify you of any material changes by posting the new policy on this page, and, where appropriate, sending a notification via email or within the app.")
                 }
 
                 Group {
-                    sectionTitle("11. Changes to This Policy")
-                    bodyText("We may update this privacy policy from time to time. We will notify you of any material changes by posting the new policy on this page, updating the \"Last updated\" date above, and, where appropriate, sending a notification via email or within the app.")
-                }
-
-                Group {
-                    sectionTitle("12. Contact Us")
-                    bodyText("If you have questions about this privacy policy, please contact us at bloggo@linkedspaces.com or through our support page.")
+                    sectionTitle("10. Contact Us")
+                    bodyText("If you have questions about this privacy policy, please contact us at bloggo@linkedspaces.com.")
                 }
 
                 Spacer(minLength: 40)

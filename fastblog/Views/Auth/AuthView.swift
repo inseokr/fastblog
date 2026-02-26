@@ -142,7 +142,6 @@ struct AuthView: View {
                 authService.handleAppleSignIn(result: result)
             }
             .signInWithAppleButtonStyle(.white)
-            .frame(maxWidth: .infinity)
             .frame(height: 54)
             .cornerRadius(14)
             .shadow(color: .black.opacity(0.25), radius: 8, y: 4)

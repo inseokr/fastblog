@@ -386,46 +386,49 @@ struct TripAnnotationView: View {
 /// Map showing only trips for a specific country. Reached from CountryBlogsView toolbar.
 struct CountryMapView: View {
     let countryName: String
+    let blogs: [CreatedRecapBlog]
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
-    @StateObject private var viewModel: ProfileMapViewModel
 
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var selectedBlogForNavigation: CreatedRecapBlog?
+    @State private var selectedTripID: UUID?
 
-    init(countryName: String, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
+    init(countryName: String, blogs: [CreatedRecapBlog], selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         self.countryName = countryName
+        self.blogs = blogs
         _selectedCreatedRecap = selectedCreatedRecap
-        _viewModel = StateObject(wrappedValue: ProfileMapViewModel(createdRecapStore: CreatedRecapBlogStore.shared))
+    }
+    
+    private var tripsWithCoordinates: [(blog: CreatedRecapBlog, coordinate: CLLocationCoordinate2D)] {
+        blogs.compactMap { blog in
+            guard let coord = createdRecapStore.coordinate(for: blog.sourceTripId) else { return nil }
+            return (blog, coord)
+        }
     }
 
     var body: some View {
         Map(position: $mapPosition) {
-            ForEach(viewModel.tripsWithCoordinates, id: \.blog.sourceTripId) { item in
+            ForEach(tripsWithCoordinates, id: \.blog.sourceTripId) { item in
                 annotation(for: item)
             }
         }
         .mapStyle(.standard(elevation: .realistic))
-        .onMapCameraChange(frequency: .onEnd) { context in
-            viewModel.mapRegion = context.region
-        }
         .ignoresSafeArea(edges: .bottom)
-        .navigationTitle(countryName)
+        .navigationTitle(displayCountryName(countryName))
         .navigationBarTitleDisplayMode(.inline)
         .preferredColorScheme(.dark)
         .onAppear {
-            viewModel.selectCountry(countryName)
-            mapPosition = .region(viewModel.mapRegion)
-        }
-        .onChange(of: viewModel.mapRegionChangeCounter) { _, _ in
-            withAnimation {
-                mapPosition = .region(viewModel.mapRegion)
+            let sortedBlogs = blogs.sorted { ($0.tripStartDate ?? $0.createdAt) > ($1.tripStartDate ?? $1.createdAt) }
+            if let latest = sortedBlogs.first, let coord = createdRecapStore.coordinate(for: latest.sourceTripId) {
+                mapPosition = .region(MKCoordinateRegion(center: coord, span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08)))
+                selectedTripID = latest.sourceTripId
             }
         }
         .navigationDestination(item: $selectedBlogForNavigation) { blog in
             RecapBlogPageView(
                 blogId: blog.sourceTripId,
-                initialTrip: _createdRecapStore.wrappedValue.tripDraft(for: blog.sourceTripId)
+                initialTrip: createdRecapStore.tripDraft(for: blog.sourceTripId)
             )
         }
     }
@@ -435,13 +438,17 @@ struct CountryMapView: View {
         Annotation("", coordinate: item.coordinate) {
             TripAnnotationView(
                 blog: item.blog,
-                isSelected: viewModel.selectedTripID == item.blog.sourceTripId
+                isSelected: selectedTripID == item.blog.sourceTripId
             )
             .onTapGesture {
-                viewModel.selectTrip(item.blog.sourceTripId)
+                selectedTripID = item.blog.sourceTripId
                 selectedBlogForNavigation = item.blog
             }
         }
+    }
+    
+    private func displayCountryName(_ name: String) -> String {
+        name.isEmpty || name == "Unknown" ? "Other" : name
     }
 }
 

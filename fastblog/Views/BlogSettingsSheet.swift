@@ -8,16 +8,21 @@ import SwiftUI
 /// Shown from the blog page (RecapBlogPageView). Change title, cover, and manage photos.
 struct BlogSettingsSheet: View {
     @Binding var draft: RecapBlogDetail
+    var blogKey: Int?
     var onSave: () -> Void
     var onEditMode: (() -> Void)? = nil
     var onDelete: () -> Void
     var onRemoveFromCloud: (() -> Void)? = nil
+    /// Called after the user restores a removed place so the parent can persist the draft.
+    var onRestore: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     @State private var showTitleChange = false
     @State private var showCoverChange = false
+    @State private var coverPhotoIdentifierBeforeEdit: String? = nil
     @State private var showDeleteConfirmation = false
     @State private var showRemoveFromCloudConfirmation = false
+    @State private var showRestorePlaces = false
 
     private var hasCloudPhotos: Bool {
         draft.days.flatMap(\.placeStops).flatMap(\.photos).contains { $0.cloudURL != nil }
@@ -33,6 +38,7 @@ struct BlogSettingsSheet: View {
                         Label("Change Blog Title", systemImage: "textformat")
                     }
                     Button {
+                        coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
                         showCoverChange = true
                     } label: {
                         Label("Change Cover Photo", systemImage: "photo")
@@ -49,6 +55,26 @@ struct BlogSettingsSheet: View {
 
                 if hasCloudPhotos {
                     Section {
+                        if onEditMode != nil {
+                            Button {
+                                onEditMode?()
+                                dismiss()
+                            } label: {
+                                Label("Edit Mode", systemImage: "pencil")
+                            }
+                        }
+                        if !draft.removedPlaceStops.isEmpty {
+                            Button {
+                                showRestorePlaces = true
+                            } label: {
+                                Label("Restore Places (\(draft.removedPlaceStops.count))", systemImage: "arrow.uturn.backward.circle")
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
+                        }
+                    }
+
+                    Section {
                         Button(role: .destructive) {
                             showRemoveFromCloudConfirmation = true
                         } label: {
@@ -59,31 +85,49 @@ struct BlogSettingsSheet: View {
                     }
                 }
 
-                Section {
-                    Button(role: .destructive) {
-                        showDeleteConfirmation = true
-                    } label: {
-                        Label("Delete Blog", systemImage: "trash")
-                    }
+                // Delete Blog — pinned to bottom
+                Divider()
+                Button(role: .destructive) {
+                    showDeleteConfirmation = true
+                } label: {
+                    Label("Delete Blog", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .foregroundStyle(.red)
                 }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
             }
             .navigationTitle("Blog Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
                         onSave()
                         dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14))
                     }
                 }
             }
             .sheet(isPresented: $showTitleChange) {
-                BlogTitleChangeSheet(title: $draft.title) {
+                BlogTitleChangeSheet(title: $draft.title, blogKey: blogKey) {
                     showTitleChange = false
                 }
             }
-            .sheet(isPresented: $showCoverChange) {
-                BlogCoverChangeSheet(coverTheme: $draft.coverTheme) {
+            .sheet(isPresented: $showCoverChange, onDismiss: {
+                if let key = blogKey,
+                   let newId = draft.selectedCoverPhotoIdentifier,
+                   newId != coverPhotoIdentifierBeforeEdit {
+                    Task { try? await APIManager.shared.uploadAndUpdateCoverPhoto(blogKey: key, assetIdentifier: newId) }
+                }
+                coverPhotoIdentifierBeforeEdit = nil
+            }) {
+                BlogCoverPhotoPickerView(
+                    photos: draft.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded),
+                    selectedIdentifier: $draft.selectedCoverPhotoIdentifier
+                ) {
                     showCoverChange = false
                 }
             }
@@ -106,6 +150,7 @@ struct BlogSettingsSheet: View {
                             }
                         }
                     }
+                    print("Removed cloud URLs from draft for blogKey \(blogKey ?? -1)")
                     onRemoveFromCloud?()
                     onSave()
                     dismiss()
@@ -113,6 +158,12 @@ struct BlogSettingsSheet: View {
                 Button("No", role: .cancel) {}
             } message: {
                 Text("Are you sure you want to remove this blog from the cloud?")
+            }
+            .sheet(isPresented: $showRestorePlaces) {
+                RemovedPlacesSheet(draft: $draft) {
+                    onRestore?()
+                    onSave()
+                }
             }
             .preferredColorScheme(.dark)
         }
@@ -122,6 +173,7 @@ struct BlogSettingsSheet: View {
 /// Single-purpose sheet to edit the blog title.
 struct BlogTitleChangeSheet: View {
     @Binding var title: String
+    var blogKey: Int? = nil
     var onDone: () -> Void
     @Environment(\.dismiss) private var dismiss
     @FocusState private var isFocused: Bool
@@ -131,7 +183,9 @@ struct BlogTitleChangeSheet: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
                 TextField("Blog title", text: $tempTitle)
-                    .textFieldStyle(.roundedBorder)
+                    .padding(16)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+                    .cornerRadius(16)
                     .padding()
                     .focused($isFocused)
             }
@@ -146,6 +200,10 @@ struct BlogTitleChangeSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         title = tempTitle
+                        if let key = blogKey {
+                            let newTitle = tempTitle
+                            Task { try? await APIManager.shared.updateBlogTitle(blogKey: key, title: newTitle) }
+                        }
                         onDone()
                         dismiss()
                     }

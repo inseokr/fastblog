@@ -37,11 +37,12 @@ struct fastblogApp: App {
                         .environmentObject(authStateManager)
                         .environmentObject(createdRecapStore)
                 }
-                // Migrate anonymous drafts + import prompt on login
+                // Migrate anonymous drafts + import prompt on login; also kick off cloud sync.
                 .onChange(of: authStateManager.authState) { _, newState in
                     if case .loggedIn(let userId) = newState {
                         createdRecapStore.importAnonymousDrafts(into: userId)
                         authStateManager.checkAndPromptImportIfNeeded()
+                        Task { await createdRecapStore.syncFromCloud() }
                     }
                 }
         }
@@ -113,6 +114,10 @@ struct fastblogApp: App {
                 Task {
                     await EntitlementManager.shared.refreshEntitlements()
                     createdRecapStore.enforceArchiveRules()
+                    // Re-sync cloud data whenever the app returns to the foreground (logged in only).
+                    if authStateManager.isLoggedIn {
+                        await createdRecapStore.syncFromCloud()
+                    }
                 }
             }
         }

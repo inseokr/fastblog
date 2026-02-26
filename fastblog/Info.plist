@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>ShareTokenKey</key>
+	<string>$(SHARE_TOKEN_KEY)</string>
 	<!-- Replace with your iOS OAuth client ID from Google Cloud Console -->
 	<key>GIDClientID</key>
 	<string>259780144944-m28majq312jddps9h4ajftdpn07r640b.apps.googleusercontent.com</string>

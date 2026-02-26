@@ -85,8 +85,9 @@ private actor GeocodeRateLimiter {
         let oneMinuteAgo = now.addingTimeInterval(-60)
         requestTimestamps = requestTimestamps.filter { $0 > oneMinuteAgo }
         let needWait: TimeInterval
-        if requestTimestamps.count >= 30, let oldest = requestTimestamps.first {
-            needWait = max(0, min(15, 60 - now.timeIntervalSince(oldest)))
+        // CLGeocoder limit is ~50 per min. If we hit 40, wait up to 1-2s to space them out.
+        if requestTimestamps.count >= 40, let oldest = requestTimestamps.first {
+            needWait = min(2.0, max(0.2, 60.0 / 40.0)) // Wait nicely spaced, not 15s.
         } else {
             needWait = 0
         }

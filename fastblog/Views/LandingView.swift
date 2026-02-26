@@ -42,10 +42,10 @@ struct LandingView: View {
                             .foregroundColor(.white)
                     }
                     Spacer()
-                    Text("Bloggo")
-                        .font(.system(size: 34))
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
+                    // Text("Bloggo")
+                    //     .font(.system(size: 34))
+                    //     .fontWeight(.bold)
+                    //     .foregroundColor(.white)
                     Spacer()
                     Button {
                         if authService.isSignedIn {
@@ -349,6 +349,7 @@ private struct SettingsView: View {
     @EnvironmentObject private var authService: AuthService
     @State private var showNeighborhoodSheet = false
     @State private var showAuth = false
+    @State private var showDeleteAccountAlert = false
     #if DEBUG
     @AppStorage("capper.tripClustering.debugLogging") private var tripClusteringDebug = false
     #endif
@@ -400,6 +401,24 @@ private struct SettingsView: View {
                             authService.signOut()
                         } label: {
                             Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
+
+                        Button {
+                            showDeleteAccountAlert = true
+                        } label: {
+                            Label("Delete Account", systemImage: "trash")
+                                .foregroundColor(.gray)
+                        }
+                        .alert("Delete Account?", isPresented: $showDeleteAccountAlert) {
+                            Button("Delete", role: .destructive) {
+                                Task {
+                                    await authService.deleteAccount()
+                                }
+                                dismiss()
+                            }
+                            Button("Cancel", role: .cancel) { }
+                        } message: {
+                            Text("This will permanently delete your account and all local data. This action cannot be undone.")
                         }
                     } else {
                         Button {
@@ -504,8 +523,11 @@ private struct SettingsView: View {
                 })
             }
             .fullScreenCover(isPresented: $showAuth) {
-                AuthView()
-                    .environmentObject(authService)
+                AuthView(onAuthenticated: {
+                    showAuth = false
+                    dismiss()
+                })
+                .environmentObject(authService)
             }
             .onAppear {
                 customProfileImageData = authService.profileImageData
