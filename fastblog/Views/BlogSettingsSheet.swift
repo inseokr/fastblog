@@ -19,6 +19,7 @@ struct BlogSettingsSheet: View {
 
     @State private var showTitleChange = false
     @State private var showCoverChange = false
+    @State private var coverPhotoIdentifierBeforeEdit: String? = nil
     @State private var showDeleteConfirmation = false
     @State private var showRemoveFromCloudConfirmation = false
     @State private var showRestorePlaces = false
@@ -29,9 +30,30 @@ struct BlogSettingsSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                List {
-                    // Section 1: Quick Actions
+            List {
+                Section {
+                    Button {
+                        showTitleChange = true
+                    } label: {
+                        Label("Change Blog Title", systemImage: "textformat")
+                    }
+                    Button {
+                        coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
+                        showCoverChange = true
+                    } label: {
+                        Label("Change Cover Photo", systemImage: "photo")
+                    }
+                    if onEditMode != nil {
+                        Button {
+                            onEditMode?()
+                            dismiss()
+                        } label: {
+                            Label("Edit Mode", systemImage: "pencil")
+                        }
+                    }
+                }
+
+                if hasCloudPhotos {
                     Section {
                         if onEditMode != nil {
                             Button {
@@ -52,18 +74,14 @@ struct BlogSettingsSheet: View {
                         }
                     }
 
-                    // Section 2: Content Editing
                     Section {
-                        Button {
-                            showTitleChange = true
+                        Button(role: .destructive) {
+                            showRemoveFromCloudConfirmation = true
                         } label: {
-                            Label("Change Blog Title", systemImage: "textformat")
+                            Label("Remove from Cloud", systemImage: "icloud.slash")
                         }
-                        Button {
-                            showCoverChange = true
-                        } label: {
-                            Label("Change Cover Photo", systemImage: "photo")
-                        }
+                    } footer: {
+                        Text("This will remove uploaded photos from the cloud. Your local blog and photos are not affected.")
                     }
                 }
 
@@ -98,17 +116,19 @@ struct BlogSettingsSheet: View {
                     showTitleChange = false
                 }
             }
-            .sheet(isPresented: $showCoverChange) {
+            .sheet(isPresented: $showCoverChange, onDismiss: {
+                if let key = blogKey,
+                   let newId = draft.selectedCoverPhotoIdentifier,
+                   newId != coverPhotoIdentifierBeforeEdit {
+                    Task { try? await APIManager.shared.uploadAndUpdateCoverPhoto(blogKey: key, assetIdentifier: newId) }
+                }
+                coverPhotoIdentifierBeforeEdit = nil
+            }) {
                 BlogCoverPhotoPickerView(
                     photos: draft.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded),
                     selectedIdentifier: $draft.selectedCoverPhotoIdentifier
                 ) {
                     showCoverChange = false
-                    // Update coverTheme slightly so `TripCoverImage` prioritizes the identifier if the old theme is still present
-                    // (Actually `TripCoverImage` already checks `coverAssetIdentifier` first, so we just dismiss.)
-                    if let key = blogKey {
-                        // Any future sync for cover goes here
-                    }
                 }
             }
             .alert("Delete Blog?", isPresented: $showDeleteConfirmation) {

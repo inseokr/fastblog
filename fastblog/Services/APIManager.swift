@@ -450,6 +450,26 @@ final class APIManager {
         let _: GenericResponse = try await post(endpoint: "/trips/delete", body: Payload(blogKey: blogKey))
     }
 
+    /// Updates the cover photo URI for a blog on the backend.
+    func updateCoverPhoto(blogKey: Int, photoUri: String) async throws {
+        struct Payload: Encodable { let blogKey: Int; let photoUri: String }
+        let _: GenericResponse = try await post(endpoint: "/trips/update-cover-photo", body: Payload(blogKey: blogKey, photoUri: photoUri))
+    }
+
+    /// Uploads a photo asset and sets it as the blog's cover photo.
+    func uploadAndUpdateCoverPhoto(blogKey: Int, assetIdentifier: String) async throws {
+        let cloudURL = try await uploadPhoto(assetIdentifier: assetIdentifier)
+        try await updateCoverPhoto(blogKey: blogKey, photoUri: cloudURL)
+        print("✅ Cover photo updated for blogKey=\(blogKey)")
+    }
+
+    /// Updates the place name on the backend.
+    func updatePlaceName(visitedTimeDigitized: String, placeName: String) async throws {
+        struct Payload: Encodable { let visitedTimeDigitized: String; let placeName: String }
+        let _: GenericResponse = try await post(endpoint: "/placeVisitHistory/updatePlaceName", body: Payload(visitedTimeDigitized: visitedTimeDigitized, placeName: placeName))
+        print("✅ Place name updated: '\(placeName)' for key=\(visitedTimeDigitized)")
+    }
+
     func setBlogPrivacy(blogKey: Int, level: String = "public") async throws {
         let payload: [String: Any] = ["blogKey": blogKey, "level": level]
         let body = try JSONSerialization.data(withJSONObject: payload)
