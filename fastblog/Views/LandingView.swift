@@ -41,6 +41,11 @@ struct LandingView: View {
                             .font(.title2)
                             .foregroundColor(.white)
                     }
+                    .simultaneousGesture(
+                        LongPressGesture(minimumDuration: 1.5).onEnded { _ in
+                            OnboardingStore.hasCompletedOnboarding = false
+                        }
+                    )
                     Spacer()
                     // Text("Bloggo")
                     //     .font(.system(size: 34))
@@ -403,29 +408,29 @@ private struct SettingsView: View {
                         }
                         .padding(.vertical, 4)
 
+                        if cloudStorageLoading {
+                            HStack {
+                                ProgressView()
+                                Text("Loading…")
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                        } else if let error = cloudStorageError {
+                            Text(error)
+                                .foregroundColor(.secondary)
+                        } else if let usage = cloudStorageUsage {
+                            LabeledContent("Storage used", value: String(format: "%.2f MB", usage.totalMB))
+                            LabeledContent("Photos", value: "\(usage.photoCount)")
+                            if let updated = usage.lastUpdated, !updated.isEmpty {
+                                LabeledContent("Last updated", value: formatCloudStorageDate(updated))
+                            }
+                        }
+
                         Button {
                             authService.signOut()
                         } label: {
                             Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
                                 .foregroundColor(.blue)
-                        }
-
-                        Button {
-                            showDeleteAccountAlert = true
-                        } label: {
-                            Label("Delete Account", systemImage: "trash")
-                                .foregroundColor(.red)
-                        }
-                        .alert("Delete Account?", isPresented: $showDeleteAccountAlert) {
-                            Button("Delete", role: .destructive) {
-                                Task {
-                                    await authService.deleteAccount()
-                                }
-                                dismiss()
-                            }
-                            Button("Cancel", role: .cancel) { }
-                        } message: {
-                            Text("This will permanently delete your account and all local data. This action cannot be undone.")
                         }
                     } else {
                         Button {
@@ -450,32 +455,7 @@ private struct SettingsView: View {
                     }
                 }
 
-                // Cloud Usage — only when signed in
-                if authService.isSignedIn {
-                    Section {
-                        if cloudStorageLoading {
-                            HStack {
-                                ProgressView()
-                                Text("Loading…")
-                                    .foregroundColor(.secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-                        } else if let error = cloudStorageError {
-                            Text(error)
-                                .foregroundColor(.secondary)
-                        } else if let usage = cloudStorageUsage {
-                            LabeledContent("Storage used", value: String(format: "%.2f MB", usage.totalMB))
-                            LabeledContent("Photos", value: "\(usage.photoCount)")
-                            if let updated = usage.lastUpdated, !updated.isEmpty {
-                                LabeledContent("Last updated", value: formatCloudStorageDate(updated))
-                            }
-                        }
-                    } header: {
-                        Text("Cloud Usage")
-                    } footer: {
-                        Text("Storage used by your recap photos in the cloud.")
-                    }
-                }
+
 
                 Section {
                     Button {
@@ -502,6 +482,7 @@ private struct SettingsView: View {
                     Text("Used to exclude nearby photos from trip results. Change this to update which area counts as \"home.\"")
                 }
 
+                /*
                 #if DEBUG
                 Section {
                     Toggle("Trip clustering debug logging", isOn: $tripClusteringDebug)
@@ -511,6 +492,7 @@ private struct SettingsView: View {
                     Text("When on, scan logs why each day merged or split (neighborhood_pass, country_fallback_pass, etc.).")
                 }
                 #endif
+                */
 
                 // Legal at bottom of Settings
                 Section {
@@ -527,19 +509,27 @@ private struct SettingsView: View {
                 } header: {
                     Text("Legal")
                 }
-                
-                Section {
-                    Button {
-                        OnboardingStore.hasCompletedOnboarding = false
-                        dismiss()
-                    } label: {
-                        Text("Test Onboarding (Temporary)")
-                            .foregroundColor(.blue)
+
+                if authService.isSignedIn {
+                    Section {
+                        Button {
+                            showDeleteAccountAlert = true
+                        } label: {
+                            Label("Delete Account", systemImage: "trash")
+                                .foregroundColor(.red)
+                        }
+                        .alert("Delete Account?", isPresented: $showDeleteAccountAlert) {
+                            Button("Delete", role: .destructive) {
+                                Task {
+                                    await authService.deleteAccount()
+                                }
+                                dismiss()
+                            }
+                            Button("Cancel", role: .cancel) { }
+                        } message: {
+                            Text("This will permanently delete your account and all local data. This action cannot be undone.")
+                        }
                     }
-                } header: {
-                    Text("Testing")
-                } footer: {
-                    Text("Temporarily jumps back into the full onboarding flow.")
                 }
             }
             .navigationTitle("Settings")
