@@ -43,7 +43,7 @@ struct UploadingBlogView: View {
                         .foregroundColor(.white)
                         .padding(.vertical, 14)
                         .padding(.horizontal, 40)
-                        .background(Color.red.opacity(0.8))
+                        .background(Color.red.opacity(0.4))
                         .clipShape(Capsule())
                 }
                 .padding(.bottom, 50)

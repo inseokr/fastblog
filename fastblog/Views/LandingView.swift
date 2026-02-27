@@ -97,6 +97,23 @@ struct LandingView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .gesture(
+            DragGesture()
+                .onEnded { value in
+                    // Detect swipe left
+                    if value.translation.width < -50 && abs(value.translation.height) < 50 {
+                        if authService.isSignedIn {
+                            showProfile = true
+                        } else {
+                            showAuth = true
+                        }
+                    }
+                    // Detect swipe up (negative height translation)
+                    if value.translation.height < -50 && abs(value.translation.height) > abs(value.translation.width) {
+                        showSeeAll = true
+                    }
+                }
+        )
         .onReceive(Timer.publish(every: ctaInterval, on: .main, in: .common).autoconnect()) { _ in
             withAnimation(.easeInOut(duration: 0.5)) { ctaOpacity = 0 }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
@@ -229,7 +246,7 @@ struct LandingView: View {
                     showSeeAll = true
                 } label: {
                     HStack {
-                        Text("Recent Blogs")
+                        Text("My Blogs")
                             .font(.headline)
                             .foregroundColor(.white)
                         Spacer()
@@ -260,6 +277,17 @@ struct LandingView: View {
             .padding(.top, 16)
             .padding(.bottom, 28)
             .background(Color.black.opacity(0.3))
+            // Use simultaneousGesture so it doesn't block the inner horizontal ScrollView
+            .simultaneousGesture(
+                DragGesture()
+                    .onEnded { value in
+                        // Detect a swipe up: negative height translation
+                        // Also check that it's mostly vertical to prevent accidental triggers while horizontal scrolling
+                        if value.translation.height < -40 && abs(value.translation.height) > abs(value.translation.width) {
+                            showSeeAll = true
+                        }
+                    }
+            )
         }
     }
 }

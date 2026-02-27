@@ -34,9 +34,21 @@ struct ContentView: View {
                 ProfileView(selectedCreatedRecap: $selectedCreatedRecap)
                     .environmentObject(createdRecapStore)
             }
-            .navigationDestination(isPresented: $showSeeAll) {
-                MyBlogsProfileView(createdRecapStore: createdRecapStore, selectedCreatedRecap: $selectedCreatedRecap)
-                    .environmentObject(createdRecapStore)
+            .fullScreenCover(isPresented: $showSeeAll) {
+                NavigationStack {
+                    MyBlogsProfileView(createdRecapStore: createdRecapStore, selectedCreatedRecap: $selectedCreatedRecap)
+                        .environmentObject(createdRecapStore)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button {
+                                    showSeeAll = false
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .foregroundColor(.white)
+                                }
+                            }
+                        }
+                }
             }
             // Only push from Landing if we are staying on Landing (not showing Trips)
             .navigationDestination(isPresented: Binding(

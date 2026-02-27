@@ -51,6 +51,7 @@ struct RecapBlogPageView: View {
     @State private var showNewBlogExitConfirmation = false
     @State private var showUploadPromptAlert = false
     @State private var showNavBarTitle = false
+    @State private var hasFinishedInitialLoad = false
 
     // Undo State
     @State private var lastUndoAction: UndoAction?
@@ -58,6 +59,7 @@ struct RecapBlogPageView: View {
     @State private var isUndoMinimized = false
     @State private var isKeyboardVisible = false
     @State private var cancellables = Set<AnyCancellable>()
+    @State private var visitedDayIndices: Set<Int> = [0]
 
     // Cloud Upload State
     @State private var isUploading = false
@@ -81,7 +83,7 @@ struct RecapBlogPageView: View {
 
         var text: String {
             switch self {
-            case .deletePlace: return "Place deleted"
+            case .deletePlace: return "Place hidden"
             case .deletePhoto: return "Photo removed"
             }
         }
@@ -168,7 +170,7 @@ struct RecapBlogPageView: View {
 
     @ViewBuilder
     private func coreContentRoot(screenHeight: CGFloat) -> some View {
-        if draft.days.isEmpty && initialTrip != nil {
+        if draft.days.isEmpty && initialTrip != nil && !hasFinishedInitialLoad {
             ProgressView("Loading…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -333,6 +335,8 @@ struct RecapBlogPageView: View {
             ZStack(alignment: .bottom) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
+                        Color.clear.frame(height: 0)
+                            .id("page-top")
 
                         if draft.selectedCoverPhotoIdentifier != nil {
                             coverPhotoHero(screenHeight: screenHeight)
@@ -351,6 +355,15 @@ struct RecapBlogPageView: View {
                                 .id("map-anchor")
                         }
                         timelineContent
+
+                        if draft.days.isEmpty && hasFinishedInitialLoad {
+                            Text("All places are hidden.")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.top, 40)
+                                .padding(.bottom, 60)
+                        }
 
                         // Spacer for bottom filter + Undo button
                         Color.clear
@@ -388,9 +401,21 @@ struct RecapBlogPageView: View {
                         }
                     }
                 }
-                .onChange(of: selectedDayIndex) { _, _ in
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        proxy.scrollTo("map-anchor", anchor: .top)
+                .onChange(of: selectedDayIndex) { _, newIndex in
+                    if isEditMode {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            proxy.scrollTo("page-top", anchor: .top)
+                        }
+                        visitedDayIndices.insert(newIndex)
+                    } else {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            proxy.scrollTo("map-anchor", anchor: .top)
+                        }
+                    }
+                }
+                .onChange(of: isEditMode) { _, editing in
+                    if editing {
+                        visitedDayIndices = [selectedDayIndex]
                     }
                 }
                 
@@ -398,7 +423,7 @@ struct RecapBlogPageView: View {
                     // Undo Overlay (Banner or Button)
                     if showUndoOverlay {
                         UndoOverlayView(
-                            text: lastUndoAction?.text ?? "Item deleted",
+                            text: lastUndoAction?.text ?? "Item hidden",
                             isMinimized: $isUndoMinimized,
                             onUndo: {
                                 performUndo()
@@ -879,7 +904,7 @@ struct RecapBlogPageView: View {
                     .onAppear { placePhotoModalItem = nil }
             }
         }
-        .presentationDetents([.fraction(0.45), .fraction(0.65), .fraction(0.92)])
+        .presentationDetents([.fraction(0.65), .fraction(0.92)])
         .presentationDragIndicator(.hidden)
         .presentationCornerRadius(24)
         .presentationBackground(Color.white)
@@ -890,13 +915,18 @@ struct RecapBlogPageView: View {
             draft = saved
             // Auto-generate stories for any places that are missing them (e.g. first open after AI was added).
             Task { @MainActor in await autoFillMissingOverallStories() }
+            hasFinishedInitialLoad = true
             return
         }
-        guard let trip = initialTrip ?? createdRecapStore.tripDraft(for: blogId) else { return }
+        guard let trip = initialTrip ?? createdRecapStore.tripDraft(for: blogId) else {
+            hasFinishedInitialLoad = true
+            return
+        }
         Task { @MainActor in
             draft = await createdRecapStore.buildBlogDetailAsync(from: trip)
             // Case 1: first-time creation — auto-generate captions + overall stories for all places.
             await autoFillCaptionsAndStories()
+            hasFinishedInitialLoad = true
         }
     }
 
@@ -973,7 +1003,7 @@ struct RecapBlogPageView: View {
         }
         
         // Soft-delete: preserve stop in removedPlaceStops so it can be restored later
-        let removedEntry = RemovedPlaceEntry(dayId: dayId, dayIndex: day.dayIndex, stop: stop)
+        let removedEntry = RemovedPlaceEntry(dayId: dayId, dayIndex: day.dayIndex, dayDate: day.date, stop: stop)
         draft.removedPlaceStops.append(removedEntry)
         
         // Perform Deletion

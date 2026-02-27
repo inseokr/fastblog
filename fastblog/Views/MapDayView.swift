@@ -290,7 +290,7 @@ struct FullScreenMapView: View {
 
     var body: some View {
         GeometryReader { geo in
-            ZStack(alignment: .topTrailing) {
+            ZStack(alignment: .topLeading) {
                 MapDayView(
                     placeStops: day.placeStops,
                     height: geo.size.height,
@@ -300,16 +300,17 @@ struct FullScreenMapView: View {
                 .ignoresSafeArea(edges: .all)
 
                 Button(action: onDismiss) {
-                    Text("Done")
-                        .font(.headline)
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundColor(.white)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .background(Color.blue)
-                        .clipShape(Capsule())
+                        .frame(width: 40, height: 40)
+                        .background(Color.black.opacity(0.5))
+                        .clipShape(Circle())
+                        .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
                 }
+                .buttonStyle(.plain)
                 .padding(.top, 56)
-                .padding(.trailing, 20)
+                .padding(.leading, 20)
 
                 if !day.placeStops.isEmpty {
                     VStack {

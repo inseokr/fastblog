@@ -34,7 +34,7 @@ struct MyBlogsProfileView: View {
             backgroundBlue
                 .ignoresSafeArea()
 
-            ScrollView {
+            ScrollView(showsIndicators: false) {
                 let allSections = MyBlogsProfileViewModel.sections(from: createdRecapStore.countrySummaries)
                 let sections = viewModel.filteredSections(from: allSections)
                 Group {

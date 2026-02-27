@@ -14,6 +14,8 @@ struct RemovedPlaceEntry: Identifiable, Equatable, Codable, Sendable {
     let dayId: UUID
     /// Fallback dayIndex if the parent day was also removed.
     let dayIndex: Int
+    /// Original date of the day. Optional to not break old saved data.
+    var dayDate: Date? = nil
     /// Full stop including `noteText` and per-photo `caption` fields.
     var stop: PlaceStop
 }
