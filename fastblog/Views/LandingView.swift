@@ -105,8 +105,10 @@ struct LandingView: View {
             }
         }
         .sheet(isPresented: $showSettings) {
-            SettingsView()
-                .environmentObject(authService)
+            SettingsView(onProfileTapped: {
+                showProfile = true
+            })
+            .environmentObject(authService)
         }
         .fullScreenCover(isPresented: $showAuth) {
             AuthView(onAuthenticated: {
@@ -360,6 +362,8 @@ private struct SettingsView: View {
     @AppStorage("capper.tripClustering.debugLogging") private var tripClusteringDebug = false
     #endif
 
+    var onProfileTapped: (() -> Void)? = nil
+
     // Per-user profile photo — loaded from authService on appear.
     @State private var customProfileImageData: Data?
 
@@ -375,38 +379,49 @@ private struct SettingsView: View {
                 Section {
                     if let user = authService.currentUser {
                         // Signed-in row
-                        HStack(spacing: 14) {
-                            if let data = customProfileImageData, let uiImage = UIImage(data: data) {
-                                Image(uiImage: uiImage)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 40, height: 40)
-                                    .clipShape(Circle())
-                            } else {
-                                ZStack {
-                                    Circle()
-                                        .fill(LinearGradient(
-                                            colors: [Color(red: 0.2, green: 0.5, blue: 1), Color(red: 0.1, green: 0.3, blue: 0.8)],
-                                            startPoint: .topLeading, endPoint: .bottomTrailing
-                                        ))
+                        Button {
+                            dismiss()
+                            onProfileTapped?()
+                        } label: {
+                            HStack(spacing: 14) {
+                                if let data = customProfileImageData, let uiImage = UIImage(data: data) {
+                                    Image(uiImage: uiImage)
+                                        .resizable()
+                                        .scaledToFill()
                                         .frame(width: 40, height: 40)
-                                    Text(user.initials)
-                                        .font(.system(size: 15, weight: .bold))
-                                        .foregroundColor(.white)
+                                        .clipShape(Circle())
+                                } else {
+                                    ZStack {
+                                        Circle()
+                                            .fill(LinearGradient(
+                                                colors: [Color(red: 0.2, green: 0.5, blue: 1), Color(red: 0.1, green: 0.3, blue: 0.8)],
+                                                startPoint: .topLeading, endPoint: .bottomTrailing
+                                            ))
+                                            .frame(width: 40, height: 40)
+                                        Text(user.initials)
+                                            .font(.system(size: 15, weight: .bold))
+                                            .foregroundColor(.white)
+                                    }
                                 }
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                if let name = user.displayName, !name.isEmpty {
-                                    Text(name)
-                                        .font(.subheadline)
-                                        .fontWeight(.semibold)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    if let name = user.displayName, !name.isEmpty {
+                                        Text(name)
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.primary)
+                                    }
+                                    Text(user.email ?? user.provider.rawValue.capitalized)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
                                 }
-                                Text(user.email ?? user.provider.rawValue.capitalized)
+                                Spacer()
+                                Image(systemName: "chevron.right")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
+                            .padding(.vertical, 4)
                         }
-                        .padding(.vertical, 4)
+                        .buttonStyle(.plain)
 
                         if cloudStorageLoading {
                             HStack {
@@ -477,7 +492,7 @@ private struct SettingsView: View {
                         }
                     }
                 } header: {
-                    Text("Trip preferences")
+                    Text("My home")
                 } footer: {
                     Text("Used to exclude nearby photos from trip results. Change this to update which area counts as \"home.\"")
                 }
