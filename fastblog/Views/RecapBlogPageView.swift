@@ -1491,47 +1491,40 @@ struct RecapBlogPageView: View {
     @ViewBuilder
     private var firstSaveBannerOverlay: some View {
         if showFirstSaveBanner {
-            ZStack(alignment: .top) {
-                Color.black.opacity(0.4)
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation { showFirstSaveBanner = false }
-                    }
-                HStack(spacing: 12) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.green)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Draft has been saved")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
-                        Text("Your recap blog is ready.")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.75))
-                    }
-                    Spacer()
-                    Button {
-                        withAnimation { showFirstSaveBanner = false }
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(.white.opacity(0.5))
-                    }
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(.green)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Draft has been saved")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                    Text("Your recap blog is ready.")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.75))
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(.ultraThinMaterial)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                        )
-                )
-                .padding(.horizontal, 20)
-                .padding(.top, 50)
+                Spacer()
+                Button {
+                    withAnimation { showFirstSaveBanner = false }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.white.opacity(0.5))
+                }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+            )
+            .padding(.horizontal, 20)
+            .padding(.top, 50)
             .transition(.opacity)
         }
     }
