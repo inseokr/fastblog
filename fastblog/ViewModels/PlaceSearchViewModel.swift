@@ -64,6 +64,16 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         query = ""
         suggestions = []
     }
+
+    /// Resolves a search completion to its MKPointOfInterestCategory raw value.
+    /// Performs a single MKLocalSearch round-trip; returns nil if no POI category is available.
+    func fetchCategory(for completion: MKLocalSearchCompletion) async -> String? {
+        let request = MKLocalSearch.Request(completion: completion)
+        let search = MKLocalSearch(request: request)
+        guard let response = try? await search.start(),
+              let mapItem = response.mapItems.first else { return nil }
+        return mapItem.pointOfInterestCategory?.rawValue
+    }
 }
 
 extension PlaceSearchViewModel: MKLocalSearchCompleterDelegate {

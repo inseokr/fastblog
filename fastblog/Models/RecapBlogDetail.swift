@@ -86,11 +86,18 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
     var representativeLocation: PhotoCoordinate?
     var photos: [RecapPhoto]
     var noteText: String?
+    /// Quick summary of this place derived from photo captions (e.g. LLM summary). Shown above/below place and time.
+    var overallStory: String?
     /// Server-assigned placeIndex in user.placeVisitHistory. Set after successful blog upload.
     var cloudPlaceIndex: Int?
     /// Digitized timestamp of the first included photo (EXIF format "yyyy:MM:dd HH:mm:ss").
     /// Used as a cloud deduplication and update key alongside cloudPlaceIndex.
     var visitedTimeDigitized: String?
+    /// Raw MKPointOfInterestCategory.rawValue set when user picks from Maps autocomplete (e.g. "MKPOICategoryRestaurant").
+    var placeCategory: String?
+
+    /// True when the user has manually typed the overall story (disables AI auto-cascade).
+    var overallStoryIsManual: Bool
 
     init(
         id: UUID = UUID(),
@@ -100,8 +107,11 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         representativeLocation: PhotoCoordinate? = nil,
         photos: [RecapPhoto],
         noteText: String? = nil,
+        overallStory: String? = nil,
+        overallStoryIsManual: Bool = false,
         cloudPlaceIndex: Int? = nil,
-        visitedTimeDigitized: String? = nil
+        visitedTimeDigitized: String? = nil,
+        placeCategory: String? = nil
     ) {
         self.id = id
         self.orderIndex = orderIndex
@@ -110,8 +120,11 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         self.representativeLocation = representativeLocation
         self.photos = photos
         self.noteText = noteText
+        self.overallStory = overallStory
+        self.overallStoryIsManual = overallStoryIsManual
         self.cloudPlaceIndex = cloudPlaceIndex
         self.visitedTimeDigitized = visitedTimeDigitized
+        self.placeCategory = placeCategory
     }
 
     var coverPhoto: RecapPhoto? {
@@ -143,8 +156,10 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
     var qualityScore: PhotoScore?
     /// Cloud URL returned by the file server after upload. Nil means not yet uploaded.
     var cloudURL: String?
+    /// True when the user has manually typed this photo's caption (AI wand is hidden and auto-cascade skips this photo).
+    var captionIsManual: Bool
 
-    init(id: UUID = UUID(), timestamp: Date, location: PhotoCoordinate? = nil, imageName: String, isIncluded: Bool = true, localIdentifier: String? = nil, caption: String? = nil, qualityScore: PhotoScore? = nil, cloudURL: String? = nil) {
+    init(id: UUID = UUID(), timestamp: Date, location: PhotoCoordinate? = nil, imageName: String, isIncluded: Bool = true, localIdentifier: String? = nil, caption: String? = nil, qualityScore: PhotoScore? = nil, cloudURL: String? = nil, captionIsManual: Bool = false) {
         self.id = id
         self.timestamp = timestamp
         self.location = location
@@ -154,5 +169,6 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
         self.caption = caption
         self.qualityScore = qualityScore
         self.cloudURL = cloudURL
+        self.captionIsManual = captionIsManual
     }
 }

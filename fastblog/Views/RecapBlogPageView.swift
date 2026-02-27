@@ -70,6 +70,8 @@ struct RecapBlogPageView: View {
     @State private var showAuth = false
     @State private var showProfileManagement = false
     @State private var showRestorePlaces = false
+    /// Tracks whether AI auto-fill is running so we don't show the blog as empty during generation.
+    @State private var isAutoFillingCaptions = false
 
 
     private enum UndoAction {
@@ -246,13 +248,21 @@ struct RecapBlogPageView: View {
                 )
             }
             .sheet(item: $showEditNameForStop) { stop in
-                EditPlaceStopNameSheet(placeTitle: bindingForPlaceTitle(stopId: stop.id), location: stop.representativeLocation?.clCoordinate ?? stop.photos.first?.location?.clCoordinate, onSave: { newTitle in
-                    updatePlaceTitle(stopId: stop.id, to: newTitle)
+                EditPlaceStopNameSheet(placeTitle: bindingForPlaceTitle(stopId: stop.id), location: stop.representativeLocation?.clCoordinate ?? stop.photos.first?.location?.clCoordinate, onSave: { newTitle, category in
+                    updatePlaceTitle(stopId: stop.id, to: newTitle, category: category)
                 })
             }
             .sheet(item: $showManagePhotosForStop, onDismiss: {
+                // Capture dayId/stopId before syncPhotoChangesWithCloud clears managePhotosEditInfo.
+                let managedItem = managePhotosEditInfo
                 createdRecapStore.saveBlogDetail(draft)
                 syncPhotoChangesWithCloud()
+                // Auto-fill AI captions for any newly included photos in this stop.
+                if let item = managedItem {
+                    Task { @MainActor in
+                        await autoFillCaptionsForStop(dayId: item.dayId, stopId: item.stopId)
+                    }
+                }
             }) { pair in
                 ManagePhotosView(
                     placeTitle: placeStop(dayId: pair.dayId, stopId: pair.stopId)?.placeTitle ?? "Photos",
@@ -764,6 +774,7 @@ struct RecapBlogPageView: View {
                     isEditMode: isEditMode,
                     badgeColor: badgeColor,
                     placeNote: bindingForPlaceNote(dayId: day.id, stopId: stop.id),
+                    overallStory: bindingForOverallStory(dayId: day.id, stopId: stop.id),
                     photoCaption: { bindingForPhotoCaption(dayId: day.id, stopId: stop.id, photoId: $0) },
                     onDelete: {
                         removePlaceStop(dayId: day.id, stopId: stop.id)
@@ -785,6 +796,30 @@ struct RecapBlogPageView: View {
                     onEditName: { showEditNameForStop = stop },
                     onDoneEditingStory: { stopId, isPlaceNote, photoId in
                         syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: isPlaceNote, photoId: photoId)
+                    },
+                    onGeneratePlaceStory: {
+                        await StoryCaptionService.shared.generatePlaceStory(stop: stop, dayDate: day.date)
+                    },
+                    onGenerateOverallStory: {
+                        guard let currentStop = placeStop(dayId: day.id, stopId: stop.id) else { return "" }
+                        let captions = currentStop.photos.filter(\.isIncluded).map { $0.caption ?? "" }
+                        return await StoryCaptionService.shared.generateOverallPlaceStory(stop: currentStop, dayDate: day.date, photoCaptions: captions)
+                    },
+                    onGeneratePhotoCaption: { photo in
+                        await StoryCaptionService.shared.generateCaption(photo: photo, placeName: stop.placeTitle, placeSubtitle: stop.placeSubtitle)
+                    },
+                    onPhotoUserEdited: { photoId in
+                        markPhotoCaptionManual(dayId: day.id, stopId: stop.id, photoId: photoId)
+                    },
+                    onOverallStoryUserEdited: {
+                        markOverallStoryManual(dayId: day.id, stopId: stop.id)
+                    },
+                    onAICaptionApplied: { photoId in
+                        markPhotoCaptionAI(dayId: day.id, stopId: stop.id, photoId: photoId)
+                        Task { await cascadeOverallStory(dayId: day.id, stopId: stop.id) }
+                    },
+                    onAIOverallStoryApplied: {
+                        markOverallStoryAI(dayId: day.id, stopId: stop.id)
                     }
                 )
                 .id(stop.id)
@@ -822,7 +857,17 @@ struct RecapBlogPageView: View {
                         photos: includedPhotos,
                         initialPhotoId: includedPhotos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : includedPhotos[0].id,
                         photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
-                        onDismiss: { placePhotoModalItem = nil }
+                        onDismiss: { placePhotoModalItem = nil },
+                        onGenerateCaption: { photo, placeName, placeSubtitle in
+                            await StoryCaptionService.shared.generateCaption(photo: photo, placeName: placeName, placeSubtitle: placeSubtitle)
+                        },
+                        onAICaptionApplied: { photoId in
+                            markPhotoCaptionAI(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
+                            Task { await cascadeOverallStory(dayId: item.dayId, stopId: item.stopId) }
+                        },
+                        onPhotoCaptionManuallyEdited: { photoId in
+                            markPhotoCaptionManual(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
+                        }
                     )
                 } else {
                     Color.white
@@ -847,6 +892,8 @@ struct RecapBlogPageView: View {
         guard let trip = initialTrip ?? createdRecapStore.tripDraft(for: blogId) else { return }
         Task { @MainActor in
             draft = await createdRecapStore.buildBlogDetailAsync(from: trip)
+            // Case 1: first-time creation — auto-generate captions + overall stories for all places.
+            await autoFillCaptionsAndStories()
         }
     }
 
@@ -1029,12 +1076,13 @@ struct RecapBlogPageView: View {
         }
     }
 
-    private func updatePlaceTitle(stopId: UUID, to title: String) {
+    private func updatePlaceTitle(stopId: UUID, to title: String, category: String? = nil) {
         for i in draft.days.indices {
             if let j = draft.days[i].placeStops.firstIndex(where: { $0.id == stopId }) {
                 var day = draft.days[i]
                 var stop = day.placeStops[j]
                 stop.placeTitle = title
+                if let category { stop.placeCategory = category }
                 day.placeStops[j] = stop
                 draft.days[i] = day
 
@@ -1118,6 +1166,26 @@ struct RecapBlogPageView: View {
         )
     }
 
+    /// Overall place story (quick summary from photo captions); shown above/below place and time.
+    private func bindingForOverallStory(dayId: UUID, stopId: UUID) -> Binding<String> {
+        Binding(
+            get: {
+                guard let day = draft.days.first(where: { $0.id == dayId }),
+                      let stop = day.placeStops.first(where: { $0.id == stopId }) else { return "" }
+                return stop.overallStory ?? ""
+            },
+            set: { newValue in
+                guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+                      let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+                var day = draft.days[dayIdx]
+                var stop = day.placeStops[stopIdx]
+                stop.overallStory = newValue.isEmpty ? nil : newValue
+                day.placeStops[stopIdx] = stop
+                draft.days[dayIdx] = day
+            }
+        )
+    }
+
     /// Photo caption is stored per photo (photoID-based); persisted when user taps Save.
     private func bindingForPhotoCaption(dayId: UUID, stopId: UUID, photoId: UUID) -> Binding<String> {
         Binding(
@@ -1160,6 +1228,123 @@ struct RecapBlogPageView: View {
                 try? await APIManager.shared.updateStory(placeKey: placeKey, storyText: storyText, photoIndex: filteredIndex, photoIndexType: "filtered")
             }
         }
+    }
+
+    // MARK: - AI Caption Tracking
+
+    /// Mark a photo caption as manually typed by the user (hides AI wand, disables auto-cascade for this photo).
+    private func markPhotoCaptionManual(dayId: UUID, stopId: UUID, photoId: UUID) {
+        guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }),
+              let photoIdx = draft.days[dayIdx].placeStops[stopIdx].photos.firstIndex(where: { $0.id == photoId }) else { return }
+        draft.days[dayIdx].placeStops[stopIdx].photos[photoIdx].captionIsManual = true
+    }
+
+    /// Mark a photo caption as AI-generated (shows AI wand, allows auto-cascade for this photo).
+    private func markPhotoCaptionAI(dayId: UUID, stopId: UUID, photoId: UUID) {
+        guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }),
+              let photoIdx = draft.days[dayIdx].placeStops[stopIdx].photos.firstIndex(where: { $0.id == photoId }) else { return }
+        draft.days[dayIdx].placeStops[stopIdx].photos[photoIdx].captionIsManual = false
+    }
+
+    /// Mark the overall story as manually typed (disables AI auto-cascade for this place).
+    private func markOverallStoryManual(dayId: UUID, stopId: UUID) {
+        guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+        draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual = true
+    }
+
+    /// Mark the overall story as AI-generated (re-enables auto-cascade for this place).
+    private func markOverallStoryAI(dayId: UUID, stopId: UUID) {
+        guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+        draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual = false
+    }
+
+    /// Regenerates the overall place story from current photo captions, unless the user has manually edited it.
+    @MainActor
+    private func cascadeOverallStory(dayId: UUID, stopId: UUID) async {
+        guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }),
+              !draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual else { return }
+        let stop = draft.days[dayIdx].placeStops[stopIdx]
+        let dayDate = draft.days[dayIdx].date
+        let captions = stop.photos.filter(\.isIncluded).compactMap(\.caption).filter { !$0.isEmpty }
+        let story = await StoryCaptionService.shared.generateOverallPlaceStory(stop: stop, dayDate: dayDate, photoCaptions: captions)
+        guard draft.days.indices.contains(dayIdx),
+              draft.days[dayIdx].placeStops.indices.contains(stopIdx),
+              !draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual else { return }
+        draft.days[dayIdx].placeStops[stopIdx].overallStory = story
+    }
+
+    // MARK: - AI Auto-Fill (Case 1: first blog creation, and when new photos are added)
+
+    /// Auto-generates photo captions and overall stories for all stops in the draft.
+    /// Only runs on photos that are included, have no caption, and are not manually edited.
+    @MainActor
+    private func autoFillCaptionsAndStories() async {
+        for dayIdx in draft.days.indices {
+            for stopIdx in draft.days[dayIdx].placeStops.indices {
+                await autoFillCaptionsForStopAt(dayIdx: dayIdx, stopIdx: stopIdx)
+            }
+        }
+    }
+
+    /// Auto-generates photo captions (and overall story) for a single stop identified by dayId/stopId.
+    /// Used after ManagePhotos to handle newly included photos.
+    @MainActor
+    private func autoFillCaptionsForStop(dayId: UUID, stopId: UUID) async {
+        guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+        await autoFillCaptionsForStopAt(dayIdx: dayIdx, stopIdx: stopIdx)
+    }
+
+    /// Core auto-fill logic for a stop at given indices. Generates captions for eligible photos then cascades overall story.
+    @MainActor
+    private func autoFillCaptionsForStopAt(dayIdx: Int, stopIdx: Int) async {
+        guard draft.days.indices.contains(dayIdx),
+              draft.days[dayIdx].placeStops.indices.contains(stopIdx) else { return }
+
+        var captionsGenerated = false
+        let stop = draft.days[dayIdx].placeStops[stopIdx]
+
+        for photoIdx in stop.photos.indices {
+            let photo = stop.photos[photoIdx]
+            guard photo.isIncluded,
+                  !photo.captionIsManual,
+                  photo.caption == nil || photo.caption!.isEmpty else { continue }
+
+            let caption = await StoryCaptionService.shared.generateCaption(
+                photo: photo,
+                placeName: stop.placeTitle,
+                placeSubtitle: stop.placeSubtitle
+            )
+
+            guard draft.days.indices.contains(dayIdx),
+                  draft.days[dayIdx].placeStops.indices.contains(stopIdx),
+                  draft.days[dayIdx].placeStops[stopIdx].photos.indices.contains(photoIdx) else { continue }
+            draft.days[dayIdx].placeStops[stopIdx].photos[photoIdx].caption = caption
+            draft.days[dayIdx].placeStops[stopIdx].photos[photoIdx].captionIsManual = false
+            captionsGenerated = true
+        }
+
+        // After generating photo captions, cascade to overall story (if not manually edited).
+        guard captionsGenerated || draft.days[dayIdx].placeStops[stopIdx].overallStory == nil,
+              draft.days.indices.contains(dayIdx),
+              draft.days[dayIdx].placeStops.indices.contains(stopIdx),
+              !draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual else { return }
+
+        let updatedStop = draft.days[dayIdx].placeStops[stopIdx]
+        let dayDate = draft.days[dayIdx].date
+        let captions = updatedStop.photos.filter(\.isIncluded).compactMap(\.caption).filter { !$0.isEmpty }
+        let story = await StoryCaptionService.shared.generateOverallPlaceStory(
+            stop: updatedStop, dayDate: dayDate, photoCaptions: captions)
+
+        guard draft.days.indices.contains(dayIdx),
+              draft.days[dayIdx].placeStops.indices.contains(stopIdx),
+              !draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual else { return }
+        draft.days[dayIdx].placeStops[stopIdx].overallStory = story
     }
 
     private func distanceString(from: PlaceStop, to: PlaceStop) -> String? {

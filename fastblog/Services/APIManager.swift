@@ -367,7 +367,7 @@ final class APIManager {
     // MARK: - Blog Creation (Linkedspaces / Pocketverse)
 
     /// Digitized time format for API: "2026:01:06 18:57:13" (yyyy:MM:dd HH:mm:ss). Timezone is the photo's capture location so the time reflects where it was taken.
-    private static func digitizedTimeString(from date: Date, timeZone: TimeZone = TimeZone(identifier: "UTC")!) -> String {
+    static func digitizedTimeString(from date: Date, timeZone: TimeZone = TimeZone(identifier: "UTC")!) -> String {
         let f = DateFormatter()
         f.dateFormat = "yyyy:MM:dd HH:mm:ss"
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -392,7 +392,7 @@ final class APIManager {
     }
 
     /// Reads EXIF OffsetTimeOriginal from the asset's image data to get the capture timezone (no geocoding). Falls back to nil so caller can use UTC.
-    private static func getLocalTimeZone(for asset: PHAsset) async -> TimeZone? {
+    static func getLocalTimeZone(for asset: PHAsset) async -> TimeZone? {
         let options = PHImageRequestOptions()
         options.isSynchronous = false
         options.deliveryMode = .fastFormat

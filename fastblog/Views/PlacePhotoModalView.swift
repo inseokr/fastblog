@@ -22,8 +22,15 @@ struct PlacePhotoModalView: View {
     var blogIsEditMode: Bool = false
     var photoCaption: (UUID) -> Binding<String>
     var onDismiss: () -> Void
+    /// When provided, a "Generate" button is shown in the caption editing panel. Called with (photo, placeName, placeSubtitle); returns generated caption.
+    var onGenerateCaption: ((RecapPhoto, String, String?) async -> String)?
+    /// Called after the AI wand applies a caption. Used to mark captionIsManual = false and cascade overall story.
+    var onAICaptionApplied: ((UUID) -> Void)?
+    /// Called when the user manually edits a photo caption in the modal. Used to mark captionIsManual = true.
+    var onPhotoCaptionManuallyEdited: ((UUID) -> Void)?
 
     @State private var currentPhotoId: UUID
+    @State private var isGeneratingCaption = false
     @State private var isOverlayHidden = false
     @State private var isEditing = false
     @State private var editedCaptionText: String = ""
@@ -47,7 +54,10 @@ struct PlacePhotoModalView: View {
         initialPhotoId: UUID,
         blogIsEditMode: Bool = false,
         photoCaption: @escaping (UUID) -> Binding<String>,
-        onDismiss: @escaping () -> Void
+        onDismiss: @escaping () -> Void,
+        onGenerateCaption: ((RecapPhoto, String, String?) async -> String)? = nil,
+        onAICaptionApplied: ((UUID) -> Void)? = nil,
+        onPhotoCaptionManuallyEdited: ((UUID) -> Void)? = nil
     ) {
         self._placeTitle = placeTitle
         self.placeSubtitle = placeSubtitle
@@ -56,6 +66,9 @@ struct PlacePhotoModalView: View {
         self.blogIsEditMode = blogIsEditMode
         self.photoCaption = photoCaption
         self.onDismiss = onDismiss
+        self.onGenerateCaption = onGenerateCaption
+        self.onAICaptionApplied = onAICaptionApplied
+        self.onPhotoCaptionManuallyEdited = onPhotoCaptionManuallyEdited
         _currentPhotoId = State(initialValue: initialPhotoId)
     }
 
@@ -231,14 +244,41 @@ struct PlacePhotoModalView: View {
                         .background(Color.white.opacity(0.15))
                         .cornerRadius(8)
 
-                    TextField("Leave a story for this photo...", text: $editedCaptionText, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .font(.body)
-                        .foregroundColor(.white)
-                        .lineLimit(2...6)
-                        .padding(12)
-                        .background(Color.white.opacity(0.15))
-                        .cornerRadius(8)
+                    HStack(alignment: .top, spacing: 8) {
+                        TextField("Leave a story for this photo...", text: $editedCaptionText, axis: .vertical)
+                            .textFieldStyle(.plain)
+                            .font(.body)
+                            .foregroundColor(.white)
+                            .lineLimit(2...6)
+                            .padding(12)
+                            .background(Color.white.opacity(0.15))
+                            .cornerRadius(8)
+                        if let generate = onGenerateCaption, let photo = currentPhoto {
+                            Button {
+                                isGeneratingCaption = true
+                                Task {
+                                    let text = await generate(photo, editedPlaceTitle, placeSubtitle)
+                                    await MainActor.run {
+                                        editedCaptionText = text
+                                        photoCaption(currentPhotoId).wrappedValue = text
+                                        isGeneratingCaption = false
+                                        onAICaptionApplied?(currentPhotoId)
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "wand.and.stars")
+                                    .font(.body)
+                                    .foregroundColor(.white)
+                            }
+                            .disabled(isGeneratingCaption)
+                        }
+                    }
+
+                    if isGeneratingCaption {
+                        Text("Generating…")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
@@ -269,6 +309,9 @@ struct PlacePhotoModalView: View {
                 try? await Task.sleep(nanoseconds: 400_000_000)
                 guard !Task.isCancelled else { return }
                 photoCaption(currentPhotoId).wrappedValue = newValue
+                if !isGeneratingCaption {
+                    onPhotoCaptionManuallyEdited?(currentPhotoId)
+                }
             }
         }
     }

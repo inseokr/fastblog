@@ -6,6 +6,7 @@
 import Combine
 import CoreLocation
 import Foundation
+import Photos
 import SwiftUI
 
 // MARK: - Blog Ownership & Sync Enums
@@ -975,6 +976,37 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
         if !primaryCountry.isEmpty && primaryCountry != "Unknown" {
             detail.countryName = primaryCountry
+        }
+
+        // Compute visitedTimeDigitized for each stop using EXIF timezone from PHAssets.
+        // This ensures the displayed visit time reflects the local timezone where photos were taken,
+        // not the device's current timezone (which may differ when the user is home after travel).
+        let allIncludedPhotos = detail.days.flatMap(\.placeStops).flatMap { $0.photos.filter(\.isIncluded) }
+        let assetIds = allIncludedPhotos.compactMap(\.localIdentifier)
+        var assetMap: [String: PHAsset] = [:]
+        if !assetIds.isEmpty {
+            let result = PHAsset.fetchAssets(withLocalIdentifiers: assetIds, options: nil)
+            result.enumerateObjects { asset, _, _ in assetMap[asset.localIdentifier] = asset }
+        }
+        var tzMap: [String: TimeZone] = [:]
+        await withTaskGroup(of: (String, TimeZone?).self) { group in
+            for (id, asset) in assetMap {
+                group.addTask { (id, await APIManager.getLocalTimeZone(for: asset)) }
+            }
+            for await (id, tz) in group {
+                if let tz { tzMap[id] = tz }
+            }
+        }
+        for dayIdx in detail.days.indices {
+            for stopIdx in detail.days[dayIdx].placeStops.indices {
+                let photos = detail.days[dayIdx].placeStops[stopIdx].photos.filter(\.isIncluded)
+                guard let firstPhoto = photos.min(by: { $0.timestamp < $1.timestamp }),
+                      let assetId = firstPhoto.localIdentifier,
+                      let asset = assetMap[assetId] else { continue }
+                let tz = tzMap[assetId] ?? TimeZone(identifier: "UTC")!
+                let date = asset.creationDate ?? firstPhoto.timestamp
+                detail.days[dayIdx].placeStops[stopIdx].visitedTimeDigitized = APIManager.digitizedTimeString(from: date, timeZone: tz)
+            }
         }
 
         // Score photos with iOS Vision AI and auto-select best per place stop.

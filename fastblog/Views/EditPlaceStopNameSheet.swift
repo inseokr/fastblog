@@ -9,11 +9,12 @@ import SwiftUI
 struct EditPlaceStopNameSheet: View {
     @Binding var placeTitle: String
     var location: CLLocationCoordinate2D?
-    var onSave: (String) -> Void
+    var onSave: (String, String?) -> Void
     @Environment(\.dismiss) private var dismiss
 
     @StateObject private var searchViewModel = PlaceSearchViewModel()
     @State private var editedTitle: String = ""
+    @State private var selectedCategory: String? = nil
     @FocusState private var isFocused: Bool
     @State private var showSuggestions: Bool = true
 
@@ -61,6 +62,10 @@ struct EditPlaceStopNameSheet: View {
                                 isFocused = false
                                 editedTitle = suggestion.title
                                 searchViewModel.suggestions = []
+                                selectedCategory = nil
+                                Task {
+                                    selectedCategory = await searchViewModel.fetchCategory(for: suggestion)
+                                }
                             } label: {
                                 VStack(alignment: .leading) {
                                     Text(suggestion.title)
@@ -88,7 +93,7 @@ struct EditPlaceStopNameSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         let trimmed = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                        onSave(trimmed.isEmpty ? "Stop" : trimmed)
+                        onSave(trimmed.isEmpty ? "Stop" : trimmed, selectedCategory)
                         dismiss()
                     }
                     .disabled(editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -97,6 +102,7 @@ struct EditPlaceStopNameSheet: View {
             }
             .onAppear {
                 editedTitle = placeTitle
+                selectedCategory = nil
                 searchViewModel.setBiasLocation(location)
             }
             .preferredColorScheme(.dark)
@@ -105,5 +111,5 @@ struct EditPlaceStopNameSheet: View {
 }
 
 #Preview {
-    EditPlaceStopNameSheet(placeTitle: .constant("Iceland Ring Road"), location: nil, onSave: { _ in })
+    EditPlaceStopNameSheet(placeTitle: .constant("Iceland Ring Road"), location: nil, onSave: { _, _ in })
 }
