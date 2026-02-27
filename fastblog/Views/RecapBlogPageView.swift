@@ -61,6 +61,7 @@ struct RecapBlogPageView: View {
 
     // Cloud Upload State
     @State private var isUploading = false
+    @State private var uploadTask: Task<Void, Never>?
     @State private var uploadProgress: (current: Int, total: Int) = (0, 0)
     @State private var showUploadingFullScreen = false
     @State private var showUploadSuccessBanner = false
@@ -121,7 +122,7 @@ struct RecapBlogPageView: View {
             .overlay(alignment: .top) { uploadSuccessBannerOverlay }
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showUploadSuccessBanner)
             .fullScreenCover(isPresented: $showUploadingFullScreen) {
-                UploadingBlogView(uploadProgress: $uploadProgress)
+                UploadingBlogView(uploadProgress: $uploadProgress, onCancel: cancelUpload)
             }
             .alert("Upload Failed", isPresented: $showUploadErrorAlert) {
                 if uploadErrorMessage == "Please sign in to upload photos." {
@@ -200,6 +201,10 @@ struct RecapBlogPageView: View {
                     },
                     onDelete: {
                         createdRecapStore.deleteBlog(sourceTripId: blogId)
+                        dismiss()
+                    },
+                    onRemoveLocalOnly: {
+                        createdRecapStore.removeLocalCopy(sourceTripId: blogId)
                         dismiss()
                     },
                     onRemoveFromCloud: {
@@ -389,36 +394,31 @@ struct RecapBlogPageView: View {
                     }
                 }
                 
-                if !isKeyboardVisible {
-                    // Day Filter fixed at bottom
-                    dayFilterSection
-                        .ignoresSafeArea(.keyboard)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-                
-                // Undo Overlay (Banner or Button)
-                if showUndoOverlay {
-                    UndoOverlayView(
-                        text: lastUndoAction?.text ?? "Item deleted",
-                        isMinimized: $isUndoMinimized,
-                        onUndo: {
-                            performUndo()
-                        },
-                        onDismiss: {
-                            withAnimation {
-                                showUndoOverlay = false
-                                lastUndoAction = nil
+                VStack(spacing: 15) {
+                    // Undo Overlay (Banner or Button)
+                    if showUndoOverlay {
+                        UndoOverlayView(
+                            text: lastUndoAction?.text ?? "Item deleted",
+                            isMinimized: $isUndoMinimized,
+                            onUndo: {
+                                performUndo()
+                            },
+                            onDismiss: {
+                                withAnimation {
+                                    showUndoOverlay = false
+                                    lastUndoAction = nil
+                                }
                             }
-                        }
-                    )
-                    // When expanded, push it up above the day filter
-                    // When minimized, it sits in bottom right (UndoOverlayView handles its own bottom alignment to safe area, 
-                    // but we might want to offset it slightly to not cover the last day chip if list is long, 
-                    // though typically FABs overlay content).
-                    // The Day Filter is ~52pt high.
-                    .padding(.bottom, isUndoMinimized ? 52 : 72) 
-                    .ignoresSafeArea(.keyboard)
+                        )
+                    }
+
+                    if !isKeyboardVisible {
+                        // Day Filter fixed at bottom
+                        dayFilterSection
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                 }
+                .ignoresSafeArea(.keyboard)
             }
         }
         .background(Color.black)
@@ -643,7 +643,8 @@ struct RecapBlogPageView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 2)
         }
         .frame(maxWidth: .infinity)
         .background {
@@ -791,7 +792,7 @@ struct RecapBlogPageView: View {
                     onPhotoTapped: { photo in
                         placePhotoModalItem = PlacePhotoModalItem(dayId: day.id, stopId: stop.id, initialPhotoId: photo.id)
                     },
-                    onCaptionFocus: { scrollToStopId = stop.id },
+                    onCaptionFocus: { focusId in scrollToStopId = focusId },
                     onNavigate: { openNavigation(for: stop) },
                     onEditName: { showEditNameForStop = stop },
                     onDoneEditingStory: { stopId, isPlaceNote, photoId in
@@ -1592,7 +1593,7 @@ struct RecapBlogPageView: View {
                     .multilineTextAlignment(.center)
                     .foregroundColor(.primary)
 
-                Text("Would you like us to email you a link so you can easily access your blog on the web?")
+                Text("Would you like to email this blog link to yourself to edit it on your PC?")
                     .font(.body)
                     .multilineTextAlignment(.center)
                     .foregroundColor(.secondary)
@@ -1817,9 +1818,10 @@ struct RecapBlogPageView: View {
         uploadProgress = (0, photosToUpload.count)
         showUploadingFullScreen = true
 
-        Task {
+        uploadTask = Task {
             var failCount = 0
             for item in photosToUpload {
+                if Task.isCancelled { break }
                 do {
                     let cloudURL = try await APIManager.shared.uploadPhoto(assetIdentifier: item.assetId)
                     // Write the cloud URL back into the draft
@@ -1829,6 +1831,11 @@ struct RecapBlogPageView: View {
                     print("🚨 Upload failed for asset \(item.assetId): \(error.localizedDescription)")
                 }
                 uploadProgress.current += 1
+            }
+
+            if Task.isCancelled {
+                // Return without doing any further cloud actions if cancelled
+                return
             }
 
             // Save updated draft with cloud URLs
@@ -1865,6 +1872,13 @@ struct RecapBlogPageView: View {
                 }
             }
         }
+    }
+
+    private func cancelUpload() {
+        uploadTask?.cancel()
+        uploadTask = nil
+        isUploading = false
+        showUploadingFullScreen = false
     }
 
     private func openNavigation(for stop: PlaceStop) {

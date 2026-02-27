@@ -545,6 +545,11 @@ final class CreatedRecapBlogStore: ObservableObject {
                 }
             }
         }
+        removeLocalCopy(sourceTripId: sourceTripId)
+    }
+
+    /// Removes a created blog locally, but DOES NOT delete it from the cloud.
+    func removeLocalCopy(sourceTripId: UUID) {
         recents.removeAll { $0.sourceTripId == sourceTripId }
         blogDetailsBySourceId.removeValue(forKey: sourceTripId)
         if pendingRecapCreated { pendingRecapCreated = false }

@@ -22,7 +22,7 @@ struct PlaceStopRowView: View {
     var onManagePhotos: () -> Void
     var onRemovePhoto: ((UUID) -> Void)?
     var onPhotoTapped: ((RecapPhoto) -> Void)?
-    var onCaptionFocus: (() -> Void)?
+    var onCaptionFocus: ((UUID) -> Void)?
     var onNavigate: (() -> Void)?
     var onEditName: (() -> Void)?
     /// Called when user taps Done on the keyboard toolbar; (stopId, isPlaceNote, photoId if photo caption).
@@ -43,6 +43,7 @@ struct PlaceStopRowView: View {
     var onAIOverallStoryApplied: (() -> Void)?
 
     @FocusState private var focusedPlaceNote: Bool
+    @FocusState private var focusedOverallStory: Bool
     @State private var isGeneratingPlaceStory = false
     @State private var isGeneratingOverallStory = false
     @State private var generatingPhotoId: UUID?
@@ -82,6 +83,7 @@ struct PlaceStopRowView: View {
     /// True when the focused field (place note or photo caption) has text, so Clear should be red.
     private var clearButtonIsRed: Bool {
         if focusedPlaceNote { return !placeNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        if focusedOverallStory { return !overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         if let id = focusedPhotoId { return !photoCaption(id).wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         return false
     }
@@ -180,7 +182,7 @@ struct PlaceStopRowView: View {
             //             }
             //             .focused($focusedPlaceNote)
             //             .onChange(of: focusedPlaceNote) { _, isFocused in
-            //                 if isFocused { onCaptionFocus?() }
+            //                 if isFocused { onCaptionFocus?(stop.id) }
             //             }
             //         if let generate = onGeneratePlaceStory {
             //             Button {
@@ -254,13 +256,14 @@ struct PlaceStopRowView: View {
                                                 .lineLimit(1)
                                                 .focused($focusedPhotoId, equals: photo.id)
                                                 .onChange(of: focusedPhotoId) { _, _ in
-                                                    if focusedPhotoId != nil { onCaptionFocus?() }
+                                                    if let id = focusedPhotoId { onCaptionFocus?(id) }
                                                 }
                                                 .onChange(of: photoCaption(photo.id).wrappedValue) { _, _ in
                                                     if generatingPhotoId != photo.id {
                                                         onPhotoUserEdited?(photo.id)
                                                     }
                                                 }
+                                            /* Hide Magic pen for photo captions per user request
                                             if let generate = onGeneratePhotoCaption, !photo.captionIsManual {
                                                 Button {
                                                     generatingPhotoId = photo.id
@@ -279,6 +282,7 @@ struct PlaceStopRowView: View {
                                                 }
                                                 .disabled(generatingPhotoId == photo.id)
                                             }
+                                            */
                                         }
                                         .frame(width: thumbnailSize)
                                     } else if !photoCaption(photo.id).wrappedValue.isEmpty {
@@ -290,6 +294,7 @@ struct PlaceStopRowView: View {
                                     }
                                 }
                                 .frame(width: thumbnailSize)
+                                .id(photo.id)
                             }
                             // Manage Photos card at end of scroll
                             if isEditMode && stop.photos.count > 1 {
@@ -320,28 +325,33 @@ struct PlaceStopRowView: View {
                 .padding(.bottom, 12)
             }
 
-            timelineLine
+            // timelineLine removed per user request
         }
         .background(Color(white: 0.12))
         .cornerRadius(12)
         .toolbar {
-            if focusedPlaceNote || focusedPhotoId != nil {
+            if focusedPlaceNote || focusedOverallStory || focusedPhotoId != nil {
                 ToolbarItemGroup(placement: .keyboard) {
                     KeyboardCaptionToolbar(
                         onCancel: {
                             focusedPlaceNote = false
+                            focusedOverallStory = false
                             focusedPhotoId = nil
                         },
                         onClear: {
                             if focusedPlaceNote {
                                 placeNote = ""
+                            } else if focusedOverallStory {
+                                overallStory = ""
                             } else if let id = focusedPhotoId {
                                 photoCaption(id).wrappedValue = ""
                             }
                         },
                         onDone: {
-                            onDoneEditingStory?(stop.id, focusedPlaceNote, focusedPhotoId)
+                            // If it's overallStory being edited, we flag isPlaceNote=true to save the stop
+                            onDoneEditingStory?(stop.id, focusedPlaceNote || focusedOverallStory, focusedPhotoId)
                             focusedPlaceNote = false
+                            focusedOverallStory = false
                             focusedPhotoId = nil
                         },
                         isClearRed: clearButtonIsRed,
@@ -372,6 +382,10 @@ struct PlaceStopRowView: View {
                                     .padding(12)
                                     .allowsHitTesting(false)
                             }
+                        }
+                        .focused($focusedOverallStory)
+                        .onChange(of: focusedOverallStory) { _, isFocused in
+                            if isFocused { onCaptionFocus?(stop.id) }
                         }
                         .onChange(of: overallStory) { _, _ in
                             if !isGeneratingOverallStory {

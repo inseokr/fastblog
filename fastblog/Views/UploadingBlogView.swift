@@ -7,6 +7,7 @@ import SwiftUI
 
 struct UploadingBlogView: View {
     @Binding var uploadProgress: (current: Int, total: Int)
+    var onCancel: () -> Void
 
     @State private var ringRotation: Double = 0
     @State private var assembledStep: Int = 0
@@ -32,6 +33,20 @@ struct UploadingBlogView: View {
             VStack(spacing: 32) {
                 uploadAnimation
                 messageSection
+            }
+            
+            VStack {
+                Spacer()
+                Button(action: onCancel) {
+                    Text("Cancel")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding(.vertical, 14)
+                        .padding(.horizontal, 40)
+                        .background(Color.red.opacity(0.8))
+                        .clipShape(Capsule())
+                }
+                .padding(.bottom, 50)
             }
         }
         .preferredColorScheme(.dark)
@@ -152,5 +167,5 @@ struct UploadingBlogView: View {
 }
 
 #Preview {
-    UploadingBlogView(uploadProgress: .constant((3, 12)))
+    UploadingBlogView(uploadProgress: .constant((3, 12)), onCancel: {})
 }

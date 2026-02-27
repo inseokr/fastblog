@@ -12,6 +12,7 @@ struct BlogSettingsSheet: View {
     var onSave: () -> Void
     var onEditMode: (() -> Void)? = nil
     var onDelete: () -> Void
+    var onRemoveLocalOnly: (() -> Void)? = nil
     var onRemoveFromCloud: (() -> Void)? = nil
     /// Called after the user restores a removed place so the parent can persist the draft.
     var onRestore: (() -> Void)? = nil
@@ -23,6 +24,7 @@ struct BlogSettingsSheet: View {
     @State private var showDeleteConfirmation = false
     @State private var showRemoveFromCloudConfirmation = false
     @State private var showRestorePlaces = false
+    @State private var showCustomDeletePopup = false
 
     private var hasCloudPhotos: Bool {
         draft.days.flatMap(\.placeStops).flatMap(\.photos).contains { $0.cloudURL != nil }
@@ -80,7 +82,13 @@ struct BlogSettingsSheet: View {
                 }
                 
                 Button {
-                    showDeleteConfirmation = true
+                    if blogKey != nil {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            showCustomDeletePopup = true
+                        }
+                    } else {
+                        showDeleteConfirmation = true
+                    }
                 } label: {
                     Text("Delete Blog")
                         .font(.headline)
@@ -134,6 +142,90 @@ struct BlogSettingsSheet: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Are you sure you want to delete this blog? It will be removed from your profile, but the trip will be available in Trips to customize again.")
+            }
+            .overlay {
+                if showCustomDeletePopup {
+                    ZStack {
+                        Color.black.opacity(0.6)
+                            .ignoresSafeArea()
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    showCustomDeletePopup = false
+                                }
+                            }
+                        
+                        VStack(spacing: 24) {
+                            Image("Blogo")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 60, height: 60)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .padding(.top, 8)
+                            
+                            VStack(spacing: 8) {
+                                Text("Delete This Blog?")
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.white)
+                                
+                                Text("\"\(draft.title)\"")
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal)
+                            }
+                            
+                            VStack(spacing: 12) {
+                                Button {
+                                    withAnimation { showCustomDeletePopup = false }
+                                    onDelete()
+                                    dismiss()
+                                } label: {
+                                    Text("Delete Everywhere")
+                                        .font(.headline)
+                                        .foregroundColor(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 14)
+                                        .background(Color.red)
+                                        .cornerRadius(12)
+                                }
+                                
+                                Button {
+                                    withAnimation { showCustomDeletePopup = false }
+                                    onRemoveLocalOnly?()
+                                    dismiss()
+                                } label: {
+                                    Text("Remove from This Device")
+                                        .font(.headline)
+                                        .foregroundColor(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 14)
+                                        .background(Color(white: 0.2))
+                                        .cornerRadius(12)
+                                }
+                                
+                                Button {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                        showCustomDeletePopup = false
+                                    }
+                                } label: {
+                                    Text("Cancel")
+                                        .font(.headline)
+                                        .foregroundColor(.secondary)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 14)
+                                }
+                            }
+                        }
+                        .padding(24)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .cornerRadius(24)
+                        .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+                        .padding(.horizontal, 32)
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
+                    }
+                    .zIndex(1)
+                }
             }
             .alert("Remove from Cloud?", isPresented: $showRemoveFromCloudConfirmation) {
                 Button("Yes", role: .destructive) {
