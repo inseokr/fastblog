@@ -19,8 +19,6 @@ struct ManagePhotosView: View {
     // Zoom state for main photo
     @State private var zoomScale: CGFloat = 1.0
     @State private var baseZoomScale: CGFloat = 1.0
-    @State private var zoomOffset: CGSize = .zero
-    @State private var lastZoomOffset: CGSize = .zero
 
     private static let thumbnailSize: CGFloat = 60
     private static let thumbnailSpacing: CGFloat = 12
@@ -84,8 +82,6 @@ struct ManagePhotosView: View {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     zoomScale = 1.0
                     baseZoomScale = 1.0
-                    zoomOffset = .zero
-                    lastZoomOffset = .zero
                 }
             }
         }
@@ -94,8 +90,8 @@ struct ManagePhotosView: View {
     // MARK: - Main Photo
 
     private var mainPhotoArea: some View {
-        ZStack {
-            if let photo = currentPhoto {
+        TabView(selection: $currentPhotoId) {
+            ForEach(photos) { photo in
                 ZStack {
                     RecapPhotoThumbnail(
                         photo: photo,
@@ -106,12 +102,11 @@ struct ManagePhotosView: View {
                     .aspectRatio(contentMode: .fit)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .scaleEffect(zoomScale)
-                    .offset(zoomOffset)
 
                     if photo.isIncluded {
                         Color.black.opacity(0.4)
                             .allowsHitTesting(false)
-                            
+
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 72))
                             .foregroundStyle(.white)
@@ -121,45 +116,17 @@ struct ManagePhotosView: View {
                     }
                 }
                 .contentShape(Rectangle())
+                .tag(photo.id)
                 .onTapGesture {
                     if zoomScale > 1.01 {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             zoomScale = 1.0
                             baseZoomScale = 1.0
-                            zoomOffset = .zero
-                            lastZoomOffset = .zero
                         }
                     } else {
                         toggleInclusion()
                     }
                 }
-                .gesture(
-                    DragGesture(minimumDistance: 10)
-                        .onChanged { value in
-                            guard zoomScale > 1.01 else { return }
-                            zoomOffset = CGSize(
-                                width: lastZoomOffset.width + value.translation.width,
-                                height: lastZoomOffset.height + value.translation.height
-                            )
-                        }
-                        .onEnded { value in
-                            if zoomScale > 1.01 {
-                                lastZoomOffset = zoomOffset
-                            } else {
-                                let idx = photos.firstIndex(where: { $0.id == currentPhotoId }) ?? 0
-                                let dx = value.translation.width
-                                if dx < -40, idx + 1 < photos.count {
-                                    withAnimation(.easeInOut(duration: 0.22)) {
-                                        currentPhotoId = photos[idx + 1].id
-                                    }
-                                } else if dx > 40, idx > 0 {
-                                    withAnimation(.easeInOut(duration: 0.22)) {
-                                        currentPhotoId = photos[idx - 1].id
-                                    }
-                                }
-                            }
-                        }
-                )
                 .simultaneousGesture(
                     MagnificationGesture()
                         .onChanged { value in
@@ -170,8 +137,6 @@ struct ManagePhotosView: View {
                                 withAnimation(.easeInOut(duration: 0.2)) {
                                     zoomScale = 1.0
                                     baseZoomScale = 1.0
-                                    zoomOffset = .zero
-                                    lastZoomOffset = .zero
                                 }
                             } else {
                                 baseZoomScale = zoomScale
@@ -180,7 +145,8 @@ struct ManagePhotosView: View {
                 )
             }
         }
-        .animation(.easeInOut(duration: 0.22), value: currentPhotoId)
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .background(Color.black)
     }
 
     private func toggleInclusion() {

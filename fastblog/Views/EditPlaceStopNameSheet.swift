@@ -29,8 +29,8 @@ struct EditPlaceStopNameSheet: View {
                 if let coord = location {
                     TappableMapView(
                         center: coord,
-                        onTap: { tappedCoordinate in
-                            resolvePOI(at: tappedCoordinate)
+                        onTap: { tappedCoordinate, mapRegion in
+                            resolvePOI(at: tappedCoordinate, mapRegion: mapRegion)
                         }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -140,7 +140,7 @@ struct EditPlaceStopNameSheet: View {
     // Note: NSCocoaErrorDomain 4099 / PerfPowerTelemetryClientRegistrationService / "Maps SpringfieldUsage"
     // is a known iOS Simulator sandbox warning from MapKit telemetry. It does not affect POI resolution;
     // running on a real device usually avoids it. We guard against overlapping requests to reduce system load.
-    private func resolvePOI(at coordinate: CLLocationCoordinate2D) {
+    private func resolvePOI(at coordinate: CLLocationCoordinate2D, mapRegion: MKCoordinateRegion? = nil) {
         if isResolvingPOI {
             debugPrint("[POI] resolvePOI skipped (already resolving)")
             return
@@ -155,7 +155,7 @@ struct EditPlaceStopNameSheet: View {
                 debugPrint("[POI] resolvePOI finished")
             }
             // Prefer POI-at-tap (e.g. restaurant inside mall) over reverse geocode (which returns building/area).
-            if let poi = await searchViewModel.resolvePOIAtCoordinate(coordinate) {
+            if let poi = await searchViewModel.resolvePOIAtCoordinate(coordinate, mapRegion: mapRegion) {
                 debugPrint("[POI] POI-at-tap result: name=\(poi.name), category=\(poi.category ?? "nil")")
                 editedTitle = poi.name
                 selectedCoordinate = coordinate
@@ -188,7 +188,7 @@ struct EditPlaceStopNameSheet: View {
     // MARK: - Tappable map (tap → coordinate → resolve POI)
     private struct TappableMapView: UIViewRepresentable {
         let center: CLLocationCoordinate2D
-        var onTap: (CLLocationCoordinate2D) -> Void
+        var onTap: (CLLocationCoordinate2D, MKCoordinateRegion) -> Void
 
         func makeUIView(context: Context) -> MKMapView {
             let map = MKMapView()
@@ -243,7 +243,7 @@ struct EditPlaceStopNameSheet: View {
                 let point = gesture.location(in: mapView)
                 let coordinate = mapView.convert(point, toCoordinateFrom: mapView)
                 debugPrint("[POI] tap at point=\(point), coordinate=\(coordinate.latitude),\(coordinate.longitude) -> calling onTap")
-                parent.onTap(coordinate)
+                parent.onTap(coordinate, mapView.region)
             }
 
             func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {

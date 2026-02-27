@@ -888,6 +888,8 @@ struct RecapBlogPageView: View {
     private func loadDraftIfNeeded() {
         if let saved = createdRecapStore.getBlogDetail(blogId: blogId) {
             draft = saved
+            // Auto-generate stories for any places that are missing them (e.g. first open after AI was added).
+            Task { @MainActor in await autoFillMissingOverallStories() }
             return
         }
         guard let trip = initialTrip ?? createdRecapStore.tripDraft(for: blogId) else { return }
@@ -1095,6 +1097,9 @@ struct RecapBlogPageView: View {
                     let categories = stop.placeCategory.map { [$0] }
                     Task { try? await APIManager.shared.updatePlaceName(visitedTimeDigitized: placeKey, placeName: title, categories: categories) }
                 }
+                // Regenerate overall story with the updated place name (unless user manually wrote one).
+                let capturedDayId = day.id
+                Task { await cascadeOverallStory(dayId: capturedDayId, stopId: stopId) }
                 break
             }
         }
@@ -1335,7 +1340,7 @@ struct RecapBlogPageView: View {
         }
 
         // After generating photo captions, cascade to overall story (if not manually edited).
-        guard captionsGenerated || draft.days[dayIdx].placeStops[stopIdx].overallStory == nil,
+        guard captionsGenerated || draft.days[dayIdx].placeStops[stopIdx].overallStory?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false,
               draft.days.indices.contains(dayIdx),
               draft.days[dayIdx].placeStops.indices.contains(stopIdx),
               !draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual else { return }
@@ -1350,6 +1355,26 @@ struct RecapBlogPageView: View {
               draft.days[dayIdx].placeStops.indices.contains(stopIdx),
               !draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual else { return }
         draft.days[dayIdx].placeStops[stopIdx].overallStory = story
+    }
+
+    /// Generates overall stories for any stops that have none and haven't been manually edited.
+    /// Called when loading a saved blog so AI stories always appear even on older saved drafts.
+    @MainActor
+    private func autoFillMissingOverallStories() async {
+        for dayIdx in draft.days.indices {
+            for stopIdx in draft.days[dayIdx].placeStops.indices {
+                let stop = draft.days[dayIdx].placeStops[stopIdx]
+                guard !stop.overallStoryIsManual,
+                      stop.overallStory?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false else { continue }
+                let dayDate = draft.days[dayIdx].date
+                let captions = stop.photos.filter(\.isIncluded).compactMap(\.caption).filter { !$0.isEmpty }
+                let story = await StoryCaptionService.shared.generateOverallPlaceStory(stop: stop, dayDate: dayDate, photoCaptions: captions)
+                guard draft.days.indices.contains(dayIdx),
+                      draft.days[dayIdx].placeStops.indices.contains(stopIdx),
+                      !draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual else { continue }
+                draft.days[dayIdx].placeStops[stopIdx].overallStory = story
+            }
+        }
     }
 
     private func distanceString(from: PlaceStop, to: PlaceStop) -> String? {

@@ -32,13 +32,12 @@ struct KeyboardCaptionToolbar: View {
                     .background(Color(red: 0, green: 122/255, blue: 1))
                     .clipShape(Capsule())
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(.ultraThinMaterial)
-            .clipShape(Capsule())
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, 12)
-            
-            Color.clear.frame(height: 12)
+            // Extra space so buttons sit farther from the keyboard
+            Color.clear.frame(height: 28)
         }
     }
 }

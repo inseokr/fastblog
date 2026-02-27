@@ -266,18 +266,19 @@ struct PlacePhotoModalView: View {
                                     }
                                 }
                             } label: {
-                                Image(systemName: "wand.and.stars")
-                                    .font(.body)
-                                    .foregroundColor(.white)
+                                if isGeneratingCaption {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                        .scaleEffect(0.8)
+                                        .frame(width: 20, height: 20)
+                                } else {
+                                    Image(systemName: "wand.and.stars")
+                                        .font(.body)
+                                        .foregroundColor(.white)
+                                }
                             }
                             .disabled(isGeneratingCaption)
                         }
-                    }
-
-                    if isGeneratingCaption {
-                        Text("Generating…")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.8))
                     }
                 }
                 .padding(.horizontal, 20)
