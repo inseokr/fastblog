@@ -1,29 +1,31 @@
 //
-//  EmailLoginView.swift
-//  Capper
+//  ResetPasswordView.swift
+//  fastblog
 //
-//  Login with email/username and password
+//  Set new password using token from reset link (deep link or route param).
 //
 
 import SwiftUI
 
-struct EmailLoginView: View {
-    @Environment(\.dismiss) private var dismiss
+struct ResetPasswordView: View {
+    let token: String
+    var onSuccess: (() -> Void)?
+
     @EnvironmentObject private var authService: AuthService
 
-    var onAuthenticated: (() -> Void)?
-    
-    init(onAuthenticated: (() -> Void)? = nil) {
-        self.onAuthenticated = onAuthenticated
-    }
-
-    @State private var email = ""
-    @State private var password = ""
-    @State private var errorMessage: String?
+    @State private var newPassword = ""
+    @State private var confirmPassword = ""
     @State private var isLoading = false
-    @State private var showForgotPassword = false
-    @FocusState private var emailFocused: Bool
-    @FocusState private var passwordFocused: Bool
+    @State private var errorMessage: String?
+    @State private var showSuccessAlert = false
+
+    private let minPasswordLength = 8
+
+    private var passwordsMatch: Bool { newPassword == confirmPassword }
+    private var isLengthValid: Bool { newPassword.count >= minPasswordLength }
+    private var canSubmit: Bool {
+        !newPassword.isEmpty && !confirmPassword.isEmpty && passwordsMatch && isLengthValid && !isLoading
+    }
 
     var body: some View {
         NavigationStack {
@@ -32,10 +34,10 @@ struct EmailLoginView: View {
 
                 VStack(spacing: 24) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Welcome Back")
+                        Text("Set New Password")
                             .font(.system(size: 26, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
-                        Text("Log in to your account.")
+                        Text("Enter your new password below. Use at least \(minPasswordLength) characters.")
                             .font(.subheadline)
                             .foregroundColor(.white.opacity(0.65))
                             .lineSpacing(2)
@@ -44,56 +46,46 @@ struct EmailLoginView: View {
                     .padding(.top, 32)
 
                     VStack(spacing: 16) {
-                        TextField("Email or Username", text: $email)
-                            .keyboardType(.emailAddress)
-                            .textContentType(.emailAddress)
-                            .autocapitalization(.none)
-                            .autocorrectionDisabled()
-                            .focused($emailFocused)
+                        SecureField("New Password", text: $newPassword)
+                            .textContentType(.newPassword)
                             .padding()
                             .background(Color.white.opacity(0.1))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .stroke(emailFocused ? Color.white.opacity(0.6) : Color.white.opacity(0.2), lineWidth: 1)
+                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
                             )
                             .cornerRadius(12)
                             .foregroundColor(.white)
                             .tint(.white)
-                            .submitLabel(.next)
-                            .onSubmit { passwordFocused = true }
 
-                        SecureField("Password", text: $password)
-                            .textContentType(.password)
-                            .focused($passwordFocused)
+                        SecureField("Confirm Password", text: $confirmPassword)
+                            .textContentType(.newPassword)
                             .padding()
                             .background(Color.white.opacity(0.1))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .stroke(passwordFocused ? Color.white.opacity(0.6) : Color.white.opacity(0.2), lineWidth: 1)
+                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
                             )
                             .cornerRadius(12)
                             .foregroundColor(.white)
                             .tint(.white)
-                            .submitLabel(.go)
-                            .onSubmit { performLogin() }
                     }
 
+                    if !confirmPassword.isEmpty && !passwordsMatch {
+                        errorRow("Passwords do not match.")
+                    }
+                    if !newPassword.isEmpty && !isLengthValid {
+                        errorRow("Password must be at least \(minPasswordLength) characters.")
+                    }
                     if let err = errorMessage {
                         errorRow(err)
                     }
 
-                    primaryButton("Sign In", icon: "arrow.right.circle.fill") {
-                        performLogin()
+                    primaryButton("Reset Password", icon: "lock.rotation.open") {
+                        submitReset()
                     }
-                    .disabled(email.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
+                    .disabled(!canSubmit)
                     .padding(.top, 8)
-
-                    Button("Forgot Password?") {
-                        showForgotPassword = true
-                    }
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.top, 12)
 
                     Spacer()
                 }
@@ -106,29 +98,41 @@ struct EmailLoginView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundColor(.white.opacity(0.7))
+                    Button("Cancel") {
+                        onSuccess?()
+                    }
+                    .foregroundColor(.white.opacity(0.7))
                 }
             }
             .preferredColorScheme(.dark)
-            .onAppear { emailFocused = true }
-            .sheet(isPresented: $showForgotPassword) {
-                ForgotPasswordView(initialUsername: email.trimmingCharacters(in: .whitespaces).isEmpty ? nil : email.trimmingCharacters(in: .whitespaces))
-                    .environmentObject(authService)
+            .alert("Password Reset", isPresented: $showSuccessAlert) {
+                Button("OK") {
+                    showSuccessAlert = false
+                    onSuccess?()
+                }
+            } message: {
+                Text("Your password has been reset. You can sign in with your new password.")
             }
         }
     }
 
-    private func performLogin() {
-        let authEmail = email.trimmingCharacters(in: .whitespaces)
-        guard !authEmail.isEmpty, !password.isEmpty else { return }
-        
-        isLoading = true
+    private func submitReset() {
+        guard canSubmit else { return }
         errorMessage = nil
+        if !passwordsMatch {
+            errorMessage = "Passwords do not match."
+            return
+        }
+        if !isLengthValid {
+            errorMessage = "Password must be at least \(minPasswordLength) characters."
+            return
+        }
+
+        isLoading = true
         Task {
             do {
-                try await authService.login(email: authEmail, password: password)
-                onAuthenticated?()
+                try await authService.resetPassword(token: token, newPassword: newPassword, confirmPassword: confirmPassword)
+                showSuccessAlert = true
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -146,8 +150,6 @@ struct EmailLoginView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 4)
-        .transition(.opacity.combined(with: .move(edge: .top)))
-        .animation(.easeInOut, value: message)
     }
 
     private func primaryButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
@@ -190,6 +192,6 @@ struct EmailLoginView: View {
 }
 
 #Preview {
-    EmailLoginView()
+    ResetPasswordView(token: "preview-token", onSuccess: {})
         .environmentObject(AuthService.shared)
 }

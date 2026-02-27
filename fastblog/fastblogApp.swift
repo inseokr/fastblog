@@ -16,6 +16,7 @@ struct fastblogApp: App {
     @AppStorage("blogify.hasCheckedExistingUser") private var hasCheckedExistingUser = false
     @Environment(\.scenePhase) private var scenePhase
     @State private var isAppReady = false
+    @State private var pendingResetToken: String?
 
 #if DEBUG
     /// Flip to `true` to skip splash + onboarding and land directly on ManagePhotosView.
@@ -29,7 +30,22 @@ struct fastblogApp: App {
                 .environmentObject(authStateManager)
                 .environmentObject(createdRecapStore)
                 .onOpenURL { url in
-                    _ = GoogleAuthManager.handleURL(url)
+                    if let token = Self.parseResetPasswordToken(from: url) {
+                        DispatchQueue.main.async { pendingResetToken = token }
+                    } else {
+                        _ = GoogleAuthManager.handleURL(url)
+                    }
+                }
+                .sheet(isPresented: Binding(
+                    get: { isAppReady && pendingResetToken != nil },
+                    set: { if !$0 { pendingResetToken = nil } }
+                )) {
+                    if let token = pendingResetToken {
+                        ResetPasswordView(token: token) {
+                            pendingResetToken = nil
+                        }
+                        .environmentObject(authService)
+                    }
                 }
                 // Import drafts modal presented at app root so it overlays any screen
                 .sheet(isPresented: $authStateManager.showImportDraftsModal) {
@@ -126,5 +142,19 @@ struct fastblogApp: App {
     private func openSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
+    }
+
+    /// Parses fastblog://reset-password?token=... deep link. Returns token if valid.
+    private static func parseResetPasswordToken(from url: URL) -> String? {
+        guard url.scheme?.lowercased() == "fastblog" else { return nil }
+        guard url.host?.lowercased() == "reset-password" else { return nil }
+        guard let token = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first(where: { $0.name == "token" })?
+            .value?
+            .trimmingCharacters(in: .whitespaces),
+            !token.isEmpty
+        else { return nil }
+        return token
     }
 }

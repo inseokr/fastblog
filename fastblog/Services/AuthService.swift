@@ -21,6 +21,7 @@ enum AuthError: LocalizedError {
     case networkError(String)
     case appleSignInFailed(String)
     case cancelled
+    case passwordResetFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -30,6 +31,7 @@ enum AuthError: LocalizedError {
         case .networkError(let m):  return "Network error: \(m)"
         case .appleSignInFailed(let m): return "Apple Sign In failed: \(m)"
         case .cancelled:            return "Sign in was cancelled."
+        case .passwordResetFailed(let m): return m
         }
     }
 }
@@ -265,30 +267,31 @@ private struct UserPayload: Decodable {
 }
 
 private struct UsernameCheckResponse: Decodable {
-    let available: Bool?
-    let message: String?
+    let result: String?
+}
+
+private struct RecoveryEmailRequest: Encodable {
+    let username: String
+    let email: String
+}
+
+private struct ResetPasswordRequest: Encodable {
+    let password: String
+    let confirm: String
+}
+
+private struct BasicResultResponse: Decodable {
+    let result: String?
+    let reason: String?
 }
 
 extension AuthService {
     
     func checkUsernameAvailability(username: String) async throws -> Bool {
-        // Ideally pass via query parameter or post body depending on API standard
-        // Defaulting to GET with query param
-        struct EmptyResponse: Decodable {}
-        
-        let endpoint = "/user/availability?username=\(username.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? username)"
-        
-        // As we don't know the exact response format, if it returns 200 it might be available
-        // Or it returns a JSON { "available": true }
-        do {
-            let _: EmptyResponse = try await APIManager.shared.get(endpoint: endpoint, requiresAuth: false)
-            return true
-        } catch APIError.httpError(let statusCode, let message) {
-            if statusCode == 409 || message.lowercased().contains("taken") {
-                return false
-            }
-            throw APIError.httpError(statusCode: statusCode, message: message)
-        }
+        let encoded = username.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? username
+        let endpoint = "/user/availability?username=\(encoded)"
+        let response: UsernameCheckResponse = try await APIManager.shared.get(endpoint: endpoint, requiresAuth: false)
+        return response.result?.uppercased() == "YES"
     }
     
     func signup(username: String, email: String, password: String) async throws {
@@ -364,7 +367,40 @@ extension AuthService {
             provider: .email,
             storageUsedBytes: response.user?.storageUsedBytes ?? 0
         )
+        // Persist login identifier for forgot-password pre-fill (username or email)
+        let loginId = response.user?.username ?? (isUsername ? email : email)
+        UserDefaults.standard.set(loginId, forKey: "blogify.lastLoginUsername")
         finishSignIn(user: user)
+    }
+
+    // MARK: - Password Recovery
+
+    /// Sends a password-reset email to the given username/email combination.
+    /// Endpoint: POST /auth/request-reset  { username, email }
+    func sendRecoveryEmail(username: String, email: String) async throws {
+        let payload = RecoveryEmailRequest(username: username, email: email)
+        let response: BasicResultResponse = try await APIManager.shared.post(
+            endpoint: "/auth/request-reset",
+            body: payload,
+            requiresAuth: false
+        )
+        guard response.result?.uppercased() == "OK" else {
+            throw AuthError.passwordResetFailed(response.reason ?? "Failed to send recovery email. Please check your details and try again.")
+        }
+    }
+
+    /// Resets the password using a token received via deep link.
+    /// Endpoint: POST /auth/update-password/:token  { password, confirm }
+    func resetPassword(token: String, newPassword: String, confirmPassword: String) async throws {
+        let payload = ResetPasswordRequest(password: newPassword, confirm: confirmPassword)
+        let response: BasicResultResponse = try await APIManager.shared.post(
+            endpoint: "/auth/update-password/\(token)",
+            body: payload,
+            requiresAuth: false
+        )
+        guard response.result?.uppercased() == "OK" else {
+            throw AuthError.passwordResetFailed(response.reason ?? "Failed to reset password. The link may have expired.")
+        }
     }
 
     // MARK: - Storage Tracking
@@ -404,6 +440,9 @@ extension AuthService {
     private func finishSignIn(user: AuthUser) {
         currentUser = user
         persist(user)
+        if let username = user.username {
+            UserDefaults.standard.set(username, forKey: "blogify.lastLoginUsername")
+        }
         isLoading = false
         Analytics.track(.authSuccess)
     }
