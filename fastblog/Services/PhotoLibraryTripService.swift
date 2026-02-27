@@ -135,7 +135,7 @@ final class PhotoLibraryTripService {
         let sortedByDate = remaining.sorted { (a, b) in
             (a.creationDate ?? .distantPast) < (b.creationDate ?? .distantPast)
         }
-        let dayGroups = groupAssetsByDay(sortedByDate)
+        let dayGroups = await groupAssetsByDay(sortedByDate)
         let sortedDayGroups = dayGroups.sorted { $0.date < $1.date }
         debugPrint("[Scan] Grouped into \(sortedDayGroups.count) day groups")
         guard !sortedDayGroups.isEmpty else {
@@ -272,7 +272,7 @@ final class PhotoLibraryTripService {
         let sortedByDate = remaining.sorted { (a, b) in
             (a.creationDate ?? .distantPast) < (b.creationDate ?? .distantPast)
         }
-        let dayGroups = groupAssetsByDay(sortedByDate)
+        let dayGroups = await groupAssetsByDay(sortedByDate)
         let sortedDayGroups = dayGroups.sorted { $0.date < $1.date }
         guard !sortedDayGroups.isEmpty else { return [] }
 
@@ -415,7 +415,7 @@ final class PhotoLibraryTripService {
         let sortedByDate = remaining.sorted { (a, b) in
             (a.creationDate ?? .distantPast) < (b.creationDate ?? .distantPast)
         }
-        let dayGroups = groupAssetsByDay(sortedByDate)
+        let dayGroups = await groupAssetsByDay(sortedByDate)
         let sortedDayGroups = dayGroups.sorted { $0.date < $1.date }
         guard !sortedDayGroups.isEmpty else { return [] }
 
@@ -563,66 +563,80 @@ final class PhotoLibraryTripService {
     }
 
     /// Groups assets by calendar day, but handles late-night events (midnight bridge).
+    /// Uses each photo's EXIF capture timezone (OffsetTimeOriginal) so that photos taken
+    /// abroad are bucketed by the local date at the destination, not the device's timezone.
     /// If photos are in early morning (e.g. 00:00-04:00) and within 2 hours of previous day's last photo,
     /// they are conceptually part of the "previous day".
-    private func groupAssetsByDay(_ assets: [PHAsset]) -> [(date: Date, assets: [PHAsset])] {
-        // Initial grouping by standard calendar day
+    private func groupAssetsByDay(_ assets: [PHAsset]) async -> [(date: Date, assets: [PHAsset])] {
+        // Fetch EXIF capture timezone for every asset in parallel.
+        // Falls back to device timezone when EXIF offset is absent (e.g. screenshots).
+        var tzMap: [String: TimeZone] = [:]
+        await withTaskGroup(of: (String, TimeZone?).self) { group in
+            for asset in assets {
+                group.addTask {
+                    (asset.localIdentifier, await APIManager.getLocalTimeZone(for: asset))
+                }
+            }
+            for await (id, tz) in group {
+                if let tz { tzMap[id] = tz }
+            }
+        }
+
+        // Returns a Gregorian calendar set to the asset's capture timezone.
+        func localCalendar(for asset: PHAsset) -> Calendar {
+            var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = tzMap[asset.localIdentifier] ?? calendar.timeZone
+            return cal
+        }
+
+        // Initial grouping by local calendar day (using each photo's capture timezone)
         var byDay: [Date: [PHAsset]] = [:]
         for asset in assets {
             guard let creation = asset.creationDate else { continue }
-            let startOfDay = calendar.startOfDay(for: creation)
+            let cal = localCalendar(for: asset)
+            let startOfDay = cal.startOfDay(for: creation)
             byDay[startOfDay, default: []].append(asset)
         }
-        
+
         // Sort dates to process sequentially
         let sortedDates = byDay.keys.sorted()
-        
+
         // We will build a new list of groups, potentially merging
         var finalGroups: [(date: Date, assets: [PHAsset])] = []
-        
+
         for date in sortedDates {
             guard let assetsForDay = byDay[date] else { continue }
             // Sort assets for this day
             let sortedAssets = assetsForDay.sorted { ($0.creationDate ?? .distantPast) < ($1.creationDate ?? .distantPast) }
-            
+
             // Check if we can merge "early morning" photos to the PREVIOUS group
             if let lastGroup = finalGroups.last,
                let lastAssetOfPrevDay = lastGroup.assets.last,
                let prevEnd = lastAssetOfPrevDay.creationDate {
-                
+
                 var keptInCurrentDay: [PHAsset] = []
-                
+
                 for asset in sortedAssets {
                     guard let current = asset.creationDate else {
                         keptInCurrentDay.append(asset)
                         continue
                     }
-                    
-                    // Check if early morning (e.g. < 4 AM relative to day start)
-                    // Config: midnightBridgeHours = 2. So we check up to 2AM? 
-                    // PRD says: "Photos crossing midnight may stay in the same Day if Time gap <= 2 hours".
-                    // The "2 hours" is gap to previous photo. 
-                    // Usually "late night" implies e.g. up to 4AM or 5AM. 
-                    // Let's check hour component.
-                    let hour = calendar.component(.hour, from: current)
-                    
-                    // Assuming early morning if hour < 5 checks. 
-                    // But critical check is GAP to prevEnd.
+
+                    // Use the photo's capture timezone for the hour check so that
+                    // "before 5 AM" means 5 AM at the destination, not on the device.
+                    let cal = localCalendar(for: asset)
+                    let hour = cal.component(.hour, from: current)
                     let gap = current.timeIntervalSince(prevEnd)
                     let gapHours = gap / 3600.0
-                    
+
                     if hour < 5 && gapHours <= Double(ScanConfig.midnightBridgeHours) {
                         // Move to previous day
                         finalGroups[finalGroups.count - 1].assets.append(asset)
-                        // Update prevEnd for chain logic? 
-                        // If we move it, it becomes the new "last asset". 
-                        // But wait, we need to compare next photo to THIS one.
-                        // Yes, effectively we are appending to the last group.
                     } else {
                         keptInCurrentDay.append(asset)
                     }
                 }
-                
+
                 if !keptInCurrentDay.isEmpty {
                     finalGroups.append((date: date, assets: keptInCurrentDay))
                 }
@@ -630,7 +644,7 @@ final class PhotoLibraryTripService {
                 finalGroups.append((date: date, assets: sortedAssets))
             }
         }
-        
+
         return finalGroups
     }
 

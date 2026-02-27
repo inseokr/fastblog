@@ -136,8 +136,10 @@
 		BB000214 /* RemovedPlacesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000213 /* RemovedPlacesSheet.swift */; };
 		BB000215 /* UploadingBlogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000216 /* UploadingBlogView.swift */; };
 		BB000217 /* SecureShareToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000218 /* SecureShareToken.swift */; };
-		CA4A4801BFB9C9373BDB12E0 /* StoryCaptionGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E34776F396319FBEE2FCECD /* StoryCaptionGenerator.swift */; };
-		EF556D8FDD00C346BED0D1F4 /* LocalLLMStoryCaptionGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */; };
+		BB000220 /* PhotoTagService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000221 /* PhotoTagService.swift */; };
+		BB000222 /* StoryCaptionGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000223 /* StoryCaptionGenerator.swift */; };
+		BB000224 /* StoryCaptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000225 /* StoryCaptionService.swift */; };
+		BB000226 /* LocalLLMStoryCaptionGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000227 /* LocalLLMStoryCaptionGenerator.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -272,6 +274,10 @@
 		BB000213 /* RemovedPlacesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemovedPlacesSheet.swift; sourceTree = "<group>"; };
 		BB000216 /* UploadingBlogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadingBlogView.swift; sourceTree = "<group>"; };
 		BB000218 /* SecureShareToken.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureShareToken.swift; sourceTree = "<group>"; };
+		BB000221 /* PhotoTagService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoTagService.swift; sourceTree = "<group>"; };
+		BB000223 /* StoryCaptionGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryCaptionGenerator.swift; sourceTree = "<group>"; };
+		BB000225 /* StoryCaptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryCaptionService.swift; sourceTree = "<group>"; };
+		BB000227 /* LocalLLMStoryCaptionGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalLLMStoryCaptionGenerator.swift; sourceTree = "<group>"; };
 		BB000219 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
 		BB00021A /* Secrets.xcconfig.example */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig.example; sourceTree = "<group>"; };
 		F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalLLMStoryCaptionGenerator.swift; sourceTree = "<group>"; };
@@ -461,10 +467,14 @@
 				BB000193 /* PhotoAssetService.swift */,
 				BB000195 /* PhotoLibraryTripService.swift */,
 				BB0001EB /* PhotoQualityScorer.swift */,
+				BB000221 /* PhotoTagService.swift */,
 				BB000197 /* PhotosAuthorizationManager.swift */,
 				BB000199 /* PlaceClusteringService.swift */,
 				BB00019B /* PlaceStopClusteringService.swift */,
 				BB0001CD /* SmartReminderService.swift */,
+				BB000223 /* StoryCaptionGenerator.swift */,
+				BB000225 /* StoryCaptionService.swift */,
+				BB000227 /* LocalLLMStoryCaptionGenerator.swift */,
 				BB0001E2 /* StoreKitManager.swift */,
 				BB00019F /* TripClusteringDebug.swift */,
 				BB0001A1 /* TripClusteringTests.swift */,
@@ -657,6 +667,10 @@
 				BB0001A8 /* TripPhotoFilterTests.swift in Sources */,
 				BB0001AA /* TripPhotoSelectionService.swift in Sources */,
 				BB0001EC /* PhotoQualityScorer.swift in Sources */,
+				BB000220 /* PhotoTagService.swift in Sources */,
+				BB000222 /* StoryCaptionGenerator.swift in Sources */,
+				BB000224 /* StoryCaptionService.swift in Sources */,
+				BB000226 /* LocalLLMStoryCaptionGenerator.swift in Sources */,
 				BB0001C0 /* PlaceSearchViewModel.swift in Sources */,
 				BB0001C2 /* KeyboardCaptionToolbar.swift in Sources */,
 				BB0001C4 /* UndoOverlayView.swift in Sources */,
@@ -756,7 +770,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = H9V9G4FU84;
+				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "fastblog uses your location to identify your neighborhood and group travel photos.";
@@ -783,7 +797,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = H9V9G4FU84;
+				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "fastblog uses your location to identify your neighborhood and group travel photos.";
