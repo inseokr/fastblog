@@ -68,7 +68,7 @@ struct PlaceStopActionSheet: View {
                     dismiss()
                     onRemoveFromBlog()
                 }) {
-                    Text("Remove from Blog")
+                    Text("Hide from Blog")
                         .font(.body)
                         .foregroundColor(.red)
                         .frame(maxWidth: .infinity)

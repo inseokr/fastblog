@@ -122,7 +122,7 @@ struct PlaceStopRowView: View {
                         Spacer()
                         if isEditMode {
                             Button(action: onDelete) {
-                                Image(systemName: "trash")
+                                Image(systemName: "eye.slash")
                                     .font(.body)
                                     .foregroundColor(.secondary)
                             }

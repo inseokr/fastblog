@@ -271,17 +271,35 @@ private struct UsernameCheckResponse: Decodable {
 
 extension AuthService {
     
+    private struct AvailabilityResponse: Decodable {
+        let result: String?
+    }
+
     func checkUsernameAvailability(username: String) async throws -> Bool {
-        // Ideally pass via query parameter or post body depending on API standard
-        // Defaulting to GET with query param
-        struct EmptyResponse: Decodable {}
-        
         let endpoint = "/user/availability?username=\(username.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? username)"
         
-        // As we don't know the exact response format, if it returns 200 it might be available
-        // Or it returns a JSON { "available": true }
         do {
-            let _: EmptyResponse = try await APIManager.shared.get(endpoint: endpoint, requiresAuth: false)
+            let response: AvailabilityResponse = try await APIManager.shared.get(endpoint: endpoint, requiresAuth: false)
+            if response.result == "NO" {
+                return false
+            }
+            return true
+        } catch APIError.httpError(let statusCode, let message) {
+            if statusCode == 409 || message.lowercased().contains("taken") {
+                return false
+            }
+            throw APIError.httpError(statusCode: statusCode, message: message)
+        }
+    }
+
+    func checkEmailAvailability(email: String) async throws -> Bool {
+        let endpoint = "/user/availability?email=\(email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? email)"
+        
+        do {
+            let response: AvailabilityResponse = try await APIManager.shared.get(endpoint: endpoint, requiresAuth: false)
+            if response.result == "NO" {
+                return false
+            }
             return true
         } catch APIError.httpError(let statusCode, let message) {
             if statusCode == 409 || message.lowercased().contains("taken") {
@@ -408,9 +426,9 @@ extension AuthService {
         Analytics.track(.authSuccess)
     }
 
-    private func isValidEmail(_ email: String) -> Bool {
-        let regex = #"^[A-Z0-9a-z._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$"#
-        return email.range(of: regex, options: .regularExpression) != nil
+    func isValidEmail(_ email: String) -> Bool {
+        let regex = #"(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])*")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\[(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)\])"#
+        return email.lowercased().range(of: regex, options: .regularExpression) != nil
     }
 
     // MARK: - Analytics

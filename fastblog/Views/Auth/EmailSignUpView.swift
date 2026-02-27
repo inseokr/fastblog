@@ -191,7 +191,7 @@ struct EmailSignUpView: View {
             primaryButton("Next", icon: "arrow.right") {
                 goToPassword()
             }
-            .disabled(!email.contains("@") || email.contains(" "))
+            .disabled(!authService.isValidEmail(email))
         }
         .onAppear { emailFocused = true }
     }
@@ -329,9 +329,24 @@ struct EmailSignUpView: View {
 
     private func goToPassword() {
         let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
-        guard trimmedEmail.contains("@") else { return }
+        guard authService.isValidEmail(trimmedEmail) else { return }
+        
+        isLoading = true
         errorMessage = nil
-        withAnimation { step = .enterPassword }
+        
+        Task {
+            do {
+                let isAvailable = try await authService.checkEmailAvailability(email: trimmedEmail)
+                if isAvailable {
+                    withAnimation { step = .enterPassword }
+                } else {
+                    errorMessage = "That email is already in use."
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isLoading = false
+        }
     }
 
     private func performSignUp() {
