@@ -97,22 +97,6 @@ struct RecapBlogPageView: View {
         GeometryReader { screenGeo in
             bodyContent(screenHeight: screenGeo.size.height)
         }
-        .confirmationDialog(
-            "Do you want to save this blog as a draft before leaving?",
-            isPresented: $showNewBlogExitConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Save Draft") {
-                createdRecapStore.saveBlogDetail(draft, asDraft: true)
-                createdRecapStore.showDraftSavedToast = true
-                dismiss()
-            }
-            Button("Don't Save", role: .destructive) {
-                createdRecapStore.deleteBlog(sourceTripId: blogId)
-                dismiss()
-            }
-            Button("Cancel", role: .cancel) { }
-        }
     }
 
     private func bodyContent(screenHeight: CGFloat) -> some View {
@@ -301,6 +285,34 @@ struct RecapBlogPageView: View {
                     .presentationDetents([.fraction(0.35), .medium])
                     .presentationDragIndicator(.visible)
             }
+            .background(
+                Color.clear
+                    .alert("Save Before Leaving?", isPresented: $showNewBlogExitConfirmation) {
+                        Button("Save Draft") {
+                            createdRecapStore.saveBlogDetail(draft, asDraft: true)
+                            createdRecapStore.showDraftSavedToast = true
+                            dismiss()
+                        }
+                        Button("Don't Save", role: .destructive) {
+                            createdRecapStore.deleteBlog(sourceTripId: blogId)
+                            dismiss()
+                        }
+                        Button("Cancel", role: .cancel) { }
+                    } message: {
+                        Text("Do you want to save this blog as a draft before leaving?")
+                    }
+            )
+            .background(
+                Color.clear
+                    .alert("Upload to Cloud?", isPresented: $showUploadPromptAlert) {
+                        Button("Yes") {
+                            uploadBlogPhotos()
+                        }
+                        Button("No", role: .cancel) { }
+                    } message: {
+                        Text("This blog needs to be uploaded to the cloud before you can share a link. Would you like to upload it now?")
+                    }
+            )
             .modifier(coreContentAlertsAndLifecycleModifier())
     }
 
@@ -597,14 +609,6 @@ struct RecapBlogPageView: View {
                             }
                             .buttonStyle(.plain)
                             .padding(.top, 4)
-                            .alert("Upload to Cloud?", isPresented: $showUploadPromptAlert) {
-                                Button("Yes") {
-                                    uploadBlogPhotos()
-                                }
-                                Button("No", role: .cancel) { }
-                            } message: {
-                                Text("This blog needs to be uploaded to the cloud before you can share a link. Would you like to upload it now?")
-                            }
                         }
                     }
                 }
@@ -1906,19 +1910,25 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .alert("Welcome to Your Blog!", isPresented: $showSaveTipAlert) {
-                Button("Don't Show Again") { showFirstTimeSaveTip = false }
-                Button("Okay", role: .cancel) { }
-            } message: {
-                Text("Tap Save when you're done editing to keep your changes and unlock your map routes.")
-            }
-            .alert("Unsaved Changes", isPresented: $showUnsavedChangesAlert) {
-                Button("Yes") { saveDraft(); dismiss() }
-                Button("No", role: .destructive) { dismiss() }
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("Do you want to save your changes?")
-            }
+            .background(
+                Color.clear
+                    .alert("Welcome to Your Blog!", isPresented: $showSaveTipAlert) {
+                        Button("Don't Show Again") { showFirstTimeSaveTip = false }
+                        Button("Okay", role: .cancel) { }
+                    } message: {
+                        Text("Tap Save when you're done editing to keep your changes and unlock your map routes.")
+                    }
+            )
+            .background(
+                Color.clear
+                    .alert("Unsaved Changes", isPresented: $showUnsavedChangesAlert) {
+                        Button("Yes") { saveDraft(); dismiss() }
+                        Button("No", role: .destructive) { dismiss() }
+                        Button("Cancel", role: .cancel) { }
+                    } message: {
+                        Text("Do you want to save your changes?")
+                    }
+            )
             .onAppear {
                 if createdRecapStore.isLoading {
                     createdRecapStore.$isLoading
