@@ -13,26 +13,33 @@ struct KeyboardCaptionToolbar: View {
     var doneButtonTitle: String = "Done"
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button("Cancel", action: onCancel)
-                .foregroundColor(.white)
-            Spacer()
-            Button("Clear", action: onClear)
-                .foregroundColor(isClearRed ? .red : .white)
-            Spacer()
-            Button(doneButtonTitle, action: onDone)
-                .fontWeight(.semibold)
-                .foregroundColor(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color(red: 0, green: 122/255, blue: 1))
-                .clipShape(Capsule())
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Button("Cancel", action: onCancel)
+                    .font(.subheadline)
+                    .foregroundColor(.white)
+                Spacer()
+                Button("Clear", action: onClear)
+                    .font(.subheadline)
+                    .foregroundColor(isClearRed ? .red : .white)
+                Spacer()
+                Button(doneButtonTitle, action: onDone)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(Color(red: 0, green: 122/255, blue: 1))
+                    .clipShape(Capsule())
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial)
+            .clipShape(Capsule())
+            .padding(.horizontal, 12)
+            
+            Color.clear.frame(height: 12)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .padding(.bottom, 20)
-        .frame(maxWidth: .infinity)
-        .background(.ultraThinMaterial.opacity(0.75))
     }
 }
 
