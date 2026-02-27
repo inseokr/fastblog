@@ -65,10 +65,28 @@ struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
         return f.string(from: date)
     }
 
-    /// e.g. "Saturday 3-18"
+    /// e.g. "Saturday Jan-18"
+    /// Uses EXIF digitized time from the first place stop when available so the day
+    /// reflects the local timezone of the capture location, not the device timezone.
     var shortDateText: String {
+        // Prefer EXIF local time — already correct for the timezone where photos were taken.
+        if let digitized = placeStops.first?.visitedTimeDigitized {
+            let components = digitized.split(separator: " ")
+            if components.count == 2 {
+                let exifParser = DateFormatter()
+                exifParser.dateFormat = "yyyy:MM:dd"
+                exifParser.timeZone = TimeZone(secondsFromGMT: 0)
+                if let exifDate = exifParser.date(from: String(components[0])) {
+                    let display = DateFormatter()
+                    display.dateFormat = "EEEE MMM-d"
+                    display.timeZone = TimeZone(secondsFromGMT: 0)
+                    return display.string(from: exifDate)
+                }
+            }
+        }
+        // Fallback: stored date in device-local timezone.
         let f = DateFormatter()
-        f.dateFormat = "EEEE M-d"
+        f.dateFormat = "EEEE MMM-d"
         return f.string(from: date)
     }
 
