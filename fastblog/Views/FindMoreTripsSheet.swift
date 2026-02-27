@@ -164,31 +164,28 @@ struct FindMoreTripsSheet: View {
 
     private var dateRangeSection: some View {
         VStack(alignment: .leading, spacing: 20) {
-            dateBlock(
-                label: "Start",
-                month: $viewModel.findMoreStartMonth,
-                year: $viewModel.findMoreStartYear,
-                onMonthChange: { viewModel.onStartSelectionChanged() },
-                onYearChange: { viewModel.onStartSelectionChanged() }
-            )
-            dateBlock(
-                label: "End",
-                month: $viewModel.findMoreEndMonth,
-                year: $viewModel.findMoreEndYear,
-                onMonthChange: { viewModel.onEndSelectionChanged() },
-                onYearChange: { viewModel.onEndSelectionChanged() }
-            )
+            dateBlock(label: "Start",
+                      month: $viewModel.findMoreStartMonth,
+                      year: $viewModel.findMoreStartYear)
+            dateBlock(label: "End",
+                      month: $viewModel.findMoreEndMonth,
+                      year: $viewModel.findMoreEndYear)
+
+            if !viewModel.isDateRangeValid {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                        .font(.footnote)
+                    Text("End must be at least 1 month after Start.")
+                        .font(.footnote)
+                        .foregroundColor(.orange)
+                }
+            }
         }
     }
 
     /// Full-width date block: label on top, Month and Year pickers side-by-side on one row.
-    private func dateBlock(
-        label: String,
-        month: Binding<Int>,
-        year: Binding<Int>,
-        onMonthChange: (() -> Void)?,
-        onYearChange: (() -> Void)?
-    ) -> some View {
+    private func dateBlock(label: String, month: Binding<Int>, year: Binding<Int>) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(label)
                 .font(.caption)
@@ -198,46 +195,29 @@ struct FindMoreTripsSheet: View {
                 .tracking(0.5)
 
             HStack(spacing: 12) {
-                // Month picker
-                HStack {
-                    Text("Month")
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.7))
-                    Spacer()
-                    Picker("Month", selection: month) {
-                        ForEach(1...12, id: \.self) { m in
-                            Text(monthNames[m - 1]).tag(m)
-                        }
+                Picker("Year", selection: year) {
+                    ForEach(years, id: \.self) { y in
+                        Text(String(y)).tag(y)
                     }
-                    .pickerStyle(.menu)
-                    .tint(.white)
-                    .onChange(of: month.wrappedValue) { _, _ in onMonthChange?() }
                 }
+                .pickerStyle(.menu)
+                .tint(.white)
+                .frame(maxWidth: .infinity)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                .frame(maxWidth: .infinity)
                 .background(Color.white.opacity(0.1))
                 .cornerRadius(12)
 
-                // Year picker
-                HStack {
-                    Text("Year")
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.7))
-                    Spacer()
-                    Picker("Year", selection: year) {
-                        ForEach(years, id: \.self) { y in
-                            Text(String(y)).tag(y)
-                        }
+                Picker("Month", selection: month) {
+                    ForEach(1...12, id: \.self) { m in
+                        Text(monthNames[m - 1]).tag(m)
                     }
-                    .pickerStyle(.menu)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .tint(.white)
-                    .onChange(of: year.wrappedValue) { _, _ in onYearChange?() }
                 }
+                .pickerStyle(.menu)
+                .tint(.white)
+                .frame(maxWidth: .infinity)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                .frame(maxWidth: .infinity)
                 .background(Color.white.opacity(0.1))
                 .cornerRadius(12)
             }
@@ -277,9 +257,10 @@ struct FindMoreTripsSheet: View {
                     .frame(maxWidth: .infinity)
                     .padding()
             }
-            .background(Color(red: 0, green: 122/255, blue: 1))
+            .background(Color(red: 0, green: 122/255, blue: 1)
+                .opacity(viewModel.isDateRangeValid ? 1 : 0.4))
             .cornerRadius(12)
-            .disabled(viewModel.isFindMoreScanning)
+            .disabled(viewModel.isFindMoreScanning || !viewModel.isDateRangeValid)
         }
         .padding(.bottom, 28)
     }

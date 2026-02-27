@@ -579,10 +579,22 @@ final class APIManager {
         print("✅ Cover photo updated for blogKey=\(blogKey)")
     }
 
-    /// Updates the place name on the backend.
-    func updatePlaceName(visitedTimeDigitized: String, placeName: String) async throws {
-        struct Payload: Encodable { let visitedTimeDigitized: String; let placeName: String }
-        let _: GenericResponse = try await post(endpoint: "/placeVisitHistory/updatePlaceName", body: Payload(visitedTimeDigitized: visitedTimeDigitized, placeName: placeName))
+    /// Updates the place name (and optionally category) on the backend for DB sync.
+    func updatePlaceName(visitedTimeDigitized: String, placeName: String, categories: [String]? = nil) async throws {
+        var payload: [String: Any] = [
+            "visitedTimeDigitized": visitedTimeDigitized,
+            "placeName": placeName
+        ]
+        if let categories = categories, !categories.isEmpty {
+            payload["categories"] = categories
+        }
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let _: GenericResponse = try await request(
+            endpoint: "/placeVisitHistory/updatePlaceName",
+            method: "POST",
+            body: body,
+            requiresAuth: true
+        )
         print("✅ Place name updated: '\(placeName)' for key=\(visitedTimeDigitized)")
     }
 

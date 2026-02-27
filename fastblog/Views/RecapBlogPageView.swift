@@ -1092,7 +1092,8 @@ struct RecapBlogPageView: View {
 
                 createdRecapStore.saveBlogDetail(draft)
                 if let placeKey = stop.visitedTimeDigitized {
-                    Task { try? await APIManager.shared.updatePlaceName(visitedTimeDigitized: placeKey, placeName: title) }
+                    let categories = stop.placeCategory.map { [$0] }
+                    Task { try? await APIManager.shared.updatePlaceName(visitedTimeDigitized: placeKey, placeName: title, categories: categories) }
                 }
                 break
             }

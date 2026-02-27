@@ -201,31 +201,18 @@ final class TripsViewModel: ObservableObject {
             let month = cal.component(.month, from: now)
             findMoreStartYear = year
             findMoreStartMonth = month
-            findMoreEndYear = year
+            findMoreEndYear  = year
             findMoreEndMonth = month
             hasOpenedFindMoreSheet = true
         }
         showFindMoreSheet = true
     }
 
-    /// Called by the UI when the user changes Start month/year. If Start is after End in the same year,
-    /// auto-clamps End month up to Start month.
-    func onStartSelectionChanged() {
-        if findMoreStartYear == findMoreEndYear && findMoreStartMonth > findMoreEndMonth {
-            findMoreEndMonth = findMoreStartMonth
-        }
-    }
-
-    /// Called by the UI when the user changes End month/year. If End year is before Start year,
-    /// auto-clamps Start year to match End year. If same year and End month is before Start month,
-    /// auto-clamps Start month down to End month.
-    func onEndSelectionChanged() {
-        if findMoreEndYear < findMoreStartYear {
-            findMoreStartYear = findMoreEndYear
-        }
-        if findMoreEndYear == findMoreStartYear && findMoreEndMonth < findMoreStartMonth {
-            findMoreStartMonth = findMoreEndMonth
-        }
+    /// End must be at least 1 month after Start for a scan to make sense.
+    var isDateRangeValid: Bool {
+        let startTotal = findMoreStartYear * 12 + findMoreStartMonth
+        let endTotal   = findMoreEndYear   * 12 + findMoreEndMonth
+        return endTotal > startTotal
     }
 
     // MARK: - NLP Parsing Chat
