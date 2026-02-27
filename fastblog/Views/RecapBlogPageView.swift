@@ -253,8 +253,8 @@ struct RecapBlogPageView: View {
                 )
             }
             .sheet(item: $showEditNameForStop) { stop in
-                EditPlaceStopNameSheet(placeTitle: bindingForPlaceTitle(stopId: stop.id), location: stop.representativeLocation?.clCoordinate ?? stop.photos.first?.location?.clCoordinate, onSave: { newTitle, category in
-                    updatePlaceTitle(stopId: stop.id, to: newTitle, category: category)
+                EditPlaceStopNameSheet(placeTitle: bindingForPlaceTitle(stopId: stop.id), location: stop.representativeLocation?.clCoordinate ?? stop.photos.first?.location?.clCoordinate, onSave: { newTitle, newCoordinate, newCategory in
+                    updatePlaceTitle(stopId: stop.id, to: newTitle, category: newCategory, coordinate: newCoordinate)
                 })
             }
             .sheet(item: $showManagePhotosForStop, onDismiss: {
@@ -1077,13 +1077,16 @@ struct RecapBlogPageView: View {
         }
     }
 
-    private func updatePlaceTitle(stopId: UUID, to title: String, category: String? = nil) {
+    private func updatePlaceTitle(stopId: UUID, to title: String, category: String? = nil, coordinate: CLLocationCoordinate2D? = nil) {
         for i in draft.days.indices {
             if let j = draft.days[i].placeStops.firstIndex(where: { $0.id == stopId }) {
                 var day = draft.days[i]
                 var stop = day.placeStops[j]
                 stop.placeTitle = title
                 if let category { stop.placeCategory = category }
+                if let coordinate {
+                    stop.representativeLocation = PhotoCoordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                }
                 day.placeStops[j] = stop
                 draft.days[i] = day
 

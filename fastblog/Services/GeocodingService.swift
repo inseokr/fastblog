@@ -15,7 +15,13 @@ extension CLGeocoder { }
 
 
 /// Rounded to 3 decimals for cache key (~111m precision). Matches locality granularity.
-func geocodeCacheKey(for location: CLLocation) -> String {
+func geocodeCacheKey(for location: CLLocation, precise: Bool = false) -> String {
+    if precise {
+        // 5 decimals ≈ 1.1 m — use for tap-to-resolve-POI so each tap gets its own lookup.
+        let lat = (location.coordinate.latitude * 100_000).rounded() / 100_000
+        let lon = (location.coordinate.longitude * 100_000).rounded() / 100_000
+        return "\(lat),\(lon)"
+    }
     let lat = (location.coordinate.latitude * 1000).rounded() / 1000
     let lon = (location.coordinate.longitude * 1000).rounded() / 1000
     return "\(lat),\(lon)"
@@ -115,8 +121,10 @@ final class GeocodingService {
         debugPrint("[Geocoding] Loaded \(memoryCache.count) cached entries from disk")
     }
 
-    func place(for location: CLLocation) async -> GeocodedPlace {
-        let key = geocodeCacheKey(for: location)
+    /// - Parameter precise: If true, use a finer cache key (~1.1 m) so the exact coordinate is looked up.
+    ///   Use for tap-to-resolve-POI; otherwise nearby taps can share a cache entry and show the wrong name.
+    func place(for location: CLLocation, precise: Bool = false) async -> GeocodedPlace {
+        let key = geocodeCacheKey(for: location, precise: precise)
         if let cached = memoryCache[key] {
             cacheHitCount += 1
             return cached

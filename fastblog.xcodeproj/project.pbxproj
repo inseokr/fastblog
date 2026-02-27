@@ -125,8 +125,6 @@
 		BB0001FE /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001FD /* AuthView.swift */; };
 		BB000200 /* EmailLoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001FF /* EmailLoginView.swift */; };
 		BB000202 /* EmailSignUpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000201 /* EmailSignUpView.swift */; };
-		BB00022A /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000228 /* ForgotPasswordView.swift */; };
-		BB00022B /* ResetPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000229 /* ResetPasswordView.swift */; };
 		BB000204 /* BottomSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000203 /* BottomSheetView.swift */; };
 		BB000206 /* ImportDraftsModalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000205 /* ImportDraftsModalView.swift */; };
 		BB000208 /* ProfileManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000207 /* ProfileManagementView.swift */; };
@@ -142,6 +140,8 @@
 		BB000222 /* StoryCaptionGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000223 /* StoryCaptionGenerator.swift */; };
 		BB000224 /* StoryCaptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000225 /* StoryCaptionService.swift */; };
 		BB000226 /* LocalLLMStoryCaptionGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000227 /* LocalLLMStoryCaptionGenerator.swift */; };
+		BB00022A /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000228 /* ForgotPasswordView.swift */; };
+		BB00022B /* ResetPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000229 /* ResetPasswordView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -265,8 +265,6 @@
 		BB0001FD /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		BB0001FF /* EmailLoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailLoginView.swift; sourceTree = "<group>"; };
 		BB000201 /* EmailSignUpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailSignUpView.swift; sourceTree = "<group>"; };
-		BB000228 /* ForgotPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordView.swift; sourceTree = "<group>"; };
-		BB000229 /* ResetPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResetPasswordView.swift; sourceTree = "<group>"; };
 		BB000203 /* BottomSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomSheetView.swift; sourceTree = "<group>"; };
 		BB000205 /* ImportDraftsModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportDraftsModalView.swift; sourceTree = "<group>"; };
 		BB000207 /* ProfileManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileManagementView.swift; sourceTree = "<group>"; };
@@ -284,6 +282,8 @@
 		BB000223 /* StoryCaptionGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryCaptionGenerator.swift; sourceTree = "<group>"; };
 		BB000225 /* StoryCaptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryCaptionService.swift; sourceTree = "<group>"; };
 		BB000227 /* LocalLLMStoryCaptionGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalLLMStoryCaptionGenerator.swift; sourceTree = "<group>"; };
+		BB000228 /* ForgotPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordView.swift; sourceTree = "<group>"; };
+		BB000229 /* ResetPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResetPasswordView.swift; sourceTree = "<group>"; };
 		F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalLLMStoryCaptionGenerator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -776,7 +776,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = H9V9G4FU84;
+				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "fastblog uses your location to identify your neighborhood and group travel photos.";
@@ -803,7 +803,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = H9V9G4FU84;
+				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "fastblog uses your location to identify your neighborhood and group travel photos.";

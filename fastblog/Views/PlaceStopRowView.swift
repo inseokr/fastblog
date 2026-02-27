@@ -139,19 +139,37 @@ struct PlaceStopRowView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
-                    if let time = visitTimeText {
-                        Text(time)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    if let cat = categoryInfo(for: stop.placeCategory) {
-                        HStack(spacing: 4) {
-                            Image(systemName: cat.symbol)
-                                .font(.caption2)
-                            Text(cat.label)
-                                .font(.caption2)
+                    let cat = categoryInfo(for: stop.placeCategory)
+                    if visitTimeText != nil || cat != nil {
+                        HStack(spacing: 8) {
+                            if let time = visitTimeText {
+                                Text(time)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            if let cat {
+                                if isEditMode {
+                                    Button { onEditName?() } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: cat.symbol)
+                                                .font(.caption2)
+                                            Text(cat.label)
+                                                .font(.caption2)
+                                        }
+                                        .foregroundColor(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                } else {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: cat.symbol)
+                                            .font(.caption2)
+                                        Text(cat.label)
+                                            .font(.caption2)
+                                    }
+                                    .foregroundColor(.secondary)
+                                }
+                            }
                         }
-                        .foregroundColor(.secondary)
                     }
                 }
             }
