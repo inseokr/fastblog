@@ -15,6 +15,9 @@ struct RemovedPlacesSheet: View {
     var onRestore: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    
+    /// The currently selected item to show in the place pull-up modal.
+    @State private var placeModalItem: PlacePhotoModalItem?
 
     var body: some View {
         NavigationStack {
@@ -33,6 +36,9 @@ struct RemovedPlacesSheet: View {
                 }
             }
             .preferredColorScheme(.dark)
+            .sheet(item: $placeModalItem) { item in
+                placePhotoModalSheet(item: item)
+            }
         }
     }
 
@@ -129,6 +135,10 @@ struct RemovedPlacesSheet: View {
                         )
                 }
             }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                openPlaceModal(for: entry)
+            }
 
             // Place info
             VStack(alignment: .leading, spacing: 3) {
@@ -143,7 +153,6 @@ struct RemovedPlacesSheet: View {
                         .foregroundColor(.secondary)
                 }
 
-                // Caption preserved badge
                 if hasCaptions(entry: entry) {
                     HStack(spacing: 4) {
                         Image(systemName: "text.bubble")
@@ -154,6 +163,10 @@ struct RemovedPlacesSheet: View {
                     .foregroundColor(.blue.opacity(0.8))
                     .padding(.top, 2)
                 }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                openPlaceModal(for: entry)
             }
 
             Spacer()
@@ -177,6 +190,60 @@ struct RemovedPlacesSheet: View {
     }
 
     // MARK: - Helpers
+
+    private func openPlaceModal(for entry: RemovedPlaceEntry) {
+        let photos = entry.stop.photos.filter(\.isIncluded)
+        let initialPhotoId = photos.first?.id ?? entry.stop.photos.first?.id
+        
+        if let initialPhotoId = initialPhotoId {
+            placeModalItem = PlacePhotoModalItem(
+                dayId: entry.dayId,
+                stopId: entry.stop.id,
+                initialPhotoId: initialPhotoId
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func placePhotoModalSheet(item: PlacePhotoModalItem) -> some View {
+        if let entry = draft.removedPlaceStops.first(where: { $0.stop.id == item.stopId && $0.dayId == item.dayId }) {
+            let stop = entry.stop
+            let includedPhotos = stop.photos.filter(\.isIncluded)
+            if !includedPhotos.isEmpty {
+                PlacePhotoModalView(
+                    placeTitle: Binding(
+                        get: { stop.placeTitle },
+                        set: { newTitle in
+                            if let idx = draft.removedPlaceStops.firstIndex(where: { $0.stop.id == stop.id }) {
+                                draft.removedPlaceStops[idx].stop.placeTitle = newTitle
+                            }
+                        }
+                    ),
+                    placeSubtitle: stop.placeSubtitle,
+                    photos: includedPhotos,
+                    initialPhotoId: includedPhotos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : includedPhotos[0].id,
+                    blogIsEditMode: true,
+                    photoCaption: { photoId in
+                        Binding(
+                            get: { stop.photos.first(where: { $0.id == photoId })?.caption ?? "" },
+                            set: { newCaption in
+                                if let idx = draft.removedPlaceStops.firstIndex(where: { $0.stop.id == stop.id }),
+                                   let photoIdx = draft.removedPlaceStops[idx].stop.photos.firstIndex(where: { $0.id == photoId }) {
+                                    draft.removedPlaceStops[idx].stop.photos[photoIdx].caption = newCaption
+                                }
+                            }
+                        )
+                    },
+                    onDismiss: { placeModalItem = nil }
+                )
+                .presentationDetents([.fraction(0.45), .fraction(0.65), .fraction(0.92)])
+            } else {
+                Color.white.onAppear { placeModalItem = nil }
+            }
+        } else {
+            Color.white.onAppear { placeModalItem = nil }
+        }
+    }
 
     private func hasCaptions(entry: RemovedPlaceEntry) -> Bool {
         let hasNote = !(entry.stop.noteText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -243,7 +310,7 @@ struct RemovedPlacesSheet: View {
         photos: []
     )
     let day = RecapBlogDay(dayIndex: 1, date: Date(), placeStops: [])
-    var detail = RecapBlogDetail(
+    let detail = RecapBlogDetail(
         title: "SF Trip",
         days: [day],
         removedPlaceStops: [
