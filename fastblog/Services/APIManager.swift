@@ -496,6 +496,7 @@ final class APIManager {
                 let visitedTime = firstPhotoVisitedTimeMs != 0 ? firstPhotoVisitedTimeMs : Int64(Date().timeIntervalSince1970 * 1000)
                 let placeVisitedTimeDigitized = (photoList.first?["digitizedTime"] as? String) ?? defaultDigitizedTime
 
+                let categories: [String] = stop.placeCategory.map { [$0] } ?? ["unknown"]
                 let place: [String: Any] = [
                     "visitedTimeDigitized": placeVisitedTimeDigitized,
                     "visitedTime": visitedTime,
@@ -505,7 +506,7 @@ final class APIManager {
                     "coordinate": coord,
                     "status": "active",
                     "abstract": true,
-                    "categories": ["unknown"],
+                    "categories": categories,
                     "photoList": photoList
                 ]
                 placeStopMapping.append(PlaceStopBuildInfo(
@@ -879,6 +880,8 @@ struct ServerPlaceRecord: Decodable {
     let coordinate: ServerCoordinate?
     /// User-written story/note for this place.
     let story: String?
+    /// POI categories (e.g. MKPOICategoryRestaurant). We send this on create; server may echo it back.
+    let categories: [String]?
     let photoList: [ServerPhotoRecord]?
 }
 

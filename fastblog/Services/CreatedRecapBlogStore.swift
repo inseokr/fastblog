@@ -715,6 +715,10 @@ final class CreatedRecapBlogStore: ObservableObject {
                                     if let name = serverPlace.placeName, !name.isEmpty {
                                         detail.days[dayIdx].placeStops[stopIdx].placeTitle = name
                                     }
+                                    // Place category (POI type from create payload or server)
+                                    if let cat = serverPlace.categories?.first, !cat.isEmpty {
+                                        detail.days[dayIdx].placeStops[stopIdx].placeCategory = cat
+                                    }
                                     // Place-level story → noteText
                                     if let story = serverPlace.story {
                                         detail.days[dayIdx].placeStops[stopIdx].noteText = story
@@ -856,6 +860,7 @@ final class CreatedRecapBlogStore: ObservableObject {
 
                 let coord = serverPlace.coordinate.map { PhotoCoordinate(latitude: $0.latitude, longitude: $0.longitude) }
                 let noteText = (serverPlace.story?.isEmpty == false) ? serverPlace.story : nil
+                let placeCategory = serverPlace.categories?.first
                 stops.append(PlaceStop(
                     orderIndex: stopIdx,
                     placeTitle: serverPlace.placeName ?? "Stop \(stopIdx + 1)",
@@ -864,7 +869,8 @@ final class CreatedRecapBlogStore: ObservableObject {
                     photos: photos,
                     noteText: noteText,
                     cloudPlaceIndex: serverPlace.placeIndex,
-                    visitedTimeDigitized: serverPlace.visitedTimeDigitized
+                    visitedTimeDigitized: serverPlace.visitedTimeDigitized,
+                    placeCategory: placeCategory
                 ))
             }
 
