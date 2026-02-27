@@ -30,7 +30,6 @@ struct AuthView: View {
             VStack(spacing: 0) {
                 // Close button
                 HStack {
-                    Spacer()
                     Button {
                         AuthService.Analytics.track(.authCancelled)
                         dismiss()
@@ -40,8 +39,9 @@ struct AuthView: View {
                             .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(.white.opacity(0.6))
                     }
-                    .padding(.trailing, 20)
+                    .padding(.leading, 20)
                     .padding(.top, 20)
+                    Spacer()
                 }
 
                 Spacer()
@@ -134,6 +134,7 @@ struct AuthView: View {
 
     private var buttonStack: some View {
         VStack(spacing: 14) {
+            /* Hide Apple and Google for first launch
             // Apple Sign In
             SignInWithAppleButton(.continue) { request in
                 request.requestedScopes = [.fullName, .email]
@@ -177,6 +178,7 @@ struct AuthView: View {
                     .padding(.horizontal, 10)
                 authDivider
             }
+            */
 
             // Email
             Button {
