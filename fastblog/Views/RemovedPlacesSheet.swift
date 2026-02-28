@@ -222,6 +222,7 @@ struct RemovedPlacesSheet: View {
                     placeSubtitle: stop.placeSubtitle,
                     photos: includedPhotos,
                     initialPhotoId: includedPhotos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : includedPhotos[0].id,
+                    stopDigitizedTime: stop.visitedTimeDigitized,
                     blogIsEditMode: true,
                     photoCaption: { photoId in
                         Binding(

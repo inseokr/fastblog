@@ -19,6 +19,9 @@ struct PlacePhotoModalView: View {
     let placeSubtitle: String?
     let photos: [RecapPhoto]
     let initialPhotoId: UUID
+    /// EXIF digitized timestamp of the stop's earliest photo ("yyyy:MM:dd HH:mm:ss" local time).
+    /// Used to derive the capture location's timezone for correct photo time display.
+    let stopDigitizedTime: String?
     var blogIsEditMode: Bool = false
     var photoCaption: (UUID) -> Binding<String>
     var onDismiss: () -> Void
@@ -40,18 +43,27 @@ struct PlacePhotoModalView: View {
     @State private var titleWhenEditingStarted: String = ""
     @State private var debounceTask: Task<Void, Never>?
 
-    private static let dateTimeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "d MMM yyyy 'at' h:mm a"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
+    /// Derives the UTC offset from the EXIF digitized local time vs the earliest photo's UTC timestamp.
+    /// This gives us the timezone where the photos were captured, regardless of device timezone.
+    private var captureTimeZone: TimeZone {
+        guard let digitized = stopDigitizedTime,
+              let earliestTimestamp = photos.map(\.timestamp).min() else { return .current }
+        let parser = DateFormatter()
+        parser.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        parser.timeZone = TimeZone(secondsFromGMT: 0)
+        guard let localAsUTC = parser.date(from: digitized) else { return .current }
+        // offset = (EXIF local epoch) - (UTC epoch); round to nearest 15 min (standard TZ unit)
+        let offsetSeconds = Int(localAsUTC.timeIntervalSince(earliestTimestamp))
+        let roundedOffset = (offsetSeconds / 900) * 900
+        return TimeZone(secondsFromGMT: roundedOffset) ?? .current
+    }
 
     init(
         placeTitle: Binding<String>,
         placeSubtitle: String?,
         photos: [RecapPhoto],
         initialPhotoId: UUID,
+        stopDigitizedTime: String? = nil,
         blogIsEditMode: Bool = false,
         photoCaption: @escaping (UUID) -> Binding<String>,
         onDismiss: @escaping () -> Void,
@@ -63,6 +75,7 @@ struct PlacePhotoModalView: View {
         self.placeSubtitle = placeSubtitle
         self.photos = photos
         self.initialPhotoId = initialPhotoId
+        self.stopDigitizedTime = stopDigitizedTime
         self.blogIsEditMode = blogIsEditMode
         self.photoCaption = photoCaption
         self.onDismiss = onDismiss
@@ -336,7 +349,12 @@ struct PlacePhotoModalView: View {
     }
 
     private var dateTimeTextForCurrentPhoto: String {
-        currentPhoto.map { Self.dateTimeFormatter.string(from: $0.timestamp) } ?? ""
+        guard let photo = currentPhoto else { return "" }
+        let f = DateFormatter()
+        f.dateFormat = "d MMM yyyy 'at' h:mm a"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = captureTimeZone
+        return f.string(from: photo.timestamp)
     }
 
     private func openNavigation() {

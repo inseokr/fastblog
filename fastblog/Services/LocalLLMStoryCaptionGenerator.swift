@@ -124,6 +124,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             You write one very short sentence that summarizes a place visit for a travel blog. \
             You are given the place name and the existing photo captions for that place. \
             Summarize them into a single, quick headline-style sentence. No first person (no "I", "we", "my"). \
+            No exact timestamp please. \
             No hashtags or emoji. Output only the summary sentence. No preamble like "Here is a summary" — just the sentence.
             """
         let prompt = """

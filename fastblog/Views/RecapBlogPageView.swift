@@ -883,6 +883,7 @@ struct RecapBlogPageView: View {
                         placeSubtitle: stop.placeSubtitle,
                         photos: includedPhotos,
                         initialPhotoId: includedPhotos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : includedPhotos[0].id,
+                        stopDigitizedTime: stop.visitedTimeDigitized,
                         photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
                         onDismiss: { placePhotoModalItem = nil },
                         onGenerateCaption: { photo, placeName, placeSubtitle in
