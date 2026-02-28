@@ -18,6 +18,8 @@ struct AuthView: View {
 
     // Callback for post-auth navigation (e.g. continue cloud upload)
     var onAuthenticated: (() -> Void)?
+    /// Called when the view should close itself (used when presented as a ZStack overlay).
+    var onDismiss: (() -> Void)?
 
     // MARK: - Body
 
@@ -32,7 +34,7 @@ struct AuthView: View {
                 HStack {
                     Button {
                         AuthService.Analytics.track(.authCancelled)
-                        dismiss()
+                        if let onDismiss { onDismiss() } else { dismiss() }
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.title2)
@@ -100,7 +102,7 @@ struct AuthView: View {
         .onChange(of: authService.currentUser) { _, user in
             if user != nil {
                 onAuthenticated?()
-                dismiss()
+                if let onDismiss { onDismiss() } else { dismiss() }
             }
         }
         .onAppear {
@@ -203,7 +205,7 @@ struct AuthView: View {
             }
             .buttonStyle(.plain)
 
-            Text("Use the same sign in method on web to edit your recaps.")
+            Text("Use the same sign in method on web to edit your blogs.")
                 .font(.caption)
                 .foregroundColor(.white.opacity(0.45))
                 .multilineTextAlignment(.center)

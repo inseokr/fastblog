@@ -750,11 +750,10 @@ struct BlogCard: View {
         ) {
             if createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId) {
                 Button("Delete from device and cloud", role: .destructive) {
-                    createdRecapStore.removeFromCloud(blogId: blog.sourceTripId)
                     createdRecapStore.deleteBlog(sourceTripId: blog.sourceTripId)
                 }
                 Button("Delete from device only") {
-                    createdRecapStore.deleteBlog(sourceTripId: blog.sourceTripId)
+                    createdRecapStore.removeLocalCopy(sourceTripId: blog.sourceTripId)
                 }
             } else {
                 Button("Delete", role: .destructive) {

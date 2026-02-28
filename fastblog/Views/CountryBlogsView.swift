@@ -13,6 +13,7 @@ struct CountryBlogsView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @State private var localSelectedBlog: CreatedRecapBlog?
     @State private var showMap = false
+    @State private var showManageSheet = false
 
     // Cloud removal
     @State private var showRemoveCloudPopup = false
@@ -37,10 +38,16 @@ struct CountryBlogsView: View {
     // Year filter support
     @State private var selectedYear: Int? = nil
 
+    // Search filter
+    @State private var searchText = ""
+    @FocusState private var isSearchFocused: Bool
+    @State private var isSearchActive = false
+
     private let undoDuration: TimeInterval = 7
 
     private var availableYears: [Int] {
-        let years = section.blogs.compactMap { blog -> Int? in
+        let activeBlogs = section.blogs.filter { createdRecapStore.hasCreatedBlog(sourceTripId: $0.sourceTripId) }
+        let years = activeBlogs.compactMap { blog -> Int? in
             guard let date = blog.tripStartDate ?? blog.tripEndDate else { return nil }
             return Calendar.current.component(.year, from: date)
         }
@@ -48,7 +55,8 @@ struct CountryBlogsView: View {
     }
 
     private var filteredAndSortedBlogs: [CreatedRecapBlog] {
-        let sorted = section.blogs.sorted {
+        let activeBlogs = section.blogs.filter { createdRecapStore.hasCreatedBlog(sourceTripId: $0.sourceTripId) }
+        let sorted = activeBlogs.sorted {
             ($0.tripStartDate ?? $0.createdAt) > ($1.tripStartDate ?? $1.createdAt)
         }
 
@@ -60,10 +68,23 @@ struct CountryBlogsView: View {
             filtered = sorted
         }
 
-        guard let year = selectedYear else { return filtered }
-        return filtered.filter { blog in
-            guard let date = blog.tripStartDate ?? blog.tripEndDate else { return false }
-            return Calendar.current.component(.year, from: date) == year
+        let yearFiltered: [CreatedRecapBlog]
+        if let year = selectedYear {
+            yearFiltered = filtered.filter { blog in
+                guard let date = blog.tripStartDate ?? blog.tripEndDate else { return false }
+                return Calendar.current.component(.year, from: date) == year
+            }
+        } else {
+            yearFiltered = filtered
+        }
+
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if query.isEmpty {
+            return yearFiltered
+        } else {
+            return yearFiltered.filter { blog in
+                blog.title.lowercased().contains(query)
+            }
         }
     }
 
@@ -130,6 +151,10 @@ struct CountryBlogsView: View {
                 }
                 .listStyle(.plain)
                 .padding(.top, 4)
+                .safeAreaInset(edge: .bottom) {
+                    Color.clear.frame(height: 80)
+                }
+                .scrollDismissesKeyboard(.interactively)
             }
 
             // ─── Undo Banner ──────────────────────────────────────────────
@@ -156,18 +181,50 @@ struct CountryBlogsView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(1)
             }
+            // ─── Floating Controls (bottom) ──────────────────────
+            VStack(spacing: 0) {
+                HStack {
+                    Spacer()
+                    Button {
+                        isSearchFocused = false
+                        showMap = true
+                    } label: {
+                        Image(systemName: "map.fill")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                            .frame(width: 52, height: 52)
+                            .background(Color.blue)
+                            .clipShape(Capsule())
+                            .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 16)
+                }
+                
+                searchBar
+            }
+            .allowsHitTesting(true)
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showUndoBanner)
         .navigationTitle(displayCountryName(section.countryName))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showMap = true
-                } label: {
-                    Image(systemName: "map")
+                Button("Manage") {
+                    showManageSheet = true
                 }
+                .fontWeight(.medium)
             }
+        }
+        .sheet(isPresented: $showManageSheet) {
+            CountryManageBlogsSheet(
+                countryName: section.countryName,
+                blogs: section.blogs
+            )
+            .environmentObject(createdRecapStore)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .navigationDestination(isPresented: $showMap) {
             CountryMapView(
@@ -290,9 +347,42 @@ struct CountryBlogsView: View {
     /// Actually calls the store to delete. Called either when the timer fires or the user dismisses the banner.
     private func commitDelete(blog: CreatedRecapBlog, includeCloud: Bool) {
         if includeCloud {
-            createdRecapStore.removeFromCloud(blogId: blog.sourceTripId)
+            createdRecapStore.deleteBlog(sourceTripId: blog.sourceTripId)
+        } else {
+            createdRecapStore.removeLocalCopy(sourceTripId: blog.sourceTripId)
         }
-        createdRecapStore.deleteBlog(sourceTripId: blog.sourceTripId)
+    }
+
+    // MARK: - Search Bar
+
+    private var searchBar: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.secondary)
+            TextField("Search blog title", text: $searchText)
+                .foregroundColor(.primary)
+                .autocorrectionDisabled()
+                .focused($isSearchFocused)
+                .onTapGesture {
+                    isSearchActive = true
+                }
+            if isSearchActive {
+                Button {
+                    searchText = ""
+                    isSearchFocused = false
+                    isSearchActive = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 56)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 20)
+        .padding(.bottom, 12)
     }
 
     // MARK: – Helpers

@@ -45,10 +45,10 @@ struct CountryCardView: View {
                 .foregroundColor(.white)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color.black.opacity(0.3))
-                        .background(.ultraThinMaterial)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)

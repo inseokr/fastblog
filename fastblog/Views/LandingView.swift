@@ -38,7 +38,11 @@ struct LandingView: View {
             landingBackground
                 .ignoresSafeArea()
 
-            VStack(spacing: 0) {
+            // EXACT CENTER CONTENT
+            scanCTA
+
+            // Top bar and Footer
+            VStack {
                 HStack {
                     Button {
                         showSettings = true
@@ -97,9 +101,21 @@ struct LandingView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 12)
                 Spacer()
-                scanCTA
-                Spacer()
+                
                 recentRecapsSection
+            }
+
+            // Auth slide-in from the right
+            if showAuth {
+                AuthView(onAuthenticated: {
+                    showProfile = true
+                    showAuth = false
+                }, onDismiss: {
+                    showAuth = false
+                })
+                .environmentObject(authService)
+                .transition(.move(edge: .trailing))
+                .zIndex(10)
             }
         }
         .preferredColorScheme(.dark)
@@ -133,12 +149,7 @@ struct LandingView: View {
             })
             .environmentObject(authService)
         }
-        .fullScreenCover(isPresented: $showAuth) {
-            AuthView(onAuthenticated: {
-                showProfile = true
-            })
-            .environmentObject(authService)
-        }
+        .animation(.easeInOut(duration: 0.3), value: showAuth)
         .onAppear {
             avatarImageData = authService.profileImageData
             // If already past splash (e.g. navigating back), show everything immediately
@@ -227,7 +238,7 @@ struct LandingView: View {
             }
             showTrips = true
         } label: {
-            VStack(spacing: 20) {
+            VStack(spacing: 32) {
                 // Both lines in same spot so they stay centered when cross-fading
                 ZStack {
                     Text("Tap to Scan")
@@ -247,14 +258,17 @@ struct LandingView: View {
 
                 ZStack {
                     Circle()
-                        .fill(Color.white.opacity(0.08))
+                        .fill(.ultraThinMaterial)
                         .frame(width: 220, height: 220)
-                    Circle()
-                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                        .frame(width: 220, height: 220)
-                    ScanningAnimationView(ringCount: 4, ringSpacing: 28, pulseDuration: 1.8, showIcon: showScanIcon)
+                    
+                    ScanningAnimationView(ringCount: 4, ringSpacing: 28, pulseDuration: 1.8, showIcon: showScanIcon, iconName: "SplashIcon")
                         .frame(width: 200, height: 200)
+                    
+                    Circle()
+                        .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+                        .frame(width: 220, height: 220)
                 }
+                .clipShape(Circle())
                 .scaleEffect(circlesScale)
                 .animation(
                     .spring(response: 0.6, dampingFraction: 0.72).delay(0.35),
@@ -319,7 +333,7 @@ struct LandingView: View {
     }
 }
 
-private struct CreatedRecapCard: View {
+struct CreatedRecapCard: View {
     let recap: CreatedRecapBlog
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
 

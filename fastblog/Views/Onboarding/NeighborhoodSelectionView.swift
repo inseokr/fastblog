@@ -86,7 +86,7 @@ struct NeighborhoodSelectionView: View {
             }
         }
         .padding(.horizontal, OnboardingConstants.Layout.horizontalPadding)
-        .padding(.bottom, 12)
+        .padding(.bottom, 24)
     }
 
     private var searchField: some View {

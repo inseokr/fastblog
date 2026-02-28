@@ -108,25 +108,20 @@ struct fastblogApp: App {
             if splashManager.phase != .done {
                 let isSplash = splashManager.phase == .splash
 
-                // Dark background fades out as home fades in
-                Color(red: 5/255, green: 10/255, blue: 48/255)
-                    .ignoresSafeArea()
-                    .opacity(isSplash ? 1 : 0)
-                    .animation(.easeInOut(duration: 0.5), value: isSplash)
+                ZStack {
+                    // Dark background fades out as home fades in
+                    Color(red: 5/255, green: 10/255, blue: 48/255)
+                        .ignoresSafeArea()
 
-                // Logo shrinks from 140→100 and glides up to the scan circle center
-                Image("SplashIcon")
-                    .resizable()
-                    .scaledToFit()
-                    .scaleEffect(isSplash ? 1.0 : (100.0 / 140.0))
-                    .frame(width: 140, height: 140)
-                    .offset(y: isSplash ? 0 : -55)
-                    .opacity(splashManager.phase == .animating ? 1 : (isSplash ? 1 : 0))
-                    .animation(
-                        .spring(response: 0.7, dampingFraction: 0.8)
-                            .delay(0.05),
-                        value: isSplash
-                    )
+                    // Logo fades away
+                    Image("SplashIcon")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 140, height: 140)
+                        .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
+                }
+                .opacity(isSplash ? 1 : 0)
+                .animation(.easeInOut(duration: 0.5), value: isSplash)
             }
         }
         .ignoresSafeArea()
@@ -153,9 +148,9 @@ struct fastblogApp: App {
                     splashManager.phase = .animating
                 }
 
-                // Phase 2 → 3: after logo lands (~800ms), fade overlay out
-                try? await Task.sleep(nanoseconds: 800_000_000)
-                withAnimation(.easeOut(duration: 0.2)) {
+                // Phase 2 → 3: after zoom fills screen (~650ms), remove overlay
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                withAnimation(.easeOut(duration: 0.1)) {
                     splashManager.phase = .done
                 }
             }

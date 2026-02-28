@@ -53,8 +53,8 @@ enum OnboardingConstants {
 
     enum Layout {
         static let horizontalPadding: CGFloat = 20
-        static let titleTopPadding: CGFloat = 16
-        static let spacingBetweenTitleAndSearch: CGFloat = 12
+        static let titleTopPadding: CGFloat = 64
+        static let spacingBetweenTitleAndSearch: CGFloat = 24
         static let searchCornerRadius: CGFloat = 12
         static let selectButtonCornerRadius: CGFloat = 25
         static let selectButtonVerticalPadding: CGFloat = 14
