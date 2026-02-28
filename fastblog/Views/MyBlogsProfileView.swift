@@ -129,8 +129,13 @@ struct MyBlogsProfileView: View {
             }
         }
         .sheet(isPresented: $showManage) {
-            MyBlogsManageSheet()
-                .environmentObject(createdRecapStore)
+            MyBlogsManageSheet { recap in
+                showManage = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    selectedCreatedRecap = recap
+                }
+            }
+            .environmentObject(createdRecapStore)
         }
         .onAppear {
             viewModel.loadUnsavedTrips()
@@ -157,10 +162,9 @@ struct MyBlogsProfileView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal, 20)
                 .padding(.bottom, 8)
             }
-            .frame(height: 120)
+            .frame(height: 128)
         }
         .padding(.bottom, 8)
     }
@@ -293,10 +297,11 @@ private struct MyBlogsManageSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
 
+    var onBlogSelected: (CreatedRecapBlog) -> Void
     @State private var blogPendingRemoval: CreatedRecapBlog?
     @State private var showRemoveAlert = false
     @State private var removedBlogIDs: Set<UUID> = []
-    @State private var selectedBlog: CreatedRecapBlog?
+
 
     private var sections: [(country: String, blogs: [CreatedRecapBlog])] {
         let active = createdRecapStore.recents.filter { !removedBlogIDs.contains($0.id) }
@@ -340,7 +345,7 @@ private struct MyBlogsManageSheet: View {
                                 LazyVStack(spacing: 10) {
                                     ForEach(section.blogs) { blog in
                                         Button {
-                                            selectedBlog = blog
+                                            onBlogSelected(blog)
                                         } label: {
                                             CountryManageRow(
                                                 blog: blog,
@@ -365,12 +370,6 @@ private struct MyBlogsManageSheet: View {
             }
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(item: $selectedBlog) { recap in
-                RecapBlogPageView(
-                    blogId: recap.sourceTripId,
-                    initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId)
-                )
-            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }

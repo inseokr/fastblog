@@ -238,24 +238,7 @@ struct LandingView: View {
             }
             showTrips = true
         } label: {
-            VStack(spacing: 32) {
-                // Both lines in same spot so they stay centered when cross-fading
-                ZStack {
-                    Text("Tap to Scan")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                        .opacity(ctaIsAlternate ? 0 : ctaOpacity)
-                    Text("Create A Blog Today")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                        .opacity(ctaIsAlternate ? ctaOpacity : 0)
-                }
-                .frame(maxWidth: .infinity)
-                .animation(.easeInOut(duration: 0.5), value: ctaIsAlternate)
-                .animation(.easeInOut(duration: 0.5), value: ctaOpacity)
-
+            ZStack {
                 ZStack {
                     Circle()
                         .fill(.ultraThinMaterial)
@@ -274,6 +257,24 @@ struct LandingView: View {
                     .spring(response: 0.6, dampingFraction: 0.72).delay(0.35),
                     value: circlesScale
                 )
+                
+                // Both lines in same spot so they stay centered when cross-fading
+                ZStack {
+                    Text("Tap to Scan")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .opacity(ctaIsAlternate ? 0 : ctaOpacity)
+                    Text("Create A Blog Today")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .opacity(ctaIsAlternate ? ctaOpacity : 0)
+                }
+                .frame(maxWidth: .infinity)
+                .animation(.easeInOut(duration: 0.5), value: ctaIsAlternate)
+                .animation(.easeInOut(duration: 0.5), value: ctaOpacity)
+                .offset(y: -156)
             }
         }
         .buttonStyle(.plain)
@@ -310,10 +311,10 @@ struct LandingView: View {
                                 }
                         }
                     }
-                    .padding(.horizontal, 20)
                     .padding(.bottom, 8)
                 }
-                .frame(height: 120)
+                .contentMargins(.horizontal, 20, for: .scrollContent)
+                .frame(height: 128)
             }
             .padding(.top, 16)
             .padding(.bottom, 28)
@@ -400,7 +401,7 @@ struct CreatedRecapCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(width: 220)
+        .frame(width: 260)
         .padding(10)
         .background(Color.white.opacity(0.1))
         .cornerRadius(12)
