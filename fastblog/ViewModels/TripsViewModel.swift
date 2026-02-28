@@ -208,11 +208,11 @@ final class TripsViewModel: ObservableObject {
         showFindMoreSheet = true
     }
 
-    /// End must be at least 1 month after Start for a scan to make sense.
+    /// End must be on or after Start for a scan to make sense.
     var isDateRangeValid: Bool {
         let startTotal = findMoreStartYear * 12 + findMoreStartMonth
         let endTotal   = findMoreEndYear   * 12 + findMoreEndMonth
-        return endTotal > startTotal
+        return endTotal >= startTotal
     }
 
     // MARK: - NLP Parsing Chat

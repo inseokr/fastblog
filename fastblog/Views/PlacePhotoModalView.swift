@@ -266,18 +266,19 @@ struct PlacePhotoModalView: View {
                                     }
                                 }
                             } label: {
-                                Image(systemName: "wand.and.stars")
-                                    .font(.body)
-                                    .foregroundColor(.white)
+                                if isGeneratingCaption {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                        .scaleEffect(0.8)
+                                        .frame(width: 20, height: 20)
+                                } else {
+                                    Image(systemName: "wand.and.stars")
+                                        .font(.body)
+                                        .foregroundColor(.white)
+                                }
                             }
                             .disabled(isGeneratingCaption)
                         }
-                    }
-
-                    if isGeneratingCaption {
-                        Text("Generating…")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.8))
                     }
                 }
                 .padding(.horizontal, 20)
@@ -490,16 +491,7 @@ struct BottomInfoOverlay: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .multilineTextAlignment(.leading)
             } else if blogIsEditMode {
-                // Just show placeholder text, tap to edit
-                Text(placeholder)
-                    .font(.body)
-                    .foregroundColor(.white.opacity(0.7))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .multilineTextAlignment(.leading)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        isEditing = true
-                    }
+                // Do not show the "leave a story..." placeholder in edit/restore mode
             }
         }
         .padding(.horizontal, 20)
@@ -515,7 +507,7 @@ struct BottomInfoOverlay: View {
         )
         .onTapGesture {
             if blogIsEditMode && !isEditing {
-                isEditing = true
+                // Tapping to edit caption disabled in edit/restore mode for now
             }
         }
     }

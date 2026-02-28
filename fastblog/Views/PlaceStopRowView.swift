@@ -238,7 +238,77 @@ struct PlaceStopRowView: View {
             // Photo strip: large thumbnails; one full photo visible + peek of next so users know they can scroll
             let includedPhotos = stop.photos.filter(\.isIncluded)
             if !includedPhotos.isEmpty || (isEditMode && stop.photos.count > 1) {
-                ScrollView(.horizontal, showsIndicators: false) {
+                if includedPhotos.count == 1, let singlePhoto = includedPhotos.first {
+                    // Single photo: same size as strip thumbnails for consistency (no oversized image / excess right space)
+                    VStack(alignment: .leading, spacing: 6) {
+                        ZStack(alignment: .topTrailing) {
+                            RecapPhotoThumbnail(photo: singlePhoto, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 480, height: 480))
+                                .aspectRatio(1, contentMode: .fill)
+                                .frame(width: thumbnailSize, height: thumbnailSize)
+                                .clipped()
+                                .cornerRadius(8)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    onPhotoTapped?(singlePhoto)
+                                }
+                            if isEditMode {
+                                Button {
+                                    onRemovePhoto?(singlePhoto.id)
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 30))
+                                        .symbolRenderingMode(.palette)
+                                        .foregroundStyle(.white, Color.black.opacity(0.6))
+                                }
+                                .buttonStyle(.plain)
+                                .padding(6)
+                            }
+                        }
+                        if isEditMode {
+                            TextField("Leave a story for this photo", text: photoCaption(singlePhoto.id), axis: .vertical)
+                                .textFieldStyle(.plain)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(2...2)
+                                .frame(width: thumbnailSize, alignment: .leading)
+                                .focused($focusedPhotoId, equals: singlePhoto.id)
+                                .onChange(of: focusedPhotoId) { _, _ in
+                                    if let id = focusedPhotoId { onCaptionFocus?(id) }
+                                }
+                                .onChange(of: photoCaption(singlePhoto.id).wrappedValue) { _, _ in
+                                    if generatingPhotoId != singlePhoto.id {
+                                        onPhotoUserEdited?(singlePhoto.id)
+                                    }
+                                }
+                        } else if !photoCaption(singlePhoto.id).wrappedValue.isEmpty {
+                            Text(photoCaption(singlePhoto.id).wrappedValue)
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.9))
+                                .lineLimit(2)
+                                .frame(width: thumbnailSize, alignment: .leading)
+                        }
+                        if isEditMode && stop.photos.count > 1 {
+                            Button(action: onManagePhotos) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "photo.on.rectangle")
+                                        .font(.caption)
+                                    Text("Manage Photos")
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                }
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(Color(white: 0.08))
+                                .cornerRadius(8)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 10) {
                         ForEach(includedPhotos) { photo in
                             VStack(alignment: .leading, spacing: 6) {
@@ -266,22 +336,22 @@ struct PlaceStopRowView: View {
                                     }
                                 }
                                     if isEditMode {
-                                        HStack(alignment: .center, spacing: 6) {
-                                            TextField("Leave a story for this photo", text: photoCaption(photo.id))
-                                                .textFieldStyle(.plain)
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                                .lineLimit(1)
-                                                .focused($focusedPhotoId, equals: photo.id)
-                                                .onChange(of: focusedPhotoId) { _, _ in
-                                                    if let id = focusedPhotoId { onCaptionFocus?(id) }
+                                        TextField("Leave a story for this photo", text: photoCaption(photo.id), axis: .vertical)
+                                            .textFieldStyle(.plain)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(2...2)
+                                            .frame(width: thumbnailSize, alignment: .leading)
+                                            .focused($focusedPhotoId, equals: photo.id)
+                                            .onChange(of: focusedPhotoId) { _, _ in
+                                                if let id = focusedPhotoId { onCaptionFocus?(id) }
+                                            }
+                                            .onChange(of: photoCaption(photo.id).wrappedValue) { _, _ in
+                                                if generatingPhotoId != photo.id {
+                                                    onPhotoUserEdited?(photo.id)
                                                 }
-                                                .onChange(of: photoCaption(photo.id).wrappedValue) { _, _ in
-                                                    if generatingPhotoId != photo.id {
-                                                        onPhotoUserEdited?(photo.id)
-                                                    }
-                                                }
-                                            /* Hide Magic pen for photo captions per user request
+                                            }
+                                        /* Hide Magic pen for photo captions per user request
                                             if let generate = onGeneratePhotoCaption, !photo.captionIsManual {
                                                 Button {
                                                     generatingPhotoId = photo.id
@@ -301,8 +371,6 @@ struct PlaceStopRowView: View {
                                                 .disabled(generatingPhotoId == photo.id)
                                             }
                                             */
-                                        }
-                                        .frame(width: thumbnailSize)
                                     } else if !photoCaption(photo.id).wrappedValue.isEmpty {
                                         Text(photoCaption(photo.id).wrappedValue)
                                             .font(.caption)
@@ -314,7 +382,7 @@ struct PlaceStopRowView: View {
                                 .frame(width: thumbnailSize)
                                 .id(photo.id)
                             }
-                            // Manage Photos card at end of scroll
+                            // Manage Photos card next to last photo; generous trailing padding so it scrolls fully into view and is tappable
                             if isEditMode && stop.photos.count > 1 {
                                 Button(action: onManagePhotos) {
                                     RoundedRectangle(cornerRadius: 8)
@@ -333,14 +401,15 @@ struct PlaceStopRowView: View {
                                         }
                                 }
                                 .buttonStyle(.plain)
+                                .contentShape(Rectangle())
                             }
                         }
                     }
                     .padding(.leading, 16)
-                    .padding(.trailing, 16)
-
-                .frame(height: thumbnailSize + 28)
-                .padding(.bottom, 12)
+                    .padding(.trailing, 32) // Extra space so Manage Photos card scrolls fully into view and stays tappable
+                    .frame(height: thumbnailSize + 28)
+                    .padding(.bottom, 12)
+                }
             }
 
             // timelineLine removed per user request
@@ -366,7 +435,6 @@ struct PlaceStopRowView: View {
                             }
                         },
                         onDone: {
-                            // If it's overallStory being edited, we flag isPlaceNote=true to save the stop
                             onDoneEditingStory?(stop.id, focusedPlaceNote || focusedOverallStory, focusedPhotoId)
                             focusedPlaceNote = false
                             focusedOverallStory = false
@@ -422,9 +490,16 @@ struct PlaceStopRowView: View {
                                 }
                             }
                         } label: {
-                            Image(systemName: "wand.and.stars")
-                                .font(.body)
-                                .foregroundColor(.white.opacity(0.9))
+                            if isGeneratingOverallStory {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(0.8)
+                                    .frame(width: 20, height: 20)
+                            } else {
+                                Image(systemName: "wand.and.stars")
+                                    .font(.body)
+                                    .foregroundColor(.white.opacity(0.9))
+                            }
                         }
                         .disabled(isGeneratingOverallStory)
                     }

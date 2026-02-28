@@ -236,7 +236,7 @@ struct RemovedPlacesSheet: View {
                     },
                     onDismiss: { placeModalItem = nil }
                 )
-                .presentationDetents([.fraction(0.45), .fraction(0.65), .fraction(0.92)])
+                .presentationDetents([.fraction(0.65), .fraction(0.92)])
             } else {
                 Color.white.onAppear { placeModalItem = nil }
             }
@@ -251,16 +251,10 @@ struct RemovedPlacesSheet: View {
         return hasNote || hasPhotoCaption
     }
 
-    /// Returns the earliest photo timestamp for a place stop, used for chronological ordering.
-    private func earliestTimestamp(of stop: PlaceStop) -> Date {
-        stop.photos.map(\.timestamp).min() ?? .distantFuture
-    }
-
     /// Inserts a place stop into the day's placeStops array at the correct
-    /// chronological position based on its earliest photo timestamp.
-    private func insertChronologically(_ stop: PlaceStop, into placeStops: inout [PlaceStop]) {
-        let stopTime = earliestTimestamp(of: stop)
-        if let insertIndex = placeStops.firstIndex(where: { earliestTimestamp(of: $0) > stopTime }) {
+    /// position based on its original orderIndex.
+    private func insertByOrderIndex(_ stop: PlaceStop, into placeStops: inout [PlaceStop]) {
+        if let insertIndex = placeStops.firstIndex(where: { $0.orderIndex > stop.orderIndex }) {
             placeStops.insert(stop, at: insertIndex)
         } else {
             placeStops.append(stop)
@@ -277,17 +271,43 @@ struct RemovedPlacesSheet: View {
         // Remove from the removed list
         draft.removedPlaceStops.removeAll { $0.stop.id == entry.stop.id }
 
-        // Find the original day and insert at chronological position
+        // Find the original day and insert at its original order position
         if let dayIdx = draft.days.firstIndex(where: { $0.id == entry.dayId }) {
-            insertChronologically(entry.stop, into: &draft.days[dayIdx].placeStops)
+            insertByOrderIndex(entry.stop, into: &draft.days[dayIdx].placeStops)
         } else if let dayIdx = draft.days.firstIndex(where: { $0.dayIndex == entry.dayIndex }) {
-            insertChronologically(entry.stop, into: &draft.days[dayIdx].placeStops)
-        } else if !draft.days.isEmpty {
-            insertChronologically(entry.stop, into: &draft.days[draft.days.count - 1].placeStops)
+            insertByOrderIndex(entry.stop, into: &draft.days[dayIdx].placeStops)
+        } else {
+            // Day was completely removed, we must recreate it.
+            let fallbackDate = entry.stop.photos.first?.timestamp ?? Date()
+            let resurrectedDay = RecapBlogDay(
+                id: entry.dayId,
+                dayIndex: entry.dayIndex,
+                date: entry.dayDate ?? fallbackDate,
+                placeStops: [entry.stop]
+            )
+            
+            // Insert the recreated day at the correct sequential dayIndex
+            if let insertIdx = draft.days.firstIndex(where: { $0.dayIndex > entry.dayIndex }) {
+                draft.days.insert(resurrectedDay, at: insertIdx)
+            } else {
+                draft.days.append(resurrectedDay)
+            }
         }
 
-        // Restore cover photo to what it was before
-        draft.selectedCoverPhotoIdentifier = currentCover
+        // If the blog was empty (no cover photo) before this restore, auto-assign the best photo
+        // from the newly restored place as the cover photo.
+        if currentCover == nil && draft.selectedCoverPhotoIdentifier == nil {
+            let includedPhotos = entry.stop.photos.filter(\.isIncluded)
+            // Pick highest quality score, falling back to the first included photo
+            let bestPhoto = includedPhotos.max(by: { ($0.qualityScore?.totalScore ?? 0) < ($1.qualityScore?.totalScore ?? 0) })
+                ?? includedPhotos.first
+            if let identifier = bestPhoto?.localIdentifier {
+                draft.selectedCoverPhotoIdentifier = identifier
+            }
+        } else {
+            // Restore cover photo to what it was before
+            draft.selectedCoverPhotoIdentifier = currentCover
+        }
 
         onRestore()
     }

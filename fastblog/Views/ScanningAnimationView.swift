@@ -10,11 +10,13 @@ struct ScanningAnimationView: View {
     let ringCount: Int
     let ringSpacing: CGFloat
     let pulseDuration: Double
+    var showIcon: Bool
 
-    init(ringCount: Int = 4, ringSpacing: CGFloat = 28, pulseDuration: Double = 1.8) {
+    init(ringCount: Int = 4, ringSpacing: CGFloat = 28, pulseDuration: Double = 1.8, showIcon: Bool = true) {
         self.ringCount = ringCount
         self.ringSpacing = ringSpacing
         self.pulseDuration = pulseDuration
+        self.showIcon = showIcon
     }
 
     var body: some View {
@@ -26,10 +28,12 @@ struct ScanningAnimationView: View {
                 )
                 .scaleEffect(0.4 + CGFloat(index) * 0.2)
             }
-            Image("ScanIcon")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 100, height: 100)
+            if showIcon {
+                Image("ScanIcon")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 100, height: 100)
+            }
         }
         .frame(width: 200, height: 200)
     }

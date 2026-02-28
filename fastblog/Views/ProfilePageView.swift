@@ -589,6 +589,10 @@ struct ProfilePhotoViewer: View {
 struct BlogCard: View {
     let blog: CreatedRecapBlog
     var onShareUnuploaded: (() -> Void)? = nil
+    
+    @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
+    @State private var showRemoveCloudPopup = false
+    @State private var showDeleteConfirmSheet = false
 
     /// Resolved username for share links (username → displayName → email fallback).
     static var resolvedUsername: String {
@@ -681,10 +685,38 @@ struct BlogCard: View {
                 let location = blog.countryName ?? "Unknown"
                 let date = blog.tripDateRangeText ?? ""
                 
-                Text("\(location) — \(date)".uppercased())
-                    .font(ProfileTheme.Typography.metadata)
-                    .foregroundColor(.secondary)
-                    .kerning(0.5)
+                HStack(alignment: .center) {
+                    Text("\(location) — \(date)".uppercased())
+                        .font(ProfileTheme.Typography.metadata)
+                        .foregroundColor(.secondary)
+                        .kerning(0.5)
+                    
+                    Spacer()
+                    
+                    Menu {
+                        if createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId) {
+                            Button {
+                                showRemoveCloudPopup = true
+                            } label: {
+                                Label("Remove from Cloud", systemImage: "icloud.slash")
+                            }
+                        }
+                        
+                        Button(role: .destructive) {
+                            showDeleteConfirmSheet = true
+                        } label: {
+                            Label("Delete Blog", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .padding(8)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .simultaneousGesture(TapGesture().onEnded { })
+                }
                 
                 // Bold Title
                 Text(blog.title)
@@ -711,6 +743,40 @@ struct BlogCard: View {
             .padding(.horizontal, ProfileTheme.Spacing.md)
         }
         .contentShape(Rectangle())
+        .confirmationDialog(
+            "Delete \"\(blog.title)\"?",
+            isPresented: $showDeleteConfirmSheet,
+            titleVisibility: .visible
+        ) {
+            if createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId) {
+                Button("Delete from device and cloud", role: .destructive) {
+                    createdRecapStore.removeFromCloud(blogId: blog.sourceTripId)
+                    createdRecapStore.deleteBlog(sourceTripId: blog.sourceTripId)
+                }
+                Button("Delete from device only") {
+                    createdRecapStore.deleteBlog(sourceTripId: blog.sourceTripId)
+                }
+            } else {
+                Button("Delete", role: .destructive) {
+                    createdRecapStore.deleteBlog(sourceTripId: blog.sourceTripId)
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            if createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId) {
+                Text("This blog is also saved in the cloud. Choose whether to delete it locally or from both places.")
+            } else {
+                Text("This will permanently delete this blog and all its local data.")
+            }
+        }
+        .alert("Remove from Cloud?", isPresented: $showRemoveCloudPopup) {
+            Button("Yes", role: .destructive) {
+                createdRecapStore.removeFromCloud(blogId: blog.sourceTripId)
+            }
+            Button("No", role: .cancel) { }
+        } message: {
+            Text("Are you sure you want to remove this blog from the cloud? Your local copy will remain.")
+        }
     }
 }
 

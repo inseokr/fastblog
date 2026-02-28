@@ -80,9 +80,25 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
     /// nearby points of interest and picking the one closest to the tap. Prefer this over reverse
     /// geocoding when the user taps a place on the map, so they get the venue name not the building/area.
     /// Returns (name, category) or nil if no POI found (caller can fall back to reverse geocode).
-    func resolvePOIAtCoordinate(_ coordinate: CLLocationCoordinate2D) async -> (name: String, category: String?)? {
+    ///
+    /// Pass `mapRegion` so the search radius scales with zoom level. Without it, a fixed 100m radius
+    /// can return invisible/database-only POIs that happen to be geometrically closer than the tapped icon.
+    func resolvePOIAtCoordinate(_ coordinate: CLLocationCoordinate2D, mapRegion: MKCoordinateRegion? = nil) async -> (name: String, category: String?)? {
+        // Scale tap radius to current zoom: meters-per-point × ~22pt (half finger).
+        // At street zoom (~200m span) → ~9m; at city zoom (~5km span) → capped at 80m.
+        // MKLocalPointsOfInterestRequest returns database POIs regardless of what MapKit renders on
+        // screen, so a tighter radius prevents invisible POIs from winning over the visible one.
+        let tapRadius: Double
+        if let region = mapRegion {
+            let metersPerPoint = region.span.latitudeDelta * 111_000.0 / 500.0
+            tapRadius = max(25.0, min(80.0, metersPerPoint * 22.0))
+        } else {
+            tapRadius = 80.0
+        }
+        debugPrint("[POI] resolvePOIAtCoordinate radius=\(Int(tapRadius))m latDelta=\(mapRegion?.span.latitudeDelta ?? -1)")
+
         let tapLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        let request = MKLocalPointsOfInterestRequest(center: coordinate, radius: 100)
+        let request = MKLocalPointsOfInterestRequest(center: coordinate, radius: tapRadius)
         let search = MKLocalSearch(request: request)
         guard let response = try? await search.start(), !response.mapItems.isEmpty else { return nil }
         let withName = response.mapItems.filter { ($0.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
@@ -91,6 +107,16 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
             let loc2 = item2.placemark.location ?? CLLocation(latitude: item2.placemark.coordinate.latitude, longitude: item2.placemark.coordinate.longitude)
             return tapLocation.distance(from: loc1) < tapLocation.distance(from: loc2)
         }) else { return nil }
+        // Reject if even the closest POI is outside the tap radius — it's a database-only POI, not
+        // something the user could have visually tapped. Fall back to reverse geocoding instead.
+        let closestLoc = closest.placemark.location
+            ?? CLLocation(latitude: closest.placemark.coordinate.latitude, longitude: closest.placemark.coordinate.longitude)
+        let distToClosest = tapLocation.distance(from: closestLoc)
+        debugPrint("[POI] closest='\(closest.name ?? "")' dist=\(Int(distToClosest))m radius=\(Int(tapRadius))m")
+        guard distToClosest <= tapRadius else {
+            debugPrint("[POI] closest POI outside tap radius, falling back to geocode")
+            return nil
+        }
         let name = (closest.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return nil }
         let category = closest.pointOfInterestCategory?.rawValue

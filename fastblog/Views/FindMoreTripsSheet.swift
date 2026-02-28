@@ -176,7 +176,7 @@ struct FindMoreTripsSheet: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(.orange)
                         .font(.footnote)
-                    Text("End must be at least 1 month after Start.")
+                    Text("End cannot be before Start.")
                         .font(.footnote)
                         .foregroundColor(.orange)
                 }

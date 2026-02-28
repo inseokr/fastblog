@@ -7,8 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		096CCFE76B626813197AAC4B /* StoryCaptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26043D80B5A5C08A2BCFE01F /* StoryCaptionService.swift */; };
-		28F7D38F2F01A420187559B4 /* PhotoTagService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 677D8E79B750FDD350790EDA /* PhotoTagService.swift */; };
 		7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000061 /* GoogleSignIn */; };
 		BB000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000101 /* ContentView.swift */; };
 		BB000104 /* fastblogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000103 /* fastblogApp.swift */; };
@@ -142,12 +140,11 @@
 		BB000226 /* LocalLLMStoryCaptionGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000227 /* LocalLLMStoryCaptionGenerator.swift */; };
 		BB00022A /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000228 /* ForgotPasswordView.swift */; };
 		BB00022B /* ResetPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000229 /* ResetPasswordView.swift */; };
+		BB00022C /* SplashStateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00022D /* SplashStateManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		26043D80B5A5C08A2BCFE01F /* StoryCaptionService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryCaptionService.swift; sourceTree = "<group>"; };
 		4E34776F396319FBEE2FCECD /* StoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryCaptionGenerator.swift; sourceTree = "<group>"; };
-		677D8E79B750FDD350790EDA /* PhotoTagService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhotoTagService.swift; sourceTree = "<group>"; };
 		AA000003 /* fastblog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = fastblog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB000101 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		BB000103 /* fastblogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = fastblogApp.swift; sourceTree = "<group>"; };
@@ -285,6 +282,7 @@
 		BB000228 /* ForgotPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordView.swift; sourceTree = "<group>"; };
 		BB000229 /* ResetPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResetPasswordView.swift; sourceTree = "<group>"; };
 		F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalLLMStoryCaptionGenerator.swift; sourceTree = "<group>"; };
+		BB00022D /* SplashStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashStateManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -313,6 +311,7 @@
 			children = (
 				BB000101 /* ContentView.swift */,
 				BB000103 /* fastblogApp.swift */,
+				BB00022D /* SplashStateManager.swift */,
 				BB0001EF /* Info.plist */,
 				BB000219 /* Secrets.xcconfig */,
 				BB00021A /* Secrets.xcconfig.example */,
@@ -488,10 +487,8 @@
 				BB0001A7 /* TripPhotoFilterTests.swift */,
 				BB0001A9 /* TripPhotoSelectionService.swift */,
 				BB000218 /* SecureShareToken.swift */,
-				26043D80B5A5C08A2BCFE01F /* StoryCaptionService.swift */,
 				F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */,
 				4E34776F396319FBEE2FCECD /* StoryCaptionGenerator.swift */,
-				677D8E79B750FDD350790EDA /* PhotoTagService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -719,8 +716,7 @@
 				BB000212 /* NeighborhoodExplainerView.swift in Sources */,
 				BB000214 /* RemovedPlacesSheet.swift in Sources */,
 				BB000217 /* SecureShareToken.swift in Sources */,
-				096CCFE76B626813197AAC4B /* StoryCaptionService.swift in Sources */,
-				28F7D38F2F01A420187559B4 /* PhotoTagService.swift in Sources */,
+				BB00022C /* SplashStateManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
