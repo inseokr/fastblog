@@ -46,6 +46,14 @@ struct RecapBlogDetail: Identifiable, Equatable, Codable, Sendable {
         self.blogKey = blogKey
         self.removedPlaceStops = removedPlaceStops
     }
+
+    var allIncludedPhotos: [RecapPhoto] {
+        days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded)
+    }
+
+    var hasCloudPhotos: Bool {
+        days.flatMap(\.placeStops).flatMap(\.photos).contains { $0.cloudURL != nil }
+    }
 }
 
 struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {

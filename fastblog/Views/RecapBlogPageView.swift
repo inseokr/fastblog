@@ -187,6 +187,7 @@ struct RecapBlogPageView: View {
             .sheet(isPresented: $showBlogSettings) {
                 BlogSettingsSheet(
                     draft: $draft,
+                    selectedDayIndex: $selectedDayIndex,
                     blogKey: currentBlogKey,
                     onSave: { saveDraft() },
                     onEditMode: {
@@ -285,7 +286,7 @@ struct RecapBlogPageView: View {
                 placePhotoModalSheet(item: item)
             }
             .sheet(isPresented: $showRestorePlaces) {
-                RemovedPlacesSheet(draft: $draft) {
+                RemovedPlacesSheet(draft: $draft, selectedDayIndex: $selectedDayIndex) {
                     createdRecapStore.saveBlogDetail(draft)
                     syncWithCloudIfNeeded()
                 }
@@ -339,6 +340,8 @@ struct RecapBlogPageView: View {
     private func mainContent(screenHeight: CGFloat) -> some View {
         ScrollViewReader { proxy in
             ZStack(alignment: .bottom) {
+                Color.black.ignoresSafeArea()
+
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         Color.clear.frame(height: 0)
@@ -883,7 +886,6 @@ struct RecapBlogPageView: View {
                         placeSubtitle: stop.placeSubtitle,
                         photos: includedPhotos,
                         initialPhotoId: includedPhotos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : includedPhotos[0].id,
-                        stopDigitizedTime: stop.visitedTimeDigitized,
                         photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
                         onDismiss: { placePhotoModalItem = nil },
                         onGenerateCaption: { photo, placeName, placeSubtitle in
@@ -909,7 +911,7 @@ struct RecapBlogPageView: View {
         .presentationDetents([.fraction(0.65), .fraction(0.92)])
         .presentationDragIndicator(.hidden)
         .presentationCornerRadius(24)
-        .presentationBackground(Color.white)
+        .presentationBackground(.black)
     }
 
     private func loadDraftIfNeeded() {

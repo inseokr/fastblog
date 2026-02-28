@@ -56,9 +56,13 @@ final class TripsViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     /// Draft trips that have not yet been turned into a created recap blog. Use this for the Trips list.
-    /// Created blogs never appear here, even after scanning for more trips.
+    /// Filters by both UUID match and date/location overlap so trips never survive a re-scan.
     var visibleDraftTrips: [TripDraft] {
-        tripDrafts.filter { !createdRecapStore.hasCreatedBlog(sourceTripId: $0.id) }
+        let saved = createdRecapStore.visibleRecents
+        return tripDrafts.filter { draft in
+            !createdRecapStore.hasCreatedBlog(sourceTripId: draft.id)
+            && !TripMatchingService.isTripSaved(draft: draft, against: saved)
+        }
     }
 
     /// Trips where the user has started selecting photos but not created the blog. Shown in "My Drafts" section.
@@ -308,7 +312,11 @@ final class TripsViewModel: ObservableObject {
             )
             hasPerformedCustomScan = true
             let existingKeys = Set(tripDrafts.map { "\($0.title)|\($0.dateRangeText)" })
-            let deduped = newTrips.filter { !existingKeys.contains("\($0.title)|\($0.dateRangeText)") }
+            let saved = createdRecapStore.visibleRecents
+            let deduped = newTrips.filter { trip in
+                !existingKeys.contains("\(trip.title)|\(trip.dateRangeText)")
+                && !TripMatchingService.isTripSaved(draft: trip, against: saved)
+            }
             if deduped.isEmpty {
                 findMoreScanResult = .empty
             } else {

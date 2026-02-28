@@ -11,6 +11,8 @@ import SwiftUI
 struct RemovedPlacesSheet: View {
     /// Live binding to the blog draft so changes persist immediately.
     @Binding var draft: RecapBlogDetail
+    /// Live binding to the selected day index in the parent view.
+    @Binding var selectedDayIndex: Int
     /// Called after a restore so the parent can persist the draft.
     var onRestore: () -> Void
 
@@ -275,8 +277,10 @@ struct RemovedPlacesSheet: View {
         // Find the original day and insert at its original order position
         if let dayIdx = draft.days.firstIndex(where: { $0.id == entry.dayId }) {
             insertByOrderIndex(entry.stop, into: &draft.days[dayIdx].placeStops)
+            selectedDayIndex = dayIdx
         } else if let dayIdx = draft.days.firstIndex(where: { $0.dayIndex == entry.dayIndex }) {
             insertByOrderIndex(entry.stop, into: &draft.days[dayIdx].placeStops)
+            selectedDayIndex = dayIdx
         } else {
             // Day was completely removed, we must recreate it.
             let fallbackDate = entry.stop.photos.first?.timestamp ?? Date()
@@ -290,8 +294,10 @@ struct RemovedPlacesSheet: View {
             // Insert the recreated day at the correct sequential dayIndex
             if let insertIdx = draft.days.firstIndex(where: { $0.dayIndex > entry.dayIndex }) {
                 draft.days.insert(resurrectedDay, at: insertIdx)
+                selectedDayIndex = insertIdx
             } else {
                 draft.days.append(resurrectedDay)
+                selectedDayIndex = draft.days.count - 1
             }
         }
 
@@ -339,5 +345,5 @@ struct RemovedPlacesSheet: View {
             RemovedPlaceEntry(dayId: day.id, dayIndex: 1, stop: stop2)
         ]
     )
-    return RemovedPlacesSheet(draft: .constant(detail), onRestore: {})
+    return RemovedPlacesSheet(draft: .constant(detail), selectedDayIndex: .constant(0), onRestore: {})
 }
