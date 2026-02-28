@@ -39,13 +39,13 @@ struct MyBlogsProfileView: View {
                 let allSections = MyBlogsProfileViewModel.sections(from: createdRecapStore.countrySummaries)
                 let sections = viewModel.filteredSections(from: allSections)
                 Group {
+                    if !isSearchActive && !viewModel.unsavedTrips.isEmpty {
+                        unsavedTripsSection
+                    }
+
                     // Recent Blogs horizontal scroll (only when not in search mode)
                     if !isSearchActive && !createdRecapStore.visibleRecents.isEmpty {
                         recentBlogsSection
-                    }
-
-                    if !isSearchActive && !viewModel.unsavedTrips.isEmpty {
-                        unsavedTripsSection
                     }
 
                     if isSearchActive && !viewModel.isSearching {
@@ -171,11 +171,26 @@ struct MyBlogsProfileView: View {
 
     private var unsavedTripsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Trips Not Saved Yet")
-                .font(.headline)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-                .padding(.top, 16)
+            HStack {
+                Text("Trips Not Saved Yet")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                Spacer()
+                Button {
+                    withAnimation { viewModel.dismissAllUnsavedTrips() }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white.opacity(0.6))
+                        .frame(width: 24, height: 24)
+                        .background(Color.white.opacity(0.15))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.top, 16)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {

@@ -17,35 +17,33 @@ struct UnsavedTripCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             coverSection
-            
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(trip.title)
                     .font(.subheadline)
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                     .lineLimit(1)
-                
+
                 Text(locationText)
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.7))
                     .lineLimit(1)
-                
+
                 Text("\(trip.totalPhotoCount) Photos • \(trip.dateRangeText)")
                     .font(.caption2)
                     .foregroundColor(.white.opacity(0.5))
                     .lineLimit(1)
-                
-                Button(action: onViewPhotos) {
-                    Text("View Photos")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundColor(.blue)
-                        .padding(.vertical, 6)
-                        .frame(maxWidth: .infinity)
-                        .background(Color.white)
-                        .cornerRadius(6)
-                }
-                .padding(.top, 8)
+
+                Text("View Photos")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.blue)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.white)
+                    .cornerRadius(6)
+                    .padding(.top, 8)
             }
             .padding(12)
         }
@@ -56,6 +54,8 @@ struct UnsavedTripCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.white.opacity(0.1), lineWidth: 1)
         )
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onViewPhotos)
     }
 
     private var coverSection: some View {
