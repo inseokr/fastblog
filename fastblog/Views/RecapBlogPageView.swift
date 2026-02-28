@@ -135,6 +135,14 @@ struct RecapBlogPageView: View {
             } message: {
                 Text("This will remove your blog from the cloud. Your local blog and photos will not be affected.")
             }
+            .alert("Upload to Cloud?", isPresented: $showUploadPromptAlert) {
+                Button("Yes") {
+                    uploadBlogPhotos()
+                }
+                Button("No", role: .cancel) { }
+            } message: {
+                Text("This blog needs to be uploaded to the cloud before you can share a link. Would you like to upload it now?")
+            }
             .fullScreenCover(isPresented: $showAuth) {
                 AuthView(onAuthenticated: {
                     showAuth = false
@@ -287,17 +295,6 @@ struct RecapBlogPageView: View {
                     .presentationDetents([.fraction(0.35), .medium])
                     .presentationDragIndicator(.visible)
             }
-            .background(
-                Color.clear
-                    .alert("Upload to Cloud?", isPresented: $showUploadPromptAlert) {
-                        Button("Yes") {
-                            uploadBlogPhotos()
-                        }
-                        Button("No", role: .cancel) { }
-                    } message: {
-                        Text("This blog needs to be uploaded to the cloud before you can share a link. Would you like to upload it now?")
-                    }
-            )
             .modifier(coreContentAlertsAndLifecycleModifier())
             .alert("Save or Exit?", isPresented: $showNewBlogExitConfirmation) {
                 Button("Continue Later") {
@@ -611,8 +608,11 @@ struct RecapBlogPageView: View {
                                 if blogIsInCloud {
                                     showShareSheet = true
                                 } else {
-                                    showUploadPromptAlert = true
-                                    print("Setting showUploadPromptAlert = true")
+                                    showSaveTipAlert = false
+                                    DispatchQueue.main.async {
+                                        showUploadPromptAlert = true
+                                        print("Setting showUploadPromptAlert = true")
+                                    }
                                 }
                             } label: {
                                 HStack(spacing: 6) {
