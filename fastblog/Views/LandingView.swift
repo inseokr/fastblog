@@ -14,6 +14,12 @@ struct LandingView: View {
     @ObservedObject var tripsViewModel: TripsViewModel
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @EnvironmentObject private var authService: AuthService
+    @EnvironmentObject private var splashManager: SplashStateManager
+
+    // Circle zoom-reveal: starts at 0, springs to full size as logo lands
+    @State private var circlesScale: CGFloat = 0.001
+    // ScanIcon hidden while the animated splash logo overlay is on top
+    @State private var showScanIcon: Bool = false
 
     @State private var showSettings = false
     @State private var showAuth = false
@@ -135,6 +141,22 @@ struct LandingView: View {
         }
         .onAppear {
             avatarImageData = authService.profileImageData
+            // If already past splash (e.g. navigating back), show everything immediately
+            if splashManager.phase == .done {
+                circlesScale = 1.0
+                showScanIcon = true
+            } else {
+                // Circles zoom out 0.35s after appear — synced to logo spring landing
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    withAnimation(.spring(response: 0.6, dampingFraction: 0.72)) {
+                        circlesScale = 1.0
+                    }
+                }
+                // ScanIcon appears once the splash overlay has faded (~0.85s)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) {
+                    showScanIcon = true
+                }
+            }
         }
         .onChange(of: authService.currentUser?.id) { _, _ in
             avatarImageData = authService.profileImageData
@@ -230,9 +252,14 @@ struct LandingView: View {
                     Circle()
                         .stroke(Color.white.opacity(0.2), lineWidth: 1)
                         .frame(width: 220, height: 220)
-                    ScanningAnimationView(ringCount: 4, ringSpacing: 28, pulseDuration: 1.8)
+                    ScanningAnimationView(ringCount: 4, ringSpacing: 28, pulseDuration: 1.8, showIcon: showScanIcon)
                         .frame(width: 200, height: 200)
                 }
+                .scaleEffect(circlesScale)
+                .animation(
+                    .spring(response: 0.6, dampingFraction: 0.72).delay(0.35),
+                    value: circlesScale
+                )
             }
         }
         .buttonStyle(.plain)
@@ -749,5 +776,6 @@ struct AllRecentsSheet: View {
         )
         .environmentObject(CreatedRecapBlogStore.shared)
         .environmentObject(AuthService.shared)
+        .environmentObject(SplashStateManager())
     }
 }

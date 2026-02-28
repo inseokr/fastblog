@@ -12,6 +12,7 @@ struct fastblogApp: App {
     @StateObject private var authService = AuthService.shared
     @StateObject private var authStateManager = AuthStateManager.shared
     @StateObject private var createdRecapStore = CreatedRecapBlogStore.shared
+    @StateObject private var splashManager = SplashStateManager()
     @AppStorage("blogify.hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("blogify.hasCheckedExistingUser") private var hasCheckedExistingUser = false
     @Environment(\.scenePhase) private var scenePhase
@@ -29,6 +30,7 @@ struct fastblogApp: App {
                 .environmentObject(authService)
                 .environmentObject(authStateManager)
                 .environmentObject(createdRecapStore)
+                .environmentObject(splashManager)
                 .onOpenURL { url in
                     if let token = Self.parseResetPasswordToken(from: url) {
                         DispatchQueue.main.async { pendingResetToken = token }
@@ -80,10 +82,8 @@ struct fastblogApp: App {
     @ViewBuilder
     private var normalAppRoot: some View {
         ZStack {
-            if !isAppReady {
-                AppLaunchSplashView()
-                    .transition(.opacity)
-            } else {
+            // ── Layer 1: main app content (fades in when ready) ──
+            if isAppReady {
                 Group {
                     if !hasCompletedOnboarding {
                         OnboardingFlowView {
@@ -100,9 +100,36 @@ struct fastblogApp: App {
                         )
                     }
                 }
-                .transition(.opacity)
+                .opacity(splashManager.phase == .splash ? 0 : 1)
+                .animation(.easeInOut(duration: 0.4), value: splashManager.phase == .splash)
+            }
+
+            // ── Layer 2: animated logo overlay ──
+            if splashManager.phase != .done {
+                let isSplash = splashManager.phase == .splash
+
+                // Dark background fades out as home fades in
+                Color(red: 5/255, green: 10/255, blue: 48/255)
+                    .ignoresSafeArea()
+                    .opacity(isSplash ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.5), value: isSplash)
+
+                // Logo shrinks from 140→100 and glides up to the scan circle center
+                Image("SplashIcon")
+                    .resizable()
+                    .scaledToFit()
+                    .scaleEffect(isSplash ? 1.0 : (100.0 / 140.0))
+                    .frame(width: 140, height: 140)
+                    .offset(y: isSplash ? 0 : -55)
+                    .opacity(splashManager.phase == .animating ? 1 : (isSplash ? 1 : 0))
+                    .animation(
+                        .spring(response: 0.7, dampingFraction: 0.8)
+                            .delay(0.05),
+                        value: isSplash
+                    )
             }
         }
+        .ignoresSafeArea()
         .onAppear {
             DraftReminderNotificationManager.requestPermissionIfNeeded()
             GoogleAuthManager.shared.restorePreviousSignIn()
@@ -110,18 +137,26 @@ struct fastblogApp: App {
                 await EntitlementManager.shared.refreshEntitlements()
                 createdRecapStore.enforceArchiveRules()
 
-                // Minor delay to ensure splash is visible for a moment if init is too fast.
-                try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s
+                // Ensure splash is visible for at least 1.5 seconds.
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
 
-                withAnimation {
-                    if !hasCheckedExistingUser {
-                        // Any user with a photo auth status other than notDetermined is an old user.
-                        if !hasCompletedOnboarding && photoAuth.status != .notDetermined {
-                            hasCompletedOnboarding = true
-                        }
-                        hasCheckedExistingUser = true
+                if !hasCheckedExistingUser {
+                    if !hasCompletedOnboarding && photoAuth.status != .notDetermined {
+                        hasCompletedOnboarding = true
                     }
+                    hasCheckedExistingUser = true
+                }
+
+                // Phase 1 → 2: reveal home content, start logo fly-in
+                withAnimation {
                     isAppReady = true
+                    splashManager.phase = .animating
+                }
+
+                // Phase 2 → 3: after logo lands (~800ms), fade overlay out
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                withAnimation(.easeOut(duration: 0.2)) {
+                    splashManager.phase = .done
                 }
             }
         }
@@ -130,7 +165,6 @@ struct fastblogApp: App {
                 Task {
                     await EntitlementManager.shared.refreshEntitlements()
                     createdRecapStore.enforceArchiveRules()
-                    // Re-sync cloud data whenever the app returns to the foreground (logged in only).
                     if authStateManager.isLoggedIn {
                         await createdRecapStore.syncFromCloud()
                     }
