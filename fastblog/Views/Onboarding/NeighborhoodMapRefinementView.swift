@@ -54,8 +54,21 @@ struct NeighborhoodMapRefinementView: View {
             .allowsHitTesting(false) // Let touches pass to map
             
             // UI Overlay
-            VStack {
-                // Header
+            VStack(spacing: 0) {
+                // Pull-up handle indicator
+                Capsule()
+                    .fill(Color.white.opacity(0.3))
+                    .frame(width: 36, height: 5)
+                    .padding(.top, 12)
+
+                // Header with title
+                Text("Set Home")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding(.top, 8)
+                    .padding(.bottom, 8)
+
+                // Header overlay info
                 VStack(spacing: 8) {
                     Text("Refine Your Neighborhood")
                         .font(.headline)

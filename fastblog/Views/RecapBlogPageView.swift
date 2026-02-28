@@ -1840,8 +1840,8 @@ struct RecapBlogPageView: View {
             
             // 2. Active Cloud Blogs Check
             if let maxCloud = EntitlementManager.shared.activeCloudBlogLimit {
-                let currentCloudCount = createdRecapStore.recents.filter { $0.cloudState != .localOnly && $0.ownerUserId == AuthService.shared.currentUser?.id }.count
-                let isThisBlogAlreadyInCloud = (createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.cloudState ?? .localOnly) != .localOnly
+                let currentCloudCount = createdRecapStore.visibleRecents.filter { $0.cloudState != .localOnly }.count
+                let isThisBlogAlreadyInCloud = (createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == blogId })?.cloudState ?? .localOnly) != .localOnly
                 
                 if !isThisBlogAlreadyInCloud && currentCloudCount >= maxCloud {
                     uploadErrorMessage = "Cloud storage limit reached.\nRemove a published blog to continue."

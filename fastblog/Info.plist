@@ -2,32 +2,32 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>ShareTokenKey</key>
-	<string>$(SHARE_TOKEN_KEY)</string>
-	<!-- Replace with your iOS OAuth client ID from Google Cloud Console -->
-	<key>GIDClientID</key>
-	<string>259780144944-m28majq312jddps9h4ajftdpn07r640b.apps.googleusercontent.com</string>
-	<!-- Reversed client ID for URL scheme (e.g. 123-abc.apps.googleusercontent.com → com.googleusercontent.apps.123-abc) -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>com.googleusercontent.apps.259780144944-m28majq312jddps9h4ajftdpn07r640b</string>
 			</array>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
 		</dict>
 		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>Password reset</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>fastblog</string>
 			</array>
-			<key>CFBundleURLName</key>
-			<string>Password reset</string>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
 		</dict>
 	</array>
+	<key>GIDClientID</key>
+	<string>259780144944-m28majq312jddps9h4ajftdpn07r640b.apps.googleusercontent.com</string>
+	<key>ShareTokenKey</key>
+	<string>$(SHARE_TOKEN_KEY)</string>
+	<key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>
+	<true/>
 </dict>
 </plist>

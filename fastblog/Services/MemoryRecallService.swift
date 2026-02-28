@@ -16,7 +16,7 @@ final class MemoryRecallService {
 
     /// Generates a daily recall from already-saved blogs. No photo library scan or geocoding.
     func generateDailyRecall() async -> RecallTrigger? {
-        let blogs = await CreatedRecapBlogStore.shared.recents
+        let blogs = await CreatedRecapBlogStore.shared.visibleRecents
         guard !blogs.isEmpty else { return nil }
         let now = Date()
 

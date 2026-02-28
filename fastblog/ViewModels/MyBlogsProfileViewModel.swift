@@ -37,6 +37,8 @@ final class MyBlogsProfileViewModel: ObservableObject {
     private let createdRecapStore = CreatedRecapBlogStore.shared
     private var cancellables = Set<AnyCancellable>()
 
+    private static let dismissedTripsKey = "bloggo.dismissedUnsavedTrips"
+
     init() {
         observeStoreChanges()
     }
@@ -79,10 +81,12 @@ final class MyBlogsProfileViewModel: ObservableObject {
             // This ensures we have the full context for matching (e.g. overlap checks).
             let result = await photoLibraryService.scanLast90Days(occupiedDateRanges: [])
             let detected = result.trips
-            let saved = createdRecapStore.recents
-            
+            let saved = createdRecapStore.visibleRecents
+
+            let dismissed = Self.loadDismissedKeys()
             let filtered = detected.filter { draft in
                 !TripMatchingService.isTripSaved(draft: draft, against: saved)
+                && !dismissed.contains(Self.dismissKey(for: draft))
             }
             
             self.unsavedTrips = filtered.sorted { ($0.earliestDate ?? .distantPast) > ($1.earliestDate ?? .distantPast) }
@@ -105,10 +109,36 @@ final class MyBlogsProfileViewModel: ObservableObject {
         if unsavedTrips.isEmpty && !isScanning {
             loadUnsavedTrips()
         } else {
-            let saved = createdRecapStore.recents
+            let saved = createdRecapStore.visibleRecents
+            let dismissed = Self.loadDismissedKeys()
             unsavedTrips = unsavedTrips.filter { draft in
                 !TripMatchingService.isTripSaved(draft: draft, against: saved)
+                && !dismissed.contains(Self.dismissKey(for: draft))
             }
         }
+    }
+
+    // MARK: - Dismissed trips persistence
+
+    /// Dismiss all currently visible unsaved trips so they don't reappear.
+    func dismissAllUnsavedTrips() {
+        var dismissed = Self.loadDismissedKeys()
+        for trip in unsavedTrips {
+            dismissed.insert(Self.dismissKey(for: trip))
+        }
+        UserDefaults.standard.set(Array(dismissed), forKey: Self.dismissedTripsKey)
+        unsavedTrips = []
+    }
+
+    /// Stable fingerprint for a trip based on its date range (survives re-scans).
+    private static func dismissKey(for trip: TripDraft) -> String {
+        let start = trip.earliestDate?.timeIntervalSince1970 ?? 0
+        let end = trip.latestDate?.timeIntervalSince1970 ?? 0
+        return "\(start)_\(end)"
+    }
+
+    private static func loadDismissedKeys() -> Set<String> {
+        let array = UserDefaults.standard.stringArray(forKey: dismissedTripsKey) ?? []
+        return Set(array)
     }
 }

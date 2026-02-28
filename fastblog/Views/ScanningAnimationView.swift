@@ -11,12 +11,15 @@ struct ScanningAnimationView: View {
     let ringSpacing: CGFloat
     let pulseDuration: Double
     var showIcon: Bool
+    /// The name of the image asset to show at the center. Defaults to "ScanIcon".
+    var iconName: String
 
-    init(ringCount: Int = 4, ringSpacing: CGFloat = 28, pulseDuration: Double = 1.8, showIcon: Bool = true) {
+    init(ringCount: Int = 4, ringSpacing: CGFloat = 28, pulseDuration: Double = 1.8, showIcon: Bool = true, iconName: String = "ScanIcon") {
         self.ringCount = ringCount
         self.ringSpacing = ringSpacing
         self.pulseDuration = pulseDuration
         self.showIcon = showIcon
+        self.iconName = iconName
     }
 
     var body: some View {
@@ -29,7 +32,7 @@ struct ScanningAnimationView: View {
                 .scaleEffect(0.4 + CGFloat(index) * 0.2)
             }
             if showIcon {
-                Image("ScanIcon")
+                Image(iconName)
                     .resizable()
                     .scaledToFit()
                     .frame(width: 100, height: 100)

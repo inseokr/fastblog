@@ -24,17 +24,31 @@ struct NeighborhoodIntroView: View {
                 .ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    HStack {
-                        Spacer()
-                        Button {
-                            onDismiss()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.headline)
-                                .foregroundColor(.white.opacity(0.6))
-                                .padding()
+                    // Pull-up handle indicator
+                    Capsule()
+                        .fill(Color.white.opacity(0.3))
+                        .frame(width: 36, height: 5)
+                        .padding(.top, 12)
+
+                    // Header with title and close button
+                    ZStack {
+                        Text("Set Home")
+                            .font(.headline)
+                            .foregroundColor(.white)
+
+                        HStack {
+                            Button {
+                                onDismiss()
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.headline)
+                                    .foregroundColor(.white.opacity(0.6))
+                                    .padding()
+                            }
+                            Spacer()
                         }
                     }
+                    .padding(.top, 8)
 
                     Spacer()
 
