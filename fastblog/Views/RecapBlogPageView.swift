@@ -289,23 +289,6 @@ struct RecapBlogPageView: View {
             }
             .background(
                 Color.clear
-                    .alert("Save Before Leaving?", isPresented: $showNewBlogExitConfirmation) {
-                        Button("Save Draft") {
-                            createdRecapStore.saveBlogDetail(draft, asDraft: true)
-                            createdRecapStore.showDraftSavedToast = true
-                            dismiss()
-                        }
-                        Button("Don't Save", role: .destructive) {
-                            createdRecapStore.deleteBlog(sourceTripId: blogId)
-                            dismiss()
-                        }
-                        Button("Cancel", role: .cancel) { }
-                    } message: {
-                        Text("Do you want to save this blog as a draft before leaving?")
-                    }
-            )
-            .background(
-                Color.clear
                     .alert("Upload to Cloud?", isPresented: $showUploadPromptAlert) {
                         Button("Yes") {
                             uploadBlogPhotos()
@@ -316,6 +299,20 @@ struct RecapBlogPageView: View {
                     }
             )
             .modifier(coreContentAlertsAndLifecycleModifier())
+            .alert("Save or Exit?", isPresented: $showNewBlogExitConfirmation) {
+                Button("Continue Later") {
+                    createdRecapStore.saveBlogDetail(draft, asDraft: true)
+                    createdRecapStore.showDraftSavedToast = true
+                    dismiss()
+                }
+                Button("Exit", role: .destructive) {
+                    createdRecapStore.deleteBlog(sourceTripId: blogId)
+                    dismiss()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("\"Continue Later\" saves your blog as a draft. \"Exit\" will discard all changes.")
+            }
     }
 
     private func coreContentAlertsAndLifecycleModifier() -> some ViewModifier {
@@ -1468,7 +1465,12 @@ struct RecapBlogPageView: View {
 
                     if isFirstCreation {
                         print("🔙 Setting showNewBlogExitConfirmation = true")
-                        showNewBlogExitConfirmation = true
+                        showSaveTipAlert = false
+                        DispatchQueue.main.async {
+                            let stillUnsaved = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
+                            guard stillUnsaved else { return }
+                            showNewBlogExitConfirmation = true
+                        }
                     } else {
                         if draftSnapshot != nil && draft == draftSnapshot {
                             // No changes made, leave uninterrupted
