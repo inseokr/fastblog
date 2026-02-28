@@ -540,7 +540,12 @@ private struct SettingsView: View {
                     }
                 }
 
-
+                // Permissions
+                Section {
+                    PhotoAccessRow()
+                } header: {
+                    Text("Permissions")
+                }
 
                 Section {
                     Button {

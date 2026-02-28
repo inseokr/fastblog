@@ -40,7 +40,7 @@ struct MyBlogsProfileView: View {
                 let sections = viewModel.filteredSections(from: allSections)
                 Group {
                     // Recent Blogs horizontal scroll (only when not in search mode)
-                    if !isSearchActive && !createdRecapStore.recents.isEmpty {
+                    if !isSearchActive && !createdRecapStore.visibleRecents.isEmpty {
                         recentBlogsSection
                     }
 
@@ -153,7 +153,7 @@ struct MyBlogsProfileView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    ForEach(createdRecapStore.recents.prefix(10)) { recap in
+                    ForEach(createdRecapStore.displayRecents.prefix(10)) { recap in
                         Button {
                             selectedCreatedRecap = recap
                         } label: {
@@ -257,16 +257,50 @@ private struct MyMapButton: View {
 
 private struct RecentBlogCard: View {
     let recap: CreatedRecapBlog
+    @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
+    @State private var showRemoveCloudPopup = false
 
     var body: some View {
         HStack(spacing: 12) {
-            AssetPhotoView(
-                assetIdentifier: recap.coverAssetIdentifier ?? recap.coverImageName,
-                cornerRadius: 10,
-                targetSize: CGSize(width: 200, height: 200)
-            )
-            .frame(width: 80, height: 80)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            ZStack(alignment: .bottomLeading) {
+                AssetPhotoView(
+                    assetIdentifier: recap.coverAssetIdentifier ?? recap.coverImageName,
+                    cornerRadius: 10,
+                    targetSize: CGSize(width: 200, height: 200)
+                )
+                .frame(width: 80, height: 80)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                if recap.lastEditedAt == nil {
+                    Text("Draft")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.black.opacity(0.6))
+                        .cornerRadius(4)
+                        .padding(4)
+                } else {
+                    if createdRecapStore.isBlogInCloud(blogId: recap.sourceTripId) {
+                        Image(systemName: "checkmark.icloud.fill")
+                            .font(.caption2)
+                            .foregroundColor(.white)
+                            .padding(4)
+                            .background(Circle().fill(Color.green))
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                showRemoveCloudPopup = true
+                            }
+                    } else {
+                        Image(systemName: "icloud.and.arrow.up")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                            .padding(4)
+                            .background(Circle().fill(Color.white))
+                    }
+                }
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(recap.title)
@@ -288,6 +322,14 @@ private struct RecentBlogCard: View {
         .padding(10)
         .background(Color.white.opacity(0.1))
         .cornerRadius(12)
+        .alert("Remove from Cloud?", isPresented: $showRemoveCloudPopup) {
+            Button("Yes", role: .destructive) {
+                createdRecapStore.removeFromCloud(blogId: recap.sourceTripId)
+            }
+            Button("No", role: .cancel) { }
+        } message: {
+            Text("Are you sure you want to remove this blog from the cloud?")
+        }
     }
 }
 
@@ -304,7 +346,7 @@ private struct MyBlogsManageSheet: View {
 
 
     private var sections: [(country: String, blogs: [CreatedRecapBlog])] {
-        let active = createdRecapStore.recents.filter { !removedBlogIDs.contains($0.id) }
+        let active = createdRecapStore.visibleRecents.filter { !removedBlogIDs.contains($0.id) }
         let grouped = Dictionary(grouping: active) { $0.countryName ?? "Unknown" }
         return grouped.map { (country: $0.key, blogs: $0.value.sorted { ($0.tripStartDate ?? $0.createdAt) > ($1.tripStartDate ?? $1.createdAt) }) }
             .sorted { $0.country < $1.country }

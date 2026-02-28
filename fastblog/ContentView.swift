@@ -72,7 +72,7 @@ struct ContentView: View {
                 dismissToLandingRequested = false
                 // After blog creation, navigate to the new recap blog on top of TripsView
                 // so back button returns to Trips page for creating more blogs
-                if let latest = createdRecapStore.recents.first {
+                if let latest = createdRecapStore.displayRecents.first {
                     showTrips = true
                     selectedCreatedRecap = latest
                 } else {

@@ -27,5 +27,7 @@
 	<string>259780144944-m28majq312jddps9h4ajftdpn07r640b.apps.googleusercontent.com</string>
 	<key>ShareTokenKey</key>
 	<string>$(SHARE_TOKEN_KEY)</string>
+	<key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>
+	<true/>
 </dict>
 </plist>

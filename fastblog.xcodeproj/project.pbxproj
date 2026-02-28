@@ -142,6 +142,7 @@
 		BB00022A /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000228 /* ForgotPasswordView.swift */; };
 		BB00022B /* ResetPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000229 /* ResetPasswordView.swift */; };
 		BB00022C /* SplashStateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00022D /* SplashStateManager.swift */; };
+		BB000231 /* PhotoAccessRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000230 /* PhotoAccessRow.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -284,6 +285,7 @@
 		BB000228 /* ForgotPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordView.swift; sourceTree = "<group>"; };
 		BB000229 /* ResetPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResetPasswordView.swift; sourceTree = "<group>"; };
 		BB00022D /* SplashStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashStateManager.swift; sourceTree = "<group>"; };
+		BB000230 /* PhotoAccessRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoAccessRow.swift; sourceTree = "<group>"; };
 		F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalLLMStoryCaptionGenerator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -410,6 +412,7 @@
 				BB00015D /* ScanningAnimationView.swift */,
 				BB00015F /* SelectPhotosIntroView.swift */,
 				BB000161 /* ShareSheet.swift */,
+				BB000230 /* PhotoAccessRow.swift */,
 				BB0001DC /* SubscriptionSettingsView.swift */,
 				BB000163 /* TermsOfServiceView.swift */,
 				BB000165 /* TitleInputView.swift */,
@@ -721,6 +724,7 @@
 				BB000214 /* RemovedPlacesSheet.swift in Sources */,
 				BB000217 /* SecureShareToken.swift in Sources */,
 				BB00022C /* SplashStateManager.swift in Sources */,
+				BB000231 /* PhotoAccessRow.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

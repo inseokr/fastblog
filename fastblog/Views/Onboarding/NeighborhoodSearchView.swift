@@ -20,8 +20,31 @@ struct NeighborhoodSearchView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VStack(spacing: 20) {
-                HStack(spacing: 12) {
+            VStack(spacing: 0) {
+                // Pull-up handle indicator
+                Capsule()
+                    .fill(Color.white.opacity(0.3))
+                    .frame(width: 36, height: 5)
+                    .padding(.top, 12)
+
+                // Header with title and cancel button
+                ZStack {
+                    Text("Set Home")
+                        .font(.headline)
+                        .foregroundColor(.white)
+
+                    HStack {
+                        Button("Cancel") {
+                            onDismiss()
+                        }
+                        .foregroundColor(.white)
+                        .padding()
+                        Spacer()
+                    }
+                }
+                .padding(.top, 8)
+
+                VStack(spacing: 20) {
                     HStack {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.white.opacity(0.5))
@@ -44,97 +67,92 @@ struct NeighborhoodSearchView: View {
                     .padding(12)
                     .background(Color.white.opacity(0.1))
                     .cornerRadius(12)
-
-                    Button("Cancel") {
-                        onDismiss()
-                    }
-                    .foregroundColor(.white)
-                }
-                .padding(.horizontal)
-                .padding(.top, 10)
-
-                if searchHelper.suggestions.isEmpty && searchHelper.query.isEmpty {
-                    Button {
-                        useCurrentLocation()
-                    } label: {
-                        HStack(spacing: 16) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.blue.opacity(0.2))
-                                    .frame(width: 40, height: 40)
-                                Image(systemName: "location.fill")
-                                    .foregroundColor(.blue)
-                            }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Use Current Location")
-                                    .font(.headline)
-                                    .foregroundColor(.white)
-                                Text("Find neighborhood near you")
-                                    .font(.caption)
-                                    .foregroundColor(.white.opacity(0.6))
-                            }
-                            Spacer()
-                        }
-                        .padding()
-                        .background(Color.white.opacity(0.05))
-                        .cornerRadius(16)
-                    }
                     .padding(.horizontal)
+                    .padding(.top, 10)
 
-                    if !NeighborhoodStore.recentSearches.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Recent Searches")
-                                .font(.subheadline)
-                                .foregroundColor(.white.opacity(0.6))
-                                .padding(.horizontal)
-
-                            ForEach(NeighborhoodStore.recentSearches, id: \.self) { search in
-                                Button {
-                                    searchHelper.query = search
-                                } label: {
-                                    HStack {
-                                        Image(systemName: "clock")
-                                            .foregroundColor(.white.opacity(0.5))
-                                        Text(search)
-                                            .foregroundColor(.white)
-                                        Spacer()
-                                    }
-                                    .padding()
-                                    .background(Color.white.opacity(0.05))
-                                    .cornerRadius(12)
+                    if searchHelper.suggestions.isEmpty && searchHelper.query.isEmpty {
+                        Button {
+                            useCurrentLocation()
+                        } label: {
+                            HStack(spacing: 16) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.blue.opacity(0.2))
+                                        .frame(width: 40, height: 40)
+                                    Image(systemName: "location.fill")
+                                        .foregroundColor(.blue)
                                 }
-                                .padding(.horizontal)
-                            }
-                        }
-                    }
 
-                    Spacer()
-
-                } else {
-                    List {
-                        ForEach(Array(searchHelper.suggestions.enumerated()), id: \.offset) { _, suggestion in
-                            Button {
-                                selectSuggestion(suggestion)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(suggestion.title)
-                                        .font(.body)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Use Current Location")
+                                        .font(.headline)
                                         .foregroundColor(.white)
-                                    if !suggestion.subtitle.isEmpty {
-                                        Text(suggestion.subtitle)
-                                            .font(.caption)
-                                            .foregroundColor(.white.opacity(0.6))
-                                    }
+                                    Text("Find neighborhood near you")
+                                        .font(.caption)
+                                        .foregroundColor(.white.opacity(0.6))
                                 }
-                                .padding(.vertical, 4)
+                                Spacer()
                             }
-                            .listRowBackground(Color.clear)
-                            .listRowSeparatorTint(Color.white.opacity(0.1))
+                            .padding()
+                            .background(Color.white.opacity(0.05))
+                            .cornerRadius(16)
                         }
+                        .padding(.horizontal)
+
+                        if !NeighborhoodStore.recentSearches.isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Recent Searches")
+                                    .font(.subheadline)
+                                    .foregroundColor(.white.opacity(0.6))
+                                    .padding(.horizontal)
+
+                                ForEach(NeighborhoodStore.recentSearches, id: \.self) { search in
+                                    Button {
+                                        searchHelper.query = search
+                                    } label: {
+                                        HStack {
+                                            Image(systemName: "clock")
+                                                .foregroundColor(.white.opacity(0.5))
+                                            Text(search)
+                                                .foregroundColor(.white)
+                                            Spacer()
+                                        }
+                                        .padding()
+                                        .background(Color.white.opacity(0.05))
+                                        .cornerRadius(12)
+                                    }
+                                    .padding(.horizontal)
+                                }
+                            }
+                        }
+
+                        Spacer()
+
+                    } else {
+                        List {
+                            ForEach(Array(searchHelper.suggestions.enumerated()), id: \.offset) { _, suggestion in
+                                Button {
+                                    selectSuggestion(suggestion)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(suggestion.title)
+                                            .font(.body)
+                                            .foregroundColor(.white)
+                                        if !suggestion.subtitle.isEmpty {
+                                            Text(suggestion.subtitle)
+                                                .font(.caption)
+                                                .foregroundColor(.white.opacity(0.6))
+                                        }
+                                    }
+                                    .padding(.vertical, 4)
+                                }
+                                .listRowBackground(Color.clear)
+                                .listRowSeparatorTint(Color.white.opacity(0.1))
+                            }
+                        }
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
                     }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
                 }
             }
         }
