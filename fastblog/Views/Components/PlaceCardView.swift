@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 // MARK: - RankBadge
 struct RankBadge: View {
@@ -54,6 +55,8 @@ struct PlaceCardView: View {
     let rank: Int
     let style: CardStyle
     var isSelected: Bool = false
+
+    @State private var resolvedTimeZoneFromLocation: TimeZone?
     
     enum CardStyle {
         case minimal
@@ -61,15 +64,37 @@ struct PlaceCardView: View {
         case voyage // Premium Travel App Style
     }
     
-    private static let visitTimeFormatter: DateFormatter = {
+    /// Derives the UTC offset from visitedTimeDigitized vs photo timestamps. Returns nil when ambiguous (e.g. offset 0 = digitized may be in UTC) or unavailable.
+    private var captureTimeZone: TimeZone? {
+        guard let digitized = stop.visitedTimeDigitized, stop.photos.count > 1 else { return nil }
+        let parser = DateFormatter()
+        parser.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        parser.timeZone = TimeZone(secondsFromGMT: 0)
+        guard let localAsUTC = parser.date(from: digitized) else { return nil }
+        let offsets: [Int] = stop.photos.map { Int(localAsUTC.timeIntervalSince($0.timestamp)) }
+        let sorted = offsets.sorted()
+        let medianOffset: Int
+        if sorted.count.isMultiple(of: 2), sorted.count >= 2 {
+            medianOffset = (sorted[sorted.count / 2 - 1] + sorted[sorted.count / 2]) / 2
+        } else {
+            medianOffset = sorted[sorted.count / 2]
+        }
+        let roundedOffset = (medianOffset / 900) * 900
+        if roundedOffset == 0 { return nil }
+        return TimeZone(secondsFromGMT: roundedOffset)
+    }
+
+    private var effectiveTimeZone: TimeZone {
+        resolvedTimeZoneFromLocation ?? captureTimeZone ?? .current
+    }
+
+    private var visitTimeText: String? {
+        guard let earliest = stop.photos.map(\.timestamp).min() else { return nil }
         let f = DateFormatter()
         f.dateFormat = "h:mm a"
         f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
-    
-    private var visitTimeText: String? {
-        stop.photos.map(\.timestamp).min().map { Self.visitTimeFormatter.string(from: $0) }
+        f.timeZone = effectiveTimeZone
+        return f.string(from: earliest)
     }
     
     var body: some View {
@@ -82,6 +107,19 @@ struct PlaceCardView: View {
             case .voyage:
                 voyageStyle
             }
+        }
+        .task(id: stop.id) {
+            // Use the earliest photo's location (by timestamp) since we display that photo's time; fall back to any photo with location, then representativeLocation.
+            let earliestWithLocation = stop.photos
+                .filter { $0.location != nil }
+                .min(by: { $0.timestamp < $1.timestamp })
+            let coord = earliestWithLocation?.location ?? stop.photos.first(where: { $0.location != nil })?.location ?? stop.representativeLocation
+            guard let loc = coord else {
+                resolvedTimeZoneFromLocation = nil
+                return
+            }
+            let cl = CLLocation(latitude: loc.latitude, longitude: loc.longitude)
+            resolvedTimeZoneFromLocation = await GeocodingService.shared.timeZone(for: cl)
         }
         .frame(width: style == .voyage ? 300 : nil, height: style == .voyage ? 160 : 140)
         .clipShape(RoundedRectangle(cornerRadius: 24))

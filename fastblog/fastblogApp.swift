@@ -13,16 +13,18 @@ struct fastblogApp: App {
     @StateObject private var authStateManager = AuthStateManager.shared
     @StateObject private var createdRecapStore = CreatedRecapBlogStore.shared
     @StateObject private var splashManager = SplashStateManager()
-    @AppStorage("blogify.hasCompletedOnboarding") private var hasCompletedOnboarding = false
-    @AppStorage("blogify.hasCheckedExistingUser") private var hasCheckedExistingUser = false
+    @AppStorage("blogify.hasCompletedOnboarding") private
+        var hasCompletedOnboarding = false
+    @AppStorage("blogify.hasCheckedExistingUser") private
+        var hasCheckedExistingUser = false
     @Environment(\.scenePhase) private var scenePhase
     @State private var isAppReady = false
     @State private var pendingResetToken: String?
 
-#if DEBUG
-    /// Flip to `true` to skip splash + onboarding and land directly on ManagePhotosView.
-    private static let kDevBypassToManagePhotos = false
-#endif
+    #if DEBUG
+        /// Flip to `true` to skip splash + onboarding and land directly on ManagePhotosView.
+        private static let kDevBypassToManagePhotos = false
+    #endif
 
     var body: some Scene {
         WindowGroup {
@@ -38,10 +40,12 @@ struct fastblogApp: App {
                         _ = GoogleAuthManager.handleURL(url)
                     }
                 }
-                .sheet(isPresented: Binding(
-                    get: { isAppReady && pendingResetToken != nil },
-                    set: { if !$0 { pendingResetToken = nil } }
-                )) {
+                .sheet(
+                    isPresented: Binding(
+                        get: { isAppReady && pendingResetToken != nil },
+                        set: { if !$0 { pendingResetToken = nil } }
+                    )
+                ) {
                     if let token = pendingResetToken {
                         ResetPasswordView(token: token) {
                             pendingResetToken = nil
@@ -68,15 +72,15 @@ struct fastblogApp: App {
 
     @ViewBuilder
     private var appContent: some View {
-#if DEBUG
-        if Self.kDevBypassToManagePhotos {
-            ManagePhotosDevWrapper()
-        } else {
+        #if DEBUG
+            if Self.kDevBypassToManagePhotos {
+                ManagePhotosDevWrapper()
+            } else {
+                normalAppRoot
+            }
+        #else
             normalAppRoot
-        }
-#else
-        normalAppRoot
-#endif
+        #endif
     }
 
     @ViewBuilder
@@ -101,7 +105,10 @@ struct fastblogApp: App {
                     }
                 }
                 .opacity(splashManager.phase == .splash ? 0 : 1)
-                .animation(.easeInOut(duration: 0.4), value: splashManager.phase == .splash)
+                .animation(
+                    .easeInOut(duration: 0.4),
+                    value: splashManager.phase == .splash
+                )
             }
 
             // ── Layer 2: animated logo overlay ──
@@ -110,7 +117,7 @@ struct fastblogApp: App {
 
                 ZStack {
                     // Dark background fades out as home fades in
-                    Color(red: 5/255, green: 10/255, blue: 48/255)
+                    Color(red: 5 / 255, green: 10 / 255, blue: 48 / 255)
                         .ignoresSafeArea()
 
                     // Logo fades away
@@ -118,7 +125,12 @@ struct fastblogApp: App {
                         .resizable()
                         .scaledToFit()
                         .frame(width: 140, height: 140)
-                        .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
+                        .shadow(
+                            color: .black.opacity(0.3),
+                            radius: 10,
+                            x: 0,
+                            y: 5
+                        )
                 }
                 .opacity(isSplash ? 1 : 0)
                 .animation(.easeInOut(duration: 0.5), value: isSplash)
@@ -136,7 +148,9 @@ struct fastblogApp: App {
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
 
                 if !hasCheckedExistingUser {
-                    if !hasCompletedOnboarding && photoAuth.status != .notDetermined {
+                    if !hasCompletedOnboarding
+                        && photoAuth.status != .notDetermined
+                    {
                         hasCompletedOnboarding = true
                     }
                     hasCheckedExistingUser = true
@@ -169,7 +183,9 @@ struct fastblogApp: App {
     }
 
     private func openSettings() {
-        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        guard let url = URL(string: UIApplication.openSettingsURLString) else {
+            return
+        }
         UIApplication.shared.open(url)
     }
 
@@ -177,11 +193,12 @@ struct fastblogApp: App {
     private static func parseResetPasswordToken(from url: URL) -> String? {
         guard url.scheme?.lowercased() == "fastblog" else { return nil }
         guard url.host?.lowercased() == "reset-password" else { return nil }
-        guard let token = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-            .queryItems?
-            .first(where: { $0.name == "token" })?
-            .value?
-            .trimmingCharacters(in: .whitespaces),
+        guard
+            let token = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .first(where: { $0.name == "token" })?
+                .value?
+                .trimmingCharacters(in: .whitespaces),
             !token.isEmpty
         else { return nil }
         return token

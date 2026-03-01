@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 /// Identifiable item for presenting the place photo modal (day + stop + initial photo).
 struct PlacePhotoModalItem: Identifiable {
@@ -42,20 +43,38 @@ struct PlacePhotoModalView: View {
     @State private var captionWhenEditingStarted: String = ""
     @State private var titleWhenEditingStarted: String = ""
     @State private var debounceTask: Task<Void, Never>?
+    /// Per-photo timezone from geocoding so each photo's time is shown in the correct TZ (not just the first).
+    @State private var resolvedTimeZoneByPhotoId: [UUID: TimeZone] = [:]
 
-    /// Derives the UTC offset from the EXIF digitized local time vs the earliest photo's UTC timestamp.
-    /// This gives us the timezone where the photos were captured, regardless of device timezone.
-    private var captureTimeZone: TimeZone {
-        guard let digitized = stopDigitizedTime,
-              let earliestTimestamp = photos.map(\.timestamp).min() else { return .current }
+    /// Derives the UTC offset from the EXIF digitized local time vs photo timestamps.
+    /// Digitized is the stop's earliest photo time in *local* time at capture; we compare to each photo's UTC timestamp to infer offset.
+    /// Returns nil when: no digitized time, single photo (can't validate), parse failure, or median offset is 0 (digitized may be stored in UTC — prefer location-based TZ).
+    private var captureTimeZone: TimeZone? {
+        print("stopDigitizedTime: \(stopDigitizedTime ?? "nil"), photo count: \(photos.count)")
+        guard let digitized = stopDigitizedTime else { return nil }
         let parser = DateFormatter()
         parser.dateFormat = "yyyy:MM:dd HH:mm:ss"
         parser.timeZone = TimeZone(secondsFromGMT: 0)
-        guard let localAsUTC = parser.date(from: digitized) else { return .current }
-        // offset = (EXIF local epoch) - (UTC epoch); round to nearest 15 min (standard TZ unit)
-        let offsetSeconds = Int(localAsUTC.timeIntervalSince(earliestTimestamp))
-        let roundedOffset = (offsetSeconds / 900) * 900
-        return TimeZone(secondsFromGMT: roundedOffset) ?? .current
+        guard let localAsUTC = parser.date(from: digitized) else { return nil }
+        // Per photo: offset = (parsed "local" as if UTC) - (photo UTC). When digitized is true local time, this gives capture TZ offset.
+        let offsets: [Int] = photos.map { Int(localAsUTC.timeIntervalSince($0.timestamp)) }
+        let sorted = offsets.sorted()
+        let medianOffset: Int
+        if sorted.count.isMultiple(of: 2), sorted.count >= 2 {
+            medianOffset = (sorted[sorted.count / 2 - 1] + sorted[sorted.count / 2]) / 2
+        } else {
+            medianOffset = sorted[sorted.count / 2]
+        }
+        let roundedOffset = (medianOffset / 900) * 900
+        // Offset 0 is ambiguous: digitized might be stored in UTC (no EXIF TZ), which would show wrong local time (e.g. morning instead of evening).
+        if roundedOffset == 0 { return nil }
+        guard let tz = TimeZone(secondsFromGMT: roundedOffset) else { return nil }
+        return tz
+    }
+
+    /// Effective timezone for the current photo: per-photo cache first (so all photos get correct time), then derived from digitized, then device.
+    private var effectiveTimeZone: TimeZone {
+        resolvedTimeZoneByPhotoId[currentPhotoId] ?? captureTimeZone ?? .current
     }
 
     init(
@@ -105,6 +124,17 @@ struct PlacePhotoModalView: View {
                                 isOverlayHidden.toggle()
                             }
                         }
+                    }
+                    .task(id: currentPhotoId) {
+                        // Resolve timezone per photo so every photo (not just the first) shows correct local time.
+                        let photoId = currentPhotoId
+                        guard let photo = currentPhoto, let loc = photo.location else { return }
+                        let cl = CLLocation(latitude: loc.latitude, longitude: loc.longitude)
+                        guard let tz = await GeocodingService.shared.timeZone(for: cl) else { return }
+                        guard currentPhotoId == photoId else { return }
+                        var updated = resolvedTimeZoneByPhotoId
+                        updated[photoId] = tz
+                        resolvedTimeZoneByPhotoId = updated
                     }
 
                 // 2. Bottom overlay
@@ -353,7 +383,12 @@ struct PlacePhotoModalView: View {
         let f = DateFormatter()
         f.dateFormat = "d MMM yyyy 'at' h:mm a"
         f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = captureTimeZone
+        f.timeZone = effectiveTimeZone
+
+        print("Photo \(photo.id) timestamp: \(photo.timestamp), effective TZ: \(effectiveTimeZone.identifier), displayed as: \(f.string(from: photo.timestamp))") 
+        print("Current device TZ: \(TimeZone.current.identifier)")
+        print(("locale: \(Locale.current.identifier)"))
+        print (("timeZone offset: \(TimeZone.current.secondsFromGMT()))"))
         return f.string(from: photo.timestamp)
     }
 

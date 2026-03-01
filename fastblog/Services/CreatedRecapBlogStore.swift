@@ -1010,13 +1010,50 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
         for dayIdx in detail.days.indices {
             for stopIdx in detail.days[dayIdx].placeStops.indices {
-                let photos = detail.days[dayIdx].placeStops[stopIdx].photos.filter(\.isIncluded)
+                let stop = detail.days[dayIdx].placeStops[stopIdx]
+                let photos = stop.photos.filter(\.isIncluded)
                 guard let firstPhoto = photos.min(by: { $0.timestamp < $1.timestamp }),
-                      let assetId = firstPhoto.localIdentifier,
-                      let asset = assetMap[assetId] else { continue }
-                let tz = tzMap[assetId] ?? TimeZone(identifier: "UTC")!
+                      let asset = assetMap[firstPhoto.localIdentifier ?? ""] else {
+                    print("[buildBlogDetail] ⚠️ '\(stop.placeTitle)': skipped visitedTimeDigitized (no included photos or missing asset)")
+                    continue
+                }
+
+                // Collect EXIF timezones for ALL included photos in the stop, then vote.
+                // This guards against one outlier photo (screenshot, foreign-device photo) with a wrong offset
+                // pulling the entire stop into the wrong timezone.
+                let stopOffsets: [Int] = photos.compactMap { photo -> Int? in
+                    guard let id = photo.localIdentifier, let tz = tzMap[id] else { return nil }
+                    // Round to nearest 15-min increment so near-duplicate offsets collapse.
+                    return (tz.secondsFromGMT() / 900) * 900
+                }
+
+                let consensusOffset: Int
+                if stopOffsets.isEmpty {
+                    print("[buildBlogDetail] ⚠️ '\(stop.placeTitle)': no EXIF timezone for any photo — falling back to UTC")
+                    consensusOffset = 0
+                } else {
+                    // Vote: pick the offset that appears most often.
+                    var tally: [Int: Int] = [:]
+                    for off in stopOffsets { tally[off, default: 0] += 1 }
+                    consensusOffset = tally.max(by: { $0.value < $1.value })!.key
+
+                    // Log any outlier photos whose offset doesn't match the winner.
+                    let outliers = photos.compactMap { photo -> String? in
+                        guard let id = photo.localIdentifier,
+                              let tz = tzMap[id],
+                              (tz.secondsFromGMT() / 900) * 900 != consensusOffset else { return nil }
+                        return "\(id.prefix(8))… offset=\(tz.secondsFromGMT() / 3600)h"
+                    }
+                    if !outliers.isEmpty {
+                        print("[buildBlogDetail] ⚠️ '\(stop.placeTitle)': outlier photo TZ(s) ignored: \(outliers.joined(separator: ", "))")
+                    }
+                }
+
+                let tz = TimeZone(secondsFromGMT: consensusOffset) ?? TimeZone(identifier: "UTC")!
                 let date = asset.creationDate ?? firstPhoto.timestamp
-                detail.days[dayIdx].placeStops[stopIdx].visitedTimeDigitized = APIManager.digitizedTimeString(from: date, timeZone: tz)
+                let digitized = APIManager.digitizedTimeString(from: date, timeZone: tz)
+                print("[buildBlogDetail] ✅ '\(stop.placeTitle)': visitedTimeDigitized=\(digitized), tz=\(tz.identifier) (votes: \(stopOffsets.count))")
+                detail.days[dayIdx].placeStops[stopIdx].visitedTimeDigitized = digitized
             }
         }
 
