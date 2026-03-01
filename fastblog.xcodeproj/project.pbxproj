@@ -26,7 +26,6 @@
 		BB000122 /* BlogSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000121 /* BlogSettingsSheet.swift */; };
 		BB000124 /* ClusterRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000123 /* ClusterRowView.swift */; };
 		BB000126 /* CountryBlogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000125 /* CountryBlogsView.swift */; };
-		BB00022E /* CountryManageBlogsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00022F /* CountryManageBlogsSheet.swift */; };
 		BB000128 /* CountryCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000127 /* CountryCardView.swift */; };
 		BB00012A /* CoverPhotoSelectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000129 /* CoverPhotoSelectView.swift */; };
 		BB00012C /* CreateBlogFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00012B /* CreateBlogFlowView.swift */; };
@@ -142,6 +141,7 @@
 		BB00022A /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000228 /* ForgotPasswordView.swift */; };
 		BB00022B /* ResetPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000229 /* ResetPasswordView.swift */; };
 		BB00022C /* SplashStateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00022D /* SplashStateManager.swift */; };
+		BB00022E /* CountryManageBlogsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00022F /* CountryManageBlogsSheet.swift */; };
 		BB000231 /* PhotoAccessRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000230 /* PhotoAccessRow.swift */; };
 /* End PBXBuildFile section */
 
@@ -166,7 +166,6 @@
 		BB000121 /* BlogSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogSettingsSheet.swift; sourceTree = "<group>"; };
 		BB000123 /* ClusterRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterRowView.swift; sourceTree = "<group>"; };
 		BB000125 /* CountryBlogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryBlogsView.swift; sourceTree = "<group>"; };
-		BB00022F /* CountryManageBlogsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryManageBlogsSheet.swift; sourceTree = "<group>"; };
 		BB000127 /* CountryCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryCardView.swift; sourceTree = "<group>"; };
 		BB000129 /* CoverPhotoSelectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverPhotoSelectView.swift; sourceTree = "<group>"; };
 		BB00012B /* CreateBlogFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateBlogFlowView.swift; sourceTree = "<group>"; };
@@ -285,6 +284,7 @@
 		BB000228 /* ForgotPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordView.swift; sourceTree = "<group>"; };
 		BB000229 /* ResetPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResetPasswordView.swift; sourceTree = "<group>"; };
 		BB00022D /* SplashStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashStateManager.swift; sourceTree = "<group>"; };
+		BB00022F /* CountryManageBlogsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryManageBlogsSheet.swift; sourceTree = "<group>"; };
 		BB000230 /* PhotoAccessRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoAccessRow.swift; sourceTree = "<group>"; };
 		F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalLLMStoryCaptionGenerator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -780,7 +780,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = H9V9G4FU84;
+				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "fastblog uses your location to identify your neighborhood and group travel photos.";
@@ -807,7 +807,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = H9V9G4FU84;
+				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "fastblog uses your location to identify your neighborhood and group travel photos.";
