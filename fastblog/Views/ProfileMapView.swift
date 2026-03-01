@@ -25,22 +25,22 @@ struct ProfileMapView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack(alignment: .bottom) {
             profileMap
             
             if !isSearchActive {
-                countryFilterBar
+                VStack {
+                    countryFilterBar
+                    Spacer()
+                }
             }
             
             // Bottom UI
-            VStack {
-                Spacer()
-                if isSearchActive {
-                    searchBar
-                        .padding(.bottom, 20)
-                } else {
-                    bottomTripList
-                }
+            if isSearchActive {
+                searchBar
+                    .padding(.bottom, 20)
+            } else {
+                bottomTripList
             }
         }
         .ignoresSafeArea(.container, edges: .bottom)
@@ -96,6 +96,7 @@ struct ProfileMapView: View {
         .onMapCameraChange(frequency: .onEnd) { context in
             viewModel.mapRegion = context.region
         }
+        .ignoresSafeArea(edges: .bottom)
         .ignoresSafeArea(.keyboard)
     }
 
@@ -209,6 +210,7 @@ struct ProfileMapView: View {
                         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: viewModel.selectedTripID)
                     }
                 }
+                .padding(.vertical, 10)
                 .scrollTargetLayout()
             }
             .safeAreaPadding(.horizontal, (geo.size.width - cardWidth) / 2)
@@ -230,7 +232,8 @@ struct ProfileMapView: View {
                 }
             }
         }
-        .frame(height: 124)
+        .frame(height: 144)
+        .padding(.bottom, 24)
     }
 
     private func countryPill(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
@@ -393,37 +396,57 @@ struct CountryMapView: View {
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var selectedBlogForNavigation: CreatedRecapBlog?
     @State private var selectedTripID: UUID?
+    @State private var scrolledTripID: UUID?
 
     init(countryName: String, blogs: [CreatedRecapBlog], selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         self.countryName = countryName
         self.blogs = blogs
         _selectedCreatedRecap = selectedCreatedRecap
     }
-    
+
+    /// Sorted blogs (most recent first) — same order the list uses.
+    private var sortedBlogs: [CreatedRecapBlog] {
+        blogs.sorted { ($0.tripStartDate ?? $0.createdAt) > ($1.tripStartDate ?? $1.createdAt) }
+    }
+
     private var tripsWithCoordinates: [(blog: CreatedRecapBlog, coordinate: CLLocationCoordinate2D)] {
-        blogs.compactMap { blog in
+        sortedBlogs.compactMap { blog in
             guard let coord = createdRecapStore.coordinate(for: blog.sourceTripId) else { return nil }
             return (blog, coord)
         }
     }
 
     var body: some View {
-        Map(position: $mapPosition) {
-            ForEach(tripsWithCoordinates, id: \.blog.sourceTripId) { item in
-                annotation(for: item)
+        ZStack(alignment: .bottom) {
+            // Full-screen map
+            Map(position: $mapPosition) {
+                ForEach(tripsWithCoordinates, id: \.blog.sourceTripId) { item in
+                    annotation(for: item)
+                }
+            }
+            .mapStyle(.standard(elevation: .realistic))
+            .ignoresSafeArea(edges: .bottom)
+
+            // Bottom blog card strip
+            if !sortedBlogs.isEmpty {
+                bottomBlogStrip
             }
         }
-        .mapStyle(.standard(elevation: .realistic))
-        .ignoresSafeArea(edges: .bottom)
         .navigationTitle(displayCountryName(countryName))
         .navigationBarTitleDisplayMode(.inline)
         .preferredColorScheme(.dark)
         .onAppear {
-            let sortedBlogs = blogs.sorted { ($0.tripStartDate ?? $0.createdAt) > ($1.tripStartDate ?? $1.createdAt) }
-            if let latest = sortedBlogs.first, let coord = createdRecapStore.coordinate(for: latest.sourceTripId) {
-                mapPosition = .region(MKCoordinateRegion(center: coord, span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08)))
-                selectedTripID = latest.sourceTripId
+            let first = sortedBlogs.first
+            if let first, let coord = createdRecapStore.coordinate(for: first.sourceTripId) {
+                mapPosition = .region(MKCoordinateRegion(
+                    center: coord,
+                    span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08)
+                ))
+            } else if tripsWithCoordinates.isEmpty {
+                mapPosition = .automatic
             }
+            selectedTripID = first?.sourceTripId
+            scrolledTripID = first?.sourceTripId
         }
         .navigationDestination(item: $selectedBlogForNavigation) { blog in
             RecapBlogPageView(
@@ -433,6 +456,65 @@ struct CountryMapView: View {
         }
     }
 
+    // MARK: - Bottom blog card strip
+
+    private var bottomBlogStrip: some View {
+        GeometryReader { geo in
+            let cardWidth = min(geo.size.width * 0.80, 340)
+            let cardHeight: CGFloat = 104
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) {
+                    ForEach(sortedBlogs, id: \.sourceTripId) { blog in
+                        ProfileMapCardView(
+                            blog: blog,
+                            isSelected: selectedTripID == blog.sourceTripId,
+                            onTap: {
+                                selectedBlogForNavigation = blog
+                            },
+                            onNavigate: {
+                                selectedBlogForNavigation = blog
+                            }
+                        )
+                        .id(blog.sourceTripId)
+                        .frame(width: cardWidth, height: cardHeight)
+                        .scaleEffect(selectedTripID == blog.sourceTripId ? 1.0 : 0.95)
+                        .opacity(selectedTripID == blog.sourceTripId ? 1.0 : 0.6)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: selectedTripID)
+                    }
+                }
+                .padding(.vertical, 10)
+                .scrollTargetLayout()
+            }
+            .safeAreaPadding(.horizontal, (geo.size.width - cardWidth) / 2)
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $scrolledTripID)
+            // Scrolling a card → select it and re-center the map
+            .onChange(of: scrolledTripID) { _, newID in
+                guard let newID, selectedTripID != newID else { return }
+                if let blog = sortedBlogs.first(where: { $0.sourceTripId == newID }),
+                   let coord = createdRecapStore.coordinate(for: newID) {
+                    withAnimation {
+                        selectedTripID = newID
+                        mapPosition = .region(MKCoordinateRegion(
+                            center: coord,
+                            span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08)
+                        ))
+                    }
+                    _ = blog // suppress unused warning if needed
+                }
+            }
+            // Tapping a map annotation → scroll the card strip to match
+            .onChange(of: selectedTripID) { _, newID in
+                if let newID { scrolledTripID = newID }
+            }
+        }
+        .frame(height: 144)
+        .padding(.bottom, 24)
+    }
+
+    // MARK: - Map annotation
+
     @MapContentBuilder
     private func annotation(for item: (blog: CreatedRecapBlog, coordinate: CLLocationCoordinate2D)) -> some MapContent {
         Annotation("", coordinate: item.coordinate) {
@@ -441,12 +523,23 @@ struct CountryMapView: View {
                 isSelected: selectedTripID == item.blog.sourceTripId
             )
             .onTapGesture {
-                selectedTripID = item.blog.sourceTripId
-                selectedBlogForNavigation = item.blog
+                if selectedTripID == item.blog.sourceTripId {
+                    // Second tap → navigate
+                    selectedBlogForNavigation = item.blog
+                } else {
+                    // First tap → select + re-center
+                    withAnimation {
+                        selectedTripID = item.blog.sourceTripId
+                        mapPosition = .region(MKCoordinateRegion(
+                            center: item.coordinate,
+                            span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08)
+                        ))
+                    }
+                }
             }
         }
     }
-    
+
     private func displayCountryName(_ name: String) -> String {
         name.isEmpty || name == "Unknown" ? "Other" : name
     }

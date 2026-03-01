@@ -45,7 +45,7 @@ struct PlacePhotoModalView: View {
     @State private var captionWhenEditingStarted: String = ""
     @State private var titleWhenEditingStarted: String = ""
     @State private var debounceTask: Task<Void, Never>?
-    /// Per-photo timezone from geocoding so each photo's time is shown in the correct TZ (not just the first).
+    @State private var showSaveConfirmationAlert = false
     @State private var resolvedTimeZoneByPhotoId: [UUID: TimeZone] = [:]
     @FocusState private var isCaptionFocused: Bool
 
@@ -127,6 +127,15 @@ struct PlacePhotoModalView: View {
         photoCaption(currentPhotoId).wrappedValue
     }
 
+    private func trim(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var hasAnyChanges: Bool {
+        trim(editedCaptionText) != trim(captionWhenEditingStarted) ||
+        trim(editedPlaceTitle) != trim(titleWhenEditingStarted)
+    }
+
     var body: some View {
         ZStack {
                 // 1. Full screen media viewer
@@ -136,6 +145,9 @@ struct PlacePhotoModalView: View {
                             withAnimation {
                                 isOverlayHidden.toggle()
                             }
+                        } else if isEditing {
+                            // Dismiss keyboard when tapping the photo during edit mode
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                         }
                     }
                     .task(id: currentPhotoId) {
@@ -153,7 +165,9 @@ struct PlacePhotoModalView: View {
                 // 2. Bottom overlay
             VStack {
                 Spacer()
-                if !isEditing {
+                // In blog edit mode always show the overlay (with inline caption input);
+                // in read mode only show it when not in the keyboard-anchored edit panel.
+                if !isEditing || blogIsEditMode {
                     BottomInfoOverlay(
                         placeTitle: placeTitle,
                         dateTimeText: dateTimeTextForCurrentPhoto,
@@ -164,7 +178,7 @@ struct PlacePhotoModalView: View {
                         onCommitCaption: { commitCaption() }
                     )
                 }
-                if !blogIsEditMode {
+                if !blogIsEditMode && !isEditing {
                     if photos.count > 1 {
                         PlacePhotoThumbnailStrip(
                             photos: photos,
@@ -188,6 +202,7 @@ struct PlacePhotoModalView: View {
                 }
             }
             .background(
+                (!blogIsEditMode && isEditing) ? nil :
                 LinearGradient(
                     colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
                     startPoint: .bottom,
@@ -205,54 +220,120 @@ struct PlacePhotoModalView: View {
                     .padding(.top, 10)
                 
                 VStack(spacing: 0) {
-                    HStack {
-                        if blogIsEditMode {
-                             Color.clear.frame(width: 44, height: 44)
-                        } else {
-                            // Unified Close/Save button in top left
+                    HStack(alignment: .top) {
+                        if isEditing && !blogIsEditMode {
+                            // Cancel button in top left when editing in read mode
                             Button(action: {
-                                if isEditing {
-                                    commitCaption()
+                                if hasAnyChanges {
+                                    showSaveConfirmationAlert = true
+                                } else {
+                                    revertChanges()
+                                    onDismiss()
                                 }
-                                onDismiss()
                             }) {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 16, weight: .semibold))
+                                Text("Cancel")
+                                    .font(.system(size: 14, weight: .semibold))
                                     .foregroundColor(.white)
-                                    .frame(width: 32, height: 32)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
                                     .background(Color.black.opacity(0.35))
-                                    .clipShape(Circle())
+                                    .clipShape(Capsule())
+                            }
+                        } else if blogIsEditMode {
+                            // Cancel button in top left when in blog edit mode
+                            Button(action: {
+                                if hasAnyChanges {
+                                    showSaveConfirmationAlert = true
+                                } else {
+                                    revertChanges()
+                                    onDismiss()
+                                }
+                            }) {
+                                Text("Cancel")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color.black.opacity(0.35))
+                                    .clipShape(Capsule())
+                            }
+                        } else {
+                            // Close button in top left when not editing
+                            Button(action: onDismiss) {
+                                Text("Close")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color.black.opacity(0.35))
+                                    .clipShape(Capsule())
                             }
                         }
 
                         Spacer()
                         
                         if !isEditing && !blogIsEditMode {
-                            // Kebab menu in top right
-                            Menu {
-                                Button {
-                                    captionWhenEditingStarted = currentCaption
-                                    titleWhenEditingStarted = placeTitle
-                                    editedCaptionText = currentCaption
-                                    editedPlaceTitle = placeTitle
-                                    isEditing = true
-                                    isCaptionFocused = true
+                            // Kebab menu + action buttons stacked vertically in top right
+                            VStack(spacing: 16) {
+                                Menu {
+                                    Button {
+                                        captionWhenEditingStarted = currentCaption
+                                        titleWhenEditingStarted = placeTitle
+                                        editedCaptionText = currentCaption
+                                        editedPlaceTitle = placeTitle
+                                        isEditing = true
+                                        isCaptionFocused = true
+                                    } label: {
+                                        Label("Edit caption", systemImage: "pencil")
+                                    }
+
+                                    Button(role: .destructive) {
+                                        onRemovePhoto?(currentPhotoId)
+                                    } label: {
+                                        Label("Remove photo", systemImage: "trash")
+                                    }
                                 } label: {
-                                    Label("Edit caption", systemImage: "pencil")
+                                    Image(systemName: "ellipsis.circle")
+                                        .font(.system(size: 22, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .frame(width: 44, height: 44)
+                                        .background(Color.black.opacity(0.35))
+                                        .clipShape(Circle())
                                 }
 
-                                Button(role: .destructive) {
-                                    onRemovePhoto?(currentPhotoId)
-                                } label: {
-                                    Label("Remove photo", systemImage: "trash")
-                                }
-                            } label: {
-                                Image(systemName: "ellipsis.circle")
-                                    .font(.system(size: 22, weight: .semibold))
+                                RightActionStack(
+                                    onSparkles: { /* AI assist */ },
+                                    onNavigate: { openNavigation() },
+                                    onLink: { openGoogleSearch() }
+                                )
+                            }
+                        } else if isEditing && !blogIsEditMode {
+                            // Save button in top right when editing in read mode
+                            Button(action: {
+                                commitCaption()
+                                onDismiss()
+                            }) {
+                                Text("Save")
+                                    .font(.system(size: 14, weight: .bold))
                                     .foregroundColor(.white)
-                                    .frame(width: 32, height: 32)
-                                    .background(Color.black.opacity(0.35))
-                                    .clipShape(Circle())
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(Color.blue)
+                                    .clipShape(Capsule())
+                            }
+                        } else if blogIsEditMode {
+                            // Save button in top right when in blog edit mode
+                            Button(action: {
+                                commitCaption()
+                                onDismiss()
+                            }) {
+                                Text("Save")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(Color.blue)
+                                    .clipShape(Capsule())
                             }
                         }
                     }
@@ -260,99 +341,103 @@ struct PlacePhotoModalView: View {
                     .padding(.top, 20)
                     Spacer()
                 }
-                // Right side actions - only visible when NOT editing AND NOT in blog edit mode
-                if !isEditing && !blogIsEditMode {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            RightActionStack(
-                                onSparkles: { /* AI assist */ },
-                                onNavigate: { openNavigation() },
-                                onLink: { openGoogleSearch() }
-                            )
-                            .padding(.trailing, 16)
-                            .padding(.bottom, photos.count > 1 ? 100 : 24)
-                        }
-                    }
-                }
+
             }
             .allowsHitTesting(true)
             .opacity(isOverlayHidden ? 0 : 1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
-        .ignoresSafeArea()
+        .background(Color.black.ignoresSafeArea())
         .statusBar(hidden: false)
         // Editing panel anchors just above the keyboard via safeAreaInset
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if isEditing {
-                VStack(alignment: .leading, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(editedPlaceTitle)
-                            .font(.title3)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
+                if blogIsEditMode {
+                    // Blog edit mode: caption input is shown inline in the photo overlay
+                    EmptyView()
+                } else {
+                    // ── Read mode editing panel (unchanged) ──
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(editedPlaceTitle)
+                                .font(.title3)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
 
-                        if !dateTimeTextForCurrentPhoto.isEmpty {
-                            Text(dateTimeTextForCurrentPhoto)
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(.white.opacity(0.8))
+                            if !dateTimeTextForCurrentPhoto.isEmpty {
+                                Text(dateTimeTextForCurrentPhoto)
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
                         }
-                    }
-                    .padding(.bottom, 4)
+                        .padding(.bottom, 4)
 
-                    HStack(alignment: .top, spacing: 8) {
-                        TextField("Leave a story for this photo...", text: $editedCaptionText, axis: .vertical)
-                            .focused($isCaptionFocused)
-                            .textFieldStyle(.plain)
-                            .font(.body)
-                            .foregroundColor(.white)
-                            .lineLimit(2...6)
-                            .padding(12)
-                            .background(.ultraThinMaterial)
-                            .background(Color.black.opacity(0.4))
-                            .cornerRadius(12)
-                        if !blogIsEditMode, let generate = onGenerateCaption, let photo = currentPhoto {
-                            Button {
-                                isGeneratingCaption = true
-                                Task {
-                                    let text = await generate(photo, editedPlaceTitle, placeSubtitle)
-                                    await MainActor.run {
-                                        editedCaptionText = text
-                                        photoCaption(currentPhotoId).wrappedValue = text
-                                        isGeneratingCaption = false
-                                        onAICaptionApplied?(currentPhotoId)
+                        HStack(alignment: .top, spacing: 8) {
+                            TextField("Leave a story for this photo...", text: $editedCaptionText, axis: .vertical)
+                                .focused($isCaptionFocused)
+                                .textFieldStyle(.plain)
+                                .font(.body)
+                                .foregroundColor(.white)
+                                .lineLimit(2...6)
+                                .padding(12)
+                                .background(.ultraThinMaterial)
+                                .background(Color.black.opacity(0.4))
+                                .cornerRadius(12)
+                            if let generate = onGenerateCaption, let photo = currentPhoto {
+                                Button {
+                                    isGeneratingCaption = true
+                                    Task {
+                                        let text = await generate(photo, editedPlaceTitle, placeSubtitle)
+                                        await MainActor.run {
+                                            editedCaptionText = text
+                                            photoCaption(currentPhotoId).wrappedValue = text
+                                            isGeneratingCaption = false
+                                            onAICaptionApplied?(currentPhotoId)
+                                        }
+                                    }
+                                } label: {
+                                    if isGeneratingCaption {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                            .scaleEffect(0.8)
+                                            .frame(width: 20, height: 20)
+                                    } else {
+                                        Image(systemName: "wand.and.stars")
+                                            .font(.body)
+                                            .foregroundColor(.white)
                                     }
                                 }
-                            } label: {
-                                if isGeneratingCaption {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                        .scaleEffect(0.8)
-                                        .frame(width: 20, height: 20)
-                                } else {
-                                    Image(systemName: "wand.and.stars")
-                                        .font(.body)
-                                        .foregroundColor(.white)
-                                }
+                                .disabled(isGeneratingCaption)
                             }
-                            .disabled(isGeneratingCaption)
                         }
                     }
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 24)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    LinearGradient(
-                        colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
-                        startPoint: .bottom,
-                        endPoint: .top
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
+                            startPoint: .bottom,
+                            endPoint: .top
+                        )
                     )
-                )
+                }
             }
+        }
+        .interactiveDismissDisabled(isEditing && hasAnyChanges)
+        .alert("Save changes?", isPresented: $showSaveConfirmationAlert) {
+            Button("Save") {
+                commitCaption()
+                onDismiss()
+            }
+            Button("Discard", role: .destructive) {
+                revertChanges()
+                onDismiss()
+            }
+            Button("Keep Editing", role: .cancel) { }
+        } message: {
+            Text("You have unsaved changes to your photo caption. Would you like to save them before leaving?")
         }
         .onAppear {
             editedCaptionText = currentCaption
@@ -361,6 +446,7 @@ struct PlacePhotoModalView: View {
                 captionWhenEditingStarted = currentCaption
                 titleWhenEditingStarted = placeTitle
                 isEditing = true
+                isCaptionFocused = true
             }
         }
         .onChange(of: currentPhotoId) { _, _ in
@@ -472,6 +558,13 @@ struct PlacePhotoModalView: View {
         }
         isEditing = false
     }
+
+    private func revertChanges() {
+        editedCaptionText = captionWhenEditingStarted
+        photoCaption(currentPhotoId).wrappedValue = captionWhenEditingStarted
+        placeTitle = titleWhenEditingStarted
+        isEditing = false
+    }
 }
 
 // MARK: - Top overlay controls
@@ -556,8 +649,10 @@ struct BottomInfoOverlay: View {
     var blogIsEditMode: Bool = false
     var onCommitCaption: () -> Void
 
+    @FocusState private var isInlineFocused: Bool
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             Text(placeTitle)
                 .font(.title2)
                 .fontWeight(.bold)
@@ -571,7 +666,22 @@ struct BottomInfoOverlay: View {
                     .shadow(color: .black.opacity(0.3), radius: 1)
             }
 
-            if isEditing {
+            if blogIsEditMode {
+                // Inline caption text input shown directly in the photo overlay
+                TextField(placeholder, text: $captionText, axis: .vertical)
+                    .focused($isInlineFocused)
+                    .textFieldStyle(.plain)
+                    .font(.body)
+                    .foregroundColor(.white)
+                    .lineLimit(2...6)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(.ultraThinMaterial)
+                    .background(Color.black.opacity(0.45))
+                    .cornerRadius(14)
+                    .padding(.top, 6)
+                    .onSubmit { onCommitCaption() }
+            } else if isEditing {
                 TextField(placeholder, text: $captionText, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.body)
@@ -588,23 +698,26 @@ struct BottomInfoOverlay: View {
                 .font(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundColor(.white)
-            } else if !captionText.isEmpty {
-                Text(captionText)
+            } else {
+                Text(captionText.isEmpty ? placeholder : captionText)
                     .font(.body)
-                    .foregroundColor(.white)
+                    .foregroundColor(captionText.isEmpty ? .white.opacity(0.6) : .white)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .multilineTextAlignment(.leading)
-            } else if blogIsEditMode {
-                // Do not show the "leave a story..." placeholder in edit/restore mode
+                    .padding(10)
+                    .background(.ultraThinMaterial)
+                    .background(Color.black.opacity(0.4))
+                    .cornerRadius(12)
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 16)
+        .padding(.vertical, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onTapGesture {
-            if blogIsEditMode && !isEditing {
-                // Tapping to edit caption disabled in edit/restore mode for now
+        .onAppear {
+            if blogIsEditMode {
+                // Focus the inline text field right away so the keyboard pops up
+                isInlineFocused = true
             }
         }
     }
