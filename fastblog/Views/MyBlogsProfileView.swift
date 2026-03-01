@@ -12,7 +12,15 @@ private let myMapButtonSize: CGFloat = 52
 private let cardSpacing: CGFloat = 16
 private let horizontalPadding: CGFloat = 20
 
+private struct MyBlogsScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value += nextValue()
+    }
+}
+
 struct MyBlogsProfileView: View {
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @StateObject private var viewModel = MyBlogsProfileViewModel()
@@ -23,6 +31,7 @@ struct MyBlogsProfileView: View {
     @FocusState private var isSearchFocused: Bool
     @State private var selectedUnsavedTripPhotos: TripDraft?
     @State private var createBlogFlowTrip: TripDraft?
+    @State private var scrollOffset: CGFloat = 0
 
     init(createdRecapStore: CreatedRecapBlogStore, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         _selectedCreatedRecap = selectedCreatedRecap
@@ -36,6 +45,7 @@ struct MyBlogsProfileView: View {
                 .ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
+
                 let allSections = MyBlogsProfileViewModel.sections(from: createdRecapStore.countrySummaries)
                 let sections = viewModel.filteredSections(from: allSections)
                 Group {
@@ -71,9 +81,18 @@ struct MyBlogsProfileView: View {
                         }
                     }
                 }
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: MyBlogsScrollOffsetKey.self, value: proxy.frame(in: .named("MyBlogsScroll")).minY)
+                    }
+                )
                 .padding(.horizontal, horizontalPadding)
                 .padding(.top, 12)
                 .padding(.bottom, searchBarHeight + myMapButtonSize + 24)
+            }
+            .coordinateSpace(name: "MyBlogsScroll")
+            .onPreferenceChange(MyBlogsScrollOffsetKey.self) { value in
+                scrollOffset = value
             }
 
             VStack(spacing: 0) {
@@ -91,6 +110,14 @@ struct MyBlogsProfileView: View {
             }
             .allowsHitTesting(true)
         }
+        .simultaneousGesture(
+            DragGesture()
+                .onEnded { value in
+                    if scrollOffset >= -20 && value.translation.height > 60 && abs(value.translation.height) > abs(value.translation.width) {
+                        dismiss()
+                    }
+                }
+        )
         .navigationTitle("My Blogs")
         .navigationBarTitleDisplayMode(.inline)
         .preferredColorScheme(.dark)
