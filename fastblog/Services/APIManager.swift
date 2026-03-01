@@ -471,15 +471,19 @@ final class APIManager {
                 }()
 
                 var photoList: [[String: Any]] = []
-                var firstPhotoVisitedTimeMs: Int64 = 0
+                var earliestCreationTimeMs: Int64 = 0
+                var earliestDigitizedTime: String?
                 for photo in includedPhotos {
                     guard let uri = photo.cloudURL else { continue }
                     let asset = photo.localIdentifier.flatMap { assetMap[$0] }
                     let creationDate = asset?.creationDate ?? photo.timestamp
                     let creationTimeMs = Int64(creationDate.timeIntervalSince1970 * 1000)
-                    if firstPhotoVisitedTimeMs == 0 { firstPhotoVisitedTimeMs = creationTimeMs }
                     let tz = photo.localIdentifier.flatMap { assetTimeZoneMap[$0] }
                     let digitizedTime = Self.digitizedTimeString(from: creationDate, timeZone: tz ?? utc)
+                    if earliestCreationTimeMs == 0 || creationTimeMs < earliestCreationTimeMs {
+                        earliestCreationTimeMs = creationTimeMs
+                        earliestDigitizedTime = digitizedTime
+                    }
                     let location = asset?.location ?? photo.location.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
                     let photoLocation: [String: Double] = location.map { ["latitude": $0.coordinate.latitude, "longitude": $0.coordinate.longitude] } ?? coord
                     photoList.append([
@@ -493,8 +497,8 @@ final class APIManager {
                     ])
                 }
 
-                let visitedTime = firstPhotoVisitedTimeMs != 0 ? firstPhotoVisitedTimeMs : Int64(Date().timeIntervalSince1970 * 1000)
-                let placeVisitedTimeDigitized = (photoList.first?["digitizedTime"] as? String) ?? defaultDigitizedTime
+                let visitedTime = earliestCreationTimeMs != 0 ? earliestCreationTimeMs : Int64(Date().timeIntervalSince1970 * 1000)
+                let placeVisitedTimeDigitized = earliestDigitizedTime ?? (photoList.first?["digitizedTime"] as? String) ?? defaultDigitizedTime
 
                 let categories: [String] = stop.placeCategory.map { [$0] } ?? ["unknown"]
                 let place: [String: Any] = [

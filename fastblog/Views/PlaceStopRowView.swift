@@ -60,7 +60,6 @@ struct PlaceStopRowView: View {
     private var visitTimeText: String? {
         // Prefer visitedTimeDigitized (EXIF local time — already timezone-correct) over
         // photo.timestamp (UTC Date formatted in device timezone, which may differ from capture location).
-        print("stop.visitedTimeDigitized: \(stop.visitedTimeDigitized ?? "nil")")
         if let digitized = stop.visitedTimeDigitized {
             let parts = digitized.split(separator: " ")
             if parts.count == 2 {

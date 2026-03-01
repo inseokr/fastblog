@@ -118,7 +118,7 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
     var overallStory: String?
     /// Server-assigned placeIndex in user.placeVisitHistory. Set after successful blog upload.
     var cloudPlaceIndex: Int?
-    /// Digitized timestamp of the first included photo (EXIF format "yyyy:MM:dd HH:mm:ss").
+    /// Digitized timestamp of the earliest included photo (EXIF format "yyyy:MM:dd HH:mm:ss").
     /// Used as a cloud deduplication and update key alongside cloudPlaceIndex.
     var visitedTimeDigitized: String?
     /// Raw MKPointOfInterestCategory.rawValue set when user picks from Maps autocomplete (e.g. "MKPOICategoryRestaurant").

@@ -53,7 +53,6 @@ struct PlacePhotoModalView: View {
     /// Digitized is the stop's earliest photo time in *local* time at capture; we compare to each photo's UTC timestamp to infer offset.
     /// Returns nil when: no digitized time, single photo (can't validate), parse failure, or median offset is 0 (digitized may be stored in UTC — prefer location-based TZ).
     private var captureTimeZone: TimeZone? {
-        print("stopDigitizedTime: \(stopDigitizedTime ?? "nil"), photo count: \(photos.count)")
         guard let digitized = stopDigitizedTime else { return nil }
         let parser = DateFormatter()
         parser.dateFormat = "yyyy:MM:dd HH:mm:ss"
@@ -78,6 +77,17 @@ struct PlacePhotoModalView: View {
     /// Effective timezone for the current photo: per-photo cache first (so all photos get correct time), then derived from digitized, then device.
     private var effectiveTimeZone: TimeZone {
         resolvedTimeZoneByPhotoId[currentPhotoId] ?? captureTimeZone ?? .current
+    }
+
+    /// Earliest photo in this stop by timestamp (same as used for place stop visit time).
+    private var earliestPhoto: RecapPhoto? {
+        photos.min(by: { $0.timestamp < $1.timestamp })
+    }
+
+    /// True when the current photo is the earliest in the stop, so we can show the same visit time as the place stop row.
+    private var isCurrentPhotoEarliest: Bool {
+        guard let photo = currentPhoto, let earliest = earliestPhoto else { return false }
+        return photo.id == earliest.id
     }
 
     init(
@@ -394,15 +404,40 @@ struct PlacePhotoModalView: View {
 
     private var dateTimeTextForCurrentPhoto: String {
         guard let photo = currentPhoto else { return "" }
+        // When showing the earliest photo, build the display from the digitized string exactly
+        // like the place stop (same time part: hours + minutes only, no Date/timezone conversion)
+        // so the modal and place stop row always show the same visit time (avoids 15-min TZ rounding).
+        if isCurrentPhotoEarliest, let digitized = stopDigitizedTime {
+            let parts = digitized.split(separator: " ")
+            if parts.count == 2 {
+                let datePart = String(parts[0]) // "yyyy:MM:dd"
+                let timePart = String(parts[1]) // "HH:mm:ss"
+                let timeComponents = timePart.split(separator: ":")
+                if timeComponents.count >= 2,
+                   let hours = Int(timeComponents[0]),
+                   let minutes = Int(timeComponents[1]) {
+                    let period = hours >= 12 ? "PM" : "AM"
+                    let h = hours == 0 ? 12 : (hours > 12 ? hours - 12 : hours)
+                    let timeStr = "\(h):\(String(format: "%02d", minutes)) \(period)"
+                    // Format date part "yyyy:MM:dd" -> "d MMM yyyy" using UTC so we just pass digits through
+                    let dateParser = DateFormatter()
+                    dateParser.dateFormat = "yyyy:MM:dd"
+                    dateParser.timeZone = TimeZone(secondsFromGMT: 0)
+                    dateParser.locale = Locale(identifier: "en_US_POSIX")
+                    if let date = dateParser.date(from: datePart) {
+                        let dateDisplay = DateFormatter()
+                        dateDisplay.dateFormat = "d MMM yyyy"
+                        dateDisplay.timeZone = TimeZone(secondsFromGMT: 0)
+                        dateDisplay.locale = Locale(identifier: "en_US_POSIX")
+                        return "\(dateDisplay.string(from: date)) at \(timeStr)"
+                    }
+                }
+            }
+        }
         let f = DateFormatter()
         f.dateFormat = "d MMM yyyy 'at' h:mm a"
         f.locale = Locale(identifier: "en_US_POSIX")
         f.timeZone = effectiveTimeZone
-
-        print("Photo \(photo.id) timestamp: \(photo.timestamp), effective TZ: \(effectiveTimeZone.identifier), displayed as: \(f.string(from: photo.timestamp))") 
-        print("Current device TZ: \(TimeZone.current.identifier)")
-        print(("locale: \(Locale.current.identifier)"))
-        print (("timeZone offset: \(TimeZone.current.secondsFromGMT()))"))
         return f.string(from: photo.timestamp)
     }
 
