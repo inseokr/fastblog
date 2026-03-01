@@ -248,9 +248,14 @@ struct RecapBlogPageView: View {
                 )
             }
             .sheet(item: $showEditNameForStop) { stop in
-                EditPlaceStopNameSheet(placeTitle: bindingForPlaceTitle(stopId: stop.id), location: stop.representativeLocation?.clCoordinate ?? stop.photos.first?.location?.clCoordinate, onSave: { newTitle, newCoordinate, newCategory in
-                    updatePlaceTitle(stopId: stop.id, to: newTitle, category: newCategory, coordinate: newCoordinate)
-                })
+                EditPlaceStopNameSheet(
+                    placeTitle: bindingForPlaceTitle(stopId: stop.id),
+                    location: stop.representativeLocation?.clCoordinate ?? stop.photos.first?.location?.clCoordinate,
+                    photos: stop.photos,
+                    onSave: { newTitle, newCoordinate, newCategory in
+                        updatePlaceTitle(stopId: stop.id, to: newTitle, category: newCategory, coordinate: newCoordinate)
+                    }
+                )
             }
             .sheet(item: $showManagePhotosForStop, onDismiss: {
                 // Capture dayId/stopId before syncPhotoChangesWithCloud clears managePhotosEditInfo.
@@ -897,6 +902,9 @@ struct RecapBlogPageView: View {
                         },
                         onPhotoCaptionManuallyEdited: { photoId in
                             markPhotoCaptionManual(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
+                        },
+                        onRemovePhoto: { photoId in
+                            removePhoto(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
                         }
                     )
                 } else {
@@ -1780,6 +1788,14 @@ struct RecapBlogPageView: View {
                 } else {
                     // New photo — upload to file server first, then add to the place
                     Task { await uploadAndAddPhotoToCloud(photo: photo, placeKey: placeKey, stopId: stop.id) }
+                }
+
+                // Suppress Undo: If the photo being added back matches the one in our pending undo action, clear it.
+                if case .deletePhoto(_, _, let undoPhoto, _) = lastUndoAction, undoPhoto.id == photo.id {
+                    withAnimation {
+                        lastUndoAction = nil
+                        showUndoOverlay = false
+                    }
                 }
             }
         }

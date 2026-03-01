@@ -10,6 +10,7 @@ import SwiftUI
 struct EditPlaceStopNameSheet: View {
     @Binding var placeTitle: String
     var location: CLLocationCoordinate2D?
+    var photos: [RecapPhoto] = []
     var onSave: (String, CLLocationCoordinate2D?, String?) -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -54,9 +55,40 @@ struct EditPlaceStopNameSheet: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 0) {
                     autocompleteBar
+                    
                     if isFocused, showSuggestions, !searchViewModel.suggestions.isEmpty {
                         suggestionsListContent
                     }
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if !photos.isEmpty && !isFocused {
+                    VStack(spacing: 0) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(photos) { photo in
+                                    RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 200, height: 200))
+                                        .frame(width: 90, height: 90)
+                                        .clipped()
+                                        .cornerRadius(10)
+                                        .shadow(color: .black.opacity(0.3), radius: 3)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.top, 20)
+                            .padding(.bottom, 12)
+                        }
+                        // Spacer so the strip clears the "Tap a place…" hint capsule pinned at the bottom
+                        Spacer().frame(height: 56)
+                    }
+                    .background(
+                        LinearGradient(
+                            colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
+                            startPoint: .bottom,
+                            endPoint: .top
+                        )
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .navigationTitle("Edit Name")

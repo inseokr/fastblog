@@ -237,78 +237,30 @@ struct PlaceStopRowView: View {
 
             // Photo strip: large thumbnails; one full photo visible + peek of next so users know they can scroll
             let includedPhotos = stop.photos.filter(\.isIncluded)
-            if !includedPhotos.isEmpty || (isEditMode && stop.photos.count > 1) {
-                if includedPhotos.count == 1, let singlePhoto = includedPhotos.first {
-                    // Single photo: same size as strip thumbnails for consistency (no oversized image / excess right space)
-                    VStack(alignment: .leading, spacing: 6) {
-                        ZStack(alignment: .topTrailing) {
-                            RecapPhotoThumbnail(photo: singlePhoto, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 480, height: 480))
-                                .aspectRatio(1, contentMode: .fill)
-                                .frame(width: thumbnailSize, height: thumbnailSize)
-                                .clipped()
-                                .cornerRadius(8)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    onPhotoTapped?(singlePhoto)
-                                }
-                            if isEditMode {
-                                Button {
-                                    onRemovePhoto?(singlePhoto.id)
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 30))
-                                        .symbolRenderingMode(.palette)
-                                        .foregroundStyle(.white, Color.black.opacity(0.6))
-                                }
-                                .buttonStyle(.plain)
-                                .padding(6)
-                            }
-                        }
-                        if isEditMode {
-                            TextField("Leave a story for this photo", text: photoCaption(singlePhoto.id), axis: .vertical)
-                                .textFieldStyle(.plain)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(2...2)
-                                .frame(width: thumbnailSize, alignment: .leading)
-                                .focused($focusedPhotoId, equals: singlePhoto.id)
-                                .onChange(of: focusedPhotoId) { _, _ in
-                                    if let id = focusedPhotoId { onCaptionFocus?(id) }
-                                }
-                                .onChange(of: photoCaption(singlePhoto.id).wrappedValue) { _, _ in
-                                    if generatingPhotoId != singlePhoto.id {
-                                        onPhotoUserEdited?(singlePhoto.id)
-                                    }
-                                }
-                        } else if !photoCaption(singlePhoto.id).wrappedValue.isEmpty {
-                            Text(photoCaption(singlePhoto.id).wrappedValue)
-                                .font(.caption)
-                                .foregroundColor(.white.opacity(0.9))
-                                .lineLimit(2)
-                                .frame(width: thumbnailSize, alignment: .leading)
-                        }
-                        if isEditMode && stop.photos.count > 1 {
-                            Button(action: onManagePhotos) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "photo.on.rectangle")
-                                        .font(.caption)
-                                    Text("Manage Photos")
-                                        .font(.caption)
-                                        .fontWeight(.medium)
-                                }
-                                .foregroundColor(.secondary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(Color(white: 0.08))
-                                .cornerRadius(8)
-                            }
-                            .buttonStyle(.plain)
-                        }
+            let hasMultipleAvailable = stop.photos.count > 1
+
+            // --- CASE 1: No included photos — show standalone "Manage Photos" button in edit mode ---
+            if isEditMode && includedPhotos.isEmpty && hasMultipleAvailable {
+                Button(action: onManagePhotos) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "photo.on.rectangle")
+                            .font(.body)
+                        Text("Manage Photos")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 12)
-                } else {
-                    ScrollView(.horizontal, showsIndicators: false) {
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color(white: 0.08))
+                    .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+            } else if !includedPhotos.isEmpty {
+                // --- CASE 2: 1+ included photos — always use horizontal scroll + outlined Manage Photos card ---
+                ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 10) {
                         ForEach(includedPhotos) { photo in
                             VStack(alignment: .leading, spacing: 6) {
@@ -335,81 +287,60 @@ struct PlaceStopRowView: View {
                                         .padding(6)
                                     }
                                 }
-                                    if isEditMode {
-                                        TextField("Leave a story for this photo", text: photoCaption(photo.id), axis: .vertical)
-                                            .textFieldStyle(.plain)
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                            .lineLimit(2...2)
-                                            .frame(width: thumbnailSize, alignment: .leading)
-                                            .focused($focusedPhotoId, equals: photo.id)
-                                            .onChange(of: focusedPhotoId) { _, _ in
-                                                if let id = focusedPhotoId { onCaptionFocus?(id) }
-                                            }
-                                            .onChange(of: photoCaption(photo.id).wrappedValue) { _, _ in
-                                                if generatingPhotoId != photo.id {
-                                                    onPhotoUserEdited?(photo.id)
-                                                }
-                                            }
-                                        /* Hide Magic pen for photo captions per user request
-                                            if let generate = onGeneratePhotoCaption, !photo.captionIsManual {
-                                                Button {
-                                                    generatingPhotoId = photo.id
-                                                    Task {
-                                                        let text = await generate(photo)
-                                                        await MainActor.run {
-                                                            photoCaption(photo.id).wrappedValue = text
-                                                            generatingPhotoId = nil
-                                                            onAICaptionApplied?(photo.id)
-                                                        }
-                                                    }
-                                                } label: {
-                                                    Image(systemName: "wand.and.stars")
-                                                        .font(.caption)
-                                                        .foregroundColor(.secondary)
-                                                }
-                                                .disabled(generatingPhotoId == photo.id)
-                                            }
-                                            */
-                                    } else if !photoCaption(photo.id).wrappedValue.isEmpty {
-                                        Text(photoCaption(photo.id).wrappedValue)
-                                            .font(.caption)
-                                            .foregroundColor(.white.opacity(0.9))
-                                            .lineLimit(2)
-                                            .frame(width: thumbnailSize, alignment: .leading)
-                                    }
-                                }
-                                .frame(width: thumbnailSize)
-                                .id(photo.id)
-                            }
-                            // Manage Photos card next to last photo; generous trailing padding so it scrolls fully into view and is tappable
-                            if isEditMode && stop.photos.count > 1 {
-                                Button(action: onManagePhotos) {
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .strokeBorder(Color.white.opacity(0.6), lineWidth: 1.5)
-                                        .frame(width: thumbnailSize, height: thumbnailSize)
-                                        .overlay {
-                                            VStack(spacing: 6) {
-                                                Image(systemName: "photo.on.rectangle")
-                                                    .font(.system(size: 40))
-                                                    .foregroundColor(.white)
-                                                Text("Manage Photos")
-                                                    .font(.caption)
-                                                    .fontWeight(.medium)
-                                                    .foregroundColor(.white)
+                                if isEditMode {
+                                    TextField("Leave a story for this photo", text: photoCaption(photo.id), axis: .vertical)
+                                        .textFieldStyle(.plain)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(2...2)
+                                        .frame(width: thumbnailSize, alignment: .leading)
+                                        .focused($focusedPhotoId, equals: photo.id)
+                                        .onChange(of: focusedPhotoId) { _, _ in
+                                            if let id = focusedPhotoId { onCaptionFocus?(id) }
+                                        }
+                                        .onChange(of: photoCaption(photo.id).wrappedValue) { _, _ in
+                                            if generatingPhotoId != photo.id {
+                                                onPhotoUserEdited?(photo.id)
                                             }
                                         }
+                                } else if !photoCaption(photo.id).wrappedValue.isEmpty {
+                                    Text(photoCaption(photo.id).wrappedValue)
+                                        .font(.caption)
+                                        .foregroundColor(.white.opacity(0.9))
+                                        .lineLimit(2)
+                                        .frame(width: thumbnailSize, alignment: .leading)
                                 }
-                                .buttonStyle(.plain)
-                                .contentShape(Rectangle())
                             }
+                            .frame(width: thumbnailSize)
+                            .id(photo.id)
+                        }
+                        // Outlined-box Manage Photos card — always shown in edit mode when photos exist
+                        if isEditMode && hasMultipleAvailable {
+                            Button(action: onManagePhotos) {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .strokeBorder(Color.white.opacity(0.6), lineWidth: 1.5)
+                                    .frame(width: thumbnailSize, height: thumbnailSize)
+                                    .overlay {
+                                        VStack(spacing: 6) {
+                                            Image(systemName: "photo.on.rectangle")
+                                                .font(.system(size: 40))
+                                                .foregroundColor(.white)
+                                            Text("Manage Photos")
+                                                .font(.caption)
+                                                .fontWeight(.medium)
+                                                .foregroundColor(.white)
+                                        }
+                                    }
+                            }
+                            .buttonStyle(.plain)
+                            .contentShape(Rectangle())
                         }
                     }
                     .padding(.leading, 16)
-                    .padding(.trailing, 32) // Extra space so Manage Photos card scrolls fully into view and stays tappable
-                    .frame(height: thumbnailSize + 28)
-                    .padding(.bottom, 12)
+                    .padding(.trailing, 32) // Extra space so Manage Photos card scrolls fully into view
                 }
+                .frame(height: thumbnailSize + 28)
+                .padding(.bottom, 12)
             }
 
             // timelineLine removed per user request

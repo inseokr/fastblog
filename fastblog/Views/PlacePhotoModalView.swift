@@ -31,6 +31,8 @@ struct PlacePhotoModalView: View {
     var onAICaptionApplied: ((UUID) -> Void)?
     /// Called when the user manually edits a photo caption in the modal. Used to mark captionIsManual = true.
     var onPhotoCaptionManuallyEdited: ((UUID) -> Void)?
+    /// Called when the user chooses "Remove photo" from the kebab menu.
+    var onRemovePhoto: ((UUID) -> Void)?
 
     @State private var currentPhotoId: UUID
     @State private var isGeneratingCaption = false
@@ -42,6 +44,7 @@ struct PlacePhotoModalView: View {
     @State private var captionWhenEditingStarted: String = ""
     @State private var titleWhenEditingStarted: String = ""
     @State private var debounceTask: Task<Void, Never>?
+    @FocusState private var isCaptionFocused: Bool
 
     /// Derives the UTC offset from the EXIF digitized local time vs the earliest photo's UTC timestamp.
     /// This gives us the timezone where the photos were captured, regardless of device timezone.
@@ -69,7 +72,8 @@ struct PlacePhotoModalView: View {
         onDismiss: @escaping () -> Void,
         onGenerateCaption: ((RecapPhoto, String, String?) async -> String)? = nil,
         onAICaptionApplied: ((UUID) -> Void)? = nil,
-        onPhotoCaptionManuallyEdited: ((UUID) -> Void)? = nil
+        onPhotoCaptionManuallyEdited: ((UUID) -> Void)? = nil,
+        onRemovePhoto: ((UUID) -> Void)? = nil
     ) {
         self._placeTitle = placeTitle
         self.placeSubtitle = placeSubtitle
@@ -82,6 +86,7 @@ struct PlacePhotoModalView: View {
         self.onGenerateCaption = onGenerateCaption
         self.onAICaptionApplied = onAICaptionApplied
         self.onPhotoCaptionManuallyEdited = onPhotoCaptionManuallyEdited
+        self.onRemovePhoto = onRemovePhoto
         _currentPhotoId = State(initialValue: initialPhotoId)
     }
 
@@ -191,8 +196,15 @@ struct PlacePhotoModalView: View {
                                     editedCaptionText = currentCaption
                                     editedPlaceTitle = placeTitle
                                     isEditing = true
+                                    isCaptionFocused = true
                                 } label: {
-                                    Label("Edit", systemImage: "pencil")
+                                    Label("Edit caption", systemImage: "pencil")
+                                }
+
+                                Button(role: .destructive) {
+                                    onRemovePhoto?(currentPhotoId)
+                                } label: {
+                                    Label("Remove photo", systemImage: "trash")
                                 }
                             } label: {
                                 Image(systemName: "ellipsis.circle")
@@ -253,6 +265,7 @@ struct PlacePhotoModalView: View {
 
                     HStack(alignment: .top, spacing: 8) {
                         TextField("Leave a story for this photo...", text: $editedCaptionText, axis: .vertical)
+                            .focused($isCaptionFocused)
                             .textFieldStyle(.plain)
                             .font(.body)
                             .foregroundColor(.white)
@@ -427,6 +440,7 @@ struct RightActionStack: View {
 
     var body: some View {
         VStack(spacing: spacing) {
+/*
             Button(action: onSparkles) {
                 Image(systemName: "sparkles")
                     .font(.system(size: 22))
@@ -436,6 +450,7 @@ struct RightActionStack: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
+*/
 
             Button(action: onNavigate) {
                 // Navigation icon replacing Share, and removed Heart/Comment/Bookmark
