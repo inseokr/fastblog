@@ -511,7 +511,7 @@ struct CountryBlogRowView: View {
                         Image(systemName: "ellipsis")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.secondary)
-                            .padding(8)
+                            .padding(12)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)

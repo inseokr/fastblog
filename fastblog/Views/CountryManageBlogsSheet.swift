@@ -35,8 +35,12 @@ struct CountryManageBlogsSheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
+            ZStack {
+                Color(uiColor: .systemGroupedBackground)
+                    .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 24) {
 
                     // ── Header ────────────────────────────────────────────
                     VStack(spacing: 8) {
@@ -78,10 +82,10 @@ struct CountryManageBlogsSheet: View {
                     Spacer(minLength: 40)
                 }
             }
-            .background(Color(uiColor: .systemGroupedBackground))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
                         .fontWeight(.semibold)
                 }

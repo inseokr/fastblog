@@ -35,6 +35,8 @@ struct PlaceStopRowView: View {
     var onGeneratePhotoCaption: ((RecapPhoto) async -> String)?
     /// Called after the user types in a photo caption field (not AI). Used to mark captionIsManual = true.
     var onPhotoUserEdited: ((UUID) -> Void)?
+    /// Called when the user taps a photo caption (read mode) — used to open the Edit Caption modal.
+    var onCaptionTapped: ((UUID) -> Void)?
     /// Called after the user types in the overall story field (not AI). Used to mark overallStoryIsManual = true.
     var onOverallStoryUserEdited: (() -> Void)?
     /// Called after AI successfully applied a caption to a photo. Used to cascade overall story.
@@ -125,12 +127,16 @@ struct PlaceStopRowView: View {
                                 Image(systemName: "eye.slash")
                                     .font(.body)
                                     .foregroundColor(.secondary)
+                                    .padding(8)
+                                    .contentShape(Rectangle())
                             }
                         } else {
                             Button { onKebab?() } label: {
                                 Image(systemName: "ellipsis")
                                     .font(.body)
                                     .foregroundColor(.secondary)
+                                    .padding(8)
+                                    .contentShape(Rectangle())
                             }
                         }
                     }
@@ -257,6 +263,7 @@ struct PlaceStopRowView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 16)
+                .padding(.top, 8)
                 .padding(.bottom, 12)
             } else if !includedPhotos.isEmpty {
                 // --- CASE 2: 1+ included photos — always use horizontal scroll + outlined Manage Photos card ---
@@ -288,27 +295,33 @@ struct PlaceStopRowView: View {
                                     }
                                 }
                                 if isEditMode {
-                                    TextField("Leave a story for this photo", text: photoCaption(photo.id), axis: .vertical)
-                                        .textFieldStyle(.plain)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(2...2)
-                                        .frame(width: thumbnailSize, alignment: .leading)
-                                        .focused($focusedPhotoId, equals: photo.id)
-                                        .onChange(of: focusedPhotoId) { _, _ in
-                                            if let id = focusedPhotoId { onCaptionFocus?(id) }
-                                        }
-                                        .onChange(of: photoCaption(photo.id).wrappedValue) { _, _ in
-                                            if generatingPhotoId != photo.id {
-                                                onPhotoUserEdited?(photo.id)
-                                            }
-                                        }
+                                    Button {
+                                        onCaptionTapped?(photo.id)
+                                    } label: {
+                                        let caption = photoCaption(photo.id).wrappedValue
+                                        Text(caption.isEmpty ? "Leave a story for this photo" : caption)
+                                            .font(.caption)
+                                            .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : .white)
+                                            .lineLimit(2)
+                                            .multilineTextAlignment(.leading)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(8)
+                                            .background(Color(white: 0.08))
+                                            .cornerRadius(6)
+                                    }
+                                    .frame(width: thumbnailSize)
+                                    .buttonStyle(.plain)
                                 } else if !photoCaption(photo.id).wrappedValue.isEmpty {
-                                    Text(photoCaption(photo.id).wrappedValue)
-                                        .font(.caption)
-                                        .foregroundColor(.white.opacity(0.9))
-                                        .lineLimit(2)
-                                        .frame(width: thumbnailSize, alignment: .leading)
+                                    Button {
+                                        onCaptionTapped?(photo.id)
+                                    } label: {
+                                        Text(photoCaption(photo.id).wrappedValue)
+                                            .font(.caption)
+                                            .foregroundColor(.white.opacity(0.9))
+                                            .lineLimit(2)
+                                            .frame(width: thumbnailSize, alignment: .leading)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
                             .frame(width: thumbnailSize)
@@ -339,8 +352,9 @@ struct PlaceStopRowView: View {
                     .padding(.leading, 16)
                     .padding(.trailing, 32) // Extra space so Manage Photos card scrolls fully into view
                 }
-                .frame(height: thumbnailSize + 28)
-                .padding(.bottom, 12)
+                .frame(height: isEditMode ? thumbnailSize + 56 : thumbnailSize + 28)
+                .padding(.top, 8) // Added top padding here
+                .padding(.bottom, isEditMode ? 20 : 12)
             }
 
             // timelineLine removed per user request
@@ -437,16 +451,16 @@ struct PlaceStopRowView: View {
                 }
                 .padding(.leading, 16)
                 .padding(.trailing, 16)
-                .padding(.top, 6)
-                .padding(.bottom, 12)
+                .padding(.top, 8)
+                .padding(.bottom, 8)
             } else if !overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(overallStory)
                     .font(.subheadline)
                     .foregroundColor(.white.opacity(0.9))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
-                    .padding(.top, 6)
-                    .padding(.bottom, 12)
+                    .padding(.top, 8)
+                    .padding(.bottom, 8)
             }
         }
     }

@@ -23,13 +23,18 @@ struct EditPlaceStopNameSheet: View {
     @State private var selectedCoordinate: CLLocationCoordinate2D? = nil
     /// When user taps a POI (or picks from autocomplete), we resolve and store category (MKPointOfInterestCategory raw value).
     @State private var selectedCategory: String? = nil
+    @State private var initialTitle: String = ""
+    @State private var initialCoordinate: CLLocationCoordinate2D? = nil
+    @State private var initialCategory: String? = nil
+    @State private var showSaveConfirmationAlert = false
 
     var body: some View {
         NavigationStack {
             Group {
                 if let coord = location {
                     TappableMapView(
-                        center: coord,
+                        center: selectedCoordinate ?? coord,
+                        title: selectedCoordinate != nil ? editedTitle : nil,
                         onTap: { tappedCoordinate, mapRegion in
                             resolvePOI(at: tappedCoordinate, mapRegion: mapRegion)
                         }
@@ -96,74 +101,138 @@ struct EditPlaceStopNameSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
-                        dismiss()
+                        if hasChanges {
+                            showSaveConfirmationAlert = true
+                        } else {
+                            dismiss()
+                        }
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        let trimmed = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                        onSave(trimmed.isEmpty ? "Stop" : trimmed, selectedCoordinate, selectedCategory)
-                        dismiss()
+                        saveAndDismiss()
                     }
                     .disabled(editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .foregroundStyle(editedTitle != placeTitle || selectedCoordinate != nil || selectedCategory != nil ? .blue : .primary)
+                    .foregroundStyle(hasChanges ? .blue : .primary)
                 }
             }
+            .interactiveDismissDisabled(hasChanges)
+            .alert("Save changes?", isPresented: $showSaveConfirmationAlert) {
+                Button("Save") {
+                    saveAndDismiss()
+                }
+                Button("Discard", role: .destructive) {
+                    dismiss()
+                }
+                Button("Keep Editing", role: .cancel) { }
+            } message: {
+                Text("You have unsaved changes to the place name or location. Would you like to save them before leaving?")
+            }
             .onAppear {
-                editedTitle = placeTitle.hasPrefix("Near ") ? String(placeTitle.dropFirst(5)) : placeTitle
+                let initialValue = placeTitle.hasPrefix("Near ") ? String(placeTitle.dropFirst(5)) : placeTitle
+                editedTitle = initialValue
+                initialTitle = initialValue
                 selectedCoordinate = nil
+                initialCoordinate = nil
                 selectedCategory = nil
+                initialCategory = nil
                 searchViewModel.setBiasLocation(location)
             }
             .overlay(alignment: .bottom) {
                 if location != nil, !isResolvingPOI {
-                    Text("Tap a place on the map to use its name")
-                        .font(.caption)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Capsule().fill(Color.black.opacity(0.6)))
+                    if let selected = selectedCoordinate {
+                        Button {
+                            let urlString = "https://www.google.com/maps/search/?api=1&query=\(selected.latitude),\(selected.longitude)"
+                            if let url = URL(string: urlString) {
+                                UIApplication.shared.open(url)
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                // Fallback icon since a specific Google asset isn't confirmed
+                                Image(systemName: "map.fill")
+                                    .foregroundColor(.blue)
+                                Text("View on Google Maps")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(.black)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(Color.white)
+                            .cornerRadius(24)
+                            .shadow(color: .black.opacity(0.2), radius: 5, x: 0, y: 2)
+                        }
                         .padding(.bottom, 16)
+                    } else {
+                        Text("Tap a place on the map to use its name")
+                            .font(.caption)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Capsule().fill(Color.black.opacity(0.6)))
+                            .padding(.bottom, 16)
+                    }
                 }
             }
             .preferredColorScheme(.dark)
         }
     }
 
+    private var hasChanges: Bool {
+        let trimmedCurrent = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedInitial = initialTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        return trimmedCurrent != trimmedInitial ||
+               selectedCoordinate?.latitude != initialCoordinate?.latitude ||
+               selectedCoordinate?.longitude != initialCoordinate?.longitude ||
+               selectedCategory != initialCategory
+    }
+
+    private func saveAndDismiss() {
+        let trimmed = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        onSave(trimmed.isEmpty ? "Stop" : trimmed, selectedCoordinate, selectedCategory)
+        dismiss()
+    }
+
     // MARK: - Autocomplete bar (compact, minimal top padding)
     private var autocompleteBar: some View {
         HStack {
-            TextField("Place name", text: $editedTitle)
-                .focused($isFocused)
-                .autocorrectionDisabled()
-                .onChange(of: isFocused) { _, focused in
-                    if focused {
-                        showSuggestions = true
-                        searchViewModel.query = editedTitle
+            HStack(spacing: 8) {
+                TextField("Place name", text: $editedTitle)
+                    .focused($isFocused)
+                    .autocorrectionDisabled()
+                    .onChange(of: isFocused) { _, focused in
+                        if focused {
+                            showSuggestions = true
+                            searchViewModel.query = editedTitle
+                        }
                     }
-                }
-                .onChange(of: editedTitle) { oldValue, newValue in
-                    if oldValue == placeTitle && newValue.hasPrefix(placeTitle) && newValue.count > oldValue.count {
-                        editedTitle = String(newValue.dropFirst(placeTitle.count))
-                    } else if showSuggestions {
-                        searchViewModel.query = newValue
+                    .onChange(of: editedTitle) { oldValue, newValue in
+                        if oldValue == placeTitle && newValue.hasPrefix(placeTitle) && newValue.count > oldValue.count {
+                            editedTitle = String(newValue.dropFirst(placeTitle.count))
+                        } else if showSuggestions {
+                            searchViewModel.query = newValue
+                        }
                     }
-                }
 
-            if !editedTitle.isEmpty {
-                Button {
-                    editedTitle = ""
-                    searchViewModel.query = ""
-                    isFocused = true
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.secondary)
+                if !editedTitle.isEmpty {
+                    Button {
+                        editedTitle = ""
+                        searchViewModel.query = ""
+                        isFocused = true
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color(white: 0.18))
+            .cornerRadius(12)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(white: 0.12))
     }
@@ -220,6 +289,7 @@ struct EditPlaceStopNameSheet: View {
     // MARK: - Tappable map (tap → coordinate → resolve POI)
     private struct TappableMapView: UIViewRepresentable {
         let center: CLLocationCoordinate2D
+        let title: String?
         var onTap: (CLLocationCoordinate2D, MKCoordinateRegion) -> Void
 
         func makeUIView(context: Context) -> MKMapView {
@@ -247,7 +317,17 @@ struct EditPlaceStopNameSheet: View {
             // Do not reset region here — SwiftUI calls this on every state change (e.g. isResolvingPOI),
             // which was overriding the user's zoom/pan. Initial region is set in makeUIView only.
             if let pin = mapView.annotations.first(where: { $0 is MKPointAnnotation }) as? MKPointAnnotation {
-                pin.coordinate = center
+                if pin.coordinate.latitude != center.latitude || pin.coordinate.longitude != center.longitude {
+                    UIView.animate(withDuration: 0.25) {
+                        pin.coordinate = center
+                    }
+                }
+                pin.title = title
+                if let title = title, !title.isEmpty {
+                    mapView.selectAnnotation(pin, animated: true)
+                } else {
+                    mapView.deselectAnnotation(pin, animated: true)
+                }
             }
         }
 
@@ -285,7 +365,7 @@ struct EditPlaceStopNameSheet: View {
                     ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: id)
                 view.markerTintColor = .systemRed
                 view.glyphImage = UIImage(systemName: "mappin.circle.fill")
-                view.canShowCallout = false
+                view.canShowCallout = true
                 return view
             }
         }

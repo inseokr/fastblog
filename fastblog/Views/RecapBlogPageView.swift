@@ -251,7 +251,7 @@ struct RecapBlogPageView: View {
                 EditPlaceStopNameSheet(
                     placeTitle: bindingForPlaceTitle(stopId: stop.id),
                     location: stop.representativeLocation?.clCoordinate ?? stop.photos.first?.location?.clCoordinate,
-                    photos: stop.photos,
+                    photos: stop.includedPhotos,
                     onSave: { newTitle, newCoordinate, newCategory in
                         updatePlaceTitle(stopId: stop.id, to: newTitle, category: newCategory, coordinate: newCoordinate)
                     }
@@ -262,8 +262,14 @@ struct RecapBlogPageView: View {
                 let managedItem = managePhotosEditInfo
                 createdRecapStore.saveBlogDetail(draft)
                 syncPhotoChangesWithCloud()
-                // Auto-fill AI captions for any newly included photos in this stop.
-                if let item = managedItem {
+                // Auto-fill AI captions only if photos were newly included during this session.
+                // If the user entered and exited without making any changes, skip auto-fill entirely.
+                if let item = managedItem,
+                   let stop = placeStop(dayId: item.dayId, stopId: item.stopId),
+                   stop.photos.contains(where: { photo in
+                       let wasPreviouslyIncluded = item.photoInclusionBefore[photo.id] ?? false
+                       return !wasPreviouslyIncluded && photo.isIncluded
+                   }) {
                     Task { @MainActor in
                         await autoFillCaptionsForStop(dayId: item.dayId, stopId: item.stopId)
                     }
@@ -846,6 +852,9 @@ struct RecapBlogPageView: View {
                     onPhotoUserEdited: { photoId in
                         markPhotoCaptionManual(dayId: day.id, stopId: stop.id, photoId: photoId)
                     },
+                    onCaptionTapped: { photoId in
+                        placePhotoModalItem = PlacePhotoModalItem(dayId: day.id, stopId: stop.id, initialPhotoId: photoId)
+                    },
                     onOverallStoryUserEdited: {
                         markOverallStoryManual(dayId: day.id, stopId: stop.id)
                     },
@@ -891,7 +900,6 @@ struct RecapBlogPageView: View {
                         placeSubtitle: stop.placeSubtitle,
                         photos: includedPhotos,
                         initialPhotoId: includedPhotos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : includedPhotos[0].id,
-                        stopDigitizedTime: stop.visitedTimeDigitized,
                         photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
                         onDismiss: { placePhotoModalItem = nil },
                         onGenerateCaption: { photo, placeName, placeSubtitle in
@@ -917,7 +925,7 @@ struct RecapBlogPageView: View {
                     .onAppear { placePhotoModalItem = nil }
             }
         }
-        .presentationDetents([.fraction(0.65), .fraction(0.92)])
+        .presentationDetents([.large])
         .presentationDragIndicator(.hidden)
         .presentationCornerRadius(24)
         .presentationBackground(.black)

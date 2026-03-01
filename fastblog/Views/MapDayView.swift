@@ -21,14 +21,17 @@ struct MapDayView: View {
     var onTap: (() -> Void)?
     /// When set, map region centers on this place's coordinate (e.g. for full-screen card sync).
     var focusedPlaceId: UUID? = nil
-    
+    /// Called when the user taps a place annotation on the map. Receives the stop's UUID.
+    var onAnnotationTap: ((UUID) -> Void)? = nil
+
     @State private var cameraPosition: MapCameraPosition = .automatic
 
-    init(placeStops: [PlaceStop], height: CGFloat = 220, onTap: (() -> Void)? = nil, focusedPlaceId: UUID? = nil) {
+    init(placeStops: [PlaceStop], height: CGFloat = 220, onTap: (() -> Void)? = nil, focusedPlaceId: UUID? = nil, onAnnotationTap: ((UUID) -> Void)? = nil) {
         self.placeStops = placeStops
         self.height = height
         self.onTap = onTap
         self.focusedPlaceId = focusedPlaceId
+        self.onAnnotationTap = onAnnotationTap
     }
 
     var body: some View {
@@ -49,6 +52,9 @@ struct MapDayView: View {
                         isFirst: isFirst,
                         isLast: isLast
                     )
+                    .onTapGesture {
+                        onAnnotationTap?(marker.id)
+                    }
                 }
             }
             
@@ -271,6 +277,7 @@ extension MapDayView {
         self.height = height
         self.onTap = onTap
         self.focusedPlaceId = focusedPlaceId
+        self.onAnnotationTap = nil
     }
 }
 
@@ -282,10 +289,21 @@ struct FullScreenMapView: View {
     var onDismiss: () -> Void
 
     @State private var selectedPlaceIndex: Int = 0
+    // Photo modal
+    @State private var photoModalStop: PlaceStop?
+    @State private var photoModalInitialPhotoId: UUID?
+    @State private var photoModalCaptions: [UUID: String] = [:]
 
     private var focusedPlaceId: UUID? {
         guard day.placeStops.indices.contains(selectedPlaceIndex) else { return nil }
         return day.placeStops[selectedPlaceIndex].id
+    }
+
+    private func openPhotoModal(for stop: PlaceStop) {
+        guard !stop.photos.isEmpty else { return }
+        photoModalCaptions = Dictionary(uniqueKeysWithValues: stop.photos.map { ($0.id, $0.caption ?? "") })
+        photoModalInitialPhotoId = stop.photos.first?.id
+        photoModalStop = stop
     }
 
     var body: some View {
@@ -295,7 +313,11 @@ struct FullScreenMapView: View {
                     placeStops: day.placeStops,
                     height: geo.size.height,
                     onTap: nil,
-                    focusedPlaceId: focusedPlaceId
+                    focusedPlaceId: focusedPlaceId,
+                    onAnnotationTap: { stopId in
+                        guard let stop = day.placeStops.first(where: { $0.id == stopId }) else { return }
+                        openPhotoModal(for: stop)
+                    }
                 )
                 .ignoresSafeArea(edges: .all)
 
@@ -324,6 +346,31 @@ struct FullScreenMapView: View {
         .background(Color.black)
         .ignoresSafeArea(edges: .all)
         .preferredColorScheme(.dark)
+        .sheet(isPresented: Binding(
+            get: { photoModalStop != nil },
+            set: { if !$0 { photoModalStop = nil } }
+        )) {
+            if let stop = photoModalStop, let initialId = photoModalInitialPhotoId {
+                PlacePhotoModalView(
+                    placeTitle: .constant(stop.placeTitle),
+                    placeSubtitle: stop.placeSubtitle,
+                    photos: stop.photos,
+                    initialPhotoId: initialId,
+                    blogIsEditMode: false,
+                    photoCaption: { id in
+                        Binding(
+                            get: { photoModalCaptions[id] ?? "" },
+                            set: { photoModalCaptions[id] = $0 }
+                        )
+                    },
+                    onDismiss: { photoModalStop = nil }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.hidden)
+                .presentationCornerRadius(24)
+                .presentationBackground(.black)
+            }
+        }
     }
 
     @State private var scrolledPlaceID: UUID?
@@ -335,12 +382,23 @@ struct FullScreenMapView: View {
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 16) {
                 ForEach(Array(day.placeStops.enumerated()), id: \.element.id) { index, stop in
-                    PlaceMapCardView(stop: stop, stopNumber: index + 1, isSelected: selectedPlaceIndex == index)
+                    Button {
+                        openPhotoModal(for: stop)
+                    } label: {
+                        PlaceMapCardView(
+                            stop: stop,
+                            stopNumber: index + 1,
+                            isFirst: index == 0,
+                            isLast: index == day.placeStops.count - 1,
+                            isSelected: selectedPlaceIndex == index
+                        )
                         .frame(width: cardWidth, height: cardHeight)
-                        .id(stop.id)
-                        .scaleEffect(selectedPlaceIndex == index ? 1.02 : 0.95)
-                        .opacity(selectedPlaceIndex == index ? 1.0 : 0.6)
-                        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: selectedPlaceIndex)
+                    }
+                    .buttonStyle(.plain)
+                    .id(stop.id)
+                    .scaleEffect(selectedPlaceIndex == index ? 1.02 : 0.95)
+                    .opacity(selectedPlaceIndex == index ? 1.0 : 0.6)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.8), value: selectedPlaceIndex)
                 }
             }
             .scrollTargetLayout()
@@ -348,6 +406,7 @@ struct FullScreenMapView: View {
         .safeAreaPadding(.horizontal, (geo.size.width - cardWidth) / 2)
         .scrollTargetBehavior(.viewAligned)
         .scrollPosition(id: $scrolledPlaceID)
+        .scrollClipDisabled(true)
         .onChange(of: scrolledPlaceID) { _, newID in
             // Card snapped — update index and recenter map
             if let newID,
@@ -372,31 +431,46 @@ struct FullScreenMapView: View {
     }
 }
 
-/// Single place card for full-screen map bottom strip: number + title, description, photo on right; blue border when selected.
-    /// Single place card for full-screen map bottom strip: Premium layout with image left, badge, and text right.
+/// Single place card for full-screen map bottom strip: Premium layout with image left, badge, and text right.
     private struct PlaceMapCardView: View {
         let stop: PlaceStop
         let stopNumber: Int
+        let isFirst: Bool
+        let isLast: Bool
         let isSelected: Bool
+
+        private var borderColor: Color {
+            if isFirst && isLast { return .green }
+            if isFirst { return .green }
+            if isLast  { return .orange }
+            return .white.opacity(0.5)
+        }
 
         var body: some View {
             HStack(spacing: 16) {
-                // Left: Photo + Badge
+                // Left: Photo + start/end badge overlay + order badge
                 ZStack(alignment: .topLeading) {
-                    if let photo = stop.photos.first {
-                        RecapPhotoThumbnail(photo: photo, cornerRadius: 12, showIcon: false, targetSize: CGSize(width: 200, height: 200))
-                            .frame(width: 96, height: 96)
-                            .clipped()
-                            .cornerRadius(12)
-                            .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
-                    } else {
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.white.opacity(0.1))
-                            .frame(width: 96, height: 96)
-                            .overlay(Image(systemName: "photo").foregroundStyle(.white.opacity(0.5)))
+                    // Photo with coloured border
+                    Group {
+                        if let photo = stop.photos.first {
+                            RecapPhotoThumbnail(photo: photo, cornerRadius: 12, showIcon: false, targetSize: CGSize(width: 200, height: 200))
+                                .frame(width: 96, height: 96)
+                                .clipped()
+                                .cornerRadius(12)
+                        } else {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.white.opacity(0.1))
+                                .frame(width: 96, height: 96)
+                                .overlay(Image(systemName: "photo").foregroundStyle(.white.opacity(0.5)))
+                        }
                     }
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(borderColor, lineWidth: (isFirst || isLast) ? 3 : 1.5)
+                    )
+                    .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
 
-                    // Order Badge
+                    // Order badge (top-leading)
                     Text("\(stopNumber)")
                         .font(.system(size: 13, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
@@ -408,6 +482,20 @@ struct FullScreenMapView: View {
                         .overlay(Circle().stroke(Color.white, lineWidth: 2))
                         .offset(x: -8, y: -8)
                         .shadow(color: .black.opacity(0.3), radius: 3, x: 0, y: 2)
+
+                    // START / END pill in bottom-leading corner of photo
+                    if isFirst || isLast {
+                        VStack {
+                            Spacer()
+                            HStack {
+                                startEndLabel
+                                    .padding(.leading, 4)
+                                    .padding(.bottom, 4)
+                                Spacer()
+                            }
+                        }
+                        .frame(width: 96, height: 96)
+                    }
                 }
                 .padding(.leading, 8)
 
@@ -428,12 +516,12 @@ struct FullScreenMapView: View {
                             .multilineTextAlignment(.leading)
                             .lineSpacing(2)
                     }
-                    
+
                     Spacer(minLength: 0)
                 }
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                
+
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(.white.opacity(0.3))
@@ -447,6 +535,28 @@ struct FullScreenMapView: View {
                     .stroke(isSelected ? Color.blue.opacity(0.5) : Color.white.opacity(0.12), lineWidth: isSelected ? 2 : 1)
             )
             .shadow(color: .black.opacity(isSelected ? 0.3 : 0.1), radius: 10, x: 0, y: 5)
+        }
+
+        @ViewBuilder
+        private var startEndLabel: some View {
+            if isFirst && isLast {
+                startEndPill(text: "START & END", color: .green)
+            } else if isFirst {
+                startEndPill(text: "START", color: .green)
+            } else if isLast {
+                startEndPill(text: "END", color: .orange)
+            }
+        }
+
+        private func startEndPill(text: String, color: Color) -> some View {
+            Text(text)
+                .font(.system(size: 9, weight: .heavy))
+                .foregroundColor(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(color.opacity(0.9)))
+                .overlay(Capsule().stroke(Color.white.opacity(0.7), lineWidth: 1))
+                .shadow(color: .black.opacity(0.4), radius: 1)
         }
 
         private var descriptionText: String? {

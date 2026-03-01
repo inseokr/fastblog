@@ -239,7 +239,7 @@ struct RemovedPlacesSheet: View {
                     },
                     onDismiss: { placeModalItem = nil }
                 )
-                .presentationDetents([.fraction(0.65), .fraction(0.92)])
+                .presentationDetents([.large])
             } else {
                 Color.white.onAppear { placeModalItem = nil }
             }

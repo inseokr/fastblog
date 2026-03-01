@@ -172,7 +172,7 @@ struct CoverPhotoPickerView: View {
                             } label: {
                                 MockPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false)
                                     .frame(width: itemSize, height: itemSize)
-                                    .clipped()
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 8)
                                             .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 3)
@@ -286,7 +286,7 @@ struct BlogCoverPhotoPickerView: View {
                             } label: {
                                 RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false)
                                     .frame(width: itemSize, height: itemSize)
-                                    .clipped()
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 8)
                                             .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 3)
