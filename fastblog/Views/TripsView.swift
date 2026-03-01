@@ -237,7 +237,7 @@ struct TripsView: View {
                     TripCarouselCard(
                         trip: trip,
                         onTap: {
-                            withAnimation { tripForPopup = trip }
+                            createBlogFlowTrip = trip
                         }
                     )
                     .containerRelativeFrame(.horizontal, count: 5, span: 4, spacing: 16)
