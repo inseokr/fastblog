@@ -13,27 +13,25 @@ struct TripsView: View {
     @AppStorage("blogify.skipSelectPhotosIntro") private var skipSelectPhotosIntro = false
     @State private var selectedTrip: TripDraft?
     @State private var createBlogFlowTrip: TripDraft?
-    /// Sheet offset from top: 0 = expanded (list full), positive = pulled down (map revealed).
-    @State private var sheetOffset: CGFloat = 0
-    @State private var dragStartSheetOffset: CGFloat = 0
     @State private var mapPosition: MapCameraPosition = .automatic
-    /// Top of scroll content in sheet coordinate space. At top when >= -10.
-    @State private var scrollContentMinY: CGFloat = 0
-    /// Latch state for the drag gesture: true = we are pulling the sheet; false = we are scrolling the list; nil = undetermined (start of gesture).
-    @State private var isSheetGestureValid: Bool? = nil
+    @State private var tripForPopup: TripDraft?
+    @State private var selectedTripID: UUID?
 
     init(viewModel: TripsViewModel, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         _viewModel = ObservedObject(wrappedValue: viewModel)
         _selectedCreatedRecap = selectedCreatedRecap
     }
 
-    @State private var tripForPopup: TripDraft?
-
     private var shouldShowSelectPhotosIntro: Bool {
         viewModel.scanState == .idle
             && !viewModel.tripDrafts.isEmpty
             && !skipSelectPhotosIntro
             && viewModel.showSelectPhotosIntroAfterScan
+    }
+
+    /// All visible trips sorted newest first — flat list for carousel.
+    private var allTrips: [TripDraft] {
+        viewModel.visibleDraftTripsNewestFirst
     }
 
     var body: some View {
@@ -77,7 +75,6 @@ struct TripsView: View {
         .onChange(of: selectedCreatedRecap) { old, new in
             if new == nil && createdRecapStore.pendingRecapCreated {
                 createdRecapStore.pendingRecapCreated = false
-                // Banner removed — shown in RecapBlogPageView on first save
             }
         }
         .overlay {
@@ -87,75 +84,15 @@ struct TripsView: View {
         }
     }
 
-    // ... (rest of the file until myDraftsSection) ...
-    // Note: I cannot replace the whole file easily. I will execute multiple replacements or chunks.
-    // Wait, the instruction said "1. Add tripForPopup... 2. Implementation... 3. Update TripDraftRow... 4. Update sections...".
-    // I should probably use `multi_replace_file_content` for better precision if I can't comfortably replace a large chunk.
-    // However, `TripsView` is 731 lines.
-    // I will use `multi_replace_file_content`.
-    
-    // Changing strategy to `multi_replace_file_content` in the actual tool call below.
-    // This block is just for the tool call construction logic.
-
-
-    private static let listHorizontalPadding: CGFloat = 20
-    /// Once sheet is pulled down (offset > this), list scroll is locked. Use small value so lock engages immediately.
-    private static let scrollLockThreshold: CGFloat = 0
-    /// Scroll content minY >= this (in sheet space) means user is at top; then pull-down closes the sheet.
-    private static let scrollAtTopTolerance: CGFloat = 1
-    /// Collapsed snap = this fraction of screen height (map revealed).
-    private static let collapsedFraction: CGFloat = 0.85
-    /// Height of the grabber handle zone (top of sheet). Drags starting here always control the sheet, not the inner scroll.
-    private static let grabberZoneHeight: CGFloat = 60
-
-    private struct ScrollContentMinYKey: PreferenceKey {
-        static var defaultValue: CGFloat = 0
-        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-    }
-
-    /// Returns a region that fits all coordinates with padding. Places the latest trip (first in newest-first order) in the center-top area of the map.
-    private static func regionFittingCoordinates(
-        _ coords: [CLLocationCoordinate2D],
-        latestCoord: CLLocationCoordinate2D?
-    ) -> MKCoordinateRegion? {
-        guard !coords.isEmpty else { return nil }
-        let lats = coords.map(\.latitude)
-        let lons = coords.map(\.longitude)
-        let minLat = lats.min()!, maxLat = lats.max()!
-        let minLon = lons.min()!, maxLon = lons.max()!
-        let padding = 0.15
-        let lonDelta = max(0.02, (maxLon - minLon) + padding)
-        let centerLon: CLLocationDegrees
-        let centerLat: CLLocationDegrees
-        if let latest = latestCoord {
-            // Position the latest trip at roughly the top 25% of the visible map.
-            // To do this, set the center south of the latest trip so it appears near the top.
-            let allSpanLat = max(0.02, (maxLat - minLat) + padding)
-            // Ensure the span is large enough to also show trips below the center
-            let distBelow = latest.latitude - minLat + padding / 2
-            // The latest trip should be at ~25% from the top → 75% of the span is below it
-            let neededSpan = max(allSpanLat, distBelow / 0.75)
-            let latDelta = neededSpan
-            centerLat = latest.latitude - (latDelta * 0.25)
-            centerLon = latest.longitude
-            return MKCoordinateRegion(
-                center: CLLocationCoordinate2D(latitude: centerLat, longitude: centerLon),
-                span: MKCoordinateSpan(latitudeDelta: latDelta, longitudeDelta: lonDelta)
-            )
-        } else {
-            let latDelta = max(0.02, (maxLat - minLat) + padding)
-            centerLat = (minLat + maxLat) / 2
-            centerLon = (minLon + maxLon) / 2
-            return MKCoordinateRegion(
-                center: CLLocationCoordinate2D(latitude: centerLat, longitude: centerLon),
-                span: MKCoordinateSpan(latitudeDelta: latDelta, longitudeDelta: lonDelta)
-            )
-        }
-    }
+    // MARK: - Main Content
 
     private var mainContent: some View {
-        GeometryReader { geometry in
-            buildMainContentBody(geometry: geometry)
+        ZStack(alignment: .bottom) {
+            // Full-screen interactive map
+            mapViewLayer
+
+            // Carousel + CTA with integrated shadow backdrop
+            bottomOverlay
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
@@ -173,163 +110,209 @@ struct TripsView: View {
                 }
             }
         }
-        .onChange(of: selectedCreatedRecap) { old, new in
-            if new == nil && createdRecapStore.pendingRecapCreated {
-                createdRecapStore.pendingRecapCreated = false
-                // Banner removed — shown in RecapBlogPageView on first save
-            }
-        }
         .overlay(alignment: .top) {
             if createdRecapStore.showDraftSavedToast {
                 draftSavedToast
             }
         }
-
         .onDisappear {
             createdRecapStore.showDraftSavedToast = false
         }
-    }
-
-    private func buildMainContentBody(geometry: GeometryProxy) -> some View {
-        let collapsedSnap = geometry.size.height * Self.collapsedFraction
-        let isScrollLocked = sheetOffset > Self.scrollLockThreshold
-
-        return ZStack(alignment: .top) {
-            mapViewLayer
-            
-            sheetLayer(collapsedSnap: collapsedSnap, isScrollLocked: isScrollLocked)
-        }
-        .onAppear {
-            dragStartSheetOffset = sheetOffset
-        }
-        .onChange(of: geometry.size) { _, _ in
-            // Keep sheet at valid offset when size changes (e.g. rotation)
-            let newCollapsed = geometry.size.height * Self.collapsedFraction
-            if sheetOffset > 0 && sheetOffset >= newCollapsed - 1 {
-                sheetOffset = newCollapsed
-                dragStartSheetOffset = newCollapsed
+        // Bi-directional sync: carousel scroll → map camera
+        .onChange(of: selectedTripID) { _, newID in
+            guard let trip = allTrips.first(where: { $0.id == newID }),
+                  let coord = trip.centerCoordinate else { return }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            withAnimation(.easeInOut(duration: 0.5)) {
+                mapPosition = .region(MKCoordinateRegion(
+                    center: coord,
+                    span: MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
+                ))
             }
         }
     }
+
+    // MARK: - Map Layer
 
     private var mapViewLayer: some View {
         TripsMapView(
             trips: viewModel.visibleDraftTrips,
+            selectedTripID: $selectedTripID,
             mapPosition: $mapPosition,
             onTripTapped: { trip in
-                createBlogFlowTrip = trip
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                    selectedTripID = trip.id
+                }
             }
         )
-        .ignoresSafeArea(edges: .top)
+        .ignoresSafeArea()
         .onAppear {
-            if mapPosition == .automatic, !viewModel.visibleDraftTrips.isEmpty {
-                let coords = viewModel.visibleDraftTrips.compactMap(\.centerCoordinate)
-                let latestCoord = viewModel.visibleDraftTripsNewestFirst.first.flatMap(\.centerCoordinate)
-                if !coords.isEmpty, let region = Self.regionFittingCoordinates(coords, latestCoord: latestCoord) {
-                    mapPosition = .region(region)
+            let trips = allTrips
+            if !trips.isEmpty {
+                // Set initial selection to newest trip
+                selectedTripID = trips.first?.id
+                // Fit all trip coordinates on the map
+                let coords = trips.compactMap(\.centerCoordinate)
+                if !coords.isEmpty {
+                    let lats = coords.map(\.latitude)
+                    let lons = coords.map(\.longitude)
+                    let center = CLLocationCoordinate2D(
+                        latitude: (lats.min()! + lats.max()!) / 2,
+                        longitude: (lons.min()! + lons.max()!) / 2
+                    )
+                    let span = MKCoordinateSpan(
+                        latitudeDelta: max(0.15, (lats.max()! - lats.min()!) * 1.3),
+                        longitudeDelta: max(0.15, (lons.max()! - lons.min()!) * 1.3)
+                    )
+                    mapPosition = .region(MKCoordinateRegion(center: center, span: span))
                 }
             }
         }
     }
 
-    private func sheetLayer(collapsedSnap: CGFloat, isScrollLocked: Bool) -> some View {
-        VStack(spacing: 0) {
-            // Grabber handle
-            RoundedRectangle(cornerRadius: 2.5)
-                .fill(Color.white.opacity(0.4))
-                .frame(width: 36, height: 5)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
+    // MARK: - Dynamic Month Title
 
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 0) {
-                    myDraftsSection
-                    readyToStartSection
-                    Spacer(minLength: 100)
-                }
-                .background(
-                    GeometryReader { g in
-                        Color.clear.preference(
-                            key: ScrollContentMinYKey.self,
-                            value: g.frame(in: .named("sheetScroll")).minY
-                        )
-                    }
-                )
+    private var currentMonthTitle: String {
+        guard let id = selectedTripID,
+              let trip = allTrips.first(where: { $0.id == id }),
+              let date = trip.earliestDate else {
+            // Fallback to first trip
+            if let first = allTrips.first, let date = first.earliestDate {
+                return Self.monthYearFormatter.string(from: date)
             }
-            .coordinateSpace(name: "sheetScroll")
-            .scrollBounceBehavior(.basedOnSize)
-            .scrollDisabled(isScrollLocked)
-            .onPreferenceChange(ScrollContentMinYKey.self) { scrollContentMinY = $0 }
+            return ""
+        }
+        return Self.monthYearFormatter.string(from: date)
+    }
 
+    private static let monthYearFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM yyyy"
+        f.locale = Locale.current
+        return f
+    }()
+
+    // MARK: - Bottom Overlay (Carousel + CTA)
+
+    private var bottomOverlay: some View {
+        VStack(spacing: 14) {
+            if allTrips.isEmpty {
+                emptyState
+            } else {
+                // Dynamic month header
+                if !currentMonthTitle.isEmpty {
+                    Text(currentMonthTitle.uppercased())
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white.opacity(0.7))
+                        .tracking(1.5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 28)
+                        .contentTransition(.numericText())
+                        .animation(.easeInOut(duration: 0.25), value: currentMonthTitle)
+                }
+                tripCarousel
+            }
             findMoreTripsButton
         }
-        .padding(.horizontal, Self.listHorizontalPadding)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20))
-        .overlay(
-            UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                .ignoresSafeArea()
+        .padding(.bottom, 8)
+        .background(
+            LinearGradient(
+                colors: [.clear, Color.black.opacity(0.45), Color.black.opacity(0.65), Color.black.opacity(0.8)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .padding(.top, -60) // extend shadow well above the month header
+            .ignoresSafeArea(.container, edges: .bottom) // extend all the way to screen bottom
+            .allowsHitTesting(false)
         )
-        .ignoresSafeArea(.container, edges: .bottom)
-        .offset(y: sheetOffset)
-        .animation(.interactiveSpring(response: 0.35, dampingFraction: 0.86), value: sheetOffset)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 8)
-                .onChanged { value in
-                    // Latching logic: decide intent at the start of the gesture
-                    if isSheetGestureValid == nil {
-                        // Grabber zone: top portion of sheet always controls sheet drag (not inner scroll)
-                        let inGrabberZone = value.startLocation.y < Self.grabberZoneHeight
-                        let isDraggingDown = value.translation.height > 0
-                        // Valid if: already pulled down (scroll is locked), or dragging down from grabber zone
-                        isSheetGestureValid = (sheetOffset > 0) || (inGrabberZone && isDraggingDown)
-                    }
-                    
-                    guard isSheetGestureValid == true else { return }
+    }
 
-                    // If we started at top but drag UP (scroll down), clamp to 0. 
-                    // If we started at top and drag DOWN (pull release), move sheet.
-                    // If we started with sheet open, move sheet.
-                    
-                    let proposed = dragStartSheetOffset + value.translation.height
-                    // Only allow pulling down (positive offset)
-                    sheetOffset = min(collapsedSnap, max(0, proposed))
-                }
-                .onEnded { value in
-                    defer {
-                        isSheetGestureValid = nil
-                        dragStartSheetOffset = sheetOffset
-                    }
-                    
-                    guard isSheetGestureValid == true else { return }
-                    
-                    let velocity = value.predictedEndTranslation.height - value.translation.height
-                    let mid = collapsedSnap / 2
-                    
-                    if velocity < -50 || (sheetOffset < mid && velocity <= 0) {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
-                            sheetOffset = 0
+    // MARK: - Horizontal Trip Carousel
+
+    private var tripCarousel: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: 16) {
+                ForEach(allTrips) { trip in
+                    TripCarouselCard(
+                        trip: trip,
+                        onTap: {
+                            withAnimation { tripForPopup = trip }
                         }
-                    } else if velocity > 50 || sheetOffset >= mid {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
-                            sheetOffset = collapsedSnap
-                        }
+                    )
+                    .containerRelativeFrame(.horizontal, count: 5, span: 4, spacing: 16)
+                    .scrollTransition(.animated(.spring(response: 0.35, dampingFraction: 0.8))) { content, phase in
+                        content
+                            .opacity(phase.isIdentity ? 1.0 : 0.55)
+                            .scaleEffect(phase.isIdentity ? 1.0 : 0.88)
+                            .offset(y: phase.isIdentity ? 0 : 8)
                     }
                 }
-        )
-        .onChange(of: sheetOffset) { _, newValue in
-            if newValue == 0 {
-                dragStartSheetOffset = 0
-            } else if abs(newValue - collapsedSnap) < 1 {
-                dragStartSheetOffset = collapsedSnap
             }
+            .scrollTargetLayout()
+        }
+        .scrollTargetBehavior(.viewAligned)
+        .scrollPosition(id: $selectedTripID)
+        .contentMargins(.horizontal, 24)
+        .frame(height: 240)
+    }
+
+    // MARK: - Empty State
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Text(viewModel.hasPerformedCustomScan ? "No trips found in this range" : "No trips found in the last 90 days")
+                .font(.headline)
+                .foregroundColor(.white)
+            Text("Try scanning a different date range")
+                .font(.subheadline)
+                .foregroundColor(.white.opacity(0.6))
+        }
+        .padding(.horizontal, 32)
+        .padding(.vertical, 24)
+        .frame(maxWidth: .infinity)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal, 24)
+    }
+
+    // MARK: - Find More Trips CTA
+
+    private var findMoreTripsButton: some View {
+        Button {
+            viewModel.openFindMoreSheet()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 14, weight: .semibold))
+                Text("Scan Photos for More Trips")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+            }
+            .foregroundColor(.white.opacity(0.9))
+            .padding(.horizontal, 28)
+            .padding(.vertical, 13)
+            .background(
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.18, green: 0.40, blue: 0.78),
+                                Color(red: 0.25, green: 0.35, blue: 0.72)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+            )
+            .clipShape(Capsule())
+            .shadow(color: Color.black.opacity(0.3), radius: 6, y: 3)
+            .shadow(color: Color(red: 0.2, green: 0.35, blue: 0.7).opacity(0.15), radius: 10, y: 2)
         }
     }
 
+    // MARK: - Toast
 
-    
     private var draftSavedToast: some View {
         HStack(spacing: 12) {
             Image(systemName: "checkmark.circle.fill")
@@ -373,171 +356,7 @@ struct TripsView: View {
         }
     }
 
-    /// Success notification card: icon, title, "Tap to view", optional dismiss. Auto-dismisses after 6s; tap opens latest blog.
-    private var recapCreatedBanner: some View {
-        HStack(spacing: 14) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.title2)
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [Color(red: 0.2, green: 0.7, blue: 1), Color(red: 0.3, green: 0.5, blue: 1)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Your recap blog is ready!")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                Text("Available in your Profile")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.75))
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Button {
-                createdRecapStore.dismissRecapCreatedBanner()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                .font(.title3)
-                .foregroundStyle(.white.opacity(0.5))
-                .symbolRenderingMode(.hierarchical)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                )
-        )
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
-        .onTapGesture {
-            if let latest = createdRecapStore.displayRecents.first {
-                selectedCreatedRecap = latest
-            }
-            createdRecapStore.dismissRecapCreatedBanner()
-        }
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
-                createdRecapStore.dismissRecapCreatedBanner()
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var myDraftsSection: some View {
-        if !viewModel.myDraftsNewestFirst.isEmpty {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("My Drafts")
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-            Text("Continue where you left off")
-                .font(.subheadline)
-                .foregroundColor(.white.opacity(0.9))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 20)
-        .padding(.bottom, 16)
-
-        VStack(alignment: .leading, spacing: 16) {
-            ForEach(viewModel.myDraftsGroupedByMonth, id: \.monthKey) { group in
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(group.displayTitle)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white.opacity(0.85))
-                        ForEach(group.trips) { trip in
-                            TripDraftRow(
-                                trip: trip,
-                                onCoverTapped: { createBlogFlowTrip = trip },
-                                onTextTapped: { withAnimation { tripForPopup = trip } }
-                            )
-                        }
-                }
-            }
-        }
-        .padding(.bottom, 24)
-        }
-    }
-
-    @ViewBuilder
-    private var readyToStartSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Your Trips")
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-            Text("Turn photos into recap blogs")
-                .font(.subheadline)
-                .foregroundColor(.white.opacity(0.7))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, 24)
-
-        if viewModel.readyToStartNewestFirst.isEmpty && viewModel.myDraftsNewestFirst.isEmpty {
-            emptyScanState
-        } else if viewModel.readyToStartNewestFirst.isEmpty {
-            Text("No new trips. Tap Find More Trips to scan.")
-                .font(.subheadline)
-                .foregroundColor(.white.opacity(0.7))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-        } else {
-            VStack(alignment: .leading, spacing: 16) {
-                ForEach(viewModel.readyToStartGroupedByMonth, id: \.monthKey) { group in
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(group.displayTitle)
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white.opacity(0.85))
-                        ForEach(group.trips) { trip in
-                            TripDraftRow(
-                                trip: trip,
-                                onCoverTapped: { createBlogFlowTrip = trip },
-                                onTextTapped: { withAnimation { tripForPopup = trip } }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var emptyScanState: some View {
-        VStack(spacing: 12) {
-            Text(viewModel.hasPerformedCustomScan ? "No trips found in this date range" : "No trips found in the last 90 days")
-                .font(.headline)
-                .foregroundColor(.white)
-                .multilineTextAlignment(.center)
-            Text(viewModel.hasPerformedCustomScan ? "Try changing the date range" : "Try changing the date range or scan older months")
-                .font(.subheadline)
-                .foregroundColor(.white.opacity(0.7))
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 24)
-        .padding(.top, 32)
-    }
-
-    private var findMoreTripsButton: some View {
-        Button("Find More Trips") {
-            viewModel.openFindMoreSheet()
-        }
-        .font(.headline)
-        .foregroundColor(Color(white: 0.45))
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(Color.white)
-        .cornerRadius(12)
-        .padding(.top, 16)
-        .padding(.bottom, 28)
-    }
+    // MARK: - Blog Creation Popup
 
     private func blogCreationPopup(trip: TripDraft) -> some View {
         ZStack {
@@ -574,7 +393,6 @@ struct TripsView: View {
 
                     Button {
                         withAnimation { tripForPopup = nil }
-                        // Allow animation to finish slightly before opening the cover
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                             createBlogFlowTrip = trip
                         }
@@ -591,8 +409,14 @@ struct TripsView: View {
                 .padding(.horizontal)
             }
             .padding(.vertical, 24)
-            .background(Color(red: 0.15, green: 0.15, blue: 0.15))
-            .cornerRadius(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+            )
             .shadow(radius: 20)
             .padding(.horizontal, 40)
             .transition(.scale.combined(with: .opacity))
@@ -601,74 +425,93 @@ struct TripsView: View {
     }
 }
 
-struct TripDraftRow: View {
-    let trip: TripDraft
-    var onCoverTapped: () -> Void = {}
-    var onTextTapped: () -> Void = {}
+// MARK: - Trip Carousel Card
 
-    private static let cardCornerRadius: CGFloat = 12
-    private static let contentPadding: CGFloat = 16
-    private static let draftBadgePadding: CGFloat = 14
+struct TripCarouselCard: View {
+    let trip: TripDraft
+    var onTap: () -> Void = {}
+
+    private static let cornerRadius: CGFloat = 18
+
+    private var durationText: String {
+        let count = trip.days.count
+        return count == 1 ? "1 day" : "\(count) days"
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            coverSection
-            textSection
-        }
-        .background(Color(white: 0.12))
-        .clipShape(RoundedRectangle(cornerRadius: Self.cardCornerRadius))
-    }
+        // Cover image as the base
+        TripCoverImage(trip: trip)
+            .frame(height: 220)
+            .scaleEffect(1.05)
+            .clipped()
+            // Dark gradient at bottom for text contrast
+            .overlay(alignment: .bottom) {
+                LinearGradient(
+                    colors: [.clear, Color.black.opacity(0.8)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 120)
+            }
+            // Trip info — bottom left
+            .overlay(alignment: .bottomLeading) {
+                VStack(alignment: .leading, spacing: 5) {
+                    // Trip title
+                    Text(trip.defaultBlogTitle)
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .lineLimit(1)
 
-    private var coverSection: some View {
-        ZStack(alignment: .topLeading) {
-            TripCoverImage(theme: trip.coverTheme, coverAssetIdentifier: trip.coverAssetIdentifier)
-                .aspectRatio(16/10, contentMode: .fill)
-                .frame(height: 180)
-                .clipped()
+                    // Date range + duration
+                    Text("\(trip.tripDateRangeDisplayText)  ·  \(durationText)")
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.7))
 
-            Text("\(trip.totalPhotoCount) Photos")
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(.white.opacity(0.9))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.black.opacity(0.55))
-                .cornerRadius(6)
-                .padding(Self.draftBadgePadding)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onCoverTapped)
-    }
-
-    private var textSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(tripCardTitleLine)
-                .font(.headline)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-            Text(trip.tripDateRangeDisplayText)
-                .font(.subheadline)
-                .foregroundColor(Color(white: 0.6))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Self.contentPadding)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onTextTapped)
-    }
-
-    /// "Trip to [City Name] in [Season]" (e.g. "Trip to Daegu in Winter"). Season empty when unknown. Matches defaultBlogTitle used when editing the blog title.
-    private var tripCardTitleLine: String {
-        trip.defaultBlogTitle
+                    // Photo count glass pill
+                    HStack(spacing: 4) {
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 9, weight: .semibold))
+                        Text("\(trip.totalPhotoCount) Photos")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundColor(.white.opacity(0.9))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                }
+                .padding(14)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+            .shadow(color: .black.opacity(0.4), radius: 12, y: 6)
+            .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+            .onTapGesture(perform: onTap)
     }
 }
+
+// MARK: - TripCoverImage
 
 /// Photo-like cover gradients keyed by theme (Iceland = aurora, Morocco = lanterns, etc.). When coverAssetIdentifier is set, shows that photo from the library.
 struct TripCoverImage: View {
     let theme: String
     var coverAssetIdentifier: String? = nil
     var targetSize: CGSize = CGSize(width: 600, height: 400)
+
+    init(theme: String, coverAssetIdentifier: String? = nil, targetSize: CGSize = CGSize(width: 600, height: 400)) {
+        self.theme = theme
+        self.coverAssetIdentifier = coverAssetIdentifier
+        self.targetSize = targetSize
+    }
+
+    /// Convenience init from a TripDraft.
+    init(trip: TripDraft, targetSize: CGSize = CGSize(width: 600, height: 400)) {
+        self.theme = trip.coverTheme
+        self.coverAssetIdentifier = trip.coverAssetIdentifier
+        self.targetSize = targetSize
+    }
 
     var body: some View {
         ZStack {
@@ -791,7 +634,6 @@ struct TripCoverImage: View {
         }
     }
 
-    /// If you add images to Assets (e.g. IcelandCover, MoroccoCover), they'll show here
     @ViewBuilder
     private var optionalAssetOverlay: some View {
         let capName = "\(theme.prefix(1).uppercased())\(theme.dropFirst())Cover"
