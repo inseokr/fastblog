@@ -194,9 +194,17 @@ struct TripsView: View {
         let collapsedSnap = geometry.size.height * Self.collapsedFraction
         let isScrollLocked = sheetOffset > Self.scrollLockThreshold
 
+        // Map clarity: 0 = sheet at top (blurred), 1 = sheet collapsed (clear)
+        let mapRevealFraction = collapsedSnap > 0 ? min(1, sheetOffset / collapsedSnap) : 0
+        let mapBlur = 3.0 * (1.0 - mapRevealFraction)
+        let mapDim = 0.12 * (1.0 - mapRevealFraction)
+
         return ZStack(alignment: .top) {
             mapViewLayer
-            
+                .blur(radius: mapBlur)
+                .overlay(Color.black.opacity(mapDim))
+                .animation(.easeOut(duration: 0.2), value: mapRevealFraction)
+
             sheetLayer(collapsedSnap: collapsedSnap, isScrollLocked: isScrollLocked)
         }
         .onAppear {
@@ -265,11 +273,35 @@ struct TripsView: View {
         }
         .padding(.horizontal, Self.listHorizontalPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
+        .background(
+            ZStack {
+                // Base: charcoal → deep navy gradient
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.08, green: 0.08, blue: 0.10),
+                        Color(red: 0.04, green: 0.05, blue: 0.15)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                // Frosted glass layer
+                Rectangle().fill(.ultraThinMaterial).opacity(0.35)
+                // Soft inner shadow at top edge
+                VStack {
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.04), Color.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 40)
+                    Spacer()
+                }
+            }
+        )
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20))
         .overlay(
             UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
                 .ignoresSafeArea()
         )
         .ignoresSafeArea(.container, edges: .bottom)
@@ -308,11 +340,14 @@ struct TripsView: View {
                     let velocity = value.predictedEndTranslation.height - value.translation.height
                     let mid = collapsedSnap / 2
                     
+                    let haptic = UIImpactFeedbackGenerator(style: .light)
                     if velocity < -50 || (sheetOffset < mid && velocity <= 0) {
+                        haptic.impactOccurred()
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
                             sheetOffset = 0
                         }
                     } else if velocity > 50 || sheetOffset >= mid {
+                        haptic.impactOccurred()
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
                             sheetOffset = collapsedSnap
                         }
@@ -432,26 +467,32 @@ struct TripsView: View {
     @ViewBuilder
     private var myDraftsSection: some View {
         if !viewModel.myDraftsNewestFirst.isEmpty {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("My Drafts")
                 .font(.title2)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
             Text("Continue where you left off")
-                .font(.subheadline)
-                .foregroundColor(.white.opacity(0.9))
+                .font(.footnote)
+                .foregroundColor(.white.opacity(0.55))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 20)
-        .padding(.bottom, 16)
+        .padding(.top, 28)
+        .padding(.bottom, 20)
 
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             ForEach(viewModel.myDraftsGroupedByMonth, id: \.monthKey) { group in
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(group.displayTitle)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white.opacity(0.85))
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(group.displayTitle.uppercased())
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white.opacity(0.55))
+                            .tracking(1.5)
+                        Rectangle()
+                            .fill(Color.white.opacity(0.08))
+                            .frame(height: 0.5)
+                    }
                         ForEach(group.trips) { trip in
                             TripDraftRow(
                                 trip: trip,
@@ -462,22 +503,23 @@ struct TripsView: View {
                 }
             }
         }
-        .padding(.bottom, 24)
+        .padding(.bottom, 32)
         }
     }
 
     @ViewBuilder
     private var readyToStartSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("Your Trips")
                 .font(.title2)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
             Text("Turn photos into recap blogs")
-                .font(.subheadline)
-                .foregroundColor(.white.opacity(0.7))
+                .font(.footnote)
+                .foregroundColor(.white.opacity(0.55))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 8)
         .padding(.bottom, 24)
 
         if viewModel.readyToStartNewestFirst.isEmpty && viewModel.myDraftsNewestFirst.isEmpty {
@@ -489,13 +531,19 @@ struct TripsView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
         } else {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 20) {
                 ForEach(viewModel.readyToStartGroupedByMonth, id: \.monthKey) { group in
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(group.displayTitle)
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white.opacity(0.85))
+                    VStack(alignment: .leading, spacing: 18) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(group.displayTitle.uppercased())
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white.opacity(0.55))
+                                .tracking(1.5)
+                            Rectangle()
+                                .fill(Color.white.opacity(0.08))
+                                .frame(height: 0.5)
+                        }
                         ForEach(group.trips) { trip in
                             TripDraftRow(
                                 trip: trip,
@@ -526,16 +574,37 @@ struct TripsView: View {
     }
 
     private var findMoreTripsButton: some View {
-        Button("Find More Trips") {
+        Button {
             viewModel.openFindMoreSheet()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 14, weight: .semibold))
+                Text("Scan Photos for More Trips")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 14)
+            .background(
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.0, green: 0.45, blue: 1.0),
+                                Color(red: 0.25, green: 0.35, blue: 0.95)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+            )
+            .clipShape(Capsule())
+            .shadow(color: Color(red: 0.1, green: 0.3, blue: 1.0).opacity(0.35), radius: 12, y: 4)
         }
-        .font(.headline)
-        .foregroundColor(Color(white: 0.45))
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(Color.white)
-        .cornerRadius(12)
-        .padding(.top, 16)
+        .padding(.top, 20)
         .padding(.bottom, 28)
     }
 
@@ -605,9 +674,10 @@ struct TripDraftRow: View {
     let trip: TripDraft
     var onCoverTapped: () -> Void = {}
     var onTextTapped: () -> Void = {}
+    @State private var isPressed = false
 
-    private static let cardCornerRadius: CGFloat = 12
-    private static let contentPadding: CGFloat = 16
+    private static let cardCornerRadius: CGFloat = 16
+    private static let contentPadding: CGFloat = 18
     private static let draftBadgePadding: CGFloat = 14
 
     var body: some View {
@@ -617,43 +687,64 @@ struct TripDraftRow: View {
         }
         .background(Color(white: 0.12))
         .clipShape(RoundedRectangle(cornerRadius: Self.cardCornerRadius))
+        .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+        .scaleEffect(isPressed ? 0.97 : 1.0)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isPressed)
+        .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
+            isPressed = pressing
+        }, perform: {})
     }
 
     private var coverSection: some View {
         ZStack(alignment: .topLeading) {
             TripCoverImage(theme: trip.coverTheme, coverAssetIdentifier: trip.coverAssetIdentifier)
                 .aspectRatio(16/10, contentMode: .fill)
-                .frame(height: 180)
+                .frame(height: 190)
+                .scaleEffect(1.05)
                 .clipped()
+                .overlay(alignment: .bottom) {
+                    // Cinematic bottom gradient
+                    LinearGradient(
+                        colors: [.clear, Color.black.opacity(0.4)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 60)
+                }
 
-            Text("\(trip.totalPhotoCount) Photos")
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(.white.opacity(0.9))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.black.opacity(0.55))
-                .cornerRadius(6)
-                .padding(Self.draftBadgePadding)
+            // Glass photo count pill
+            HStack(spacing: 5) {
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                Text("\(trip.totalPhotoCount)")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial)
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+            .padding(Self.draftBadgePadding)
         }
         .contentShape(Rectangle())
         .onTapGesture(perform: onCoverTapped)
     }
 
     private var textSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 5) {
             Text(tripCardTitleLine)
                 .font(.headline)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
             Text(trip.tripDateRangeDisplayText)
-                .font(.subheadline)
-                .foregroundColor(Color(white: 0.6))
+                .font(.caption)
+                .foregroundColor(Color(white: 0.50))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Self.contentPadding)
+        .padding(.horizontal, Self.contentPadding)
+        .padding(.vertical, Self.contentPadding)
         .contentShape(Rectangle())
         .onTapGesture(perform: onTextTapped)
     }
