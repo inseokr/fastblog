@@ -56,23 +56,17 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 #if canImport(FoundationModels)
     @available(iOS 26.0, *)
     private func generateCaptionWithLLM(context: PhotoCaptionContext) async -> String? {
-        let tagsLine = context.tags.isEmpty ? "no specific tags" : context.tags.prefix(8).joined(separator: ", ")
-        let placeLine = [context.placeName, context.placeSubtitle]
-            .compactMap { $0 }
-            .filter { !$0.isEmpty }
-            .joined(separator: ", ")
-        let placePart = placeLine.isEmpty ? "" : " Place: \(placeLine)."
-        let timePart = context.dateTimeText.isEmpty ? "" : " When: \(context.dateTimeText)."
+        let tagsLine = context.tags.isEmpty ? "general photo" : context.tags.prefix(8).joined(separator: ", ")
 
         let instructions = """
-            You write short, warm photo captions for a travel blog. Be concise (1–2 sentences), evocative. \
-            No hashtags or emoji. Do not use first person (no "I", "we", "my") — the people in the photo could be anyone; write in a neutral or descriptive tone. \
-            Output only the caption. No preamble like "Here is a short caption" or "Sure, here is..." — just the caption text.
+            You write short, vivid photo captions for a travel blog. \
+            One concise sentence based only on the photo tags provided. \
+            No hashtags or emoji. No first person (no "I", "we", "my"). \
+            Output only the caption text. No preamble like "Here is a caption" — just the caption.
             """
         let prompt = """
-            Write one short blog-style caption for this photo. \
-            Image tags: \(tagsLine).\(placePart)\(timePart) \
-            Output only the caption text. No introduction, no "Here is...", no first person (I/we/my).
+            Write one short caption for a travel photo with these tags: \(tagsLine). \
+            Output only the caption text. No introduction, no first person (I/we/my).
             """
 
         return await runSession(instructions: instructions, prompt: prompt)

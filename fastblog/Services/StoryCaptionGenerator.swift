@@ -11,9 +11,6 @@ import Foundation
 /// Input context for generating a single photo caption.
 struct PhotoCaptionContext {
     let tags: [String]
-    let placeName: String
-    let placeSubtitle: String?
-    let dateTimeText: String
 }
 
 /// Input context for generating a place-level story (note for the whole stop).
@@ -54,27 +51,13 @@ final class TemplateStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         try? await Task.sleep(nanoseconds: 300_000_000)
 
         let tagPart = context.tags.prefix(5).joined(separator: ", ")
-        let placePart = [context.placeName, context.placeSubtitle].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
-        let timePart = context.dateTimeText
 
-        if context.tags.isEmpty && placePart.isEmpty && timePart.isEmpty {
+        if tagPart.isEmpty {
             return "A moment worth remembering."
         }
 
-        // Blog-style: one or two short sentences, evocative
-        if !placePart.isEmpty && !tagPart.isEmpty {
-            if timePart.isEmpty {
-                return "\(placePart) — \(tagPart). A spot we’ll remember."
-            }
-            return "\(placePart), \(timePart). This one captures \(tagPart)."
-        }
-        if !placePart.isEmpty {
-            return timePart.isEmpty ? "Stopped at \(placePart)." : "\(placePart) at \(timePart)."
-        }
-        if !tagPart.isEmpty {
-            return "This photo: \(tagPart)." + (timePart.isEmpty ? "" : " \(timePart).")
-        }
-        return timePart.isEmpty ? "A moment worth remembering." : timePart
+        // Concise blog-style: one short sentence based only on photo content.
+        return "This photo: \(tagPart)."
     }
 
     func generatePlaceStory(context: PlaceStoryContext) async -> String {

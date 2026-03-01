@@ -62,16 +62,7 @@ actor StoryCaptionService {
         } else {
             tags = []
         }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "d MMM yyyy 'at' h:mm a"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        let dateTimeText = formatter.string(from: photo.timestamp)
-        let context = PhotoCaptionContext(
-            tags: tags,
-            placeName: placeName,
-            placeSubtitle: placeSubtitle,
-            dateTimeText: dateTimeText
-        )
+        let context = PhotoCaptionContext(tags: tags)
         return await generator.generateCaption(context: context)
     }
 
@@ -138,4 +129,5 @@ actor StoryCaptionService {
         )
         return await generator.generateOverallPlaceStory(context: context)
     }
+
 }
