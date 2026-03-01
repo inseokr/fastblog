@@ -45,6 +45,8 @@ struct PlacePhotoModalView: View {
     @State private var captionWhenEditingStarted: String = ""
     @State private var titleWhenEditingStarted: String = ""
     @State private var debounceTask: Task<Void, Never>?
+    @State private var showSaveConfirmationAlert = false
+    @State private var resolvedTimeZoneByPhotoId: [UUID: TimeZone] = [:]
     @FocusState private var isCaptionFocused: Bool
 
     /// Derives the UTC offset from the EXIF digitized local time vs photo timestamps.
