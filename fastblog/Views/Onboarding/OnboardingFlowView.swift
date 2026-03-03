@@ -11,7 +11,8 @@ enum OnboardingStep {
     case problemStatement
     case neighborhoodIntro
     case neighborhood
-    case photoPermission
+    case photoPermissionOnboarding
+    case photoPermissionDenied
 }
 
 struct OnboardingFlowView: View {
@@ -36,26 +37,29 @@ struct OnboardingFlowView: View {
                 }
             } else if step == .neighborhood {
                 NeighborhoodSelectionView {
-                    step = .photoPermission
+                    step = .photoPermissionOnboarding
                 }
+            } else if step == .photoPermissionOnboarding {
+                PhotoPermissionOnboardingView(photoAuth: photoAuth)
             } else {
                 PhotosPermissionView(
                     status: photoAuth.status,
-                    onRequest: { await photoAuth.requestAccess() },
-                    onOpenSettings: { openSettings() }
-                )
-                .onAppear {
-                    if photoAuth.isAuthorized {
+                    onOpenSettings: { openSettings() },
+                    onContinueWithoutScanning: {
                         OnboardingStore.hasCompletedOnboarding = true
                         onComplete()
                     }
-                }
+                )
             }
         }
         .onChange(of: photoAuth.status) { _, newStatus in
-            if case .photoPermission = step, newStatus == .authorized || newStatus == .limited {
-                OnboardingStore.hasCompletedOnboarding = true
-                onComplete()
+            if step == .photoPermissionOnboarding || step == .photoPermissionDenied {
+                if newStatus == .authorized || newStatus == .limited {
+                    OnboardingStore.hasCompletedOnboarding = true
+                    onComplete()
+                } else if newStatus == .denied || newStatus == .restricted {
+                    step = .photoPermissionDenied
+                }
             }
         }
     }

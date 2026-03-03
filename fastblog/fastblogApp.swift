@@ -15,6 +15,8 @@ struct fastblogApp: App {
     @StateObject private var splashManager = SplashStateManager()
     @AppStorage("blogify.hasCompletedOnboarding") private
         var hasCompletedOnboarding = false
+    @AppStorage("blogify.justFinishedOnboarding") private
+        var justFinishedOnboarding = false
     @AppStorage("blogify.hasCheckedExistingUser") private
         var hasCheckedExistingUser = false
     @Environment(\.scenePhase) private var scenePhase
@@ -92,6 +94,7 @@ struct fastblogApp: App {
                     if !hasCompletedOnboarding {
                         OnboardingFlowView {
                             hasCompletedOnboarding = true
+                            justFinishedOnboarding = true
                             photoAuth.refreshStatus()
                         }
                     } else if photoAuth.isAuthorized {
@@ -99,8 +102,11 @@ struct fastblogApp: App {
                     } else {
                         PhotosPermissionView(
                             status: photoAuth.status,
-                            onRequest: { await photoAuth.requestAccess() },
-                            onOpenSettings: { openSettings() }
+                            onOpenSettings: { openSettings() },
+                            onContinueWithoutScanning: {
+                                hasCompletedOnboarding = true
+                                justFinishedOnboarding = true
+                            }
                         )
                     }
                 }

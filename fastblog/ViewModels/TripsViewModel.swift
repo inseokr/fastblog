@@ -33,11 +33,46 @@ final class TripsViewModel: ObservableObject {
     /// True if the user has performed at least one custom scan via the Find More sheet.
     @Published var hasPerformedCustomScan: Bool = false
 
+    /// Progress of the Find More scan (0.0 → 1.0).
+    @Published var findMoreScanProgress: Double = 0
+
     /// Start/End year+month selected in the Find More sheet. Only scanned when user taps Scan.
-    @Published var findMoreStartYear: Int = Calendar.current.component(.year, from: Date())
-    @Published var findMoreStartMonth: Int = Calendar.current.component(.month, from: Date())
-    @Published var findMoreEndYear: Int = Calendar.current.component(.year, from: Date())
-    @Published var findMoreEndMonth: Int = Calendar.current.component(.month, from: Date())
+    @Published var findMoreStartYear: Int = Calendar.current.component(.year, from: Date()) {
+        didSet { enforceDateRangeConsistency(fromStart: true) }
+    }
+    @Published var findMoreStartMonth: Int = Calendar.current.component(.month, from: Date()) {
+        didSet { enforceDateRangeConsistency(fromStart: true) }
+    }
+    @Published var findMoreEndYear: Int = Calendar.current.component(.year, from: Date()) {
+        didSet { enforceDateRangeConsistency(fromStart: false) }
+    }
+    @Published var findMoreEndMonth: Int = Calendar.current.component(.month, from: Date()) {
+        didSet { enforceDateRangeConsistency(fromStart: false) }
+    }
+    
+    private var isEnforcingDateRange = false
+    
+    private func enforceDateRangeConsistency(fromStart: Bool) {
+        guard !isEnforcingDateRange else { return }
+        isEnforcingDateRange = true
+        defer { isEnforcingDateRange = false }
+        
+        if findMoreStartYear > findMoreEndYear {
+            if fromStart {
+                findMoreEndYear = findMoreStartYear
+            } else {
+                findMoreStartYear = findMoreEndYear
+            }
+        }
+        
+        if findMoreStartYear == findMoreEndYear && findMoreStartMonth > findMoreEndMonth {
+            if fromStart {
+                findMoreEndMonth = findMoreStartMonth
+            } else {
+                findMoreStartMonth = findMoreEndMonth
+            }
+        }
+    }
     
     // MARK: - NLP Parsing State
     @Published var findMoreChatInput: String = ""
@@ -49,6 +84,9 @@ final class TripsViewModel: ObservableObject {
     /// Tracks whether the Find More sheet has been opened at least once this session.
     /// Stays `false` until after the first open; reset only happens on first open (cold start).
     private var hasOpenedFindMoreSheet: Bool = false
+
+    /// Tracks the running Find More scan task so it can be cancelled.
+    private var findMoreScanTask: Task<Void, Never>?
 
     private let photoLibraryService = PhotoLibraryTripService.shared
     private let mockService = MockTripDataService.shared
@@ -294,13 +332,14 @@ final class TripsViewModel: ObservableObject {
     func scanFindMoreTripsInRange() {
         guard !isFindMoreScanning else { return }
         isFindMoreScanning = true
+        findMoreScanProgress = 0
         findMoreScanResult = .none
         let startYear = findMoreStartYear
         let startMonth = findMoreStartMonth
         let endYear = findMoreEndYear
         let endMonth = findMoreEndMonth
         let occupiedRanges = createdRecapStore.occupiedDateRanges()
-        Task {
+        findMoreScanTask = Task {
             // Clear "Ready to Start" trips (previous scan results), keeping only My Drafts
             let myDraftIds = TripDraftStore.draftTripIds()
             tripDrafts = tripDrafts.filter { myDraftIds.contains($0.id) }
@@ -308,8 +347,14 @@ final class TripsViewModel: ObservableObject {
             let newTrips = await photoLibraryService.scanInDateRange(
                 startYear: startYear, startMonth: startMonth,
                 endYear: endYear, endMonth: endMonth,
-                occupiedDateRanges: occupiedRanges
+                occupiedDateRanges: occupiedRanges,
+                progress: { [weak self] value in
+                    Task { @MainActor in
+                        self?.findMoreScanProgress = value
+                    }
+                }
             )
+            guard !Task.isCancelled else { return }
             hasPerformedCustomScan = true
             let existingKeys = Set(tripDrafts.map { "\($0.title)|\($0.dateRangeText)" })
             let saved = createdRecapStore.visibleRecents
@@ -328,6 +373,14 @@ final class TripsViewModel: ObservableObject {
             }
             isFindMoreScanning = false
         }
+    }
+
+    /// Cancel an in-progress Find More scan.
+    func cancelFindMoreScan() {
+        findMoreScanTask?.cancel()
+        findMoreScanTask = nil
+        isFindMoreScanning = false
+        findMoreScanProgress = 0
     }
 
     func dismissFindMoreSheet() {

@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var showSeeAll = false
     @State private var selectedCreatedRecap: CreatedRecapBlog?
     @State private var dismissToLandingRequested = false
+    @AppStorage("blogify.justFinishedOnboarding") private var justFinishedOnboarding = false
 
     init() {
         _tripsViewModel = StateObject(wrappedValue: TripsViewModel(createdRecapStore: CreatedRecapBlogStore.shared))
@@ -78,6 +79,15 @@ struct ContentView: View {
                 } else {
                     showTrips = false
                 }
+            }
+        }
+        .onAppear {
+            if justFinishedOnboarding {
+                justFinishedOnboarding = false
+                if tripsViewModel.tripDrafts.isEmpty {
+                    tripsViewModel.startDefaultScan()
+                }
+                showTrips = true
             }
         }
     }

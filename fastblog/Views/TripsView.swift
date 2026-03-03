@@ -4,18 +4,22 @@
 //
 
 import MapKit
+import Photos
 import SwiftUI
 
 struct TripsView: View {
     @ObservedObject var viewModel: TripsViewModel
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
+    @StateObject private var photoAuth = PhotosAuthorizationManager()
     @AppStorage("blogify.skipSelectPhotosIntro") private var skipSelectPhotosIntro = false
     @State private var selectedTrip: TripDraft?
     @State private var createBlogFlowTrip: TripDraft?
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var tripForPopup: TripDraft?
     @State private var selectedTripID: UUID?
+    /// When true, skip the map-animate-to-trip in onChange (to avoid loop when map pan drives selection).
+    @State private var suppressMapAnimation = false
 
     init(viewModel: TripsViewModel, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         _viewModel = ObservedObject(wrappedValue: viewModel)
@@ -32,6 +36,20 @@ struct TripsView: View {
     /// All visible trips sorted newest first — flat list for carousel.
     private var allTrips: [TripDraft] {
         viewModel.visibleDraftTripsNewestFirst
+    }
+
+    /// Find the trip whose coordinate is closest to a given map center point.
+    private func closestTrip(to center: CLLocationCoordinate2D) -> TripDraft? {
+        let tripsWithCoord = allTrips.compactMap { trip in
+            trip.centerCoordinate.map { (trip, $0) }
+        }
+        guard !tripsWithCoord.isEmpty else { return nil }
+        let centerLoc = CLLocation(latitude: center.latitude, longitude: center.longitude)
+        return tripsWithCoord.min(by: { a, b in
+            let distA = centerLoc.distance(from: CLLocation(latitude: a.1.latitude, longitude: a.1.longitude))
+            let distB = centerLoc.distance(from: CLLocation(latitude: b.1.latitude, longitude: b.1.longitude))
+            return distA < distB
+        })?.0
     }
 
     var body: some View {
@@ -91,8 +109,15 @@ struct TripsView: View {
             // Full-screen interactive map
             mapViewLayer
 
-            // Carousel + CTA with integrated shadow backdrop
-            bottomOverlay
+            VStack(spacing: 0) {
+                if photoAuth.status == .limited {
+                    limitedAccessHelper
+                        .padding(.top, 60)
+                }
+                Spacer()
+                // Carousel + CTA with integrated shadow backdrop
+                bottomOverlay
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
@@ -120,6 +145,10 @@ struct TripsView: View {
         }
         // Bi-directional sync: carousel scroll → map camera
         .onChange(of: selectedTripID) { _, newID in
+            guard !suppressMapAnimation else {
+                suppressMapAnimation = false
+                return
+            }
             guard let trip = allTrips.first(where: { $0.id == newID }),
                   let coord = trip.centerCoordinate else { return }
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -140,8 +169,21 @@ struct TripsView: View {
             selectedTripID: $selectedTripID,
             mapPosition: $mapPosition,
             onTripTapped: { trip in
+                if trip.id == selectedTripID {
+                    createBlogFlowTrip = trip
+                } else {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                        selectedTripID = trip.id
+                    }
+                }
+            },
+            onMapRegionChanged: { center in
+                // Find the trip closest to the map center
+                guard let closest = closestTrip(to: center) else { return }
+                guard closest.id != selectedTripID else { return }
+                suppressMapAnimation = true
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
-                    selectedTripID = trip.id
+                    selectedTripID = closest.id
                 }
             }
         )
@@ -150,20 +192,12 @@ struct TripsView: View {
             let trips = allTrips
             if !trips.isEmpty {
                 // Set initial selection to newest trip
-                selectedTripID = trips.first?.id
-                // Fit all trip coordinates on the map
-                let coords = trips.compactMap(\.centerCoordinate)
-                if !coords.isEmpty {
-                    let lats = coords.map(\.latitude)
-                    let lons = coords.map(\.longitude)
-                    let center = CLLocationCoordinate2D(
-                        latitude: (lats.min()! + lats.max()!) / 2,
-                        longitude: (lons.min()! + lons.max()!) / 2
-                    )
-                    let span = MKCoordinateSpan(
-                        latitudeDelta: max(0.15, (lats.max()! - lats.min()!) * 1.3),
-                        longitudeDelta: max(0.15, (lons.max()! - lons.min()!) * 1.3)
-                    )
+                let firstTrip = trips.first
+                selectedTripID = firstTrip?.id
+                
+                // Center the map on the newest trip's coordinates
+                if let center = firstTrip?.centerCoordinate {
+                    let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
                     mapPosition = .region(MKCoordinateRegion(center: center, span: span))
                 }
             }
@@ -308,6 +342,66 @@ struct TripsView: View {
             .clipShape(Capsule())
             .shadow(color: Color.black.opacity(0.3), radius: 6, y: 3)
             .shadow(color: Color(red: 0.2, green: 0.35, blue: 0.7).opacity(0.15), radius: 10, y: 2)
+        }
+    }
+
+    // MARK: - Limited Access Helper
+
+    private var limitedAccessHelper: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "photo.badge.plus")
+                .foregroundColor(.white)
+                .font(.title3)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Not finding your trip?")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                Text("Add more photos")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.8))
+            }
+            Spacer()
+            
+            Button {
+                presentLimitedLibraryPicker()
+            } label: {
+                Text("Choose Photos")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.white)
+                    .clipShape(Capsule())
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.ultraThinMaterial)
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.15), lineWidth: 1))
+        )
+        .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
+        .padding(.horizontal, 24)
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    private func presentLimitedLibraryPicker() {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootViewController = windowScene.windows.first?.rootViewController else {
+            return
+        }
+        
+        PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: rootViewController) { _ in
+            // Handle post-selection if needed (e.g., re-trigger scan)
+            DispatchQueue.main.async {
+                photoAuth.refreshStatus()
+                if viewModel.tripDrafts.isEmpty {
+                    viewModel.startDefaultScan()
+                }
+            }
         }
     }
 

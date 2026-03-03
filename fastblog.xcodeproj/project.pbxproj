@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		014EFECF22C00C706E3AA554 /* PhotoPermissionOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0B8C01DE7515924E7A5D33 /* PhotoPermissionOnboardingView.swift */; };
+		0B1189F592CFDEDAF3305FAB /* PhotoPermissionOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */; };
 		7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000061 /* GoogleSignIn */; };
 		BB000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000101 /* ContentView.swift */; };
 		BB000104 /* fastblogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000103 /* fastblogApp.swift */; };
@@ -146,6 +148,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		2C0B8C01DE7515924E7A5D33 /* PhotoPermissionOnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhotoPermissionOnboardingView.swift; sourceTree = "<group>"; };
+		3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhotoPermissionOnboardingView.swift; sourceTree = "<group>"; };
 		4E34776F396319FBEE2FCECD /* StoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryCaptionGenerator.swift; sourceTree = "<group>"; };
 		AA000003 /* fastblog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = fastblog.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB000101 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -301,7 +305,7 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		BB0001AD /* main */ = {
+		BB0001AD = {
 			isa = PBXGroup;
 			children = (
 				BB0001AE /* fastblog */,
@@ -447,6 +451,8 @@
 				BB000179 /* OnboardingFlowView.swift */,
 				BB00017B /* OnboardingState.swift */,
 				BB00017D /* SplashView.swift */,
+				3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */,
+				2C0B8C01DE7515924E7A5D33 /* PhotoPermissionOnboardingView.swift */,
 			);
 			path = Onboarding;
 			sourceTree = "<group>";
@@ -562,7 +568,7 @@
 				en,
 				Base,
 			);
-			mainGroup = BB0001AD /* main */;
+			mainGroup = BB0001AD;
 			packageReferences = (
 				AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
@@ -725,6 +731,8 @@
 				BB000217 /* SecureShareToken.swift in Sources */,
 				BB00022C /* SplashStateManager.swift in Sources */,
 				BB000231 /* PhotoAccessRow.swift in Sources */,
+				0B1189F592CFDEDAF3305FAB /* PhotoPermissionOnboardingView.swift in Sources */,
+				014EFECF22C00C706E3AA554 /* PhotoPermissionOnboardingView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

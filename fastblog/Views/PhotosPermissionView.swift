@@ -8,8 +8,8 @@ import SwiftUI
 
 struct PhotosPermissionView: View {
     let status: PHAuthorizationStatus
-    let onRequest: () async -> Void
     let onOpenSettings: () -> Void
+    let onContinueWithoutScanning: () -> Void
 
     private let background = Color(red: 5/255, green: 10/255, blue: 48/255)
 
@@ -34,35 +34,34 @@ struct PhotosPermissionView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
 
-                if status == .notDetermined {
-                    Button {
-                        Task { await onRequest() }
-                    } label: {
-                        Text("Allow Access to Photos")
-                            .font(.headline)
-                            .foregroundColor(background)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(Color.white)
-                            .cornerRadius(12)
-                    }
-                    .padding(.horizontal, 32)
-                    .padding(.top, 8)
-                } else {
-                    Button {
-                        onOpenSettings()
-                    } label: {
-                        Text("Open Settings")
-                            .font(.headline)
-                            .foregroundColor(background)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(Color.white)
-                            .cornerRadius(12)
-                    }
-                    .padding(.horizontal, 32)
-                    .padding(.top, 8)
+                Button {
+                    onOpenSettings()
+                } label: {
+                    Text("Open Settings")
+                        .font(.headline)
+                        .foregroundColor(background)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.white)
+                        .cornerRadius(12)
                 }
+                .padding(.horizontal, 32)
+                .padding(.top, 8)
+                
+                Button {
+                    onContinueWithoutScanning()
+                } label: {
+                    Text("Continue without scanning")
+                        .font(.headline)
+                        .foregroundColor(.white.opacity(0.8))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                        )
+                }
+                .padding(.horizontal, 32)
             }
         }
         .preferredColorScheme(.dark)

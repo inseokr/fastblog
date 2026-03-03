@@ -361,7 +361,7 @@ final class PhotoLibraryTripService {
 
     /// Scan for trips across a start year+month to end year+month (cross-year capable).
     /// Falls through to the single-year variant when both years match.
-    func scanInDateRange(startYear: Int, startMonth: Int, endYear: Int, endMonth: Int, occupiedDateRanges: [(start: Date, end: Date)] = []) async -> [TripDraft] {
+    func scanInDateRange(startYear: Int, startMonth: Int, endYear: Int, endMonth: Int, occupiedDateRanges: [(start: Date, end: Date)] = [], progress: ((Double) -> Void)? = nil) async -> [TripDraft] {
         // Build the actual date span
         var startComps = DateComponents(); startComps.year = startYear; startComps.month = startMonth; startComps.day = 1
         guard let startDate = calendar.date(from: startComps).map({ calendar.startOfDay(for: $0) }) else { return [] }
@@ -369,7 +369,7 @@ final class PhotoLibraryTripService {
         guard let endMonthStart = calendar.date(from: endComps),
               let endDate = calendar.date(byAdding: .month, value: 1, to: endMonthStart) else { return [] }
 
-        return await scanInDateRange(startDate: startDate, endDate: endDate, occupiedDateRanges: occupiedDateRanges)
+        return await scanInDateRange(startDate: startDate, endDate: endDate, occupiedDateRanges: occupiedDateRanges, progress: progress)
     }
 
     /// Scan for trips in a custom year/month range. Uses same local exclusion and segmentation as default scan. Does not use the default-scan cache. Excludes photos in occupiedDateRanges (already-created blogs).
@@ -385,7 +385,7 @@ final class PhotoLibraryTripService {
 
     /// Core date-range scanner used by all public overloads. Fetches photos in [startDate, endDate),
     /// applies local exclusion, groups by day, and returns TripDraft array.
-    private func scanInDateRange(startDate: Date, endDate: Date, occupiedDateRanges: [(start: Date, end: Date)] = []) async -> [TripDraft] {
+    private func scanInDateRange(startDate: Date, endDate: Date, occupiedDateRanges: [(start: Date, end: Date)] = [], progress: ((Double) -> Void)? = nil) async -> [TripDraft] {
         let options = PHFetchOptions()
         options.predicate = NSPredicate(format: "creationDate >= %@ AND creationDate < %@", startDate as NSDate, endDate as NSDate)
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
@@ -397,6 +397,7 @@ final class PhotoLibraryTripService {
             allAssets.append(asset)
         }
         allAssets = filterOutAssetsInOccupiedRanges(allAssets, occupiedDateRanges: occupiedDateRanges)
+        progress?(0.05)
 
         let home = NeighborhoodStore.getNeighborhoodCenter()
         let minMiles = NeighborhoodStore.localExclusionMiles
@@ -409,6 +410,7 @@ final class PhotoLibraryTripService {
                 }
             }
         }
+        progress?(0.15)
 
         guard !remaining.isEmpty else { return [] }
 
@@ -418,8 +420,10 @@ final class PhotoLibraryTripService {
         let dayGroups = await groupAssetsByDay(sortedByDate)
         let sortedDayGroups = dayGroups.sorted { $0.date < $1.date }
         guard !sortedDayGroups.isEmpty else { return [] }
+        progress?(0.25)
 
-        let dayClusters = await buildDayClusters(from: sortedDayGroups)
+        let dayClusters = await buildDayClusters(from: sortedDayGroups, progress: progress)
+        progress?(0.90)
         let groupingResult = DayToTripGrouper.groupDaysIntoTrips(
             days: dayClusters,
             neighborhoodRadiusMiles: ScanConfig.neighborhoodRadiusMiles,
@@ -486,6 +490,7 @@ final class PhotoLibraryTripService {
             )
             trips.append(draft)
         }
+        progress?(1.0)
         return trips
     }
 
@@ -651,7 +656,7 @@ final class PhotoLibraryTripService {
     /// Builds DayCluster for each day group using centroid-only geocoding.
     /// Geocodes only the coarsened day centroid (~1.1km grid) — 1 call per unique area per day
     /// instead of 1 call per unique photo coordinate. Reduces geocoding calls by 10–50×.
-    private func buildDayClusters(from dayGroups: [(date: Date, assets: [PHAsset])]) async -> [DayCluster] {
+    private func buildDayClusters(from dayGroups: [(date: Date, assets: [PHAsset])], progress: ((Double) -> Void)? = nil) async -> [DayCluster] {
         var clusters: [DayCluster] = []
         let total = dayGroups.count
         debugPrint("[Scan] Building \(total) day clusters (centroid-only geocoding)...")
@@ -714,6 +719,12 @@ final class PhotoLibraryTripService {
                 maxDistanceWithinDayMiles: maxDistanceWithinDayMiles,
                 assets: group.assets
             ))
+
+            // Report progress: 0.25 → 0.85 proportional to days processed
+            if total > 0 {
+                let fraction = Double(idx + 1) / Double(total)
+                progress?(0.25 + fraction * 0.60)
+            }
         }
         return clusters
     }

@@ -9,13 +9,19 @@ private let loadingBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
 
 struct LoadingScanView: View {
     var message: String = "Scanning your trips…"
+    /// When true, renders with a semi-transparent blurred background instead of solid navy.
+    var isOverlay: Bool = false
+    /// When non-nil, shows a percentage and drives step labels from real progress instead of timer.
+    var progress: Double? = nil
+    /// When non-nil, shows a gray Cancel button at the bottom.
+    var onCancel: (() -> Void)? = nil
 
     @State private var ringRotation: Double = 0
     @State private var pulseScale: CGFloat = 1
     @State private var stepLabelIndex: Int = 0
     @State private var nodeFade: [Bool] = [false, false, false]
 
-    private let stepLabels = [
+    private let timerStepLabels = [
         "Reading your photo library…",
         "Grouping days into trips…",
         "Almost done…"
@@ -23,14 +29,49 @@ struct LoadingScanView: View {
 
     private let nodeIcons = ["mappin.and.ellipse", "photo.on.rectangle.angled", "sparkles"]
 
+    /// Step label driven by real progress value.
+    private var progressStepLabel: String {
+        guard let p = progress else { return timerStepLabels[stepLabelIndex] }
+        switch p {
+        case ..<0.20: return "Reading your photo library…"
+        case 0.20..<0.40: return "Filtering trip photos…"
+        case 0.40..<0.85: return "Grouping days into trips…"
+        default: return "Almost done…"
+        }
+    }
+
     var body: some View {
         ZStack {
-            loadingBackground
-                .ignoresSafeArea()
+            if isOverlay {
+                // Blur the content behind, then tint with semi-transparent navy
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .ignoresSafeArea()
+                loadingBackground.opacity(0.65)
+                    .ignoresSafeArea()
+            } else {
+                loadingBackground
+                    .ignoresSafeArea()
+            }
 
             VStack(spacing: 36) {
                 scanAnimation
                 messageSection
+
+                if let onCancel {
+                    Button {
+                        onCancel()
+                    } label: {
+                        Text("Cancel")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.7))
+                            .padding(.horizontal, 32)
+                            .padding(.vertical, 10)
+                            .background(Color.white.opacity(0.12))
+                            .cornerRadius(10)
+                    }
+                }
             }
         }
         .preferredColorScheme(.dark)
@@ -103,16 +144,28 @@ struct LoadingScanView: View {
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
 
-            Text(stepLabels[stepLabelIndex])
+            Text(progressStepLabel)
                 .font(.subheadline)
                 .foregroundColor(.white.opacity(0.65))
                 .multilineTextAlignment(.center)
-                .animation(.easeInOut(duration: 0.3), value: stepLabelIndex)
+                .contentTransition(.numericText())
+                .animation(.easeInOut(duration: 0.3), value: progressStepLabel)
 
-            Text("This may take a moment")
-                .font(.caption)
-                .foregroundColor(.white.opacity(0.35))
-                .padding(.top, 4)
+            if let progress {
+                Text("\(Int(progress * 100))%")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white.opacity(0.5))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(.easeInOut(duration: 0.25), value: Int(progress * 100))
+                    .padding(.top, 4)
+            } else {
+                Text("This may take a moment")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.35))
+                    .padding(.top, 4)
+            }
         }
         .padding(.horizontal, 32)
     }
@@ -140,12 +193,14 @@ struct LoadingScanView: View {
             }
         }
 
-        // Cycle step labels
-        for idx in 1..<stepLabels.count {
-            let delay = 1.0 + Double(idx) * 1.4
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    stepLabelIndex = idx
+        // Cycle step labels only when no real progress is driving them
+        if progress == nil {
+            for idx in 1..<timerStepLabels.count {
+                let delay = 1.0 + Double(idx) * 1.4
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        stepLabelIndex = idx
+                    }
                 }
             }
         }

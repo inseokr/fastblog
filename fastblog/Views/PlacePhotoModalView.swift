@@ -699,16 +699,18 @@ struct BottomInfoOverlay: View {
                 .fontWeight(.semibold)
                 .foregroundColor(.white)
             } else {
-                Text(captionText.isEmpty ? placeholder : captionText)
-                    .font(.body)
-                    .foregroundColor(captionText.isEmpty ? .white.opacity(0.6) : .white)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .multilineTextAlignment(.leading)
-                    .padding(10)
-                    .background(.ultraThinMaterial)
-                    .background(Color.black.opacity(0.4))
-                    .cornerRadius(12)
+                if !captionText.isEmpty {
+                    Text(captionText)
+                        .font(.body)
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .multilineTextAlignment(.leading)
+                        .padding(10)
+                        .background(.ultraThinMaterial)
+                        .background(Color.black.opacity(0.4))
+                        .cornerRadius(12)
+                }
             }
         }
         .padding(.horizontal, 20)

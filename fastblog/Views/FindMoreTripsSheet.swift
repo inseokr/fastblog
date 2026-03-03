@@ -38,9 +38,16 @@ struct FindMoreTripsSheet: View {
             .padding(.horizontal, 20)
 
             if viewModel.isFindMoreScanning {
-                loadingOverlay
+                LoadingScanView(
+                    message: "Scanning Photos…",
+                    isOverlay: true,
+                    progress: viewModel.findMoreScanProgress,
+                    onCancel: { viewModel.cancelFindMoreScan() }
+                )
+                .transition(.opacity)
             }
         }
+        .animation(.easeInOut(duration: 0.4), value: viewModel.isFindMoreScanning)
         .preferredColorScheme(.dark)
         .onChange(of: viewModel.findMoreScanResult) { _, result in
             if case .success = result {
@@ -265,24 +272,6 @@ struct FindMoreTripsSheet: View {
         .padding(.bottom, 28)
     }
 
-    // MARK: – Loading overlay
-
-    private var loadingOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.5)
-                .ignoresSafeArea()
-            VStack(spacing: 20) {
-                Text("Scanning Photos...")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                Image("ScanIcon")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 56, height: 56)
-            }
-        }
-    }
 }
 
 #Preview {
