@@ -46,8 +46,10 @@ struct CreateBlogFlowView: View {
                     primaryButtonTitle: existingBlogId != nil ? "Update" : nil
                 )
             case .creating:
-                CreatingRecapView()
-                    .onAppear {
+                CreatingRecapView(onCancel: {
+                    dismiss()
+                })
+                .onAppear {
                         Task {
                             let animationStart = Date()
 

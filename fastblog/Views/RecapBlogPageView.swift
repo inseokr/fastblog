@@ -75,6 +75,8 @@ struct RecapBlogPageView: View {
     @State private var showRestorePlaces = false
     /// Tracks whether AI auto-fill is running so we don't show the blog as empty during generation.
     @State private var isAutoFillingCaptions = false
+    /// The day ID currently having its caption AI-generated (nil when idle).
+    @State private var isGeneratingDayCaptionForDayId: UUID?
 
 
     private enum UndoAction {
@@ -798,13 +800,16 @@ struct RecapBlogPageView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 6) {
                 Text(day.shortDateText)
-                    .font(.title3) // Bigger than previous .headline, smaller than Blog Title (.largeTitle/34)
+                    .font(.title3)
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                 Image(systemName: "sun.max")
                     .foregroundColor(.secondary)
             }
             .padding(.top, 4)
+
+            // Day-level caption — right below the date header
+            dayCaptionRow(day: day)
 
             ForEach(Array(day.placeStops.enumerated()), id: \.element.id) { index, stop in
                 let badgeColor: Color = (index == 0) ? .green : (index == day.placeStops.count - 1 ? .orange : .blue)
@@ -1247,6 +1252,78 @@ struct RecapBlogPageView: View {
                 draft.days[dayIdx] = day
             }
         )
+    }
+
+    private func bindingForDayCaption(dayId: UUID) -> Binding<String> {
+        Binding(
+            get: {
+                draft.days.first(where: { $0.id == dayId })?.dayCaption ?? ""
+            },
+            set: { newValue in
+                guard let idx = draft.days.firstIndex(where: { $0.id == dayId }) else { return }
+                draft.days[idx].dayCaption = newValue.isEmpty ? nil : newValue
+            }
+        )
+    }
+
+    @ViewBuilder
+    private func dayCaptionRow(day: RecapBlogDay) -> some View {
+        let captionBinding = bindingForDayCaption(dayId: day.id)
+        let isGenerating = isGeneratingDayCaptionForDayId == day.id
+        if isEditMode {
+            HStack(alignment: .top, spacing: 8) {
+                TextField("", text: captionBinding, axis: .vertical)
+                    .lineLimit(1...3)
+                    .font(.subheadline)
+                    .foregroundColor(.white)
+                    .padding(12)
+                    .background(Color(white: 0.1))
+                    .cornerRadius(10)
+                    .overlay(alignment: .topLeading) {
+                        if captionBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Text("Describe your day in a sentence…")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary.opacity(0.9))
+                                .padding(12)
+                                .allowsHitTesting(false)
+                        }
+                    }
+
+                Button {
+                    guard !isGenerating else { return }
+                    isGeneratingDayCaptionForDayId = day.id
+                    Task {
+                        let text = await StoryCaptionService.shared.generateDaySummary(day: day)
+                        await MainActor.run {
+                            guard let idx = draft.days.firstIndex(where: { $0.id == day.id }) else { return }
+                            draft.days[idx].dayCaption = text.isEmpty ? nil : text
+                            isGeneratingDayCaptionForDayId = nil
+                            createdRecapStore.saveBlogDetail(draft)
+                        }
+                    }
+                } label: {
+                    if isGenerating {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.8)
+                            .frame(width: 20, height: 20)
+                    } else {
+                        Image(systemName: "wand.and.stars")
+                            .font(.body)
+                            .foregroundColor(.white.opacity(0.9))
+                    }
+                }
+                .disabled(isGenerating)
+                .padding(.top, 12)
+            }
+            .padding(.bottom, 4)
+        } else if !(day.dayCaption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Text(day.dayCaption!)
+                .font(.subheadline)
+                .foregroundColor(.white.opacity(0.9))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 4)
+        }
     }
 
     /// Photo caption is stored per photo (photoID-based); persisted when user taps Save.

@@ -197,7 +197,7 @@ private struct PlaceMarkerView: View {
     }
 
     var body: some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 6) {
             if isFirst && isLast {
                 startEndBadge(text: "START & END", color: Color.green)
             } else if isFirst {

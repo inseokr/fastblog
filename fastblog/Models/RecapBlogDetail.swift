@@ -61,12 +61,15 @@ struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
     var dayIndex: Int
     var date: Date
     var placeStops: [PlaceStop]
+    /// User-written or AI-generated caption for the whole day. Shown right below the day date text.
+    var dayCaption: String?
 
-    init(id: UUID = UUID(), dayIndex: Int, date: Date, placeStops: [PlaceStop]) {
+    init(id: UUID = UUID(), dayIndex: Int, date: Date, placeStops: [PlaceStop], dayCaption: String? = nil) {
         self.id = id
         self.dayIndex = dayIndex
         self.date = date
         self.placeStops = placeStops
+        self.dayCaption = dayCaption
     }
 
     var dateText: String {

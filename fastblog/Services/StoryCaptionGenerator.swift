@@ -32,12 +32,22 @@ struct OverallPlaceStoryContext {
     let dateTimeText: String
 }
 
+/// Input context for generating a one-sentence summary of an entire travel day.
+struct DayStoryContext {
+    /// Human-readable date string (e.g. "Saturday Jan-18").
+    let dayDateText: String
+    /// Each place's overallStory or placeTitle as fallback, in visit order.
+    let placeStories: [String]
+}
+
 /// Provider that generates caption or place story text. Replace with a real local LLM when available.
 protocol StoryCaptionGeneratorProtocol: Sendable {
     func generateCaption(context: PhotoCaptionContext) async -> String
     func generatePlaceStory(context: PlaceStoryContext) async -> String
     /// Very quick one-sentence summary of the place from all photo captions. Shown above/below place and time.
     func generateOverallPlaceStory(context: OverallPlaceStoryContext) async -> String
+    /// One-sentence summary of the whole day from all place stories.
+    func generateDaySummary(context: DayStoryContext) async -> String
 }
 
 /// Template-based generator that weaves tags and metadata into short, blog-like text.
@@ -94,5 +104,15 @@ final class TemplateStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         }
         let first = String(captions[0].prefix(60))
         return first + "… and \(captions.count - 1) more from this spot."
+    }
+
+    func generateDaySummary(context: DayStoryContext) async -> String {
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        let stories = context.placeStories.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        if stories.isEmpty {
+            return context.dayDateText.isEmpty ? "A full day of exploring." : "\(context.dayDateText) — a day to remember."
+        }
+        let names = stories.prefix(3).joined(separator: ", ")
+        return "\(context.dayDateText): \(names)."
     }
 }

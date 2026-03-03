@@ -53,6 +53,17 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         return await templateFallback.generateOverallPlaceStory(context: context)
     }
 
+    func generateDaySummary(context: DayStoryContext) async -> String {
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if let result = await generateDaySummaryWithLLM(context: context) {
+                return result
+            }
+        }
+#endif
+        return await templateFallback.generateDaySummary(context: context)
+    }
+
 #if canImport(FoundationModels)
     @available(iOS 26.0, *)
     private func generateCaptionWithLLM(context: PhotoCaptionContext) async -> String? {
@@ -145,6 +156,35 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         } catch {
             return nil
         }
+    }
+
+    @available(iOS 26.0, *)
+    private func generateDaySummaryWithLLM(context: DayStoryContext) async -> String? {
+        let stories = context.placeStories.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let storiesBlock: String
+        if stories.isEmpty {
+            storiesBlock = "No place stories yet."
+        } else {
+            storiesBlock = stories.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+        }
+        let datePart = context.dayDateText.isEmpty ? "" : " Date: \(context.dayDateText)."
+
+        let instructions = """
+            You write one short, vivid sentence that summarises a travel day for a blog. \
+            You are given place stories from that day. Blend them into a single evocative sentence. \
+            No hashtags or emoji. No first person (no "I", "we", "my"). No date mention. \
+            Output only the sentence. No preamble like "Here is a summary" — just the sentence.
+            """
+        let prompt = """
+            Summarise this travel day into one vivid sentence.\(datePart)
+
+            Place stories:
+            \(storiesBlock)
+
+            Output only the one-sentence day summary. No introduction, no first person (I/we/my).
+            """
+
+        return await runSession(instructions: instructions, prompt: prompt)
     }
 #endif
 }

@@ -22,6 +22,8 @@ struct TripsView: View {
     @State private var suppressMapAnimation = false
     /// True after a scan completes with weak results while access is Limited — gates the top banner.
     @State private var showLimitedBannerAfterWeakScan = false
+    /// Show "Load more trips?" popup when user scrolls to the last trip.
+    @State private var showLoadMorePopup = false
 
     init(viewModel: TripsViewModel, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         _viewModel = ObservedObject(wrappedValue: viewModel)
@@ -102,6 +104,35 @@ struct TripsView: View {
                 blogCreationPopup(trip: trip)
             }
         }
+        .overlay {
+            if showLoadMorePopup && !viewModel.isLoadingOlderTrips {
+                loadMoreTripsPopup
+            }
+        }
+        .overlay {
+            if viewModel.isLoadingOlderTrips {
+                LoadingScanView(
+                    message: "Scanning older photos…",
+                    isOverlay: true,
+                    progress: viewModel.loadOlderProgress,
+                    onCancel: { viewModel.cancelLoadOlderTrips() }
+                )
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.4), value: viewModel.isLoadingOlderTrips)
+        .onChange(of: viewModel.olderTripsResult) { _, result in
+            if case .success = result {
+                // New trips appended — dismiss popup immediately
+                withAnimation(.easeInOut(duration: 0.3)) { showLoadMorePopup = false }
+            } else if case .empty = result {
+                // No older trips found — keep popup open so user sees the message,
+                // then auto-dismiss after 2 seconds
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    withAnimation(.easeInOut(duration: 0.3)) { showLoadMorePopup = false }
+                }
+            }
+        }
     }
 
     // MARK: - Main Content
@@ -171,6 +202,12 @@ struct TripsView: View {
                     center: coord,
                     span: MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
                 ))
+            }
+            // Detect scroll to last (oldest) trip — prompt to load more
+            if newID == allTrips.last?.id && !viewModel.isLoadingOlderTrips {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    showLoadMorePopup = true
+                }
             }
         }
     }
@@ -284,8 +321,17 @@ struct TripsView: View {
                 ForEach(allTrips) { trip in
                     TripCarouselCard(
                         trip: trip,
+                        isSelected: trip.id == selectedTripID,
                         onTap: {
-                            createBlogFlowTrip = trip
+                            if trip.id == selectedTripID {
+                                // Already centered — open blog creation
+                                createBlogFlowTrip = trip
+                            } else {
+                                // Not centered yet — just snap it into focus
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                                    selectedTripID = trip.id
+                                }
+                            }
                         }
                     )
                     .containerRelativeFrame(.horizontal, count: 5, span: 4, spacing: 16)
@@ -378,12 +424,16 @@ struct TripsView: View {
 
     private var findMoreTripsButton: some View {
         Button {
-            viewModel.openFindMoreSheet()
+            if photoAuth.status == .limited {
+                presentLimitedLibraryPicker()
+            } else {
+                viewModel.openFindMoreSheet()
+            }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "sparkle")
+                Image(systemName: photoAuth.status == .limited ? "photo.badge.plus" : "sparkle")
                     .font(.system(size: 14, weight: .semibold))
-                Text("Scan Photos for More Trips")
+                Text(photoAuth.status == .limited ? "Select More Photos" : "Scan Photos for More Trips")
                     .font(.subheadline)
                     .fontWeight(.semibold)
             }
@@ -580,12 +630,138 @@ struct TripsView: View {
         }
         .zIndex(200)
     }
+
+    // MARK: - Load More Trips Popup
+
+    private var loadMoreTripsPopup: some View {
+        ZStack {
+            Color.black.opacity(0.6)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation { showLoadMorePopup = false }
+                }
+
+            VStack(spacing: 20) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 36))
+                    .foregroundColor(.blue)
+
+                Text("Load older trips?")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+
+                Text("Scan photos from the previous 3 months to find more trips.")
+                    .font(.body)
+                    .foregroundColor(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+
+                // Shown after a scan returns with no results
+                if viewModel.olderTripsResult == .empty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(.orange)
+                        Text("No more trips found in this period.")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                    .padding(.horizontal)
+                    .transition(.opacity)
+                }
+
+                VStack(spacing: 10) {
+                    if photoAuth.status == .limited {
+                        // Limited access — offer to upgrade or select more photos
+                        Button {
+                            withAnimation { showLoadMorePopup = false }
+                            openSettings()
+                        } label: {
+                            Text("Allow Full Access")
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color.blue)
+                                .cornerRadius(10)
+                        }
+
+                        Button {
+                            withAnimation { showLoadMorePopup = false }
+                            presentLimitedLibraryPicker()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "photo.badge.plus")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text("Select More Photos")
+                                    .fontWeight(.semibold)
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.white.opacity(0.15))
+                            .cornerRadius(10)
+                        }
+                    } else {
+                        // Full access — one tap starts the scan automatically
+                        Button {
+                            withAnimation { showLoadMorePopup = false }
+                            viewModel.loadOlderTrips()
+                        } label: {
+                            Text("Yes, load more")
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color.blue)
+                                .cornerRadius(10)
+                        }
+                        // Disable while a scan result is already displayed (user should dismiss first)
+                        .disabled(viewModel.olderTripsResult == .empty)
+                    }
+
+                    Button {
+                        withAnimation { showLoadMorePopup = false }
+                    } label: {
+                        Text("Not now")
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.7))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(10)
+                    }
+                }
+                .padding(.horizontal)
+                .animation(.easeInOut(duration: 0.25), value: viewModel.olderTripsResult)
+            }
+            .padding(.vertical, 24)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+            )
+            .shadow(radius: 20)
+            .padding(.horizontal, 40)
+            .transition(.scale.combined(with: .opacity))
+        }
+        .zIndex(200)
+    }
+
+    private func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+    }
 }
 
 // MARK: - Trip Carousel Card
 
 struct TripCarouselCard: View {
     let trip: TripDraft
+    var isSelected: Bool = false
     var onTap: () -> Void = {}
 
     private static let cornerRadius: CGFloat = 18
@@ -641,6 +817,22 @@ struct TripCarouselCard: View {
                     .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
                 }
                 .padding(14)
+            }
+            // Subtle "tap to create" hint only on the selected card
+            .overlay(alignment: .topTrailing) {
+                if isSelected {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.white, Color.blue)
+                        .padding(10)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            // Selection ring
+            .overlay {
+                RoundedRectangle(cornerRadius: Self.cornerRadius)
+                    .stroke(Color.white.opacity(isSelected ? 0.8 : 0), lineWidth: 2)
+                    .animation(.easeInOut(duration: 0.2), value: isSelected)
             }
             .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
             .shadow(color: .black.opacity(0.4), radius: 12, y: 6)

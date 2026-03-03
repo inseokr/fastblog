@@ -36,6 +36,16 @@ final class TripsViewModel: ObservableObject {
     /// Progress of the Find More scan (0.0 → 1.0).
     @Published var findMoreScanProgress: Double = 0
 
+    // MARK: - Load Older Trips State
+    /// The earliest date covered by scanning so far (default scan = now - 90 days).
+    @Published var earliestScannedDate: Date?
+    /// True while the "load older trips" scan is running.
+    @Published var isLoadingOlderTrips: Bool = false
+    /// Progress of the load-older scan (0.0 → 1.0).
+    @Published var loadOlderProgress: Double = 0
+    /// Result of the load-older scan.
+    @Published var olderTripsResult: FindMoreScanResult = .none
+
     /// Start/End year+month selected in the Find More sheet. Only scanned when user taps Scan.
     @Published var findMoreStartYear: Int = Calendar.current.component(.year, from: Date()) {
         didSet { enforceDateRangeConsistency(fromStart: true) }
@@ -87,6 +97,8 @@ final class TripsViewModel: ObservableObject {
 
     /// Tracks the running Find More scan task so it can be cancelled.
     private var findMoreScanTask: Task<Void, Never>?
+    /// Tracks the running load-older scan task so it can be cancelled.
+    private var loadOlderScanTask: Task<Void, Never>?
 
     private let photoLibraryService = PhotoLibraryTripService.shared
     private let mockService = MockTripDataService.shared
@@ -239,6 +251,7 @@ final class TripsViewModel: ObservableObject {
         Task {
             let trips = await photoLibraryService.scanLast3Months(occupiedDateRanges: occupiedRanges)
             tripDrafts = trips
+            earliestScannedDate = Calendar.current.date(byAdding: .day, value: -ScanConfig.windowDays, to: Date())
             scanState = .idle
         }
     }
@@ -398,5 +411,73 @@ final class TripsViewModel: ObservableObject {
     func dismissFindMoreSheet() {
         showFindMoreSheet = false
         findMoreScanResult = .none
+    }
+
+    // MARK: - Load Older Trips
+
+    /// Scan the previous 90 days before `earliestScannedDate`, append new trips, update the window.
+    func loadOlderTrips() {
+        guard !isLoadingOlderTrips, let earliest = earliestScannedDate else { return }
+        isLoadingOlderTrips = true
+        loadOlderProgress = 0
+        olderTripsResult = .none
+
+        let cal = Calendar.current
+        let endDate = earliest
+        guard let startDate = cal.date(byAdding: .day, value: -ScanConfig.windowDays, to: endDate) else {
+            isLoadingOlderTrips = false
+            return
+        }
+
+        let startComps = cal.dateComponents([.year, .month], from: startDate)
+        let endComps = cal.dateComponents([.year, .month], from: endDate)
+        guard let sY = startComps.year, let sM = startComps.month,
+              let eY = endComps.year, let eM = endComps.month else {
+            isLoadingOlderTrips = false
+            return
+        }
+
+        let occupiedRanges = createdRecapStore.occupiedDateRanges()
+        loadOlderScanTask = Task {
+            let newTrips = await photoLibraryService.scanInDateRange(
+                startYear: sY, startMonth: sM,
+                endYear: eY, endMonth: eM,
+                occupiedDateRanges: occupiedRanges,
+                progress: { [weak self] value in
+                    Task { @MainActor in
+                        self?.loadOlderProgress = value
+                    }
+                }
+            )
+            guard !Task.isCancelled else { return }
+
+            let existingKeys = Set(tripDrafts.map { "\($0.title)|\($0.dateRangeText)" })
+            let saved = createdRecapStore.visibleRecents
+            let deduped = newTrips.filter { trip in
+                !existingKeys.contains("\(trip.title)|\(trip.dateRangeText)")
+                && !createdRecapStore.hasCreatedBlog(sourceTripId: trip.id)
+                && !TripMatchingService.isTripSaved(draft: trip, against: saved)
+            }
+
+            if deduped.isEmpty {
+                olderTripsResult = .empty
+            } else {
+                withAnimation {
+                    tripDrafts.append(contentsOf: deduped)
+                }
+                olderTripsResult = .success(deduped.count)
+                showSelectPhotosIntroAfterScan = false
+            }
+            earliestScannedDate = startDate
+            isLoadingOlderTrips = false
+        }
+    }
+
+    /// Cancel an in-progress load-older scan.
+    func cancelLoadOlderTrips() {
+        loadOlderScanTask?.cancel()
+        loadOlderScanTask = nil
+        isLoadingOlderTrips = false
+        loadOlderProgress = 0
     }
 }

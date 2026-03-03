@@ -353,10 +353,74 @@ struct PlacePhotoModalView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if isEditing {
                 if blogIsEditMode {
-                    // Blog edit mode: caption input is shown inline in the photo overlay
-                    EmptyView()
+                    // ── Blog edit mode: caption TextField anchored above keyboard ──
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(editedPlaceTitle)
+                                .font(.title3)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+
+                            if !dateTimeTextForCurrentPhoto.isEmpty {
+                                Text(dateTimeTextForCurrentPhoto)
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                        }
+                        .padding(.bottom, 4)
+
+                        HStack(alignment: .top, spacing: 8) {
+                            TextField("Leave a story for this photo...", text: $editedCaptionText, axis: .vertical)
+                                .focused($isCaptionFocused)
+                                .textFieldStyle(.plain)
+                                .font(.body)
+                                .foregroundColor(.white)
+                                .lineLimit(2...6)
+                                .padding(12)
+                                .background(.ultraThinMaterial)
+                                .background(Color.black.opacity(0.4))
+                                .cornerRadius(12)
+                            if let generate = onGenerateCaption, let photo = currentPhoto {
+                                Button {
+                                    isGeneratingCaption = true
+                                    Task {
+                                        let text = await generate(photo, editedPlaceTitle, placeSubtitle)
+                                        await MainActor.run {
+                                            editedCaptionText = text
+                                            photoCaption(currentPhotoId).wrappedValue = text
+                                            isGeneratingCaption = false
+                                            onAICaptionApplied?(currentPhotoId)
+                                        }
+                                    }
+                                } label: {
+                                    if isGeneratingCaption {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                            .scaleEffect(0.8)
+                                            .frame(width: 20, height: 20)
+                                    } else {
+                                        Image(systemName: "wand.and.stars")
+                                            .font(.body)
+                                            .foregroundColor(.white)
+                                    }
+                                }
+                                .disabled(isGeneratingCaption)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
+                            startPoint: .bottom,
+                            endPoint: .top
+                        )
+                    )
                 } else {
-                    // ── Read mode editing panel (unchanged) ──
+                    // ── Read mode editing panel ──
                     VStack(alignment: .leading, spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(editedPlaceTitle)
@@ -649,8 +713,6 @@ struct BottomInfoOverlay: View {
     var blogIsEditMode: Bool = false
     var onCommitCaption: () -> Void
 
-    @FocusState private var isInlineFocused: Bool
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(placeTitle)
@@ -667,20 +729,8 @@ struct BottomInfoOverlay: View {
             }
 
             if blogIsEditMode {
-                // Inline caption text input shown directly in the photo overlay
-                TextField(placeholder, text: $captionText, axis: .vertical)
-                    .focused($isInlineFocused)
-                    .textFieldStyle(.plain)
-                    .font(.body)
-                    .foregroundColor(.white)
-                    .lineLimit(2...6)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .background(.ultraThinMaterial)
-                    .background(Color.black.opacity(0.45))
-                    .cornerRadius(14)
-                    .padding(.top, 6)
-                    .onSubmit { onCommitCaption() }
+                // Caption input is now in safeAreaInset — show nothing here
+                EmptyView()
             } else if isEditing {
                 TextField(placeholder, text: $captionText, axis: .vertical)
                     .textFieldStyle(.plain)
@@ -716,12 +766,6 @@ struct BottomInfoOverlay: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onAppear {
-            if blogIsEditMode {
-                // Focus the inline text field right away so the keyboard pops up
-                isInlineFocused = true
-            }
-        }
     }
 }
 

@@ -6,19 +6,25 @@
 import SwiftUI
 
 struct CreatingRecapView: View {
+    /// Optional cancel handler — if nil, the Cancel button is hidden.
+    var onCancel: (() -> Void)? = nil
+
     @State private var ringTrim: CGFloat = 0
     @State private var ringRotation: Double = 0
     @State private var assembledStep: Int = 0
     @State private var pulseScale: CGFloat = 1
     @State private var stepLabelIndex: Int = 0
     @State private var colorProgress: CGFloat = 0
+    /// Simulated progress percentage (0-100) shown in the last step.
+    @State private var progressPercent: Int = 0
 
     private let navyBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
+    /// Total animation duration (should match CreateBlogFlowView.creatingAnimationDuration)
+    private let totalDuration: TimeInterval = 5.0
 
-    private let stepLabels = [
+    private let earlyStepLabels = [
         "Selecting your photos…",
-        "Writing your story…",
-        "Almost there…"
+        "Writing your story…"
     ]
 
     var body: some View {
@@ -30,8 +36,25 @@ struct CreatingRecapView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 32) {
+                Spacer()
                 buildingAnimation
                 messageSection
+                Spacer()
+
+                // Cancel button — gray, soft, bottom center
+                if let cancel = onCancel {
+                    Button(action: cancel) {
+                        Text("Cancel")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.45))
+                            .padding(.horizontal, 32)
+                            .padding(.vertical, 12)
+                            .background(Color.white.opacity(0.08))
+                            .clipShape(Capsule())
+                    }
+                    .padding(.bottom, 32)
+                }
             }
         }
         .preferredColorScheme(.dark)
@@ -59,7 +82,7 @@ struct CreatingRecapView: View {
                 .frame(width: 120, height: 120)
                 .rotationEffect(.degrees(-90))
 
-            // Small “building block” icons that assemble in
+            // Small "building block" icons that assemble in
             ForEach(0..<3, id: \.self) { index in
                 buildingNode(at: index)
             }
@@ -96,10 +119,21 @@ struct CreatingRecapView: View {
                 .fontWeight(.bold)
                 .foregroundColor(.primary)
                 .multilineTextAlignment(.center)
-            Text(stepLabels[stepLabelIndex])
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .animation(.easeInOut(duration: 0.3), value: stepLabelIndex)
+
+            Group {
+                if stepLabelIndex < earlyStepLabels.count {
+                    Text(earlyStepLabels[stepLabelIndex])
+                } else {
+                    // Show live percentage in the final stage
+                    Text("\(progressPercent)%")
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                }
+            }
+            .font(.subheadline)
+            .foregroundColor(.secondary)
+            .animation(.easeInOut(duration: 0.3), value: stepLabelIndex)
+
             Text("Please do not leave this screen")
                 .font(.caption)
                 .foregroundColor(.secondary.opacity(0.8))
@@ -138,12 +172,21 @@ struct CreatingRecapView: View {
             }
         }
 
-        // Cycle step labels so users see building steps
-        for idx in 1..<stepLabels.count {
-            let delay = 0.6 + Double(idx) * 0.55
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    stepLabelIndex = idx
+        // Cycle through early step labels, then switch to percentage mode
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            withAnimation(.easeInOut(duration: 0.25)) { stepLabelIndex = 1 }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
+            withAnimation(.easeInOut(duration: 0.25)) { stepLabelIndex = 2 }
+            // Animate percentage from 0 → 99 over the remaining duration
+            let tickInterval = 0.05
+            let steps = Int((totalDuration - 2.2) / tickInterval)
+            for i in 0..<steps {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * tickInterval) {
+                    let raw = Int(Double(i) / Double(steps) * 99)
+                    withAnimation(.easeOut(duration: tickInterval)) {
+                        progressPercent = min(raw, 99) // never show 100% until complete
+                    }
                 }
             }
         }
@@ -151,5 +194,6 @@ struct CreatingRecapView: View {
 }
 
 #Preview {
-    CreatingRecapView()
+    CreatingRecapView(onCancel: { })
 }
+

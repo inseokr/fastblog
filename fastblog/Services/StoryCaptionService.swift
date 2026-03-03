@@ -130,4 +130,18 @@ actor StoryCaptionService {
         return await generator.generateOverallPlaceStory(context: context)
     }
 
+    /// Generate a one-sentence summary of the whole day from all place stories.
+    /// Falls back to place titles when no overallStory is set for a stop.
+    func generateDaySummary(day: RecapBlogDay) async -> String {
+        let placeStories = day.placeStops.map { stop -> String in
+            let story = stop.overallStory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return story.isEmpty ? stop.placeTitle : story
+        }
+        let context = DayStoryContext(
+            dayDateText: day.shortDateText,
+            placeStories: placeStories
+        )
+        return await generator.generateDaySummary(context: context)
+    }
+
 }
