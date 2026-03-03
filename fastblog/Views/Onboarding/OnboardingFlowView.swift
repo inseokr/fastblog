@@ -40,7 +40,14 @@ struct OnboardingFlowView: View {
                     step = .photoPermissionOnboarding
                 }
             } else if step == .photoPermissionOnboarding {
-                PhotoPermissionOnboardingView(photoAuth: photoAuth)
+                PhotoPermissionOnboardingView(photoAuth: photoAuth) { resultStatus in
+                    if resultStatus == .authorized || resultStatus == .limited {
+                        OnboardingStore.hasCompletedOnboarding = true
+                        onComplete()
+                    } else if resultStatus == .denied || resultStatus == .restricted {
+                        step = .photoPermissionDenied
+                    }
+                }
             } else {
                 PhotosPermissionView(
                     status: photoAuth.status,

@@ -6,6 +6,7 @@
 //  If End is before Start within the same year, Start month is auto-clamped to End month.
 //
 
+import Photos
 import SwiftUI
 
 private let sheetBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
@@ -14,6 +15,7 @@ private let chatInputBackground = Color(red: 30/255, green: 35/255, blue: 73/255
 struct FindMoreTripsSheet: View {
     @ObservedObject var viewModel: TripsViewModel
     @Environment(\.dismiss) private var dismiss
+    @StateObject private var photoAuth = PhotosAuthorizationManager()
 
     private let monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -81,6 +83,7 @@ struct FindMoreTripsSheet: View {
             VStack(alignment: .leading, spacing: 28) {
                 titleSection
                 chatSection
+                limitedWarningSection  // Trigger 2: shown only when status is .limited
                 dateRangeSection
                 emptyResultSection
             }
@@ -96,6 +99,65 @@ struct FindMoreTripsSheet: View {
             Text("Where would you like to go?")
                 .font(.subheadline)
                 .foregroundColor(.white.opacity(0.9))
+        }
+    }
+
+    // MARK: – Limited Access Warning (Trigger 2)
+
+    @ViewBuilder
+    private var limitedWarningSection: some View {
+        if photoAuth.status == .limited {
+            HStack(spacing: 12) {
+                Image(systemName: "photo.badge.exclamationmark")
+                    .font(.title3)
+                    .foregroundColor(.orange)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(photoAuth.selectedPhotoCount > 0
+                         ? "Only \(photoAuth.selectedPhotoCount) photos available"
+                         : "Limited photo access")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                    Text("Scans are limited to your selected photos.")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.65))
+                }
+
+                Spacer()
+
+                Button {
+                    presentLimitedPickerFromSheet()
+                } label: {
+                    Text("Add Photos")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.white)
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(chatInputBackground)
+                    .overlay(RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.orange.opacity(0.35), lineWidth: 1))
+            )
+        }
+    }
+
+    private func presentLimitedPickerFromSheet() {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootViewController = windowScene.windows.first?.rootViewController else { return }
+        PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: rootViewController) { _ in
+            DispatchQueue.main.async {
+                photoAuth.refreshStatus()
+                // Auto-kick a scan with the newly available photos
+                viewModel.scanFindMoreTripsInRange()
+            }
         }
     }
 

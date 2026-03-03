@@ -182,6 +182,18 @@ final class TripsViewModel: ObservableObject {
         }
     }
 
+    /// True when the scan has completed but results are weak: no trips found, or only
+    /// a single 1-day trip detected. Used to decide when to surface the "Add More Photos"
+    /// nudge for Limited access users.
+    var scanResultIsWeak: Bool {
+        guard scanState == .idle else { return false }
+        if tripDrafts.isEmpty { return true }
+        if tripDrafts.count == 1,
+           let only = tripDrafts.first,
+           only.days.count <= 1 { return true }
+        return false
+    }
+
     /// Trip to pass into the picker: applies saved selection if this is a draft, otherwise returns the trip as-is.
     func tripForPicker(_ trip: TripDraft) -> TripDraft {
         TripDraftStore.hasDraft(tripId: trip.id)

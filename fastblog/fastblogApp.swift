@@ -93,9 +93,12 @@ struct fastblogApp: App {
                 Group {
                     if !hasCompletedOnboarding {
                         OnboardingFlowView {
+                            // Refresh auth FIRST so photoAuth.isAuthorized is
+                            // already true when hasCompletedOnboarding triggers
+                            // the view transition to ContentView.
+                            photoAuth.refreshStatus()
                             hasCompletedOnboarding = true
                             justFinishedOnboarding = true
-                            photoAuth.refreshStatus()
                         }
                     } else if photoAuth.isAuthorized {
                         ContentView()

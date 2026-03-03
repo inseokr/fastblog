@@ -8,6 +8,8 @@ import SwiftUI
 
 struct PhotoPermissionOnboardingView: View {
     @ObservedObject var photoAuth: PhotosAuthorizationManager
+    /// Called after the permission request completes with the resulting status.
+    var onResult: ((PHAuthorizationStatus) -> Void)? = nil
 
     // Staggered animation phases (similar to ProblemStatementView)
     @State private var showIcon = false
@@ -34,8 +36,8 @@ struct PhotoPermissionOnboardingView: View {
                 // Icon Header
                 Image(systemName: "photo.on.rectangle.angled")
                     .font(.system(size: 80))
-                    .foregroundColor(.blue)
-                    .shadow(color: .blue.opacity(0.3), radius: 20, y: 10)
+                    .foregroundColor(.white)
+                    .shadow(color: .white.opacity(0.2), radius: 20, y: 10)
                     .padding(.bottom, 40)
                     .opacity(showIcon ? 1 : 0)
                     .scaleEffect(showIcon ? 1 : 0.8)
@@ -72,9 +74,15 @@ struct PhotoPermissionOnboardingView: View {
                 // Button
                 VStack(spacing: 8) {
                     Button {
-                        // Triggers system prompt
                         Task {
-                            await photoAuth.requestAccess()
+                            let current = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+                            if current == .authorized || current == .limited {
+                                // Already granted (e.g. reinstall) — skip system dialog
+                                onResult?(current)
+                            } else {
+                                await photoAuth.requestAccess()
+                                onResult?(photoAuth.status)
+                            }
                         }
                     } label: {
                         Text("Allow Photo Access")
@@ -86,11 +94,17 @@ struct PhotoPermissionOnboardingView: View {
                             .clipShape(Capsule())
                             .shadow(color: .blue.opacity(0.3), radius: 10, y: 4)
                     }
-                    
-                    Text("You can choose specific photos instead.")
-                        .font(.caption2)
-                        .foregroundColor(.white.opacity(0.4))
-                        .padding(.top, 4)
+
+                    Button {
+                        Task {
+                            await requestLimitedAccess()
+                        }
+                    } label: {
+                        Text("Choose specific photos instead")
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.4))
+                            .padding(.top, 4)
+                    }
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 40)
@@ -101,6 +115,40 @@ struct PhotoPermissionOnboardingView: View {
         .preferredColorScheme(.dark)
         .onAppear {
             startStaggeredAnimation()
+        }
+    }
+
+    /// Request limited photo access: if not yet determined, triggers the system
+    /// permission dialog (where the user can choose "Select Photos…"). If already
+    /// limited, directly presents the limited library picker to add/change photos.
+    private func requestLimitedAccess() async {
+        let currentStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+
+        if currentStatus == .notDetermined {
+            // System dialog lets the user pick "Select Photos…" for limited access
+            await photoAuth.requestAccess()
+            onResult?(photoAuth.status)
+        } else if currentStatus == .limited {
+            // Already limited — show picker so user can add/change photos
+            await presentLimitedPicker()
+            photoAuth.refreshStatus()
+            onResult?(photoAuth.status)
+        } else {
+            // Already authorized, denied, etc. — just proceed
+            onResult?(currentStatus)
+        }
+    }
+
+    /// Present Apple's limited library picker and wait for completion.
+    @MainActor
+    private func presentLimitedPicker() async {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootVC = scene.windows.first?.rootViewController else { return }
+
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: rootVC) { _ in
+                continuation.resume()
+            }
         }
     }
 

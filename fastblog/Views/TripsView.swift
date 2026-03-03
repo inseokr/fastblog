@@ -20,6 +20,8 @@ struct TripsView: View {
     @State private var selectedTripID: UUID?
     /// When true, skip the map-animate-to-trip in onChange (to avoid loop when map pan drives selection).
     @State private var suppressMapAnimation = false
+    /// True after a scan completes with weak results while access is Limited — gates the top banner.
+    @State private var showLimitedBannerAfterWeakScan = false
 
     init(viewModel: TripsViewModel, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         _viewModel = ObservedObject(wrappedValue: viewModel)
@@ -110,7 +112,8 @@ struct TripsView: View {
             mapViewLayer
 
             VStack(spacing: 0) {
-                if photoAuth.status == .limited {
+                // Only surface the Limited banner after a scan that produced weak results
+                if photoAuth.status == .limited && showLimitedBannerAfterWeakScan {
                     limitedAccessHelper
                         .padding(.top, 60)
                 }
@@ -142,6 +145,17 @@ struct TripsView: View {
         }
         .onDisappear {
             createdRecapStore.showDraftSavedToast = false
+        }
+        // Surface the Limited banner only when scan finishes with weak results
+        .onChange(of: viewModel.scanState) { _, newState in
+            if newState == .idle && photoAuth.status == .limited && viewModel.scanResultIsWeak {
+                withAnimation(.easeOut(duration: 0.4)) {
+                    showLimitedBannerAfterWeakScan = true
+                }
+            } else if newState != .idle {
+                // Hide banner while a new scan is running
+                showLimitedBannerAfterWeakScan = false
+            }
         }
         // Bi-directional sync: carousel scroll → map camera
         .onChange(of: selectedTripID) { _, newID in
@@ -294,16 +308,66 @@ struct TripsView: View {
     // MARK: - Empty State
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Text(viewModel.hasPerformedCustomScan ? "No trips found in this range" : "No trips found in the last 90 days")
-                .font(.headline)
-                .foregroundColor(.white)
-            Text("Try scanning a different date range")
-                .font(.subheadline)
-                .foregroundColor(.white.opacity(0.6))
+        VStack(spacing: 16) {
+            VStack(spacing: 8) {
+                Text(viewModel.hasPerformedCustomScan ? "No trips found in this range" : "No trips found in the last 90 days")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                if photoAuth.status == .limited {
+                    Text("Limited photo access may be hiding some trips.")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.65))
+                        .multilineTextAlignment(.center)
+                } else {
+                    Text("Try scanning a different date range")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.6))
+                }
+            }
+
+            if photoAuth.status == .limited {
+                HStack(spacing: 10) {
+                    Button {
+                        presentLimitedLibraryPicker()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "photo.badge.plus")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("Add More Photos")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                        .background(
+                            Capsule().fill(
+                                LinearGradient(
+                                    colors: [Color(red: 0.18, green: 0.40, blue: 0.78),
+                                             Color(red: 0.25, green: 0.35, blue: 0.72)],
+                                    startPoint: .leading, endPoint: .trailing
+                                )
+                            )
+                        )
+                        .clipShape(Capsule())
+                    }
+
+                    Button {
+                        viewModel.openFindMoreSheet()
+                    } label: {
+                        Text("Change Range")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.7))
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 10)
+                            .background(Capsule().fill(Color.white.opacity(0.1)))
+                            .clipShape(Capsule())
+                    }
+                }
+            }
         }
-        .padding(.horizontal, 32)
-        .padding(.vertical, 24)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 22)
         .frame(maxWidth: .infinity)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -345,29 +409,29 @@ struct TripsView: View {
         }
     }
 
-    // MARK: - Limited Access Helper
+    // MARK: - Limited Access Helper (top banner — Trigger 1, weak scan results)
 
     private var limitedAccessHelper: some View {
         HStack(spacing: 12) {
             Image(systemName: "photo.badge.plus")
                 .foregroundColor(.white)
                 .font(.title3)
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("Not finding your trip?")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
-                Text("Add more photos")
+                Text("Limited access — add more photos to find more trips.")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(.white.opacity(0.75))
             }
             Spacer()
-            
+
             Button {
                 presentLimitedLibraryPicker()
             } label: {
-                Text("Choose Photos")
+                Text("Add Photos")
                     .font(.caption)
                     .fontWeight(.bold)
                     .foregroundColor(.black)
@@ -393,14 +457,13 @@ struct TripsView: View {
               let rootViewController = windowScene.windows.first?.rootViewController else {
             return
         }
-        
+
         PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: rootViewController) { _ in
-            // Handle post-selection if needed (e.g., re-trigger scan)
             DispatchQueue.main.async {
                 photoAuth.refreshStatus()
-                if viewModel.tripDrafts.isEmpty {
-                    viewModel.startDefaultScan()
-                }
+                // Hide the banner and kick off a fresh scan to reflect newly added photos
+                withAnimation { showLimitedBannerAfterWeakScan = false }
+                viewModel.startDefaultScan()
             }
         }
     }
