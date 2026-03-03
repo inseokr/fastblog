@@ -955,6 +955,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         for dayIdx in detail.days.indices {
             for stopIdx in detail.days[dayIdx].placeStops.indices {
                 let stop = detail.days[dayIdx].placeStops[stopIdx]
+                if Task.isCancelled { return detail }
                 if let coord = stop.representativeLocation {
                     let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
                     let place = await GeocodingService.shared.place(for: loc)
@@ -970,6 +971,8 @@ final class CreatedRecapBlogStore: ObservableObject {
                 }
             }
         }
+
+        if Task.isCancelled { return detail }
 
         let primaryCity = primaryCityFromCandidates(cityCandidates)
         let primaryCountry = primaryFromCandidates(countryCandidates)
@@ -1070,6 +1073,7 @@ final class CreatedRecapBlogStore: ObservableObject {
 
         for dayIdx in updated.days.indices {
             for stopIdx in updated.days[dayIdx].placeStops.indices {
+                if Task.isCancelled { return updated }
                 let photos = updated.days[dayIdx].placeStops[stopIdx].photos
                 let identifiers = photos.compactMap(\.localIdentifier)
                 guard !identifiers.isEmpty else { continue }

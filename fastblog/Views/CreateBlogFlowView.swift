@@ -47,37 +47,46 @@ struct CreateBlogFlowView: View {
                 )
             case .creating:
                 CreatingRecapView(onCancel: {
+                    createdRecapStore.removeLocalCopy(sourceTripId: trip.id)
                     dismiss()
                 })
-                .onAppear {
-                        Task {
-                            let animationStart = Date()
+                .task {
+                    do {
+                        let animationStart = Date()
 
-                            // Determine the trip to build from
-                            let tripForBuild: TripDraft
-                            if startDirectlyCreating {
-                                let selectedTrip = await TripPhotoSelectionService.shared.selectTopPhotosPerCluster(trip: trip)
-                                createdRecapStore.addCreatedBlog(trip: selectedTrip)
-                                tripForBuild = selectedTrip
-                            } else {
-                                tripForBuild = createdRecapStore.tripDraft(for: trip.id) ?? trip
-                            }
-
-                            // Build full blog detail (geocoding + Vision AI scoring) during animation
-                            let detail = await createdRecapStore.buildBlogDetailAsync(from: tripForBuild)
-
-                            // Ensure minimum animation duration has elapsed
-                            let elapsed = Date().timeIntervalSince(animationStart)
-                            let remaining = creatingAnimationDuration - elapsed
-                            if remaining > 0 {
-                                try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
-                            }
-
-                            // Save pre-built detail so the blog page loads instantly
-                            createdRecapStore.saveBlogDetail(detail, asDraft: true)
-                            goToLanding()
+                        // Determine the trip to build from
+                        let tripForBuild: TripDraft
+                        if startDirectlyCreating {
+                            let selectedTrip = await TripPhotoSelectionService.shared.selectTopPhotosPerCluster(trip: trip)
+                            createdRecapStore.addCreatedBlog(trip: selectedTrip)
+                            tripForBuild = selectedTrip
+                        } else {
+                            tripForBuild = createdRecapStore.tripDraft(for: trip.id) ?? trip
                         }
+
+                        // Build full blog detail (geocoding + Vision AI scoring) during animation
+                        let detail = await createdRecapStore.buildBlogDetailAsync(from: tripForBuild)
+
+                        try Task.checkCancellation()
+
+                        // Ensure minimum animation duration has elapsed
+                        let elapsed = Date().timeIntervalSince(animationStart)
+                        let remaining = creatingAnimationDuration - elapsed
+                        if remaining > 0 {
+                            try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                        }
+
+                        try Task.checkCancellation()
+
+                        // Save pre-built detail so the blog page loads instantly
+                        createdRecapStore.saveBlogDetail(detail, asDraft: true)
+                        goToLanding()
+                    } catch is CancellationError {
+                        print("Blog creation was cancelled.")
+                    } catch {
+                        print("Unknown error during blog creation: \\(error)")
                     }
+                }
             }
         }
         .onAppear {

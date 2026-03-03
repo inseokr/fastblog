@@ -11,6 +11,7 @@ struct TripsView: View {
     @ObservedObject var viewModel: TripsViewModel
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var photoAuth = PhotosAuthorizationManager()
     @AppStorage("blogify.skipSelectPhotosIntro") private var skipSelectPhotosIntro = false
     @State private var selectedTrip: TripDraft?
@@ -24,6 +25,14 @@ struct TripsView: View {
     @State private var showLimitedBannerAfterWeakScan = false
     /// Show "Load more trips?" popup when user scrolls to the last trip.
     @State private var showLoadMorePopup = false
+    /// Guards against the popup firing on the initial programmatic selection in onAppear.
+    @State private var didCompleteInitialSelection = false
+    /// True while the carousel is animating the map to a new trip — blocks onMapRegionChanged
+    /// from firing back and jumping the scroll position mid-animation.
+    @State private var isAnimatingMapFromCarousel = false
+    /// Snapshot of allTrips.count taken just before a load-older scan starts, so we know
+    /// which index the first new trip lands at after the scan completes.
+    @State private var tripCountBeforeOlderScan: Int = 0
 
     init(viewModel: TripsViewModel, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         _viewModel = ObservedObject(wrappedValue: viewModel)
@@ -115,16 +124,35 @@ struct TripsView: View {
                     message: "Scanning older photos…",
                     isOverlay: true,
                     progress: viewModel.loadOlderProgress,
-                    onCancel: { viewModel.cancelLoadOlderTrips() }
+                    onCancel: {
+                        viewModel.cancelLoadOlderTrips()
+                        // Restore the popup so the user isn't stranded on the last card
+                        withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
+                    }
                 )
                 .transition(.opacity)
             }
         }
         .animation(.easeInOut(duration: 0.4), value: viewModel.isLoadingOlderTrips)
+        // Always disable default back button to unconditionally prevent the swipe-to-go-back gesture, 
+        // which users can accidentally trigger when swiping the carousel from left to right.
+        .navigationBarBackButtonHidden(true)
         .onChange(of: viewModel.olderTripsResult) { _, result in
             if case .success = result {
-                // New trips appended — dismiss popup immediately
+                // New trips appended — dismiss popup and scroll to the first new trip.
                 withAnimation(.easeInOut(duration: 0.3)) { showLoadMorePopup = false }
+                // allTrips is sorted newest→oldest, so the first newly loaded trip sits
+                // at index tripCountBeforeOlderScan (right after the old last card).
+                let trips = allTrips
+                if tripCountBeforeOlderScan < trips.count {
+                    let firstNewTrip = trips[tripCountBeforeOlderScan]
+                    // Brief delay lets SwiftUI finish inserting the new rows before scrolling.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        withAnimation(.easeInOut(duration: 0.45)) {
+                            selectedTripID = firstNewTrip.id
+                        }
+                    }
+                }
             } else if case .empty = result {
                 // No older trips found — keep popup open so user sees the message,
                 // then auto-dismiss after 2 seconds
@@ -159,6 +187,19 @@ struct TripsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .preferredColorScheme(.dark)
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.body.weight(.semibold))
+                        Text("Back")
+                    }
+                }
+                .opacity((showLoadMorePopup || viewModel.isLoadingOlderTrips) ? 0 : 1)
+                .disabled(showLoadMorePopup || viewModel.isLoadingOlderTrips)
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     viewModel.openFindMoreSheet()
@@ -190,6 +231,12 @@ struct TripsView: View {
         }
         // Bi-directional sync: carousel scroll → map camera
         .onChange(of: selectedTripID) { _, newID in
+            // Skip popup on the initial programmatic selection that happens in onAppear.
+            // Only real user carousel swipes (not map-pan or initial load) should trigger it.
+            guard didCompleteInitialSelection else {
+                didCompleteInitialSelection = true
+                return
+            }
             guard !suppressMapAnimation else {
                 suppressMapAnimation = false
                 return
@@ -197,17 +244,17 @@ struct TripsView: View {
             guard let trip = allTrips.first(where: { $0.id == newID }),
                   let coord = trip.centerCoordinate else { return }
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            // Lock out map-region callbacks while we animate to prevent the intermediate
+            // camera positions from bouncing the carousel back mid-swipe.
+            isAnimatingMapFromCarousel = true
             withAnimation(.easeInOut(duration: 0.5)) {
                 mapPosition = .region(MKCoordinateRegion(
                     center: coord,
                     span: MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
                 ))
             }
-            // Detect scroll to last (oldest) trip — prompt to load more
-            if newID == allTrips.last?.id && !viewModel.isLoadingOlderTrips {
-                withAnimation(.easeOut(duration: 0.3)) {
-                    showLoadMorePopup = true
-                }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+                isAnimatingMapFromCarousel = false
             }
         }
     }
@@ -229,6 +276,9 @@ struct TripsView: View {
                 }
             },
             onMapRegionChanged: { center in
+                // Don't interrupt a carousel-driven map animation — intermediate camera
+                // positions would cause the scroll view to jump around.
+                guard !isAnimatingMapFromCarousel else { return }
                 // Find the trip closest to the map center
                 guard let closest = closestTrip(to: center) else { return }
                 guard closest.id != selectedTripID else { return }
@@ -349,6 +399,22 @@ struct TripsView: View {
         .scrollPosition(id: $selectedTripID)
         .contentMargins(.horizontal, 24)
         .frame(height: 240)
+        // Detect an attempt to swipe past the last card (leftward drag while already on it).
+        // The ScrollView rubber-bands naturally; we also pop the "Load older trips" sheet.
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 30)
+                .onEnded { value in
+                    let isLeftwardDrag = value.translation.width < -40
+                    guard isLeftwardDrag,
+                          selectedTripID == allTrips.last?.id,
+                          allTrips.count > 1,
+                          !viewModel.isLoadingOlderTrips,
+                          !showLoadMorePopup else { return }
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        showLoadMorePopup = true
+                    }
+                }
+        )
     }
 
     // MARK: - Empty State
@@ -705,6 +771,9 @@ struct TripsView: View {
                     } else {
                         // Full access — one tap starts the scan automatically
                         Button {
+                            // Snapshot the current count so we can scroll to the first new
+                            // trip after the scan completes.
+                            tripCountBeforeOlderScan = allTrips.count
                             withAnimation { showLoadMorePopup = false }
                             viewModel.loadOlderTrips()
                         } label: {
