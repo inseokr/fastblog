@@ -553,6 +553,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         recents.removeAll { $0.sourceTripId == sourceTripId }
         blogDetailsBySourceId.removeValue(forKey: sourceTripId)
         if pendingRecapCreated { pendingRecapCreated = false }
+        needsRescan = true
         persistRecents()
         persistBlogDetails()
     }

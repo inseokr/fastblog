@@ -74,6 +74,7 @@ struct CreatingRecapView: View {
                 .foregroundColor(.blue.opacity(0.4))
                 .frame(width: 140, height: 140)
                 .rotationEffect(.degrees(ringRotation))
+                .animation(.linear(duration: 2).repeatForever(autoreverses: false), value: ringRotation)
 
             // Filling progress ring
             Circle()
@@ -81,6 +82,7 @@ struct CreatingRecapView: View {
                 .stroke(Color.blue, lineWidth: 4)
                 .frame(width: 120, height: 120)
                 .rotationEffect(.degrees(-90))
+                .animation(.easeInOut(duration: 1.8), value: ringTrim)
 
             // Small "building block" icons that assemble in
             ForEach(0..<3, id: \.self) { index in
@@ -93,6 +95,7 @@ struct CreatingRecapView: View {
                 .scaledToFit()
                 .frame(width: 88, height: 88)
                 .scaleEffect(pulseScale)
+                .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulseScale)
         }
         .frame(width: 200, height: 200)
     }
@@ -110,6 +113,7 @@ struct CreatingRecapView: View {
             .foregroundColor(.blue.opacity(visible ? 0.9 : 0))
             .scaleEffect(visible ? 1 : 0.3)
             .offset(x: x, y: y)
+            .animation(.spring(response: 0.45, dampingFraction: 0.7), value: visible)
     }
 
     private var messageSection: some View {
@@ -148,27 +152,19 @@ struct CreatingRecapView: View {
         }
 
         // Progress ring fills over ~1.8s
-        withAnimation(.easeInOut(duration: 1.8)) {
-            ringTrim = 1
-        }
+        ringTrim = 1
 
         // Dashed ring rotation (continuous)
-        withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
-            ringRotation = 360
-        }
+        ringRotation = 360
 
         // Gentle pulse on logo
-        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-            pulseScale = 1.08
-        }
+        pulseScale = 1.08
 
         // Assemble nodes one by one
         for step in 1...3 {
             let delay = 0.4 + Double(step) * 0.35
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) {
-                    assembledStep = step
-                }
+                assembledStep = step
             }
         }
 

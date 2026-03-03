@@ -151,7 +151,7 @@
 		2C0B8C01DE7515924E7A5D33 /* PhotoPermissionOnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhotoPermissionOnboardingView.swift; sourceTree = "<group>"; };
 		3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhotoPermissionOnboardingView.swift; sourceTree = "<group>"; };
 		4E34776F396319FBEE2FCECD /* StoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryCaptionGenerator.swift; sourceTree = "<group>"; };
-		AA000003 /* fastblog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = fastblog.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA000003 /* Bloggo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Bloggo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB000101 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		BB000103 /* fastblogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = fastblogApp.swift; sourceTree = "<group>"; };
 		BB000105 /* MyBlogsProfileViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyBlogsProfileViewModel.swift; sourceTree = "<group>"; };
@@ -335,7 +335,7 @@
 		BB0001AF /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				AA000003 /* fastblog.app */,
+				AA000003 /* Bloggo.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -530,9 +530,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		AA000020 /* fastblog */ = {
+		AA000020 /* Bloggo */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AA000030 /* Build configuration list for PBXNativeTarget "fastblog" */;
+			buildConfigurationList = AA000030 /* Build configuration list for PBXNativeTarget "Bloggo" */;
 			buildPhases = (
 				AA000021 /* Sources */,
 				AA000022 /* Frameworks */,
@@ -542,12 +542,12 @@
 			);
 			dependencies = (
 			);
-			name = fastblog;
+			name = Bloggo;
 			packageProductDependencies = (
 				AA000061 /* GoogleSignIn */,
 			);
 			productName = fastblog;
-			productReference = AA000003 /* fastblog.app */;
+			productReference = AA000003 /* Bloggo.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -576,7 +576,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AA000020 /* fastblog */,
+				AA000020 /* Bloggo */,
 			);
 		};
 /* End PBXProject section */
@@ -791,7 +791,7 @@
 				DEVELOPMENT_TEAM = H9V9G4FU84;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "fastblog uses your location to identify your neighborhood and group travel photos.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Bloggo uses your location to identify your trips outside of your home.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Allow access so Bloggo can organize your trips by place and day.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -817,7 +817,7 @@
 				DEVELOPMENT_TEAM = H9V9G4FU84;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "fastblog uses your location to identify your neighborhood and group travel photos.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Bloggo uses your location to identify your trips outside of your home.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Allow access so Bloggo can organize your trips by place and day.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -835,7 +835,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		AA000030 /* Build configuration list for PBXNativeTarget "fastblog" */ = {
+		AA000030 /* Build configuration list for PBXNativeTarget "Bloggo" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AA000052 /* Debug */,

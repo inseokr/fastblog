@@ -165,9 +165,9 @@ struct PlacePhotoModalView: View {
                 // 2. Bottom overlay
             VStack {
                 Spacer()
-                // In blog edit mode always show the overlay (with inline caption input);
-                // in read mode only show it when not in the keyboard-anchored edit panel.
-                if !isEditing || blogIsEditMode {
+                // In edit mode (both blog edit and read mode editing),
+                // the place title, timestamp and caption input are rendered in the safeAreaInset anchored above the keyboard.
+                if !isEditing {
                     BottomInfoOverlay(
                         placeTitle: placeTitle,
                         dateTimeText: dateTimeTextForCurrentPhoto,
@@ -202,7 +202,7 @@ struct PlacePhotoModalView: View {
                 }
             }
             .background(
-                (!blogIsEditMode && isEditing) ? nil :
+                isEditing ? nil :
                 LinearGradient(
                     colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
                     startPoint: .bottom,

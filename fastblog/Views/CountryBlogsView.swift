@@ -23,8 +23,8 @@ struct CountryBlogsView: View {
     @State private var blogToDelete: CreatedRecapBlog?
     @State private var showDeleteConfirmSheet = false
 
-    // Edit
-    @State private var blogToEdit: CreatedRecapBlog?
+    // Edit — force edit mode when opening via kebab
+    @State private var openInEditMode = false
 
     // Soft-delete + Undo state
     /// The blog is hidden from the list immediately; deletion is only committed when the timer fires.
@@ -126,7 +126,8 @@ struct CountryBlogsView: View {
                                     showRemoveCloudPopup = true
                                 },
                                 onEditBlog: {
-                                    blogToEdit = blog
+                                    openInEditMode = true
+                                    localSelectedBlog = blog
                                 },
                                 onDeleteBlog: {
                                     blogToDelete = blog
@@ -237,8 +238,10 @@ struct CountryBlogsView: View {
         .navigationDestination(item: $localSelectedBlog) { recap in
             RecapBlogPageView(
                 blogId: recap.sourceTripId,
-                initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId)
+                initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId),
+                forceEditMode: openInEditMode
             )
+            .onDisappear { openInEditMode = false }
         }
         // ─── Confirmation Sheet for Delete ────────────────────────────────
         .confirmationDialog(
@@ -284,12 +287,6 @@ struct CountryBlogsView: View {
             }
         } message: { _ in
             Text("Are you sure you want to remove this blog from the cloud? Your local copy will remain.")
-        }
-        .navigationDestination(item: $blogToEdit) { blog in
-            RecapBlogPageView(
-                blogId: blog.sourceTripId,
-                initialTrip: createdRecapStore.tripDraft(for: blog.sourceTripId)
-            )
         }
     }
 

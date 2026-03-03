@@ -23,6 +23,8 @@ struct LandingView: View {
 
     @State private var showSettings = false
     @State private var showAuth = false
+    /// True while we're waiting for a scan to finish before navigating to Trips.
+    @State private var pendingNavigateAfterScan = false
     /// CTA text cycles every 5 seconds: "Tap to Scan" ↔ "Create A Blog Today"
     @State private var ctaIsAlternate = false
     @State private var ctaOpacity: Double = 1
@@ -117,7 +119,15 @@ struct LandingView: View {
                 .transition(.move(edge: .trailing))
                 .zIndex(10)
             }
+
+            // Scanning overlay — fades in on top of landing while scan runs
+            if tripsViewModel.scanState != .idle {
+                LoadingScanView(message: tripsViewModel.loadingMessage)
+                    .transition(.opacity)
+                    .zIndex(20)
+            }
         }
+        .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
         .preferredColorScheme(.dark)
         .gesture(
             DragGesture()
@@ -152,6 +162,10 @@ struct LandingView: View {
         .animation(.easeInOut(duration: 0.3), value: showAuth)
         .onAppear {
             avatarImageData = authService.profileImageData
+            // If a scan is already running (e.g. from onboarding), track it for navigation
+            if tripsViewModel.scanState != .idle {
+                pendingNavigateAfterScan = true
+            }
             // If already past splash (e.g. navigating back), show everything immediately
             if splashManager.phase == .done {
                 circlesScale = 1.0
@@ -171,6 +185,13 @@ struct LandingView: View {
         }
         .onChange(of: authService.currentUser?.id) { _, _ in
             avatarImageData = authService.profileImageData
+        }
+        // Navigate to TripsView once scanning finishes
+        .onChange(of: tripsViewModel.scanState) { _, newState in
+            if newState == .idle && pendingNavigateAfterScan {
+                pendingNavigateAfterScan = false
+                showTrips = true
+            }
         }
     }
 
@@ -234,9 +255,12 @@ struct LandingView: View {
     private var scanCTA: some View {
         Button {
             if tripsViewModel.tripDrafts.isEmpty {
+                // Start scan — navigation will happen when scan finishes (via onChange below)
                 tripsViewModel.startDefaultScan()
+                pendingNavigateAfterScan = true
+            } else {
+                showTrips = true
             }
-            showTrips = true
         } label: {
             ZStack {
                 ZStack {

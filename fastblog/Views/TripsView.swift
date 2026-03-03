@@ -23,15 +23,18 @@ struct TripsView: View {
     @State private var suppressMapAnimation = false
     /// True after a scan completes with weak results while access is Limited — gates the top banner.
     @State private var showLimitedBannerAfterWeakScan = false
-    /// Show "Load more trips?" popup when user scrolls to the last trip.
+    /// Show "Load more trips?" popup when user scrolls past the last trip.
     @State private var showLoadMorePopup = false
+    /// Show "Load newer trips?" popup when user swipes past the first trip.
+    @State private var showLoadNewerPopup = false
     /// Guards against the popup firing on the initial programmatic selection in onAppear.
     @State private var didCompleteInitialSelection = false
     /// True while the carousel is animating the map to a new trip — blocks onMapRegionChanged
     /// from firing back and jumping the scroll position mid-animation.
     @State private var isAnimatingMapFromCarousel = false
-    /// Snapshot of allTrips.count taken just before a load-older scan starts, so we know
-    /// which index the first new trip lands at after the scan completes.
+    /// Tracks the last known map region for zoom in/out controls.
+    @State private var currentMapRegion: MKCoordinateRegion?
+    /// (Unused after windowed paging — kept to avoid removing call sites; always 0 now.)
     @State private var tripCountBeforeOlderScan: Int = 0
 
     init(viewModel: TripsViewModel, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
@@ -76,6 +79,7 @@ struct TripsView: View {
                 }
                 .navigationTitle("Trips")
                 .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.hidden, for: .navigationBar)
             } else {
                 mainContent
             }
@@ -119,6 +123,11 @@ struct TripsView: View {
             }
         }
         .overlay {
+            if showLoadNewerPopup && !viewModel.isLoadingNewerTrips {
+                loadNewerTripsPopup
+            }
+        }
+        .overlay {
             if viewModel.isLoadingOlderTrips {
                 LoadingScanView(
                     message: "Scanning older photos…",
@@ -126,38 +135,57 @@ struct TripsView: View {
                     progress: viewModel.loadOlderProgress,
                     onCancel: {
                         viewModel.cancelLoadOlderTrips()
-                        // Restore the popup so the user isn't stranded on the last card
                         withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
                     }
                 )
                 .transition(.opacity)
             }
         }
+        .overlay {
+            if viewModel.isLoadingNewerTrips {
+                LoadingScanView(
+                    message: "Scanning newer photos…",
+                    isOverlay: true,
+                    progress: viewModel.loadNewerProgress,
+                    onCancel: {
+                        viewModel.cancelLoadNewerTrips()
+                        withAnimation(.easeOut(duration: 0.3)) { showLoadNewerPopup = true }
+                    }
+                )
+                .transition(.opacity)
+            }
+        }
         .animation(.easeInOut(duration: 0.4), value: viewModel.isLoadingOlderTrips)
-        // Always disable default back button to unconditionally prevent the swipe-to-go-back gesture, 
-        // which users can accidentally trigger when swiping the carousel from left to right.
+        .animation(.easeInOut(duration: 0.4), value: viewModel.isLoadingNewerTrips)
         .navigationBarBackButtonHidden(true)
+        // Older trips window loaded — dismiss popup and jump to newest of the older batch.
         .onChange(of: viewModel.olderTripsResult) { _, result in
             if case .success = result {
-                // New trips appended — dismiss popup and scroll to the first new trip.
                 withAnimation(.easeInOut(duration: 0.3)) { showLoadMorePopup = false }
-                // allTrips is sorted newest→oldest, so the first newly loaded trip sits
-                // at index tripCountBeforeOlderScan (right after the old last card).
-                let trips = allTrips
-                if tripCountBeforeOlderScan < trips.count {
-                    let firstNewTrip = trips[tripCountBeforeOlderScan]
-                    // Brief delay lets SwiftUI finish inserting the new rows before scrolling.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                        withAnimation(.easeInOut(duration: 0.45)) {
-                            selectedTripID = firstNewTrip.id
-                        }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    if let first = allTrips.first {
+                        withAnimation(.easeInOut(duration: 0.45)) { selectedTripID = first.id }
                     }
                 }
             } else if case .empty = result {
-                // No older trips found — keep popup open so user sees the message,
-                // then auto-dismiss after 2 seconds
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                     withAnimation(.easeInOut(duration: 0.3)) { showLoadMorePopup = false }
+                }
+            }
+        }
+        // Newer trips window loaded — dismiss popup and jump to oldest (rightmost) of the newer batch,
+        // which is chronologically closest to the older window the user came from.
+        .onChange(of: viewModel.newerTripsResult) { _, result in
+            if case .success = result {
+                withAnimation(.easeInOut(duration: 0.3)) { showLoadNewerPopup = false }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    if let last = allTrips.last {
+                        withAnimation(.easeInOut(duration: 0.45)) { selectedTripID = last.id }
+                    }
+                }
+            } else if case .empty = result {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    withAnimation(.easeInOut(duration: 0.3)) { showLoadNewerPopup = false }
                 }
             }
         }
@@ -185,20 +213,19 @@ struct TripsView: View {
         .background(Color.black)
         .navigationTitle("Trips")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .preferredColorScheme(.dark)
         .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
+            ToolbarItem(placement: .cancellationAction) {
                 Button {
                     dismiss()
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                            .font(.body.weight(.semibold))
-                        Text("Back")
-                    }
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.white)
                 }
-                .opacity((showLoadMorePopup || viewModel.isLoadingOlderTrips) ? 0 : 1)
-                .disabled(showLoadMorePopup || viewModel.isLoadingOlderTrips)
+                .opacity((showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips) ? 0 : 1)
+                .disabled(showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips)
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -208,6 +235,8 @@ struct TripsView: View {
                         .font(.body)
                         .foregroundColor(.white)
                 }
+                .opacity((showLoadMorePopup || viewModel.isLoadingOlderTrips) ? 0 : 1)
+                .disabled(showLoadMorePopup || viewModel.isLoadingOlderTrips)
             }
         }
         .overlay(alignment: .top) {
@@ -263,7 +292,7 @@ struct TripsView: View {
 
     private var mapViewLayer: some View {
         TripsMapView(
-            trips: viewModel.visibleDraftTrips,
+            trips: allTrips,
             selectedTripID: $selectedTripID,
             mapPosition: $mapPosition,
             onTripTapped: { trip in
@@ -275,11 +304,13 @@ struct TripsView: View {
                     }
                 }
             },
-            onMapRegionChanged: { center in
+            onMapRegionChanged: { region in
+                currentMapRegion = region
                 // Don't interrupt a carousel-driven map animation — intermediate camera
                 // positions would cause the scroll view to jump around.
                 guard !isAnimatingMapFromCarousel else { return }
                 // Find the trip closest to the map center
+                let center = region.center
                 guard let closest = closestTrip(to: center) else { return }
                 guard closest.id != selectedTripID else { return }
                 suppressMapAnimation = true
@@ -304,6 +335,7 @@ struct TripsView: View {
             }
         }
     }
+
 
     // MARK: - Dynamic Month Title
 
@@ -399,19 +431,29 @@ struct TripsView: View {
         .scrollPosition(id: $selectedTripID)
         .contentMargins(.horizontal, 24)
         .frame(height: 240)
-        // Detect an attempt to swipe past the last card (leftward drag while already on it).
-        // The ScrollView rubber-bands naturally; we also pop the "Load older trips" sheet.
+        // Detect swipes past either end of the carousel.
+        // • Left-swipe on last card   → "Load older trips"
+        // • Right-swipe on first card → "Load newer trips" (only when a newer window exists)
         .simultaneousGesture(
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
-                    let isLeftwardDrag = value.translation.width < -40
-                    guard isLeftwardDrag,
-                          selectedTripID == allTrips.last?.id,
-                          allTrips.count > 1,
-                          !viewModel.isLoadingOlderTrips,
-                          !showLoadMorePopup else { return }
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        showLoadMorePopup = true
+                    let isLeftwardDrag  = value.translation.width < -40
+                    let isRightwardDrag = value.translation.width >  40
+
+                    if isLeftwardDrag,
+                       selectedTripID == allTrips.last?.id,
+                       allTrips.count > 1,
+                       !viewModel.isLoadingOlderTrips,
+                       !showLoadMorePopup {
+                        withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
+                    }
+
+                    if isRightwardDrag,
+                       selectedTripID == allTrips.first?.id,
+                       viewModel.canLoadNewerTrips,
+                       !viewModel.isLoadingNewerTrips,
+                       !showLoadNewerPopup {
+                        withAnimation(.easeOut(duration: 0.3)) { showLoadNewerPopup = true }
                     }
                 }
         )
@@ -717,7 +759,7 @@ struct TripsView: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
 
-                Text("Scan photos from the previous 3 months to find more trips.")
+                Text("Scan the previous 3 months to find older trips.")
                     .font(.body)
                     .foregroundColor(.white.opacity(0.8))
                     .multilineTextAlignment(.center)
@@ -771,9 +813,6 @@ struct TripsView: View {
                     } else {
                         // Full access — one tap starts the scan automatically
                         Button {
-                            // Snapshot the current count so we can scroll to the first new
-                            // trip after the scan completes.
-                            tripCountBeforeOlderScan = allTrips.count
                             withAnimation { showLoadMorePopup = false }
                             viewModel.loadOlderTrips()
                         } label: {
@@ -823,6 +862,92 @@ struct TripsView: View {
     private func openSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
+    }
+
+    // MARK: - Load Newer Trips Popup
+
+    private var loadNewerTripsPopup: some View {
+        ZStack {
+            Color.black.opacity(0.6)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation { showLoadNewerPopup = false }
+                }
+
+            VStack(spacing: 20) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 36))
+                    .foregroundColor(.blue)
+                    .scaleEffect(x: -1) // mirror to face forward in time
+
+                Text("Load newer trips?")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+
+                Text("Scan the next 3 months to find more recent trips.")
+                    .font(.body)
+                    .foregroundColor(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+
+                // Shown after a scan returns with no results
+                if viewModel.newerTripsResult == .empty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(.orange)
+                        Text("No trips found in this period.")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                    .padding(.horizontal)
+                    .transition(.opacity)
+                }
+
+                VStack(spacing: 10) {
+                    Button {
+                        withAnimation { showLoadNewerPopup = false }
+                        viewModel.loadNewerTrips()
+                    } label: {
+                        Text("Yes")
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.blue)
+                            .cornerRadius(10)
+                    }
+                    .disabled(viewModel.newerTripsResult == .empty)
+
+                    Button {
+                        withAnimation { showLoadNewerPopup = false }
+                    } label: {
+                        Text("Not now")
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.7))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(10)
+                    }
+                }
+                .padding(.horizontal)
+                .animation(.easeInOut(duration: 0.25), value: viewModel.newerTripsResult)
+            }
+            .padding(.vertical, 24)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+            )
+            .shadow(radius: 20)
+            .padding(.horizontal, 40)
+            .transition(.scale.combined(with: .opacity))
+        }
+        .zIndex(200)
     }
 }
 

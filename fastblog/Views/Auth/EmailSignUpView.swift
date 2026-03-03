@@ -415,15 +415,8 @@ struct EmailSignUpView: View {
         .buttonStyle(.plain)
     }
 
-    private var backgroundGradient: LinearGradient {
-        LinearGradient(
-            stops: [
-                .init(color: Color(red: 0.04, green: 0.07, blue: 0.22), location: 0),
-                .init(color: Color(red: 0.03, green: 0.03, blue: 0.15), location: 1)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+    private var backgroundGradient: some View {
+        Color(red: 5/255, green: 10/255, blue: 48/255)
     }
 
     private var loadingOverlay: some View {

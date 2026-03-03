@@ -299,17 +299,34 @@ struct FindMoreTripsSheet: View {
     @ViewBuilder
     private var emptyResultSection: some View {
         if viewModel.findMoreScanResult == .empty {
-            HStack(spacing: 8) {
-                Image(systemName: "info.circle.fill")
-                    .foregroundColor(.orange)
-                Text("No new trips found for this range.")
+            VStack(spacing: 16) {
+                Image(systemName: "map")
+                    .font(.system(size: 36))
+                    .foregroundColor(.white.opacity(0.35))
+
+                Text("No trips found in this range")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+
+                Text("Try scanning a different date range")
                     .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.9))
+                    .foregroundColor(.white.opacity(0.7))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.1))
-            .cornerRadius(10)
+            .padding(.vertical, 28)
+            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.white.opacity(0.06))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.95)))
         }
     }
 

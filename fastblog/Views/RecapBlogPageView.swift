@@ -17,6 +17,7 @@ private struct TitleMinYPreferenceKey: PreferenceKey {
 struct RecapBlogPageView: View {
     let blogId: UUID
     let initialTrip: TripDraft?
+    let forceEditMode: Bool
 
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @EnvironmentObject private var authService: AuthService
@@ -91,9 +92,10 @@ struct RecapBlogPageView: View {
         }
     }
 
-    init(blogId: UUID, initialTrip: TripDraft?) {
+    init(blogId: UUID, initialTrip: TripDraft?, forceEditMode: Bool = false) {
         self.blogId = blogId
         self.initialTrip = initialTrip
+        self.forceEditMode = forceEditMode
         _draft = State(initialValue: RecapBlogDetail(id: blogId, title: "", days: [], coverTheme: "default"))
     }
 
@@ -1524,9 +1526,9 @@ struct RecapBlogPageView: View {
     }
 
     private func checkFirstTimeTip() {
-        // If the blog has been saved before, start in View Mode.
+        // If the blog has been saved before, start in View Mode (unless forced into edit).
         if let existing = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }), existing.lastEditedAt != nil {
-            isEditMode = false
+            isEditMode = forceEditMode
         } else if showFirstTimeSaveTip {
             showSaveTipAlert = true
         }

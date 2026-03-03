@@ -93,6 +93,7 @@ struct LoadingScanView: View {
                 .foregroundColor(.white.opacity(0.25))
                 .frame(width: 250, height: 250)
                 .rotationEffect(.degrees(ringRotation))
+                .animation(.linear(duration: 6).repeatForever(autoreverses: false), value: ringRotation)
 
             // Pulsating concentric rings — the signature scan effect
             ScanningAnimationView(ringCount: 4, ringSpacing: 28, pulseDuration: 1.8, showIcon: false)
@@ -109,6 +110,7 @@ struct LoadingScanView: View {
                 .scaledToFit()
                 .frame(width: 88, height: 88)
                 .scaleEffect(pulseScale)
+                .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulseScale)
         }
         .frame(width: 260, height: 260)
     }
@@ -132,6 +134,7 @@ struct LoadingScanView: View {
             .opacity(visible ? 1 : 0)
             .scaleEffect(visible ? 1 : 0.3)
             .offset(x: x, y: y)
+            .animation(.spring(response: 0.45, dampingFraction: 0.7), value: visible)
     }
 
     // MARK: - Message
@@ -174,22 +177,16 @@ struct LoadingScanView: View {
 
     private func startAnimations() {
         // Dashed outer ring spins continuously
-        withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) {
-            ringRotation = 360
-        }
+        ringRotation = 360
 
         // Gentle pulse on central icon
-        withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-            pulseScale = 1.12
-        }
+        pulseScale = 1.12
 
         // Orbit nodes pop in one by one
         for index in 0..<3 {
             let delay = 0.3 + Double(index) * 0.4
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) {
-                    nodeFade[index] = true
-                }
+                nodeFade[index] = true
             }
         }
 

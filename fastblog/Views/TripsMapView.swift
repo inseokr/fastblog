@@ -12,7 +12,7 @@ struct TripsMapView: View {
     @Binding var selectedTripID: UUID?
     @Binding var mapPosition: MapCameraPosition
     var onTripTapped: ((TripDraft) -> Void)?
-    var onMapRegionChanged: ((CLLocationCoordinate2D) -> Void)?
+    var onMapRegionChanged: ((MKCoordinateRegion) -> Void)?
 
     /// Trips that have a center coordinate for map display.
     private var tripsWithCoordinate: [(trip: TripDraft, coordinate: CLLocationCoordinate2D)] {
@@ -37,7 +37,7 @@ struct TripsMapView: View {
         }
         .mapStyle(.standard(elevation: .realistic))
         .onMapCameraChange(frequency: .onEnd) { context in
-            onMapRegionChanged?(context.camera.centerCoordinate)
+            onMapRegionChanged?(context.region)
         }
     }
 }

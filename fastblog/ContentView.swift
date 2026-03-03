@@ -85,9 +85,12 @@ struct ContentView: View {
             if justFinishedOnboarding {
                 justFinishedOnboarding = false
                 if tripsViewModel.tripDrafts.isEmpty {
+                    // Scan starts — LandingView shows the scanning overlay,
+                    // then navigates to TripsView when scan finishes.
                     tripsViewModel.startDefaultScan()
+                } else {
+                    showTrips = true
                 }
-                showTrips = true
             }
         }
     }

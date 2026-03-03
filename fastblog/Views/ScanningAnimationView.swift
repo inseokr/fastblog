@@ -63,14 +63,14 @@ private struct ScanningRingView: View {
             )
             .scaleEffect(isExpanded ? 1.4 : 0.6)
             .opacity(isExpanded ? 0 : 0.7)
+            .animation(
+                .easeOut(duration: duration)
+                .repeatForever(autoreverses: true)
+                .delay(delay),
+                value: isExpanded
+            )
             .onAppear {
-                withAnimation(
-                    .easeOut(duration: duration)
-                    .repeatForever(autoreverses: true)
-                    .delay(delay)
-                ) {
-                    isExpanded = true
-                }
+                isExpanded = true
             }
     }
 }

@@ -30,14 +30,14 @@ final class ProfileMapViewModel: ObservableObject {
         self.mapRegion = defaultRegion
     }
 
-    /// Only cloud-published blogs appear on the Profile map, matching the Profile page list.
+    /// All visible blogs appear on the Profile map, matching the My Blogs page list.
     var allTrips: [CreatedRecapBlog] {
-        store.cloudPublishedBlogs
+        store.visibleRecents
     }
 
-    /// Country summaries for the filter bar — only cloud-published blogs.
+    /// Country summaries for the filter bar — all visible blogs.
     var countrySummaries: [CountryRecapSummary] {
-        store.cloudCountrySummaries
+        store.countrySummaries
     }
 
     /// Trips to show on map and in modal; filtered by selected country and search text when set. Sorted newest to oldest.

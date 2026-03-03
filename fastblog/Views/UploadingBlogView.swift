@@ -66,6 +66,7 @@ struct UploadingBlogView: View {
                 .foregroundColor(.blue.opacity(0.4))
                 .frame(width: 140, height: 140)
                 .rotationEffect(.degrees(ringRotation))
+                .animation(.linear(duration: 2).repeatForever(autoreverses: false), value: ringRotation)
 
             // Progress ring that fills based on actual upload progress
             Circle()
@@ -86,6 +87,7 @@ struct UploadingBlogView: View {
                 .scaledToFit()
                 .frame(width: 88, height: 88)
                 .scaleEffect(pulseScale)
+                .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulseScale)
         }
         .frame(width: 200, height: 200)
     }
@@ -103,6 +105,7 @@ struct UploadingBlogView: View {
             .foregroundColor(.blue.opacity(visible ? 0.9 : 0))
             .scaleEffect(visible ? 1 : 0.3)
             .offset(x: x, y: y)
+            .animation(.spring(response: 0.45, dampingFraction: 0.7), value: visible)
     }
 
     private var messageSection: some View {
@@ -135,22 +138,16 @@ struct UploadingBlogView: View {
 
     private func startAnimations() {
         // Dashed ring rotation (continuous)
-        withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
-            ringRotation = 360
-        }
+        ringRotation = 360
 
         // Gentle pulse on logo
-        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-            pulseScale = 1.08
-        }
+        pulseScale = 1.08
 
         // Assemble nodes one by one
         for step in 1...3 {
             let delay = 0.4 + Double(step) * 0.35
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) {
-                    assembledStep = step
-                }
+                assembledStep = step
             }
         }
 
