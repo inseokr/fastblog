@@ -59,6 +59,17 @@ struct PlaceStopRowView: View {
         return f
     }()
 
+    private static let dayDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    private var dayDateText: String {
+        Self.dayDateFormatter.string(from: day.date)
+    }
+
     private var visitTimeText: String? {
         // Prefer visitedTimeDigitized (EXIF local time — already timezone-correct) over
         // photo.timestamp (UTC Date formatted in device timezone, which may differ from capture location).
@@ -281,18 +292,29 @@ struct PlaceStopRowView: View {
                                         .onTapGesture {
                                             onPhotoTapped?(photo)
                                         }
-                                    if isEditMode {
-                                        Button {
-                                            onRemovePhoto?(photo.id)
-                                        } label: {
-                                            Image(systemName: "xmark.circle.fill")
-                                                .font(.system(size: 30))
-                                                .symbolRenderingMode(.palette)
-                                                .foregroundStyle(.white, Color.black.opacity(0.6))
+                                    VStack(alignment: .trailing, spacing: 6) {
+                                        Text(dayDateText)
+                                            .font(.caption2)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Color.black.opacity(0.55))
+                                            .clipShape(Capsule())
+
+                                        if isEditMode {
+                                            Button {
+                                                onRemovePhoto?(photo.id)
+                                            } label: {
+                                                Image(systemName: "xmark.circle.fill")
+                                                    .font(.system(size: 30))
+                                                    .symbolRenderingMode(.palette)
+                                                    .foregroundStyle(.white, Color.black.opacity(0.6))
+                                            }
+                                            .buttonStyle(.plain)
                                         }
-                                        .buttonStyle(.plain)
-                                        .padding(6)
                                     }
+                                    .padding(6)
                                 }
                                 if isEditMode {
                                     Button {

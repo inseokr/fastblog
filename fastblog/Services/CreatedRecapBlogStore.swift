@@ -16,6 +16,61 @@ enum OwnerScope: String, Codable, Sendable {
     case anonymous
     case account
 }
+struct VisitedPlaceSummary: Identifiable, Equatable {
+    struct RelatedBlogRef: Identifiable, Equatable {
+        let blogId: UUID
+        let blogTitle: String
+        let blogDate: Date
+        var id: UUID { blogId }
+    }
+
+    let placeId: String
+    let placeName: String
+    let city: String
+    let country: String
+    let categoryRawValue: String?
+    let latestVisitDate: Date
+    let year: Int
+    let photos: [RecapPhoto]
+    let placeCaption: String?
+    let photoCaptions: [String]
+    let relatedBlogs: [RelatedBlogRef]
+
+    var id: String { placeId }
+
+    var displayName: String {
+        let trimmed = placeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed.lowercased() == "unknown" || trimmed == "Unknown Place" {
+            return "Unknown Place"
+        }
+        return trimmed
+    }
+
+    var cityDisplay: String? {
+        let trimmed = city.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    var heroPhoto: RecapPhoto? {
+        photos.max { lhs, rhs in
+            let l = lhs.qualityScore?.totalScore ?? -1
+            let r = rhs.qualityScore?.totalScore ?? -1
+            if l != r { return l < r }
+            return lhs.timestamp < rhs.timestamp
+        }
+    }
+
+    var thumbnailStrip: [RecapPhoto] {
+        Array(photos.sorted(by: { $0.timestamp > $1.timestamp }).prefix(3))
+    }
+
+    var captionPreview: String? {
+        if let c = placeCaption, !c.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return c
+        }
+        return photoCaptions.first
+    }
+}
 
 /// The cloud lifecycle state of a local blog.
 enum CloudState: String, Codable, Sendable {
@@ -531,6 +586,37 @@ final class CreatedRecapBlogStore: ObservableObject {
         )
         persistRecents()
         persistBlogDetails()
+    }
+
+    /// Updates the caption of a single photo across any stored blog detail that contains it.
+    /// Called when the user edits a caption from the Places Visited photo modal.
+    func updatePhotoCaption(photoId: UUID, newCaption: String) {
+        var changed = false
+        for key in blogDetailsBySourceId.keys {
+            guard var detail = blogDetailsBySourceId[key] else { continue }
+            var detailChanged = false
+            for dayIdx in detail.days.indices {
+                for stopIdx in detail.days[dayIdx].placeStops.indices {
+                    for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
+                        if detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].id == photoId {
+                            detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].caption = newCaption.isEmpty ? nil : newCaption
+                            detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].captionIsManual = true
+                            detailChanged = true
+                        }
+                    }
+                }
+            }
+            if detailChanged {
+                blogDetailsBySourceId[key] = detail
+                changed = true
+            }
+        }
+        if changed {
+            persistBlogDetails()
+            // Notify SwiftUI observers so views reading `visitedPlaces` (a computed property
+            // derived from `blogDetailsBySourceId`) re-render immediately with the new caption.
+            objectWillChange.send()
+        }
     }
 
     /// Deletes a created blog locally and from the cloud if it was published.
@@ -1248,6 +1334,117 @@ final class CreatedRecapBlogStore: ObservableObject {
             )
         }
         .sorted { $0.mostRecentBlog.createdAt > $1.mostRecentBlog.createdAt }
+    }
+
+    /// Derived list of visited places aggregated across all visible blogs (latest-first).
+    /// - Note: Uses persisted blogDetailsBySourceId only (no on-the-fly rebuild).
+    var visitedPlaces: [VisitedPlaceSummary] {
+        let blogs = visibleRecents
+        var byKey: [String: (place: VisitedPlaceSummary, latest: Date)] = [:]
+
+        for blog in blogs {
+            guard let detail = blogDetailsBySourceId[blog.sourceTripId] else { continue }
+            let country = (detail.countryName?.isEmpty == false ? detail.countryName : blog.countryName) ?? "Unknown"
+            let relatedRef = VisitedPlaceSummary.RelatedBlogRef(
+                blogId: blog.sourceTripId,
+                blogTitle: blog.title,
+                blogDate: blog.tripStartDate ?? blog.createdAt
+            )
+
+            for day in detail.days {
+                for stop in day.placeStops {
+                    let included = stop.photos.filter(\.isIncluded)
+                    guard !included.isEmpty else { continue }
+
+                    let latestVisit = included.map(\.timestamp).max() ?? (blog.tripEndDate ?? blog.createdAt)
+                    let year = Calendar.current.component(.year, from: latestVisit)
+                    let placeName = stop.placeTitle
+                    let city = stop.placeSubtitle ?? ""
+
+                    let placeKey: String = {
+                        if let idx = stop.cloudPlaceIndex {
+                            return "cloud_\(idx)"
+                        }
+                        if let vtd = stop.visitedTimeDigitized, !vtd.isEmpty {
+                            return "vtd_\(vtd)_\(placeName)"
+                        }
+                        let dayStamp = day.date.timeIntervalSince1970
+                        return "local_\(blog.sourceTripId.uuidString)_\(Int(dayStamp))_\(stop.orderIndex)_\(placeName)"
+                    }()
+
+                    let placeCaption = stop.noteText
+                    let photoCaptions = included.compactMap { $0.caption?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                        .filter { !$0.isEmpty }
+
+                    let newSummary = VisitedPlaceSummary(
+                        placeId: placeKey,
+                        placeName: placeName,
+                        city: city,
+                        country: country,
+                        categoryRawValue: stop.placeCategory,
+                        latestVisitDate: latestVisit,
+                        year: year,
+                        photos: included.sorted(by: { $0.timestamp > $1.timestamp }),
+                        placeCaption: placeCaption,
+                        photoCaptions: photoCaptions,
+                        relatedBlogs: [relatedRef]
+                    )
+
+                    if var existing = byKey[placeKey]?.place {
+                        let mergedLatest = max(existing.latestVisitDate, newSummary.latestVisitDate)
+                        let mergedPhotos = (existing.photos + newSummary.photos)
+                            .uniqued(by: { $0.id })
+                            .sorted(by: { $0.timestamp > $1.timestamp })
+
+                        let mergedPhotoCaptions = (existing.photoCaptions + newSummary.photoCaptions)
+                            .filter { !$0.isEmpty }
+                        let mergedBlogs = (existing.relatedBlogs + newSummary.relatedBlogs)
+                            .uniqued(by: { $0.blogId })
+                            .sorted(by: { $0.blogDate > $1.blogDate })
+
+                        let caption = (existing.placeCaption?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+                            ? existing.placeCaption
+                            : newSummary.placeCaption
+
+                        existing = VisitedPlaceSummary(
+                            placeId: existing.placeId,
+                            placeName: existing.placeName,
+                            city: existing.city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? newSummary.city : existing.city,
+                            country: existing.country,
+                            categoryRawValue: existing.categoryRawValue ?? newSummary.categoryRawValue,
+                            latestVisitDate: mergedLatest,
+                            year: Calendar.current.component(.year, from: mergedLatest),
+                            photos: mergedPhotos,
+                            placeCaption: caption,
+                            photoCaptions: mergedPhotoCaptions,
+                            relatedBlogs: mergedBlogs
+                        )
+                        byKey[placeKey] = (existing, mergedLatest)
+                    } else {
+                        byKey[placeKey] = (newSummary, latestVisit)
+                    }
+                }
+            }
+        }
+
+        return byKey.values
+            .map(\.place)
+            .sorted(by: { $0.latestVisitDate > $1.latestVisitDate })
+    }
+}
+
+private extension Array {
+    func uniqued<Key: Hashable>(by key: (Element) -> Key) -> [Element] {
+        var seen = Set<Key>()
+        var out: [Element] = []
+        out.reserveCapacity(count)
+        for e in self {
+            let k = key(e)
+            if seen.contains(k) { continue }
+            seen.insert(k)
+            out.append(e)
+        }
+        return out
     }
 }
 

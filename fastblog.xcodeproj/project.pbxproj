@@ -12,6 +12,8 @@
 		7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000061 /* GoogleSignIn */; };
 		BB000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000101 /* ContentView.swift */; };
 		BB000104 /* fastblogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000103 /* fastblogApp.swift */; };
+		BB00F002 /* PlacesVisitedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F001 /* PlacesVisitedView.swift */; };
+		BB00F004 /* PlaceVisitedDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F003 /* PlaceVisitedDetailView.swift */; };
 		BB000106 /* MyBlogsProfileViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000105 /* MyBlogsProfileViewModel.swift */; };
 		BB000108 /* ProfileMapViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000107 /* ProfileMapViewModel.swift */; };
 		BB00010A /* TripCreationViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000109 /* TripCreationViewModel.swift */; };
@@ -183,6 +185,8 @@
 		BB00013B /* MapDayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapDayView.swift; sourceTree = "<group>"; };
 		BB00013D /* MockPhotoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockPhotoView.swift; sourceTree = "<group>"; };
 		BB00013F /* MyBlogsProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyBlogsProfileView.swift; sourceTree = "<group>"; };
+		BB00F001 /* PlacesVisitedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacesVisitedView.swift; sourceTree = "<group>"; };
+		BB00F003 /* PlaceVisitedDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceVisitedDetailView.swift; sourceTree = "<group>"; };
 		BB000141 /* MyMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyMapView.swift; sourceTree = "<group>"; };
 		BB000143 /* PhotoSelectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSelectView.swift; sourceTree = "<group>"; };
 		BB000145 /* PhotosPermissionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotosPermissionView.swift; sourceTree = "<group>"; };
@@ -396,6 +400,8 @@
 				BB00013B /* MapDayView.swift */,
 				BB00013D /* MockPhotoView.swift */,
 				BB00013F /* MyBlogsProfileView.swift */,
+				BB00F001 /* PlacesVisitedView.swift */,
+				BB00F003 /* PlaceVisitedDetailView.swift */,
 				BB000141 /* MyMapView.swift */,
 				BB000143 /* PhotoSelectView.swift */,
 				BB000145 /* PhotosPermissionView.swift */,
@@ -599,6 +605,8 @@
 			files = (
 				BB000102 /* ContentView.swift in Sources */,
 				BB000104 /* fastblogApp.swift in Sources */,
+				BB00F002 /* PlacesVisitedView.swift in Sources */,
+				BB00F004 /* PlaceVisitedDetailView.swift in Sources */,
 				BB000106 /* MyBlogsProfileViewModel.swift in Sources */,
 				BB000108 /* ProfileMapViewModel.swift in Sources */,
 				BB00010A /* TripCreationViewModel.swift in Sources */,

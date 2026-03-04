@@ -26,6 +26,7 @@ struct PlacePhotoModalView: View {
     var blogIsEditMode: Bool = false
     var photoCaption: (UUID) -> Binding<String>
     var onDismiss: () -> Void
+    var onViewBlog: (() -> Void)?
     /// When provided, a "Generate" button is shown in the caption editing panel. Called with (photo, placeName, placeSubtitle); returns generated caption.
     var onGenerateCaption: ((RecapPhoto, String, String?) async -> String)?
     /// Called after the AI wand applies a caption. Used to mark captionIsManual = false and cascade overall story.
@@ -99,6 +100,7 @@ struct PlacePhotoModalView: View {
         blogIsEditMode: Bool = false,
         photoCaption: @escaping (UUID) -> Binding<String>,
         onDismiss: @escaping () -> Void,
+        onViewBlog: (() -> Void)? = nil,
         onGenerateCaption: ((RecapPhoto, String, String?) async -> String)? = nil,
         onAICaptionApplied: ((UUID) -> Void)? = nil,
         onPhotoCaptionManuallyEdited: ((UUID) -> Void)? = nil,
@@ -112,6 +114,7 @@ struct PlacePhotoModalView: View {
         self.blogIsEditMode = blogIsEditMode
         self.photoCaption = photoCaption
         self.onDismiss = onDismiss
+        self.onViewBlog = onViewBlog
         self.onGenerateCaption = onGenerateCaption
         self.onAICaptionApplied = onAICaptionApplied
         self.onPhotoCaptionManuallyEdited = onPhotoCaptionManuallyEdited
@@ -164,7 +167,9 @@ struct PlacePhotoModalView: View {
 
                 // 2. Bottom overlay
             VStack {
-                Spacer()
+                Color.clear
+                    .frame(maxHeight: .infinity)
+                    .allowsHitTesting(false)
                 // In edit mode (both blog edit and read mode editing),
                 // the place title, timestamp and caption input are rendered in the safeAreaInset anchored above the keyboard.
                 if !isEditing {
@@ -175,6 +180,7 @@ struct PlacePhotoModalView: View {
                         captionText: $editedCaptionText,
                         placeholder: "Leave a story for this photo...",
                         blogIsEditMode: blogIsEditMode,
+                        onViewBlog: onViewBlog,
                         onCommitCaption: { commitCaption() }
                     )
                 }
@@ -711,15 +717,33 @@ struct BottomInfoOverlay: View {
     @Binding var captionText: String
     let placeholder: String
     var blogIsEditMode: Bool = false
+    var onViewBlog: (() -> Void)?
     var onCommitCaption: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(placeTitle)
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-                .shadow(color: .black.opacity(0.4), radius: 2)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(placeTitle)
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .shadow(color: .black.opacity(0.4), radius: 2)
+
+                Spacer()
+
+                if let onViewBlog {
+                    Button(action: onViewBlog) {
+                        Image(systemName: "book.fill")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 36, height: 36)
+                            .background(Color.black.opacity(0.35))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("View blog")
+                }
+            }
 
             if !dateTimeText.isEmpty {
                 Text(dateTimeText)

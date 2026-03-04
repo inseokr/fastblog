@@ -19,12 +19,67 @@ private struct MyBlogsScrollOffsetKey: PreferenceKey {
     }
 }
 
+private struct PlaceVisitedMiniCard: View {
+    let place: VisitedPlaceSummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack(alignment: .bottomLeading) {
+                if let hero = place.heroPhoto {
+                    RecapPhotoThumbnail(photo: hero, cornerRadius: 12, showIcon: false, targetSize: CGSize(width: 520, height: 520))
+                        .frame(width: 140, height: 112)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                } else {
+                    Color.white.opacity(0.12)
+                        .frame(width: 140, height: 112)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay {
+                            Image(systemName: "photo")
+                                .foregroundColor(.white.opacity(0.5))
+                        }
+                }
+
+                if place.photos.count > 1 {
+                    Text("+\(max(0, place.photos.count - 1))")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.black.opacity(0.55))
+                        .clipShape(Capsule())
+                        .padding(8)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(place.displayName)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+
+                Text(place.country)
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.75))
+                    .lineLimit(1)
+            }
+        }
+        .frame(width: 140)
+        .padding(10)
+        .background(Color.white.opacity(0.10))
+        .cornerRadius(14)
+    }
+}
+
 struct MyBlogsProfileView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @StateObject private var viewModel = MyBlogsProfileViewModel()
     @State private var selectedSection: CountrySection?
+    @State private var selectedPlaceForModal: VisitedPlaceSummary?
+    @State private var showPlacesVisited = false
     @State private var showMyMap = false
     @State private var showManage = false
     @State private var isSearchActive = false
@@ -53,8 +108,12 @@ struct MyBlogsProfileView: View {
                         unsavedTripsSection
                     }
 
+                    if !isSearchActive && !createdRecapStore.visitedPlaces.isEmpty {
+                        placesVisitedSection
+                    }
+
                     // Recent Blogs horizontal scroll (only when not in search mode)
-                    if !isSearchActive && !createdRecapStore.visibleRecents.isEmpty {
+                    if false && !isSearchActive && !createdRecapStore.visibleRecents.isEmpty {
                         recentBlogsSection
                     }
 
@@ -133,6 +192,13 @@ struct MyBlogsProfileView: View {
         .navigationDestination(item: $selectedSection) { section in
             CountryBlogsView(section: section, selectedBlog: $selectedCreatedRecap)
         }
+        .navigationDestination(isPresented: $showPlacesVisited) {
+            PlacesVisitedView()
+                .environmentObject(createdRecapStore)
+        }
+        .sheet(item: $selectedPlaceForModal) { place in
+            placeModalSheet(place: place)
+        }
         .navigationDestination(isPresented: $showMyMap) {
             MyMapView(selectedCreatedRecap: $selectedCreatedRecap)
         }
@@ -170,6 +236,85 @@ struct MyBlogsProfileView: View {
     }
 
     // "Recent Blogs" horizontal scroll matching the home page style
+    private var placesVisitedSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Places Visited")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .padding(.top, 16)
+
+                Spacer()
+
+                Button {
+                    showPlacesVisited = true
+                } label: {
+                    Text("View All")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white.opacity(0.85))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.12))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(createdRecapStore.visitedPlaces.prefix(10)) { place in
+                        Button {
+                            selectedPlaceForModal = place
+                        } label: {
+                            PlaceVisitedMiniCard(place: place)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.bottom, 8)
+            }
+            .frame(height: 178)
+        }
+        .padding(.bottom, 8)
+    }
+
+    @ViewBuilder
+    private func placeModalSheet(place: VisitedPlaceSummary) -> some View {
+        let photos = place.photos
+        if let initialPhotoId = photos.first?.id {
+            PlacePhotoModalView(
+                placeTitle: Binding(
+                    get: { place.displayName },
+                    set: { _ in }
+                ),
+                placeSubtitle: place.cityDisplay ?? place.country,
+                photos: photos,
+                initialPhotoId: initialPhotoId,
+                stopDigitizedTime: nil,
+                blogIsEditMode: false,
+                photoCaption: { photoId in
+                    let caption = photos.first(where: { $0.id == photoId })?.caption ?? ""
+                    return Binding(
+                        get: { caption },
+                        set: { _ in }
+                    )
+                },
+                onDismiss: { selectedPlaceForModal = nil },
+                onViewBlog: {
+                    guard let blogId = place.relatedBlogs.first?.blogId,
+                          let recap = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == blogId }) else { return }
+                    selectedPlaceForModal = nil
+                    selectedCreatedRecap = recap
+                }
+            )
+            .presentationDetents([.large])
+        } else {
+            Color.clear.onAppear { selectedPlaceForModal = nil }
+        }
+    }
+
     private var recentBlogsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Recent Blogs")
