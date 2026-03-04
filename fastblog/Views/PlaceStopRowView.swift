@@ -242,10 +242,11 @@ struct PlaceStopRowView: View {
 
             // Photo strip: large thumbnails; one full photo visible + peek of next so users know they can scroll
             let includedPhotos = stop.photos.filter(\.isIncluded)
+            let hasAnyPhotos = !stop.photos.isEmpty
             let hasMultipleAvailable = stop.photos.count > 1
 
             // --- CASE 1: No included photos — show standalone "Manage Photos" button in edit mode ---
-            if isEditMode && includedPhotos.isEmpty && hasMultipleAvailable {
+            if isEditMode && includedPhotos.isEmpty && hasAnyPhotos {
                 Button(action: onManagePhotos) {
                     HStack(spacing: 8) {
                         Image(systemName: "photo.on.rectangle")
