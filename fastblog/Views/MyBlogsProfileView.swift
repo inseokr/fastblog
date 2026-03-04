@@ -59,7 +59,7 @@ private struct PlaceVisitedMiniCard: View {
                     .foregroundColor(.white)
                     .lineLimit(1)
 
-                Text(place.country)
+                Text(place.cityDisplay ?? place.country)
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.75))
                     .lineLimit(1)
