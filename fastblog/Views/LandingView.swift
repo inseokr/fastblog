@@ -158,6 +158,7 @@ struct LandingView: View {
                 showProfile = true
             })
             .environmentObject(authService)
+            .environmentObject(createdRecapStore)
         }
         .animation(.easeInOut(duration: 0.3), value: showAuth)
         .onAppear {
@@ -449,12 +450,20 @@ struct CreatedRecapCard: View {
 private struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var authService: AuthService
+    @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @State private var showNeighborhoodSheet = false
     @State private var showAuth = false
     @State private var showDeleteAccountAlert = false
+    @State private var showAdminDashboard = false
     #if DEBUG
     @AppStorage("capper.tripClustering.debugLogging") private var tripClusteringDebug = false
     #endif
+
+    private let adminEmail = "yoobinrickyseo1@gmail.com"
+
+    private var isAdmin: Bool {
+        (authService.currentUser?.email ?? "").lowercased() == adminEmail.lowercased()
+    }
 
     var onProfileTapped: (() -> Void)? = nil
 
@@ -571,6 +580,24 @@ private struct SettingsView: View {
                     Text("Permissions")
                 }
 
+                if isAdmin {
+                    Section {
+                        Button {
+                            showAdminDashboard = true
+                        } label: {
+                            HStack {
+                                Label("Analytics Dashboard", systemImage: "chart.bar.fill")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    } header: {
+                        Text("Admin")
+                    }
+                }
+
                 Section {
                     Button {
                         showNeighborhoodSheet = true
@@ -648,6 +675,11 @@ private struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(isPresented: $showAdminDashboard) {
+                AdminAnalyticsDashboardView()
+                    .environmentObject(createdRecapStore)
+                    .environmentObject(authService)
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {

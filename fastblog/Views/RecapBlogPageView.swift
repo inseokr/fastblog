@@ -805,8 +805,16 @@ struct RecapBlogPageView: View {
                     .font(.title3)
                     .fontWeight(.bold)
                     .foregroundColor(.white)
-                Image(systemName: "sun.max")
-                    .foregroundColor(.secondary)
+                if let tzText = dayTimeZoneLabel(day: day) {
+                    Text(tzText)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(white: 0.12))
+                        .clipShape(Capsule())
+                }
             }
             .padding(.top, 4)
 
@@ -896,6 +904,33 @@ struct RecapBlogPageView: View {
         }
     }
 
+    private func dayTimeZoneLabel(day: RecapBlogDay) -> String? {
+        if let offset = day.placeStops.first?.visitedTimeZoneOffsetSeconds {
+            return gmtLabel(secondsFromGMT: offset)
+        }
+        if let digitized = day.placeStops.first?.visitedTimeDigitized {
+            // When we don't have explicit offset stored (older saved drafts), infer from the string
+            // by falling back to generic UTC label.
+            let components = digitized.split(separator: " ")
+            if components.count == 2 {
+                return "UTC"
+            }
+        }
+        return nil
+    }
+
+    private func gmtLabel(secondsFromGMT: Int) -> String {
+        if secondsFromGMT == 0 { return "UTC" }
+        let sign = secondsFromGMT >= 0 ? "+" : "-"
+        let absSeconds = abs(secondsFromGMT)
+        let hours = absSeconds / 3600
+        let minutes = (absSeconds % 3600) / 60
+        if minutes == 0 {
+            return "UTC\(sign)\(hours)"
+        }
+        return String(format: "UTC%@%d:%02d", sign, hours, minutes)
+    }
+
     @ViewBuilder
     private func placePhotoModalSheet(item: PlacePhotoModalItem) -> some View {
         Group {
@@ -943,6 +978,11 @@ struct RecapBlogPageView: View {
     private func loadDraftIfNeeded() {
         if let saved = createdRecapStore.getBlogDetail(blogId: blogId) {
             draft = saved
+            Task { @MainActor in
+                if let updated = await createdRecapStore.backfillTimeZoneOffsetsIfNeeded(blogId: blogId) {
+                    draft = updated
+                }
+            }
             // Auto-generate stories for any places that are missing them (e.g. first open after AI was added).
             Task { @MainActor in await autoFillMissingOverallStories() }
             hasFinishedInitialLoad = true

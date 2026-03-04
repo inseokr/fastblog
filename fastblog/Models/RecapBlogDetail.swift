@@ -124,6 +124,9 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
     /// Digitized timestamp of the earliest included photo (EXIF format "yyyy:MM:dd HH:mm:ss").
     /// Used as a cloud deduplication and update key alongside cloudPlaceIndex.
     var visitedTimeDigitized: String?
+    /// Optional timezone offset (seconds from GMT) for visitedTimeDigitized.
+    /// Nil for older saved drafts or when unknown.
+    var visitedTimeZoneOffsetSeconds: Int?
     /// Raw MKPointOfInterestCategory.rawValue set when user picks from Maps autocomplete (e.g. "MKPOICategoryRestaurant").
     var placeCategory: String?
 
@@ -142,6 +145,7 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         overallStoryIsManual: Bool = false,
         cloudPlaceIndex: Int? = nil,
         visitedTimeDigitized: String? = nil,
+        visitedTimeZoneOffsetSeconds: Int? = nil,
         placeCategory: String? = nil
     ) {
         self.id = id
@@ -155,6 +159,7 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         self.overallStoryIsManual = overallStoryIsManual
         self.cloudPlaceIndex = cloudPlaceIndex
         self.visitedTimeDigitized = visitedTimeDigitized
+        self.visitedTimeZoneOffsetSeconds = visitedTimeZoneOffsetSeconds
         self.placeCategory = placeCategory
     }
 

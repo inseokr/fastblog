@@ -533,6 +533,29 @@ final class CreatedRecapBlogStore: ObservableObject {
         persistBlogDetails()
     }
 
+    /// Backfills per-stop timezone offsets for older saved drafts.
+    /// Returns the updated detail if it changed (and persists it), else nil.
+    func backfillTimeZoneOffsetsIfNeeded(blogId: UUID) async -> RecapBlogDetail? {
+        guard var detail = blogDetailsBySourceId[blogId] else { return nil }
+
+        var didChange = false
+        for dayIdx in detail.days.indices {
+            for stopIdx in detail.days[dayIdx].placeStops.indices {
+                let hasDigitized = detail.days[dayIdx].placeStops[stopIdx].visitedTimeDigitized != nil
+                let hasOffset = detail.days[dayIdx].placeStops[stopIdx].visitedTimeZoneOffsetSeconds != nil
+                if hasDigitized && !hasOffset {
+                    detail.days[dayIdx].placeStops[stopIdx].visitedTimeZoneOffsetSeconds = 0
+                    didChange = true
+                }
+            }
+        }
+
+        guard didChange else { return nil }
+        blogDetailsBySourceId[blogId] = detail
+        persistBlogDetails()
+        return detail
+    }
+
     /// Deletes a created blog locally and from the cloud if it was published.
     func deleteBlog(sourceTripId: UUID) {
         if let key = recents.first(where: { $0.sourceTripId == sourceTripId })?.blogKey {
