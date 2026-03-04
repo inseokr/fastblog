@@ -19,9 +19,21 @@ final class PhotosAuthorizationManager: ObservableObject {
     }
 
     func requestAccess() async {
+        AppAnalytics.trackEvent(name: "photo_permission_prompted")
         let newStatus = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         status = newStatus
         refreshPhotoCount()
+
+        switch newStatus {
+        case .authorized, .limited:
+            AppAnalytics.trackEvent(name: "photo_permission_granted")
+        case .denied, .restricted:
+            AppAnalytics.trackEvent(name: "photo_permission_denied")
+        case .notDetermined:
+            break
+        @unknown default:
+            break
+        }
     }
 
     func refreshStatus() {

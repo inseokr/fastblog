@@ -11,6 +11,7 @@
 		0B1189F592CFDEDAF3305FAB /* PhotoPermissionOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */; };
 		7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000061 /* GoogleSignIn */; };
 		BB000301 /* AdminAnalyticsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000300 /* AdminAnalyticsDashboardView.swift */; };
+		BB000303 /* MyStatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000302 /* MyStatsView.swift */; };
 		BB000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000101 /* ContentView.swift */; };
 		BB000104 /* fastblogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000103 /* fastblogApp.swift */; };
 		BB000106 /* MyBlogsProfileViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000105 /* MyBlogsProfileViewModel.swift */; };
@@ -146,6 +147,7 @@
 		BB00022C /* SplashStateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00022D /* SplashStateManager.swift */; };
 		BB00022E /* CountryManageBlogsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00022F /* CountryManageBlogsSheet.swift */; };
 		BB000231 /* PhotoAccessRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000230 /* PhotoAccessRow.swift */; };
+		BB00A001 /* Analytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00A002 /* Analytics.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -293,6 +295,8 @@
 		BB000230 /* PhotoAccessRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoAccessRow.swift; sourceTree = "<group>"; };
 		F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalLLMStoryCaptionGenerator.swift; sourceTree = "<group>"; };
 		BB000300 /* AdminAnalyticsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminAnalyticsDashboardView.swift; sourceTree = "<group>"; };
+		BB000302 /* MyStatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyStatsView.swift; sourceTree = "<group>"; };
+		BB00A002 /* Analytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Analytics.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -377,6 +381,7 @@
 			children = (
 				BB0001DA /* AppLaunchSplashView.swift */,
 				BB000300 /* AdminAnalyticsDashboardView.swift */,
+				BB000302 /* MyStatsView.swift */,
 				BB00011F /* BlogPreviewView.swift */,
 				BB000121 /* BlogSettingsSheet.swift */,
 				BB000203 /* BottomSheetView.swift */,
@@ -463,6 +468,7 @@
 		BB0001B4 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				BB00A002 /* Analytics.swift */,
 				BB0001F2 /* APIManager.swift */,
 				BB0001F4 /* AuthService.swift */,
 				BB0001F6 /* AuthStateManager.swift */,
@@ -601,6 +607,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				BB000301 /* AdminAnalyticsDashboardView.swift in Sources */,
+				BB000303 /* MyStatsView.swift in Sources */,
+				BB00A001 /* Analytics.swift in Sources */,
 				BB000102 /* ContentView.swift in Sources */,
 				BB000104 /* fastblogApp.swift in Sources */,
 				BB000106 /* MyBlogsProfileViewModel.swift in Sources */,

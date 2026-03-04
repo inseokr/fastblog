@@ -18,6 +18,7 @@ final class LocationManagerForOnboarding: NSObject, ObservableObject {
     }
 
     func requestLocation() {
+        AppAnalytics.trackEvent(name: "location_permission_prompted")
         manager.requestWhenInUseAuthorization()
         manager.requestLocation()
     }
@@ -26,6 +27,9 @@ final class LocationManagerForOnboarding: NSObject, ObservableObject {
 extension LocationManagerForOnboarding: CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         lastCoordinate = locations.last?.coordinate
+        if manager.authorizationStatus == .authorizedAlways || manager.authorizationStatus == .authorizedWhenInUse {
+            AppAnalytics.trackEvent(name: "location_permission_granted")
+        }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {

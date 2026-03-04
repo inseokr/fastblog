@@ -22,6 +22,7 @@ struct fastblogApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var isAppReady = false
     @State private var pendingResetToken: String?
+    @State private var hasTrackedAppOpened = false
 
     #if DEBUG
         /// Flip to `true` to skip splash + onboarding and land directly on ManagePhotosView.
@@ -169,6 +170,11 @@ struct fastblogApp: App {
                 withAnimation {
                     isAppReady = true
                     splashManager.phase = .animating
+                }
+
+                if !hasTrackedAppOpened {
+                    hasTrackedAppOpened = true
+                    AppAnalytics.trackEvent(name: "app_opened")
                 }
 
                 // Phase 2 → 3: after zoom fills screen (~650ms), remove overlay

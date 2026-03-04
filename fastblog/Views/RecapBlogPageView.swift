@@ -6,6 +6,7 @@
 import SwiftUI
 import MapKit
 import Combine
+import UIKit
 
 private struct TitleMinYPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = .greatestFiniteMagnitude
@@ -53,6 +54,8 @@ struct RecapBlogPageView: View {
     @State private var showUploadPromptAlert = false
     @State private var showNavBarTitle = false
     @State private var hasFinishedInitialLoad = false
+    @State private var hasTrackedBlogOpened = false
+    @State private var hasTrackedFirstCaptionWritten = false
 
     // Undo State
     @State private var lastUndoAction: UndoAction?
@@ -186,7 +189,20 @@ struct RecapBlogPageView: View {
             .toolbarBackground(!isEditMode && showNavBarTitle ? .visible : .hidden, for: .navigationBar)
             .toolbar { toolbarContent }
             .sheet(isPresented: $showShareSheet) {
-                ShareSheet(items: shareItems)
+                ShareSheet(items: shareItems) { activityType, completed in
+                    if completed {
+                        AppAnalytics.trackEvent(name: "blog_link_share_completed")
+                        if activityType == UIActivity.ActivityType.copyToPasteboard {
+                            AppAnalytics.trackEvent(name: "blog_link_share_completed_copy")
+                        } else if activityType == UIActivity.ActivityType.mail {
+                            AppAnalytics.trackEvent(name: "blog_link_share_completed_mail")
+                        } else {
+                            AppAnalytics.trackEvent(name: "blog_link_share_completed_other")
+                        }
+                    } else {
+                        AppAnalytics.trackEvent(name: "blog_link_share_cancelled")
+                    }
+                }
             }
             .sheet(isPresented: $showBlogSettings) {
                 BlogSettingsSheet(
@@ -623,7 +639,14 @@ struct RecapBlogPageView: View {
 
                             Button {
                                 print("SHARE BUTTON CLICKED in recap blog page. blogIsInCloud: \(blogIsInCloud)")
+                                AppAnalytics.trackEvent(name: "share_button_clicked")
                                 if blogIsInCloud {
+                                    if let items = shareItems as? [Any],
+                                       let url = items.first(where: { $0 is URL }) as? URL {
+                                        AppAnalytics.trackEvent(name: "share_link_created", properties: ["urlHost": url.host ?? "", "hasURL": true])
+                                    } else {
+                                        AppAnalytics.trackEvent(name: "share_link_created", properties: ["hasURL": false])
+                                    }
                                     showShareSheet = true
                                 } else {
                                     showSaveTipAlert = false
@@ -978,6 +1001,16 @@ struct RecapBlogPageView: View {
     private func loadDraftIfNeeded() {
         if let saved = createdRecapStore.getBlogDetail(blogId: blogId) {
             draft = saved
+            if !hasTrackedBlogOpened {
+                hasTrackedBlogOpened = true
+                AppAnalytics.trackEvent(
+                    name: "blog_opened",
+                    properties: [
+                        "photoCount": draft.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count,
+                        "placeCount": draft.days.flatMap(\.placeStops).count
+                    ]
+                )
+            }
             Task { @MainActor in
                 if let updated = await createdRecapStore.backfillTimeZoneOffsetsIfNeeded(blogId: blogId) {
                     draft = updated
@@ -994,6 +1027,16 @@ struct RecapBlogPageView: View {
         }
         Task { @MainActor in
             draft = await createdRecapStore.buildBlogDetailAsync(from: trip)
+            if !hasTrackedBlogOpened {
+                hasTrackedBlogOpened = true
+                AppAnalytics.trackEvent(
+                    name: "blog_opened",
+                    properties: [
+                        "photoCount": draft.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count,
+                        "placeCount": draft.days.flatMap(\.placeStops).count
+                    ]
+                )
+            }
             // Case 1: first-time creation — auto-generate captions + overall stories for all places.
             await autoFillCaptionsAndStories()
             hasFinishedInitialLoad = true
@@ -1040,6 +1083,8 @@ struct RecapBlogPageView: View {
 // AutosaveManager.shared.cancelPending() — removed
         createdRecapStore.saveBlogDetail(draft)
 
+        AppAnalytics.trackEvent(name: "blog_saved")
+
         if isFirstSave {
             withAnimation {
                 showFirstSaveBanner = true
@@ -1062,6 +1107,8 @@ struct RecapBlogPageView: View {
     private func removePlaceStop(dayId: UUID, stopId: UUID) {
         guard let dayIndex = draft.days.firstIndex(where: { $0.id == dayId }),
               let stopIndex = draft.days[dayIndex].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+
+        AppAnalytics.trackEvent(name: "place_hidden")
         
         // Prepare Undo
         let day = draft.days[dayIndex]
@@ -1104,6 +1151,8 @@ struct RecapBlogPageView: View {
         guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
               let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }),
               let photoIdx = draft.days[dayIdx].placeStops[stopIdx].photos.firstIndex(where: { $0.id == photoId }) else { return }
+
+        AppAnalytics.trackEvent(name: "photo_hidden")
         
         // Prepare Undo
         let day = draft.days[dayIdx]
@@ -1267,6 +1316,17 @@ struct RecapBlogPageView: View {
             set: { newValue in
                 guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
                       let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+
+                let oldValue = (draft.days[dayIdx].placeStops[stopIdx].noteText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let newTrimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if oldValue.isEmpty && !newTrimmed.isEmpty {
+                    AppAnalytics.trackEvent(name: "place_caption_created")
+                    if !hasTrackedFirstCaptionWritten {
+                        hasTrackedFirstCaptionWritten = true
+                        AppAnalytics.trackEvent(name: "first_caption_written")
+                    }
+                }
+
                 var day = draft.days[dayIdx]
                 var stop = day.placeStops[stopIdx]
                 stop.noteText = newValue.isEmpty ? nil : newValue
@@ -1287,6 +1347,17 @@ struct RecapBlogPageView: View {
             set: { newValue in
                 guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
                       let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+
+                let oldValue = (draft.days[dayIdx].placeStops[stopIdx].overallStory ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let newTrimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if oldValue.isEmpty && !newTrimmed.isEmpty {
+                    AppAnalytics.trackEvent(name: "place_caption_created")
+                    if !hasTrackedFirstCaptionWritten {
+                        hasTrackedFirstCaptionWritten = true
+                        AppAnalytics.trackEvent(name: "first_caption_written")
+                    }
+                }
+
                 var day = draft.days[dayIdx]
                 var stop = day.placeStops[stopIdx]
                 stop.overallStory = newValue.isEmpty ? nil : newValue
@@ -1303,6 +1374,17 @@ struct RecapBlogPageView: View {
             },
             set: { newValue in
                 guard let idx = draft.days.firstIndex(where: { $0.id == dayId }) else { return }
+
+                let oldValue = (draft.days[idx].dayCaption ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let newTrimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if oldValue.isEmpty && !newTrimmed.isEmpty {
+                    AppAnalytics.trackEvent(name: "day_caption_created")
+                    if !hasTrackedFirstCaptionWritten {
+                        hasTrackedFirstCaptionWritten = true
+                        AppAnalytics.trackEvent(name: "first_caption_written")
+                    }
+                }
+
                 draft.days[idx].dayCaption = newValue.isEmpty ? nil : newValue
             }
         )
@@ -1381,6 +1463,17 @@ struct RecapBlogPageView: View {
                 guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
                       let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }),
                       let photoIdx = draft.days[dayIdx].placeStops[stopIdx].photos.firstIndex(where: { $0.id == photoId }) else { return }
+
+                let oldValue = (draft.days[dayIdx].placeStops[stopIdx].photos[photoIdx].caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let newTrimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if oldValue.isEmpty && !newTrimmed.isEmpty {
+                    AppAnalytics.trackEvent(name: "photo_caption_created")
+                    if !hasTrackedFirstCaptionWritten {
+                        hasTrackedFirstCaptionWritten = true
+                        AppAnalytics.trackEvent(name: "first_caption_written")
+                    }
+                }
+
                 var day = draft.days[dayIdx]
                 var stop = day.placeStops[stopIdx]
                 var photo = stop.photos[photoIdx]
@@ -1398,6 +1491,13 @@ struct RecapBlogPageView: View {
         guard let day = draft.days.first(where: { $0.placeStops.contains(where: { $0.id == stopId }) }),
               let stop = day.placeStops.first(where: { $0.id == stopId }),
               let placeKey = stop.visitedTimeDigitized else { return }
+
+        if isPlaceNote {
+            AppAnalytics.trackEvent(name: "place_story_added")
+        } else {
+            AppAnalytics.trackEvent(name: "photo_caption_added")
+        }
+
         Task {
             if isPlaceNote {
                 let storyText = stop.noteText ?? ""
@@ -1976,6 +2076,13 @@ struct RecapBlogPageView: View {
             return
         }
 
+        AppAnalytics.trackEvent(
+            name: "upload_attempted",
+            properties: [
+                "photoCount": draft.days.flatMap(\.placeStops).flatMap(\.photos).filter { $0.isIncluded && $0.cloudURL == nil }.count
+            ]
+        )
+
         // 🚨 Free Tier Guardrails
         if EntitlementManager.shared.isFreeTier {
             // 1. Storage Limit Check
@@ -2070,9 +2177,11 @@ struct RecapBlogPageView: View {
             showUploadingFullScreen = false
 
             if failCount > 0 {
+                AppAnalytics.trackEvent(name: "upload_failed", properties: ["failedCount": failCount])
                 uploadErrorMessage = "\(failCount) photo\(failCount == 1 ? "" : "s") failed to upload. Tap the cloud button to retry."
                 showUploadErrorAlert = true
             } else {
+                AppAnalytics.trackEvent(name: "upload_success")
                 withAnimation { showUploadSuccessBanner = true }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
                     withAnimation { showUploadSuccessBanner = false }

@@ -93,7 +93,10 @@ struct TripsView: View {
         .navigationDestination(item: $selectedTrip) { trip in
             TripDayPickerView(
                 trip: viewModel.tripForPicker(trip),
-                onStartCreateBlog: { createBlogFlowTrip = $0 }
+                onStartCreateBlog: {
+                    AppAnalytics.trackEvent(name: "trip_selected")
+                    createBlogFlowTrip = $0
+                }
             )
         }
         .fullScreenCover(item: $createBlogFlowTrip) { trip in
@@ -297,6 +300,7 @@ struct TripsView: View {
             mapPosition: $mapPosition,
             onTripTapped: { trip in
                 if trip.id == selectedTripID {
+                    AppAnalytics.trackEvent(name: "trip_selected")
                     createBlogFlowTrip = trip
                 } else {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
@@ -407,6 +411,7 @@ struct TripsView: View {
                         onTap: {
                             if trip.id == selectedTripID {
                                 // Already centered — open blog creation
+                                AppAnalytics.trackEvent(name: "trip_selected")
                                 createBlogFlowTrip = trip
                             } else {
                                 // Not centered yet — just snap it into focus

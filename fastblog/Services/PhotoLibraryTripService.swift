@@ -54,8 +54,10 @@ final class PhotoLibraryTripService {
     /// Fetches photos from the last windowDays, applies local exclusion, groups by day, returns trips and counts.
     /// Excludes photos whose creation date falls within any occupied range (already-created blogs) to reduce memory and avoid re-showing those trips.
     func scanLast90Days(occupiedDateRanges: [(start: Date, end: Date)] = []) async -> ScanResult {
+        AppAnalytics.trackEvent(name: "trip_scan_started")
         let now = Date()
         guard let windowStart = calendar.date(byAdding: .day, value: -ScanConfig.windowDays, to: now) else {
+            AppAnalytics.trackEvent(name: "trip_scan_completed", properties: ["tripsDetected": 0])
             return ScanResult(trips: [], totalFetched: 0, excludedLocalCount: 0, remainingForTripsCount: 0)
         }
 
@@ -64,6 +66,10 @@ final class PhotoLibraryTripService {
         let rangesKey = occupiedDateRanges.map { "\($0.start.timeIntervalSince1970)-\($0.end.timeIntervalSince1970)" }.joined(separator: ";")
         let cacheKey = "\(windowStart.timeIntervalSince1970)-\(radiusMiles)-\(centerKey)-\(rangesKey)"
         if cacheKey == cachedScanKey, let cached = cachedTrips {
+            AppAnalytics.trackEvent(name: "trip_scan_completed", properties: ["tripsDetected": cached.count, "fromCache": true])
+            if cached.count > 0 {
+                AppAnalytics.shared.incrementCounter("trips_detected", by: cached.count)
+            }
             return ScanResult(
                 trips: cached,
                 totalFetched: -1,
@@ -122,6 +128,7 @@ final class PhotoLibraryTripService {
         guard !remaining.isEmpty else {
             cachedScanKey = cacheKey
             cachedTrips = []
+            AppAnalytics.trackEvent(name: "trip_scan_completed", properties: ["tripsDetected": 0])
             return ScanResult(trips: [], totalFetched: totalFetched, excludedLocalCount: excludedWithin50Count + missingLocationCount, remainingForTripsCount: 0)
         }
 
@@ -230,6 +237,11 @@ final class PhotoLibraryTripService {
         debugPrint("[Scan] Day→Trip grouping produced \(trips.count) trip(s)")
         cachedScanKey = cacheKey
         cachedTrips = trips
+
+        AppAnalytics.trackEvent(name: "trip_scan_completed", properties: ["tripsDetected": trips.count])
+        if trips.count > 0 {
+            AppAnalytics.shared.incrementCounter("trips_detected", by: trips.count)
+        }
         return ScanResult(trips: trips, totalFetched: totalFetched, excludedLocalCount: excludedWithin50Count + missingLocationCount, remainingForTripsCount: remainingForTripsCount)
     }
 
@@ -267,7 +279,10 @@ final class PhotoLibraryTripService {
             remaining = allAssets.filter { $0.location != nil }
         }
 
-        guard !remaining.isEmpty else { return [] }
+        guard !remaining.isEmpty else {
+            AppAnalytics.trackEvent(name: "trip_scan_completed", properties: ["tripsDetected": 0])
+            return []
+        }
 
         let sortedByDate = remaining.sorted { (a, b) in
             (a.creationDate ?? .distantPast) < (b.creationDate ?? .distantPast)
@@ -386,6 +401,7 @@ final class PhotoLibraryTripService {
     /// Core date-range scanner used by all public overloads. Fetches photos in [startDate, endDate),
     /// applies local exclusion, groups by day, and returns TripDraft array.
     func scanInDateRange(startDate: Date, endDate: Date, occupiedDateRanges: [(start: Date, end: Date)] = [], progress: ((Double) -> Void)? = nil) async -> [TripDraft] {
+        AppAnalytics.trackEvent(name: "trip_scan_started")
         let options = PHFetchOptions()
         options.predicate = NSPredicate(format: "creationDate >= %@ AND creationDate < %@", startDate as NSDate, endDate as NSDate)
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
@@ -419,7 +435,10 @@ final class PhotoLibraryTripService {
         }
         let dayGroups = await groupAssetsByDay(sortedByDate)
         let sortedDayGroups = dayGroups.sorted { $0.date < $1.date }
-        guard !sortedDayGroups.isEmpty else { return [] }
+        guard !sortedDayGroups.isEmpty else {
+            AppAnalytics.trackEvent(name: "trip_scan_completed", properties: ["tripsDetected": 0])
+            return []
+        }
         progress?(0.25)
 
         let dayClusters = await buildDayClusters(from: sortedDayGroups, progress: progress)
@@ -491,6 +510,11 @@ final class PhotoLibraryTripService {
             trips.append(draft)
         }
         progress?(1.0)
+
+        AppAnalytics.trackEvent(name: "trip_scan_completed", properties: ["tripsDetected": trips.count])
+        if trips.count > 0 {
+            AppAnalytics.shared.incrementCounter("trips_detected", by: trips.count)
+        }
         return trips
     }
 

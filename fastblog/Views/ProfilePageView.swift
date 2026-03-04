@@ -7,6 +7,7 @@
 //
 import SwiftUI
 import PhotosUI
+import UIKit
 
 /// Centralized design system constants for the Profile
 struct ProfileTheme {
@@ -43,6 +44,7 @@ struct ProfilePageView: View {
     @StateObject private var viewModel = MyBlogsProfileViewModel()
     @State private var selectedCountryID: String? = nil
     @State private var showMyMap = false
+    @State private var showMyStats = false
     @State private var showManagementSheet = false
     /// Local navigation state — avoids conflicting with the global selectedCreatedRecap binding
     @State private var selectedBlogToOpen: CreatedRecapBlog? = nil
@@ -192,20 +194,12 @@ struct ProfilePageView: View {
                 Text("Bloggo")
                     .font(.system(size: 22, weight: .bold))
             }
-            if authStateManager.isLoggedIn {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task { await createdRecapStore.syncFromCloud() }
-                    } label: {
-                        if createdRecapStore.isSyncing {
-                            ProgressView()
-                                .tint(.primary)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .foregroundColor(.primary)
-                        }
-                    }
-                    .disabled(createdRecapStore.isSyncing)
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showMyStats = true
+                } label: {
+                    Text("My Stats")
+                        .foregroundColor(.primary)
                 }
             }
         }
@@ -223,6 +217,10 @@ struct ProfilePageView: View {
         }
         .navigationDestination(isPresented: $showMyMap) {
             MyMapView(selectedCreatedRecap: $selectedCreatedRecap)
+        }
+        .navigationDestination(isPresented: $showMyStats) {
+            MyStatsView()
+                .environmentObject(createdRecapStore)
         }
         .navigationDestination(item: $selectedBlogToOpen) { recap in
             RecapBlogPageView(
@@ -593,6 +591,8 @@ struct BlogCard: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @State private var showRemoveCloudPopup = false
     @State private var showDeleteConfirmSheet = false
+    @State private var showShareSheet = false
+    @State private var shareItems: [Any] = []
 
     /// Resolved username for share links (username → displayName → email fallback).
     static var resolvedUsername: String {
@@ -635,11 +635,12 @@ struct BlogCard: View {
                             // Share Button overlay
                             if let key = blog.blogKey,
                                let url = SecureShareToken.shareURL(username: BlogCard.resolvedUsername, blogKey: key) {
-                                ShareLink(
-                                    item: url,
-                                    subject: Text(blog.title),
-                                    message: Text("\(blog.title) – My Recap Blog")
-                                ) {
+                                Button {
+                                    AppAnalytics.trackEvent(name: "share_button_clicked")
+                                    AppAnalytics.trackEvent(name: "share_link_created", properties: ["urlHost": url.host ?? "", "hasURL": true])
+                                    shareItems = [url, "\(blog.title) – My Recap Blog"]
+                                    showShareSheet = true
+                                } label: {
                                     Image(systemName: "square.and.arrow.up")
                                         .font(.system(size: 14, weight: .semibold))
                                         .foregroundColor(.white)
@@ -652,6 +653,7 @@ struct BlogCard: View {
                                         )
                                 }
                                 .padding(ProfileTheme.Spacing.sm)
+                                .buttonStyle(.plain)
                             } else {
                                 Button {
                                 } label: {
@@ -677,6 +679,22 @@ struct BlogCard: View {
                     }
                 )
                 .clipped()
+                .sheet(isPresented: $showShareSheet) {
+                    ShareSheet(items: shareItems) { activityType, completed in
+                        if completed {
+                            AppAnalytics.trackEvent(name: "blog_link_share_completed")
+                            if activityType == UIActivity.ActivityType.copyToPasteboard {
+                                AppAnalytics.trackEvent(name: "blog_link_share_completed_copy")
+                            } else if activityType == UIActivity.ActivityType.mail {
+                                AppAnalytics.trackEvent(name: "blog_link_share_completed_mail")
+                            } else {
+                                AppAnalytics.trackEvent(name: "blog_link_share_completed_other")
+                            }
+                        } else {
+                            AppAnalytics.trackEvent(name: "blog_link_share_cancelled")
+                        }
+                    }
+                }
             
             // Story Meta & Content
             VStack(alignment: .leading, spacing: ProfileTheme.Spacing.sm) {

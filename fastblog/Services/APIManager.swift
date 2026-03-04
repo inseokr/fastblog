@@ -760,6 +760,8 @@ final class APIManager {
             print("✅ Privacy set to public for blogKey: \(response.blogKey)")
 
             print("🎉 publishBlog complete — all 3 steps succeeded")
+
+            AppAnalytics.trackEvent(name: "blog_published")
             return response.blogKey
         } catch {
             print("🚨 publishBlog failed: \(error)")

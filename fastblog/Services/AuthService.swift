@@ -465,6 +465,27 @@ extension AuthService {
 
         static func track(_ event: Event) {
             // Wire to your analytics SDK here.
+            let (name, properties): (String, [String: Any])
+            switch event {
+            case .authCreateAccountTapped:
+                name = "auth_create_account_tapped"
+                properties = [:]
+            case .authProviderSelected(let p):
+                name = "auth_provider_selected"
+                properties = ["provider": p]
+            case .authSuccess:
+                name = "auth_success"
+                properties = [:]
+            case .authCancelled:
+                name = "auth_cancelled"
+                properties = [:]
+            case .authFailed(let r):
+                name = "auth_failed"
+                properties = ["reason": r]
+            }
+
+            AppAnalytics.trackEvent(name: name, properties: properties)
+
             #if DEBUG
             switch event {
             case .authCreateAccountTapped:

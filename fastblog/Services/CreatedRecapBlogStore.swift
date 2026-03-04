@@ -322,6 +322,15 @@ final class CreatedRecapBlogStore: ObservableObject {
         let placeCount = tempDetail.days.reduce(0) { $0 + $1.placeStops.count }
         let duration = trip.days.count
 
+        AppAnalytics.trackEvent(
+            name: "blog_created",
+            properties: [
+                "photoCount": trip.selectedPhotoCount,
+                "placeCount": placeCount,
+                "durationDays": duration
+            ]
+        )
+
         // Auto-detect ownership from current auth state
         let resolvedScope: OwnerScope
         let resolvedUserId: String?
@@ -558,6 +567,7 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Deletes a created blog locally and from the cloud if it was published.
     func deleteBlog(sourceTripId: UUID) {
+        AppAnalytics.trackEvent(name: "blog_deleted")
         if let key = recents.first(where: { $0.sourceTripId == sourceTripId })?.blogKey {
             Task {
                 do {
@@ -1183,9 +1193,15 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     private func primaryCaption(from detail: RecapBlogDetail) -> String? {
         for day in detail.days {
+            if let dayCaption = day.dayCaption, !dayCaption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return dayCaption
+            }
             for stop in day.placeStops {
                 if let note = stop.noteText, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     return note
+                }
+                if let story = stop.overallStory, !story.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return story
                 }
             }
         }

@@ -378,6 +378,11 @@ struct ProfileManagementView: View {
 
         guard !photosToUpload.isEmpty else { return }
 
+        AppAnalytics.trackEvent(
+            name: "upload_attempted",
+            properties: ["photoCount": photosToUpload.count]
+        )
+
         uploadingBlogId = blog.sourceTripId
         uploadProgress = (0, photosToUpload.count)
 
@@ -410,9 +415,12 @@ struct ProfileManagementView: View {
                         }
                     }
                 }
+
+                AppAnalytics.trackEvent(name: "upload_success")
             }
 
             if failCount > 0 {
+                AppAnalytics.trackEvent(name: "upload_failed", properties: ["failedCount": failCount])
                 uploadErrorMessage = "\(failCount) photo\(failCount == 1 ? "" : "s") failed to upload. Try again."
                 showUploadError = true
             }
