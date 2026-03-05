@@ -172,15 +172,32 @@ struct RecapBlogPageView: View {
             } message: {
                 Text("This blog needs to be uploaded to the cloud before you can share a link. Would you like to upload it now?")
             }
-            .alert("Day Not Ready", isPresented: $showUnprocessedDayAlert) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text("This day is still being prepared. Place names and photos will appear shortly.")
+            .overlay {
+                if showUnprocessedDayAlert {
+                    ProcessingDayPopup {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            showUnprocessedDayAlert = false
+                        }
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showUnprocessedDayAlert)
+                    .zIndex(999)
+                }
             }
             .onReceive(createdRecapStore.objectWillChange) {
                 if let updated = createdRecapStore.getBlogDetail(blogId: blogId),
                    updated.days.count == draft.days.count, !updated.days.isEmpty {
                     draft = updated
+                }
+                // Auto-dismiss the popup once every day is ready
+                if showUnprocessedDayAlert {
+                    let stillProcessing = createdRecapStore.processingDayIndexByBlogId[blogId] != nil
+                    let allResolved = draft.days.allSatisfy { $0.isPlaceNamesResolved }
+                    if !stillProcessing && allResolved {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            showUnprocessedDayAlert = false
+                        }
+                    }
                 }
             }
             .fullScreenCover(isPresented: $showAuth) {
@@ -778,9 +795,12 @@ struct RecapBlogPageView: View {
         let isProcessed = day.isPlaceNamesResolved
         let isProcessing = processingIndex == index
         let isUnprocessed = !isProcessed && !isProcessing
+        let isBlocked = isUnprocessed || isProcessing
         return Button {
-            if isUnprocessed {
-                showUnprocessedDayAlert = true
+            if isBlocked {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    showUnprocessedDayAlert = true
+                }
             } else {
                 selectedDayIndex = index
             }
@@ -2307,6 +2327,84 @@ private struct EditBlogPhotoFlowView: View {
             trip = createdRecapStore.tripDraftApplyingBlogSelection(blogId: blogId)
         }
         .preferredColorScheme(.dark)
+    }
+}
+
+// MARK: - Processing Day Popup
+
+/// Center-screen modal shown when a user taps a day that is still being built.
+struct ProcessingDayPopup: View {
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ZStack {
+            // Dimmed scrim — tap anywhere to dismiss
+            Color.black.opacity(0.55)
+                .ignoresSafeArea()
+                .onTapGesture { onDismiss() }
+
+            // Frosted card
+            VStack(spacing: 0) {
+                // Spinner icon
+                ZStack {
+                    Circle()
+                        .fill(Color.blue.opacity(0.18))
+                        .frame(width: 64, height: 64)
+                    ProgressView()
+                        .scaleEffect(1.3)
+                        .tint(Color.blue)
+                }
+                .padding(.top, 28)
+                .padding(.bottom, 18)
+
+                // Title
+                Text("Almost There!")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+
+                // Body
+                Text("We're still drafting this day. It will be ready in just a moment!")
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.75))
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(3)
+                    .padding(.horizontal, 28)
+                    .padding(.top, 10)
+
+                // Divider
+                Rectangle()
+                    .fill(Color.white.opacity(0.12))
+                    .frame(height: 1)
+                    .padding(.top, 24)
+
+                // CTA
+                Button {
+                    onDismiss()
+                } label: {
+                    Text("Okay")
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                }
+                .buttonStyle(.plain)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: .black.opacity(0.45), radius: 30, y: 10)
+            .padding(.horizontal, 40)
+        }
     }
 }
 
