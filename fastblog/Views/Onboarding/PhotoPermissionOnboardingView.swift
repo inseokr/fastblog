@@ -73,19 +73,23 @@ struct PhotoPermissionOnboardingView: View {
 
                 // Button
                 VStack(spacing: 8) {
+                    // Big CTA: triggers Apple's system permission dialog (required on first
+                    // launch — cannot be bypassed). If already granted, proceeds immediately.
                     Button {
                         Task {
                             let current = PHPhotoLibrary.authorizationStatus(for: .readWrite)
                             if current == .authorized || current == .limited {
-                                // Already granted (e.g. reinstall) — skip system dialog
+                                // Already granted — proceed straight to trip scanner
                                 onResult?(current)
                             } else {
+                                // First time: Apple's system dialog appears here.
+                                // The dialog defaults to "Allow Full Access".
                                 await photoAuth.requestAccess()
                                 onResult?(photoAuth.status)
                             }
                         }
                     } label: {
-                        Text("Allow Photo Access")
+                        Text("Allow Full Access")
                             .font(.headline)
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
@@ -95,15 +99,20 @@ struct PhotoPermissionOnboardingView: View {
                             .shadow(color: .blue.opacity(0.3), radius: 10, y: 4)
                     }
 
+                    // Secondary link: shows Apple's limited photo selection picker.
+                    // On first launch this still requires the system dialog first,
+                    // then immediately opens the picker. If already limited, opens
+                    // the picker directly so the user can add/remove photos.
                     Button {
                         Task {
                             await requestLimitedAccess()
                         }
                     } label: {
-                        Text("Choose specific photos instead")
-                            .font(.caption2)
-                            .foregroundColor(.white.opacity(0.4))
-                            .padding(.top, 4)
+                        Text("Choose limited photos")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.55))
+                            .underline()
+                            .padding(.top, 8)
                     }
                 }
                 .padding(.horizontal, 24)
@@ -118,27 +127,33 @@ struct PhotoPermissionOnboardingView: View {
         }
     }
 
-    /// Request limited photo access: if not yet determined, triggers the system
-    /// permission dialog (where the user can choose "Select Photos…"). If already
-    /// limited, directly presents the limited library picker to add/change photos.
+    /// "Choose limited photos" flow:
+    /// - .notDetermined: shows Apple's system dialog; if user picks limited
+    ///   access the limited picker immediately follows so they can select photos.
+    /// - .limited: directly presents the picker so the user can add/remove photos.
+    /// - .authorized / .denied / other: proceeds without showing the picker.
     private func requestLimitedAccess() async {
         let currentStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
 
-        if currentStatus == .notDetermined {
-            // System dialog lets the user pick "Select Photos…" for limited access
+        switch currentStatus {
+        case .notDetermined:
+            // Apple's system permission dialog is required before any photo access
             await photoAuth.requestAccess()
             if photoAuth.status == .limited {
+                // User chose limited — immediately open the photo selection picker
                 await presentLimitedPicker()
                 photoAuth.refreshStatus()
             }
             onResult?(photoAuth.status)
-        } else if currentStatus == .limited {
-            // Already limited — show picker so user can add/change photos
+
+        case .limited:
+            // Already limited — open Apple's picker so the user can adjust their selection
             await presentLimitedPicker()
             photoAuth.refreshStatus()
             onResult?(photoAuth.status)
-        } else {
-            // Already authorized, denied, etc. — just proceed
+
+        default:
+            // Already authorized (or denied/restricted) — proceed immediately
             onResult?(currentStatus)
         }
     }

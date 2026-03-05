@@ -186,6 +186,22 @@ struct TripsView: View {
                 }
             }
         }
+        // Find More scan completed — always land on the newest (latest-dated) trip.
+        // Without this, the old selectedTripID is no longer valid in the refreshed trip list
+        // and SwiftUI defaults the scroll position to the end of the carousel.
+        .onChange(of: viewModel.findMoreScanResult) { _, result in
+            if case .success = result {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    if let newest = allTrips.first {
+                        withAnimation(.easeInOut(duration: 0.45)) { selectedTripID = newest.id }
+                        if let center = newest.centerCoordinate {
+                            let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
+                            mapPosition = .region(MKCoordinateRegion(center: center, span: span))
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Main Content

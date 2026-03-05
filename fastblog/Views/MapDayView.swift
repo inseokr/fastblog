@@ -84,6 +84,10 @@ struct MapDayView: View {
         .onAppear {
             updateCameraPosition(animated: false)
         }
+        .onChange(of: placeStops) { _, _ in
+            // Day filter changed — reset map to the "Start" POI of the new day.
+            updateCameraPosition(animated: true)
+        }
         .onChange(of: focusedPlaceId) { _, _ in
             updateCameraPosition(animated: true)
         }

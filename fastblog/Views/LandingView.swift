@@ -28,6 +28,8 @@ struct LandingView: View {
     /// CTA text cycles every 5 seconds: "Tap to Scan" ↔ "Create A Blog Today"
     @State private var ctaIsAlternate = false
     @State private var ctaOpacity: Double = 1
+    /// Fade-in opacity for the CTA label on first launch. Starts hidden, fades in after the button appears.
+    @State private var ctaTextOpacity: Double = 0
     
     /// Per-user profile photo — loaded from authService on appear/user-change.
     @State private var avatarImageData: Data?
@@ -170,6 +172,7 @@ struct LandingView: View {
             if splashManager.phase == .done {
                 circlesScale = 1.0
                 showScanIcon = true
+                ctaTextOpacity = 1
             } else {
                 // Circles zoom out 0.35s after appear — synced to logo spring landing
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
@@ -180,6 +183,12 @@ struct LandingView: View {
                 // ScanIcon appears once the splash overlay has faded (~0.85s)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) {
                     showScanIcon = true
+                    // Fade the CTA text in shortly after the button appears
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        withAnimation(.easeIn(duration: 0.55)) {
+                            ctaTextOpacity = 1
+                        }
+                    }
                 }
             }
         }
@@ -288,12 +297,12 @@ struct LandingView: View {
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
-                        .opacity(ctaIsAlternate ? 0 : ctaOpacity)
+                        .opacity((ctaIsAlternate ? 0 : ctaOpacity) * ctaTextOpacity)
                     Text("Create A Blog Today")
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
-                        .opacity(ctaIsAlternate ? ctaOpacity : 0)
+                        .opacity((ctaIsAlternate ? ctaOpacity : 0) * ctaTextOpacity)
                 }
                 .frame(maxWidth: .infinity)
                 .animation(.easeInOut(duration: 0.5), value: ctaIsAlternate)

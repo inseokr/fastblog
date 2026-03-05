@@ -88,6 +88,7 @@ struct RecapBlogPageView: View {
     @State private var uploadErrorMessage = ""
     @State private var showRemoveFromCloudAlert = false
     @State private var showAuth = false
+    @State private var showSignInAlert = false
     @State private var showProfileManagement = false
     @State private var showRestorePlaces = false
     /// Tracks whether AI auto-fill is running so we don't show the blog as empty during generation.
@@ -135,12 +136,7 @@ struct RecapBlogPageView: View {
                 UploadingBlogView(uploadProgress: $uploadProgress, onCancel: cancelUpload)
             }
             .alert("Upload Failed", isPresented: $showUploadErrorAlert) {
-                if uploadErrorMessage == "Please sign in to upload photos." {
-                    Button("Sign In") {
-                        showAuth = true
-                    }
-                    Button("Close", role: .cancel) { }
-                } else if uploadErrorMessage == "Cloud storage limit reached.\nRemove a published blog to continue." {
+                if uploadErrorMessage == "Cloud storage limit reached.\nRemove a published blog to continue." {
                     Button("Manage") {
                         showProfileManagement = true
                     }
@@ -150,6 +146,14 @@ struct RecapBlogPageView: View {
                 }
             } message: {
                 Text(uploadErrorMessage)
+            }
+            .alert("Sign In Required", isPresented: $showSignInAlert) {
+                Button("Sign In") {
+                    showAuth = true
+                }
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("You need to sign in to upload your blog to the cloud.")
             }
             .alert("Remove from Cloud?", isPresented: $showRemoveFromCloudAlert) {
                 Button("Yes", role: .destructive) {
@@ -1799,9 +1803,12 @@ struct RecapBlogPageView: View {
         }
     }
 
+
+
     @ViewBuilder
     private func firstUploadEmailModalContent() -> some View {
         VStack(spacing: 24) {
+
             Image(systemName: "envelope.circle.fill")
                 .resizable()
                 .scaledToFit()
@@ -1993,9 +2000,9 @@ struct RecapBlogPageView: View {
 
     private func uploadBlogPhotos() {
         guard !isUploading else { return }
-        guard AuthService.shared.currentJwtToken != nil else {
-            uploadErrorMessage = "Please sign in to upload photos."
-            showUploadErrorAlert = true
+        // Use the published @ObservableObject state — never stale unlike keychain reads.
+        guard authService.isSignedIn else {
+            showSignInAlert = true
             return
         }
 
@@ -2071,18 +2078,30 @@ struct RecapBlogPageView: View {
             // Save updated draft with cloud URLs
             createdRecapStore.saveBlogDetail(draft)
 
-            // Create blog on server (fire-and-forget)
+            // Publish blog to server; on success, show the first-blog modal.
+            // The modal fires *after* the fullScreenCover has fully dismissed
+            // to avoid iOS silently dropping a sheet presented during a cover's
+            // dismiss animation.
             if failCount == 0 {
                 let snapshot = draft
                 let currentBlogId = blogId
+                let isFirstBlog = !hasUploadedFirstBlog
                 Task {
                     if let blogKey = await APIManager.shared.publishBlog(detail: snapshot) {
                         await MainActor.run {
                             createdRecapStore.setBlogKey(blogId: currentBlogId, blogKey: blogKey)
-                            if !hasUploadedFirstBlog {
-                                hasUploadedFirstBlog = true
-                                newlyUploadedBlogKey = blogKey
-                                showFirstUploadEmailModal = true
+                        }
+                        if isFirstBlog {
+                            // Wait for the fullScreenCover dismiss animation to finish
+                            // before presenting the sheet (iOS drops sheets presented
+                            // while a fullScreenCover is mid-dismissal).
+                            try? await Task.sleep(nanoseconds: 700_000_000) // 0.7 s
+                            await MainActor.run {
+                                if !hasUploadedFirstBlog {
+                                    hasUploadedFirstBlog = true
+                                    newlyUploadedBlogKey = blogKey
+                                    showFirstUploadEmailModal = true
+                                }
                             }
                         }
                     }
