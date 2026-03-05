@@ -292,29 +292,18 @@ struct PlaceStopRowView: View {
                                         .onTapGesture {
                                             onPhotoTapped?(photo)
                                         }
-                                    VStack(alignment: .trailing, spacing: 6) {
-                                        Text(dayDateText)
-                                            .font(.caption2)
-                                            .fontWeight(.semibold)
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(Color.black.opacity(0.55))
-                                            .clipShape(Capsule())
-
-                                        if isEditMode {
-                                            Button {
-                                                onRemovePhoto?(photo.id)
-                                            } label: {
-                                                Image(systemName: "xmark.circle.fill")
-                                                    .font(.system(size: 30))
-                                                    .symbolRenderingMode(.palette)
-                                                    .foregroundStyle(.white, Color.black.opacity(0.6))
-                                            }
-                                            .buttonStyle(.plain)
+                                    if isEditMode {
+                                        Button {
+                                            onRemovePhoto?(photo.id)
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .font(.system(size: 30))
+                                                .symbolRenderingMode(.palette)
+                                                .foregroundStyle(.white, Color.black.opacity(0.6))
                                         }
+                                        .buttonStyle(.plain)
+                                        .padding(6)
                                     }
-                                    .padding(6)
                                 }
                                 if isEditMode {
                                     Button {

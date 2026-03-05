@@ -149,6 +149,7 @@ private struct MapWithRegionBinding: UIViewRepresentable {
 
             let newCenter = mapView.region.center
             let newSpan = mapView.region.span
+            let newRegion = MKCoordinateRegion(center: newCenter, span: newSpan)
 
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
@@ -157,6 +158,9 @@ private struct MapWithRegionBinding: UIViewRepresentable {
                 }
                 if !self.sameSpan(self.parent.span, newSpan) {
                     self.parent.span = newSpan
+                }
+                if !self.sameRegion(self.parent.region, newRegion) {
+                    self.parent.region = newRegion
                 }
             }
         }
@@ -168,6 +172,10 @@ private struct MapWithRegionBinding: UIViewRepresentable {
         private func sameSpan(_ a: MKCoordinateSpan, _ b: MKCoordinateSpan) -> Bool {
             abs(a.latitudeDelta - b.latitudeDelta) < 0.000_001 &&
             abs(a.longitudeDelta - b.longitudeDelta) < 0.000_001
+        }
+
+        private func sameRegion(_ a: MKCoordinateRegion, _ b: MKCoordinateRegion) -> Bool {
+            sameCoordinate(a.center, b.center) && sameSpan(a.span, b.span)
         }
     }
 }

@@ -18,17 +18,33 @@ final class LocationManagerForOnboarding: NSObject, ObservableObject {
     }
 
     func requestLocation() {
-        manager.requestWhenInUseAuthorization()
-        manager.requestLocation()
+        let status = manager.authorizationStatus
+        if status == .authorizedWhenInUse || status == .authorizedAlways {
+            manager.requestLocation()
+        } else if status == .notDetermined {
+            manager.requestWhenInUseAuthorization()
+        }
     }
 }
 
 extension LocationManagerForOnboarding: CLLocationManagerDelegate {
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        if status == .authorizedWhenInUse || status == .authorizedAlways {
+            manager.requestLocation()
+        }
+    }
+
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        lastCoordinate = locations.last?.coordinate
+        let coord = locations.last?.coordinate
+        DispatchQueue.main.async {
+            self.lastCoordinate = coord
+        }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        lastCoordinate = CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194)
+        DispatchQueue.main.async {
+            self.lastCoordinate = nil
+        }
     }
 }

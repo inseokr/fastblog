@@ -19,6 +19,7 @@ struct NeighborhoodSelectionView: View {
     @State private var pendingCenter: CLLocationCoordinate2D?
     @State private var pendingSpan: MKCoordinateSpan?
     @State private var isResolvingPlace = false
+    @State private var resolvePlaceTask: Task<Void, Never>?
 
     init(onSelect: @escaping () -> Void) {
         self.onSelect = onSelect
@@ -62,6 +63,10 @@ struct NeighborhoodSelectionView: View {
                 )
             )
             mapRegion = region
+        }
+        .onDisappear {
+            resolvePlaceTask?.cancel()
+            resolvePlaceTask = nil
         }
     }
 
@@ -165,6 +170,8 @@ struct NeighborhoodSelectionView: View {
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+        .disabled(isResolvingPlace)
+        .opacity(isResolvingPlace ? 0.7 : 1)
         .padding(.horizontal, OnboardingConstants.Layout.horizontalPadding)
         .padding(.bottom, 32)
         .padding(.top, 16)
@@ -179,17 +186,25 @@ struct NeighborhoodSelectionView: View {
         pendingCenter = center
         pendingSpan = span
         isResolvingPlace = true
-        Task { @MainActor in
-            defer { isResolvingPlace = false }
+        resolvePlaceTask?.cancel()
+        resolvePlaceTask = Task { @MainActor in
+            defer {
+                isResolvingPlace = false
+                resolvePlaceTask = nil
+            }
             let location = CLLocation(latitude: center.latitude, longitude: center.longitude)
             let place = await GeocodingService.shared.place(for: location)
+            guard !Task.isCancelled else { return }
             searchHelper.query = place.areaName
         }
     }
 
     /// Save the pending selection and advance to the next onboarding step.
     private func commitSelectionAndContinue() {
+        guard !isResolvingPlace else { return }
         guard let center = pendingCenter, let span = pendingSpan else { return }
+        resolvePlaceTask?.cancel()
+        resolvePlaceTask = nil
         let cityName = searchHelper.query.isEmpty ? nil : searchHelper.query
         let selection = NeighborhoodSelection(
             cityName: cityName,
