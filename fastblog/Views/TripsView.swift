@@ -345,6 +345,8 @@ struct TripsView: View {
                 // Don't interrupt a carousel-driven map animation — intermediate camera
                 // positions would cause the scroll view to jump around.
                 guard !isAnimatingMapFromCarousel else { return }
+                // Don't let the map's initial auto-fit position override the programmatic selection.
+                guard selectedTripID != nil else { return }
                 // Find the trip closest to the map center
                 let center = region.center
                 guard let closest = closestTrip(to: center) else { return }
@@ -370,6 +372,15 @@ struct TripsView: View {
                     let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
                     mapPosition = .region(MKCoordinateRegion(center: center, span: span))
                 }
+            }
+        }
+        // Handle the case where trips arrive after onAppear (scan data published after scanState flips to idle)
+        .onChange(of: viewModel.visibleDraftTripsNewestFirst) { _, newTrips in
+            guard selectedTripID == nil, let firstTrip = newTrips.first else { return }
+            selectedTripID = firstTrip.id
+            if let center = firstTrip.centerCoordinate {
+                let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
+                mapPosition = .region(MKCoordinateRegion(center: center, span: span))
             }
         }
     }
