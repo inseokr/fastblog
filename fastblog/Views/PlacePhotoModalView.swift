@@ -145,13 +145,14 @@ struct PlacePhotoModalView: View {
                 // 1. Full screen media viewer
                 fullScreenPhotoView
                     .onTapGesture {
-                        if !blogIsEditMode && !isEditing {
+                        if isEditing || isCaptionFocused {
+                            // Keyboard is up — dismiss it first; don't toggle overlay yet
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                        } else {
+                            // No keyboard — toggle overlay visibility in any mode
                             withAnimation(.easeInOut(duration: 0.25)) {
                                 isOverlayHidden.toggle()
                             }
-                        } else if isEditing {
-                            // Dismiss keyboard when tapping the photo during edit mode
-                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                         }
                     }
                     .task(id: currentPhotoId) {
@@ -182,6 +183,7 @@ struct PlacePhotoModalView: View {
                         placeholder: "Leave a story for this photo...",
                         blogIsEditMode: blogIsEditMode,
                         onViewBlog: onViewBlog,
+                        onTitleTap: { openGoogleSearch() },
                         onCommitCaption: { commitCaption() }
                     )
                 }
@@ -365,11 +367,14 @@ struct PlacePhotoModalView: View {
         .background(Color.black.ignoresSafeArea())
         .statusBar(hidden: false)
         .sheet(isPresented: $showRenameSheet) {
-            EditPlaceNameSheet(currentName: placeTitle) { newName in
-                placeTitle = newName
-            }
-            .presentationDetents([.height(220)])
-            .presentationDragIndicator(.visible)
+            EditPlaceStopNameSheet(
+                placeTitle: $placeTitle,
+                location: photos.compactMap({ $0.location?.clCoordinate }).first,
+                photos: photos,
+                onSave: { newName, _, _ in
+                    placeTitle = newName
+                }
+            )
         }
         // Editing panel anchors just above the keyboard via safeAreaInset
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -526,7 +531,7 @@ struct PlacePhotoModalView: View {
                 captionWhenEditingStarted = currentCaption
                 titleWhenEditingStarted = placeTitle
                 isEditing = true
-                isCaptionFocused = true
+                // Do NOT auto-focus — keyboard should only appear when user taps the caption field
             }
         }
         .onChange(of: currentPhotoId) { _, _ in
@@ -728,16 +733,30 @@ struct BottomInfoOverlay: View {
     let placeholder: String
     var blogIsEditMode: Bool = false
     var onViewBlog: (() -> Void)?
+    var onTitleTap: (() -> Void)? = nil
     var onCommitCaption: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(placeTitle)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-                    .shadow(color: .black.opacity(0.4), radius: 2)
+                // Tappable place title — opens Google search
+                Button(action: { onTitleTap?() }) {
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text(placeTitle)
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .shadow(color: .black.opacity(0.4), radius: 2)
+                        if onTitleTap != nil {
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.75))
+                                .shadow(color: .black.opacity(0.4), radius: 2)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(onTitleTap == nil)
 
                 Spacer()
 

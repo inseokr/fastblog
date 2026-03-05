@@ -142,7 +142,8 @@ struct EditPlaceStopNameSheet: View {
                 if location != nil, !isResolvingPOI {
                     if let selected = selectedCoordinate {
                         Button {
-                            let urlString = "https://www.google.com/maps/search/?api=1&query=\(selected.latitude),\(selected.longitude)"
+                            let query = editedTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                            let urlString = "https://www.google.com/maps/search/?api=1&query=\(query)"
                             if let url = URL(string: urlString) {
                                 UIApplication.shared.open(url)
                             }

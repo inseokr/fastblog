@@ -105,7 +105,7 @@ struct PlaceStopRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Row 1: badge + title, subtitle, time
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
                 stopBadge
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
@@ -125,11 +125,15 @@ struct PlaceStopRowView: View {
                             Button {
                                 onNavigate?()
                             } label: {
-                                Text(stop.placeTitle)
-                                    .font(.title3) // Slightly larger place title for better tap target? Or keep headline? Keeping consistent but tappable.
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                                    .underline(false) // No underline, just text
+                                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                                    Text(stop.placeTitle)
+                                        .font(.title3)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.white)
+                                    Image(systemName: "arrow.up.right.square")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundColor(.white.opacity(0.6))
+                                }
                             }
                             .buttonStyle(.plain)
                         }
@@ -139,7 +143,8 @@ struct PlaceStopRowView: View {
                                 Image(systemName: "eye.slash")
                                     .font(.body)
                                     .foregroundColor(.secondary)
-                                    .padding(8)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
                                     .contentShape(Rectangle())
                             }
                         } else {

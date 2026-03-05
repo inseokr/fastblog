@@ -557,6 +557,7 @@ private struct PlacesVisitedMapView: View {
 
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var selectedPlaceForModal: VisitedPlaceSummary?
+    @State private var selectedCreatedRecap: CreatedRecapBlog?
 
     private let defaultRegion = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
@@ -778,10 +779,21 @@ private struct PlacesVisitedMapView: View {
             PlaceVisitedPhotoModalWrapper(
                 place: place,
                 onDismiss: { selectedPlaceForModal = nil },
-                onViewBlog: nil
+                onViewBlog: {
+                    guard let blogId = place.relatedBlogs.first?.blogId,
+                          let recap = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == blogId }) else { return }
+                    selectedPlaceForModal = nil
+                    selectedCreatedRecap = recap
+                }
             )
             .environmentObject(createdRecapStore)
             .presentationDetents([.large])
+        }
+        .navigationDestination(item: $selectedCreatedRecap) { recap in
+            RecapBlogPageView(
+                blogId: recap.sourceTripId,
+                initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId)
+            )
         }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
