@@ -124,7 +124,7 @@ struct MyBlogsProfileView: View {
                         switch currentPage {
                         case .blogs:   showMyMap = true
                         case .country: showCountryMap = true
-                        case .places:  showPlacesMap = true
+                        case .places:  showPlacesMap.toggle()
                         }
                     }
                     .padding(.trailing, horizontalPadding)
@@ -233,6 +233,7 @@ struct MyBlogsProfileView: View {
             sharedSearchText = ""
             viewModel.searchText = ""
             isSearchActive = false
+            showPlacesMap = false
         }
         .onChange(of: sharedSearchText) { _, newValue in
             if case .blogs = currentPage { viewModel.searchText = newValue }

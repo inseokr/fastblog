@@ -23,6 +23,8 @@ final class TripsViewModel: ObservableObject {
     @Published var currentWindowTrips: [TripDraft]? = nil
     @Published var scanState: MockScanState = .idle
     @Published var loadingMessage: String = "Loading Past Trips…"
+    /// Progress of the initial default scan (0.0 → 1.0). Reset to 0 on each new scan.
+    @Published var defaultScanProgress: Double = 0
 
     /// When true, show the "Select Photos / To Create A Blog" intro after scan completes (unless user chose "Do not show again").
     @Published var showSelectPhotosIntroAfterScan: Bool = true
@@ -320,6 +322,7 @@ final class TripsViewModel: ObservableObject {
         showSelectPhotosIntroAfterScan = true
         scanState = .scanningDefault
         loadingMessage = "Scanning your photos…"
+        defaultScanProgress = 0
         let occupiedRanges = createdRecapStore.occupiedDateRanges()
         Task {
             let cal = Calendar.current
@@ -334,7 +337,12 @@ final class TripsViewModel: ObservableObject {
             let allTrips = await photoLibraryService.scanInDateRange(
                 startDate: fetchStart,
                 endDate: windowEnd,
-                occupiedDateRanges: occupiedRanges
+                occupiedDateRanges: occupiedRanges,
+                progress: { [weak self] value in
+                    Task { @MainActor in
+                        self?.defaultScanProgress = value
+                    }
+                }
             )
 
             // Keep only trips whose earliestDate falls within the window.

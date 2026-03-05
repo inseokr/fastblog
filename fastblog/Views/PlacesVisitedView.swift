@@ -161,19 +161,53 @@ struct PlacesVisitedView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 44)
                         } else {
-                            let indexedPlaces = Array(filteredPlaces.enumerated())
-                            LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 12) {
-                                ForEach(indexedPlaces, id: \.element.id) { index, place in
-                                    // Pair partner: even index pairs with the next, odd with the previous
-                                    let partnerIndex = index % 2 == 0 ? index + 1 : index - 1
-                                    let partnerHasCaption = partnerIndex < filteredPlaces.count && filteredPlaces[partnerIndex].captionPreview != nil
-                                    let showCaptionSpace = place.captionPreview != nil || partnerHasCaption
-                                    Button {
-                                        selectedPlaceForModal = place
-                                    } label: {
-                                        PlaceVisitedCard(place: place, showCaptionSpace: showCaptionSpace)
+                            // Group by year, then by month
+                            let yearGroups = groupedByYearThenMonth(filteredPlaces)
+                            LazyVStack(alignment: .leading, spacing: 0) {
+                                ForEach(yearGroups, id: \.year) { yearGroup in
+                                    // Year header — large
+                                    Text(String(yearGroup.year))
+                                        .font(.title)
+                                        .fontWeight(.bold)
+                                        .foregroundStyle(.primary)
+                                        .padding(.top, 8)
+                                        .padding(.bottom, 4)
+
+                                    ForEach(yearGroup.months, id: \.month) { monthGroup in
+                                        // Month header — smaller
+                                        Text(monthGroup.monthName)
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                            .foregroundStyle(.secondary)
+                                            .padding(.top, 10)
+                                            .padding(.bottom, 6)
+
+                                        // 2-column grid for places in this month
+                                        let pairs = stride(from: 0, to: monthGroup.places.count, by: 2).map {
+                                            Array(monthGroup.places[$0 ..< min($0 + 2, monthGroup.places.count)])
+                                        }
+                                        ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
+                                            HStack(alignment: .top, spacing: 12) {
+                                                ForEach(Array(pair.enumerated()), id: \.element.id) { colIdx, place in
+                                                    let partnerIdx = colIdx == 0 ? 1 : 0
+                                                    let partnerHasCaption = partnerIdx < pair.count && pair[partnerIdx].captionPreview != nil
+                                                    let showCaptionSpace = place.captionPreview != nil || partnerHasCaption
+                                                    Button {
+                                                        selectedPlaceForModal = place
+                                                    } label: {
+                                                        PlaceVisitedCard(place: place, showCaptionSpace: showCaptionSpace)
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                    .frame(maxWidth: .infinity)
+                                                }
+                                                // If odd number in this row, fill the gap
+                                                if pair.count == 1 {
+                                                    Color.clear.frame(maxWidth: .infinity)
+                                                }
+                                            }
+                                            .padding(.bottom, 12)
+                                        }
                                     }
-                                    .buttonStyle(.plain)
                                 }
                             }
                         }
@@ -182,19 +216,24 @@ struct PlacesVisitedView: View {
                     .padding(.bottom, 132)
                 }
             }
+            // Inline map overlay — slides in over list, filter bar stays visible above
+            if showPlacesMap {
+                PlacesVisitedInlineMap(
+                    selectedYear: $selectedYear,
+                    selectedCountry: $selectedCountry,
+                    selectedCategory: $selectedCategory,
+                    searchText: $searchText
+                )
+                .environmentObject(createdRecapStore)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(1)
+            }
         }
+        .animation(.easeInOut(duration: 0.28), value: showPlacesMap)
         .sheet(item: $selectedPlaceForModal) { place in
             placeModalSheet(place: place)
         }
-        .navigationDestination(isPresented: $showPlacesMap) {
-            PlacesVisitedMapView(
-                selectedYear: $selectedYear,
-                selectedCountry: $selectedCountry,
-                selectedCategory: $selectedCategory,
-                searchText: $searchText
-            )
-            .environmentObject(createdRecapStore)
-        }
+
         .navigationDestination(item: $selectedCreatedRecap) { recap in
             RecapBlogPageView(
                 blogId: recap.sourceTripId,
@@ -224,6 +263,40 @@ struct PlacesVisitedView: View {
         }
     }
 
+    // MARK: - Year / Month grouping helpers
+
+    private struct MonthGroup {
+        let month: Int          // 1–12
+        let monthName: String   // e.g. "March"
+        let places: [VisitedPlaceSummary]
+    }
+
+    private struct YearGroup {
+        let year: Int
+        let months: [MonthGroup]
+    }
+
+    private func groupedByYearThenMonth(_ places: [VisitedPlaceSummary]) -> [YearGroup] {
+        let cal = Calendar.current
+        // Group by year
+        let byYear = Dictionary(grouping: places) { cal.component(.year, from: $0.latestVisitDate) }
+        return byYear.keys.sorted(by: >).map { year in
+            let yearPlaces = byYear[year]!
+            // Group by month within the year
+            let byMonth = Dictionary(grouping: yearPlaces) { cal.component(.month, from: $0.latestVisitDate) }
+            let monthGroups = byMonth.keys.sorted(by: >).map { month -> MonthGroup in
+                let formatter = DateFormatter()
+                formatter.dateFormat = "MMMM"
+                let name: String = {
+                    var comps = DateComponents(); comps.month = month; comps.year = year
+                    let date = cal.date(from: comps) ?? Date()
+                    return formatter.string(from: date)
+                }()
+                return MonthGroup(month: month, monthName: name, places: byMonth[month]!)
+            }
+            return YearGroup(year: year, months: monthGroups)
+        }
+    }
 
     private var filterBar: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -278,7 +351,7 @@ struct PlacesVisitedView: View {
                 .foregroundColor(isSelected ? Color(uiColor: .systemBackground) : .primary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(isSelected ? Color.primary : Color(uiColor: .secondarySystemBackground))
+                .background(isSelected ? Color.primary : Color(uiColor: .systemGray5))
                 .clipShape(Capsule())
                 .lineLimit(1)
         }
@@ -315,14 +388,21 @@ private struct PlaceVisitedPhotoModalWrapper: View {
 
     /// Live caption state keyed by photo ID. Seeded from place.photos on appear.
     @State private var liveCaptions: [UUID: String] = [:]
+    /// Live place name — updated when user edits via the kebab 'Edit Place Name' menu item.
+    @State private var livePlaceTitle: String = ""
 
     var body: some View {
         let photos = place.photos
         if let initialPhotoId = photos.first?.id {
             PlacePhotoModalView(
                 placeTitle: Binding(
-                    get: { place.displayName },
-                    set: { _ in }
+                    get: { livePlaceTitle.isEmpty ? place.displayName : livePlaceTitle },
+                    set: { newName in
+                        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmed.isEmpty else { return }
+                        livePlaceTitle = trimmed
+                        store.updatePlaceStopName(photoId: initialPhotoId, newName: trimmed)
+                    }
                 ),
                 placeSubtitle: place.cityDisplay ?? place.country,
                 photos: photos,
@@ -392,7 +472,7 @@ private struct PlaceVisitedCard: View {
 
                 VStack {
                     HStack {
-                        Text(place.latestVisitDate.formatted(date: .abbreviated, time: .omitted))
+                        Text(place.latestVisitDate.formatted(.dateTime.month(.abbreviated).day()))
                             .font(.caption2)
                             .fontWeight(.semibold)
                             .foregroundStyle(.white)
@@ -466,6 +546,102 @@ private struct PlaceVisitedCard: View {
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        }
+    }
+}
+
+
+// MARK: - Inline map (no navigation push; filter bar stays above)
+
+private struct PlacesVisitedInlineMap: View {
+    @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
+
+    @Binding var selectedYear: Int?
+    @Binding var selectedCountry: String?
+    @Binding var selectedCategory: String?
+    @Binding var searchText: String
+
+    @State private var mapPosition: MapCameraPosition = .automatic
+    @State private var selectedPlaceForModal: VisitedPlaceSummary?
+
+    private let defaultRegion = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
+        span: MKCoordinateSpan(latitudeDelta: 0.6, longitudeDelta: 0.6)
+    )
+
+    private func coordinate(for place: VisitedPlaceSummary) -> CLLocationCoordinate2D? {
+        if let loc = place.heroPhoto?.location?.clCoordinate { return loc }
+        if let loc = place.photos.compactMap({ $0.location?.clCoordinate }).first { return loc }
+        return nil
+    }
+
+    private var filteredPlaces: [VisitedPlaceSummary] {
+        createdRecapStore.visitedPlaces
+            .filter { place in
+                if let y = selectedYear, place.year != y { return false }
+                if let c = selectedCountry {
+                    if place.country.trimmingCharacters(in: .whitespacesAndNewlines)
+                        .caseInsensitiveCompare(c.trimmingCharacters(in: .whitespacesAndNewlines)) != .orderedSame { return false }
+                }
+                if let cat = selectedCategory {
+                    if (place.categoryRawValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                        .caseInsensitiveCompare(cat.trimmingCharacters(in: .whitespacesAndNewlines)) != .orderedSame { return false }
+                }
+                let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !query.isEmpty {
+                    let q = query.lowercased()
+                    if !(place.displayName.lowercased().contains(q) ||
+                         (place.cityDisplay ?? "").lowercased().contains(q) ||
+                         place.country.lowercased().contains(q)) { return false }
+                }
+                return true
+            }
+            .sorted(by: { $0.latestVisitDate > $1.latestVisitDate })
+    }
+
+    private var placesWithCoordinates: [(place: VisitedPlaceSummary, coordinate: CLLocationCoordinate2D)] {
+        filteredPlaces.compactMap { place in
+            guard let coord = coordinate(for: place) else { return nil }
+            return (place, coord)
+        }
+    }
+
+    private func recenterToLatestPlace() {
+        if let latest = placesWithCoordinates.first?.coordinate {
+            withAnimation {
+                mapPosition = .region(MKCoordinateRegion(
+                    center: latest,
+                    span: MKCoordinateSpan(latitudeDelta: 0.25, longitudeDelta: 0.25)
+                ))
+            }
+        } else {
+            withAnimation { mapPosition = .region(defaultRegion) }
+        }
+    }
+
+    var body: some View {
+        Map(position: $mapPosition) {
+            ForEach(placesWithCoordinates, id: \.place.id) { item in
+                Annotation("", coordinate: item.coordinate) {
+                    PlacesVisitedMapMarker(place: item.place)
+                        .onTapGesture { selectedPlaceForModal = item.place }
+                }
+            }
+        }
+        .mapStyle(.standard(elevation: .realistic))
+        .clipShape(RoundedRectangle(cornerRadius: 0))
+        .onAppear { recenterToLatestPlace() }
+        .onChange(of: selectedYear)    { _, _ in recenterToLatestPlace() }
+        .onChange(of: selectedCountry) { _, _ in recenterToLatestPlace() }
+        .onChange(of: selectedCategory){ _, _ in recenterToLatestPlace() }
+        .sheet(item: $selectedPlaceForModal) { place in
+            PlaceVisitedPhotoModalWrapper(
+                place: place,
+                onDismiss: { selectedPlaceForModal = nil },
+                onViewBlog: nil
+            )
+            .environmentObject(createdRecapStore)
+            .presentationDetents([.large])
         }
     }
 }

@@ -49,6 +49,7 @@ struct PlacePhotoModalView: View {
     @State private var showSaveConfirmationAlert = false
     @State private var resolvedTimeZoneByPhotoId: [UUID: TimeZone] = [:]
     @FocusState private var isCaptionFocused: Bool
+    @State private var showRenameSheet = false
 
     /// Derives the UTC offset from the EXIF digitized local time vs photo timestamps.
     /// Digitized is the stop's earliest photo time in *local* time at capture; we compare to each photo's UTC timestamp to infer offset.
@@ -284,6 +285,12 @@ struct PlacePhotoModalView: View {
                             VStack(spacing: 16) {
                                 Menu {
                                     Button {
+                                        showRenameSheet = true
+                                    } label: {
+                                        Label("Edit Place Name", systemImage: "mappin.and.ellipse")
+                                    }
+
+                                    Button {
                                         captionWhenEditingStarted = currentCaption
                                         titleWhenEditingStarted = placeTitle
                                         editedCaptionText = currentCaption
@@ -357,6 +364,13 @@ struct PlacePhotoModalView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
         .statusBar(hidden: false)
+        .sheet(isPresented: $showRenameSheet) {
+            EditPlaceNameSheet(currentName: placeTitle) { newName in
+                placeTitle = newName
+            }
+            .presentationDetents([.height(220)])
+            .presentationDragIndicator(.visible)
+        }
         // Editing panel anchors just above the keyboard via safeAreaInset
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if isEditing {
@@ -858,5 +872,73 @@ struct ThumbnailPreview: View {
             }
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Edit Place Name Sheet
+
+private struct EditPlaceNameSheet: View {
+    let currentName: String
+    let onSave: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var nameText: String = ""
+    @FocusState private var isNameFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack {
+                Text("Edit Place Name")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .foregroundColor(.secondary)
+            }
+
+            HStack {
+                TextField("Place name", text: $nameText)
+                    .focused($isNameFocused)
+                    .textFieldStyle(.roundedBorder)
+                    .submitLabel(.done)
+                    .onSubmit {
+                        save()
+                    }
+                if !nameText.isEmpty {
+                    Button {
+                        nameText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Button {
+                save()
+            } label: {
+                Text("Done")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(nameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.blue)
+                    .cornerRadius(12)
+            }
+            .disabled(nameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .padding(24)
+        .onAppear {
+            nameText = currentName
+            isNameFocused = true
+        }
+    }
+
+    private func save() {
+        let trimmed = nameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        onSave(trimmed)
+        dismiss()
     }
 }

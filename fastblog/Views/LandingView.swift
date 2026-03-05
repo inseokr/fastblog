@@ -124,9 +124,12 @@ struct LandingView: View {
 
             // Scanning overlay — fades in on top of landing while scan runs
             if tripsViewModel.scanState != .idle {
-                LoadingScanView(message: tripsViewModel.loadingMessage)
-                    .transition(.opacity)
-                    .zIndex(20)
+                LoadingScanView(
+                    message: tripsViewModel.loadingMessage,
+                    progress: tripsViewModel.defaultScanProgress > 0 ? tripsViewModel.defaultScanProgress : nil
+                )
+                .transition(.opacity)
+                .zIndex(20)
             }
         }
         .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)

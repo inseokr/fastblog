@@ -619,6 +619,35 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
     }
 
+    /// Updates the place stop name for the stop that contains the given photo, across all stored blog details.
+    /// Called when the user edits a place name from the Places Visited photo modal.
+    func updatePlaceStopName(photoId: UUID, newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        var changed = false
+        for key in blogDetailsBySourceId.keys {
+            guard var detail = blogDetailsBySourceId[key] else { continue }
+            var detailChanged = false
+            for dayIdx in detail.days.indices {
+                for stopIdx in detail.days[dayIdx].placeStops.indices {
+                    let containsPhoto = detail.days[dayIdx].placeStops[stopIdx].photos.contains { $0.id == photoId }
+                    if containsPhoto {
+                        detail.days[dayIdx].placeStops[stopIdx].placeTitle = trimmed
+                        detailChanged = true
+                    }
+                }
+            }
+            if detailChanged {
+                blogDetailsBySourceId[key] = detail
+                changed = true
+            }
+        }
+        if changed {
+            persistBlogDetails()
+            objectWillChange.send()
+        }
+    }
+
     /// Sets `isIncluded = false` for the given photo across any stored blog detail that contains it.
     /// Called when the user removes a photo from the Place pull-up modal in Places Visited or My Blogs.
     /// The photo is soft-deleted (recoverable via the Manage Photos flow in the blog editor).
