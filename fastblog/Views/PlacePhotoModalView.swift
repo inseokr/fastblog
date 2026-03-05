@@ -365,11 +365,14 @@ struct PlacePhotoModalView: View {
         .background(Color.black.ignoresSafeArea())
         .statusBar(hidden: false)
         .sheet(isPresented: $showRenameSheet) {
-            EditPlaceNameSheet(currentName: placeTitle) { newName in
-                placeTitle = newName
-            }
-            .presentationDetents([.height(220)])
-            .presentationDragIndicator(.visible)
+            EditPlaceStopNameSheet(
+                placeTitle: $placeTitle,
+                location: photos.compactMap({ $0.location?.clCoordinate }).first,
+                photos: photos,
+                onSave: { newName, _, _ in
+                    placeTitle = newName
+                }
+            )
         }
         // Editing panel anchors just above the keyboard via safeAreaInset
         .safeAreaInset(edge: .bottom, spacing: 0) {
