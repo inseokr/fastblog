@@ -43,6 +43,8 @@ struct PlaceStopRowView: View {
     var onAICaptionApplied: ((UUID) -> Void)?
     /// Called after AI successfully applied the overall story. Used to mark overallStoryIsManual = false.
     var onAIOverallStoryApplied: (() -> Void)?
+    /// When set, tapping the place caption row in edit mode opens the pull-up caption edit modal.
+    var onEditPlaceCaption: (() -> Void)?
 
     @FocusState private var focusedPlaceNote: Bool
     @FocusState private var focusedOverallStory: Bool
@@ -409,31 +411,25 @@ struct PlaceStopRowView: View {
         Group {
             if isEditMode {
                 HStack(alignment: .top, spacing: 8) {
-                    TextField("", text: $overallStory, axis: .vertical)
-                        .lineLimit(2...4)
-                        .font(.subheadline)
-                        .foregroundColor(.white)
+                    // Tappable display — opens PlaceCaptionEditSheet
+                    Button {
+                        onEditPlaceCaption?()
+                    } label: {
+                        HStack {
+                            let trimmed = overallStory.trimmingCharacters(in: .whitespacesAndNewlines)
+                            Text(trimmed.isEmpty ? placeStoryPlaceholder : trimmed)
+                                .font(.subheadline)
+                                .foregroundColor(trimmed.isEmpty ? .secondary.opacity(0.9) : .white)
+                                .lineLimit(3)
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                         .padding(12)
                         .background(Color(white: 0.08))
                         .cornerRadius(10)
-                        .overlay(alignment: .topLeading) {
-                            if overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                Text(placeStoryPlaceholder)
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary.opacity(0.9))
-                                    .padding(12)
-                                    .allowsHitTesting(false)
-                            }
-                        }
-                        .focused($focusedOverallStory)
-                        .onChange(of: focusedOverallStory) { _, isFocused in
-                            if isFocused { onCaptionFocus?(stop.id) }
-                        }
-                        .onChange(of: overallStory) { _, _ in
-                            if !isGeneratingOverallStory {
-                                onOverallStoryUserEdited?()
-                            }
-                        }
+                    }
+                    .buttonStyle(.plain)
+
                     if let generate = onGenerateOverallStory {
                         Button {
                             isGeneratingOverallStory = true
@@ -458,6 +454,7 @@ struct PlaceStopRowView: View {
                             }
                         }
                         .disabled(isGeneratingOverallStory)
+                        .padding(.top, 12)
                     }
                 }
                 .padding(.leading, 16)

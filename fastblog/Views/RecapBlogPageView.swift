@@ -14,6 +14,22 @@ private struct TitleMinYPreferenceKey: PreferenceKey {
     }
 }
 
+// MARK: - Caption Edit Sheet Item Types
+
+/// Carries the day identity + mutable caption for the pull-up day caption editor.
+struct DayCaptionEditItem: Identifiable {
+    let dayId: UUID
+    let dayLabel: String
+    var id: UUID { dayId }
+}
+
+/// Carries the stop identity for the pull-up place caption editor.
+struct PlaceCaptionEditItem: Identifiable {
+    let dayId: UUID
+    let stopId: UUID
+    var id: UUID { stopId }
+}
+
 struct RecapBlogPageView: View {
     let blogId: UUID
     let initialTrip: TripDraft?
@@ -78,6 +94,10 @@ struct RecapBlogPageView: View {
     @State private var isAutoFillingCaptions = false
     /// The day ID currently having its caption AI-generated (nil when idle).
     @State private var isGeneratingDayCaptionForDayId: UUID?
+    /// Day caption pull-up sheet trigger.
+    @State private var dayCaptionEditItem: DayCaptionEditItem?
+    /// Place caption pull-up sheet trigger.
+    @State private var placeCaptionEditItem: PlaceCaptionEditItem?
 
 
     private enum UndoAction {
@@ -261,6 +281,39 @@ struct RecapBlogPageView: View {
                     }
                 )
             }
+            // Day caption pull-up modal
+            .sheet(item: $dayCaptionEditItem) { item in
+                DayCaptionEditSheet(
+                    dayLabel: item.dayLabel,
+                    caption: bindingForDayCaption(dayId: item.dayId),
+                    onSave: {
+                        dayCaptionEditItem = nil
+                        createdRecapStore.saveBlogDetail(draft)
+                    },
+                    onCancel: {
+                        dayCaptionEditItem = nil
+                    }
+                )
+            }
+            // Place caption pull-up modal
+            .sheet(item: $placeCaptionEditItem) { item in
+                if let stop = placeStop(dayId: item.dayId, stopId: item.stopId) {
+                    PlaceCaptionEditSheet(
+                        placeTitle: stop.placeTitle,
+                        placeSubtitle: stop.placeSubtitle,
+                        photos: stop.includedPhotos,
+                        caption: bindingForOverallStory(dayId: item.dayId, stopId: item.stopId),
+                        onSave: {
+                            placeCaptionEditItem = nil
+                            markOverallStoryManual(dayId: item.dayId, stopId: item.stopId)
+                            createdRecapStore.saveBlogDetail(draft)
+                        },
+                        onCancel: {
+                            placeCaptionEditItem = nil
+                        }
+                    )
+                }
+            }
             .sheet(item: $showManagePhotosForStop, onDismiss: {
                 // Capture dayId/stopId before syncPhotoChangesWithCloud clears managePhotosEditInfo.
                 let managedItem = managePhotosEditInfo
@@ -291,9 +344,13 @@ struct RecapBlogPageView: View {
                     .environmentObject(createdRecapStore)
             }
             .fullScreenCover(item: $fullScreenMapDay) { day in
-                FullScreenMapView(day: day) {
+                FullScreenMapView(day: day, onDismiss: {
                     fullScreenMapDay = nil
-                }
+                }, onCaptionSaved: { stopId, photoId, newCaption in
+                    // Write the edited caption back into the draft and persist it
+                    bindingForPhotoCaption(dayId: day.id, stopId: stopId, photoId: photoId).wrappedValue = newCaption
+                    createdRecapStore.saveBlogDetail(draft)
+                })
             }
             .sheet(item: $placePhotoModalItem, onDismiss: {
                 createdRecapStore.saveBlogDetail(draft)
@@ -764,7 +821,7 @@ struct RecapBlogPageView: View {
                         .frame(width: 40, height: 40)
                     Image(systemName: "arrow.uturn.backward.circle.fill")
                         .font(.system(size: 22))
-                        .foregroundColor(.blue)
+                        .foregroundColor(.white)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -871,6 +928,9 @@ struct RecapBlogPageView: View {
                     },
                     onAIOverallStoryApplied: {
                         markOverallStoryAI(dayId: day.id, stopId: stop.id)
+                    },
+                    onEditPlaceCaption: {
+                        placeCaptionEditItem = PlaceCaptionEditItem(dayId: day.id, stopId: stop.id)
                     }
                 )
                 .id(stop.id)
@@ -879,16 +939,16 @@ struct RecapBlogPageView: View {
                     let nextStop = day.placeStops[index + 1]
                     if let dist = distanceString(from: stop, to: nextStop) {
                         HStack {
-                            Spacer()
+                            Image(systemName: "arrow.down")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
                             Text(dist)
                                 .font(.caption)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.secondary)
-                            Image(systemName: "arrow.down")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
+                            Spacer()
                         }
-                        .padding(.trailing, 32) // Aligned roughly with content
+                        .padding(.leading, 32) // Aligned roughly with content
                         .padding(.vertical, 4)
                     }
                 }
@@ -1274,22 +1334,25 @@ struct RecapBlogPageView: View {
         let isGenerating = isGeneratingDayCaptionForDayId == day.id
         if isEditMode {
             HStack(alignment: .top, spacing: 8) {
-                TextField("", text: captionBinding, axis: .vertical)
-                    .lineLimit(1...3)
-                    .font(.subheadline)
-                    .foregroundColor(.white)
-                    .padding(12)
-                    .background(Color(white: 0.1))
-                    .cornerRadius(10)
-                    .overlay(alignment: .topLeading) {
-                        if captionBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            Text("Describe your day in a sentence…")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary.opacity(0.9))
-                                .padding(12)
-                                .allowsHitTesting(false)
-                        }
-                    }
+                // Tappable display — opens DayCaptionEditSheet
+                Button {
+                    dayCaptionEditItem = DayCaptionEditItem(
+                        dayId: day.id,
+                        dayLabel: "Day \(day.dayIndex) · \(day.shortDateText)"
+                    )
+                } label: {
+                    let trimmed = captionBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                    Text(trimmed.isEmpty ? "Describe your day in a sentence…" : trimmed)
+                        .font(.subheadline)
+                        .foregroundColor(trimmed.isEmpty ? .secondary.opacity(0.9) : .white)
+                        .lineLimit(3)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(Color(white: 0.1))
+                        .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
 
                 Button {
                     guard !isGenerating else { return }

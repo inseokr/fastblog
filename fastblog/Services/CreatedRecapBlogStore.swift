@@ -619,6 +619,35 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
     }
 
+    /// Sets `isIncluded = false` for the given photo across any stored blog detail that contains it.
+    /// Called when the user removes a photo from the Place pull-up modal in Places Visited or My Blogs.
+    /// The photo is soft-deleted (recoverable via the Manage Photos flow in the blog editor).
+    func removePhotoFromBlog(photoId: UUID) {
+        var changed = false
+        for key in blogDetailsBySourceId.keys {
+            guard var detail = blogDetailsBySourceId[key] else { continue }
+            var detailChanged = false
+            for dayIdx in detail.days.indices {
+                for stopIdx in detail.days[dayIdx].placeStops.indices {
+                    for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
+                        if detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].id == photoId {
+                            detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = false
+                            detailChanged = true
+                        }
+                    }
+                }
+            }
+            if detailChanged {
+                blogDetailsBySourceId[key] = detail
+                changed = true
+            }
+        }
+        if changed {
+            persistBlogDetails()
+            objectWillChange.send()
+        }
+    }
+
     /// Deletes a created blog locally and from the cloud if it was published.
     func deleteBlog(sourceTripId: UUID) {
         if let key = recents.first(where: { $0.sourceTripId == sourceTripId })?.blogKey {

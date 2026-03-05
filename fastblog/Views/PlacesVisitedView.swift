@@ -4,15 +4,12 @@ import SwiftUI
 struct PlacesVisitedView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
 
+    @Binding var searchText: String
+    @Binding var showPlacesMap: Bool
+
     @State private var selectedYear: Int? = nil
     @State private var selectedCountry: String? = nil
     @State private var selectedCategory: String? = nil
-
-    @State private var searchText: String = ""
-    @State private var isSearchActive: Bool = false
-    @FocusState private var isSearchFocused: Bool
-
-    @State private var showPlacesMap: Bool = false
 
     @State private var selectedPlaceForModal: VisitedPlaceSummary?
     @State private var selectedCreatedRecap: CreatedRecapBlog?
@@ -128,83 +125,71 @@ struct PlacesVisitedView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    filterBar
+            VStack(alignment: .leading, spacing: 12) {
+                filterBar
+                    .padding(.horizontal, horizontalPadding)
 
-                    if filteredPlaces.isEmpty {
-                        VStack(spacing: 10) {
-                            Text(createdRecapStore.visitedPlaces.isEmpty ? "No places yet" : "No matches")
-                                .font(.title3)
-                                .fontWeight(.semibold)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if filteredPlaces.isEmpty {
+                            VStack(spacing: 10) {
+                                Text(createdRecapStore.visitedPlaces.isEmpty ? "No places yet" : "No matches")
+                                    .font(.title3)
+                                    .fontWeight(.semibold)
 
-                            Text(createdRecapStore.visitedPlaces.isEmpty
-                                 ? "Create a blog to start building your Places."
-                                 : "Try clearing filters.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 20)
+                                Text(createdRecapStore.visitedPlaces.isEmpty
+                                     ? "Create a blog to start building your Places."
+                                     : "Try clearing filters.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 20)
 
-                            if createdRecapStore.visitedPlaces.isEmpty {
-                                Button("Create Blog") { }
+                                if createdRecapStore.visitedPlaces.isEmpty {
+                                    Button("Create Blog") { }
+                                        .buttonStyle(.borderedProminent)
+                                } else {
+                                    Button("Clear filters") {
+                                        selectedYear = nil
+                                        selectedCountry = nil
+                                        selectedCategory = nil
+                                        searchText = ""
+                                    }
                                     .buttonStyle(.borderedProminent)
-                            } else {
-                                Button("Clear filters") {
-                                    selectedYear = nil
-                                    selectedCountry = nil
-                                    selectedCategory = nil
-                                    searchText = ""
-                                    isSearchFocused = false
-                                    isSearchActive = false
                                 }
-                                .buttonStyle(.borderedProminent)
                             }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 44)
-                    } else {
-                        let indexedPlaces = Array(filteredPlaces.enumerated())
-                        LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 12) {
-                            ForEach(indexedPlaces, id: \.element.id) { index, place in
-                                // Pair partner: even index pairs with the next, odd with the previous
-                                let partnerIndex = index % 2 == 0 ? index + 1 : index - 1
-                                let partnerHasCaption = partnerIndex < filteredPlaces.count && filteredPlaces[partnerIndex].captionPreview != nil
-                                let showCaptionSpace = place.captionPreview != nil || partnerHasCaption
-                                Button {
-                                    selectedPlaceForModal = place
-                                } label: {
-                                    PlaceVisitedCard(place: place, showCaptionSpace: showCaptionSpace)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 44)
+                        } else {
+                            let indexedPlaces = Array(filteredPlaces.enumerated())
+                            LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 12) {
+                                ForEach(indexedPlaces, id: \.element.id) { index, place in
+                                    // Pair partner: even index pairs with the next, odd with the previous
+                                    let partnerIndex = index % 2 == 0 ? index + 1 : index - 1
+                                    let partnerHasCaption = partnerIndex < filteredPlaces.count && filteredPlaces[partnerIndex].captionPreview != nil
+                                    let showCaptionSpace = place.captionPreview != nil || partnerHasCaption
+                                    Button {
+                                        selectedPlaceForModal = place
+                                    } label: {
+                                        PlaceVisitedCard(place: place, showCaptionSpace: showCaptionSpace)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     }
+                    .padding(.horizontal, horizontalPadding)
+                    .padding(.bottom, 132)
                 }
-                .padding(.horizontal, horizontalPadding)
-                .padding(.bottom, searchBarHeight + mapButtonSize + 24)
             }
-
-            VStack(spacing: 0) {
-                Spacer()
-                HStack {
-                    Spacer()
-                    placesMapButton
-                        .padding(.trailing, horizontalPadding)
-                        .padding(.bottom, 16)
-                }
-                placesSearchBar
-            }
-            .allowsHitTesting(true)
         }
-        .navigationTitle("Places Visited")
-        .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedPlaceForModal) { place in
             placeModalSheet(place: place)
         }
         .navigationDestination(isPresented: $showPlacesMap) {
             PlacesVisitedMapView(
                 selectedYear: $selectedYear,
+                selectedCountry: $selectedCountry,
                 selectedCategory: $selectedCategory,
                 searchText: $searchText
             )
@@ -227,7 +212,6 @@ struct PlacesVisitedView: View {
                     Image(systemName: selectedCountry == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
                 }
             }
-
             if selectedYear != nil || selectedCountry != nil || selectedCategory != nil {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Reset") {
@@ -240,49 +224,6 @@ struct PlacesVisitedView: View {
         }
     }
 
-    private var placesMapButton: some View {
-        Button {
-            isSearchFocused = false
-            showPlacesMap = true
-        } label: {
-            Image(systemName: "map.fill")
-                .font(.title2)
-                .foregroundColor(.white)
-                .frame(width: mapButtonSize, height: mapButtonSize)
-                .background(Color.blue)
-                .clipShape(Capsule())
-                .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var placesSearchBar: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("Search places", text: $searchText)
-                .autocorrectionDisabled()
-                .focused($isSearchFocused)
-                .onTapGesture { isSearchActive = true }
-
-            if isSearchActive {
-                Button {
-                    searchText = ""
-                    isSearchFocused = false
-                    isSearchActive = false
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 16)
-        .frame(height: searchBarHeight)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, horizontalPadding)
-        .padding(.bottom, 12)
-    }
 
     private var filterBar: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -401,6 +342,10 @@ private struct PlaceVisitedPhotoModalWrapper: View {
                 onViewBlog: onViewBlog,
                 onPhotoCaptionManuallyEdited: { photoId in
                     // updatePhotoCaption already called via the binding setter
+                },
+                onRemovePhoto: { photoId in
+                    store.removePhotoFromBlog(photoId: photoId)
+                    onDismiss()
                 }
             )
         } else {
@@ -434,7 +379,7 @@ private struct PlaceVisitedCard: View {
                         .frame(maxWidth: .infinity)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                 } else {
-                    Color(uiColor: .secondarySystemBackground)
+                    Color.clear
                         .frame(height: 150)
                         .frame(maxWidth: .infinity)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -516,7 +461,7 @@ private struct PlaceVisitedCard: View {
             }
         }
         .padding(12)
-        .background(Color(uiColor: .systemBackground))
+        .background(Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -530,6 +475,7 @@ private struct PlacesVisitedMapView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
 
     @Binding var selectedYear: Int?
+    @Binding var selectedCountry: String?
     @Binding var selectedCategory: String?
     @Binding var searchText: String
 
@@ -543,6 +489,10 @@ private struct PlacesVisitedMapView: View {
 
     private var availableYears: [Int] {
         Array(Set(createdRecapStore.visitedPlaces.map(\.year))).sorted(by: >)
+    }
+
+    private var availableCountries: [String] {
+        Array(Set(createdRecapStore.visitedPlaces.map(\.country))).sorted()
     }
 
     private var availableCategories: [String] {
@@ -618,6 +568,11 @@ private struct PlacesVisitedMapView: View {
         createdRecapStore.visitedPlaces
             .filter { place in
                 if let y = selectedYear, place.year != y { return false }
+                if let c = selectedCountry {
+                    let lhs = place.country.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let rhs = c.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if lhs.caseInsensitiveCompare(rhs) != .orderedSame { return false }
+                }
                 if let cat = selectedCategory {
                     let lhs = (place.categoryRawValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     let rhs = cat.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -643,6 +598,23 @@ private struct PlacesVisitedMapView: View {
         }
     }
 
+    private func recenterToLatestPlace() {
+        if let latest = placesWithCoordinates.first?.coordinate {
+            withAnimation {
+                mapPosition = .region(
+                    MKCoordinateRegion(
+                        center: latest,
+                        span: MKCoordinateSpan(latitudeDelta: 0.25, longitudeDelta: 0.25)
+                    )
+                )
+            }
+        } else {
+            withAnimation {
+                mapPosition = .region(defaultRegion)
+            }
+        }
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             Map(position: $mapPosition) {
@@ -658,23 +630,23 @@ private struct PlacesVisitedMapView: View {
             .mapStyle(.standard(elevation: .realistic))
             .ignoresSafeArea(.container, edges: .bottom)
             .onAppear {
-                if let first = placesWithCoordinates.first?.coordinate {
-                    mapPosition = .region(
-                        MKCoordinateRegion(
-                            center: first,
-                            span: MKCoordinateSpan(latitudeDelta: 0.25, longitudeDelta: 0.25)
-                        )
-                    )
-                } else {
-                    mapPosition = .region(defaultRegion)
-                }
+                recenterToLatestPlace()
+            }
+            .onChange(of: selectedYear) { _, _ in
+                recenterToLatestPlace()
+            }
+            .onChange(of: selectedCountry) { _, _ in
+                recenterToLatestPlace()
+            }
+            .onChange(of: selectedCategory) { _, _ in
+                recenterToLatestPlace()
             }
 
             VStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Year")
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(.white.opacity(0.6))
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
@@ -694,7 +666,7 @@ private struct PlacesVisitedMapView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Category")
                             .font(.caption)
-                            .foregroundStyle(.white.opacity(0.7))
+                            .foregroundStyle(.white.opacity(0.6))
 
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
@@ -712,11 +684,11 @@ private struct PlacesVisitedMapView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 10)
+            .padding(.top, 8)
+            .padding(.bottom, 8)
             .background(
                 LinearGradient(
-                    colors: [Color.black.opacity(0.6), Color.black.opacity(0)],
+                    colors: [Color.black.opacity(0.45), Color.black.opacity(0)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -742,6 +714,17 @@ private struct PlacesVisitedMapView: View {
                 } label: {
                     Image(systemName: "chevron.left")
                         .fontWeight(.semibold)
+                }
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("All Countries") { selectedCountry = nil }
+                    ForEach(availableCountries, id: \.self) { c in
+                        Button(c) { selectedCountry = c }
+                    }
+                } label: {
+                    Image(systemName: selectedCountry == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
                 }
             }
         }

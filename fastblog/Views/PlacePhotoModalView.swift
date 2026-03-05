@@ -145,7 +145,7 @@ struct PlacePhotoModalView: View {
                 fullScreenPhotoView
                     .onTapGesture {
                         if !blogIsEditMode && !isEditing {
-                            withAnimation {
+                            withAnimation(.easeInOut(duration: 0.25)) {
                                 isOverlayHidden.toggle()
                             }
                         } else if isEditing {
@@ -208,7 +208,7 @@ struct PlacePhotoModalView: View {
                 }
             }
             .background(
-                isEditing ? nil :
+                (isEditing || isOverlayHidden) ? nil :
                 LinearGradient(
                     colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
                     startPoint: .bottom,
@@ -216,6 +216,7 @@ struct PlacePhotoModalView: View {
                 )
             )
             .opacity(isOverlayHidden ? 0 : 1)
+            .animation(.easeInOut(duration: 0.25), value: isOverlayHidden)
 
             // 3. Top bar + bottom-right action stack (drawn on top so never covered when modal is small)
             ZStack(alignment: .top) {
@@ -349,8 +350,9 @@ struct PlacePhotoModalView: View {
                 }
 
             }
-            .allowsHitTesting(true)
+            .allowsHitTesting(!isOverlayHidden)
             .opacity(isOverlayHidden ? 0 : 1)
+            .animation(.easeInOut(duration: 0.25), value: isOverlayHidden)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
@@ -384,9 +386,6 @@ struct PlacePhotoModalView: View {
                                 .foregroundColor(.white)
                                 .lineLimit(2...6)
                                 .padding(12)
-                                .background(.ultraThinMaterial)
-                                .background(Color.black.opacity(0.4))
-                                .cornerRadius(12)
                             if let generate = onGenerateCaption, let photo = currentPhoto {
                                 Button {
                                     isGeneratingCaption = true
@@ -451,9 +450,6 @@ struct PlacePhotoModalView: View {
                                 .foregroundColor(.white)
                                 .lineLimit(2...6)
                                 .padding(12)
-                                .background(.ultraThinMaterial)
-                                .background(Color.black.opacity(0.4))
-                                .cornerRadius(12)
                             if let generate = onGenerateCaption, let photo = currentPhoto {
                                 Button {
                                     isGeneratingCaption = true
@@ -762,9 +758,6 @@ struct BottomInfoOverlay: View {
                     .foregroundColor(.white)
                     .lineLimit(2...6)
                     .padding(10)
-                    .background(.ultraThinMaterial)
-                    .background(Color.black.opacity(0.4))
-                    .cornerRadius(12)
                     .onSubmit { onCommitCaption() }
                 Button("Done") {
                     onCommitCaption()
@@ -781,9 +774,6 @@ struct BottomInfoOverlay: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .multilineTextAlignment(.leading)
                         .padding(10)
-                        .background(.ultraThinMaterial)
-                        .background(Color.black.opacity(0.4))
-                        .cornerRadius(12)
                 }
             }
         }

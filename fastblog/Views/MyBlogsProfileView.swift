@@ -7,6 +7,13 @@
 
 import SwiftUI
 
+// MARK: - Page enum
+private enum MyBlogsPage: Equatable {
+    case blogs
+    case country(CountrySection)
+    case places
+}
+
 private let searchBarHeight: CGFloat = 56
 private let myMapButtonSize: CGFloat = 52
 private let cardSpacing: CGFloat = 16
@@ -77,10 +84,16 @@ struct MyBlogsProfileView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @StateObject private var viewModel = MyBlogsProfileViewModel()
-    @State private var selectedSection: CountrySection?
-    @State private var selectedPlaceForModal: VisitedPlaceSummary?
-    @State private var showPlacesVisited = false
+    // Page navigation (ZStack-based, bottom bar persists across all pages)
+    @State private var currentPage: MyBlogsPage = .blogs
+    @State private var sharedSearchText: String = ""
+
+    // Per-page map destinations
     @State private var showMyMap = false
+    @State private var showCountryMap: Bool = false
+    @State private var showPlacesMap: Bool = false
+
+    @State private var selectedPlaceForModal: VisitedPlaceSummary?
     @State private var showManage = false
     @State private var isSearchActive = false
     @FocusState private var isSearchFocused: Bool
@@ -96,105 +109,90 @@ struct MyBlogsProfileView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            backgroundBlue
-                .ignoresSafeArea()
+            backgroundBlue.ignoresSafeArea()
 
-            ScrollView(showsIndicators: false) {
+            // ── Active page content ──────────────────────────────────────
+            pageContent
 
-                let allSections = MyBlogsProfileViewModel.sections(from: createdRecapStore.countrySummaries)
-                let sections = viewModel.filteredSections(from: allSections)
-                Group {
-                    if !isSearchActive && !viewModel.unsavedTrips.isEmpty {
-                        unsavedTripsSection
-                    }
-
-                    if !isSearchActive && !createdRecapStore.visitedPlaces.isEmpty {
-                        placesVisitedSection
-                    }
-
-                    // Recent Blogs horizontal scroll (only when not in search mode)
-                    if false && !isSearchActive && !createdRecapStore.visibleRecents.isEmpty {
-                        recentBlogsSection
-                    }
-
-                    if isSearchActive && !viewModel.isSearching {
-                        // Search mode active but nothing typed yet
-                        VStack(spacing: 12) {
-                            Text("Search by city or blog title")
-                                .font(.subheadline)
-                                .foregroundColor(.white.opacity(0.6))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 48)
-                    } else if sections.isEmpty {
-                        emptyState
-                    } else {
-                        LazyVStack(spacing: cardSpacing) {
-                            ForEach(sections) { section in
-                                CountryCardView(section: section) {
-                                    isSearchFocused = false
-                                    selectedSection = section
-                                }
-                                .frame(maxWidth: .infinity)
-                            }
-                        }
-                    }
-                }
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear.preference(key: MyBlogsScrollOffsetKey.self, value: proxy.frame(in: .named("MyBlogsScroll")).minY)
-                    }
-                )
-                .padding(.horizontal, horizontalPadding)
-                .padding(.top, 12)
-                .padding(.bottom, searchBarHeight + myMapButtonSize + 24)
-            }
-            .coordinateSpace(name: "MyBlogsScroll")
-            .onPreferenceChange(MyBlogsScrollOffsetKey.self) { value in
-                scrollOffset = value
-            }
-
+            // ── Persistent bottom bar (always visible) ───────────────────
             VStack(spacing: 0) {
                 Spacer()
                 HStack {
                     Spacer()
                     MyMapButton {
                         isSearchFocused = false
-                        showMyMap = true
+                        switch currentPage {
+                        case .blogs:   showMyMap = true
+                        case .country: showCountryMap = true
+                        case .places:  showPlacesMap = true
+                        }
                     }
-                    .padding(.trailing, 20)
+                    .padding(.trailing, horizontalPadding)
                     .padding(.bottom, 16)
                 }
-                searchBar
+                adaptiveSearchBar
             }
             .allowsHitTesting(true)
         }
         .simultaneousGesture(
-            DragGesture()
-                .onEnded { value in
-                    if scrollOffset >= -20 && value.translation.height > 60 && abs(value.translation.height) > abs(value.translation.width) {
+            DragGesture().onEnded { value in
+                let isHorizontal = abs(value.translation.width) > abs(value.translation.height)
+                if currentPage == .blogs {
+                    // Swipe down to dismiss My Blogs
+                    if !isHorizontal && scrollOffset >= -20 && value.translation.height > 60 {
                         dismiss()
                     }
+                } else {
+                    // Swipe right to go back to blogs page
+                    if isHorizontal && value.translation.width > 60 {
+                        switch currentPage {
+                        case .country:
+                            break
+                        case .places:
+                            withAnimation(.easeInOut(duration: 0.26)) { currentPage = .blogs }
+                        case .blogs:
+                            break
+                        }
+                    }
                 }
+            }
         )
-        .navigationTitle("My Blogs")
+        .navigationTitle(pageTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
         .preferredColorScheme(.dark)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Manage") {
-                    isSearchFocused = false
-                    showManage = true
+            ToolbarItem(placement: .topBarLeading) {
+                switch currentPage {
+                case .blogs:
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.body.weight(.semibold))
+                    }
+                case .country, .places:
+                    Button {
+                        isSearchFocused = false
+                        withAnimation(.easeInOut(duration: 0.26)) {
+                            currentPage = .blogs
+                        }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.body.weight(.semibold))
+                    }
                 }
-                .foregroundColor(.white)
             }
-        }
-        .navigationDestination(item: $selectedSection) { section in
-            CountryBlogsView(section: section, selectedBlog: $selectedCreatedRecap)
-        }
-        .navigationDestination(isPresented: $showPlacesVisited) {
-            PlacesVisitedView()
-                .environmentObject(createdRecapStore)
+            // Manage — only on blogs page (sub-pages add their own toolbar items)
+            if case .blogs = currentPage {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Manage") {
+                        isSearchFocused = false
+                        showManage = true
+                    }
+                    .foregroundColor(.white)
+                }
+            }
         }
         .sheet(item: $selectedPlaceForModal) { place in
             placeModalSheet(place: place)
@@ -209,9 +207,9 @@ struct MyBlogsProfileView: View {
             )
         }
         .navigationDestination(item: $createBlogFlowTrip) { trip in
-            CreateBlogFlowView(trip: trip, startDirectlyCreating: true) { createdTripId in
+            CreateBlogFlowView(trip: trip, startDirectlyCreating: true) { _ in
                 createBlogFlowTrip = nil
-                viewModel.loadUnsavedTrips() // Refresh after creation
+                viewModel.loadUnsavedTrips()
             }
             .environmentObject(createdRecapStore)
         }
@@ -230,9 +228,136 @@ struct MyBlogsProfileView: View {
             }
             .environmentObject(createdRecapStore)
         }
-        .onAppear {
-            viewModel.loadUnsavedTrips()
+        .onAppear { viewModel.loadUnsavedTrips() }
+        .onChange(of: currentPage) { _, _ in
+            sharedSearchText = ""
+            viewModel.searchText = ""
+            isSearchActive = false
         }
+        .onChange(of: sharedSearchText) { _, newValue in
+            if case .blogs = currentPage { viewModel.searchText = newValue }
+        }
+    }
+
+    // MARK: - Page routing
+
+    private var pageTitle: String {
+        switch currentPage {
+        case .blogs: return "My Blogs"
+        case .country(let section): return section.countryName.isEmpty || section.countryName == "Unknown" ? "Other" : section.countryName
+        case .places: return "Places Visited"
+        }
+    }
+
+    @ViewBuilder
+    private var pageContent: some View {
+        switch currentPage {
+        case .blogs:
+            blogsScrollView
+        case .country(let section):
+            CountryBlogsView(
+                section: section,
+                selectedBlog: $selectedCreatedRecap,
+                showMap: $showCountryMap,
+                searchText: $sharedSearchText
+            )
+            .environmentObject(createdRecapStore)
+            .transition(.move(edge: .trailing).combined(with: .opacity))
+        case .places:
+            PlacesVisitedView(
+                searchText: $sharedSearchText,
+                showPlacesMap: $showPlacesMap
+            )
+            .environmentObject(createdRecapStore)
+            .transition(.move(edge: .trailing).combined(with: .opacity))
+        }
+    }
+
+    private var blogsScrollView: some View {
+        ScrollView(showsIndicators: false) {
+            let allSections = MyBlogsProfileViewModel.sections(from: createdRecapStore.countrySummaries)
+            let sections = viewModel.filteredSections(from: allSections)
+            Group {
+                if false && !isSearchActive && !viewModel.unsavedTrips.isEmpty {
+                    unsavedTripsSection
+                }
+                if !isSearchActive && !createdRecapStore.visitedPlaces.isEmpty {
+                    placesVisitedSection
+                }
+                if false && !isSearchActive && !createdRecapStore.visibleRecents.isEmpty {
+                    recentBlogsSection
+                }
+                if isSearchActive && !viewModel.isSearching {
+                    VStack(spacing: 12) {
+                        Text("Search by city or blog title")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 48)
+                } else if sections.isEmpty {
+                    emptyState
+                } else {
+                    LazyVStack(spacing: cardSpacing) {
+                        ForEach(sections) { section in
+                            CountryCardView(section: section) {
+                                isSearchFocused = false
+                                withAnimation(.easeInOut(duration: 0.26)) {
+                                    currentPage = .country(section)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+            }
+            .background(GeometryReader { proxy in
+                Color.clear.preference(key: MyBlogsScrollOffsetKey.self, value: proxy.frame(in: .named("MyBlogsScroll")).minY)
+            })
+            .padding(.horizontal, horizontalPadding)
+            .padding(.top, 12)
+            .padding(.bottom, searchBarHeight + myMapButtonSize + 24)
+        }
+        .coordinateSpace(name: "MyBlogsScroll")
+        .onPreferenceChange(MyBlogsScrollOffsetKey.self) { value in scrollOffset = value }
+        .transition(.move(edge: .leading).combined(with: .opacity))
+    }
+
+    // MARK: - Persistent bottom bar
+
+    private var adaptiveSearchBar: some View {
+        let placeholder: String
+        let isDark: Bool
+        switch currentPage {
+        case .blogs:   placeholder = "Search city or blog title"; isDark = true
+        case .country: placeholder = "Search blog title";          isDark = false
+        case .places:  placeholder = "Search places";               isDark = false
+        }
+        return HStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(isDark ? .white.opacity(0.7) : .secondary)
+            TextField(placeholder, text: $sharedSearchText)
+                .foregroundColor(isDark ? .white : .primary)
+                .autocorrectionDisabled()
+                .focused($isSearchFocused)
+                .onTapGesture { isSearchActive = true }
+            if isSearchActive {
+                Button {
+                    sharedSearchText = ""
+                    isSearchFocused = false
+                    isSearchActive = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(isDark ? .white.opacity(0.5) : .secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(height: searchBarHeight)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, horizontalPadding)
+        .padding(.bottom, 12)
     }
 
     // "Recent Blogs" horizontal scroll matching the home page style
@@ -248,7 +373,7 @@ struct MyBlogsProfileView: View {
                 Spacer()
 
                 Button {
-                    showPlacesVisited = true
+                    withAnimation(.easeInOut(duration: 0.26)) { currentPage = .places }
                 } label: {
                     Text("View All")
                         .font(.subheadline)
@@ -307,6 +432,10 @@ struct MyBlogsProfileView: View {
                           let recap = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == blogId }) else { return }
                     selectedPlaceForModal = nil
                     selectedCreatedRecap = recap
+                },
+                onRemovePhoto: { photoId in
+                    createdRecapStore.removePhotoFromBlog(photoId: photoId)
+                    selectedPlaceForModal = nil
                 }
             )
             .presentationDetents([.large])
@@ -392,35 +521,6 @@ struct MyBlogsProfileView: View {
         .padding(.vertical, 48)
     }
 
-    private var searchBar: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "magnifyingglass")
-                .foregroundColor(.white.opacity(0.7))
-            TextField("Search city or blog title", text: $viewModel.searchText)
-                .foregroundColor(.white)
-                .autocorrectionDisabled()
-                .focused($isSearchFocused)
-                .onTapGesture {
-                    isSearchActive = true
-                }
-            if isSearchActive {
-                Button {
-                    viewModel.searchText = ""
-                    isSearchFocused = false
-                    isSearchActive = false
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.white.opacity(0.5))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 16)
-        .frame(height: searchBarHeight)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, horizontalPadding)
-        .padding(.bottom, 12)
-    }
 }
 
 private struct MyMapButton: View {

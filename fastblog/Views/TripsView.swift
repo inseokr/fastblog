@@ -245,7 +245,21 @@ struct TripsView: View {
             createdRecapStore.showDraftSavedToast = false
         }
         // Surface the Limited banner only when scan finishes with weak results
-        .onChange(of: viewModel.scanState) { _, newState in
+        .onChange(of: viewModel.scanState) { oldState, newState in
+            if oldState != .idle && newState == .idle {
+                // After any scan completes, jump the carousel selection to the newest trip.
+                // (Fix: scanning from Home should always land on latest trip.)
+                didCompleteInitialSelection = false
+                let trips = allTrips
+                if let firstTrip = trips.first {
+                    selectedTripID = firstTrip.id
+                    if let center = firstTrip.centerCoordinate {
+                        let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
+                        mapPosition = .region(MKCoordinateRegion(center: center, span: span))
+                    }
+                }
+            }
+
             if newState == .idle && photoAuth.status == .limited && viewModel.scanResultIsWeak {
                 withAnimation(.easeOut(duration: 0.4)) {
                     showLimitedBannerAfterWeakScan = true

@@ -10,9 +10,10 @@ import SwiftUI
 struct CountryBlogsView: View {
     let section: CountrySection
     @Binding var selectedBlog: CreatedRecapBlog?
+    @Binding var showMap: Bool
+    @Binding var searchText: String
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @State private var localSelectedBlog: CreatedRecapBlog?
-    @State private var showMap = false
     @State private var showManageSheet = false
 
     // Cloud removal
@@ -38,10 +39,8 @@ struct CountryBlogsView: View {
     // Year filter support
     @State private var selectedYear: Int? = nil
 
-    // Search filter
-    @State private var searchText = ""
-    @FocusState private var isSearchFocused: Bool
-    @State private var isSearchActive = false
+    // Search filter (driven by parent's shared search bar)
+    // searchText is a @Binding — no local @State needed
 
     private let undoDuration: TimeInterval = 7
 
@@ -153,7 +152,7 @@ struct CountryBlogsView: View {
                 .listStyle(.plain)
                 .padding(.top, 4)
                 .safeAreaInset(edge: .bottom) {
-                    Color.clear.frame(height: 80)
+                    Color.clear.frame(height: 132)
                 }
                 .scrollDismissesKeyboard(.interactively)
             }
@@ -181,35 +180,10 @@ struct CountryBlogsView: View {
                 )
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(1)
-            }
-            // ─── Floating Controls (bottom) ──────────────────────
-            VStack(spacing: 0) {
-                HStack {
-                    Spacer()
-                    Button {
-                        isSearchFocused = false
-                        showMap = true
-                    } label: {
-                        Image(systemName: "map.fill")
-                            .font(.title2)
-                            .foregroundColor(.white)
-                            .frame(width: 52, height: 52)
-                            .background(Color.blue)
-                            .clipShape(Capsule())
-                            .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.trailing, 20)
-                    .padding(.bottom, 16)
-                }
-                
-                searchBar
-            }
-            .allowsHitTesting(true)
         }
+        } // end ZStack
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showUndoBanner)
-        .navigationTitle(displayCountryName(section.countryName))
-        .navigationBarTitleDisplayMode(.inline)
+        .background(InteractivePopGestureDisabler())
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Manage") {
@@ -288,7 +262,7 @@ struct CountryBlogsView: View {
         } message: { _ in
             Text("Are you sure you want to remove this blog from the cloud? Your local copy will remain.")
         }
-    }
+    } // end body
 
     // MARK: – Delete helpers
 
@@ -350,37 +324,8 @@ struct CountryBlogsView: View {
         }
     }
 
-    // MARK: - Search Bar
-
-    private var searchBar: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "magnifyingglass")
-                .foregroundColor(.secondary)
-            TextField("Search blog title", text: $searchText)
-                .foregroundColor(.primary)
-                .autocorrectionDisabled()
-                .focused($isSearchFocused)
-                .onTapGesture {
-                    isSearchActive = true
-                }
-            if isSearchActive {
-                Button {
-                    searchText = ""
-                    isSearchFocused = false
-                    isSearchActive = false
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 56)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 20)
-        .padding(.bottom, 12)
-    }
+    // MARK: - Search happens via parent's shared search bar now
+    // (searchText is a @Binding passed in from MyBlogsProfileView)
 
     // MARK: – Helpers
 
@@ -400,6 +345,26 @@ struct CountryBlogsView: View {
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct InteractivePopGestureDisabler: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> UIViewController {
+        let vc = UIViewController()
+        vc.view.backgroundColor = .clear
+        return vc
+    }
+
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
+        DispatchQueue.main.async {
+            uiViewController.navigationController?.interactivePopGestureRecognizer?.isEnabled = false
+        }
+    }
+
+    static func dismantleUIViewController(_ uiViewController: UIViewController, coordinator: ()) {
+        DispatchQueue.main.async {
+            uiViewController.navigationController?.interactivePopGestureRecognizer?.isEnabled = true
+        }
     }
 }
 

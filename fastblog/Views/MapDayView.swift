@@ -287,12 +287,16 @@ extension MapDayView {
 struct FullScreenMapView: View {
     let day: RecapBlogDay
     var onDismiss: () -> Void
+    /// Called when a photo caption is saved inside the modal. Receives (stopId, photoId, newCaption).
+    var onCaptionSaved: ((UUID, UUID, String) -> Void)? = nil
 
     @State private var selectedPlaceIndex: Int = 0
     // Photo modal
     @State private var photoModalStop: PlaceStop?
     @State private var photoModalInitialPhotoId: UUID?
     @State private var photoModalCaptions: [UUID: String] = [:]
+    /// Captions at the moment the modal was opened — used to diff on dismiss.
+    @State private var photoModalCaptionsSnapshot: [UUID: String] = [:]
 
     private var focusedPlaceId: UUID? {
         guard day.placeStops.indices.contains(selectedPlaceIndex) else { return nil }
@@ -301,9 +305,20 @@ struct FullScreenMapView: View {
 
     private func openPhotoModal(for stop: PlaceStop) {
         guard !stop.photos.isEmpty else { return }
-        photoModalCaptions = Dictionary(uniqueKeysWithValues: stop.photos.map { ($0.id, $0.caption ?? "") })
+        let captions = Dictionary(uniqueKeysWithValues: stop.photos.map { ($0.id, $0.caption ?? "") })
+        photoModalCaptions = captions
+        photoModalCaptionsSnapshot = captions
         photoModalInitialPhotoId = stop.photos.first?.id
         photoModalStop = stop
+    }
+
+    private func flushCaptionChanges(stop: PlaceStop) {
+        for (photoId, newCaption) in photoModalCaptions {
+            let original = photoModalCaptionsSnapshot[photoId] ?? ""
+            if newCaption != original {
+                onCaptionSaved?(stop.id, photoId, newCaption)
+            }
+        }
     }
 
     var body: some View {
@@ -363,7 +378,11 @@ struct FullScreenMapView: View {
                             set: { photoModalCaptions[id] = $0 }
                         )
                     },
-                    onDismiss: { photoModalStop = nil }
+                    onDismiss: {
+                        // Flush caption changes before clearing the stop
+                        flushCaptionChanges(stop: stop)
+                        photoModalStop = nil
+                    }
                 )
                 .presentationDetents([.large])
                 .presentationDragIndicator(.hidden)

@@ -39,16 +39,6 @@ struct ContentView: View {
                 NavigationStack {
                     MyBlogsProfileView(createdRecapStore: createdRecapStore, selectedCreatedRecap: $selectedCreatedRecap)
                         .environmentObject(createdRecapStore)
-                        .toolbar {
-                            ToolbarItem(placement: .cancellationAction) {
-                                Button {
-                                    showSeeAll = false
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .foregroundColor(.white)
-                                }
-                            }
-                        }
                 }
             }
             // Only push from Landing if we are staying on Landing (not showing Trips)

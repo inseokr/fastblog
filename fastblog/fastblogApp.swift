@@ -6,8 +6,20 @@
 import SwiftUI
 import UIKit
 
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    static var orientationLock: UIInterfaceOrientationMask = .portrait
+
+    func application(
+        _ application: UIApplication,
+        supportedInterfaceOrientationsFor window: UIWindow?
+    ) -> UIInterfaceOrientationMask {
+        Self.orientationLock
+    }
+}
+
 @main
 struct fastblogApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var photoAuth = PhotosAuthorizationManager()
     @StateObject private var authService = AuthService.shared
     @StateObject private var authStateManager = AuthStateManager.shared
