@@ -64,8 +64,8 @@ struct CreateBlogFlowView: View {
                             tripForBuild = createdRecapStore.tripDraft(for: trip.id) ?? trip
                         }
 
-                        // Build full blog detail (geocoding + Vision AI scoring) during animation
-                        let detail = await createdRecapStore.buildBlogDetailAsync(from: tripForBuild)
+                        // Build first day only (rate limit: 50 geocode/min); remaining days process on recap page
+                        let detail = await createdRecapStore.buildBlogDetailFirstDayOnly(from: tripForBuild)
 
                         try Task.checkCancellation()
 

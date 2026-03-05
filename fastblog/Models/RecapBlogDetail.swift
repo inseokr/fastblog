@@ -63,13 +63,30 @@ struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
     var placeStops: [PlaceStop]
     /// User-written or AI-generated caption for the whole day. Shown right below the day date text.
     var dayCaption: String?
+    /// True after reverse-geocoding and photo scoring have been applied for this day (used for day-by-day rate-limited processing).
+    var isPlaceNamesResolved: Bool
 
-    init(id: UUID = UUID(), dayIndex: Int, date: Date, placeStops: [PlaceStop], dayCaption: String? = nil) {
+    init(id: UUID = UUID(), dayIndex: Int, date: Date, placeStops: [PlaceStop], dayCaption: String? = nil, isPlaceNamesResolved: Bool = false) {
         self.id = id
         self.dayIndex = dayIndex
         self.date = date
         self.placeStops = placeStops
         self.dayCaption = dayCaption
+        self.isPlaceNamesResolved = isPlaceNamesResolved
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        dayIndex = try c.decode(Int.self, forKey: .dayIndex)
+        date = try c.decode(Date.self, forKey: .date)
+        placeStops = try c.decode([PlaceStop].self, forKey: .placeStops)
+        dayCaption = try c.decodeIfPresent(String.self, forKey: .dayCaption)
+        isPlaceNamesResolved = try c.decodeIfPresent(Bool.self, forKey: .isPlaceNamesResolved) ?? false
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, dayIndex, date, placeStops, dayCaption, isPlaceNamesResolved
     }
 
     var dateText: String {

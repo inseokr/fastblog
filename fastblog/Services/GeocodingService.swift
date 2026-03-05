@@ -82,6 +82,9 @@ private func isLikelyVenue(_ name: String) -> Bool {
 /// Max reverse geocode requests per minute (rate limit).
 // private let geocodeRateLimitPerMinute = 30
 
+/// Max reverse geocode requests per minute (CLGeocoder / Apple limit).
+private let geocodeRateLimitPerMinute = 50
+
 /// Async-safe rate limiter; returns wait seconds so caller sleeps outside actor (Swift 6 compliant).
 private actor GeocodeRateLimiter {
     private var requestTimestamps: [Date] = []
@@ -92,13 +95,31 @@ private actor GeocodeRateLimiter {
         requestTimestamps = requestTimestamps.filter { $0 > oneMinuteAgo }
         let needWait: TimeInterval
         // CLGeocoder limit is ~50 per min. If we hit 40, wait up to 1-2s to space them out.
-        if requestTimestamps.count >= 40, let oldest = requestTimestamps.first {
+        if requestTimestamps.count >= 40, requestTimestamps.first != nil {
             needWait = min(2.0, max(0.2, 60.0 / 40.0)) // Wait nicely spaced, not 15s.
         } else {
             needWait = 0
         }
         requestTimestamps.append(Date())
         return needWait
+    }
+
+    /// Returns recommended seconds to wait before starting a batch of `estimatedNewCalls` requests,
+    /// so that we stay under geocodeRateLimitPerMinute. Does not record any requests.
+    func recommendedWaitBeforeBatch(estimatedNewCalls: Int) async -> TimeInterval {
+        let now = Date()
+        let oneMinuteAgo = now.addingTimeInterval(-60)
+        let recent = requestTimestamps.filter { $0 > oneMinuteAgo }
+        let currentCount = recent.count
+        let headroom = geocodeRateLimitPerMinute - currentCount
+        if estimatedNewCalls <= headroom { return 0 }
+        let overflow = estimatedNewCalls - headroom
+        let oldestFirst = recent.sorted()
+        guard overflow <= oldestFirst.count else {
+            return 60 // Full minute if we can't compute (safety).
+        }
+        let expireAt = oldestFirst[overflow - 1].addingTimeInterval(60)
+        return max(0, expireAt.timeIntervalSince(now))
     }
 }
 
@@ -145,6 +166,12 @@ final class GeocodingService {
         newEntryCount += 1
         if newEntryCount % 10 == 0 { persistCache() }
         return place
+    }
+
+    /// Recommended seconds to wait before starting a batch of up to `estimatedNewCalls` reverse-geocode requests,
+    /// so we stay under the 50/min rate limit. Call before processing the next day in recap to avoid throttling.
+    func recommendedDelayBeforeNextBatch(estimatedNewCalls: Int) async -> TimeInterval {
+        await rateLimiter.recommendedWaitBeforeBatch(estimatedNewCalls: estimatedNewCalls)
     }
 
     /// Returns timezone at the given location (where the photo was taken). Uses same reverse-geocode cache as place(for:).

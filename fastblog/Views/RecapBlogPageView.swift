@@ -99,7 +99,8 @@ struct RecapBlogPageView: View {
     @State private var dayCaptionEditItem: DayCaptionEditItem?
     /// Place caption pull-up sheet trigger.
     @State private var placeCaptionEditItem: PlaceCaptionEditItem?
-
+    /// Alert when user taps a day that is not yet processed (geocoding still in progress).
+    @State private var showUnprocessedDayAlert = false
 
     private enum UndoAction {
         case deletePlace(dayId: UUID, stop: PlaceStop, index: Int)
@@ -170,6 +171,17 @@ struct RecapBlogPageView: View {
                 Button("No", role: .cancel) { }
             } message: {
                 Text("This blog needs to be uploaded to the cloud before you can share a link. Would you like to upload it now?")
+            }
+            .alert("Day Not Ready", isPresented: $showUnprocessedDayAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("This day is still being prepared. Place names and photos will appear shortly.")
+            }
+            .onReceive(createdRecapStore.objectWillChange) {
+                if let updated = createdRecapStore.getBlogDetail(blogId: blogId),
+                   updated.days.count == draft.days.count, !updated.days.isEmpty {
+                    draft = updated
+                }
             }
             .fullScreenCover(isPresented: $showAuth) {
                 AuthView(onAuthenticated: {
@@ -740,10 +752,11 @@ struct RecapBlogPageView: View {
 
     /// Day filter fixed at top; scrollable content (map + timeline) sits below it.
     private var dayFilterSection: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        let processingIndex = createdRecapStore.processingDayIndexByBlogId[blogId]
+        return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(Array(draft.days.enumerated()), id: \.element.id) { index, day in
-                    dayPill(title: "Day \(day.dayIndex)", index: index)
+                    dayPill(title: "Day \(day.dayIndex)", index: index, day: day, processingIndex: processingIndex)
                         .id(day.id)
                 }
             }
@@ -760,19 +773,35 @@ struct RecapBlogPageView: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func dayPill(title: String, index: Int) -> some View {
+    private func dayPill(title: String, index: Int, day: RecapBlogDay, processingIndex: Int?) -> some View {
         let isSelected = selectedDayIndex == index
+        let isProcessed = day.isPlaceNamesResolved
+        let isProcessing = processingIndex == index
+        let isUnprocessed = !isProcessed && !isProcessing
         return Button {
-            selectedDayIndex = index
+            if isUnprocessed {
+                showUnprocessedDayAlert = true
+            } else {
+                selectedDayIndex = index
+            }
         } label: {
-            Text(title)
-                .font(.subheadline)
-                .fontWeight(isSelected ? .semibold : .regular)
-                .foregroundColor(isSelected ? .white : .secondary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(isSelected ? Color.blue : Color(white: 0.2))
-                .clipShape(Capsule())
+            HStack(spacing: 6) {
+                if isProcessing {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(.white)
+                }
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(isSelected ? .semibold : .regular)
+                    .foregroundColor(isSelected ? .white : (isUnprocessed ? .secondary.opacity(0.6) : .secondary))
+                    .opacity(isUnprocessed ? 0.7 : 1)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(isSelected ? Color.blue : Color(white: 0.2))
+            .clipShape(Capsule())
+            .opacity(isUnprocessed ? 0.85 : 1)
         }
         .buttonStyle(.plain)
     }
@@ -1010,6 +1039,8 @@ struct RecapBlogPageView: View {
             // Auto-generate stories for any places that are missing them (e.g. first open after AI was added).
             Task { @MainActor in await autoFillMissingOverallStories() }
             hasFinishedInitialLoad = true
+            // Process any remaining days in background (rate-limited geocoding).
+            Task { @MainActor in await createdRecapStore.continueGeocodingDays(blogId: blogId) }
             return
         }
         guard let trip = initialTrip ?? createdRecapStore.tripDraft(for: blogId) else {
@@ -1017,10 +1048,14 @@ struct RecapBlogPageView: View {
             return
         }
         Task { @MainActor in
-            draft = await createdRecapStore.buildBlogDetailAsync(from: trip)
-            // Case 1: first-time creation — auto-generate captions + overall stories for all places.
-            await autoFillCaptionsAndStories()
+            let detail = await createdRecapStore.buildBlogDetailFirstDayOnly(from: trip)
+            createdRecapStore.saveBlogDetail(detail, asDraft: true)
+            draft = detail
+            await autoFillMissingOverallStories()
             hasFinishedInitialLoad = true
+            // Process remaining days in background (rate limit: 50 geocode/min).
+            await createdRecapStore.continueGeocodingDays(blogId: blogId)
+            await autoFillCaptionsAndStories()
         }
     }
 

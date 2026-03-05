@@ -234,6 +234,8 @@ final class CreatedRecapBlogStore: ObservableObject {
     var draftOccupiedRanges: [(start: Date, end: Date)] = []
     /// When true, TripsViewModel clears trips and re-runs default scan (e.g. after archive rules change).
     @Published var needsRescan: Bool = false
+    /// Day index currently being processed (geocoding + scoring) for each blog; used by RecapBlogPageView for "processing" pill state.
+    @Published private(set) var processingDayIndexByBlogId: [UUID: Int] = [:]
     private var tripDraftsBySourceId: [UUID: TripDraft] = [:]
     /// Persisted editable blog details; Save in RecapBlogPageView writes here.
     private var blogDetailsBySourceId: [UUID: RecapBlogDetail] = [:]
@@ -1211,12 +1213,171 @@ final class CreatedRecapBlogStore: ObservableObject {
         return detail
     }
 
-    /// Scores every photo using Vision AI, then auto-selects the best per place stop.
+    // MARK: - Day-by-day processing (rate limit 50 geocode/min)
+
+    /// Builds blog detail with structure for all days but only processes day 0 (geocode, title, visitedTime, photo quality).
+    /// Use before navigating to recap; then call continueGeocodingDays(blogId:) when the recap page loads.
+    func buildBlogDetailFirstDayOnly(from trip: TripDraft) async -> RecapBlogDetail {
+        var detail = buildBlogDetail(from: trip)
+        guard let firstDayIdx = detail.days.indices.first else { return detail }
+
+        // Process only day 0: geocode, then title/country from day 0, visitedTime for day 0, photo quality for day 0.
+        var cityCandidates: [(city: String, order: Int)] = []
+        var countryCandidates: [(country: String, order: Int)] = []
+        var order = 0
+        for stopIdx in detail.days[firstDayIdx].placeStops.indices {
+            let stop = detail.days[firstDayIdx].placeStops[stopIdx]
+            if Task.isCancelled { return detail }
+            if let coord = stop.representativeLocation {
+                let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+                let place = await GeocodingService.shared.place(for: loc)
+                cityCandidates.append((place.cityName, order))
+                countryCandidates.append((place.countryName, order))
+                order += 1
+                var dayCopy = detail.days[firstDayIdx]
+                var stopCopy = dayCopy.placeStops[stopIdx]
+                stopCopy.placeTitle = "Near \(place.areaName)"
+                stopCopy.placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+                dayCopy.placeStops[stopIdx] = stopCopy
+                detail.days[firstDayIdx] = dayCopy
+            }
+        }
+        detail.days[firstDayIdx].isPlaceNamesResolved = true
+
+        let primaryCity = primaryCityFromCandidates(cityCandidates)
+        let primaryCountry = primaryFromCandidates(countryCandidates)
+        let season = seasonFromDetail(detail)
+        let cityPart = (primaryCity.isEmpty || primaryCity == "Unknown Place") ? "New Place" : primaryCity
+        if let s = season, !s.isEmpty {
+            detail.title = "Trip To \(cityPart) in \(s)"
+        } else {
+            detail.title = "Trip To \(cityPart)"
+        }
+        if !primaryCountry.isEmpty && primaryCountry != "Unknown" {
+            detail.countryName = primaryCountry
+        }
+
+        detail = await applyVisitedTimeDigitized(to: detail, dayIndices: [firstDayIdx])
+        if Task.isCancelled { return detail }
+        detail = await applyPhotoQualitySelection(to: detail, dayIndices: [firstDayIdx])
+        return detail
+    }
+
+    /// Process one more day (geocode, visitedTime, photo quality) and merge into stored detail. Call after recommended delay.
+    /// Sets processingDayIndexByBlogId when starting and clears when done; notifies observers.
+    func continueGeocodingDays(blogId: UUID) async {
+        guard var detail = blogDetailsBySourceId[blogId],
+              let trip = tripDraftsBySourceId[blogId] else { return }
+        let dayIndicesToProcess = detail.days.indices.filter { !detail.days[$0].isPlaceNamesResolved }
+        guard let dayIdx = dayIndicesToProcess.first else { return }
+
+        let placeCount = detail.days[dayIdx].placeStops.count
+        let delay = await GeocodingService.shared.recommendedDelayBeforeNextBatch(estimatedNewCalls: placeCount)
+        if delay > 0 {
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        }
+        if Task.isCancelled { return }
+
+        processingDayIndexByBlogId[blogId] = dayIdx
+        objectWillChange.send()
+
+        var updatedDetail = await processOneDay(detail: detail, dayIndex: dayIdx)
+        if Task.isCancelled {
+            processingDayIndexByBlogId.removeValue(forKey: blogId)
+            objectWillChange.send()
+            return
+        }
+        updatedDetail.days[dayIdx].isPlaceNamesResolved = true
+        blogDetailsBySourceId[blogId] = updatedDetail
+        persistBlogDetails()
+        processingDayIndexByBlogId.removeValue(forKey: blogId)
+        objectWillChange.send()
+
+        // Process next day after a short yield so UI can update.
+        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+        await continueGeocodingDays(blogId: blogId)
+    }
+
+    /// Geocode, visitedTimeDigitized, and photo quality for a single day; does not set isPlaceNamesResolved.
+    private func processOneDay(detail: RecapBlogDetail, dayIndex: Int) async -> RecapBlogDetail {
+        var result = detail
+        guard dayIndex < result.days.count else { return result }
+
+        for stopIdx in result.days[dayIndex].placeStops.indices {
+            let stop = result.days[dayIndex].placeStops[stopIdx]
+            if Task.isCancelled { return result }
+            if let coord = stop.representativeLocation {
+                let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+                let place = await GeocodingService.shared.place(for: loc)
+                result.days[dayIndex].placeStops[stopIdx].placeTitle = "Near \(place.areaName)"
+                result.days[dayIndex].placeStops[stopIdx].placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+            }
+        }
+
+        result = await applyVisitedTimeDigitized(to: result, dayIndices: [dayIndex])
+        if Task.isCancelled { return result }
+        result = await applyPhotoQualitySelection(to: result, dayIndices: [dayIndex])
+        return result
+    }
+
+    /// Apply visitedTimeDigitized for the given day indices only.
+    private func applyVisitedTimeDigitized(to detail: RecapBlogDetail, dayIndices: [Int]) async -> RecapBlogDetail {
+        var result = detail
+        let daySet = Set(dayIndices)
+        let photosToResolve = detail.days.enumerated().flatMap { dayIdx, day -> [(Int, Int, RecapPhoto)] in
+            guard daySet.contains(dayIdx) else { return [] }
+            return day.placeStops.enumerated().flatMap { stopIdx, stop in
+                stop.photos.filter(\.isIncluded).map { (dayIdx, stopIdx, $0) }
+            }
+        }
+        let assetIds = photosToResolve.map(\.2).compactMap(\.localIdentifier)
+        var assetMap: [String: PHAsset] = [:]
+        if !assetIds.isEmpty {
+            let fetch = PHAsset.fetchAssets(withLocalIdentifiers: assetIds, options: nil)
+            fetch.enumerateObjects { asset, _, _ in assetMap[asset.localIdentifier] = asset }
+        }
+        var tzMap: [String: TimeZone] = [:]
+        await withTaskGroup(of: (String, TimeZone?).self) { group in
+            for (_, _, photo) in photosToResolve {
+                guard let id = photo.localIdentifier, let asset = assetMap[id] else { continue }
+                group.addTask { (id, await APIManager.getLocalTimeZone(for: asset)) }
+            }
+            for await (id, tz) in group {
+                if let tz { tzMap[id] = tz }
+            }
+        }
+        for (dayIdx, stopIdx, _) in photosToResolve {
+            guard dayIdx < result.days.count, stopIdx < result.days[dayIdx].placeStops.count else { continue }
+            let stop = result.days[dayIdx].placeStops[stopIdx]
+            let photos = stop.photos.filter(\.isIncluded)
+            guard let firstPhoto = photos.min(by: { $0.timestamp < $1.timestamp }),
+                  let _ = assetMap[firstPhoto.localIdentifier ?? ""] else { continue }
+            let stopOffsets: [Int] = photos.compactMap { photo -> Int? in
+                guard let id = photo.localIdentifier, let tz = tzMap[id] else { return nil }
+                return (tz.secondsFromGMT() / 900) * 900
+            }
+            let consensusOffset = stopOffsets.isEmpty ? 0 : (stopOffsets.reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }.max(by: { $0.value < $1.value })?.key ?? 0)
+            let tz = TimeZone(secondsFromGMT: consensusOffset) ?? TimeZone(identifier: "UTC")!
+            let asset = assetMap[firstPhoto.localIdentifier ?? ""]!
+            let date = asset.creationDate ?? firstPhoto.timestamp
+            let digitized = APIManager.digitizedTimeString(from: date, timeZone: tz)
+            result.days[dayIdx].placeStops[stopIdx].visitedTimeDigitized = digitized
+        }
+        return result
+    }
+
+    /// Scores every photo using Vision AI and auto-selects the best per place stop.
     private func applyPhotoQualitySelection(to detail: RecapBlogDetail) async -> RecapBlogDetail {
+        await applyPhotoQualitySelection(to: detail, dayIndices: detail.days.indices.map { $0 })
+    }
+
+    /// Scores photos and auto-selects best per place stop for the given day indices only.
+    private func applyPhotoQualitySelection(to detail: RecapBlogDetail, dayIndices: [Int]) async -> RecapBlogDetail {
         var updated = detail
         let scorer = PhotoQualityScorer.shared
+        let daySet = Set(dayIndices)
 
-        for dayIdx in updated.days.indices {
+        for dayIdx in updated.days.indices where daySet.contains(dayIdx) {
             for stopIdx in updated.days[dayIdx].placeStops.indices {
                 if Task.isCancelled { return updated }
                 let photos = updated.days[dayIdx].placeStops[stopIdx].photos

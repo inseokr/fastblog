@@ -313,7 +313,7 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		BB0001AD = {
+		BB0001AD /* main */ = {
 			isa = PBXGroup;
 			children = (
 				BB0001AE /* fastblog */,
@@ -580,7 +580,7 @@
 				en,
 				Base,
 			);
-			mainGroup = BB0001AD;
+			mainGroup = BB0001AD /* main */;
 			packageReferences = (
 				AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
@@ -804,7 +804,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = H9V9G4FU84;
+				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Bloggo uses your location to identify your trips outside of your home.";
@@ -830,7 +830,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = H9V9G4FU84;
+				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Bloggo uses your location to identify your trips outside of your home.";
