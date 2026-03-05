@@ -127,6 +127,10 @@ struct PhotoPermissionOnboardingView: View {
         if currentStatus == .notDetermined {
             // System dialog lets the user pick "Select Photos…" for limited access
             await photoAuth.requestAccess()
+            if photoAuth.status == .limited {
+                await presentLimitedPicker()
+                photoAuth.refreshStatus()
+            }
             onResult?(photoAuth.status)
         } else if currentStatus == .limited {
             // Already limited — show picker so user can add/change photos

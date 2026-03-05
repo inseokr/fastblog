@@ -86,12 +86,12 @@ struct NeighborhoodIntroView: View {
                             .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 4)
                     }
                     .padding(.horizontal, 24)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 12)
 
                     Text("You can change this anytime.")
                         .font(.caption)
                         .foregroundColor(.white.opacity(0.4))
-                        .padding(.bottom, 24)
+                        .padding(.bottom, 32)
                 }
             }
             .navigationDestination(isPresented: $navigateToSearch) {

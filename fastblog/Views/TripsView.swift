@@ -43,10 +43,7 @@ struct TripsView: View {
     }
 
     private var shouldShowSelectPhotosIntro: Bool {
-        viewModel.scanState == .idle
-            && !viewModel.tripDrafts.isEmpty
-            && !skipSelectPhotosIntro
-            && viewModel.showSelectPhotosIntroAfterScan
+        false
     }
 
     /// All visible trips sorted newest first — flat list for carousel.

@@ -48,6 +48,11 @@ struct SplashView: View {
                     .padding(.horizontal, 24)
                     .padding(.bottom, 12)
 
+                    Text("By continuing you agree to Bloggo’s")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.35))
+                        .padding(.bottom, 4)
+
                     HStack(spacing: 4) {
                         Button("Privacy Policy") {
                             showPrivacyPolicy = true
