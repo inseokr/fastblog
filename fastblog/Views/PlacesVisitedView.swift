@@ -216,24 +216,19 @@ struct PlacesVisitedView: View {
                     .padding(.bottom, 132)
                 }
             }
-            // Inline map overlay — slides in over list, filter bar stays visible above
-            if showPlacesMap {
-                PlacesVisitedInlineMap(
-                    selectedYear: $selectedYear,
-                    selectedCountry: $selectedCountry,
-                    selectedCategory: $selectedCategory,
-                    searchText: $searchText
-                )
-                .environmentObject(createdRecapStore)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .zIndex(1)
-            }
         }
-        .animation(.easeInOut(duration: 0.28), value: showPlacesMap)
         .sheet(item: $selectedPlaceForModal) { place in
             placeModalSheet(place: place)
         }
-
+        .navigationDestination(isPresented: $showPlacesMap) {
+            PlacesVisitedMapView(
+                selectedYear: $selectedYear,
+                selectedCountry: $selectedCountry,
+                selectedCategory: $selectedCategory,
+                searchText: $searchText
+            )
+            .environmentObject(createdRecapStore)
+        }
         .navigationDestination(item: $selectedCreatedRecap) { recap in
             RecapBlogPageView(
                 blogId: recap.sourceTripId,
@@ -550,101 +545,6 @@ private struct PlaceVisitedCard: View {
     }
 }
 
-
-// MARK: - Inline map (no navigation push; filter bar stays above)
-
-private struct PlacesVisitedInlineMap: View {
-    @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
-
-    @Binding var selectedYear: Int?
-    @Binding var selectedCountry: String?
-    @Binding var selectedCategory: String?
-    @Binding var searchText: String
-
-    @State private var mapPosition: MapCameraPosition = .automatic
-    @State private var selectedPlaceForModal: VisitedPlaceSummary?
-
-    private let defaultRegion = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
-        span: MKCoordinateSpan(latitudeDelta: 0.6, longitudeDelta: 0.6)
-    )
-
-    private func coordinate(for place: VisitedPlaceSummary) -> CLLocationCoordinate2D? {
-        if let loc = place.heroPhoto?.location?.clCoordinate { return loc }
-        if let loc = place.photos.compactMap({ $0.location?.clCoordinate }).first { return loc }
-        return nil
-    }
-
-    private var filteredPlaces: [VisitedPlaceSummary] {
-        createdRecapStore.visitedPlaces
-            .filter { place in
-                if let y = selectedYear, place.year != y { return false }
-                if let c = selectedCountry {
-                    if place.country.trimmingCharacters(in: .whitespacesAndNewlines)
-                        .caseInsensitiveCompare(c.trimmingCharacters(in: .whitespacesAndNewlines)) != .orderedSame { return false }
-                }
-                if let cat = selectedCategory {
-                    if (place.categoryRawValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                        .caseInsensitiveCompare(cat.trimmingCharacters(in: .whitespacesAndNewlines)) != .orderedSame { return false }
-                }
-                let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !query.isEmpty {
-                    let q = query.lowercased()
-                    if !(place.displayName.lowercased().contains(q) ||
-                         (place.cityDisplay ?? "").lowercased().contains(q) ||
-                         place.country.lowercased().contains(q)) { return false }
-                }
-                return true
-            }
-            .sorted(by: { $0.latestVisitDate > $1.latestVisitDate })
-    }
-
-    private var placesWithCoordinates: [(place: VisitedPlaceSummary, coordinate: CLLocationCoordinate2D)] {
-        filteredPlaces.compactMap { place in
-            guard let coord = coordinate(for: place) else { return nil }
-            return (place, coord)
-        }
-    }
-
-    private func recenterToLatestPlace() {
-        if let latest = placesWithCoordinates.first?.coordinate {
-            withAnimation {
-                mapPosition = .region(MKCoordinateRegion(
-                    center: latest,
-                    span: MKCoordinateSpan(latitudeDelta: 0.25, longitudeDelta: 0.25)
-                ))
-            }
-        } else {
-            withAnimation { mapPosition = .region(defaultRegion) }
-        }
-    }
-
-    var body: some View {
-        Map(position: $mapPosition) {
-            ForEach(placesWithCoordinates, id: \.place.id) { item in
-                Annotation("", coordinate: item.coordinate) {
-                    PlacesVisitedMapMarker(place: item.place)
-                        .onTapGesture { selectedPlaceForModal = item.place }
-                }
-            }
-        }
-        .mapStyle(.standard(elevation: .realistic))
-        .clipShape(RoundedRectangle(cornerRadius: 0))
-        .onAppear { recenterToLatestPlace() }
-        .onChange(of: selectedYear)    { _, _ in recenterToLatestPlace() }
-        .onChange(of: selectedCountry) { _, _ in recenterToLatestPlace() }
-        .onChange(of: selectedCategory){ _, _ in recenterToLatestPlace() }
-        .sheet(item: $selectedPlaceForModal) { place in
-            PlaceVisitedPhotoModalWrapper(
-                place: place,
-                onDismiss: { selectedPlaceForModal = nil },
-                onViewBlog: nil
-            )
-            .environmentObject(createdRecapStore)
-            .presentationDetents([.large])
-        }
-    }
-}
 
 private struct PlacesVisitedMapView: View {
     @Environment(\.dismiss) private var dismiss
