@@ -365,7 +365,7 @@ struct RecapBlogPageView: View {
             }
             .sheet(isPresented: $showFirstUploadEmailModal) {
                 firstUploadEmailModalContent()
-                    .presentationDetents([.fraction(0.35), .medium])
+                    .presentationDetents([.fraction(0.45), .medium])
                     .presentationDragIndicator(.visible)
             }
             .modifier(coreContentAlertsAndLifecycleModifier())
