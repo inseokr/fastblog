@@ -151,10 +151,7 @@ final class PhotoLibraryTripService {
         let debugLogging = TripClusteringDebug.isEnabled
         let groupingResult = DayToTripGrouper.groupDaysIntoTrips(
             days: dayClusters,
-            neighborhoodRadiusMiles: ScanConfig.neighborhoodRadiusMiles,
-            countryFallbackMaxMiles: ScanConfig.countryFallbackMaxMiles,
             maxGapDaysToBridge: ScanConfig.maxGapDaysToBridge,
-            multiCityDayMaxMiles: ScanConfig.multiCityDayMaxMiles,
             debugLogging: debugLogging
         )
         if debugLogging {
@@ -170,19 +167,24 @@ final class PhotoLibraryTripService {
         let monthYearFormatter = DateFormatter()
         monthYearFormatter.dateFormat = "MMM yyyy"
 
-        debugPrint("[Scan] Trip grouping done: \(groupingResult.trips.count) trip(s). Building trip models...")
+        let splitTrips = splitTripsByMaxDays(groupingResult.trips, maxDays: ScanConfig.maxTripDays)
+        debugPrint("[Scan] Trip grouping done: \(groupingResult.trips.count) trip(s), \(splitTrips.count) after 7-day split. Building trip models...")
         var trips: [TripDraft] = []
-        for (tripIdx, tripDays) in groupingResult.trips.enumerated() {
+        for (tripIdx, item) in splitTrips.enumerated() {
+            let tripDays = item.days
             guard !tripDays.isEmpty else { continue }
             let segment = tripDays.flatMap { $0.assets }
             let firstDate = tripDays.first!.dayDate
             let lastDate = tripDays.last!.dayDate
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
-            let title = defaultTripTitle(for: tripDays)
+            var title = defaultTripTitle(for: tripDays)
+            if let part = item.partNumber, let total = item.totalParts, total > 1 {
+                title = "\(title) (Part \(part))"
+            }
             let coverAsset = segment.first
             let coverIdentifier = coverAsset?.localIdentifier
 
-            debugPrint("[Scan] Trip \(tripIdx + 1)/\(groupingResult.trips.count): \"\(title)\" (\(segment.count) photos)")
+            debugPrint("[Scan] Trip \(tripIdx + 1)/\(splitTrips.count): \"\(title)\" (\(segment.count) photos)")
 
             let tripDaysModels: [TripDay] = tripDays.enumerated().map { dayIndex, dayCluster in
                 let dateText = formatter.string(from: dayCluster.dayDate)
@@ -279,10 +281,7 @@ final class PhotoLibraryTripService {
         let dayClusters = await buildDayClusters(from: sortedDayGroups)
         let groupingResult = DayToTripGrouper.groupDaysIntoTrips(
             days: dayClusters,
-            neighborhoodRadiusMiles: ScanConfig.neighborhoodRadiusMiles,
-            countryFallbackMaxMiles: ScanConfig.countryFallbackMaxMiles,
             maxGapDaysToBridge: ScanConfig.maxGapDaysToBridge,
-            multiCityDayMaxMiles: ScanConfig.multiCityDayMaxMiles,
             debugLogging: TripClusteringDebug.isEnabled
         )
 
@@ -291,14 +290,19 @@ final class PhotoLibraryTripService {
         let monthYearFormatter = DateFormatter()
         monthYearFormatter.dateFormat = "MMM yyyy"
 
+        let splitTrips = splitTripsByMaxDays(groupingResult.trips, maxDays: ScanConfig.maxTripDays)
         var results: [TripScanResult] = []
-        for tripDays in groupingResult.trips {
+        for item in splitTrips {
+            let tripDays = item.days
             guard !tripDays.isEmpty else { continue }
             let assets = tripDays.flatMap { $0.assets }
             let firstDate = tripDays.first!.dayDate
             let lastDate = tripDays.last!.dayDate
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
-            let title = defaultTripTitle(for: tripDays)
+            var title = defaultTripTitle(for: tripDays)
+            if let part = item.partNumber, let total = item.totalParts, total > 1 {
+                title = "\(title) (Part \(part))"
+            }
             let coverAsset = assets.first
             let coverIdentifier = coverAsset?.localIdentifier
 
@@ -426,10 +430,7 @@ final class PhotoLibraryTripService {
         progress?(0.90)
         let groupingResult = DayToTripGrouper.groupDaysIntoTrips(
             days: dayClusters,
-            neighborhoodRadiusMiles: ScanConfig.neighborhoodRadiusMiles,
-            countryFallbackMaxMiles: ScanConfig.countryFallbackMaxMiles,
             maxGapDaysToBridge: ScanConfig.maxGapDaysToBridge,
-            multiCityDayMaxMiles: ScanConfig.multiCityDayMaxMiles,
             debugLogging: TripClusteringDebug.isEnabled
         )
 
@@ -438,14 +439,19 @@ final class PhotoLibraryTripService {
         let monthYearFormatter = DateFormatter()
         monthYearFormatter.dateFormat = "MMM yyyy"
 
+        let splitTrips = splitTripsByMaxDays(groupingResult.trips, maxDays: ScanConfig.maxTripDays)
         var trips: [TripDraft] = []
-        for tripDays in groupingResult.trips {
+        for item in splitTrips {
+            let tripDays = item.days
             guard !tripDays.isEmpty else { continue }
             let segment = tripDays.flatMap { $0.assets }
             let firstDate = tripDays.first!.dayDate
             let lastDate = tripDays.last!.dayDate
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
-            let title = defaultTripTitle(for: tripDays)
+            var title = defaultTripTitle(for: tripDays)
+            if let part = item.partNumber, let total = item.totalParts, total > 1 {
+                title = "\(title) (Part \(part))"
+            }
             let coverAsset = segment.first
             let coverIdentifier = coverAsset?.localIdentifier
 
@@ -519,6 +525,24 @@ final class PhotoLibraryTripService {
             segments.append(current)
         }
         return segments
+    }
+
+    /// Splits trips longer than maxDays into Part 1, Part 2, etc. Each part becomes a separate blog. Returns (days, partNumber, totalParts); partNumber/totalParts are nil for unsplit trips.
+    private func splitTripsByMaxDays(_ trips: [[DayCluster]], maxDays: Int) -> [(days: [DayCluster], partNumber: Int?, totalParts: Int?)] {
+        var result: [(days: [DayCluster], partNumber: Int?, totalParts: Int?)] = []
+        for trip in trips {
+            if trip.count <= maxDays {
+                result.append((days: trip, partNumber: nil as Int?, totalParts: nil as Int?))
+            } else {
+                let chunks = stride(from: 0, to: trip.count, by: maxDays).map { start in
+                    Array(trip[start..<min(start + maxDays, trip.count)])
+                }
+                for (zeroBased, chunk) in chunks.enumerated() {
+                    result.append((days: chunk, partNumber: zeroBased + 1, totalParts: chunks.count))
+                }
+            }
+        }
+        return result
     }
 
     /// Cache key for a location (~111m precision) to match GeocodingService and dedupe geocode calls.

@@ -348,12 +348,14 @@ struct TripsView: View {
         )
         .ignoresSafeArea()
         .onAppear {
+            // Only set initial selection once — skip on re-appear (e.g. after fullScreenCover dismiss)
+            guard selectedTripID == nil else { return }
             let trips = allTrips
             if !trips.isEmpty {
                 // Set initial selection to newest trip
                 let firstTrip = trips.first
                 selectedTripID = firstTrip?.id
-                
+
                 // Center the map on the newest trip's coordinates
                 if let center = firstTrip?.centerCoordinate {
                     let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
