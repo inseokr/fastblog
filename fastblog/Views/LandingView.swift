@@ -25,7 +25,7 @@ struct LandingView: View {
     @State private var showAuth = false
     /// True while we're waiting for a scan to finish before navigating to Trips.
     @State private var pendingNavigateAfterScan = false
-    /// CTA text cycles every 5 seconds: "Tap to Scan" ↔ "Create A Blog Today"
+    /// CTA text cycles every 5 seconds: "Tap to Blog" ↔ "Create A Blog Today"
     @State private var ctaIsAlternate = false
     @State private var ctaOpacity: Double = 1
     /// Fade-in opacity for the CTA label on first launch. Starts hidden, fades in after the button appears.
@@ -296,7 +296,7 @@ struct LandingView: View {
                 
                 // Both lines in same spot so they stay centered when cross-fading
                 ZStack {
-                    Text("Tap to Scan")
+                    Text("Tap to Blog")
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundColor(.white)

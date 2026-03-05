@@ -321,7 +321,7 @@ final class TripsViewModel: ObservableObject {
     func startDefaultScan() {
         showSelectPhotosIntroAfterScan = true
         scanState = .scanningDefault
-        loadingMessage = "Scanning your photos…"
+        loadingMessage = "Loading your photos…"
         defaultScanProgress = 0
         let occupiedRanges = createdRecapStore.occupiedDateRanges()
         Task {
