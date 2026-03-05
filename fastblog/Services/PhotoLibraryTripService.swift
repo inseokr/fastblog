@@ -177,9 +177,10 @@ final class PhotoLibraryTripService {
             let firstDate = tripDays.first!.dayDate
             let lastDate = tripDays.last!.dayDate
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
-            var title = defaultTripTitle(for: tripDays)
+            let title = defaultTripTitle(for: tripDays)
+            var episodeLabel: String? = nil
             if let part = item.partNumber, let total = item.totalParts, total > 1 {
-                title = "\(title) (Part \(part))"
+                episodeLabel = "Episode \(part) of \(total)"
             }
             let coverAsset = segment.first
             let coverIdentifier = coverAsset?.localIdentifier
@@ -215,6 +216,7 @@ final class PhotoLibraryTripService {
                 )
             }
 
+            let daysSeasonText = "\(tripDaysModels.count) days • \(monthYearFormatter.string(from: firstDate))"
             let draft = TripDraft(
                 title: title,
                 dateRangeText: dateRangeText,
@@ -222,9 +224,10 @@ final class PhotoLibraryTripService {
                 coverImageName: "default",
                 isScannedFromDefaultRange: true,
                 draftCreatedAgoText: "From your photo library",
-                daysSeasonText: "\(tripDaysModels.count) days • \(monthYearFormatter.string(from: firstDate))",
+                daysSeasonText: daysSeasonText,
                 coverTheme: "default",
-                coverAssetIdentifier: coverIdentifier
+                coverAssetIdentifier: coverIdentifier,
+                episodeLabel: episodeLabel
             )
             trips.append(draft)
         }
@@ -299,9 +302,10 @@ final class PhotoLibraryTripService {
             let firstDate = tripDays.first!.dayDate
             let lastDate = tripDays.last!.dayDate
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
-            var title = defaultTripTitle(for: tripDays)
+            let title = defaultTripTitle(for: tripDays)
+            var episodeLabel: String? = nil
             if let part = item.partNumber, let total = item.totalParts, total > 1 {
-                title = "\(title) (Part \(part))"
+                episodeLabel = "Episode \(part) of \(total)"
             }
             let coverAsset = assets.first
             let coverIdentifier = coverAsset?.localIdentifier
@@ -335,6 +339,7 @@ final class PhotoLibraryTripService {
                 )
             }
 
+            let daysSeasonText = "\(tripDaysModels.count) days • \(monthYearFormatter.string(from: firstDate))"
             let draft = TripDraft(
                 title: title,
                 dateRangeText: dateRangeText,
@@ -342,9 +347,10 @@ final class PhotoLibraryTripService {
                 coverImageName: "default",
                 isScannedFromDefaultRange: false,
                 draftCreatedAgoText: "From your photo library",
-                daysSeasonText: "\(tripDaysModels.count) days • \(monthYearFormatter.string(from: firstDate))",
+                daysSeasonText: daysSeasonText,
                 coverTheme: "default",
-                coverAssetIdentifier: coverIdentifier
+                coverAssetIdentifier: coverIdentifier,
+                episodeLabel: episodeLabel
             )
             results.append(TripScanResult(assets: assets, draft: draft))
         }
@@ -448,9 +454,10 @@ final class PhotoLibraryTripService {
             let firstDate = tripDays.first!.dayDate
             let lastDate = tripDays.last!.dayDate
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
-            var title = defaultTripTitle(for: tripDays)
+            let title = defaultTripTitle(for: tripDays)
+            var episodeLabel: String? = nil
             if let part = item.partNumber, let total = item.totalParts, total > 1 {
-                title = "\(title) (Part \(part))"
+                episodeLabel = "Episode \(part) of \(total)"
             }
             let coverAsset = segment.first
             let coverIdentifier = coverAsset?.localIdentifier
@@ -483,6 +490,7 @@ final class PhotoLibraryTripService {
                 )
             }
 
+            let daysSeasonText = "\(tripDaysModels.count) days • \(monthYearFormatter.string(from: firstDate))"
             let draft = TripDraft(
                 title: title,
                 dateRangeText: dateRangeText,
@@ -490,9 +498,10 @@ final class PhotoLibraryTripService {
                 coverImageName: "default",
                 isScannedFromDefaultRange: false,
                 draftCreatedAgoText: "From your photo library",
-                daysSeasonText: "\(tripDaysModels.count) days • \(monthYearFormatter.string(from: firstDate))",
+                daysSeasonText: daysSeasonText,
                 coverTheme: "default",
-                coverAssetIdentifier: coverIdentifier
+                coverAssetIdentifier: coverIdentifier,
+                episodeLabel: episodeLabel
             )
             trips.append(draft)
         }

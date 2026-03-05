@@ -36,6 +36,8 @@ struct TripsView: View {
     @State private var currentMapRegion: MKCoordinateRegion?
     /// (Unused after windowed paging — kept to avoid removing call sites; always 0 now.)
     @State private var tripCountBeforeOlderScan: Int = 0
+    /// True when the blog creation flow was opened — tells the next scan completion to preserve scroll position.
+    @State private var preserveScrollOnNextScan = false
 
     init(viewModel: TripsViewModel, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         _viewModel = ObservedObject(wrappedValue: viewModel)
@@ -99,6 +101,9 @@ struct TripsView: View {
                 selectedTrip = nil
             }
             .environmentObject(CreatedRecapBlogStore.shared)
+        }
+        .onChange(of: createBlogFlowTrip) { _, newTrip in
+            if newTrip != nil { preserveScrollOnNextScan = true }
         }
         .sheet(isPresented: $viewModel.showFindMoreSheet) {
             FindMoreTripsSheet(viewModel: viewModel)
@@ -263,15 +268,19 @@ struct TripsView: View {
         // Surface the Limited banner only when scan finishes with weak results
         .onChange(of: viewModel.scanState) { oldState, newState in
             if oldState != .idle && newState == .idle {
-                // After any scan completes, jump the carousel selection to the newest trip.
-                // (Fix: scanning from Home should always land on latest trip.)
                 didCompleteInitialSelection = false
-                let trips = allTrips
-                if let firstTrip = trips.first {
-                    selectedTripID = firstTrip.id
-                    if let center = firstTrip.centerCoordinate {
-                        let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
-                        mapPosition = .region(MKCoordinateRegion(center: center, span: span))
+                if preserveScrollOnNextScan {
+                    // Re-scan triggered by returning from blog flow — keep the user's scroll position.
+                    preserveScrollOnNextScan = false
+                } else {
+                    // Normal scan (initial load, Find More, etc.) — land on the newest trip.
+                    let trips = allTrips
+                    if let firstTrip = trips.first {
+                        selectedTripID = firstTrip.id
+                        if let center = firstTrip.centerCoordinate {
+                            let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
+                            mapPosition = .region(MKCoordinateRegion(center: center, span: span))
+                        }
                     }
                 }
             }
@@ -457,7 +466,7 @@ struct TripsView: View {
             .scrollTargetLayout()
         }
         .scrollTargetBehavior(.viewAligned)
-        .scrollPosition(id: $selectedTripID)
+        .scrollPosition(id: $selectedTripID, anchor: .leading)
         .contentMargins(.horizontal, 24)
         .frame(height: 240)
         // Detect swipes past either end of the carousel.
@@ -1012,15 +1021,22 @@ struct TripCarouselCard: View {
             // Trip info — bottom left
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 5) {
-                    // Trip title
-                    Text(trip.defaultBlogTitle)
+                    // Trip title (base title only; episode on next row when split)
+                    Text(trip.displayTitle)
                         .font(.subheadline)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
                         .lineLimit(1)
 
-                    // Date range + duration
-                    Text("\(trip.tripDateRangeDisplayText)  ·  \(durationText)")
+                    // Episode line when trip was split (e.g. "Episode 1 of 2")
+                    if let episode = trip.displayEpisodeLabel, !episode.isEmpty {
+                        Text(episode)
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.85))
+                    }
+
+                    // Subtitle: daysSeasonText (e.g. "7 days • Mar 2024") or date range + duration
+                    Text(trip.daysSeasonText.isEmpty ? "\(trip.tripDateRangeDisplayText)  ·  \(durationText)" : trip.daysSeasonText)
                         .font(.caption2)
                         .foregroundColor(.white.opacity(0.7))
 
