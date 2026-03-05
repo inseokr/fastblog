@@ -151,9 +151,21 @@ struct NeighborhoodSelectionView: View {
     }
 
     private var mapSection: some View {
-        MapWithCenterSelector(region: $mapRegion) { center, span in
-            handleSelect(center: center, span: span)
-        }
+        MapWithCenterSelector(
+            region: $mapRegion,
+            selectedAreaName: hasPendingSelection ? searchHelper.query : nil,
+            onDeselect: {
+                hasPendingSelection = false
+                pendingCenter = nil
+                pendingSpan = nil
+                resolvePlaceTask?.cancel()
+                resolvePlaceTask = nil
+                searchHelper.clearQuery()  // clears both query + suggestions synchronously, preventing the flash
+            },
+            onSelect: { center, span in
+                handleSelect(center: center, span: span)
+            }
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(OnboardingConstants.Colors.mapBackground)
         .ignoresSafeArea(edges: .bottom)
