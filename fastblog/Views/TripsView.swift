@@ -132,7 +132,7 @@ struct TripsView: View {
         .overlay {
             if viewModel.isLoadingOlderTrips {
                 LoadingScanView(
-                    message: "Scanning older photos…",
+                    message: "Finding older trips…",
                     isOverlay: true,
                     progress: viewModel.loadOlderProgress,
                     onCancel: {
@@ -146,7 +146,7 @@ struct TripsView: View {
         .overlay {
             if viewModel.isLoadingNewerTrips {
                 LoadingScanView(
-                    message: "Scanning newer photos…",
+                    message: "Finding newer trips…",
                     isOverlay: true,
                     progress: viewModel.loadNewerProgress,
                     onCancel: {
@@ -590,7 +590,7 @@ struct TripsView: View {
             HStack(spacing: 8) {
                 Image(systemName: photoAuth.status == .limited ? "photo.badge.plus" : "sparkle")
                     .font(.system(size: 14, weight: .semibold))
-                Text(photoAuth.status == .limited ? "Select More Photos" : "Scan Photos for More Trips")
+                Text(photoAuth.status == .limited ? "Select More Photos" : "Find More New Blogs")
                     .font(.subheadline)
                     .fontWeight(.semibold)
             }
@@ -808,7 +808,7 @@ struct TripsView: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
 
-                Text("Scan the previous 3 months to find older trips.")
+                Text("")
                     .font(.body)
                     .foregroundColor(.white.opacity(0.8))
                     .multilineTextAlignment(.center)
@@ -934,7 +934,7 @@ struct TripsView: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
 
-                Text("Scan the next 3 months to find more recent trips.")
+                Text("")
                     .font(.body)
                     .foregroundColor(.white.opacity(0.8))
                     .multilineTextAlignment(.center)

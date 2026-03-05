@@ -8,7 +8,7 @@ import SwiftUI
 private let loadingBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
 
 struct LoadingScanView: View {
-    var message: String = "Scanning your trips…"
+    var message: String = "Finding your trips…"
     /// When true, renders with a semi-transparent blurred background instead of solid navy.
     var isOverlay: Bool = false
     /// When non-nil, shows a percentage and drives step labels from real progress instead of timer.

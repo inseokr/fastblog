@@ -37,18 +37,26 @@ private struct CenterPulsingCircle: View {
 /// The selection area is the map region inside the circle. Tapping Select captures the current map center and reports it (parent updates text field and shows Done).
 struct MapWithCenterSelector: View {
     @Binding var region: MKCoordinateRegion
-    /// Called when user taps Select: (center, span). Parent should reverse geocode, update text field, and show Done.
+    /// Called when user taps Select: (center, span). Parent reverse geocodes and passes the name back via selectedAreaName.
     var onSelect: (CLLocationCoordinate2D, MKCoordinateSpan) -> Void
+    /// When non-nil the circle shows this name label and the button switches to a blue checkmark.
+    var selectedAreaName: String?
+    /// Called when user taps the blue checkmark to deselect.
+    var onDeselect: () -> Void
 
     @State private var currentCenter: CLLocationCoordinate2D
     @State private var currentSpan: MKCoordinateSpan
 
     init(
         region: Binding<MKCoordinateRegion>,
+        selectedAreaName: String? = nil,
+        onDeselect: @escaping () -> Void = {},
         onSelect: @escaping (CLLocationCoordinate2D, MKCoordinateSpan) -> Void
     ) {
         _region = region
         self.onSelect = onSelect
+        self.selectedAreaName = selectedAreaName
+        self.onDeselect = onDeselect
         _currentCenter = State(initialValue: region.wrappedValue.center)
         _currentSpan = State(initialValue: region.wrappedValue.span)
     }
@@ -70,30 +78,63 @@ struct MapWithCenterSelector: View {
                 currentSpan = region.span
             }
 
-            // Orange circle and Select button fixed together, centered; button right under circle with padding
+            // Circle + optional name label + action button — all centered
             VStack(spacing: OnboardingConstants.Map.selectButtonSpacingBelowCircle) {
+                // Area name floats above the circle when selected
+                if let name = selectedAreaName, !name.isEmpty {
+                    Text(name)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(Color.black.opacity(0.55))
+                        .clipShape(Capsule())
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
+
                 CenterPulsingCircle()
+
                 selectButton
             }
+            .animation(.easeInOut(duration: 0.25), value: selectedAreaName)
         }
     }
 
+    private var isSelected: Bool { selectedAreaName != nil && !(selectedAreaName?.isEmpty ?? true) }
+
     private var selectButton: some View {
         Button(action: {
-            onSelect(currentCenter, currentSpan)
+            if isSelected {
+                onDeselect()
+            } else {
+                onSelect(currentCenter, currentSpan)
+            }
         }) {
-            Text("Select")
-                .font(.headline)
-                .foregroundColor(.black)
-                .padding(.horizontal, 32)
-                .padding(.vertical, OnboardingConstants.Layout.selectButtonVerticalPadding)
-                .background(Color.white)
-                .clipShape(Capsule())
+            Group {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 32)
+                        .padding(.vertical, OnboardingConstants.Layout.selectButtonVerticalPadding)
+                } else {
+                    Text("Select")
+                        .font(.headline)
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 32)
+                        .padding(.vertical, OnboardingConstants.Layout.selectButtonVerticalPadding)
+                }
+            }
+            .frame(minWidth: 100)
+            .background(isSelected ? Color.blue : Color.white)
+            .clipShape(Capsule())
+            .animation(.easeInOut(duration: 0.2), value: isSelected)
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
-        .accessibilityLabel("Select neighborhood")
-        .accessibilityHint("Sets the area under the circle; then tap Done to continue")
+        .accessibilityLabel(isSelected ? "Deselect neighborhood" : "Select neighborhood")
     }
 }
 

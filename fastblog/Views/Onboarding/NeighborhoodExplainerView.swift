@@ -37,7 +37,7 @@ struct NeighborhoodExplainerView: View {
                     .padding(.bottom, 16)
 
                 VStack(spacing: 24) {
-                    Text("This is your reference point for detecting trips.\nChoose your actual residential area.")
+                    Text("This is your reference point for detecting trips.")
                         .font(.body)
                         .multilineTextAlignment(.center)
                         .foregroundColor(.white.opacity(0.7))

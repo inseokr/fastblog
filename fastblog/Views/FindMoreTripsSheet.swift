@@ -41,7 +41,7 @@ struct FindMoreTripsSheet: View {
 
             if viewModel.isFindMoreScanning {
                 LoadingScanView(
-                    message: "Scanning Photos…",
+                    message: "Finding trips…",
                     isOverlay: true,
                     progress: viewModel.findMoreScanProgress,
                     onCancel: { viewModel.cancelFindMoreScan() }
@@ -337,7 +337,7 @@ struct FindMoreTripsSheet: View {
             Button {
                 viewModel.scanFindMoreTripsInRange()
             } label: {
-                Text("Scan For New Blogs")
+                Text("Find New Blogs")
                     .font(.headline)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
