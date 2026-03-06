@@ -693,7 +693,7 @@ final class APIManager {
     /// Fetches global dashboard analytics (admin only).
     /// Uses a direct request so we can log the raw JSON for debugging decode mismatches.
     func fetchDashboardAnalytics() async throws -> BackendDashboardAnalytics {
-        guard let url = URL(string: baseURL + "/admin/dashboard/analytics?userType=bloggo") else {
+        guard let url = URL(string: baseURL + "/admin/dashboard/analytics/bloggo") else {
             throw APIError.invalidURL
         }
 

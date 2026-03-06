@@ -82,7 +82,9 @@ struct AdminAnalyticsDashboardView: View {
                                 .padding()
                         } else if let stats = backendStats {
                             overviewSection(stats: stats)
-                            engagementSection(stats: stats)
+                            activationFunnelSection(stats: stats)
+                            retentionSection(stats: stats)
+                            featureUsageSection(stats: stats)
                             poiAccuracySection(stats: stats)
                         } else {
                             Text("No global analytics found.")
@@ -162,9 +164,9 @@ struct AdminAnalyticsDashboardView: View {
                 metricCard(title: "New Users (30d)", value: "\(stats.overview.newUsersLast30Days)")
                 metricCard(title: "Total Places", value: "\(stats.overview.totalPlaces)")
                 metricCard(title: "Total Photos", value: "\(stats.overview.totalPhotos)")
-                metricCard(title: "Total Comments", value: "\(stats.overview.totalComments)")
-                metricCard(title: "Avg Places / User", value: stats.overview.avgPlacesPerUser)
-                metricCard(title: "Avg Photos / Place", value: stats.overview.avgPhotosPerPlace)
+                if let r = stats.retention {
+                    metricCard(title: "Day 7 Retention", value: "\(r.d7Pct)%")
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -173,20 +175,85 @@ struct AdminAnalyticsDashboardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private func engagementSection(stats: BackendDashboardAnalytics) -> some View {
+    private func activationFunnelSection(stats: BackendDashboardAnalytics) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Engagement")
+            Text("Activation Funnel")
                 .font(.headline)
-            
-            if let e = stats.engagement {
+
+            if let f = stats.activationFunnel {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    metricCard(title: "Photos w/ Story", value: "\(e.photosWithStoryPercentage)%")
-                    metricCard(title: "Photos w/ Audio", value: "\(e.audioCaptionPercentage)%")
-                    metricCard(title: "Total Stories", value: "\(e.totalStories)")
-                    metricCard(title: "Total Audio", value: "\(e.totalAudioCaptions)")
+                    metricCard(title: "Total Users", value: "\(f.totalUsers)")
+                    metricCard(title: "Users w/ Places", value: "\(f.usersWithPlaces)")
+                    metricCard(title: "Users w/ Blogs", value: "\(f.usersWithBlogs)")
+                    metricCard(title: "Users Published", value: "\(f.usersWhoPublished)")
+                }
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Users → Places: \(f.placesConversionPct)%")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Text("Places → Blogs: \(f.blogsConversionPct)%")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Text("Blogs → Published: \(f.publishedConversionPct)%")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.top, 4)
+            } else {
+                Text("No funnel data")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func retentionSection(stats: BackendDashboardAnalytics) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Retention & Engagement")
+                .font(.headline)
+
+            if let r = stats.retention {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    if let t = stats.timeToFirstBlog {
+                        metricCard(title: "Time to 1st Blog (Avg)", value: "\(t.avgMinutes)m")
+                        metricCard(title: "Time to 1st Blog (Med)", value: "\(t.medianMinutes)m")
+                    }
+                    metricCard(title: "Day 1 Retention", value: "\(r.d1Pct)%")
+                    metricCard(title: "Day 7 Retention", value: "\(r.d7Pct)%")
+                    metricCard(title: "Day 30 Retention", value: "\(r.d30Pct)%")
+                    metricCard(title: "Created 2nd Blog", value: "\(r.secondBlogPct)%")
                 }
             } else {
-                Text("No engagement data")
+                Text("No retention data")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func featureUsageSection(stats: BackendDashboardAnalytics) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Feature Usage")
+                .font(.headline)
+
+            if let f = stats.featureUsage {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    metricCard(title: "Caption Writing", value: "\(f.captionWritingPct)%")
+                    metricCard(title: "Audio Recording", value: "\(f.audioRecordingPct)%")
+                    metricCard(title: "Place Renames", value: "\(f.placeRenamePct)%")
+                    metricCard(title: "Place Captions", value: "\(f.placeCaptionPct)%")
+                }
+            } else {
+                Text("No feature usage data")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
