@@ -394,7 +394,6 @@
 				BB0001DA /* AppLaunchSplashView.swift */,
 				BB000300 /* AdminAnalyticsDashboardView.swift */,
 				BB000302 /* MyStatsView.swift */,
-				BB00A002 /* Analytics.swift */,
 				BB00011F /* BlogPreviewView.swift */,
 				BB000121 /* BlogSettingsSheet.swift */,
 				BB000203 /* BottomSheetView.swift */,
@@ -487,6 +486,7 @@
 		BB0001B4 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				BB00A002 /* Analytics.swift */,
 				BB0001F2 /* APIManager.swift */,
 				BB0001F4 /* AuthService.swift */,
 				BB0001F6 /* AuthStateManager.swift */,
