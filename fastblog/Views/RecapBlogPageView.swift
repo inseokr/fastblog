@@ -434,9 +434,9 @@ struct RecapBlogPageView: View {
             draftSnapshot: $draftSnapshot,
             cancellables: $cancellables,
             isKeyboardVisible: $isKeyboardVisible,
-            isEditMode: isEditMode,
-            draft: draft,
-            saveDraft: saveDraft,
+            isEditMode: $isEditMode,
+            draft: $draft,
+            saveDraft: { saveDraft() },
             loadDraftIfNeeded: loadDraftIfNeeded,
             checkFirstTimeTip: checkFirstTimeTip,
             createdRecapStore: createdRecapStore,
@@ -525,10 +525,8 @@ struct RecapBlogPageView: View {
                 }
                 .onChange(of: selectedDayIndex) { _, newIndex in
                     if isEditMode {
-                        if let day = day(at: newIndex) {
-                            withAnimation(.easeOut(duration: 0.3)) {
-                                proxy.scrollTo("day-section-\(day.id)", anchor: .top)
-                            }
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            proxy.scrollTo("page-top", anchor: .top)
                         }
                         visitedDayIndices.insert(newIndex)
                     } else {
@@ -539,10 +537,8 @@ struct RecapBlogPageView: View {
                 }
                 .onChange(of: hasFinishedInitialLoad) { _, finished in
                     if finished && isEditMode {
-                        if let day = day(at: selectedDayIndex) {
-                            withAnimation(.easeOut(duration: 0.3)) {
-                                proxy.scrollTo("day-section-\(day.id)", anchor: .top)
-                            }
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            proxy.scrollTo("page-top", anchor: .top)
                         }
                     }
                 }
@@ -567,6 +563,8 @@ struct RecapBlogPageView: View {
                             }
                         }
                     )
+                    .padding(.bottom, Self.dayFilterApproxHeight + 10)
+                    .zIndex(20)
                 } else if showSplitUndoBanner {
                         // Special banner for "Undo Split" in edit mode
                         VStack {
@@ -598,10 +596,10 @@ struct RecapBlogPageView: View {
                                     .fill(Color(uiColor: .label).opacity(0.88))
                             )
                             .padding(.horizontal, 20)
-                            .padding(.bottom, 24)
+                            .padding(.bottom, Self.dayFilterApproxHeight + 20)
                         }
                         .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .zIndex(10)
+                        .zIndex(20)
                     }
 
                     if !isKeyboardVisible {
@@ -907,6 +905,7 @@ struct RecapBlogPageView: View {
         VStack(alignment: .leading, spacing: 16) {
             if let day = day(at: selectedDayIndex) {
                 daySection(day: day)
+                    .id("day-section-\(day.id)")
             }
         }
         .padding(.horizontal, 16)
@@ -980,7 +979,7 @@ struct RecapBlogPageView: View {
                 Spacer()
                 
                 // Only show split icon if there are at least 2 days and this isn't the *last* day
-                if draft.days.count >= 2, let dayIdx = draft.days.firstIndex(where: { $0.id == day.id }), dayIdx < draft.days.count - 1 {
+                if isEditMode, draft.days.count >= 2, let dayIdx = draft.days.firstIndex(where: { $0.id == day.id }), dayIdx < draft.days.count - 1 {
                     Button {
                         dayIndexToSplit = dayIdx
                         showSplitActionSheet = true
@@ -1819,9 +1818,8 @@ struct RecapBlogPageView: View {
                     } else {
                         if draftSnapshot != nil && draft == draftSnapshot {
                             // No changes made, leave uninterrupted
-                            print("🔙 No changes, dismissing")
+                            print("🔙 No changes, returning to read-only")
                             isEditMode = false
-                            dismiss()
                         } else {
                             // Changes were made
                             print("🔙 Changes detected, showing unsaved alert")
@@ -2171,6 +2169,13 @@ struct RecapBlogPageView: View {
         return !included.isEmpty && included.allSatisfy { $0.cloudURL != nil }
     }
 
+    private var isDraft: Bool {
+        guard let blog = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }) else {
+            return true // If not found in recents, it's in the process of being created (draft)
+        }
+        return blog.cloudState == .localOnly
+    }
+
     private var currentBlogKey: Int? {
         createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.blogKey
     }
@@ -2403,8 +2408,8 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
     @Binding var draftSnapshot: RecapBlogDetail?
     @Binding var cancellables: Set<AnyCancellable>
     @Binding var isKeyboardVisible: Bool
-    var isEditMode: Bool
-    var draft: RecapBlogDetail
+    @Binding var isEditMode: Bool
+    @Binding var draft: RecapBlogDetail
     var saveDraft: () -> Void
     var loadDraftIfNeeded: () -> Void
     var checkFirstTimeTip: () -> Void
@@ -2425,8 +2430,16 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
             .background(
                 Color.clear
                     .alert("Unsaved Changes", isPresented: $showUnsavedChangesAlert) {
-                        Button("Yes") { saveDraft(); dismiss() }
-                        Button("No", role: .destructive) { dismiss() }
+                        Button("Yes") {
+                            saveDraft()
+                            isEditMode = false
+                        }
+                        Button("No", role: .destructive) {
+                            if let snapshot = draftSnapshot {
+                                draft = snapshot
+                            }
+                            isEditMode = false
+                        }
                         Button("Cancel", role: .cancel) { }
                     } message: {
                         Text("Do you want to save your changes?")

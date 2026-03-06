@@ -152,9 +152,6 @@ struct MergeBlogsView: View {
                 let generator = UINotificationFeedbackGenerator()
                 generator.notificationOccurred(.success)
                 mergeCompleted = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    dismiss()
-                }
             }
             Button("Cancel", role: .cancel) {
                 pairToMerge = nil
