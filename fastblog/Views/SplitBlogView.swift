@@ -253,7 +253,7 @@ struct SplitBlogView: View {
                     Text("Choose where to split")
                         .font(.headline)
                         .foregroundColor(.primary)
-                        .padding(.top, 8)
+                        .padding(.top, 24)
                     if let blog = selectedBlog {
                         Text(blog.title)
                             .font(.subheadline)

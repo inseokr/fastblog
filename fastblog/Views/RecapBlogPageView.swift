@@ -408,15 +408,17 @@ struct RecapBlogPageView: View {
                     draft = updated
                 }
             }) {
-                SplitBlogView(
-                    countryName: draft.countryName ?? "Unknown",
-                    preloadedBlog: createdRecapStore.recents.first { $0.sourceTripId == blogId },
-                    preloadedDays: draft.days,
-                    onSplitCompleted: {
-                        showSplitUndoBanner = true
-                    }
-                )
-                .environmentObject(createdRecapStore)
+                NavigationStack {
+                    SplitBlogView(
+                        countryName: draft.countryName ?? "Unknown",
+                        preloadedBlog: createdRecapStore.recents.first { $0.sourceTripId == blogId },
+                        preloadedDays: draft.days,
+                        onSplitCompleted: {
+                            showSplitUndoBanner = true
+                        }
+                    )
+                    .environmentObject(createdRecapStore)
+                }
             }
             .sheet(isPresented: $showFirstUploadEmailModal) {
                 firstUploadEmailModalContent()
