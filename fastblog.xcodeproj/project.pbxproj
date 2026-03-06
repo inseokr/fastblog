@@ -146,6 +146,8 @@
 		BB00022B /* ResetPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000229 /* ResetPasswordView.swift */; };
 		BB00022C /* SplashStateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00022D /* SplashStateManager.swift */; };
 		BB00022E /* CountryManageBlogsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00022F /* CountryManageBlogsSheet.swift */; };
+		BB000240 /* MergeBlogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000241 /* MergeBlogsView.swift */; };
+		BB000242 /* SplitBlogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000243 /* SplitBlogView.swift */; };
 		BB000231 /* PhotoAccessRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000230 /* PhotoAccessRow.swift */; };
 		BB00F002 /* PlacesVisitedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F001 /* PlacesVisitedView.swift */; };
 		BB00F004 /* PlaceVisitedDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F003 /* PlaceVisitedDetailView.swift */; };
@@ -295,6 +297,8 @@
 		BB000229 /* ResetPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResetPasswordView.swift; sourceTree = "<group>"; };
 		BB00022D /* SplashStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashStateManager.swift; sourceTree = "<group>"; };
 		BB00022F /* CountryManageBlogsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryManageBlogsSheet.swift; sourceTree = "<group>"; };
+		BB000241 /* MergeBlogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MergeBlogsView.swift; sourceTree = "<group>"; };
+		BB000243 /* SplitBlogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitBlogView.swift; sourceTree = "<group>"; };
 		BB000230 /* PhotoAccessRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoAccessRow.swift; sourceTree = "<group>"; };
 		BB00F001 /* PlacesVisitedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacesVisitedView.swift; sourceTree = "<group>"; };
 		BB00F003 /* PlaceVisitedDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceVisitedDetailView.swift; sourceTree = "<group>"; };
@@ -388,6 +392,8 @@
 				BB000123 /* ClusterRowView.swift */,
 				BB000125 /* CountryBlogsView.swift */,
 				BB00022F /* CountryManageBlogsSheet.swift */,
+				BB000241 /* MergeBlogsView.swift */,
+				BB000243 /* SplitBlogView.swift */,
 				BB000127 /* CountryCardView.swift */,
 				BB000129 /* CoverPhotoSelectView.swift */,
 				BB00012B /* CreateBlogFlowView.swift */,
@@ -630,6 +636,8 @@
 				BB000124 /* ClusterRowView.swift in Sources */,
 				BB000126 /* CountryBlogsView.swift in Sources */,
 				BB00022E /* CountryManageBlogsSheet.swift in Sources */,
+				BB000240 /* MergeBlogsView.swift in Sources */,
+				BB000242 /* SplitBlogView.swift in Sources */,
 				BB000128 /* CountryCardView.swift in Sources */,
 				BB00012A /* CoverPhotoSelectView.swift in Sources */,
 				BB00012C /* CreateBlogFlowView.swift in Sources */,

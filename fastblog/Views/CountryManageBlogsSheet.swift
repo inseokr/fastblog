@@ -26,11 +26,16 @@ struct CountryManageBlogsSheet: View {
     // row can update its button immediately.
     @State private var removedBlogIDs: Set<UUID> = []
 
+    // Merge / Split navigation
+    @State private var showMergeView = false
+    @State private var showSplitView = false
+
+    /// Live blog list derived from the store so merge/split results reflect immediately.
     private var sortedBlogs: [CreatedRecapBlog] {
-        let activeBlogs = blogs.filter { blog in
-            removedBlogIDs.contains(blog.id) || createdRecapStore.hasCreatedBlog(sourceTripId: blog.sourceTripId)
-        }
-        return activeBlogs.sorted { ($0.tripStartDate ?? $0.createdAt) > ($1.tripStartDate ?? $1.createdAt) }
+        createdRecapStore.visibleRecents
+            .filter { ($0.countryName ?? "Unknown") == countryName }
+            .filter { removedBlogIDs.contains($0.id) || createdRecapStore.hasCreatedBlog(sourceTripId: $0.sourceTripId) }
+            .sorted { ($0.tripStartDate ?? $0.createdAt) > ($1.tripStartDate ?? $1.createdAt) }
     }
 
     var body: some View {
@@ -86,12 +91,38 @@ struct CountryManageBlogsSheet: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                        .fontWeight(.semibold)
+                Button("Close") { dismiss() }
+                    .fontWeight(.semibold)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        showMergeView = true
+                    } label: {
+                        Label("Merge Blogs", systemImage: "arrow.triangle.merge")
+                    }
+                    Button {
+                        showSplitView = true
+                    } label: {
+                        Label("Split Blog", systemImage: "scissors")
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.primary)
                 }
             }
-            // ── Remove Confirmation Alert ──────────────────────────────
-            .alert(
+        }
+        .navigationDestination(isPresented: $showMergeView) {
+            MergeBlogsView(countryName: countryName)
+                .environmentObject(createdRecapStore)
+        }
+        .navigationDestination(isPresented: $showSplitView) {
+            SplitBlogView(countryName: countryName)
+                .environmentObject(createdRecapStore)
+        }
+        // ── Remove Confirmation Alert ──────────────────────────────
+        .alert(
                 "Remove from this device?",
                 isPresented: $showRemoveAlert,
                 presenting: blogPendingRemoval
@@ -112,7 +143,7 @@ struct CountryManageBlogsSheet: View {
 
     private func commitRemove(blog: CreatedRecapBlog) {
         createdRecapStore.removeLocalCopy(sourceTripId: blog.sourceTripId)
-        withAnimation {
+        _ = withAnimation {
             removedBlogIDs.insert(blog.id)
         }
         blogPendingRemoval = nil

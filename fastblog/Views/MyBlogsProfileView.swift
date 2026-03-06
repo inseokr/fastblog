@@ -632,6 +632,14 @@ private struct MyBlogsManageSheet: View {
     @State private var showRemoveAlert = false
     @State private var removedBlogIDs: Set<UUID> = []
 
+    // Merge / Split navigation
+    @State private var showMergeView = false
+    @State private var showSplitView = false
+    @State private var selectedCountryForAction: String?
+
+    private var countryNames: [String] {
+        sections.map(\.country).sorted()
+    }
 
     private var sections: [(country: String, blogs: [CreatedRecapBlog])] {
         let active = createdRecapStore.visibleRecents.filter { !removedBlogIDs.contains($0.id) }
@@ -705,6 +713,61 @@ private struct MyBlogsManageSheet: View {
                     Button("Close") { dismiss() }
                         .fontWeight(.semibold)
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        if countryNames.count == 1, let only = countryNames.first {
+                            Button {
+                                selectedCountryForAction = only
+                                showMergeView = true
+                            } label: {
+                                Label("Merge Blogs", systemImage: "arrow.triangle.merge")
+                            }
+                            Button {
+                                selectedCountryForAction = only
+                                showSplitView = true
+                            } label: {
+                                Label("Split Blog", systemImage: "scissors")
+                            }
+                        } else {
+                            Menu {
+                                ForEach(countryNames, id: \.self) { country in
+                                    Button(country) {
+                                        selectedCountryForAction = country
+                                        showMergeView = true
+                                    }
+                                }
+                            } label: {
+                                Label("Merge Blogs", systemImage: "arrow.triangle.merge")
+                            }
+                            Menu {
+                                ForEach(countryNames, id: \.self) { country in
+                                    Button(country) {
+                                        selectedCountryForAction = country
+                                        showSplitView = true
+                                    }
+                                }
+                            } label: {
+                                Label("Split Blog", systemImage: "scissors")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.primary)
+                    }
+                }
+            }
+            .navigationDestination(isPresented: $showMergeView) {
+                if let country = selectedCountryForAction {
+                    MergeBlogsView(countryName: country)
+                        .environmentObject(createdRecapStore)
+                }
+            }
+            .navigationDestination(isPresented: $showSplitView) {
+                if let country = selectedCountryForAction {
+                    SplitBlogView(countryName: country)
+                        .environmentObject(createdRecapStore)
+                }
             }
             .alert(
                 "Remove from this device?",
@@ -713,7 +776,7 @@ private struct MyBlogsManageSheet: View {
             ) { blog in
                 Button("Remove", role: .destructive) {
                     createdRecapStore.removeLocalCopy(sourceTripId: blog.sourceTripId)
-                    withAnimation { removedBlogIDs.insert(blog.id) }
+                    _ = withAnimation { removedBlogIDs.insert(blog.id) }
                     blogPendingRemoval = nil
                     let g = UINotificationFeedbackGenerator()
                     g.notificationOccurred(.success)

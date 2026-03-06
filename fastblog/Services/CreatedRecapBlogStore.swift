@@ -236,6 +236,14 @@ final class CreatedRecapBlogStore: ObservableObject {
     @Published var needsRescan: Bool = false
     /// Day index currently being processed (geocoding + scoring) for each blog; used by RecapBlogPageView for "processing" pill state.
     @Published private(set) var processingDayIndexByBlogId: [UUID: Int] = [:]
+
+    /// Undo info for the last split operation (not persisted).
+    struct SplitUndoInfo {
+        let keepId: UUID
+        let newId: UUID
+        let originalTitle: String
+    }
+    @Published var lastSplitUndoInfo: SplitUndoInfo?
     private var tripDraftsBySourceId: [UUID: TripDraft] = [:]
     /// Persisted editable blog details; Save in RecapBlogPageView writes here.
     private var blogDetailsBySourceId: [UUID: RecapBlogDetail] = [:]
@@ -702,6 +710,282 @@ final class CreatedRecapBlogStore: ObservableObject {
         needsRescan = true
         persistRecents()
         persistBlogDetails()
+    }
+
+    // MARK: - Merge & Split
+
+    /// Merges two blogs into one. The `keepId` blog absorbs all days from `absorbId`.
+    /// Both IDs are `sourceTripId` values.
+    func mergeBlogs(keepId: UUID, absorbId: UUID) {
+        guard var keepDetail = blogDetailsBySourceId[keepId],
+              let absorbDetail = blogDetailsBySourceId[absorbId],
+              let keepIdx = recents.firstIndex(where: { $0.sourceTripId == keepId }) else {
+            return
+        }
+
+        // 1. Combine days, merging same-date days
+        var daysByDate: [String: RecapBlogDay] = [:]
+        let cal = Calendar.current
+        let dateKey: (Date) -> String = { date in
+            let comps = cal.dateComponents([.year, .month, .day], from: date)
+            return "\(comps.year!)-\(comps.month!)-\(comps.day!)"
+        }
+
+        for day in keepDetail.days {
+            daysByDate[dateKey(day.date)] = day
+        }
+        for day in absorbDetail.days {
+            let key = dateKey(day.date)
+            if var existing = daysByDate[key] {
+                // Same calendar date — merge place stops
+                var stops = existing.placeStops + day.placeStops
+                stops.sort {
+                    ($0.visitedTimeDigitized ?? "") < ($1.visitedTimeDigitized ?? "")
+                }
+                for i in stops.indices { stops[i].orderIndex = i }
+                existing.placeStops = stops
+                if existing.dayCaption == nil { existing.dayCaption = day.dayCaption }
+                existing.isPlaceNamesResolved = existing.isPlaceNamesResolved && day.isPlaceNamesResolved
+                daysByDate[key] = existing
+            } else {
+                daysByDate[key] = day
+            }
+        }
+
+        var allDays = daysByDate.values.sorted { $0.date < $1.date }
+        for i in allDays.indices { allDays[i].dayIndex = i }
+
+        // 2. Merge removed place stops
+        let mergedRemoved = keepDetail.removedPlaceStops + absorbDetail.removedPlaceStops
+
+        // 3. Update detail
+        keepDetail.days = allDays
+        keepDetail.removedPlaceStops = mergedRemoved
+        blogDetailsBySourceId[keepId] = keepDetail
+
+        // 4. Update recents metadata
+        let keepOld = recents[keepIdx]
+        let absorbOld = recents.first { $0.sourceTripId == absorbId }
+        let newStart = [keepOld.tripStartDate, absorbOld?.tripStartDate].compactMap { $0 }.min()
+        let newEnd = [keepOld.tripEndDate, absorbOld?.tripEndDate].compactMap { $0 }.max()
+        let totalPlaces = allDays.reduce(0) { $0 + $1.placeStops.count }
+        let totalPhotos = allDays.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
+
+        recents[keepIdx].tripStartDate = newStart
+        recents[keepIdx].tripEndDate = newEnd
+        recents[keepIdx].totalPlaceVisitCount = totalPlaces
+        recents[keepIdx].tripDurationDays = allDays.count
+        recents[keepIdx].selectedPhotoCount = totalPhotos
+        recents[keepIdx].tripDateRangeText = Self.formatDateRange(start: newStart, end: newEnd)
+        recents[keepIdx].lastEditedAt = Date()
+        recents[keepIdx].syncStatus = .needsUpload
+
+        // 5. Best-effort merge TripDraft
+        if var keepTrip = tripDraftsBySourceId[keepId],
+           let absorbTrip = tripDraftsBySourceId[absorbId] {
+            var combined = keepTrip.days + absorbTrip.days
+            combined.sort {
+                let t0 = $0.photos.first?.timestamp ?? .distantPast
+                let t1 = $1.photos.first?.timestamp ?? .distantPast
+                return t0 < t1
+            }
+            for i in combined.indices { combined[i].dayIndex = i }
+            keepTrip.days = combined
+            keepTrip.episodeLabel = nil
+            tripDraftsBySourceId[keepId] = keepTrip
+        }
+
+        // 6. Remove the absorbed blog
+        recents.removeAll { $0.sourceTripId == absorbId }
+        blogDetailsBySourceId.removeValue(forKey: absorbId)
+        tripDraftsBySourceId.removeValue(forKey: absorbId)
+
+        // 7. Persist
+        persistRecents()
+        persistBlogDetails()
+        persistTripDrafts()
+        needsRescan = true
+    }
+
+    /// Splits a blog into two at the given day boundary.
+    /// Days 0...afterDayIndex stay in Part 1. Days (afterDayIndex+1)... become Part 2.
+    func splitBlog(blogId: UUID, afterDayIndex: Int) {
+        guard let detail = blogDetailsBySourceId[blogId],
+              let recentIdx = recents.firstIndex(where: { $0.sourceTripId == blogId }),
+              afterDayIndex >= 0,
+              afterDayIndex < detail.days.count - 1 else {
+            return
+        }
+
+        let oldRecent = recents[recentIdx]
+
+        // 1. Split days
+        var part1Days = Array(detail.days[0...afterDayIndex])
+        var part2Days = Array(detail.days[(afterDayIndex + 1)...])
+        for i in part1Days.indices { part1Days[i].dayIndex = i }
+        for i in part2Days.indices { part2Days[i].dayIndex = i }
+
+        // 2. Split removed place stops by day
+        let part1DayIds = Set(part1Days.map(\.id))
+        let part1Removed = detail.removedPlaceStops.filter { part1DayIds.contains($0.dayId) }
+        let part2Removed = detail.removedPlaceStops.filter { !part1DayIds.contains($0.dayId) }
+
+        // 3. Generate titles
+        let baseTitle = detail.title
+            .replacingOccurrences(of: " \\(Part \\d+ of \\d+\\)", with: "", options: .regularExpression)
+            .replacingOccurrences(of: " \\(Episode \\d+ of \\d+\\)", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        let title1 = "\(baseTitle) (Part 1 of 2)"
+        let title2 = "\(baseTitle) (Part 2 of 2)"
+
+        // 4. Create Part 1 detail (reuse existing id)
+        let detail1 = RecapBlogDetail(
+            id: blogId,
+            title: title1,
+            days: part1Days,
+            coverTheme: detail.coverTheme,
+            selectedCoverPhotoIdentifier: detail.selectedCoverPhotoIdentifier,
+            countryName: detail.countryName,
+            blogKey: detail.blogKey,
+            removedPlaceStops: part1Removed
+        )
+
+        // 5. Create Part 2 detail (new UUID)
+        let newBlogId = UUID()
+        let part2CoverIdentifier = part2Days.first?.placeStops.first?.photos.first(where: \.isIncluded)?.localIdentifier
+        let detail2 = RecapBlogDetail(
+            id: newBlogId,
+            title: title2,
+            days: part2Days,
+            coverTheme: detail.coverTheme,
+            selectedCoverPhotoIdentifier: part2CoverIdentifier,
+            countryName: detail.countryName,
+            removedPlaceStops: part2Removed
+        )
+
+        // 6. Update Part 1 metadata
+        let start1 = part1Days.first?.date
+        let end1 = part1Days.last?.date
+        let places1 = part1Days.reduce(0) { $0 + $1.placeStops.count }
+        let photos1 = part1Days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
+
+        recents[recentIdx].title = title1
+        recents[recentIdx].tripStartDate = start1
+        recents[recentIdx].tripEndDate = end1
+        recents[recentIdx].totalPlaceVisitCount = places1
+        recents[recentIdx].tripDurationDays = part1Days.count
+        recents[recentIdx].selectedPhotoCount = photos1
+        recents[recentIdx].tripDateRangeText = Self.formatDateRange(start: start1, end: end1)
+        recents[recentIdx].lastEditedAt = Date()
+        recents[recentIdx].syncStatus = .needsUpload
+
+        // 7. Create Part 2 recents entry
+        let start2 = part2Days.first?.date
+        let end2 = part2Days.last?.date
+        let places2 = part2Days.reduce(0) { $0 + $1.placeStops.count }
+        let photos2 = part2Days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
+
+        let newRecent = CreatedRecapBlog(
+            sourceTripId: newBlogId,
+            title: title2,
+            createdAt: Date(),
+            coverImageName: detail.coverTheme,
+            coverAssetIdentifier: part2CoverIdentifier,
+            selectedPhotoCount: photos2,
+            countryName: oldRecent.countryName,
+            tripDateRangeText: Self.formatDateRange(start: start2, end: end2),
+            lastEditedAt: Date(),
+            tripStartDate: start2,
+            tripEndDate: end2,
+            totalPlaceVisitCount: places2,
+            tripDurationDays: part2Days.count,
+            ownerScope: oldRecent.ownerScope,
+            ownerUserId: oldRecent.ownerUserId
+        )
+        recents.append(newRecent)
+
+        // 8. Best-effort split TripDraft
+        if let trip = tripDraftsBySourceId[blogId] {
+            let splitIdx = min(afterDayIndex, trip.days.count - 1)
+            if splitIdx < trip.days.count - 1 {
+                var trip1 = trip
+                trip1.days = Array(trip.days[0...splitIdx])
+                for i in trip1.days.indices { trip1.days[i].dayIndex = i }
+                trip1.title = title1
+                trip1.episodeLabel = "Episode 1 of 2"
+                tripDraftsBySourceId[blogId] = trip1
+
+                var trip2Days = Array(trip.days[(splitIdx + 1)...])
+                for i in trip2Days.indices { trip2Days[i].dayIndex = i }
+                let trip2 = TripDraft(
+                    id: newBlogId,
+                    title: title2,
+                    dateRangeText: Self.formatDateRange(start: start2, end: end2) ?? "",
+                    days: trip2Days,
+                    coverImageName: trip.coverImageName,
+                    isScannedFromDefaultRange: trip.isScannedFromDefaultRange,
+                    coverTheme: trip.coverTheme,
+                    coverAssetIdentifier: trip.coverAssetIdentifier,
+                    episodeLabel: "Episode 2 of 2"
+                )
+                tripDraftsBySourceId[newBlogId] = trip2
+            }
+        }
+
+        // 9. Store undo info (in-memory only)
+        lastSplitUndoInfo = SplitUndoInfo(keepId: blogId, newId: newBlogId, originalTitle: detail.title)
+
+        // 10. Persist
+        blogDetailsBySourceId[blogId] = detail1
+        blogDetailsBySourceId[newBlogId] = detail2
+        persistRecents()
+        persistBlogDetails()
+        persistTripDrafts()
+        needsRescan = true
+    }
+
+    /// Undoes the last split operation by re-merging the two resulting blogs back into one.
+    func undoSplit() {
+        guard let info = lastSplitUndoInfo else { return }
+        // Merge Part 2 back into Part 1 (keepId absorbs newId)
+        mergeBlogs(keepId: info.keepId, absorbId: info.newId)
+        // Restore original title on the merged blog
+        if let idx = recents.firstIndex(where: { $0.sourceTripId == info.keepId }) {
+            recents[idx].title = info.originalTitle
+            blogDetailsBySourceId[info.keepId]?.title = info.originalTitle
+            persistRecents()
+            persistBlogDetails()
+        }
+        lastSplitUndoInfo = nil
+    }
+
+    /// Formats a date range as "Jan 15 – 20, 2025" or "Jan 15 – Feb 3, 2025".
+    static func formatDateRange(start: Date?, end: Date?) -> String? {
+        guard let start = start, let end = end else { return nil }
+        let cal = Calendar.current
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+
+        let sy = cal.component(.year, from: start)
+        let sm = cal.component(.month, from: start)
+        let sd = cal.component(.day, from: start)
+        let ey = cal.component(.year, from: end)
+        let em = cal.component(.month, from: end)
+        let ed = cal.component(.day, from: end)
+
+        fmt.dateFormat = "MMM"
+        let sMonth = fmt.string(from: start)
+        let eMonth = fmt.string(from: end)
+
+        if sy == ey && sm == em && sd == ed {
+            return "\(sMonth) \(sd), \(sy)"
+        } else if sy == ey && sm == em {
+            return "\(sMonth) \(sd) – \(ed), \(sy)"
+        } else if sy == ey {
+            return "\(sMonth) \(sd) – \(eMonth) \(ed), \(sy)"
+        } else {
+            return "\(sMonth) \(sd), \(sy) – \(eMonth) \(ed), \(ey)"
+        }
     }
 
     // MARK: - Cloud URL Management
