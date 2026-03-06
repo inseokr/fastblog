@@ -323,6 +323,7 @@ final class TripsViewModel: ObservableObject {
         scanState = .scanningDefault
         loadingMessage = "Loading your photos…"
         defaultScanProgress = 0
+        AppAnalytics.shared.trackEvent(name: "trip_scan_started")
         let occupiedRanges = createdRecapStore.occupiedDateRanges()
         Task {
             let cal = Calendar.current
@@ -353,6 +354,9 @@ final class TripsViewModel: ObservableObject {
 
             // Cache the window-filtered results for instant restore later.
             windowCache[windowCacheKey(start: windowStart, end: windowEnd)] = windowTrips
+
+            AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
+            AppAnalytics.shared.incrementCounter("trips_detected", by: windowTrips.count)
 
             tripDrafts = windowTrips
             // Reset window so the carousel shows the fresh default scan results.
@@ -466,6 +470,7 @@ final class TripsViewModel: ObservableObject {
         isFindMoreScanning = true
         findMoreScanProgress = 0
         findMoreScanResult = .none
+        AppAnalytics.shared.trackEvent(name: "trip_scan_started")
         let startYear = findMoreStartYear
         let startMonth = findMoreStartMonth
         let endYear = findMoreEndYear
@@ -494,6 +499,9 @@ final class TripsViewModel: ObservableObject {
                 !existingKeys.contains("\(trip.title)|\(trip.dateRangeText)")
                 && !TripMatchingService.isTripSaved(draft: trip, against: saved)
             }
+            AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
+            AppAnalytics.shared.incrementCounter("trips_detected", by: newTrips.count)
+            
             if deduped.isEmpty {
                 findMoreScanResult = .empty
             } else {
@@ -575,6 +583,7 @@ final class TripsViewModel: ObservableObject {
         isLoadingOlderTrips = true
         loadOlderProgress = 0
         olderTripsResult = .none
+        AppAnalytics.shared.trackEvent(name: "trip_scan_started")
 
         // Pad the fetch range so trips straddling a window boundary are built in full.
         let fetchStart = cal.date(byAdding: .day, value: -Self.fetchPaddingDays, to: windowStart) ?? windowStart
@@ -600,6 +609,9 @@ final class TripsViewModel: ObservableObject {
 
             // Cache for instant restore on future visits.
             windowCache[cacheKey] = windowTrips
+
+            AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
+            AppAnalytics.shared.incrementCounter("trips_detected", by: windowTrips.count)
 
             let count = applyWindowTrips(windowTrips, windowStart: windowStart, windowEnd: windowEnd)
             olderTripsResult = count > 0 ? .success(count) : .empty
@@ -643,6 +655,7 @@ final class TripsViewModel: ObservableObject {
         isLoadingNewerTrips = true
         loadNewerProgress = 0
         newerTripsResult = .none
+        AppAnalytics.shared.trackEvent(name: "trip_scan_started")
 
         // Pad the fetch range so trips straddling a window boundary are built in full.
         let fetchStart = cal.date(byAdding: .day, value: -Self.fetchPaddingDays, to: windowStart) ?? windowStart
@@ -668,6 +681,9 @@ final class TripsViewModel: ObservableObject {
 
             // Cache for instant restore on future visits.
             windowCache[cacheKey] = windowTrips
+
+            AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
+            AppAnalytics.shared.incrementCounter("trips_detected", by: windowTrips.count)
 
             let count = applyWindowTrips(windowTrips, windowStart: windowStart, windowEnd: windowEnd)
             newerTripsResult = count > 0 ? .success(count) : .empty

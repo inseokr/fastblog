@@ -5,47 +5,53 @@ struct AdminAnalyticsDashboardView: View {
     @EnvironmentObject private var authService: AuthService
 
     @State private var eventCounters: [String: Int] = [:]
+    
+    // New Backend State
+    @State private var backendStats: BackendDashboardAnalytics?
+    @State private var isFetchingStats = false
+    @State private var fetchError: String?
 
-    private let adminEmails: Set<String> = [
+    private static let adminEmails: Set<String> = [
         "yoobinrickyseo1@gmail.com",
         "inseo.kr@gmail.com"
     ]
+    private static let adminUsernames: Set<String> = [
+        "inseo", "yoobin", "admin"
+    ]
+
+    static func isAdminUser(_ user: AuthUser) -> Bool {
+        let email = (user.email ?? "").lowercased()
+        let username = (user.username ?? "").lowercased()
+        return adminEmails.contains(email) || adminUsernames.contains(username)
+    }
 
     private var isAdmin: Bool {
-        let email = (authService.currentUser?.email ?? "").lowercased()
-        return adminEmails.contains(email)
-    }
-
-    private var visibleBlogs: [CreatedRecapBlog] {
-        createdRecapStore.visibleRecents
-    }
-
-    private var draftBlogsCount: Int {
-        visibleBlogs.filter { createdRecapStore.getBlogDetail(blogId: $0.sourceTripId) == nil }.count
-    }
-
-    private var uploadedBlogsCount: Int {
-        visibleBlogs.filter { createdRecapStore.isBlogInCloud(blogId: $0.sourceTripId) }.count
-    }
-
-    private var localOnlyBlogsCount: Int {
-        visibleBlogs.filter { !createdRecapStore.isBlogInCloud(blogId: $0.sourceTripId) }.count
-    }
-
-    private var totalSelectedPhotos: Int {
-        visibleBlogs.reduce(0) { $0 + $1.selectedPhotoCount }
-    }
-
-    private var totalPlacesAdded: Int {
-        visibleBlogs.reduce(0) { $0 + $1.totalPlaceVisitCount }
-    }
-
-    private var blogsWithAnyCaptionCount: Int {
-        visibleBlogs.filter { ($0.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }.count
+        guard let user = authService.currentUser else { return false }
+        return Self.isAdminUser(user)
     }
 
     private func refreshCounters() {
         eventCounters = AppAnalytics.shared.countersSnapshot()
+    }
+
+    private func fetchBackendStats() {
+        guard isAdmin else { return }
+        isFetchingStats = true
+        fetchError = nil
+        Task {
+            do {
+                let stats = try await APIManager.shared.fetchDashboardAnalytics()
+                await MainActor.run {
+                    self.backendStats = stats
+                    self.isFetchingStats = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.fetchError = error.localizedDescription
+                    self.isFetchingStats = false
+                }
+            }
+        }
     }
 
     private func count(_ name: String) -> Int {
@@ -64,7 +70,32 @@ struct AdminAnalyticsDashboardView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         header
-                        metricsGrid
+                        
+                        if isFetchingStats && backendStats == nil {
+                            ProgressView("Loading global analytics...")
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding()
+                        } else if let error = fetchError {
+                            Text("Error loading stats: \(error)")
+                                .foregroundColor(.red)
+                                .font(.subheadline)
+                                .padding()
+                        } else if let stats = backendStats {
+                            overviewSection(stats: stats)
+                            engagementSection(stats: stats)
+                            poiAccuracySection(stats: stats)
+                        } else {
+                            Text("No global analytics found.")
+                                .foregroundColor(.secondary)
+                                .padding()
+                        }
+                        
+                        Divider().padding(.vertical, 8)
+                        
+                        Text("Local Device Hardware Analytics")
+                            .font(.headline)
+                            .padding(.bottom, -8)
+                        
                         systemHealthSection
                         funnelSection
                         captionAnalyticsSection
@@ -74,8 +105,11 @@ struct AdminAnalyticsDashboardView: View {
                     .padding(16)
                 }
                 .background(Color(uiColor: .systemGroupedBackground))
-                .navigationTitle("Admin Dashboard")
                 .navigationBarTitleDisplayMode(.inline)
+                .onAppear {
+                    refreshCounters()
+                    fetchBackendStats()
+                }
             } else {
                 VStack(spacing: 12) {
                     Image(systemName: "lock.fill")
@@ -99,11 +133,18 @@ struct AdminAnalyticsDashboardView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Pre-launch analytics")
+            Text("Platform Analytics")
                 .font(.system(.title2, design: .serif).weight(.medium))
-            Text("Local, on-device counters from current app data")
+            Text("Live data aggregating all users on the platform")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
+            
+            if let user = authService.currentUser {
+                Text("Logged in as (Username: \(user.username ?? "nil"))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.top, 4)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
@@ -111,25 +152,85 @@ struct AdminAnalyticsDashboardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private var metricsGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            metricCard(title: "Blogs", value: visibleBlogs.count)
-            metricCard(title: "Draft blogs", value: draftBlogsCount)
-            metricCard(title: "Uploaded", value: uploadedBlogsCount)
-            metricCard(title: "Local only", value: localOnlyBlogsCount)
-            metricCard(title: "Selected photos", value: totalSelectedPhotos)
-            metricCard(title: "Places added", value: totalPlacesAdded)
-            metricCard(title: "Blogs w/ caption", value: blogsWithAnyCaptionCount)
-            metricCard(title: "Share links", value: count("blog_link_share_completed"))
+    private func overviewSection(stats: BackendDashboardAnalytics) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Overview")
+                .font(.headline)
+            
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                metricCard(title: "Total Users", value: "\(stats.overview.totalUsers)")
+                metricCard(title: "New Users (30d)", value: "\(stats.overview.newUsersLast30Days)")
+                metricCard(title: "Total Places", value: "\(stats.overview.totalPlaces)")
+                metricCard(title: "Total Photos", value: "\(stats.overview.totalPhotos)")
+                metricCard(title: "Total Comments", value: "\(stats.overview.totalComments)")
+                metricCard(title: "Avg Places / User", value: stats.overview.avgPlacesPerUser)
+                metricCard(title: "Avg Photos / Place", value: stats.overview.avgPhotosPerPlace)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func engagementSection(stats: BackendDashboardAnalytics) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Engagement")
+                .font(.headline)
+            
+            if let e = stats.engagement {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    metricCard(title: "Photos w/ Story", value: "\(e.photosWithStoryPercentage)%")
+                    metricCard(title: "Photos w/ Audio", value: "\(e.audioCaptionPercentage)%")
+                    metricCard(title: "Total Stories", value: "\(e.totalStories)")
+                    metricCard(title: "Total Audio", value: "\(e.totalAudioCaptions)")
+                }
+            } else {
+                Text("No engagement data")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func poiAccuracySection(stats: BackendDashboardAnalytics) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("POI Selection Accuracy")
+                .font(.headline)
+            
+            if let p = stats.poiAccuracy {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    metricCard(title: "Top 3 Accuracy", value: "\(p.topThreeAccuracy)%")
+                    metricCard(title: "Top 10 Accuracy", value: "\(p.topTenAccuracy)%")
+                    metricCard(title: "Top 40 Accuracy", value: "\(p.topFortyAccuracy)%")
+                    metricCard(title: "Total Selections", value: "\(p.totalSelections)")
+                }
+            } else {
+                Text("No POI data")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
     private func metricCard(title: String, value: Int) -> some View {
+        metricCard(title: title, value: "\(value)")
+    }
+
+    private func metricCard(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.caption)
                 .foregroundColor(.secondary)
-            Text("\(value)")
+            Text(value)
                 .font(.system(size: 24, weight: .bold, design: .rounded))
                 .foregroundColor(.primary)
         }
@@ -138,6 +239,7 @@ struct AdminAnalyticsDashboardView: View {
         .background(Color(uiColor: .secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
+
 
     private var detailsSection: some View {
         VStack(alignment: .leading, spacing: 12) {

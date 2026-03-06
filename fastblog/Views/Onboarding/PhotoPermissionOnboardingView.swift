@@ -84,7 +84,11 @@ struct PhotoPermissionOnboardingView: View {
                             } else {
                                 // First time: Apple's system dialog appears here.
                                 // The dialog defaults to "Allow Full Access".
+                                AppAnalytics.shared.trackEvent(name: "photo_permission_prompted")
                                 await photoAuth.requestAccess()
+                                if photoAuth.status == .authorized || photoAuth.status == .limited {
+                                    AppAnalytics.shared.trackEvent(name: "photo_permission_granted")
+                                }
                                 onResult?(photoAuth.status)
                             }
                         }
@@ -138,7 +142,11 @@ struct PhotoPermissionOnboardingView: View {
         switch currentStatus {
         case .notDetermined:
             // Apple's system permission dialog is required before any photo access
+            AppAnalytics.shared.trackEvent(name: "photo_permission_prompted")
             await photoAuth.requestAccess()
+            if photoAuth.status == .authorized || photoAuth.status == .limited {
+                AppAnalytics.shared.trackEvent(name: "photo_permission_granted")
+            }
             if photoAuth.status == .limited {
                 // User chose limited — immediately open the photo selection picker
                 await presentLimitedPicker()

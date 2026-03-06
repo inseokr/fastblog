@@ -23,6 +23,15 @@ final class AppAnalytics {
         }
         #endif
     }
+    
+    func trackCaptionWritten(type: String) {
+        trackEvent(name: type)
+        let firstCaptionKey = "bloggo.analytics.has_written_first_caption"
+        if !UserDefaults.standard.bool(forKey: firstCaptionKey) {
+            UserDefaults.standard.set(true, forKey: firstCaptionKey)
+            trackEvent(name: "first_caption_written")
+        }
+    }
 
     func incrementCounter(_ name: String, by amount: Int = 1) {
         queue.sync {

@@ -83,6 +83,7 @@ struct TripDayPickerView: View {
             Text("You must select at least one photo to create a blog.")
         }
         .onAppear {
+            if !isEditMode { AppAnalytics.shared.trackEvent(name: "trip_selected") }
             viewModel.selectedDayIndex = 0
         }
         .onDisappear {

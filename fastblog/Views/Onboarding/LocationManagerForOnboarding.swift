@@ -22,6 +22,7 @@ final class LocationManagerForOnboarding: NSObject, ObservableObject {
         if status == .authorizedWhenInUse || status == .authorizedAlways {
             manager.requestLocation()
         } else if status == .notDetermined {
+            AppAnalytics.shared.trackEvent(name: "location_permission_prompted")
             manager.requestWhenInUseAuthorization()
         }
     }

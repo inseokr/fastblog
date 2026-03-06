@@ -1,0 +1,195 @@
+import Foundation
+
+struct BackendDashboardAnalytics: Decodable {
+    let overview: BackendOverview
+    let poiAccuracy: BackendPoiAccuracy?
+    let geography: BackendGeography?
+    let categories: [BackendCategory]?
+    let topActiveUsers: [BackendTopActiveUser]?
+    let engagement: BackendEngagement?
+
+    enum CodingKeys: String, CodingKey {
+        case overview, poiAccuracy, geography, categories, topActiveUsers, engagement
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        overview = (try? container.decode(BackendOverview.self, forKey: .overview)) ?? BackendOverview.empty
+        poiAccuracy = try? container.decode(BackendPoiAccuracy.self, forKey: .poiAccuracy)
+        geography = try? container.decode(BackendGeography.self, forKey: .geography)
+        categories = try? container.decode([BackendCategory].self, forKey: .categories)
+        topActiveUsers = try? container.decode([BackendTopActiveUser].self, forKey: .topActiveUsers)
+        engagement = try? container.decode(BackendEngagement.self, forKey: .engagement)
+    }
+}
+
+struct BackendOverview: Decodable {
+    let totalUsers: Int
+    let totalPlaces: Int
+    let totalPhotos: Int
+    let totalComments: Int
+    let newUsersLast30Days: Int
+    let avgPlacesPerUser: String
+    let avgPhotosPerPlace: String
+
+    static let empty = BackendOverview(
+        totalUsers: 0, totalPlaces: 0, totalPhotos: 0, totalComments: 0,
+        newUsersLast30Days: 0, avgPlacesPerUser: "0", avgPhotosPerPlace: "0"
+    )
+
+    enum CodingKeys: String, CodingKey {
+        case totalUsers, totalPlaces, totalPhotos, totalComments
+        case newUsersLast30Days, avgPlacesPerUser, avgPhotosPerPlace
+    }
+
+    init(totalUsers: Int, totalPlaces: Int, totalPhotos: Int, totalComments: Int,
+         newUsersLast30Days: Int, avgPlacesPerUser: String, avgPhotosPerPlace: String) {
+        self.totalUsers = totalUsers
+        self.totalPlaces = totalPlaces
+        self.totalPhotos = totalPhotos
+        self.totalComments = totalComments
+        self.newUsersLast30Days = newUsersLast30Days
+        self.avgPlacesPerUser = avgPlacesPerUser
+        self.avgPhotosPerPlace = avgPhotosPerPlace
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        totalUsers = (try? container.decode(Int.self, forKey: .totalUsers)) ?? 0
+        totalPlaces = (try? container.decode(Int.self, forKey: .totalPlaces)) ?? 0
+        totalPhotos = (try? container.decode(Int.self, forKey: .totalPhotos)) ?? 0
+        totalComments = (try? container.decode(Int.self, forKey: .totalComments)) ?? 0
+        newUsersLast30Days = (try? container.decode(Int.self, forKey: .newUsersLast30Days)) ?? 0
+        // These might come as numbers from the backend
+        if let s = try? container.decode(String.self, forKey: .avgPlacesPerUser) {
+            avgPlacesPerUser = s
+        } else if let n = try? container.decode(Double.self, forKey: .avgPlacesPerUser) {
+            avgPlacesPerUser = String(format: "%.1f", n)
+        } else {
+            avgPlacesPerUser = "0"
+        }
+        if let s = try? container.decode(String.self, forKey: .avgPhotosPerPlace) {
+            avgPhotosPerPlace = s
+        } else if let n = try? container.decode(Double.self, forKey: .avgPhotosPerPlace) {
+            avgPhotosPerPlace = String(format: "%.1f", n)
+        } else {
+            avgPhotosPerPlace = "0"
+        }
+    }
+}
+
+struct BackendPoiAccuracy: Decodable {
+    let topThreeAccuracy: String
+    let topTenAccuracy: String
+    let topFortyAccuracy: String
+    let totalSelections: Int
+
+    enum CodingKeys: String, CodingKey {
+        case topThreeAccuracy, topTenAccuracy, topFortyAccuracy, totalSelections
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Accuracies might come as numbers
+        func decodeStringOrNumber(_ key: CodingKeys) -> String {
+            if let s = try? container.decode(String.self, forKey: key) { return s }
+            if let n = try? container.decode(Double.self, forKey: key) { return String(format: "%.1f", n) }
+            return "0"
+        }
+        topThreeAccuracy = decodeStringOrNumber(.topThreeAccuracy)
+        topTenAccuracy = decodeStringOrNumber(.topTenAccuracy)
+        topFortyAccuracy = decodeStringOrNumber(.topFortyAccuracy)
+        totalSelections = (try? container.decode(Int.self, forKey: .totalSelections)) ?? 0
+    }
+}
+
+struct BackendGeography: Decodable {
+    let placesByCountry: [[AnyDecodable]]?
+    let placesByCity: [[AnyDecodable]]?
+}
+
+struct BackendCategory: Decodable {
+    let category: String
+    let count: Int
+    let percentage: String
+
+    enum CodingKeys: String, CodingKey {
+        case category, count, percentage
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        category = (try? container.decode(String.self, forKey: .category)) ?? "unknown"
+        count = (try? container.decode(Int.self, forKey: .count)) ?? 0
+        if let s = try? container.decode(String.self, forKey: .percentage) {
+            percentage = s
+        } else if let n = try? container.decode(Double.self, forKey: .percentage) {
+            percentage = String(format: "%.1f%%", n)
+        } else {
+            percentage = "0%"
+        }
+    }
+}
+
+struct BackendTopActiveUser: Decodable {
+    let username: String
+    let placesAdded: Int
+    let photosAdded: Int
+    let joinedDate: String
+
+    enum CodingKeys: String, CodingKey {
+        case username, placesAdded, photosAdded, joinedDate
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        username = (try? container.decode(String.self, forKey: .username)) ?? "unknown"
+        placesAdded = (try? container.decode(Int.self, forKey: .placesAdded)) ?? 0
+        photosAdded = (try? container.decode(Int.self, forKey: .photosAdded)) ?? 0
+        joinedDate = (try? container.decode(String.self, forKey: .joinedDate)) ?? ""
+    }
+}
+
+struct BackendEngagement: Decodable {
+    let photosWithStoryPercentage: String
+    let audioCaptionPercentage: String
+    let totalStories: Int
+    let totalAudioCaptions: Int
+
+    enum CodingKeys: String, CodingKey {
+        case photosWithStoryPercentage, audioCaptionPercentage, totalStories, totalAudioCaptions
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func decodeStringOrNumber(_ key: CodingKeys) -> String {
+            if let s = try? container.decode(String.self, forKey: key) { return s }
+            if let n = try? container.decode(Double.self, forKey: key) { return String(format: "%.1f", n) }
+            return "0"
+        }
+        photosWithStoryPercentage = decodeStringOrNumber(.photosWithStoryPercentage)
+        audioCaptionPercentage = decodeStringOrNumber(.audioCaptionPercentage)
+        totalStories = (try? container.decode(Int.self, forKey: .totalStories)) ?? 0
+        totalAudioCaptions = (try? container.decode(Int.self, forKey: .totalAudioCaptions)) ?? 0
+    }
+}
+
+// Helper for parsing loosely typed arrays from JSON
+struct AnyDecodable: Decodable {
+    let value: Any
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let string = try? container.decode(String.self) {
+            value = string
+        } else if let int = try? container.decode(Int.self) {
+            value = int
+        } else if let double = try? container.decode(Double.self) {
+            value = double
+        } else if let bool = try? container.decode(Bool.self) {
+            value = bool
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "AnyDecodable value cannot be decoded")
+        }
+    }
+}

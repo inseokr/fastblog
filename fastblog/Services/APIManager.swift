@@ -195,6 +195,7 @@ final class APIManager {
     ///   - filename: Filename for the upload (default: "photo.jpg").
     /// - Returns: The cloud URL string from the server response.
     func uploadPhoto(image: UIImage, filename: String = "photo.jpg") async throws -> String {
+        AppAnalytics.shared.trackEvent(name: "upload_attempted")
         guard let url = URL(string: fileServerURL + "/place/file_upload") else {
             throw APIError.invalidURL
         }
@@ -247,6 +248,7 @@ final class APIManager {
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
+            AppAnalytics.shared.trackEvent(name: "upload_failed")
             var errorMessage = "Upload failed."
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 print("🚨 Upload Error JSON: \(json)")
@@ -271,10 +273,12 @@ final class APIManager {
         }
 
         guard let cloudURL = result.path, !cloudURL.isEmpty else {
+            AppAnalytics.shared.trackEvent(name: "upload_failed")
             throw APIError.invalidResponse
         }
 
         print("   ✅ Uploaded → \(cloudURL)")
+        AppAnalytics.shared.trackEvent(name: "upload_success")
         return cloudURL
     }
 
@@ -684,6 +688,66 @@ final class APIManager {
         print("✅ updatePhoto: \(operation) — placeKey=\(placeKey), digitizedTime=\(digitizedTime)")
     }
 
+    // MARK: - Admin Analytics
+    
+    /// Fetches global dashboard analytics (admin only).
+    /// Uses a direct request so we can log the raw JSON for debugging decode mismatches.
+    func fetchDashboardAnalytics() async throws -> BackendDashboardAnalytics {
+        guard let url = URL(string: baseURL + "/admin/dashboard/analytics") else {
+            throw APIError.invalidURL
+        }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = AuthService.shared.currentJwtToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        print("🌐 [GET] \(url.absoluteString)")
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: req)
+        } catch {
+            throw APIError.networkError(error)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        // Log full raw response for debugging
+        let rawJSON = String(data: data, encoding: .utf8) ?? "<non-UTF8>"
+        print("📥 Admin Analytics \(httpResponse.statusCode): \(rawJSON)")
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let msg = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["message"] as? String
+                ?? "HTTP \(httpResponse.statusCode)"
+            throw APIError.httpError(statusCode: httpResponse.statusCode, message: msg)
+        }
+
+        // Try decoding as { result, data: { ... } } wrapper first
+        struct WrappedResponse: Decodable {
+            let result: String?
+            let data: BackendDashboardAnalytics?
+            let message: String?
+        }
+
+        if let wrapped = try? JSONDecoder().decode(WrappedResponse.self, from: data),
+           let analytics = wrapped.data {
+            return analytics
+        }
+
+        // Fallback: try decoding analytics directly from root
+        do {
+            return try JSONDecoder().decode(BackendDashboardAnalytics.self, from: data)
+        } catch {
+            print("🚨 Analytics decode error: \(error)")
+            throw APIError.decodingFailed(error)
+        }
+    }
+
     // MARK: - Cloud Sync Fetch
 
     /// Fetches all trips (blogs) for the given username from the backend.
@@ -760,6 +824,7 @@ final class APIManager {
             print("✅ Privacy set to public for blogKey: \(response.blogKey)")
 
             print("🎉 publishBlog complete — all 3 steps succeeded")
+            AppAnalytics.shared.trackEvent(name: "blog_published")
             return response.blogKey
         } catch {
             print("🚨 publishBlog failed: \(error)")

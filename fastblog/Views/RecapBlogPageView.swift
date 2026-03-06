@@ -320,6 +320,7 @@ struct RecapBlogPageView: View {
                     dayLabel: item.dayLabel,
                     caption: bindingForDayCaption(dayId: item.dayId),
                     onSave: {
+                        AppAnalytics.shared.trackCaptionWritten(type: "day_caption_created")
                         dayCaptionEditItem = nil
                         createdRecapStore.saveBlogDetail(draft)
                     },
@@ -337,6 +338,7 @@ struct RecapBlogPageView: View {
                         photos: stop.includedPhotos,
                         caption: bindingForOverallStory(dayId: item.dayId, stopId: item.stopId),
                         onSave: {
+                            AppAnalytics.shared.trackCaptionWritten(type: "place_caption_created")
                             placeCaptionEditItem = nil
                             markOverallStoryManual(dayId: item.dayId, stopId: item.stopId)
                             createdRecapStore.saveBlogDetail(draft)
@@ -380,6 +382,7 @@ struct RecapBlogPageView: View {
                 FullScreenMapView(day: day, onDismiss: {
                     fullScreenMapDay = nil
                 }, onCaptionSaved: { stopId, photoId, newCaption in
+                    AppAnalytics.shared.trackCaptionWritten(type: "photo_caption_created")
                     // Write the edited caption back into the draft and persist it
                     bindingForPhotoCaption(dayId: day.id, stopId: stopId, photoId: photoId).wrappedValue = newCaption
                     createdRecapStore.saveBlogDetail(draft)

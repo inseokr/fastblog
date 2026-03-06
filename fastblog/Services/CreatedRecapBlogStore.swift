@@ -381,6 +381,7 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Call when user completes the Create Blog sequence (before showing RecapSavedView).
     func addCreatedBlog(trip: TripDraft) {
+        AppAnalytics.shared.trackEvent(name: "blog_created")
         let startDate = trip.earliestDate
         let endDate = trip.latestDate
         let tempDetail = buildBlogDetail(from: trip)
@@ -570,6 +571,7 @@ final class CreatedRecapBlogStore: ObservableObject {
     /// Persist edited blog detail. Call when user taps Save on RecapBlogPageView. Updates the corresponding recents entry.
     /// - Parameter asDraft: If true, preserves the existing lastEditedAt (keeping it nil if it was a draft).
     func saveBlogDetail(_ detail: RecapBlogDetail, asDraft: Bool = false) {
+        AppAnalytics.shared.trackEvent(name: "blog_saved")
         blogDetailsBySourceId[detail.id] = detail
         guard let idx = recents.firstIndex(where: { $0.sourceTripId == detail.id }) else { return }
         let old = recents[idx]

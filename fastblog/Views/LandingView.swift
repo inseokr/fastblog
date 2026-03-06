@@ -166,6 +166,7 @@ struct LandingView: View {
         }
         .animation(.easeInOut(duration: 0.3), value: showAuth)
         .onAppear {
+            AppAnalytics.shared.trackEvent(name: "app_opened")
             avatarImageData = authService.profileImageData
             // If a scan is already running (e.g. from onboarding), track it for navigation
             if tripsViewModel.scanState != .idle {
@@ -637,8 +638,8 @@ private struct SettingsView: View {
                     Text("Legal")
                 }
 
-                if let email = authService.currentUser?.email,
-                   email == "yoobinrickyseo1@gmail.com" || email == "inseo.kr@gmail.com" {
+                if let user = authService.currentUser,
+                   AdminAnalyticsDashboardView.isAdminUser(user) {
                     Section {
                         Button {
                             showAdminDashboard = true
