@@ -1496,7 +1496,58 @@ final class CreatedRecapBlogStore: ObservableObject {
         // Score photos with iOS Vision AI and auto-select best per place stop.
         detail = await applyPhotoQualitySelection(to: detail)
 
+        // Pick cover: best photo from each place, then best of those (so we don't always pick from the first place).
+        if let bestCoverId = bestCoverIdentifierFromDetail(detail) {
+            detail.selectedCoverPhotoIdentifier = bestCoverId
+        }
+
         return detail
+    }
+
+    /// Best cover for a detail: one best-scoring included photo per place stop, then the highest-scoring of those.
+    private func bestCoverIdentifierFromDetail(_ detail: RecapBlogDetail) -> String? {
+        var bestPerPlace: [(identifier: String, score: Double)] = []
+        for day in detail.days {
+            for stop in day.placeStops {
+                let included = stop.photos.filter(\.isIncluded)
+                guard !included.isEmpty else { continue }
+                let withScores = included.filter { $0.qualityScore != nil }
+                let best = withScores.isEmpty
+                    ? included.first
+                    : withScores.max(by: { ($0.qualityScore?.totalScore ?? -1) < ($1.qualityScore?.totalScore ?? -1) })
+                guard let photo = best, let id = photo.localIdentifier else { continue }
+                let score = photo.qualityScore?.totalScore ?? -1
+                bestPerPlace.append((id, score))
+            }
+        }
+        guard !bestPerPlace.isEmpty else { return nil }
+        let top = bestPerPlace.max(by: { $0.score < $1.score })
+        return top?.identifier
+    }
+
+    /// Best cover for a trip draft: best-scoring selected photo per day, then the best of those. Uses Vision AI scoring.
+    func bestCoverAssetIdentifier(for trip: TripDraft) async -> String? {
+        let allIds = trip.days.flatMap { day in
+            day.photos.filter(\.isSelected).compactMap(\.localIdentifier)
+        }
+        guard !allIds.isEmpty else { return nil }
+        let scorer = PhotoQualityScorer.shared
+        let scores = await scorer.scorePhotos(identifiers: allIds)
+        guard !scores.isEmpty else {
+            return trip.days.flatMap(\.photos).first(where: { $0.isSelected })?.localIdentifier
+        }
+        var bestPerDay: [(identifier: String, score: Double)] = []
+        for day in trip.days {
+            let dayIds = day.photos.filter(\.isSelected).compactMap(\.localIdentifier)
+            guard !dayIds.isEmpty else { continue }
+            let bestId = dayIds.max { (scores[$0]?.totalScore ?? -1) < (scores[$1]?.totalScore ?? -1) }
+            if let id = bestId, let score = scores[id] {
+                bestPerDay.append((id, score.totalScore))
+            }
+        }
+        guard !bestPerDay.isEmpty else { return nil }
+        let top = bestPerDay.max(by: { $0.score < $1.score })
+        return top?.identifier
     }
 
     // MARK: - Day-by-day processing (rate limit 50 geocode/min)
@@ -1546,6 +1597,9 @@ final class CreatedRecapBlogStore: ObservableObject {
         detail = await applyVisitedTimeDigitized(to: detail, dayIndices: [firstDayIdx])
         if Task.isCancelled { return detail }
         detail = await applyPhotoQualitySelection(to: detail, dayIndices: [firstDayIdx])
+        if let bestCoverId = bestCoverIdentifierFromDetail(detail) {
+            detail.selectedCoverPhotoIdentifier = bestCoverId
+        }
         return detail
     }
 
