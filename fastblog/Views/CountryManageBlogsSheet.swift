@@ -97,14 +97,14 @@ struct CountryManageBlogsSheet: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
-                        showMergeView = true
-                    } label: {
-                        Label("Merge Blogs", systemImage: "arrow.triangle.merge")
-                    }
-                    Button {
                         showSplitView = true
                     } label: {
                         Label("Split Blog", systemImage: "scissors")
+                    }
+                    Button {
+                        showMergeView = true
+                    } label: {
+                        Label("Merge Blogs", systemImage: "arrow.triangle.merge")
                     }
                 } label: {
                     Image(systemName: "line.3.horizontal")
