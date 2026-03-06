@@ -1036,6 +1036,9 @@ struct RecapBlogPageView: View {
                         },
                         onRemovePhoto: { photoId in
                             removePhoto(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
+                        },
+                        onSavePlaceName: { name, category, coordinate in
+                            updatePlaceTitle(stopId: item.stopId, to: name, category: category, coordinate: coordinate)
                         }
                     )
                 } else {

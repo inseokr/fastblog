@@ -8,6 +8,67 @@
 
 import Foundation
 
+// MARK: - Place Category
+
+/// Normalized place category used to select the right prompt modifier.
+enum PlaceCategoryID: String, Sendable {
+    case landmark    = "LANDMARK"
+    case restaurant  = "RESTAURANT"
+    case cafe        = "CAFE"
+    case beach       = "BEACH"
+    case mountain    = "MOUNTAIN"
+    case park        = "PARK"
+    case museum      = "MUSEUM"
+    case hotel       = "HOTEL"
+    case street      = "STREET"
+    case viewpoint   = "VIEWPOINT"
+    case event       = "EVENT"
+    case unknown     = "UNKNOWN"
+
+    /// Maps Apple MKPOICategory strings (e.g. "MKPOICategoryRestaurant") to a normalized ID.
+    static func from(mkCategory: String?) -> PlaceCategoryID {
+        guard let raw = mkCategory else { return .unknown }
+        let cat = raw.lowercased()
+        if cat.contains("restaurant") || cat.contains("fooddelivery") || cat.contains("dining") { return .restaurant }
+        if cat.contains("cafe") || cat.contains("coffee") || cat.contains("bakery") { return .cafe }
+        if cat.contains("nightlife") || cat.contains("brewery") || cat.contains("bar") { return .restaurant }
+        if cat.contains("beach") || cat.contains("marina") || cat.contains("surf") { return .beach }
+        if cat.contains("mountain") || cat.contains("ski") || cat.contains("hiking") { return .mountain }
+        if cat.contains("nationalpark") || cat.contains("nature") || cat.contains("forest") { return .park }
+        if cat.contains("park") || cat.contains("garden") { return .park }
+        if cat.contains("museum") || cat.contains("artgallery") || cat.contains("gallery") { return .museum }
+        if cat.contains("landmark") || cat.contains("monument") || cat.contains("historicsite") { return .landmark }
+        if cat.contains("theater") || cat.contains("concert") || cat.contains("stadium") || cat.contains("fairground") { return .event }
+        if cat.contains("hotel") || cat.contains("lodging") || cat.contains("campground") { return .hotel }
+        if cat.contains("viewpoint") || cat.contains("scenic") || cat.contains("overlook") { return .viewpoint }
+        if cat.contains("street") || cat.contains("transit") || cat.contains("airport") { return .street }
+        return .unknown
+    }
+}
+
+// MARK: - Place Name Confidence
+
+/// How specific / trustworthy the place name is — shapes how the LLM uses it.
+enum PlaceNameConfidence: Sendable {
+    case official  // Proper noun: "Eiffel Tower", "In-N-Out Burger"
+    case semi      // Vague descriptor: "Near Bangkok", "Downtown LA"
+    case generic   // Category-level: "Restaurant", "Unknown"
+
+    static func from(placeName: String) -> PlaceNameConfidence {
+        let trimmed = placeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .generic }
+        let lower = trimmed.lowercased()
+        if lower.hasPrefix("near ") { return .semi }
+        if lower.hasSuffix(" area") || lower.contains("downtown") || lower.contains(" district") || lower.contains("neighborhood") { return .semi }
+        let genericKeywords = ["restaurant", "cafe", "coffee", "hotel", "beach", "park", "museum",
+                               "bar", "shop", "store", "unknown", "street", "building", "mall", "airport"]
+        if genericKeywords.contains(where: { lower == $0 }) { return .generic }
+        return .official
+    }
+}
+
+// MARK: - Context Types
+
 /// Input context for generating a single photo caption.
 struct PhotoCaptionContext {
     let tags: [String]
@@ -21,15 +82,25 @@ struct PlaceStoryContext {
     let placeSubtitle: String?
     let dateTimeText: String
     let photoCount: Int
+    let categoryID: PlaceCategoryID
+    let nameConfidence: PlaceNameConfidence
+    /// Derived from the earliest photo timestamp (e.g. "morning", "golden hour", "night").
+    let timeOfDay: String?
+    /// Derived from Vision tags ("indoor" / "outdoor" detection). Nil when unknown.
+    let isIndoor: Bool?
 }
 
 /// Input context for generating an overall place summary from existing photo captions.
 struct OverallPlaceStoryContext {
     /// All photo captions (stories) for this place's included photos.
     let photoCaptions: [String]
+    /// Aggregated Vision tags from included photos — used to enrich the prompt when meaningful.
+    let tags: [String]
     let placeName: String
     let placeSubtitle: String?
     let dateTimeText: String
+    let categoryID: PlaceCategoryID
+    let nameConfidence: PlaceNameConfidence
 }
 
 /// Input context for generating a one-sentence summary of an entire travel day.
@@ -40,6 +111,8 @@ struct DayStoryContext {
     let placeStories: [String]
 }
 
+// MARK: - Protocol
+
 /// Provider that generates caption or place story text. Replace with a real local LLM when available.
 protocol StoryCaptionGeneratorProtocol: Sendable {
     func generateCaption(context: PhotoCaptionContext) async -> String
@@ -49,6 +122,8 @@ protocol StoryCaptionGeneratorProtocol: Sendable {
     /// One-sentence summary of the whole day from all place stories.
     func generateDaySummary(context: DayStoryContext) async -> String
 }
+
+// MARK: - Template Fallback
 
 /// Template-based generator that weaves tags and metadata into short, blog-like text.
 /// Used when the on-device LLM (Foundation Models) is unavailable.
@@ -66,7 +141,6 @@ final class TemplateStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             return "A moment worth remembering."
         }
 
-        // Concise blog-style: one short sentence based only on photo content.
         return "This photo: \(tagPart)."
     }
 
@@ -74,7 +148,13 @@ final class TemplateStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         try? await Task.sleep(nanoseconds: 400_000_000)
 
         let tagPart = context.tags.prefix(6).joined(separator: ", ")
-        let placePart = [context.placeName, context.placeSubtitle].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+        let placePart: String
+        switch context.nameConfidence {
+        case .official, .semi:
+            placePart = [context.placeName, context.placeSubtitle].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+        case .generic:
+            placePart = ""
+        }
         let timePart = context.dateTimeText
         let countPart = context.photoCount > 1 ? "\(context.photoCount) photos" : "one photo"
 
@@ -95,7 +175,13 @@ final class TemplateStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         try? await Task.sleep(nanoseconds: 200_000_000)
         let captions = context.photoCaptions.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         if captions.isEmpty {
-            let placePart = [context.placeName, context.placeSubtitle].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+            let placePart: String
+            switch context.nameConfidence {
+            case .official, .semi:
+                placePart = [context.placeName, context.placeSubtitle].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+            case .generic:
+                placePart = ""
+            }
             return placePart.isEmpty ? "A stop worth remembering." : "\(placePart) — a moment to look back on."
         }
         if captions.count == 1 {

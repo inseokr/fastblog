@@ -5,6 +5,11 @@
 //  Uses Apple's on-device Foundation Models (iOS 26+, Apple Intelligence) to generate
 //  blog-style captions and place stories. Falls back to template when unavailable.
 //
+//  Prompt architecture:
+//    Base system prompt (always)
+//    + Category modifier  (based on PlaceCategoryID)
+//    + Name confidence modifier (based on PlaceNameConfidence)
+//
 
 import Foundation
 
@@ -65,6 +70,112 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
     }
 
 #if canImport(FoundationModels)
+
+    // MARK: - Prompt Modifiers
+
+    @available(iOS 26.0, *)
+    private func categoryModifier(for category: PlaceCategoryID) -> String {
+        switch category {
+        case .restaurant:
+            return """
+                This place is categorized as a restaurant or food establishment.
+                Focus on sensory details: taste, ambiance, vibe, plating, smell, atmosphere.
+                Avoid generic food descriptions. Make it feel like a personal dining experience.
+                """
+        case .cafe:
+            return """
+                This place is categorized as a café or coffee shop.
+                Focus on mood, warmth, aroma, the sound of conversation, the ritual of coffee.
+                Make it feel intimate and unhurried.
+                """
+        case .beach:
+            return """
+                This place is categorized as a beach or coastal area.
+                Focus on mood, weather, sounds, movement of water, light, calmness or energy.
+                Avoid clichés like "crystal clear waters" unless it fits naturally.
+                """
+        case .landmark:
+            return """
+                This place is categorized as a well-known landmark.
+                Balance emotional reflection with subtle recognition of its significance.
+                Do not sound like a Wikipedia article. Make it feel personal.
+                """
+        case .museum:
+            return """
+                This place is categorized as a museum or cultural venue.
+                Focus on atmosphere, discovery, the feeling of stepping into history or art.
+                Keep it evocative, not encyclopedic.
+                """
+        case .park:
+            return """
+                This place is categorized as a park or natural area.
+                Focus on the feeling of open space, greenery, calm, or playful energy.
+                Ground it in sensory details.
+                """
+        case .mountain:
+            return """
+                This place is categorized as a mountain or hiking area.
+                Focus on scale, physical sensation, panoramas, achievement, or raw nature.
+                Make it vivid and grounded.
+                """
+        case .hotel:
+            return """
+                This place is categorized as a hotel or accommodation.
+                Focus on comfort, arrival energy, views from the window, or the sense of a home base for the trip.
+                """
+        case .viewpoint:
+            return """
+                This place is categorized as a viewpoint or scenic overlook.
+                Focus on what can be seen, the light, the scale, the silence or the crowd below.
+                Make the view feel worth the trip.
+                """
+        case .event:
+            return """
+                This place is categorized as an event venue or entertainment space.
+                Focus on atmosphere, crowd energy, anticipation, or the feeling of being part of something larger.
+                """
+        case .street:
+            return """
+                This place is categorized as a street or general city area.
+                Focus on atmosphere, movement, culture, small observations.
+                Do not fabricate specific facts about the location.
+                """
+        case .unknown:
+            return """
+                The exact type of place is unclear.
+                Write a flexible, mood-focused caption based only on the atmosphere suggested by the tags.
+                Avoid assuming what kind of place this is.
+                """
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private func nameConfidenceModifier(for confidence: PlaceNameConfidence, placeName: String) -> String {
+        switch confidence {
+        case .official:
+            return """
+                The official place name is known: "\(placeName)"
+                You may naturally reference the name once in the caption.
+                Do not explain what it is. Assume the reader already recognizes it.
+                Make the name feel woven into the experience.
+                """
+        case .semi:
+            return """
+                The place name may not be precise or widely recognizable: "\(placeName)"
+                Do not rely heavily on the name. Focus more on atmosphere than identity.
+                Do not invent reputation or fame for this place.
+                """
+        case .generic:
+            return """
+                The place name is generic or unclear — do not use it in the caption.
+                Write as if describing the experience without labeling the place.
+                Focus entirely on mood and memory.
+                """
+        }
+    }
+
+    // MARK: - Generators
+
     @available(iOS 26.0, *)
     private func generateCaptionWithLLM(context: PhotoCaptionContext) async -> String? {
         let tagsLine = context.tags.isEmpty ? "general photo" : context.tags.prefix(8).joined(separator: ", ")
@@ -86,23 +197,40 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
     @available(iOS 26.0, *)
     private func generatePlaceStoryWithLLM(context: PlaceStoryContext) async -> String? {
         let tagsLine = context.tags.isEmpty ? "general visit" : context.tags.prefix(8).joined(separator: ", ")
-        let placeLine = [context.placeName, context.placeSubtitle]
-            .compactMap { $0 }
-            .filter { !$0.isEmpty }
-            .joined(separator: ", ")
-        let placePart = placeLine.isEmpty ? "" : " Place: \(placeLine)."
         let timePart = context.dateTimeText.isEmpty ? "" : " When: \(context.dateTimeText)."
-        let countPart = context.photoCount > 1 ? " \(context.photoCount) photos from this spot." : ""
+        let countPart = context.photoCount > 1 ? " \(context.photoCount) photos from this stop." : ""
 
-        let instructions = """
-            You write brief, engaging place stories for a travel blog. One or two sentences: what the place is like or what stands out. \
-            No hashtags or emoji. Do not use first person (no "I", "we", "my") — the visitors could be anyone; write in a neutral or descriptive tone. \
-            Output only the story. No preamble like "Here is a short story" or "Sure, here is..." — just the story text.
+        var contextLines: [String] = []
+        if let tod = context.timeOfDay { contextLines.append("Time of day: \(tod)") }
+        if let indoor = context.isIndoor { contextLines.append("Environment: \(indoor ? "indoor" : "outdoor")") }
+        let contextBlock = contextLines.isEmpty ? "" : "\nContext:\n" + contextLines.joined(separator: "\n")
+
+        let baseSystem = """
+            You are a travel storytelling assistant inside a mobile app called Bloggo.
+            Your job is to generate a short, engaging, emotionally inviting caption for a place visited during a trip.
+            The caption should:
+            • Feel natural and human
+            • Be warm and vivid
+            • Avoid sounding robotic or generic
+            • Stay under 3 sentences
+            • Focus on experience, atmosphere, and memory
+            Do not invent false historical facts. Do not exaggerate unrealistically.
+            Keep it grounded and authentic.
+            No hashtags or emoji. No first person (no "I", "we", "my").
+            Output only the caption text. No preamble like "Here is a caption" — just the caption.
             """
+
+        let instructions = [
+            baseSystem,
+            categoryModifier(for: context.categoryID),
+            nameConfidenceModifier(for: context.nameConfidence, placeName: context.placeName)
+        ].joined(separator: "\n\n")
+
         let prompt = """
-            Write one short blog-style sentence about this place visit. \
-            Vibe/tags: \(tagsLine).\(placePart)\(timePart)\(countPart) \
-            Output only the story text. No introduction, no "Here is...", no first person (I/we/my).
+            Generate 1 caption for this place visit.
+            Tags: \(tagsLine).\(timePart)\(countPart)\(contextBlock)
+
+            Output only the caption. No introduction, no first person.
             """
 
         return await runSession(instructions: instructions, prompt: prompt)
@@ -111,51 +239,51 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
     @available(iOS 26.0, *)
     private func generateOverallPlaceStoryWithLLM(context: OverallPlaceStoryContext) async -> String? {
         let captions = context.photoCaptions.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        let placeLine = [context.placeName, context.placeSubtitle]
-            .compactMap { $0 }
-            .filter { !$0.isEmpty }
-            .joined(separator: ", ")
-        let placePart = placeLine.isEmpty ? "" : " Place: \(placeLine)."
+
+        let placePart: String
+        switch context.nameConfidence {
+        case .official, .semi:
+            let line = [context.placeName, context.placeSubtitle]
+                .compactMap { $0 }
+                .filter { !$0.isEmpty }
+                .joined(separator: ", ")
+            placePart = line.isEmpty ? "" : " Place: \(line)."
+        case .generic:
+            placePart = ""
+        }
         let timePart = context.dateTimeText.isEmpty ? "" : " When: \(context.dateTimeText)."
 
-        let captionsBlock: String
-        if captions.isEmpty {
-            captionsBlock = "No photo captions yet."
-        } else {
-            captionsBlock = captions.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
-        }
+        let captionsBlock = captions.isEmpty
+            ? "No photo captions yet."
+            : captions.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
 
-        let instructions = """
-            You write one very short sentence that summarizes a place visit for a travel blog. \
-            You are given the place name and the existing photo captions for that place. \
-            Summarize them into a single, quick headline-style sentence. No first person (no "I", "we", "my"). \
-            No exact timestamp please. \
-            No hashtags or emoji. Output only the summary sentence. No preamble like "Here is a summary" — just the sentence.
+        let tagsLine = context.tags.prefix(8).joined(separator: ", ")
+        let tagsPart = tagsLine.isEmpty ? "" : "\nPhoto analysis tags: \(tagsLine)."
+
+        let baseSystem = """
+            You are a travel storytelling assistant inside a mobile app called Bloggo.
+            Your job is to write one very short sentence that summarizes a place visit for a travel blog.
+            The sentence should feel natural, warm, and vivid.
+            No hashtags or emoji. No first person (no "I", "we", "my"). No exact timestamp.
+            Output only the summary sentence. No preamble like "Here is a summary" — just the sentence.
             """
+
+        let instructions = [
+            baseSystem,
+            categoryModifier(for: context.categoryID),
+            nameConfidenceModifier(for: context.nameConfidence, placeName: context.placeName)
+        ].joined(separator: "\n\n")
+
         let prompt = """
-            Summarize these photo captions into one short sentence for this place.\(placePart)\(timePart)
+            Summarize these photo captions into one short sentence for this place.\(placePart)\(timePart)\(tagsPart)
 
             Photo captions:
             \(captionsBlock)
 
-            Output only the one-sentence summary. No introduction, no first person (I/we/my).
+            Output only the one-sentence summary. No introduction, no first person.
             """
 
         return await runSession(instructions: instructions, prompt: prompt)
-    }
-
-    @available(iOS 26.0, *)
-    private func runSession(instructions: String, prompt: String) async -> String? {
-        do {
-            let session = LanguageModelSession(instructions: instructions)
-            let response = try await session.respond(to: prompt)
-            let text = response.content
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-            return text.isEmpty ? nil : text
-        } catch {
-            return nil
-        }
     }
 
     @available(iOS 26.0, *)
@@ -186,5 +314,22 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 
         return await runSession(instructions: instructions, prompt: prompt)
     }
+
+    // MARK: - Session Runner
+
+    @available(iOS 26.0, *)
+    private func runSession(instructions: String, prompt: String) async -> String? {
+        do {
+            let session = LanguageModelSession(instructions: instructions)
+            let response = try await session.respond(to: prompt)
+            let text = response.content
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            return text.isEmpty ? nil : text
+        } catch {
+            return nil
+        }
+    }
+
 #endif
 }

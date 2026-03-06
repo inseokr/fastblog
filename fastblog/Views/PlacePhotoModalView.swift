@@ -35,6 +35,9 @@ struct PlacePhotoModalView: View {
     var onPhotoCaptionManuallyEdited: ((UUID) -> Void)?
     /// Called when the user chooses "Remove photo" from the kebab menu.
     var onRemovePhoto: ((UUID) -> Void)?
+    /// Called when the user saves a place name edit from within this modal.
+    /// Provides (newName, category, coordinate) so the caller can update the store and regenerate captions.
+    var onSavePlaceName: ((String, String?, CLLocationCoordinate2D?) -> Void)?
 
     @State private var currentPhotoId: UUID
     @State private var isGeneratingCaption = false
@@ -105,7 +108,8 @@ struct PlacePhotoModalView: View {
         onGenerateCaption: ((RecapPhoto, String, String?) async -> String)? = nil,
         onAICaptionApplied: ((UUID) -> Void)? = nil,
         onPhotoCaptionManuallyEdited: ((UUID) -> Void)? = nil,
-        onRemovePhoto: ((UUID) -> Void)? = nil
+        onRemovePhoto: ((UUID) -> Void)? = nil,
+        onSavePlaceName: ((String, String?, CLLocationCoordinate2D?) -> Void)? = nil
     ) {
         self._placeTitle = placeTitle
         self.placeSubtitle = placeSubtitle
@@ -120,6 +124,7 @@ struct PlacePhotoModalView: View {
         self.onAICaptionApplied = onAICaptionApplied
         self.onPhotoCaptionManuallyEdited = onPhotoCaptionManuallyEdited
         self.onRemovePhoto = onRemovePhoto
+        self.onSavePlaceName = onSavePlaceName
         _currentPhotoId = State(initialValue: initialPhotoId)
     }
 
@@ -371,8 +376,9 @@ struct PlacePhotoModalView: View {
                 placeTitle: $placeTitle,
                 location: photos.compactMap({ $0.location?.clCoordinate }).first,
                 photos: photos,
-                onSave: { newName, _, _ in
+                onSave: { newName, coord, category in
                     placeTitle = newName
+                    onSavePlaceName?(newName, category, coord)
                 }
             )
         }

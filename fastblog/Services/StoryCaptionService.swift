@@ -66,6 +66,29 @@ actor StoryCaptionService {
         return await generator.generateCaption(context: context)
     }
 
+    /// Derives a human-readable time-of-day label from a timestamp.
+    private func timeOfDayLabel(from date: Date, in timeZone: TimeZone) -> String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        let hour = cal.component(.hour, from: date)
+        switch hour {
+        case 5..<9:   return "morning"
+        case 9..<12:  return "late morning"
+        case 12..<14: return "midday"
+        case 14..<17: return "afternoon"
+        case 17..<20: return "golden hour"
+        default:      return "night"
+        }
+    }
+
+    /// Detects indoor/outdoor from Vision tags. Returns nil when uncertain.
+    private func isIndoor(from tags: [String]) -> Bool? {
+        let lower = tags.map { $0.lowercased() }
+        if lower.contains(where: { $0.contains("indoor") || $0.contains("interior") }) { return true }
+        if lower.contains(where: { $0.contains("outdoor") || $0.contains("exterior") }) { return false }
+        return nil
+    }
+
     /// Generate a place-level story from the first included photo's tags (or aggregated tags).
     /// Uses place name, subtitle, earliest photo time, and photo count.
     func generatePlaceStory(
@@ -73,30 +96,41 @@ actor StoryCaptionService {
         dayDate: Date?
     ) async -> String {
         let included = stop.photos.filter(\.isIncluded)
-        let tags: [String]
-        if let first = included.first, let lid = first.localIdentifier {
-            tags = await tagService.tags(forLocalIdentifier: lid)
-        } else {
-            tags = []
+        var tagSet: [String] = []
+        for photo in included.prefix(3) {
+            if let lid = photo.localIdentifier {
+                let photoTags = await tagService.tags(forLocalIdentifier: lid)
+                for t in photoTags where !tagSet.contains(t) { tagSet.append(t) }
+            }
         }
+        let tags = tagSet
+        let tz = await captureTimeZone(for: stop)
         let formatter = DateFormatter()
         formatter.dateFormat = "d MMM yyyy 'at' h:mm a"
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = await captureTimeZone(for: stop)
+        formatter.timeZone = tz
         let dateTimeText: String
+        let earliestDate: Date?
         if let t = included.map(\.timestamp).min() {
             dateTimeText = formatter.string(from: t)
+            earliestDate = t
         } else if let d = dayDate {
             dateTimeText = formatter.string(from: d)
+            earliestDate = d
         } else {
             dateTimeText = ""
+            earliestDate = nil
         }
         let context = PlaceStoryContext(
             tags: tags,
             placeName: stop.placeTitle,
             placeSubtitle: stop.placeSubtitle,
             dateTimeText: dateTimeText,
-            photoCount: included.count
+            photoCount: included.count,
+            categoryID: PlaceCategoryID.from(mkCategory: stop.placeCategory),
+            nameConfidence: PlaceNameConfidence.from(placeName: stop.placeTitle),
+            timeOfDay: earliestDate.map { timeOfDayLabel(from: $0, in: tz) },
+            isIndoor: isIndoor(from: tags)
         )
         return await generator.generatePlaceStory(context: context)
     }
@@ -108,11 +142,18 @@ actor StoryCaptionService {
         dayDate: Date?,
         photoCaptions: [String]
     ) async -> String {
+        let included = stop.photos.filter(\.isIncluded)
+        var tagSet: [String] = []
+        for photo in included.prefix(3) {
+            if let lid = photo.localIdentifier {
+                let photoTags = await tagService.tags(forLocalIdentifier: lid)
+                for t in photoTags where !tagSet.contains(t) { tagSet.append(t) }
+            }
+        }
         let formatter = DateFormatter()
         formatter.dateFormat = "d MMM yyyy 'at' h:mm a"
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = await captureTimeZone(for: stop)
-        let included = stop.photos.filter(\.isIncluded)
         let dateTimeText: String
         if let t = included.map(\.timestamp).min() {
             dateTimeText = formatter.string(from: t)
@@ -123,9 +164,12 @@ actor StoryCaptionService {
         }
         let context = OverallPlaceStoryContext(
             photoCaptions: photoCaptions,
+            tags: tagSet,
             placeName: stop.placeTitle,
             placeSubtitle: stop.placeSubtitle,
-            dateTimeText: dateTimeText
+            dateTimeText: dateTimeText,
+            categoryID: PlaceCategoryID.from(mkCategory: stop.placeCategory),
+            nameConfidence: PlaceNameConfidence.from(placeName: stop.placeTitle)
         )
         return await generator.generateOverallPlaceStory(context: context)
     }
