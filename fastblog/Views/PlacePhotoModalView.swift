@@ -41,7 +41,11 @@ struct PlacePhotoModalView: View {
 
     @State private var currentPhotoId: UUID
     @State private var isGeneratingCaption = false
-    @State private var isOverlayHidden = false
+    @State private var isZoomMode = false
+    @State private var accumulatedZoomScale: CGFloat = 1.0
+    @State private var accumulatedDragOffset: CGSize = .zero
+    @GestureState private var pinchScale: CGFloat = 1.0
+    @GestureState private var dragState: CGSize = .zero
     @State private var isEditing = false
     @State private var editedCaptionText: String = ""
     @State private var editedPlaceTitle: String = ""
@@ -151,13 +155,16 @@ struct PlacePhotoModalView: View {
                 // .simultaneousGesture fires alongside TabView's own paging swipe recognizer
                 // so single taps are not swallowed by the UIScrollView underneath.
                 fullScreenPhotoView
+                    .onAppear { debugPrint("[PlacePhotoModal] fullScreenPhotoView appeared") }
                     .simultaneousGesture(
                         TapGesture().onEnded {
+                            debugPrint("[PlacePhotoModal] TapGesture fired (viewer) isCaptionFocused=\(isCaptionFocused) isZoomMode=\(isZoomMode)")
                             if isCaptionFocused {
                                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                            } else {
+                            } else if !isZoomMode {
+                                debugPrint("[PlacePhotoModal] Tap on viewer area → entering zoom mode, photoId=\(currentPhotoId)")
                                 withAnimation(.easeInOut(duration: 0.25)) {
-                                    isOverlayHidden.toggle()
+                                    isZoomMode = true
                                 }
                             }
                         }
@@ -218,18 +225,23 @@ struct PlacePhotoModalView: View {
                 }
             }
             .background(
-                (isEditing || isOverlayHidden) ? nil :
+                (isEditing || isZoomMode) ? nil :
                 LinearGradient(
                     colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
                     startPoint: .bottom,
                     endPoint: .top
                 )
             )
-            .opacity(isOverlayHidden ? 0 : 1)
-            .animation(.easeInOut(duration: 0.25), value: isOverlayHidden)
+            .opacity(isZoomMode ? 0 : 1)
+            .animation(.easeInOut(duration: 0.25), value: isZoomMode)
 
-            // 3. Top bar + bottom-right action stack (drawn on top so never covered when modal is small)
+            // 4. Top bar + bottom-right action stack (drawn on top so never covered when modal is small).
+            // Pass-through layer so taps in the center reach the photo view; only the bar content gets hits.
             ZStack(alignment: .top) {
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .allowsHitTesting(false)
                 // Drag Handle
                 Capsule()
                     .fill(Color.white.opacity(0.4))
@@ -362,17 +374,56 @@ struct PlacePhotoModalView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 20)
-                    Spacer()
                 }
-
+                .frame(maxWidth: .infinity, alignment: .top)
             }
-            .allowsHitTesting(!isOverlayHidden)
-            .opacity(isOverlayHidden ? 0 : 1)
-            .animation(.easeInOut(duration: 0.25), value: isOverlayHidden)
+            .allowsHitTesting(!isZoomMode)
+            .opacity(isZoomMode ? 0 : 1)
+            .animation(.easeInOut(duration: 0.25), value: isZoomMode)
+
+            // 5. Zoom mode overlay — appears when user taps the photo
+            if isZoomMode, let photo = currentPhoto {
+                zoomablePhotoOverlay(photo: photo)
+            }
+
+            // 6. Tap + swipe only over the middle (photo) area; no contentShape on the stack so top/bottom pass through to bar and thumbnails.
+            if !isZoomMode {
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: 80)
+                    Button {
+                        debugPrint("[PlacePhotoModal] Photo area tapped → entering zoom, photoId=\(currentPhotoId)")
+                        withAnimation(.easeInOut(duration: 0.25)) { isZoomMode = true }
+                    } label: {
+                        Color.clear
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 40)
+                            .onEnded { value in
+                                let dx = value.translation.width
+                                guard abs(dx) > 40 else { return }
+                                guard let idx = photos.firstIndex(where: { $0.id == currentPhotoId }) else { return }
+                                if dx < 0, idx + 1 < photos.count {
+                                    withAnimation(.easeInOut(duration: 0.25)) { currentPhotoId = photos[idx + 1].id }
+                                } else if dx > 0, idx > 0 {
+                                    withAnimation(.easeInOut(duration: 0.25)) { currentPhotoId = photos[idx - 1].id }
+                                }
+                            }
+                    )
+                    Color.clear.frame(height: 220)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
         .statusBar(hidden: false)
+        .onAppear {
+            debugPrint("[PlacePhotoModal] Modal is active (onAppear)")
+        }
         .sheet(isPresented: $showRenameSheet) {
             EditPlaceStopNameSheet(
                 placeTitle: $placeTitle,
@@ -579,6 +630,58 @@ struct PlacePhotoModalView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .aspectRatio(contentMode: .fill)
             .clipped()
+            .contentShape(Rectangle())
+            .onTapGesture {
+                debugPrint("[PlacePhotoModal] Photo tapped → entering zoom (photo only), photoId=\(photo.id)")
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    isZoomMode = true
+                }
+            }
+    }
+
+    @ViewBuilder
+    private func zoomablePhotoOverlay(photo: RecapPhoto) -> some View {
+        let scale = max(1.0, accumulatedZoomScale * pinchScale)
+        let offset = CGSize(
+            width: accumulatedDragOffset.width + dragState.width,
+            height: accumulatedDragOffset.height + dragState.height
+        )
+
+        Color.black
+            .ignoresSafeArea()
+            .overlay(
+                RecapPhotoThumbnail(photo: photo, cornerRadius: 0, showIcon: false, targetSize: CGSize(width: 1200, height: 1200))
+                    .aspectRatio(contentMode: .fit)
+                    .scaleEffect(scale)
+                    .offset(offset)
+                    .gesture(
+                        SimultaneousGesture(
+                            MagnificationGesture()
+                                .updating($pinchScale) { current, state, _ in state = current }
+                                .onEnded { value in
+                                    accumulatedZoomScale = max(1.0, min(5.0, accumulatedZoomScale * value))
+                                },
+                            DragGesture(minimumDistance: 5)
+                                .updating($dragState) { value, state, _ in state = value.translation }
+                                .onEnded { value in
+                                    accumulatedDragOffset = CGSize(
+                                        width: accumulatedDragOffset.width + value.translation.width,
+                                        height: accumulatedDragOffset.height + value.translation.height
+                                    )
+                                }
+                        )
+                    )
+                    .simultaneousGesture(
+                        TapGesture().onEnded {
+                            debugPrint("[PlacePhotoModal] Tap in zoom overlay → exiting zoom mode")
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isZoomMode = false
+                                accumulatedZoomScale = 1.0
+                                accumulatedDragOffset = .zero
+                            }
+                        }
+                    )
+            )
     }
 
     private var dateTimeTextForCurrentPhoto: String {
