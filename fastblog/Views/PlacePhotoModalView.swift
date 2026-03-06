@@ -157,12 +157,13 @@ struct PlacePhotoModalView: View {
                 fullScreenPhotoView
                     .onAppear { debugPrint("[PlacePhotoModal] fullScreenPhotoView appeared") }
                     .simultaneousGesture(
-                        TapGesture().onEnded {
-                            debugPrint("[PlacePhotoModal] TapGesture fired (viewer) isCaptionFocused=\(isCaptionFocused) isZoomMode=\(isZoomMode)")
+                        TapGesture(count: 2).onEnded {
+                            debugPrint("[PlacePhotoModal] Double-tap on viewer → entering zoom mode, photoId=\(currentPhotoId)")
                             if isCaptionFocused {
                                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                             } else if !isZoomMode {
-                                debugPrint("[PlacePhotoModal] Tap on viewer area → entering zoom mode, photoId=\(currentPhotoId)")
+                                accumulatedZoomScale = 1.0
+                                accumulatedDragOffset = .zero
                                 withAnimation(.easeInOut(duration: 0.25)) {
                                     isZoomMode = true
                                 }
@@ -391,13 +392,20 @@ struct PlacePhotoModalView: View {
                 VStack(spacing: 0) {
                     Color.clear.frame(height: 80)
                     Button {
-                        debugPrint("[PlacePhotoModal] Photo area tapped → entering zoom, photoId=\(currentPhotoId)")
+                        debugPrint("[PlacePhotoModal] Photo area double-tapped → entering zoom, photoId=\(currentPhotoId)")
+                        accumulatedZoomScale = 1.0
+                        accumulatedDragOffset = .zero
                         withAnimation(.easeInOut(duration: 0.25)) { isZoomMode = true }
                     } label: {
                         Color.clear
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .simultaneousGesture(TapGesture(count: 2).onEnded {
+                        accumulatedZoomScale = 1.0
+                        accumulatedDragOffset = .zero
+                        withAnimation(.easeInOut(duration: 0.25)) { isZoomMode = true }
+                    })
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
                     .gesture(
@@ -631,8 +639,10 @@ struct PlacePhotoModalView: View {
             .aspectRatio(contentMode: .fill)
             .clipped()
             .contentShape(Rectangle())
-            .onTapGesture {
-                debugPrint("[PlacePhotoModal] Photo tapped → entering zoom (photo only), photoId=\(photo.id)")
+            .onTapGesture(count: 2) {
+                debugPrint("[PlacePhotoModal] Photo double-tapped → entering zoom (photo only), photoId=\(photo.id)")
+                accumulatedZoomScale = 1.0
+                accumulatedDragOffset = .zero
                 withAnimation(.easeInOut(duration: 0.25)) {
                     isZoomMode = true
                 }
@@ -647,41 +657,58 @@ struct PlacePhotoModalView: View {
             height: accumulatedDragOffset.height + dragState.height
         )
 
-        Color.black
-            .ignoresSafeArea()
-            .overlay(
-                RecapPhotoThumbnail(photo: photo, cornerRadius: 0, showIcon: false, targetSize: CGSize(width: 1200, height: 1200))
-                    .aspectRatio(contentMode: .fit)
-                    .scaleEffect(scale)
-                    .offset(offset)
-                    .gesture(
-                        SimultaneousGesture(
-                            MagnificationGesture()
-                                .updating($pinchScale) { current, state, _ in state = current }
-                                .onEnded { value in
-                                    accumulatedZoomScale = max(1.0, min(5.0, accumulatedZoomScale * value))
-                                },
-                            DragGesture(minimumDistance: 5)
-                                .updating($dragState) { value, state, _ in state = value.translation }
-                                .onEnded { value in
-                                    accumulatedDragOffset = CGSize(
-                                        width: accumulatedDragOffset.width + value.translation.width,
-                                        height: accumulatedDragOffset.height + value.translation.height
-                                    )
-                                }
-                        )
-                    )
-                    .simultaneousGesture(
-                        TapGesture().onEnded {
-                            debugPrint("[PlacePhotoModal] Tap in zoom overlay → exiting zoom mode")
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                isZoomMode = false
-                                accumulatedZoomScale = 1.0
-                                accumulatedDragOffset = .zero
+        ZStack(alignment: .topLeading) {
+            Color.black
+                .ignoresSafeArea()
+
+            RecapPhotoThumbnail(photo: photo, cornerRadius: 0, showIcon: false, targetSize: CGSize(width: 1200, height: 1200))
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .scaleEffect(scale)
+                .offset(offset)
+                .gesture(
+                    SimultaneousGesture(
+                        MagnificationGesture()
+                            .updating($pinchScale) { current, state, _ in state = current }
+                            .onEnded { value in
+                                accumulatedZoomScale = max(1.0, min(5.0, accumulatedZoomScale * value))
+                            },
+                        DragGesture(minimumDistance: 5)
+                            .updating($dragState) { value, state, _ in state = value.translation }
+                            .onEnded { value in
+                                accumulatedDragOffset = CGSize(
+                                    width: accumulatedDragOffset.width + value.translation.width,
+                                    height: accumulatedDragOffset.height + value.translation.height
+                                )
                             }
-                        }
                     )
-            )
+                )
+                .simultaneousGesture(
+                    TapGesture(count: 2).onEnded {
+                        debugPrint("[PlacePhotoModal] Double-tap in zoom overlay → resetting zoom")
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            accumulatedZoomScale = 1.0
+                            accumulatedDragOffset = .zero
+                        }
+                    }
+                )
+
+            // Close button — always visible so user can exit zoom mode easily
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isZoomMode = false
+                    accumulatedZoomScale = 1.0
+                    accumulatedDragOffset = .zero
+                }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 28))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, Color.black.opacity(0.5))
+                    .padding(16)
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     private var dateTimeTextForCurrentPhoto: String {
