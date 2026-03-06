@@ -105,7 +105,7 @@ struct PlaceStopRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Row 1: badge + title, subtitle, time
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
                 stopBadge
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {

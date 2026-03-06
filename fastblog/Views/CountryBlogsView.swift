@@ -141,8 +141,11 @@ struct CountryBlogsView: View {
                         // ─── Swipe-left trailing action ───────────────────
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
-                                blogToDelete = blog
-                                showDeleteConfirmSheet = true
+                                let captured = blog
+                                DispatchQueue.main.async {
+                                    blogToDelete = captured
+                                    showDeleteConfirmSheet = true
+                                }
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }

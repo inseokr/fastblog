@@ -909,14 +909,21 @@ struct RecapBlogPageView: View {
     }
 
     private func daySection(day: RecapBlogDay) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let isDayLoading = !day.isPlaceNamesResolved
+        return VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 6) {
                 Text(day.shortDateText)
                     .font(.title3)
                     .fontWeight(.bold)
                     .foregroundColor(.white)
-                Image(systemName: "sun.max")
-                    .foregroundColor(.secondary)
+                if isDayLoading {
+                    ProgressView()
+                        .scaleEffect(0.75)
+                        .tint(.secondary)
+                } else {
+                    Image(systemName: "sun.max")
+                        .foregroundColor(.secondary)
+                }
             }
             .padding(.top, 4)
 
@@ -1001,7 +1008,7 @@ struct RecapBlogPageView: View {
                                 .foregroundColor(.secondary)
                             Spacer()
                         }
-                        .padding(.leading, 32) // Aligned roughly with content
+                        .padding(.leading, 16) // Aligned with the numbered circle badge
                         .padding(.vertical, 4)
                     }
                 }
@@ -2341,8 +2348,10 @@ struct ProcessingDayPopup: View {
 
     var body: some View {
         ZStack {
-            // Dimmed scrim — tap anywhere to dismiss
-            Color.black.opacity(0.55)
+            // Blurred scrim — tap anywhere to dismiss. Uses material blur so the
+            // backdrop dims naturally without a hard black rectangle edge.
+            Rectangle()
+                .fill(.ultraThinMaterial)
                 .ignoresSafeArea()
                 .onTapGesture { onDismiss() }
 
