@@ -12,7 +12,6 @@ struct LandingView: View {
     @Binding var showSeeAll: Bool
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     /// Passed back to ContentView so RecapBlogPageView opens at the right day.
-    @Binding var initialDayIndexForRecap: Int?
     @ObservedObject var tripsViewModel: TripsViewModel
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @EnvironmentObject private var authService: AuthService
@@ -180,7 +179,6 @@ struct LandingView: View {
                 OnTheGoTripStore.clearNewMoments()
                 if let blogId = newMomentsAlertBlogId,
                    let recap = createdRecapStore.displayRecents.first(where: { $0.sourceTripId == blogId }) {
-                    initialDayIndexForRecap = newMomentsAlertDayIndex
                     selectedCreatedRecap = recap
                 }
             }
@@ -893,7 +891,6 @@ struct AllRecentsSheet: View {
             showProfile: .constant(false),
             showSeeAll: .constant(false),
             selectedCreatedRecap: .constant(nil),
-            initialDayIndexForRecap: .constant(nil),
             tripsViewModel: TripsViewModel(createdRecapStore: CreatedRecapBlogStore.shared)
         )
         .environmentObject(CreatedRecapBlogStore.shared)

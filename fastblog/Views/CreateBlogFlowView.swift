@@ -95,17 +95,6 @@ struct CreateBlogFlowView: View {
             if flowCoverAssetIdentifier == nil {
                 let fallback = trip.coverAssetIdentifier ?? trip.days.flatMap(\.photos).first(where: \.isSelected)?.localIdentifier
                 flowCoverAssetIdentifier = fallback
-                // When no cover is set, pick best from each place then best of best (async).
-                if trip.coverAssetIdentifier == nil, !trip.days.flatMap(\.photos).filter(\.isSelected).isEmpty {
-                    Task {
-                        let best = await createdRecapStore.bestCoverAssetIdentifier(for: trip)
-                        await MainActor.run {
-                            if flowCoverAssetIdentifier == fallback {
-                                flowCoverAssetIdentifier = best ?? fallback
-                            }
-                        }
-                    }
-                }
             }
             if startDirectlyCreating {
                 step = .creating
