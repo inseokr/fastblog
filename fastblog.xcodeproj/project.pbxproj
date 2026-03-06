@@ -624,6 +624,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BB00A001 /* Analytics.swift in Sources */,
 				BB000301 /* AdminAnalyticsDashboardView.swift in Sources */,
 				BB000303 /* MyStatsView.swift in Sources */,
 				BB000102 /* ContentView.swift in Sources */,
