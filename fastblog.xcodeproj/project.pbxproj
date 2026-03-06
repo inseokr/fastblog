@@ -221,6 +221,9 @@
 		BB000177 /* OnboardingConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingConstants.swift; sourceTree = "<group>"; };
 		BB000179 /* OnboardingFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlowView.swift; sourceTree = "<group>"; };
 		BB00017B /* OnboardingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingState.swift; sourceTree = "<group>"; };
+		BB00A002 /* Analytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Analytics.swift; sourceTree = "<group>"; };
+		BB000300 /* AdminAnalyticsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminAnalyticsDashboardView.swift; sourceTree = "<group>"; };
+		BB000302 /* MyStatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyStatsView.swift; sourceTree = "<group>"; };
 		BB00017D /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
 		BB00017F /* CreatedRecapBlogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreatedRecapBlogStore.swift; sourceTree = "<group>"; };
 		BB000181 /* DayToTripGrouper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayToTripGrouper.swift; sourceTree = "<group>"; };
@@ -382,10 +385,13 @@
 			path = ViewModels;
 			sourceTree = "<group>";
 		};
-		BB0001B2 /* Views */ = {
+				BB0001B2 /* Views */ = {
 			isa = PBXGroup;
 			children = (
 				BB0001DA /* AppLaunchSplashView.swift */,
+				BB000300 /* AdminAnalyticsDashboardView.swift */,
+				BB000302 /* MyStatsView.swift */,
+				BB00A002 /* Analytics.swift */,
 				BB00011F /* BlogPreviewView.swift */,
 				BB000121 /* BlogSettingsSheet.swift */,
 				BB000203 /* BottomSheetView.swift */,
