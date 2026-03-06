@@ -464,6 +464,7 @@ private struct SettingsView: View {
     @State private var showNeighborhoodSheet = false
     @State private var showAuth = false
     @State private var showDeleteAccountAlert = false
+    @State private var showAdminDashboard = false
     #if DEBUG
     @AppStorage("capper.tripClustering.debugLogging") private var tripClusteringDebug = false
     #endif
@@ -636,6 +637,25 @@ private struct SettingsView: View {
                     Text("Legal")
                 }
 
+                if let email = authService.currentUser?.email,
+                   email == "yoobinrickyseo1@gmail.com" || email == "inseo.kr@gmail.com" {
+                    Section {
+                        Button {
+                            showAdminDashboard = true
+                        } label: {
+                            HStack {
+                                Label("Admin Analytics", systemImage: "chart.bar.fill")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    } header: {
+                        Text("Admin")
+                    }
+                }
+
                 if authService.isSignedIn {
                     Section {
                         Button {
@@ -660,6 +680,11 @@ private struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(isPresented: $showAdminDashboard) {
+                AdminAnalyticsDashboardView()
+                    .environmentObject(CreatedRecapBlogStore.shared)
+                    .environmentObject(authService)
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
