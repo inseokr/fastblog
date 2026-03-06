@@ -7,6 +7,7 @@
 //
 
 import CoreImage
+import CoreLocation
 import Foundation
 import Photos
 import Vision
@@ -189,6 +190,7 @@ actor PhotoQualityScorer {
 extension Array where Element == RecapPhoto {
     /// Returns the top-quality photo ids that should be included by default.
     /// 3 photos if total > 5, 2 if 3–5, 1 if 1–2. Users can add more via "Manage Photos".
+    /// Adds duplicate control: avoid selecting photos that are too close in time/location.
     func autoSelectedIds() -> Set<UUID> {
         guard !isEmpty else { return [] }
         let count = self.count
@@ -200,11 +202,60 @@ extension Array where Element == RecapPhoto {
             return Set(filter(\.isIncluded).map(\.id))
         }
 
-        let topPhotos = sorted {
+        let rankedPhotos = sorted {
             ($0.qualityScore?.totalScore ?? 0) > ($1.qualityScore?.totalScore ?? 0)
-        }.prefix(maxSelected)
+        }
 
-        return Set(topPhotos.map(\.id))
+        // Keep deterministic, but skip obvious near-duplicate burst shots.
+        let minTimeDistance: TimeInterval = 90 // seconds
+        let minSpatialDistance: CLLocationDistance = 35 // meters
+        var selected: [RecapPhoto] = []
+
+        for candidate in rankedPhotos {
+            guard selected.count < maxSelected else { break }
+            if isDistinctEnough(
+                candidate,
+                from: selected,
+                minTimeDistance: minTimeDistance,
+                minSpatialDistance: minSpatialDistance
+            ) {
+                selected.append(candidate)
+            }
+        }
+
+        // Fallback to ensure we still fill the expected count in dense/same-spot sequences.
+        if selected.count < maxSelected {
+            for candidate in rankedPhotos where !selected.contains(where: { $0.id == candidate.id }) {
+                guard selected.count < maxSelected else { break }
+                selected.append(candidate)
+            }
+        }
+
+        return Set(selected.map(\.id))
+    }
+
+    private func isDistinctEnough(
+        _ candidate: RecapPhoto,
+        from selected: [RecapPhoto],
+        minTimeDistance: TimeInterval,
+        minSpatialDistance: CLLocationDistance
+    ) -> Bool {
+        for existing in selected {
+            let timeDelta = abs(candidate.timestamp.timeIntervalSince(existing.timestamp))
+            guard timeDelta < minTimeDistance else { continue }
+
+            // If both locations exist, require spatial separation too.
+            if let cLoc = candidate.location, let eLoc = existing.location {
+                let c = CLLocation(latitude: cLoc.latitude, longitude: cLoc.longitude)
+                let e = CLLocation(latitude: eLoc.latitude, longitude: eLoc.longitude)
+                let distance = c.distance(from: e)
+                if distance < minSpatialDistance { return false }
+            } else {
+                // When GPS is missing, time proximity alone is the best duplicate signal.
+                return false
+            }
+        }
+        return true
     }
 }
 
