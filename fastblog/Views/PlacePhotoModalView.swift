@@ -143,18 +143,20 @@ struct PlacePhotoModalView: View {
     var body: some View {
         ZStack {
                 // 1. Full screen media viewer
+                // .simultaneousGesture fires alongside TabView's own paging swipe recognizer
+                // so single taps are not swallowed by the UIScrollView underneath.
                 fullScreenPhotoView
-                    .onTapGesture {
-                        if isEditing || isCaptionFocused {
-                            // Keyboard is up — dismiss it first; don't toggle overlay yet
-                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                        } else {
-                            // No keyboard — toggle overlay visibility in any mode
-                            withAnimation(.easeInOut(duration: 0.25)) {
-                                isOverlayHidden.toggle()
+                    .simultaneousGesture(
+                        TapGesture().onEnded {
+                            if isCaptionFocused {
+                                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                            } else {
+                                withAnimation(.easeInOut(duration: 0.25)) {
+                                    isOverlayHidden.toggle()
+                                }
                             }
                         }
-                    }
+                    )
                     .task(id: currentPhotoId) {
                         // Resolve timezone per photo so every photo (not just the first) shows correct local time.
                         let photoId = currentPhotoId
