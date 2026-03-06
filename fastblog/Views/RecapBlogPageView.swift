@@ -101,6 +101,11 @@ struct RecapBlogPageView: View {
     @State private var placeCaptionEditItem: PlaceCaptionEditItem?
     /// Alert when user taps a day that is not yet processed (geocoding still in progress).
     @State private var showUnprocessedDayAlert = false
+    
+    // MARK: - Split Blog Properties
+    @State private var showSplitActionSheet = false
+    @State private var dayIndexToSplit: Int?
+    @State private var showSplitUndoBanner = false
 
     private enum UndoAction {
         case deletePlace(dayId: UUID, stop: PlaceStop, index: Int)
@@ -520,13 +525,24 @@ struct RecapBlogPageView: View {
                 }
                 .onChange(of: selectedDayIndex) { _, newIndex in
                     if isEditMode {
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            proxy.scrollTo("page-top", anchor: .top)
+                        if let day = day(at: newIndex) {
+                            withAnimation(.easeOut(duration: 0.3)) {
+                                proxy.scrollTo("day-section-\(day.id)", anchor: .top)
+                            }
                         }
                         visitedDayIndices.insert(newIndex)
                     } else {
                         withAnimation(.easeOut(duration: 0.3)) {
                             proxy.scrollTo("map-anchor", anchor: .top)
+                        }
+                    }
+                }
+                .onChange(of: hasFinishedInitialLoad) { _, finished in
+                    if finished && isEditMode {
+                        if let day = day(at: selectedDayIndex) {
+                            withAnimation(.easeOut(duration: 0.3)) {
+                                proxy.scrollTo("day-section-\(day.id)", anchor: .top)
+                            }
                         }
                     }
                 }
@@ -536,22 +552,56 @@ struct RecapBlogPageView: View {
                     }
                 }
                 
-                VStack(spacing: 15) {
-                    // Undo Overlay (Banner or Button)
-                    if showUndoOverlay {
-                        UndoOverlayView(
-                            text: lastUndoAction?.text ?? "Item hidden",
-                            isMinimized: $isUndoMinimized,
-                            onUndo: {
-                                performUndo()
-                            },
-                            onDismiss: {
-                                withAnimation {
-                                    showUndoOverlay = false
-                                    lastUndoAction = nil
-                                }
+                // Undo Overlay (Banner or Button)
+                if showUndoOverlay {
+                    UndoOverlayView(
+                        text: lastUndoAction?.text ?? "Item hidden",
+                        isMinimized: $isUndoMinimized,
+                        onUndo: {
+                            performUndo()
+                        },
+                        onDismiss: {
+                            withAnimation {
+                                showUndoOverlay = false
+                                lastUndoAction = nil
                             }
-                        )
+                        }
+                    )
+                } else if showSplitUndoBanner {
+                        // Special banner for "Undo Split" in edit mode
+                        VStack {
+                            Spacer()
+                            HStack(spacing: 12) {
+                                Text("Blog split into two parts")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundColor(.white)
+
+                                Spacer()
+
+                                Button("Undo") {
+                                    createdRecapStore.undoSplit()
+                                    withAnimation {
+                                        showSplitUndoBanner = false
+                                    }
+                                    // Optionally re-fetch draft since we merged back
+                                    if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
+                                        draft = updated
+                                    }
+                                }
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.orange)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color(uiColor: .label).opacity(0.88))
+                            )
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 24)
+                        }
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .zIndex(10)
                     }
 
                     if !isKeyboardVisible {
@@ -559,11 +609,10 @@ struct RecapBlogPageView: View {
                         dayFilterSection
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
-                }
-                .ignoresSafeArea(.keyboard)
             }
+            .ignoresSafeArea(.keyboard)
+            .background(Color.black)
         }
-        .background(Color.black)
     }
 
     private var blogTitleView: some View {
@@ -927,6 +976,65 @@ struct RecapBlogPageView: View {
                     Image(systemName: "sun.max")
                         .foregroundColor(.secondary)
                 }
+                
+                Spacer()
+                
+                // Only show split icon if there are at least 2 days and this isn't the *last* day
+                if draft.days.count >= 2, let dayIdx = draft.days.firstIndex(where: { $0.id == day.id }), dayIdx < draft.days.count - 1 {
+                    Button {
+                        dayIndexToSplit = dayIdx
+                        showSplitActionSheet = true
+                    } label: {
+                        Image(systemName: "scissors")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.orange)
+                            .padding(8)
+                            .background(Color.white.opacity(0.15))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .confirmationDialog(
+                        "Split Blog?",
+                        isPresented: $showSplitActionSheet,
+                        titleVisibility: .visible
+                    ) {
+                        if let splitIdx = dayIndexToSplit {
+                            let isJustCreated = !createdRecapStore.hasCreatedBlog(sourceTripId: blogId)
+                            
+                            if isJustCreated {
+                                let part1Count = splitIdx + 1
+                                let part2Count = draft.days.count - part1Count
+                                Button("Create Part 1 (Days 1–\(part1Count))") {
+                                    splitUnsavedBlog(afterDayIndex: splitIdx, keepPart: 1)
+                                }
+                                Button("Create Part 2 (Days \(part1Count + 1)–\(draft.days.count))") {
+                                    splitUnsavedBlog(afterDayIndex: splitIdx, keepPart: 2)
+                                }
+                            } else {
+                                Button("Split Blog Here") {
+                                    splitSavedBlog(afterDayIndex: splitIdx)
+                                }
+                            }
+                        }
+                        Button("Cancel", role: .cancel) {
+                            dayIndexToSplit = nil
+                        }
+                    } message: {
+                        if let splitIdx = dayIndexToSplit {
+                            let isJustCreated = !createdRecapStore.hasCreatedBlog(sourceTripId: blogId)
+                            let part1Count = splitIdx + 1
+                            let part2Count = draft.days.count - part1Count
+                            
+                            if isJustCreated {
+                                Text("This blog hasn't been saved yet. Which part would you like to create?\n\nPart 1: Day 1–\(part1Count) (\(part1Count) day\(part1Count == 1 ? "" : "s"))\nPart 2: Day \(part1Count + 1)–\(draft.days.count) (\(part2Count) day\(part2Count == 1 ? "" : "s"))")
+                            } else {
+                                Text("This will create two separate blogs:\n\nPart 1: Day 1–\(part1Count) (\(part1Count) day\(part1Count == 1 ? "" : "s"))\nPart 2: Day \(part1Count + 1)–\(draft.days.count) (\(part2Count) day\(part2Count == 1 ? "" : "s"))")
+                            }
+                        } else {
+                            Text("Split this blog into two separate blogs.")
+                        }
+                    }
+                }
             }
             .padding(.top, 4)
 
@@ -1017,6 +1125,7 @@ struct RecapBlogPageView: View {
                 }
             }
         }
+        .id("day-section-\(day.id)")
     }
 
     @ViewBuilder
@@ -2064,6 +2173,84 @@ struct RecapBlogPageView: View {
 
     private var currentBlogKey: Int? {
         createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.blogKey
+    }
+
+    // MARK: - Split Logic
+
+    /// Splits a blog that hasn't been saved yet.
+    /// - Parameters:
+    ///   - afterDayIndex: The index of the day to split after.
+    ///   - keepPart: 1 to keep the first part (Days 1...afterDayIndex+1), 2 to keep the second part.
+    private func splitUnsavedBlog(afterDayIndex: Int, keepPart: Int) {
+        // We do a similar split to CreatedRecapBlogStore.splitBlog, but we just want to update `draft`
+        // and optionally save the part we keep, discarding the rest since it was never saved anyway.
+        // Actually, the user asked "we ask the user which blog they would like to create". 
+        // We will just keep the chosen part in the current view and discard the other part.
+        
+        var part1Days = Array(draft.days[0...afterDayIndex])
+        var part2Days = Array(draft.days[(afterDayIndex + 1)...])
+        
+        for i in part1Days.indices { part1Days[i].dayIndex = i }
+        for i in part2Days.indices { part2Days[i].dayIndex = i }
+
+        let baseTitle = draft.title
+            .replacingOccurrences(of: " \\(Part \\d+ of \\d+\\)", with: "", options: .regularExpression)
+            .replacingOccurrences(of: " \\(Episode \\d+ of \\d+\\)", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+
+        if keepPart == 1 {
+            draft.title = "\(baseTitle) (Part 1 of 2)"
+            draft.days = part1Days
+            
+            // Filter removed stops
+            let part1DayIds = Set(part1Days.map(\.id))
+            draft.removedPlaceStops = draft.removedPlaceStops.filter { part1DayIds.contains($0.dayId) }
+            
+        } else {
+            draft.title = "\(baseTitle) (Part 2 of 2)"
+            draft.days = part2Days
+            
+            // Adjust Cover Photo if needed
+            let part2CoverIdentifier = part2Days.first?.placeStops.first?.photos.first(where: \.isIncluded)?.localIdentifier
+            draft.selectedCoverPhotoIdentifier = part2CoverIdentifier
+            
+            // Filter removed stops
+            let part2DayIds = Set(part2Days.map(\.id))
+            draft.removedPlaceStops = draft.removedPlaceStops.filter { part2DayIds.contains($0.dayId) }
+        }
+        
+        // Auto-save the new draft state
+        createdRecapStore.saveBlogDetail(draft)
+        
+        // Ensure selectedDayIndex is valid
+        if selectedDayIndex >= draft.days.count {
+            selectedDayIndex = max(0, draft.days.count - 1)
+        }
+        
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+    }
+
+    /// Splits a blog that has already been saved/created (Edit Mode).
+    private func splitSavedBlog(afterDayIndex: Int) {
+        // We just call the store's split functionality on the current blogId and afterDayIndex.
+        createdRecapStore.splitBlog(blogId: blogId, afterDayIndex: afterDayIndex)
+        
+        // Since the current view is for `blogId`, which is now Part 1, we should refresh `draft`
+        if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
+            draft = updated
+            if selectedDayIndex >= draft.days.count {
+                selectedDayIndex = max(0, draft.days.count - 1)
+            }
+            
+            // Show the Undo Banner
+            withAnimation {
+                showSplitUndoBanner = true
+            }
+            
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.success)
+        }
     }
 
     private func uploadBlogPhotos() {
