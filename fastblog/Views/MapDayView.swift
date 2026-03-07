@@ -301,6 +301,24 @@ struct FullScreenMapView: View {
     @State private var photoModalCaptions: [UUID: String] = [:]
     /// Captions at the moment the modal was opened — used to diff on dismiss.
     @State private var photoModalCaptionsSnapshot: [UUID: String] = [:]
+    
+    @State private var selectedCategory: String? = nil
+
+    private var availableCategories: [String] {
+        let cats = day.placeStops
+            .compactMap { $0.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return Array(Set(cats)).sorted()
+    }
+
+    private var filteredStops: [PlaceStop] {
+        guard let cat = selectedCategory else { return day.placeStops }
+        return day.placeStops.filter { stop in
+            let lhs = (stop.placeCategory ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let rhs = cat.trimmingCharacters(in: .whitespacesAndNewlines)
+            return lhs.caseInsensitiveCompare(rhs) == .orderedSame
+        }
+    }
 
     private var focusedPlaceId: UUID? {
         guard day.placeStops.indices.contains(selectedPlaceIndex) else { return nil }
@@ -329,12 +347,12 @@ struct FullScreenMapView: View {
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
                 MapDayView(
-                    placeStops: day.placeStops,
+                    placeStops: filteredStops,
                     height: geo.size.height,
                     onTap: nil,
                     focusedPlaceId: focusedPlaceId,
                     onAnnotationTap: { stopId in
-                        guard let stop = day.placeStops.first(where: { $0.id == stopId }) else { return }
+                        guard let stop = filteredStops.first(where: { $0.id == stopId }) else { return }
                         openPhotoModal(for: stop)
                     }
                 )
@@ -352,8 +370,41 @@ struct FullScreenMapView: View {
                 .buttonStyle(.plain)
                 .padding(.top, 56)
                 .padding(.leading, 20)
+                .zIndex(2)
 
-                if !day.placeStops.isEmpty {
+                VStack(spacing: 8) {
+                    Text("Day \(day.dayIndex)")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial)
+                        .background(Color.black.opacity(0.4))
+                        .clipShape(Capsule())
+                        .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+
+                    if !availableCategories.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                chip(label: "All", isSelected: selectedCategory == nil) {
+                                    withAnimation { selectedCategory = nil; selectedPlaceIndex = 0 }
+                                }
+                                ForEach(availableCategories, id: \.self) { cat in
+                                    chip(label: categoryDisplayLabel(for: cat), isSelected: selectedCategory == cat) {
+                                        withAnimation { selectedCategory = (selectedCategory == cat) ? nil : cat; selectedPlaceIndex = 0 }
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                        }
+                    }
+                }
+                .padding(.top, 56)
+                .frame(maxWidth: .infinity, alignment: .top)
+                .zIndex(1)
+
+                if !filteredStops.isEmpty {
                     VStack {
                         Spacer()
                         placeCardsStrip(in: geo)
@@ -398,13 +449,76 @@ struct FullScreenMapView: View {
 
     @State private var scrolledPlaceID: UUID?
 
+    private func categoryDisplayLabel(for rawValue: String) -> String {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+
+        let cat = MKPointOfInterestCategory(rawValue: trimmed)
+        switch cat {
+        case .restaurant:      return "Restaurant"
+        case .cafe:            return "Café"
+        case .bakery:          return "Bakery"
+        case .winery:          return "Winery"
+        case .brewery:         return "Brewery"
+        case .nightlife:       return "Nightlife"
+        case .hotel:           return "Hotel"
+        case .campground:      return "Campground"
+        case .museum:          return "Museum"
+        case .movieTheater:    return "Movie Theater"
+        case .theater:         return "Theater"
+        case .amusementPark:   return "Amusement Park"
+        case .zoo:             return "Zoo"
+        case .aquarium:        return "Aquarium"
+        case .park:            return "Park"
+        case .beach:           return "Beach"
+        case .nationalPark:    return "National Park"
+        case .airport:         return "Airport"
+        case .publicTransport: return "Transit"
+        case .gasStation:      return "Gas Station"
+        case .hospital:        return "Hospital"
+        case .pharmacy:        return "Pharmacy"
+        case .fitnessCenter:   return "Fitness"
+        case .store:           return "Store"
+        case .foodMarket:      return "Market"
+        case .library:         return "Library"
+        case .school:          return "School"
+        case .university:      return "University"
+        case .marina:          return "Marina"
+        case .stadium:         return "Stadium"
+        case .bank:            return "Bank"
+        default: break
+        }
+
+        if trimmed.hasPrefix("MKPOICategory") {
+            let remainder = String(trimmed.dropFirst("MKPOICategory".count))
+            if remainder.isEmpty { return trimmed }
+            return remainder.replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression)
+        }
+        if trimmed.count <= 4 { return trimmed.uppercased() }
+        return trimmed
+    }
+
+    private func chip(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                .foregroundColor(isSelected ? .black : .white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(isSelected ? Color.white : Color(uiColor: .systemGray5).opacity(0.8))
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
     private func placeCardsStrip(in geo: GeometryProxy) -> some View {
         let cardWidth = min(geo.size.width * 0.80, 340)
         let cardHeight: CGFloat = 130
 
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 16) {
-                ForEach(Array(day.placeStops.enumerated()), id: \.element.id) { index, stop in
+                ForEach(Array(filteredStops.enumerated()), id: \.element.id) { index, stop in
                     Button {
                         openPhotoModal(for: stop)
                     } label: {
@@ -412,7 +526,7 @@ struct FullScreenMapView: View {
                             stop: stop,
                             stopNumber: index + 1,
                             isFirst: index == 0,
-                            isLast: index == day.placeStops.count - 1,
+                            isLast: index == filteredStops.count - 1,
                             isSelected: selectedPlaceIndex == index
                         )
                         .frame(width: cardWidth, height: cardHeight)
@@ -433,7 +547,7 @@ struct FullScreenMapView: View {
         .onChange(of: scrolledPlaceID) { _, newID in
             // Card snapped — update index and recenter map
             if let newID,
-               let newIndex = day.placeStops.firstIndex(where: { $0.id == newID }),
+               let newIndex = filteredStops.firstIndex(where: { $0.id == newID }),
                newIndex != selectedPlaceIndex {
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
                     selectedPlaceIndex = newIndex
@@ -442,13 +556,13 @@ struct FullScreenMapView: View {
         }
         .onChange(of: selectedPlaceIndex) { _, newIndex in
             // Annotation/button tap drives scroll position
-            if let id = day.placeStops[safe: newIndex]?.id, scrolledPlaceID != id {
+            if let id = filteredStops[safe: newIndex]?.id, scrolledPlaceID != id {
                 scrolledPlaceID = id
             }
         }
         .onAppear {
             // Seed initial scroll position to first card
-            scrolledPlaceID = day.placeStops.first?.id
+            scrolledPlaceID = filteredStops.first?.id
         }
         .frame(height: cardHeight + 20)
     }
