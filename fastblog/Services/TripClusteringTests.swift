@@ -2,7 +2,7 @@
 //  TripClusteringTests.swift
 //  Capper
 //
-//  Unit-like tests for Day→Trip clustering: merge/split rules and post-pass smoothing.
+//  Unit-like tests for Day→Trip clustering: gap rules and post-pass smoothing.
 //
 
 import CoreLocation
@@ -37,60 +37,60 @@ enum TripClusteringTests {
     }
 
     static func runAll() {
-        testAdjacentSameCountryMergesRegardlessOfDistance()
+        testAdjacentDaysMergeRegardlessOfCountry()
         testGap1To2DaysMergesWhenRulesPass()
-        testSameCountryMergesEvenIfFarApart()
-        testDifferentCountriesMergeWhenTripHasThreeOrFewerDays()
-        testDifferentCountriesSplitWhenTripHasMoreThanThreeDays()
+        testFarApartDaysMergeWhenGapPasses()
+        testDifferentCountriesStillMergeWhenGapPasses()
+        testLargeGapSplitsTrip()
         testHaversineSanity()
     }
 
-    /// Adjacent days, same country → should merge (no distance check).
-    static func testAdjacentSameCountryMergesRegardlessOfDistance() {
+    /// Adjacent days should merge regardless of country or distance.
+    static func testAdjacentDaysMergeRegardlessOfCountry() {
         let d1 = makeDay(dayOffset: 0, lat: 37.77, lon: -122.42, countryCode: "US", countryName: "United States", cityName: "SF")
-        let d2 = makeDay(dayOffset: 1, lat: 38.35, lon: -122.18, countryCode: "US", countryName: "United States", cityName: "Napa")
+        let d2 = makeDay(dayOffset: 1, lat: 48.85, lon: 2.35, countryCode: "FR", countryName: "France", cityName: "Paris")
         let result = DayToTripGrouper.groupDaysIntoTrips(days: [d1, d2], maxGapDaysToBridge: 2)
         assert(result.trips.count == 1, "expected 1 trip, got \(result.trips.count)")
         assert(result.trips[0].count == 2, "expected 2 days in trip")
     }
 
-    /// Gap of 1 day and 2 days between days, same country → should merge (bridge rule).
+    /// Gap of 1 day and 2 days between days should merge (bridge rule).
     static func testGap1To2DaysMergesWhenRulesPass() {
         let d1 = makeDay(dayOffset: 0, lat: 35.68, lon: 139.65, countryCode: "JP", cityName: "Tokyo")
-        let d2 = makeDay(dayOffset: 2, lat: 35.68, lon: 139.70, countryCode: "JP", cityName: "Tokyo")
+        let d2 = makeDay(dayOffset: 2, lat: 40.71, lon: -74.00, countryCode: "US", cityName: "New York")
         let gap = d1.dayGap(to: d2)
         assert(gap == 2, "gap should be 2, got \(gap)")
         let result = DayToTripGrouper.groupDaysIntoTrips(days: [d1, d2], maxGapDaysToBridge: 2)
         assert(result.trips.count == 1, "expected 1 trip with gap=2 bridge, got \(result.trips.count)")
     }
 
-    /// Same country, adjacent days, even far apart (e.g. Tokyo vs Osaka) → merge (no spatial split).
-    static func testSameCountryMergesEvenIfFarApart() {
+    /// Adjacent days, even far apart geographically, should still merge.
+    static func testFarApartDaysMergeWhenGapPasses() {
         let d1 = makeDay(dayOffset: 0, lat: 35.68, lon: 139.65, countryCode: "JP", cityName: "Tokyo", maxDistanceWithinDayMiles: 0)
         let d2 = makeDay(dayOffset: 1, lat: 34.69, lon: 135.50, countryCode: "JP", cityName: "Osaka", maxDistanceWithinDayMiles: 250)
         let result = DayToTripGrouper.groupDaysIntoTrips(days: [d1, d2], maxGapDaysToBridge: 2)
-        assert(result.trips.count == 1, "expected 1 trip (same country, no distance split), got \(result.trips.count)")
+        assert(result.trips.count == 1, "expected 1 trip (gap-only merge), got \(result.trips.count)")
     }
 
-    /// Two days in different countries with trip length ≤3 → merge (country separation only when trip > 3 days).
-    static func testDifferentCountriesMergeWhenTripHasThreeOrFewerDays() {
+    /// Different countries should still merge when the day gap passes.
+    static func testDifferentCountriesStillMergeWhenGapPasses() {
         let d1 = makeDay(dayOffset: 0, lat: 48.85, lon: 2.35, countryCode: "FR", cityName: "Paris")
         let d2 = makeDay(dayOffset: 1, lat: 48.90, lon: 2.40, countryCode: "DE", cityName: "Strasbourg")
         let result = DayToTripGrouper.groupDaysIntoTrips(days: [d1, d2], maxGapDaysToBridge: 2)
-        assert(result.trips.count == 1, "expected 1 trip (country separation only when > 3 days), got \(result.trips.count)")
+        assert(result.trips.count == 1, "expected 1 trip (country no longer splits), got \(result.trips.count)")
     }
 
-    /// Four days in FR then one in DE → split (current trip has > 3 days so country separation applies).
-    static func testDifferentCountriesSplitWhenTripHasMoreThanThreeDays() {
+    /// A gap larger than the configured bridge window should split.
+    static func testLargeGapSplitsTrip() {
         let d1 = makeDay(dayOffset: 0, lat: 48.85, lon: 2.35, countryCode: "FR", cityName: "Paris")
         let d2 = makeDay(dayOffset: 1, lat: 48.86, lon: 2.36, countryCode: "FR", cityName: "Paris")
-        let d3 = makeDay(dayOffset: 2, lat: 48.87, lon: 2.37, countryCode: "FR", cityName: "Paris")
-        let d4 = makeDay(dayOffset: 3, lat: 48.88, lon: 2.38, countryCode: "FR", cityName: "Paris")
-        let d5 = makeDay(dayOffset: 4, lat: 52.52, lon: 13.40, countryCode: "DE", cityName: "Berlin")
+        let d3 = makeDay(dayOffset: 5, lat: 52.52, lon: 13.40, countryCode: "DE", cityName: "Berlin")
+        let d4 = makeDay(dayOffset: 6, lat: 52.53, lon: 13.41, countryCode: "DE", cityName: "Berlin")
+        let d5 = makeDay(dayOffset: 7, lat: 52.54, lon: 13.42, countryCode: "DE", cityName: "Berlin")
         let result = DayToTripGrouper.groupDaysIntoTrips(days: [d1, d2, d3, d4, d5], maxGapDaysToBridge: 2)
-        assert(result.trips.count == 2, "expected 2 trips (4 days FR then DE → split), got \(result.trips.count)")
-        assert(result.trips[0].count == 4, "expected 4 days in first trip")
-        assert(result.trips[1].count == 1, "expected 1 day in second trip")
+        assert(result.trips.count == 2, "expected 2 trips when gap exceeds bridge window, got \(result.trips.count)")
+        assert(result.trips[0].count == 2, "expected 2 days in first trip")
+        assert(result.trips[1].count == 3, "expected 3 days in second trip")
     }
 
     static func testHaversineSanity() {

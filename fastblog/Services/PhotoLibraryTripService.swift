@@ -28,6 +28,25 @@ struct LibrarySummary {
     let monthCounts: [String: Int] // "2024-05": 12
 }
 
+private struct TripPlaceSummary {
+    let cityName: String?
+    let countryName: String?
+    let countryCode: String?
+
+    var title: String {
+        if let cityName, !cityName.isEmpty, let countryName, !countryName.isEmpty {
+            return "\(cityName), \(countryName)"
+        }
+        if let cityName, !cityName.isEmpty {
+            return cityName
+        }
+        if let countryName, !countryName.isEmpty {
+            return "\(countryName) Trip"
+        }
+        return "Unknown Trip"
+    }
+}
+
 /// Scans the photo library for the last 90 days and builds trip drafts.
 /// Only photos with valid location and strictly > minMiles from neighborhood center are included.
 /// Photos without location are excluded. When neighborhood is not set, no trips are returned.
@@ -179,9 +198,8 @@ final class PhotoLibraryTripService {
             return ScanResult(trips: [], totalFetched: totalFetched, excludedLocalCount: excludedWithin50Count + missingLocationCount, remainingForTripsCount: remainingForTripsCount)
         }
 
-        debugPrint("[Scan] Building day clusters (centroid geocoding, 1 call/day)...")
+        debugPrint("[Scan] Building day clusters (geometry only, no per-day geocoding)...")
         let dayClusters = await buildDayClusters(from: sortedDayGroups)
-        await GeocodingService.shared.flushCache()
         debugPrint("[Scan] Day clusters built: \(dayClusters.count). Starting trip grouping...")
         let debugLogging = TripClusteringDebug.isEnabled
         let groupingResult = DayToTripGrouper.groupDaysIntoTrips(
@@ -212,7 +230,8 @@ final class PhotoLibraryTripService {
             let firstDate = tripDays.first!.dayDate
             let lastDate = tripDays.last!.dayDate
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
-            let title = defaultTripTitle(for: tripDays)
+            let placeSummary = await buildTripPlaceSummary(for: tripDays)
+            let title = placeSummary.title
             var episodeLabel: String? = nil
             if let part = item.partNumber, let total = item.totalParts, total > 1 {
                 episodeLabel = "Episode \(part) of \(total)"
@@ -236,14 +255,11 @@ final class PhotoLibraryTripService {
                     let coord: PhotoCoordinate? = asset.location.map { loc in
                         PhotoCoordinate(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude)
                     }
-                    // Use day-level geocoded data from cluster — no per-photo geocoding during scan phase
-                    let placeName: String? = (!dayCluster.cityName.isEmpty && dayCluster.cityName != "?") ? dayCluster.cityName : nil
-                    let photoCountryName: String? = (!dayCluster.countryName.isEmpty && dayCluster.countryName != "Unknown") ? dayCluster.countryName : nil
                     return MockPhoto(
                         imageName: "photo",
                         timestamp: effectiveDate(for: asset),
-                        locationName: placeName,
-                        countryName: photoCountryName,
+                        locationName: placeSummary.cityName,
+                        countryName: placeSummary.countryName,
                         isSelected: false,
                         localIdentifier: asset.localIdentifier,
                         location: coord
@@ -253,9 +269,9 @@ final class PhotoLibraryTripService {
                     dayIndex: dayIndex + 1,
                     dateText: dateText,
                     photos: photos,
-                    countryCode: dayCluster.countryCode,
-                    countryName: dayCluster.countryName,
-                    cityName: dayCluster.cityName
+                    countryCode: placeSummary.countryCode,
+                    countryName: placeSummary.countryName,
+                    cityName: placeSummary.cityName
                 )
             }
 
@@ -343,7 +359,8 @@ final class PhotoLibraryTripService {
             let firstDate = tripDays.first!.dayDate
             let lastDate = tripDays.last!.dayDate
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
-            let title = defaultTripTitle(for: tripDays)
+            let placeSummary = await buildTripPlaceSummary(for: tripDays)
+            let title = placeSummary.title
             var episodeLabel: String? = nil
             if let part = item.partNumber, let total = item.totalParts, total > 1 {
                 episodeLabel = "Episode \(part) of \(total)"
@@ -365,14 +382,11 @@ final class PhotoLibraryTripService {
                     let coord = asset.location.map { loc in
                         PhotoCoordinate(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude)
                     }
-                    // Use day-level geocoded data from cluster — no per-photo geocoding during scan phase
-                    let placeName: String? = (!dayCluster.cityName.isEmpty && dayCluster.cityName != "?") ? dayCluster.cityName : nil
-                    let photoCountryName: String? = (!dayCluster.countryName.isEmpty && dayCluster.countryName != "Unknown") ? dayCluster.countryName : nil
                     return MockPhoto(
                         imageName: "photo",
                         timestamp: effectiveDate(for: asset),
-                        locationName: placeName,
-                        countryName: photoCountryName,
+                        locationName: placeSummary.cityName,
+                        countryName: placeSummary.countryName,
                         isSelected: false,
                         localIdentifier: asset.localIdentifier,
                         location: coord
@@ -382,9 +396,9 @@ final class PhotoLibraryTripService {
                     dayIndex: dayIndex + 1,
                     dateText: dateText,
                     photos: photos,
-                    countryCode: dayCluster.countryCode,
-                    countryName: dayCluster.countryName,
-                    cityName: dayCluster.cityName
+                    countryCode: placeSummary.countryCode,
+                    countryName: placeSummary.countryName,
+                    cityName: placeSummary.cityName
                 )
             }
 
@@ -501,7 +515,8 @@ final class PhotoLibraryTripService {
             let firstDate = tripDays.first!.dayDate
             let lastDate = tripDays.last!.dayDate
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
-            let title = defaultTripTitle(for: tripDays)
+            let placeSummary = await buildTripPlaceSummary(for: tripDays)
+            let title = placeSummary.title
             var episodeLabel: String? = nil
             if let part = item.partNumber, let total = item.totalParts, total > 1 {
                 episodeLabel = "Episode \(part) of \(total)"
@@ -523,13 +538,11 @@ final class PhotoLibraryTripService {
                     let coord: PhotoCoordinate? = asset.location.map { loc in
                         PhotoCoordinate(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude)
                     }
-                    let placeName: String? = (!dayCluster.cityName.isEmpty && dayCluster.cityName != "?") ? dayCluster.cityName : nil
-                    let photoCountryName: String? = (!dayCluster.countryName.isEmpty && dayCluster.countryName != "Unknown") ? dayCluster.countryName : nil
                     return MockPhoto(
                         imageName: "photo",
                         timestamp: effectiveDate(for: asset),
-                        locationName: placeName,
-                        countryName: photoCountryName,
+                        locationName: placeSummary.cityName,
+                        countryName: placeSummary.countryName,
                         isSelected: false,
                         localIdentifier: asset.localIdentifier,
                         location: coord
@@ -539,9 +552,9 @@ final class PhotoLibraryTripService {
                     dayIndex: dayIndex + 1,
                     dateText: dateText,
                     photos: photos,
-                    countryCode: dayCluster.countryCode,
-                    countryName: dayCluster.countryName,
-                    cityName: dayCluster.cityName
+                    countryCode: placeSummary.countryCode,
+                    countryName: placeSummary.countryName,
+                    cityName: placeSummary.cityName
                 )
             }
 
@@ -782,13 +795,13 @@ final class PhotoLibraryTripService {
         return finalGroups
     }
 
-    /// Builds DayCluster for each day group using centroid-only geocoding.
-    /// Geocodes only the coarsened day centroid (~1.1km grid) — 1 call per unique area per day
-    /// instead of 1 call per unique photo coordinate. Reduces geocoding calls by 10–50×.
+    /// Builds DayCluster for each day group using geometry only.
+    /// Reverse-geocoding is deferred until trips are formed so we only call the geocoder
+    /// once per trip instead of once per day.
     private func buildDayClusters(from dayGroups: [(date: Date, assets: [PHAsset])], progress: ((Double) -> Void)? = nil) async -> [DayCluster] {
         var clusters: [DayCluster] = []
         let total = dayGroups.count
-        debugPrint("[Scan] Building \(total) day clusters (centroid-only geocoding)...")
+        debugPrint("[Scan] Building \(total) day clusters (geometry only)...")
 
         for (idx, group) in dayGroups.enumerated() {
             let assetsWithLocation = group.assets.filter { $0.location != nil }
@@ -806,24 +819,7 @@ final class PhotoLibraryTripService {
             let n = Double(rawCoords.count)
             let dayCentroid = CLLocationCoordinate2D(latitude: latSum / n, longitude: lonSum / n)
 
-            // 2. Geocode ONLY the coarsened centroid (~1.1km grid).
-            // Days in the same city area share one cached result, cutting redundant API calls.
-            let coarseLat = (dayCentroid.latitude * 100).rounded() / 100
-            let coarseLon = (dayCentroid.longitude * 100).rounded() / 100
-            let centroidLocation = CLLocation(latitude: coarseLat, longitude: coarseLon)
-            let centroidPlace = await GeocodingService.shared.place(for: centroidLocation)
-            let countryCode = centroidPlace.isoCountryCode
-            let countryName = centroidPlace.countryName == "Unknown" ? "" : centroidPlace.countryName
-            let cityName: String
-            if !centroidPlace.cityName.isEmpty && centroidPlace.cityName != "Unknown Place" {
-                cityName = centroidPlace.cityName
-            } else if !centroidPlace.areaName.isEmpty && centroidPlace.areaName != "Unknown Place" {
-                cityName = centroidPlace.areaName
-            } else {
-                cityName = ""
-            }
-
-            // 3. Geographic spread via raw GPS — replaces geocoded city-centroid approach.
+            // 2. Geographic spread via raw GPS.
             // Sampling keeps the O(n²) max-distance check fast for large photo days.
             let sampleCoords: [CLLocationCoordinate2D]
             if rawCoords.count > 30 {
@@ -835,15 +831,15 @@ final class PhotoLibraryTripService {
             let maxDistanceWithinDayMiles = GeoDistanceHelper.maxPairwiseDistanceMiles(sampleCoords)
 
             if (idx + 1) % 5 == 0 || idx == 0 || total <= 5 {
-                debugPrint("[Scan] Day \(idx + 1)/\(total): \(cityName.isEmpty ? "?" : cityName), \(countryCode.isEmpty ? "?" : countryCode) spread=\(String(format: "%.1f", maxDistanceWithinDayMiles))mi (\(rawCoords.count) photos)")
+                debugPrint("[Scan] Day \(idx + 1)/\(total): spread=\(String(format: "%.1f", maxDistanceWithinDayMiles))mi (\(rawCoords.count) photos)")
             }
 
             clusters.append(DayCluster(
                 dayDate: group.date,
                 dayCentroid: dayCentroid,
-                countryCode: countryCode,
-                countryName: countryName,
-                cityName: cityName,
+                countryCode: "",
+                countryName: "",
+                cityName: "",
                 cityCentroids: [dayCentroid],
                 maxDistanceWithinDayMiles: maxDistanceWithinDayMiles,
                 assets: group.assets
@@ -858,22 +854,37 @@ final class PhotoLibraryTripService {
         return clusters
     }
 
-    /// Default trip title: "{TopCity}, {Country}" or "{TopCity} Area, {Country}" if multiple cities within 100 mi, or "{Country} Trip" if no city.
-    private func defaultTripTitle(for tripDays: [DayCluster]) -> String {
-        let allCities = tripDays.map(\.cityName).filter { !$0.isEmpty }
-        let countryName = tripDays.first?.countryName ?? "Unknown"
-        _ = tripDays.first?.countryCode ?? ""
-        if allCities.isEmpty {
-            return "\(countryName) Trip"
+    /// Reverse-geocodes the first location-bearing photo in the trip.
+    /// This avoids centroid drift for border crossings or multi-city trips.
+    private func buildTripPlaceSummary(for tripDays: [DayCluster]) async -> TripPlaceSummary {
+        let representativeAsset = tripDays
+            .flatMap { day in
+                day.assets.sorted { effectiveDate(for: $0) < effectiveDate(for: $1) }
+            }
+            .first { $0.location != nil }
+
+        guard let coordinate = representativeAsset?.location?.coordinate else {
+            return TripPlaceSummary(cityName: nil, countryName: nil, countryCode: nil)
         }
-        var cityCounts: [String: Int] = [:]
-        for c in allCities { cityCounts[c, default: 0] += 1 }
-        let topCity = cityCounts.max(by: { $0.value < $1.value })?.key ?? allCities[0]
-        let uniqueCities = Set(allCities)
-        if uniqueCities.count > 1 {
-            return "\(topCity) Area, \(countryName)"
+        let place = await GeocodingService.shared.place(
+            for: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        )
+
+        let cityName: String?
+        if !place.cityName.isEmpty && place.cityName != "Unknown Place" {
+            cityName = place.cityName
+        } else if !place.areaName.isEmpty && place.areaName != "Unknown Place" {
+            cityName = place.areaName
+        } else {
+            cityName = nil
         }
-        return "\(topCity), \(countryName)"
+
+        let countryName: String? = {
+            guard !place.countryName.isEmpty, place.countryName != "Unknown" else { return nil }
+            return place.countryName
+        }()
+        let countryCode: String? = place.isoCountryCode.isEmpty ? nil : place.isoCountryCode
+        return TripPlaceSummary(cityName: cityName, countryName: countryName, countryCode: countryCode)
     }
 
     // MARK: - Library Summary Scan

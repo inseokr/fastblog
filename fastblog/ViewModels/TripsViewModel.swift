@@ -132,6 +132,15 @@ final class TripsViewModel: ObservableObject {
         return "\(s)-\(e)"
     }
 
+    /// Keep a trip when any portion overlaps the visible window.
+    /// This preserves Episode 1 for long trips that start just before the window
+    /// but continue into it.
+    private func tripOverlapsWindow(_ trip: TripDraft, windowStart: Date, windowEnd: Date) -> Bool {
+        guard let start = trip.earliestDate else { return false }
+        let end = trip.latestDate ?? start
+        return end >= windowStart && start < windowEnd
+    }
+
     /// Apply a set of window-filtered trips: dedup against created blogs and saved drafts,
     /// then update `tripDrafts`, `currentWindowTrips`, and date bounds.
     /// Returns the number of trips that survived dedup (0 = empty).
@@ -346,10 +355,10 @@ final class TripsViewModel: ObservableObject {
                 }
             )
 
-            // Keep only trips whose earliestDate falls within the window.
+            // Keep trips that overlap the window so boundary-spanning split trips
+            // still show their first episode.
             let windowTrips = allTrips.filter { trip in
-                guard let earliest = trip.earliestDate else { return false }
-                return earliest >= windowStart
+                tripOverlapsWindow(trip, windowStart: windowStart, windowEnd: windowEnd)
             }
 
             // Cache the window-filtered results for instant restore later.
@@ -644,10 +653,9 @@ final class TripsViewModel: ObservableObject {
             )
             guard !Task.isCancelled else { return }
 
-            // Keep only trips whose earliestDate falls within the actual window [windowStart, windowEnd).
+            // Keep trips that overlap the actual window [windowStart, windowEnd).
             let windowTrips = allTrips.filter { trip in
-                guard let earliest = trip.earliestDate else { return false }
-                return earliest >= windowStart && earliest < windowEnd
+                tripOverlapsWindow(trip, windowStart: windowStart, windowEnd: windowEnd)
             }
 
             // Cache for instant restore on future visits.
@@ -716,10 +724,9 @@ final class TripsViewModel: ObservableObject {
             )
             guard !Task.isCancelled else { return }
 
-            // Keep only trips whose earliestDate falls within the actual window [windowStart, windowEnd).
+            // Keep trips that overlap the actual window [windowStart, windowEnd).
             let windowTrips = allTrips.filter { trip in
-                guard let earliest = trip.earliestDate else { return false }
-                return earliest >= windowStart && earliest < windowEnd
+                tripOverlapsWindow(trip, windowStart: windowStart, windowEnd: windowEnd)
             }
 
             // Cache for instant restore on future visits.

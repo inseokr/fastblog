@@ -2,7 +2,7 @@
 //  DayToTripGrouper.swift
 //  Capper
 //
-//  Groups Days into Trips by same country and calendar-day gap (no spatial distance). Deterministic: same input → same trips.
+//  Groups days into trips by calendar-day gap only. Deterministic: same input → same trips.
 //
 
 import CoreLocation
@@ -10,9 +10,8 @@ import Foundation
 
 /// Why a day merged or started a new trip (for debug logging).
 enum TripMergeReason: String {
-    case sameCountryPass = "same_country_pass"
+    case gapPass = "gap_pass"
     case gapTooLarge = "gap_too_large"
-    case differentCountry = "different_country"
     case firstDay = "first_day"
 }
 
@@ -23,12 +22,12 @@ struct DayToTripGroupingResult {
     let mergeReasons: [[TripMergeReason]]
 }
 
-/// Groups days into trips. Process days in chronological order; extend current trip if merge conditions pass.
+/// Groups days into trips. Process days in chronological order; extend current trip if the gap rule passes.
 enum DayToTripGrouper {
-    /// Groups `days` (must be sorted by dayDate ascending) into trips. Merge only by same country and gap ≤ maxGapDaysToBridge (no spatial distance). Applies post-pass smoothing for 1-day trips.
+    /// Groups `days` (must be sorted by dayDate ascending) into trips. Merge when gap ≤ maxGapDaysToBridge. Applies post-pass smoothing for 1-day trips.
     /// - Parameters:
     ///   - days: All day clusters sorted by dayDate.
-    ///   - maxGapDaysToBridge: Max calendar-day gap to allow merge (same country only).
+    ///   - maxGapDaysToBridge: Max calendar-day gap to allow merge.
     ///   - debugLogging: When true, mergeReasons are populated and reasons can be logged.
     static func groupDaysIntoTrips(
         days: [DayCluster],
@@ -53,18 +52,9 @@ enum DayToTripGrouper {
             let lastTrip = trips.count - 1
             let currentTripDays = trips[lastTrip]
             let tripLastDay = currentTripDays.last!
-            let tripCountryCode = tripLastDay.countryCode
             let gap = tripLastDay.dayGap(to: day)
-            let currentTripDayCount = currentTripDays.count
 
-            let (shouldMerge, reason) = shouldMergeDayIntoTrip(
-                candidate: day,
-                tripCountryCode: tripCountryCode,
-                gap: gap,
-                currentTripDayCount: currentTripDayCount,
-                maxGapDaysToBridge: maxGapDaysToBridge,
-                minTripDaysForCountrySeparation: ScanConfig.minTripDaysForCountrySeparation
-            )
+            let (shouldMerge, reason) = shouldMergeDayIntoTrip(gap: gap, maxGapDaysToBridge: maxGapDaysToBridge)
 
             if shouldMerge {
                 trips[lastTrip].append(day)
@@ -79,33 +69,25 @@ enum DayToTripGrouper {
             reasons = trips.map { _ in [] }
         }
 
-        // Post-pass: merge 1-day trips sandwiched between two trips in same country, gap ≤ maxGapDaysToBridge
+        // Post-pass: merge 1-day trips when adjacent trip gaps also satisfy the bridge rule.
         let smoothed = applyTripMergeSmoothing(trips: trips, maxGapDaysToBridge: maxGapDaysToBridge)
 
         return DayToTripGroupingResult(trips: smoothed, mergeReasons: reasons)
     }
 
-    /// Merge decision: should we add candidate day to the current trip? Country-based separation applies only when current trip has more than minTripDaysForCountrySeparation days.
+    /// Merge decision: should we add the candidate day to the current trip?
     /// - Returns: (merge: Bool, reason: TripMergeReason)
     static func shouldMergeDayIntoTrip(
-        candidate: DayCluster,
-        tripCountryCode: String,
         gap: Int,
-        currentTripDayCount: Int,
-        maxGapDaysToBridge: Int,
-        minTripDaysForCountrySeparation: Int = ScanConfig.minTripDaysForCountrySeparation
+        maxGapDaysToBridge: Int
     ) -> (Bool, TripMergeReason) {
         if gap > maxGapDaysToBridge {
             return (false, .gapTooLarge)
         }
-        // Only split by country when the current trip already has more than minTripDaysForCountrySeparation days.
-        if currentTripDayCount > minTripDaysForCountrySeparation && candidate.countryCode != tripCountryCode {
-            return (false, .differentCountry)
-        }
-        return (true, .sameCountryPass)
+        return (true, .gapPass)
     }
 
-    /// If a trip is only 1 day and is sandwiched between two trips in the same country with gap ≤ maxGapDaysToBridge, merge into previous trip.
+    /// If a trip is only 1 day and is adjacent to another trip within the bridge gap, merge it.
     static func applyTripMergeSmoothing(
         trips: [[DayCluster]],
         maxGapDaysToBridge: Int
@@ -125,8 +107,8 @@ enum DayToTripGrouper {
                 let prevLast = prevTrip?.last
                 let nextFirst = nextTrip?.first
 
-                let canMergePrev = prevLast.map { p in p.countryCode == single.countryCode && p.dayGap(to: single) <= maxGapDaysToBridge } ?? false
-                let canMergeNext = nextFirst.map { n in n.countryCode == single.countryCode && single.dayGap(to: n) <= maxGapDaysToBridge } ?? false
+                let canMergePrev = prevLast.map { p in p.dayGap(to: single) <= maxGapDaysToBridge } ?? false
+                let canMergeNext = nextFirst.map { n in single.dayGap(to: n) <= maxGapDaysToBridge } ?? false
 
                 if canMergePrev, let p = prevTrip {
                     result[i - 1] = p + [single]

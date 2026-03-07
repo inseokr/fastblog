@@ -2,23 +2,23 @@
 //  DayCluster.swift
 //  Capper
 //
-//  A single calendar day of photos with derived geo for Day→Trip clustering.
+//  A single calendar day of photos with geometry for day-to-trip clustering.
 //
 
 import CoreLocation
 import Foundation
 import Photos
 
-/// One day of photos with centroid and place metadata for clustering.
+/// One day of photos with centroid and lightweight metadata for clustering.
 struct DayCluster {
     /// Start of this calendar day (local timezone when available).
     var dayDate: Date
     /// Centroid of photo coordinates (weighted by count; or median).
     var dayCentroid: CLLocationCoordinate2D
-    /// ISO country code from geocoding (e.g. "US").
+    /// Optional trip-level geocoded country code can be copied here when needed.
     var countryCode: String
     var countryName: String
-    /// Primary city name (e.g. locality or subAdministrativeArea).
+    /// Optional trip-level city name.
     var cityName: String
     /// Representative city centroids when day has multiple cities (for max-distance check).
     var cityCentroids: [CLLocationCoordinate2D]
