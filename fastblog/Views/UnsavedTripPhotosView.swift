@@ -53,7 +53,7 @@ struct UnsavedTripPhotosView: View {
                         }
                         
                         ForEach(Array(trip.days.enumerated()), id: \.offset) { index, day in
-                            FilterPill(title: "Day \(day.dayIndex)", isSelected: selectedDayIndex == index) {
+                            FilterPill(title: "Day \(day.dayIndex + 1)", isSelected: selectedDayIndex == index) {
                                 selectedDayIndex = index
                             }
                         }

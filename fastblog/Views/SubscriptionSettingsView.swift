@@ -29,7 +29,7 @@ struct SubscriptionSettingsView: View {
         } header: {
             Text("Subscription")
         } footer: {
-            Text("When Pro expires, only your 5 blogs in the cloud remain. The rest are archived but still stored locally.")
+            Text("When Pro expires, your blogs within 500 MB of storage remain in the cloud. All blogs are still stored locally.")
         }
 
         // DEBUG-only mock entitlements section
@@ -240,8 +240,8 @@ private struct FreeTierDetailSheet: View {
 
                 // What Free includes
                 Section {
-                    featureRow(icon: "doc.on.doc", text: "5 blogs in the cloud (lifetime)")
-                    featureRow(icon: "square.and.arrow.up", text: "Sharing enabled for those 5 blogs")
+                    featureRow(icon: "doc.on.doc", text: "500 MB cloud storage")
+                    featureRow(icon: "square.and.arrow.up", text: "Sharing enabled for all blogs")
                     featureRow(icon: "pencil.slash", text: "Cloud blog editing disabled")
                 } header: {
                     Text("Free Tier Includes")
@@ -259,11 +259,9 @@ private struct FreeTierDetailSheet: View {
 
                 // What happens when Pro expires
                 Section {
-                    featureRow(icon: "clock.arrow.circlepath", text: "5 blogs in the cloud")
-                    featureRow(icon: "archivebox", text: "Older blogs become Archived")
-                    featureRow(icon: "eye", text: "Archived blogs are still visible locally")
-                    featureRow(icon: "link.badge.plus", text: "Share links disabled on archived blogs")
-                    featureRow(icon: "arrow.up.circle", text: "Reactivate by upgrading to Pro or buying Lifetime slots")
+                    featureRow(icon: "clock.arrow.circlepath", text: "500 MB storage kept")
+                    featureRow(icon: "eye", text: "All blogs still visible locally")
+                    featureRow(icon: "arrow.up.circle", text: "Upgrade to Pro for more storage")
                 } header: {
                     Text("When Pro Expires")
                 }

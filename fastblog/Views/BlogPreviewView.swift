@@ -69,7 +69,7 @@ struct BlogPreviewView: View {
 
     private func daySection(day: TripDay, photos: [MockPhoto]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Day \(day.dayIndex) – \(day.dateText)")
+            Text("Day \(day.dayIndex + 1) – \(day.dateText)")
                 .font(.title2)
                 .fontWeight(.semibold)
                 .foregroundColor(.primary)
