@@ -23,15 +23,18 @@ struct MapDayView: View {
     var focusedPlaceId: UUID? = nil
     /// Called when the user taps a place annotation on the map. Receives the stop's UUID.
     var onAnnotationTap: ((UUID) -> Void)? = nil
+    /// If true, suppress any green/orange "Start" or "End" visual styling on markers.
+    var hideStartEndMarkers: Bool = false
 
     @State private var cameraPosition: MapCameraPosition = .automatic
 
-    init(placeStops: [PlaceStop], height: CGFloat = 220, onTap: (() -> Void)? = nil, focusedPlaceId: UUID? = nil, onAnnotationTap: ((UUID) -> Void)? = nil) {
+    init(placeStops: [PlaceStop], height: CGFloat = 220, onTap: (() -> Void)? = nil, focusedPlaceId: UUID? = nil, onAnnotationTap: ((UUID) -> Void)? = nil, hideStartEndMarkers: Bool = false) {
         self.placeStops = placeStops
         self.height = height
         self.onTap = onTap
         self.focusedPlaceId = focusedPlaceId
         self.onAnnotationTap = onAnnotationTap
+        self.hideStartEndMarkers = hideStartEndMarkers
     }
 
     var body: some View {
@@ -42,8 +45,8 @@ struct MapDayView: View {
             }
             ForEach(Array(markers.enumerated()), id: \.element.id) { index, marker in
                 let placeNumber = index + 1
-                let isFirst = index == 0
-                let isLast = index == markers.count - 1
+                let isFirst = !hideStartEndMarkers && index == 0
+                let isLast = !hideStartEndMarkers && index == markers.count - 1
                 Annotation("", coordinate: marker.coordinate) {
                     PlaceMarkerView(
                         photo: marker.firstPhoto,
@@ -356,7 +359,8 @@ struct FullScreenMapView: View {
                     onAnnotationTap: { stopId in
                         guard let stop = filteredStops.first(where: { $0.id == stopId }) else { return }
                         openPhotoModal(for: stop)
-                    }
+                    },
+                    hideStartEndMarkers: selectedCategory != nil
                 )
                 .ignoresSafeArea(edges: .all)
 
@@ -541,8 +545,8 @@ struct FullScreenMapView: View {
                         PlaceMapCardView(
                             stop: stop,
                             stopNumber: index + 1,
-                            isFirst: index == 0,
-                            isLast: index == filteredStops.count - 1,
+                            isFirst: selectedCategory == nil && index == 0,
+                            isLast: selectedCategory == nil && index == filteredStops.count - 1,
                             isSelected: selectedPlaceIndex == index
                         )
                         .frame(width: cardWidth, height: cardHeight)
