@@ -422,6 +422,20 @@ final class CreatedRecapBlogStore: ObservableObject {
         pendingRecapCreated = true
         persistRecents()
         persistTripDrafts()
+
+        // If the trip just ended within the last 14 days the user may still be travelling.
+        // Track it so we can surface "new moments" popup when they re-open the app.
+        if let endDate = blog.tripEndDate {
+            let daysSinceEnd = Calendar.current.dateComponents([.day], from: endDate, to: Date()).day ?? Int.max
+            if daysSinceEnd <= 14 {
+                OnTheGoTripStore.markTripAsActive(
+                    blogId: blog.sourceTripId,
+                    title: blog.title,
+                    tripEndDate: endDate,
+                    country: blog.countryName
+                )
+            }
+        }
     }
 
     /// Dismiss the "Recap Blog has been created!" banner.

@@ -101,6 +101,14 @@ struct MyBlogsProfileView: View {
     @State private var createBlogFlowTrip: TripDraft?
     @State private var scrollOffset: CGFloat = 0
 
+    // On-the-go new-moments popup
+    @State private var showNewMomentsAlert = false
+    @State private var newMomentsAlertBlogTitle = ""
+    @State private var newMomentsAlertBlogId: UUID? = nil
+    @State private var newMomentsDayIndex: Int? = nil
+    /// Day index to open when navigating into a blog from the new-moments popup.
+    @State private var initialDayIndexForRecap: Int? = nil
+
     init(createdRecapStore: CreatedRecapBlogStore, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         _selectedCreatedRecap = selectedCreatedRecap
     }
@@ -203,8 +211,10 @@ struct MyBlogsProfileView: View {
         .navigationDestination(item: $selectedCreatedRecap) { recap in
             RecapBlogPageView(
                 blogId: recap.sourceTripId,
-                initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId)
+                initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId),
+                initialDayIndex: initialDayIndexForRecap
             )
+            .onAppear { initialDayIndexForRecap = nil }
         }
         .navigationDestination(item: $createBlogFlowTrip) { trip in
             CreateBlogFlowView(trip: trip, startDirectlyCreating: true) { _ in
@@ -228,7 +238,28 @@ struct MyBlogsProfileView: View {
             }
             .environmentObject(createdRecapStore)
         }
-        .onAppear { viewModel.loadUnsavedTrips() }
+        .onAppear {
+            viewModel.loadUnsavedTrips()
+            checkForNewMoments()
+        }
+        .alert(
+            "New moments added to \"\(newMomentsAlertBlogTitle)\"",
+            isPresented: $showNewMomentsAlert
+        ) {
+            Button("View") {
+                OnTheGoTripStore.clearNewMoments()
+                if let blogId = newMomentsAlertBlogId,
+                   let recap = createdRecapStore.displayRecents.first(where: { $0.sourceTripId == blogId }) {
+                    initialDayIndexForRecap = newMomentsDayIndex
+                    selectedCreatedRecap = recap
+                }
+            }
+            Button("Ok", role: .cancel) {
+                OnTheGoTripStore.clearNewMoments()
+            }
+        } message: {
+            Text("Your trip has new content since you last looked. Tap View to go to the latest day.")
+        }
         .onChange(of: currentPage) { _, _ in
             sharedSearchText = ""
             viewModel.searchText = ""
@@ -241,6 +272,17 @@ struct MyBlogsProfileView: View {
     }
 
     // MARK: - Page routing
+
+    private func checkForNewMoments() {
+        guard OnTheGoTripStore.hasNewMoments,
+              let blogId = OnTheGoTripStore.activeBlogId,
+              let title = OnTheGoTripStore.activeBlogTitle,
+              createdRecapStore.visibleRecents.contains(where: { $0.sourceTripId == blogId }) else { return }
+        newMomentsAlertBlogId = blogId
+        newMomentsAlertBlogTitle = title
+        newMomentsDayIndex = OnTheGoTripStore.newMomentsDayIndex
+        showNewMomentsAlert = true
+    }
 
     private var pageTitle: String {
         switch currentPage {

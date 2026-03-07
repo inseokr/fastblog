@@ -11,6 +11,8 @@ struct LandingView: View {
     @Binding var showProfile: Bool
     @Binding var showSeeAll: Bool
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
+    /// Passed back to ContentView so RecapBlogPageView opens at the right day.
+    @Binding var initialDayIndexForRecap: Int?
     @ObservedObject var tripsViewModel: TripsViewModel
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @EnvironmentObject private var authService: AuthService
@@ -30,7 +32,13 @@ struct LandingView: View {
     @State private var ctaOpacity: Double = 1
     /// Fade-in opacity for the CTA label on first launch. Starts hidden, fades in after the button appears.
     @State private var ctaTextOpacity: Double = 0
-    
+
+    // New-moments popup (on-the-go feature)
+    @State private var showNewMomentsAlert = false
+    @State private var newMomentsAlertBlogTitle = ""
+    @State private var newMomentsAlertBlogId: UUID? = nil
+    @State private var newMomentsAlertDayIndex: Int? = nil
+
     /// Per-user profile photo — loaded from authService on appear/user-change.
     @State private var avatarImageData: Data?
 
@@ -164,6 +172,28 @@ struct LandingView: View {
             })
             .environmentObject(authService)
         }
+        .alert(
+            "New moments added to \"\(newMomentsAlertBlogTitle)\"",
+            isPresented: $showNewMomentsAlert
+        ) {
+            Button("View") {
+                OnTheGoTripStore.clearNewMoments()
+                if let blogId = newMomentsAlertBlogId,
+                   let recap = createdRecapStore.displayRecents.first(where: { $0.sourceTripId == blogId }) {
+                    initialDayIndexForRecap = newMomentsAlertDayIndex
+                    selectedCreatedRecap = recap
+                }
+            }
+            Button("Ok", role: .cancel) {
+                OnTheGoTripStore.clearNewMoments()
+                // Proceed to Trips page so user can keep exploring
+                if !tripsViewModel.tripDrafts.isEmpty {
+                    showTrips = true
+                }
+            }
+        } message: {
+            Text("Your trip has new content since you last looked. Tap View to go to the latest day.")
+        }
         .animation(.easeInOut(duration: 0.3), value: showAuth)
         .onAppear {
             AppAnalytics.shared.trackEvent(name: "app_opened")
@@ -267,7 +297,16 @@ struct LandingView: View {
 
     private var scanCTA: some View {
         Button {
-            if tripsViewModel.tripDrafts.isEmpty {
+            // Check for on-the-go new moments first — only when the user already has a created blog.
+            if OnTheGoTripStore.hasNewMoments,
+               let blogId = OnTheGoTripStore.activeBlogId,
+               let title = OnTheGoTripStore.activeBlogTitle,
+               createdRecapStore.visibleRecents.contains(where: { $0.sourceTripId == blogId }) {
+                newMomentsAlertBlogId = blogId
+                newMomentsAlertBlogTitle = title
+                newMomentsAlertDayIndex = OnTheGoTripStore.newMomentsDayIndex
+                showNewMomentsAlert = true
+            } else if tripsViewModel.tripDrafts.isEmpty {
                 // Start scan — navigation will happen when scan finishes (via onChange below)
                 tripsViewModel.startDefaultScan()
                 pendingNavigateAfterScan = true
@@ -854,6 +893,7 @@ struct AllRecentsSheet: View {
             showProfile: .constant(false),
             showSeeAll: .constant(false),
             selectedCreatedRecap: .constant(nil),
+            initialDayIndexForRecap: .constant(nil),
             tripsViewModel: TripsViewModel(createdRecapStore: CreatedRecapBlogStore.shared)
         )
         .environmentObject(CreatedRecapBlogStore.shared)

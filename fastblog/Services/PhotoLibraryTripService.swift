@@ -45,6 +45,43 @@ final class PhotoLibraryTripService {
         self.radiusMiles = radiusMiles
     }
 
+#if DEBUG
+    private func debugDateString(_ date: Date?) -> String {
+        guard let date else { return "nil" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss ZZZZ"
+        return formatter.string(from: date)
+    }
+
+    /// Detailed ordering trace for one day bucket. Helps verify if inversion happens in
+    /// photo scan/grouping or later in UI rendering.
+    private func debugLogDayOrdering(dayLabel: String, assets: [PHAsset], source: String) {
+        guard !assets.isEmpty else { return }
+        let byEffective = assets.sorted { effectiveDate(for: $0) < effectiveDate(for: $1) }
+        let byCreation = assets.sorted { ($0.creationDate ?? .distantPast) < ($1.creationDate ?? .distantPast) }
+        let effectiveIds = byEffective.map(\.localIdentifier)
+        let creationIds = byCreation.map(\.localIdentifier)
+        let differs = effectiveIds != creationIds
+        debugPrint("[DayOrder][\(source)] \(dayLabel) assets=\(assets.count) effectiveDiffersFromCreation=\(differs)")
+        for (idx, asset) in byEffective.enumerated() {
+            let creation = asset.creationDate
+            let modification = asset.modificationDate
+            let effective = effectiveDate(for: asset)
+            let usedModification = creation.map { !calendar.isDate(effective, inSameDayAs: $0) } ?? false
+            let suffix = String(asset.localIdentifier.suffix(8))
+            debugPrint(
+                "[DayOrder][\(source)] #\(idx + 1) id=\(suffix) " +
+                "creation=\(debugDateString(creation)) " +
+                "modification=\(debugDateString(modification)) " +
+                "effective=\(debugDateString(effective)) " +
+                "usesModification=\(usedModification)"
+            )
+        }
+    }
+#endif
+
     /// Call when neighborhood center changes so the next scan is not served from stale cache.
     static func invalidateScanCache() {
         shared.cachedScanKey = nil
@@ -132,9 +169,7 @@ final class PhotoLibraryTripService {
         #endif
 
         // Sort by date ascending; group by calendar day then build DayClusters for Day→Trip grouping
-        let sortedByDate = remaining.sorted { (a, b) in
-            (a.creationDate ?? .distantPast) < (b.creationDate ?? .distantPast)
-        }
+        let sortedByDate = remaining.sorted { effectiveDate(for: $0) < effectiveDate(for: $1) }
         let dayGroups = await groupAssetsByDay(sortedByDate)
         let sortedDayGroups = dayGroups.sorted { $0.date < $1.date }
         debugPrint("[Scan] Grouped into \(sortedDayGroups.count) day groups")
@@ -189,7 +224,15 @@ final class PhotoLibraryTripService {
 
             let tripDaysModels: [TripDay] = tripDays.enumerated().map { dayIndex, dayCluster in
                 let dateText = formatter.string(from: dayCluster.dayDate)
-                let photos: [MockPhoto] = dayCluster.assets.map { asset in
+                let sortedDayAssets = dayCluster.assets.sorted { effectiveDate(for: $0) < effectiveDate(for: $1) }
+#if DEBUG
+                debugLogDayOrdering(
+                    dayLabel: "trip=\(tripIdx + 1) day=\(dayIndex + 1) dateText=\(dateText)",
+                    assets: sortedDayAssets,
+                    source: "scanLast90Days"
+                )
+#endif
+                let photos: [MockPhoto] = sortedDayAssets.map { asset in
                     let coord: PhotoCoordinate? = asset.location.map { loc in
                         PhotoCoordinate(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude)
                     }
@@ -198,7 +241,7 @@ final class PhotoLibraryTripService {
                     let photoCountryName: String? = (!dayCluster.countryName.isEmpty && dayCluster.countryName != "Unknown") ? dayCluster.countryName : nil
                     return MockPhoto(
                         imageName: "photo",
-                        timestamp: asset.creationDate ?? Date(),
+                        timestamp: effectiveDate(for: asset),
                         locationName: placeName,
                         countryName: photoCountryName,
                         isSelected: false,
@@ -274,9 +317,7 @@ final class PhotoLibraryTripService {
 
         guard !remaining.isEmpty else { return [] }
 
-        let sortedByDate = remaining.sorted { (a, b) in
-            (a.creationDate ?? .distantPast) < (b.creationDate ?? .distantPast)
-        }
+        let sortedByDate = remaining.sorted { effectiveDate(for: $0) < effectiveDate(for: $1) }
         let dayGroups = await groupAssetsByDay(sortedByDate)
         let sortedDayGroups = dayGroups.sorted { $0.date < $1.date }
         guard !sortedDayGroups.isEmpty else { return [] }
@@ -312,7 +353,15 @@ final class PhotoLibraryTripService {
 
             let tripDaysModels: [TripDay] = tripDays.enumerated().map { dayIndex, dayCluster in
                 let dateText = formatter.string(from: dayCluster.dayDate)
-                let photos: [MockPhoto] = dayCluster.assets.map { asset in
+                let sortedDayAssets = dayCluster.assets.sorted { effectiveDate(for: $0) < effectiveDate(for: $1) }
+#if DEBUG
+                debugLogDayOrdering(
+                    dayLabel: "trip=\(item.partNumber ?? 1) day=\(dayIndex + 1) dateText=\(dateText)",
+                    assets: sortedDayAssets,
+                    source: "scanFlexibleRange"
+                )
+#endif
+                let photos: [MockPhoto] = sortedDayAssets.map { asset in
                     let coord = asset.location.map { loc in
                         PhotoCoordinate(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude)
                     }
@@ -321,7 +370,7 @@ final class PhotoLibraryTripService {
                     let photoCountryName: String? = (!dayCluster.countryName.isEmpty && dayCluster.countryName != "Unknown") ? dayCluster.countryName : nil
                     return MockPhoto(
                         imageName: "photo",
-                        timestamp: asset.creationDate ?? Date(),
+                        timestamp: effectiveDate(for: asset),
                         locationName: placeName,
                         countryName: photoCountryName,
                         isSelected: false,
@@ -424,9 +473,7 @@ final class PhotoLibraryTripService {
 
         guard !remaining.isEmpty else { return [] }
 
-        let sortedByDate = remaining.sorted { (a, b) in
-            (a.creationDate ?? .distantPast) < (b.creationDate ?? .distantPast)
-        }
+        let sortedByDate = remaining.sorted { effectiveDate(for: $0) < effectiveDate(for: $1) }
         let dayGroups = await groupAssetsByDay(sortedByDate)
         let sortedDayGroups = dayGroups.sorted { $0.date < $1.date }
         guard !sortedDayGroups.isEmpty else { return [] }
@@ -464,7 +511,15 @@ final class PhotoLibraryTripService {
 
             let tripDaysModels: [TripDay] = tripDays.enumerated().map { dayIndex, dayCluster in
                 let dateText = formatter.string(from: dayCluster.dayDate)
-                let photos: [MockPhoto] = dayCluster.assets.map { asset in
+                let sortedDayAssets = dayCluster.assets.sorted { effectiveDate(for: $0) < effectiveDate(for: $1) }
+#if DEBUG
+                debugLogDayOrdering(
+                    dayLabel: "trip=\(item.partNumber ?? 1) day=\(dayIndex + 1) dateText=\(dateText)",
+                    assets: sortedDayAssets,
+                    source: "scanInDateRange"
+                )
+#endif
+                let photos: [MockPhoto] = sortedDayAssets.map { asset in
                     let coord: PhotoCoordinate? = asset.location.map { loc in
                         PhotoCoordinate(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude)
                     }
@@ -472,7 +527,7 @@ final class PhotoLibraryTripService {
                     let photoCountryName: String? = (!dayCluster.countryName.isEmpty && dayCluster.countryName != "Unknown") ? dayCluster.countryName : nil
                     return MockPhoto(
                         imageName: "photo",
-                        timestamp: asset.creationDate ?? Date(),
+                        timestamp: effectiveDate(for: asset),
                         locationName: placeName,
                         countryName: photoCountryName,
                         isSelected: false,
@@ -600,6 +655,30 @@ final class PhotoLibraryTripService {
         return "\(dayFormatter.string(from: firstDate)) – \(dayFormatter.string(from: lastDate))"
     }
 
+    /// Returns the date that best represents when a photo belongs in a trip timeline.
+    /// For photos that were received/imported from another device (e.g. AirDrop, Messages),
+    /// the creationDate is the original capture date (February) while modificationDate is
+    /// when it was saved to this device (March 6). In that case we return modificationDate
+    /// so the photo lands in the correct day bucket.
+    ///
+    /// We only switch to modificationDate when the gap is ≥ 28 days, which catches the
+    /// "received from a friend a month later" case without affecting photos that were merely
+    /// edited a few days after capture (where modificationDate is close to creationDate).
+    private func effectiveDate(for asset: PHAsset) -> Date {
+        guard let creation = asset.creationDate else {
+            return asset.modificationDate ?? .distantPast
+        }
+        guard let modification = asset.modificationDate,
+              modification > creation else {
+            return creation
+        }
+        let daysDiff = calendar.dateComponents([.day], from: creation, to: modification).day ?? 0
+        guard daysDiff >= 28, !calendar.isDate(modification, inSameDayAs: creation) else {
+            return creation
+        }
+        return modification
+    }
+
     /// Groups assets by calendar day, but handles late-night events (midnight bridge).
     /// Uses each photo's EXIF capture timezone (OffsetTimeOriginal) so that photos taken
     /// abroad are bucketed by the local date at the destination, not the device's timezone.
@@ -627,25 +706,44 @@ final class PhotoLibraryTripService {
             return cal
         }
 
-        // Initial grouping by local calendar day (using each photo's capture timezone)
-        var byDay: [Date: [PHAsset]] = [:]
+        // Initial grouping by local calendar day (using each photo's capture timezone).
+        // IMPORTANT: use a Y-M-D key instead of raw Date as dictionary key.
+        // If we keyed by raw Date (startOfDay in each asset's timezone), two different
+        // timezones can produce different Date values that still format to the same
+        // visible date in UI (e.g. "Mar 6"), leading to duplicate "Day N" labels.
+        // For photos whose modificationDate is on a different (later) day than creationDate
+        // (e.g. a photo taken in February but re-imported/edited on March 6), we still bucket
+        // by the photo's local/capture timezone. Using device timezone here can shift a
+        // "Mar 6 1:00 PM Los Angeles" edit into "Mar 7" when the device is ahead (e.g. Asia).
+        var byDay: [String: (date: Date, assets: [PHAsset])] = [:]
         for asset in assets {
-            guard let creation = asset.creationDate else { continue }
+            let effective = effectiveDate(for: asset)
+            guard effective != .distantPast else { continue }
             let cal = localCalendar(for: asset)
-            let startOfDay = cal.startOfDay(for: creation)
-            byDay[startOfDay, default: []].append(asset)
+            let comps = cal.dateComponents([.year, .month, .day], from: effective)
+            guard let year = comps.year, let month = comps.month, let day = comps.day else { continue }
+            let key = String(format: "%04d-%02d-%02d", year, month, day)
+            // Canonical day date in device calendar to keep display labels stable.
+            let canonicalDate = calendar.date(from: DateComponents(year: year, month: month, day: day, hour: 12))
+                ?? cal.startOfDay(for: effective)
+            if byDay[key] == nil {
+                byDay[key] = (date: canonicalDate, assets: [asset])
+            } else {
+                byDay[key]?.assets.append(asset)
+            }
         }
 
         // Sort dates to process sequentially
-        let sortedDates = byDay.keys.sorted()
+        let sortedDays = byDay.values.sorted { $0.date < $1.date }
 
         // We will build a new list of groups, potentially merging
         var finalGroups: [(date: Date, assets: [PHAsset])] = []
 
-        for date in sortedDates {
-            guard let assetsForDay = byDay[date] else { continue }
+        for day in sortedDays {
+            let date = day.date
+            let assetsForDay = day.assets
             // Sort assets for this day
-            let sortedAssets = assetsForDay.sorted { ($0.creationDate ?? .distantPast) < ($1.creationDate ?? .distantPast) }
+            let sortedAssets = assetsForDay.sorted { effectiveDate(for: $0) < effectiveDate(for: $1) }
 
             // Check if we can merge "early morning" photos to the PREVIOUS group
             if let lastGroup = finalGroups.last,
@@ -682,6 +780,19 @@ final class PhotoLibraryTripService {
                 finalGroups.append((date: date, assets: sortedAssets))
             }
         }
+
+#if DEBUG
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.dateFormat = "yyyy-MM-dd"
+        for (idx, group) in finalGroups.enumerated() {
+            debugLogDayOrdering(
+                dayLabel: "group=\(idx + 1) day=\(fmt.string(from: group.date))",
+                assets: group.assets,
+                source: "groupAssetsByDay"
+            )
+        }
+#endif
 
         return finalGroups
     }

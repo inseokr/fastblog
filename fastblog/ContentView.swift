@@ -13,6 +13,8 @@ struct ContentView: View {
     @State private var showSeeAll = false
     @State private var selectedCreatedRecap: CreatedRecapBlog?
     @State private var dismissToLandingRequested = false
+    /// Day index to open when navigating to a blog via the new-moments popup.
+    @State private var initialDayIndexForRecap: Int? = nil
     @AppStorage("blogify.justFinishedOnboarding") private var justFinishedOnboarding = false
 
     init() {
@@ -26,6 +28,7 @@ struct ContentView: View {
                 showProfile: $showProfile,
                 showSeeAll: $showSeeAll,
                 selectedCreatedRecap: $selectedCreatedRecap,
+                initialDayIndexForRecap: $initialDayIndexForRecap,
                 tripsViewModel: tripsViewModel
             )
             .navigationDestination(isPresented: $showTrips) {
@@ -49,8 +52,10 @@ struct ContentView: View {
                 if let recap = selectedCreatedRecap {
                     RecapBlogPageView(
                         blogId: recap.sourceTripId,
-                        initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId)
+                        initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId),
+                        initialDayIndex: initialDayIndexForRecap
                     )
+                    .onAppear { initialDayIndexForRecap = nil }
                 }
             }
         }

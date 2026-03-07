@@ -364,6 +364,49 @@ final class TripsViewModel: ObservableObject {
             earliestScannedDate = windowStart
             latestScannedDate = windowEnd
             scanState = .idle
+
+            // Check if the user has an active on-the-go blog and new moments were found.
+            detectNewMomentsForOnTheGoTrip(scannedDrafts: windowTrips)
+        }
+    }
+
+    /// After a default scan, check whether any scanned drafts are temporal continuations
+    /// of the user's currently active on-the-go blog.  When they are, signal new moments
+    /// so the next "Tap to Blog" tap shows the update popup.
+    private func detectNewMomentsForOnTheGoTrip(scannedDrafts: [TripDraft]) {
+        guard let activeBlogId = OnTheGoTripStore.activeBlogId,
+              OnTheGoTripStore.isTripStillOngoing() else {
+            // Trip has been over for too long — stop tracking.
+            if OnTheGoTripStore.activeBlogId != nil && !OnTheGoTripStore.isTripStillOngoing() {
+                OnTheGoTripStore.markTripAsEnded()
+            }
+            return
+        }
+
+        guard let activeBlog = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == activeBlogId }),
+              let blogEndDate = activeBlog.tripEndDate else { return }
+
+        let cal = Calendar.current
+        let blogCountry = (activeBlog.countryName ?? OnTheGoTripStore.tripCountry)?.lowercased()
+
+        // A continuation draft starts within 7 days of the blog's last day and
+        // belongs to the same country (when country info is available).
+        let continuationDrafts = scannedDrafts.filter { draft in
+            guard let earliest = draft.earliestDate else { return false }
+            let dayDiff = cal.dateComponents([.day], from: blogEndDate, to: earliest).day ?? Int.max
+            guard dayDiff >= 0 && dayDiff <= 7 else { return false }
+            if let bc = blogCountry, !bc.isEmpty,
+               let dc = draft.primaryCountryDisplayName?.lowercased(), !dc.isEmpty {
+                return bc == dc
+            }
+            // No country info on one side → accept by date proximity alone.
+            return true
+        }
+
+        if !continuationDrafts.isEmpty {
+            // Point the user at the last day of the existing blog.
+            let lastDayIndex = max(0, activeBlog.tripDurationDays - 1)
+            OnTheGoTripStore.signalNewMoments(dayIndex: lastDayIndex)
         }
     }
 

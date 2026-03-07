@@ -69,6 +69,31 @@ struct PhotoSelectView: View {
         return true
     }
 
+#if DEBUG
+    private func debugDateString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss ZZZZ"
+        return formatter.string(from: date)
+    }
+
+    private func debugLogVisiblePhotoOrder(context: String) {
+        guard !photos.isEmpty else {
+            print("[PhotoSelectOrder] \(context) photos=0")
+            return
+        }
+        print("[PhotoSelectOrder] \(context) photos=\(photos.count)")
+        for (idx, photo) in photos.enumerated() {
+            let suffix = photo.localIdentifier.map { String($0.suffix(8)) } ?? "nil"
+            print(
+                "[PhotoSelectOrder] #\(idx + 1) id=\(photo.id.uuidString.prefix(8)) " +
+                "assetSuffix=\(suffix) timestamp=\(debugDateString(photo.timestamp))"
+            )
+        }
+    }
+#endif
+
     var body: some View {
         ZStack {
             Color.black
@@ -114,6 +139,9 @@ struct PhotoSelectView: View {
             if currentPhotoId == nil {
                 currentPhotoId = photos.first?.id
             }
+#if DEBUG
+            debugLogVisiblePhotoOrder(context: "onAppear dayIndex=\(day.dayIndex) dateText=\(day.dateText)")
+#endif
         }
         .onChange(of: day.id) { _, _ in
             if let edge = scrollToEdgeAfterDayChange {
@@ -127,6 +155,9 @@ struct PhotoSelectView: View {
             } else {
                 currentPhotoId = photos.first?.id
             }
+#if DEBUG
+            debugLogVisiblePhotoOrder(context: "onChangeDay dayIndex=\(day.dayIndex) dateText=\(day.dateText)")
+#endif
         }
     }
 

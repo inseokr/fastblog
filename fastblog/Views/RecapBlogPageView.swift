@@ -119,10 +119,14 @@ struct RecapBlogPageView: View {
         }
     }
 
-    init(blogId: UUID, initialTrip: TripDraft?, forceEditMode: Bool = false) {
+    /// When set, the blog opens scrolled to this day index (0-based). Used by the "on the go" new-moments popup.
+    let initialDayIndex: Int?
+
+    init(blogId: UUID, initialTrip: TripDraft?, forceEditMode: Bool = false, initialDayIndex: Int? = nil) {
         self.blogId = blogId
         self.initialTrip = initialTrip
         self.forceEditMode = forceEditMode
+        self.initialDayIndex = initialDayIndex
         _draft = State(initialValue: RecapBlogDetail(id: blogId, title: "", days: [], coverTheme: "default"))
     }
 
@@ -536,9 +540,15 @@ struct RecapBlogPageView: View {
                     }
                 }
                 .onChange(of: hasFinishedInitialLoad) { _, finished in
-                    if finished && isEditMode {
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            proxy.scrollTo("page-top", anchor: .top)
+                    if finished {
+                        // Jump to a specific day when requested (e.g. from new-moments popup).
+                        if let idx = initialDayIndex, idx > 0, idx < draft.days.count {
+                            selectedDayIndex = idx
+                        }
+                        if isEditMode {
+                            withAnimation(.easeOut(duration: 0.3)) {
+                                proxy.scrollTo("page-top", anchor: .top)
+                            }
                         }
                     }
                 }
