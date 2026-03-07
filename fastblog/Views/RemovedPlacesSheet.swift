@@ -82,7 +82,7 @@ struct RemovedPlacesSheet: View {
             seen.insert(entry.dayId)
             let header: String
             if let day = draft.days.first(where: { $0.id == entry.dayId }) {
-                header = "Day \(day.dayIndex) · \(day.shortDateText)"
+                header = "Day \(day.dayIndex + 1) · \(day.shortDateText)"
             } else {
                 header = "Day \(entry.dayIndex)"
             }

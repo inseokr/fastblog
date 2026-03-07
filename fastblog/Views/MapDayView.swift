@@ -360,23 +360,23 @@ struct FullScreenMapView: View {
                 )
                 .ignoresSafeArea(edges: .all)
 
-                Button(action: onDismiss) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 40, height: 40)
-                        .background(Color.black.opacity(0.5))
-                        .clipShape(Circle())
-                        .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 56)
-                .padding(.leading, 20)
-                .zIndex(2)
+                // Top bar: Back button on left, Day info centered
+                HStack(alignment: .top) {
+                    Button(action: onDismiss) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 40, height: 40)
+                            .background(Color.black.opacity(0.5))
+                            .clipShape(Circle())
+                            .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
+                    }
+                    .buttonStyle(.plain)
 
-                VStack(spacing: 8) {
+                    Spacer()
+
                     VStack(spacing: 2) {
-                        Text("Day \(day.dayIndex)")
+                        Text("Day \(day.dayIndex + 1)")
                             .font(.headline)
                             .fontWeight(.bold)
                             .foregroundColor(.white)
@@ -388,8 +388,18 @@ struct FullScreenMapView: View {
                             .foregroundColor(.white.opacity(0.9))
                             .shadow(color: .black.opacity(0.8), radius: 2)
                     }
-                    .padding(.bottom, 8)
+                    .padding(.top, 4) // Slight visual tweak to center with the 40 height button
 
+                    Spacer()
+                    
+                    // Invisible spacer for symmetry so the title is perfectly centered
+                    Color.clear.frame(width: 40, height: 40)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 56)
+                .zIndex(2)
+
+                VStack(spacing: 8) {
                     if !availableCategories.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
@@ -406,7 +416,7 @@ struct FullScreenMapView: View {
                         }
                     }
                 }
-                .padding(.top, 74) // Moved down to avoid back button
+                .padding(.top, 110) // Push filters below the top bar
                 .frame(maxWidth: .infinity, alignment: .top)
                 .zIndex(1)
 
