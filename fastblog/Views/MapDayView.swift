@@ -306,17 +306,19 @@ struct FullScreenMapView: View {
 
     private var availableCategories: [String] {
         let cats = day.placeStops
-            .compactMap { $0.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+            .compactMap {
+                let cat = $0.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return cat.isEmpty ? "Others" : cat
+            }
         return Array(Set(cats)).sorted()
     }
 
     private var filteredStops: [PlaceStop] {
         guard let cat = selectedCategory else { return day.placeStops }
         return day.placeStops.filter { stop in
-            let lhs = (stop.placeCategory ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let rhs = cat.trimmingCharacters(in: .whitespacesAndNewlines)
-            return lhs.caseInsensitiveCompare(rhs) == .orderedSame
+            let rawCat = (stop.placeCategory ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let actualCat = rawCat.isEmpty ? "Others" : rawCat
+            return actualCat.caseInsensitiveCompare(cat) == .orderedSame
         }
     }
 
@@ -373,16 +375,20 @@ struct FullScreenMapView: View {
                 .zIndex(2)
 
                 VStack(spacing: 8) {
-                    Text("Day \(day.dayIndex)")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial)
-                        .background(Color.black.opacity(0.4))
-                        .clipShape(Capsule())
-                        .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                    VStack(spacing: 2) {
+                        Text("Day \(day.dayIndex)")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .shadow(color: .black.opacity(0.8), radius: 2)
+                        
+                        Text(day.shortDateText)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.9))
+                            .shadow(color: .black.opacity(0.8), radius: 2)
+                    }
+                    .padding(.bottom, 8)
 
                     if !availableCategories.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -400,7 +406,7 @@ struct FullScreenMapView: View {
                         }
                     }
                 }
-                .padding(.top, 56)
+                .padding(.top, 74) // Moved down to avoid back button
                 .frame(maxWidth: .infinity, alignment: .top)
                 .zIndex(1)
 
@@ -451,7 +457,7 @@ struct FullScreenMapView: View {
 
     private func categoryDisplayLabel(for rawValue: String) -> String {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "" }
+        if trimmed.isEmpty || trimmed == "Others" { return "Others" }
 
         let cat = MKPointOfInterestCategory(rawValue: trimmed)
         switch cat {
