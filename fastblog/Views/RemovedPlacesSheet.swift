@@ -84,7 +84,7 @@ struct RemovedPlacesSheet: View {
             if let day = draft.days.first(where: { $0.id == entry.dayId }) {
                 header = "Day \(day.dayIndex + 1) · \(day.shortDateText)"
             } else {
-                header = "Day \(entry.dayIndex)"
+                header = "Day \(entry.dayIndex + 1)"
             }
             let groupEntries = draft.removedPlaceStops.filter { $0.dayId == entry.dayId }
             ordered.append(DayGroup(id: entry.dayId, dayIndex: entry.dayIndex, header: header, entries: groupEntries))

@@ -266,7 +266,7 @@ final class PhotoLibraryTripService {
                     )
                 }
                 return TripDay(
-                    dayIndex: dayIndex + 1,
+                    dayIndex: dayIndex,
                     dateText: dateText,
                     photos: photos,
                     countryCode: placeSummary.countryCode,
@@ -393,7 +393,7 @@ final class PhotoLibraryTripService {
                     )
                 }
                 return TripDay(
-                    dayIndex: dayIndex + 1,
+                    dayIndex: dayIndex,
                     dateText: dateText,
                     photos: photos,
                     countryCode: placeSummary.countryCode,
@@ -549,7 +549,7 @@ final class PhotoLibraryTripService {
                     )
                 }
                 return TripDay(
-                    dayIndex: dayIndex + 1,
+                    dayIndex: dayIndex,
                     dateText: dateText,
                     photos: photos,
                     countryCode: placeSummary.countryCode,
