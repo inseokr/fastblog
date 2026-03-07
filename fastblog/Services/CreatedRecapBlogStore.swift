@@ -569,6 +569,13 @@ final class CreatedRecapBlogStore: ObservableObject {
         guard let idx = recents.firstIndex(where: { $0.sourceTripId == detail.id }) else { return }
         let old = recents[idx]
         let country = (detail.countryName.flatMap { $0.isEmpty || $0 == "Unknown" ? nil : $0 }) ?? old.countryName
+
+        // Use the dates from detail to accurately reflect removals/splits
+        let newStart = detail.days.first?.date ?? old.tripStartDate
+        let newEnd = detail.days.last?.date ?? old.tripEndDate
+        let newDateRange = Self.formatDateRange(start: newStart, end: newEnd) ?? old.tripDateRangeText
+        let newSelectedCount = detail.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
+
         recents[idx] = CreatedRecapBlog(
             id: old.id,
             sourceTripId: old.sourceTripId,
@@ -576,12 +583,12 @@ final class CreatedRecapBlogStore: ObservableObject {
             createdAt: old.createdAt,
             coverImageName: detail.coverTheme,
             coverAssetIdentifier: detail.selectedCoverPhotoIdentifier,
-            selectedPhotoCount: old.selectedPhotoCount,
+            selectedPhotoCount: newSelectedCount,
             countryName: country,
-            tripDateRangeText: old.tripDateRangeText,
+            tripDateRangeText: newDateRange,
             lastEditedAt: asDraft ? old.lastEditedAt : Date(),
-            tripStartDate: old.tripStartDate,
-            tripEndDate: old.tripEndDate,
+            tripStartDate: newStart,
+            tripEndDate: newEnd,
             totalPlaceVisitCount: detail.days.reduce(0) { $0 + $1.placeStops.count },
             tripDurationDays: detail.days.count,
             caption: primaryCaption(from: detail),
@@ -817,8 +824,8 @@ final class CreatedRecapBlogStore: ObservableObject {
         // 1. Split days
         var part1Days = Array(detail.days[0...afterDayIndex])
         var part2Days = Array(detail.days[(afterDayIndex + 1)...])
-        for i in part1Days.indices { part1Days[i].dayIndex = i }
-        for i in part2Days.indices { part2Days[i].dayIndex = i }
+        for i in part1Days.indices { part1Days[i].dayIndex = i + 1 }
+        for i in part2Days.indices { part2Days[i].dayIndex = i + 1 }
 
         // 2. Split removed place stops by day
         let part1DayIds = Set(part1Days.map(\.id))
@@ -935,6 +942,81 @@ final class CreatedRecapBlogStore: ObservableObject {
         blogDetailsBySourceId[newBlogId] = detail2
         persistRecents()
         persistBlogDetails()
+        persistTripDrafts()
+        needsRescan = true
+    }
+
+    /// Splits an unsaved trip draft into two, keeping one part for the current editor and preserving the other part as a new TripDraft.
+    func splitUnsavedTrip(tripId: UUID, afterDayIndex: Int, keepPart: Int) {
+        guard let trip = tripDraftsBySourceId[tripId],
+              afterDayIndex >= 0,
+              afterDayIndex < trip.days.count - 1 else {
+            return
+        }
+        
+        // 1. Split days
+        let splitIdx = afterDayIndex
+        var part1Days = Array(trip.days[0...splitIdx])
+        var part2Days = Array(trip.days[(splitIdx + 1)...])
+        for i in part1Days.indices { part1Days[i].dayIndex = i + 1 }
+        for i in part2Days.indices { part2Days[i].dayIndex = i + 1 }
+        
+        let baseTitle = trip.title
+            .replacingOccurrences(of: " \\(Part \\d+ of \\d+\\)", with: "", options: .regularExpression)
+            .replacingOccurrences(of: " \\(Episode \\d+ of \\d+\\)", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        
+        let title1 = "\(baseTitle) (Part 1 of 2)"
+        let title2 = "\(baseTitle) (Part 2 of 2)"
+        
+        // 2. Formulate the two TripDrafts
+        let start1 = part1Days.first?.photos.first?.timestamp
+        let end1 = part1Days.last?.photos.last?.timestamp
+        let dateRange1 = Self.formatDateRange(start: start1, end: end1) ?? ""
+        
+        var trip1 = trip
+        trip1.title = title1
+        trip1.days = part1Days
+        trip1.dateRangeText = dateRange1
+        trip1.episodeLabel = "Episode 1 of 2"
+        
+        let start2 = part2Days.first?.photos.first?.timestamp
+        let end2 = part2Days.last?.photos.last?.timestamp
+        let dateRange2 = Self.formatDateRange(start: start2, end: end2) ?? ""
+        
+        // Provide a cover image fallback for the second part
+        let part2CoverIdentifier = part2Days.first?.photos.first(where: \.isSelected)?.localIdentifier
+            ?? trip.coverAssetIdentifier
+        
+        let newTripId = UUID()
+        let trip2 = TripDraft(
+            id: newTripId,
+            title: title2,
+            dateRangeText: dateRange2,
+            days: part2Days,
+            coverImageName: trip.coverImageName,
+            isScannedFromDefaultRange: trip.isScannedFromDefaultRange,
+            coverTheme: trip.coverTheme,
+            coverAssetIdentifier: part2CoverIdentifier,
+            episodeLabel: "Episode 2 of 2"
+        )
+        
+        // 3. Assign the kept part to the original tripId, and the discarded part to the new ID.
+        if keepPart == 1 {
+            tripDraftsBySourceId[tripId] = trip1
+            tripDraftsBySourceId[newTripId] = trip2
+        } else {
+            // we want the editor (which continues using 'tripId') to have part 2.
+            var trip2WithOriginalID = trip2
+            trip2WithOriginalID.id = tripId
+            
+            var trip1WithNewID = trip1
+            trip1WithNewID.id = newTripId
+            
+            tripDraftsBySourceId[tripId] = trip2WithOriginalID
+            tripDraftsBySourceId[newTripId] = trip1WithNewID
+        }
+        
         persistTripDrafts()
         needsRescan = true
     }
