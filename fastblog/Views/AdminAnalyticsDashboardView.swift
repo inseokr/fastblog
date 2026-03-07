@@ -209,16 +209,15 @@ struct AdminAnalyticsDashboardView: View {
             if let f = stats.activationFunnel {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     metricCard(title: "Total Users", value: "\(f.totalUsers)")
-                    metricCard(title: "Users w/ Places", value: "\(f.usersWithPlaces)")
+                    metricCard(title: "Avg Places / User", value: stats.overview.avgPlacesPerUser)
+                    metricCard(title: "Total Cloud Blogs", value: "\(f.totalBlogs)")
                     metricCard(title: "Users w/ Blogs", value: "\(f.usersWithBlogs)")
-                    metricCard(title: "Users Published", value: "\(f.usersWhoPublished)")
+                    metricCard(title: "Users Uploaded", value: "\(f.usersWhoPublished)")
+                    metricCard(title: "Avg Blogs / User", value: f.avgBlogsPerUser)
                 }
-                
+
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Users → Places: \(f.placesConversionPct)%")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Text("Places → Blogs: \(f.blogsConversionPct)%")
+                    Text("Users → Blogs: \(f.blogsConversionPct)%")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                     Text("Blogs → Published: \(f.publishedConversionPct)%")
@@ -273,7 +272,16 @@ struct AdminAnalyticsDashboardView: View {
             Text("Feature Usage")
                 .font(.headline)
 
-            if let f = stats.featureUsage {
+            if let f = stats.featureUsage, let eq = stats.engagementQuality {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    metricCard(title: "Caption Writing", value: "\(f.captionWritingPct)%")
+                    metricCard(title: "Audio Recording", value: "\(f.audioRecordingPct)%")
+                    metricCard(title: "Place Renames", value: "\(f.placeRenamePct)%")
+                    metricCard(title: "Place Captions", value: "\(f.placeCaptionPct)%")
+                    metricCard(title: "Avg Renames / User", value: eq.avgRenamedPlacesPerUser)
+                    metricCard(title: "Total Renames", value: "\(eq.placesRenamed)")
+                }
+            } else if let f = stats.featureUsage {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     metricCard(title: "Caption Writing", value: "\(f.captionWritingPct)%")
                     metricCard(title: "Audio Recording", value: "\(f.audioRecordingPct)%")

@@ -221,11 +221,12 @@ struct BackendEngagementQuality: Decodable {
     let placesWithStory: Int
     let placeRenameRate: String
     let placesRenamed: Int
+    let avgRenamedPlacesPerUser: String
     let avgStoryLengthChars: String
 
     enum CodingKeys: String, CodingKey {
         case photosWithStoryPct, photosWithAudioPct, placeStoryRate
-        case placesWithStory, placeRenameRate, placesRenamed, avgStoryLengthChars
+        case placesWithStory, placeRenameRate, placesRenamed, avgRenamedPlacesPerUser, avgStoryLengthChars
     }
 
     init(from decoder: Decoder) throws {
@@ -241,6 +242,7 @@ struct BackendEngagementQuality: Decodable {
         placesWithStory = (try? container.decode(Int.self, forKey: .placesWithStory)) ?? 0
         placeRenameRate = decodeStringOrNumber(.placeRenameRate)
         placesRenamed = (try? container.decode(Int.self, forKey: .placesRenamed)) ?? 0
+        avgRenamedPlacesPerUser = decodeStringOrNumber(.avgRenamedPlacesPerUser)
         avgStoryLengthChars = decodeStringOrNumber(.avgStoryLengthChars)
     }
 }
@@ -279,12 +281,15 @@ struct BackendActivationFunnel: Decodable {
     let usersWithPlaces: Int
     let usersWithBlogs: Int
     let usersWhoPublished: Int
+    let totalBlogs: Int
+    let avgBlogsPerUser: String
     let placesConversionPct: String
     let blogsConversionPct: String
     let publishedConversionPct: String
 
     enum CodingKeys: String, CodingKey {
         case totalUsers, usersWithPlaces, usersWithBlogs, usersWhoPublished
+        case totalBlogs, avgBlogsPerUser
         case placesConversionPct, blogsConversionPct, publishedConversionPct
     }
 
@@ -294,11 +299,13 @@ struct BackendActivationFunnel: Decodable {
         usersWithPlaces = (try? container.decode(Int.self, forKey: .usersWithPlaces)) ?? 0
         usersWithBlogs = (try? container.decode(Int.self, forKey: .usersWithBlogs)) ?? 0
         usersWhoPublished = (try? container.decode(Int.self, forKey: .usersWhoPublished)) ?? 0
+        totalBlogs = (try? container.decode(Int.self, forKey: .totalBlogs)) ?? 0
         func decodeStringOrNumber(_ key: CodingKeys) -> String {
             if let s = try? container.decode(String.self, forKey: key) { return s }
             if let n = try? container.decode(Double.self, forKey: key) { return String(format: "%.1f", n) }
             return "0"
         }
+        avgBlogsPerUser = decodeStringOrNumber(.avgBlogsPerUser)
         placesConversionPct = decodeStringOrNumber(.placesConversionPct)
         blogsConversionPct = decodeStringOrNumber(.blogsConversionPct)
         publishedConversionPct = decodeStringOrNumber(.publishedConversionPct)
