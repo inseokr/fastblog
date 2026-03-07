@@ -6,30 +6,30 @@ let jsonString = """
   "accountType": "all",
   "data": {
     "activationFunnel": {
-      "totalUsers": 0,
-      "usersWithPlaces": 0,
-      "usersWithBlogs": 0,
-      "usersWhoPublished": 0,
-      "placesConversionPct": 0,
-      "blogsConversionPct": 0,
-      "publishedConversionPct": 0
+      "totalUsers": 12,
+      "usersWithPlaces": 10,
+      "usersWithBlogs": 8,
+      "usersWhoPublished": 5,
+      "placesConversionPct": 83.3,
+      "blogsConversionPct": 80.0,
+      "publishedConversionPct": 62.5
     },
     "retention": {
-      "d1Pct": 0,
-      "d7Pct": 0,
-      "d30Pct": 0,
-      "eligibleUsers": { "d1": 0, "d7": 0, "d30": 0 }
+      "d1Pct": 50.0,
+      "d7Pct": 25.0,
+      "d30Pct": 10.0,
+      "eligibleUsers": { "d1": 100, "d7": 100, "d30": 100 }
     },
     "stickiness": {
-      "secondBlogPct": 0,
-      "avgDaysSinceLastActive": 0,
-      "usersWithActivitySignal": 0
+      "secondBlogPct": 15.0,
+      "avgDaysSinceLastActive": 2.5,
+      "usersWithActivitySignal": 40
     },
     "featureUsage": {
-      "captionWritingPct": 0,
-      "audioRecordingPct": 0,
-      "placeRenamePct": 0,
-      "placeCaptionPct": 0
+      "captionWritingPct": 30.5,
+      "audioRecordingPct": 5.0,
+      "placeRenamePct": 12.0,
+      "placeCaptionPct": 2.2
     }
   }
 }
@@ -46,26 +46,9 @@ struct BackendDashboardAnalytics: Decodable {
     
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        do {
-            activationFunnel = try container.decode(BackendActivationFunnel.self, forKey: .activationFunnel)
-        } catch {
-            print("ActivationFunnel Error: \(error)")
-            activationFunnel = nil
-        }
-        
-        do {
-            retention = try container.decode(BackendRetention.self, forKey: .retention)
-        } catch {
-            print("Retention Error: \(error)")
-            retention = nil
-        }
-        
-        do {
-            featureUsage = try container.decode(BackendFeatureUsage.self, forKey: .featureUsage)
-        } catch {
-            print("FeatureUsage Error: \(error)")
-            featureUsage = nil
-        }
+        activationFunnel = try? container.decode(BackendActivationFunnel.self, forKey: .activationFunnel)
+        retention = try? container.decode(BackendRetention.self, forKey: .retention)
+        featureUsage = try? container.decode(BackendFeatureUsage.self, forKey: .featureUsage)
     }
 }
 
@@ -158,9 +141,9 @@ struct WrappedResponse: Decodable {
 let data = jsonString.data(using: .utf8)!
 do {
     let wrapped = try JSONDecoder().decode(WrappedResponse.self, from: data)
-    print("Decoded activationFunnel nil? \(wrapped.data?.activationFunnel == nil)")
-    print("Decoded retention nil? \(wrapped.data?.retention == nil)")
-    print("Decoded featureUsage nil? \(wrapped.data?.featureUsage == nil)")
+    print("Funnel: totalUsers=", wrapped.data?.activationFunnel?.totalUsers ?? -1)
+    print("Retention: d1Pct=", wrapped.data?.retention?.d1Pct ?? "nil")
+    print("Feature: audioRecordingPct=", wrapped.data?.featureUsage?.audioRecordingPct ?? "nil")
 } catch {
     print("Top level error: \(error)")
 }

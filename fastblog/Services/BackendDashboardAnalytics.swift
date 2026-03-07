@@ -10,12 +10,14 @@ struct BackendDashboardAnalytics: Decodable {
     let blogMetrics: BackendBlogMetrics?
     let activationFunnel: BackendActivationFunnel?
     let retention: BackendRetention?
+    let stickiness: BackendStickiness?
     let timeToFirstBlog: BackendTimeToFirstBlog?
+    let engagementQuality: BackendEngagementQuality?
     let featureUsage: BackendFeatureUsage?
 
     enum CodingKeys: String, CodingKey {
         case overview, poiAccuracy, geography, categories, topActiveUsers
-        case engagement, blogMetrics, activationFunnel, retention, timeToFirstBlog, featureUsage
+        case engagement, blogMetrics, activationFunnel, retention, stickiness, timeToFirstBlog, engagementQuality, featureUsage
     }
 
     init(from decoder: Decoder) throws {
@@ -29,7 +31,9 @@ struct BackendDashboardAnalytics: Decodable {
         blogMetrics = try? container.decode(BackendBlogMetrics.self, forKey: .blogMetrics)
         activationFunnel = try? container.decode(BackendActivationFunnel.self, forKey: .activationFunnel)
         retention = try? container.decode(BackendRetention.self, forKey: .retention)
+        stickiness = try? container.decode(BackendStickiness.self, forKey: .stickiness)
         timeToFirstBlog = try? container.decode(BackendTimeToFirstBlog.self, forKey: .timeToFirstBlog)
+        engagementQuality = try? container.decode(BackendEngagementQuality.self, forKey: .engagementQuality)
         featureUsage = try? container.decode(BackendFeatureUsage.self, forKey: .featureUsage)
     }
 }
@@ -168,19 +172,11 @@ struct BackendEngagement: Decodable {
     let audioCaptionPercentage: String
     let totalStories: Int
     let totalAudioCaptions: Int
-    let placesWithStory: Int
-    let placeStoryRate: String
-    let placesRenamed: Int
-    let placeRenameRate: String
-    let avgStoryLengthChars: String
 
     enum CodingKeys: String, CodingKey {
         case photosWithStoryPercentage = "photosWithStoryPct"
         case audioCaptionPercentage = "photosWithAudioPct"
         case totalStories, totalAudioCaptions
-        case placesWithStory, placeStoryRate
-        case placesRenamed, placeRenameRate
-        case avgStoryLengthChars
     }
 
     init(from decoder: Decoder) throws {
@@ -194,10 +190,36 @@ struct BackendEngagement: Decodable {
         audioCaptionPercentage = decodeStringOrNumber(.audioCaptionPercentage)
         totalStories = (try? container.decode(Int.self, forKey: .totalStories)) ?? 0
         totalAudioCaptions = (try? container.decode(Int.self, forKey: .totalAudioCaptions)) ?? 0
-        placesWithStory = (try? container.decode(Int.self, forKey: .placesWithStory)) ?? 0
+    }
+}
+
+struct BackendEngagementQuality: Decodable {
+    let photosWithStoryPct: String
+    let photosWithAudioPct: String
+    let placeStoryRate: String
+    let placesWithStory: Int
+    let placeRenameRate: String
+    let placesRenamed: Int
+    let avgStoryLengthChars: String
+
+    enum CodingKeys: String, CodingKey {
+        case photosWithStoryPct, photosWithAudioPct, placeStoryRate
+        case placesWithStory, placeRenameRate, placesRenamed, avgStoryLengthChars
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func decodeStringOrNumber(_ key: CodingKeys) -> String {
+            if let s = try? container.decode(String.self, forKey: key) { return s }
+            if let n = try? container.decode(Double.self, forKey: key) { return String(format: "%.1f", n) }
+            return "0"
+        }
+        photosWithStoryPct = decodeStringOrNumber(.photosWithStoryPct)
+        photosWithAudioPct = decodeStringOrNumber(.photosWithAudioPct)
         placeStoryRate = decodeStringOrNumber(.placeStoryRate)
-        placesRenamed = (try? container.decode(Int.self, forKey: .placesRenamed)) ?? 0
+        placesWithStory = (try? container.decode(Int.self, forKey: .placesWithStory)) ?? 0
         placeRenameRate = decodeStringOrNumber(.placeRenameRate)
+        placesRenamed = (try? container.decode(Int.self, forKey: .placesRenamed)) ?? 0
         avgStoryLengthChars = decodeStringOrNumber(.avgStoryLengthChars)
     }
 }
@@ -266,11 +288,9 @@ struct BackendRetention: Decodable {
     let d1Pct: String
     let d7Pct: String
     let d30Pct: String
-    let secondBlogPct: String
-    let avgDaysSinceLastActive: String
 
     enum CodingKeys: String, CodingKey {
-        case d1Pct, d7Pct, d30Pct, secondBlogPct, avgDaysSinceLastActive
+        case d1Pct, d7Pct, d30Pct
     }
 
     init(from decoder: Decoder) throws {
@@ -283,8 +303,28 @@ struct BackendRetention: Decodable {
         d1Pct = decodeStringOrNumber(.d1Pct)
         d7Pct = decodeStringOrNumber(.d7Pct)
         d30Pct = decodeStringOrNumber(.d30Pct)
+    }
+}
+
+struct BackendStickiness: Decodable {
+    let secondBlogPct: String
+    let avgDaysSinceLastActive: String
+    let usersWithActivitySignal: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case secondBlogPct, avgDaysSinceLastActive, usersWithActivitySignal
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func decodeStringOrNumber(_ key: CodingKeys) -> String {
+            if let s = try? container.decode(String.self, forKey: key) { return s }
+            if let n = try? container.decode(Double.self, forKey: key) { return String(format: "%.1f", n) }
+            return "0"
+        }
         secondBlogPct = decodeStringOrNumber(.secondBlogPct)
         avgDaysSinceLastActive = decodeStringOrNumber(.avgDaysSinceLastActive)
+        usersWithActivitySignal = try? container.decode(Int.self, forKey: .usersWithActivitySignal)
     }
 }
 
