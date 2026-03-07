@@ -260,12 +260,16 @@ final class TripsViewModel: ObservableObject {
             .sorted { $0.monthKey > $1.monthKey }
     }
 
-    /// Trips ordered newest first — reads from currentWindowTrips when a windowed scan
-    /// is active, otherwise falls back to the full visible draft list.
+    /// Trips ordered newest first — reads from the active window when present, but still
+    /// applies the same created/draft filtering so saved trips disappear immediately.
     var visibleDraftTripsNewestFirst: [TripDraft] {
         let source: [TripDraft]
         if let window = currentWindowTrips {
-            source = window
+            let saved = createdRecapStore.visibleRecents
+            source = window.filter { draft in
+                !createdRecapStore.hasCreatedBlog(sourceTripId: draft.id)
+                && !TripMatchingService.isTripSaved(draft: draft, against: saved)
+            }
         } else {
             source = visibleDraftTrips
         }
@@ -296,6 +300,7 @@ final class TripsViewModel: ObservableObject {
     /// Remove a trip from the list (e.g. after it was turned into a created blog). Keeps tripDrafts in sync.
     func removeTrip(id: UUID) {
         tripDrafts.removeAll { $0.id == id }
+        currentWindowTrips?.removeAll { $0.id == id }
     }
 
     init(createdRecapStore: CreatedRecapBlogStore) {

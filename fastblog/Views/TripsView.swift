@@ -97,8 +97,17 @@ struct TripsView: View {
         }
         .fullScreenCover(item: $createBlogFlowTrip) { trip in
             CreateBlogFlowView(trip: trip, startDirectlyCreating: true) { createdTripId in
+                viewModel.removeTrip(id: createdTripId)
                 createBlogFlowTrip = nil
                 selectedTrip = nil
+                let remainingTrips = viewModel.visibleDraftTripsNewestFirst
+                if selectedTripID == createdTripId {
+                    selectedTripID = remainingTrips.first?.id
+                    if let center = remainingTrips.first?.centerCoordinate {
+                        let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
+                        mapPosition = .region(MKCoordinateRegion(center: center, span: span))
+                    }
+                }
             }
             .environmentObject(CreatedRecapBlogStore.shared)
         }
