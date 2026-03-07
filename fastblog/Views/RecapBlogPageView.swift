@@ -975,8 +975,8 @@ struct RecapBlogPageView: View {
                 
                 Spacer()
                 
-                // Only show split icon if there are at least 2 days and this isn't the *last* day
-                if isEditMode, draft.days.count >= 2, let dayIdx = draft.days.firstIndex(where: { $0.id == day.id }), dayIdx < draft.days.count - 1 {
+                // Only show split icon if there are at least 2 days and this isn't the *first* day
+                if isEditMode, draft.days.count >= 2, let dayIdx = draft.days.firstIndex(where: { $0.id == day.id }), dayIdx > 0 {
                     Button {
                         dayIndexToSplit = dayIdx
                         showSplitActionSheet = true
@@ -998,17 +998,17 @@ struct RecapBlogPageView: View {
                             let isJustCreated = !createdRecapStore.hasCreatedBlog(sourceTripId: blogId)
                             
                             if isJustCreated {
-                                let part1Count = splitIdx + 1
+                                let part1Count = splitIdx
                                 let part2Count = draft.days.count - part1Count
                                 Button("Create Part 1 (Days 1–\(part1Count))") {
-                                    splitUnsavedBlog(afterDayIndex: splitIdx, keepPart: 1)
+                                    splitUnsavedBlog(afterDayIndex: splitIdx - 1, keepPart: 1)
                                 }
                                 Button("Create Part 2 (Days \(part1Count + 1)–\(draft.days.count))") {
-                                    splitUnsavedBlog(afterDayIndex: splitIdx, keepPart: 2)
+                                    splitUnsavedBlog(afterDayIndex: splitIdx - 1, keepPart: 2)
                                 }
                             } else {
                                 Button("Split Blog Here") {
-                                    splitSavedBlog(afterDayIndex: splitIdx)
+                                    splitSavedBlog(afterDayIndex: splitIdx - 1)
                                 }
                             }
                         }
@@ -1018,7 +1018,7 @@ struct RecapBlogPageView: View {
                     } message: {
                         if let splitIdx = dayIndexToSplit {
                             let isJustCreated = !createdRecapStore.hasCreatedBlog(sourceTripId: blogId)
-                            let part1Count = splitIdx + 1
+                            let part1Count = splitIdx
                             let part2Count = draft.days.count - part1Count
                             
                             if isJustCreated {
