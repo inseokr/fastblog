@@ -38,6 +38,10 @@ struct TripsView: View {
     @State private var tripCountBeforeOlderScan: Int = 0
     /// True when the blog creation flow was opened — tells the next scan completion to preserve scroll position.
     @State private var preserveScrollOnNextScan = false
+    /// Fallback trip ID precomputed when blog creation starts (while the trip is still in allTrips).
+    /// Used in the completion callback because createdRecapStore may have already filtered the trip
+    /// out of allTrips by the time the callback fires, making removedTripIndex unreliable.
+    @State private var nextTripIDAfterCreation: UUID? = nil
 
     init(viewModel: TripsViewModel, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         _viewModel = ObservedObject(wrappedValue: viewModel)
@@ -51,6 +55,15 @@ struct TripsView: View {
     /// All visible trips sorted newest first — flat list for carousel.
     private var allTrips: [TripDraft] {
         viewModel.visibleDraftTripsNewestFirst
+    }
+
+    /// Restore the user's last visible selection when possible; otherwise fall back to the first trip.
+    private func preferredTrip(from trips: [TripDraft]) -> TripDraft? {
+        if let savedID = viewModel.lastSelectedVisibleTripID,
+           let savedTrip = trips.first(where: { $0.id == savedID }) {
+            return savedTrip
+        }
+        return trips.first
     }
 
     /// Find the trip whose coordinate is closest to a given map center point.
@@ -97,22 +110,45 @@ struct TripsView: View {
         }
         .fullScreenCover(item: $createBlogFlowTrip) { trip in
             CreateBlogFlowView(trip: trip, startDirectlyCreating: true) { createdTripId in
-                viewModel.removeTrip(id: createdTripId)
-                createBlogFlowTrip = nil
-                selectedTrip = nil
-                let remainingTrips = viewModel.visibleDraftTripsNewestFirst
+                // Use the fallback precomputed when the flow opened. By the time this callback
+                // fires, createdRecapStore has already added the blog so the trip is filtered
+                // out of allTrips — making a live firstIndex lookup return nil and always
+                // landing on index 0 (the newest trip).
                 if selectedTripID == createdTripId {
-                    selectedTripID = remainingTrips.first?.id
-                    if let center = remainingTrips.first?.centerCoordinate {
+                    let fallbackID = nextTripIDAfterCreation
+                    let fallbackTrip = viewModel.visibleDraftTripsNewestFirst.first(where: { $0.id == fallbackID })
+                                    ?? viewModel.tripDrafts.first(where: { $0.id == fallbackID })
+                    selectedTripID = fallbackID
+                    viewModel.lastSelectedVisibleTripID = fallbackID
+                    if let center = fallbackTrip?.centerCoordinate {
                         let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
                         mapPosition = .region(MKCoordinateRegion(center: center, span: span))
                     }
                 }
+                viewModel.removeTrip(id: createdTripId)
+                createBlogFlowTrip = nil
+                selectedTrip = nil
             }
             .environmentObject(CreatedRecapBlogStore.shared)
         }
         .onChange(of: createBlogFlowTrip) { _, newTrip in
-            if newTrip != nil { preserveScrollOnNextScan = true }
+            if let trip = newTrip {
+                preserveScrollOnNextScan = true
+                // Snapshot the fallback position NOW while the trip is still in allTrips.
+                let trips = allTrips
+                if let idx = trips.firstIndex(where: { $0.id == trip.id }) {
+                    let remaining = trips.indices.filter { $0 != idx }.map { trips[$0] }
+                    if !remaining.isEmpty {
+                        nextTripIDAfterCreation = remaining[min(idx, remaining.count - 1)].id
+                    } else {
+                        nextTripIDAfterCreation = nil
+                    }
+                } else {
+                    nextTripIDAfterCreation = nil
+                }
+            } else {
+                nextTripIDAfterCreation = nil
+            }
         }
         .sheet(isPresented: $viewModel.showFindMoreSheet) {
             FindMoreTripsSheet(viewModel: viewModel)
@@ -282,11 +318,11 @@ struct TripsView: View {
                     // Re-scan triggered by returning from blog flow — keep the user's scroll position.
                     preserveScrollOnNextScan = false
                 } else {
-                    // Normal scan (initial load, Find More, etc.) — land on the newest trip.
+                    // Normal scan (initial load, Find More, etc.) — restore last position or land on newest trip.
                     let trips = allTrips
-                    if let firstTrip = trips.first {
-                        selectedTripID = firstTrip.id
-                        if let center = firstTrip.centerCoordinate {
+                    if let target = preferredTrip(from: trips) {
+                        selectedTripID = target.id
+                        if let center = target.centerCoordinate {
                             let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
                             mapPosition = .region(MKCoordinateRegion(center: center, span: span))
                         }
@@ -305,6 +341,9 @@ struct TripsView: View {
         }
         // Bi-directional sync: carousel scroll → map camera
         .onChange(of: selectedTripID) { _, newID in
+            if newID != nil {
+                viewModel.lastSelectedVisibleTripID = newID
+            }
             // Skip popup on the initial programmatic selection that happens in onAppear.
             // Only real user carousel swipes (not map-pan or initial load) should trigger it.
             guard didCompleteInitialSelection else {
@@ -371,13 +410,11 @@ struct TripsView: View {
             // Only set initial selection once — skip on re-appear (e.g. after fullScreenCover dismiss)
             guard selectedTripID == nil else { return }
             let trips = allTrips
-            if !trips.isEmpty {
-                // Set initial selection to newest trip
-                let firstTrip = trips.first
-                selectedTripID = firstTrip?.id
+            if let preferredTrip = preferredTrip(from: trips) {
+                selectedTripID = preferredTrip.id
 
-                // Center the map on the newest trip's coordinates
-                if let center = firstTrip?.centerCoordinate {
+                // Restore the last visible trip when possible; otherwise use the newest trip.
+                if let center = preferredTrip.centerCoordinate {
                     let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
                     mapPosition = .region(MKCoordinateRegion(center: center, span: span))
                 }
@@ -385,9 +422,9 @@ struct TripsView: View {
         }
         // Handle the case where trips arrive after onAppear (scan data published after scanState flips to idle)
         .onChange(of: viewModel.visibleDraftTripsNewestFirst) { _, newTrips in
-            guard selectedTripID == nil, let firstTrip = newTrips.first else { return }
-            selectedTripID = firstTrip.id
-            if let center = firstTrip.centerCoordinate {
+            guard selectedTripID == nil, let preferredTrip = preferredTrip(from: newTrips) else { return }
+            selectedTripID = preferredTrip.id
+            if let center = preferredTrip.centerCoordinate {
                 let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
                 mapPosition = .region(MKCoordinateRegion(center: center, span: span))
             }

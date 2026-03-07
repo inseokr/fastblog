@@ -21,6 +21,9 @@ final class TripsViewModel: ObservableObject {
     /// the display window is always a single, authoritative write, not a mutation of tripDrafts.
     /// When nil, falls back to the full visibleDraftTrips (default scan path).
     @Published var currentWindowTrips: [TripDraft]? = nil
+    /// Remembers the last selected trip in the carousel so selection survives view recreation
+    /// when navigating to a recap blog and back.
+    @Published var lastSelectedVisibleTripID: UUID? = nil
     @Published var scanState: MockScanState = .idle
     @Published var loadingMessage: String = "Loading Past Trips…"
     /// Progress of the initial default scan (0.0 → 1.0). Reset to 0 on each new scan.
