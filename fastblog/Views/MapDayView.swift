@@ -400,7 +400,7 @@ struct FullScreenMapView: View {
                     Color.clear.frame(width: 40, height: 40)
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 56)
+                .padding(.top, 44) // Moved up closer to the top edge
                 .zIndex(2)
 
                 VStack(spacing: 8) {
@@ -420,7 +420,7 @@ struct FullScreenMapView: View {
                         }
                     }
                 }
-                .padding(.top, 110) // Push filters below the top bar
+                .padding(.top, 98) // Push filters below the adjusted top bar
                 .frame(maxWidth: .infinity, alignment: .top)
                 .zIndex(1)
 
