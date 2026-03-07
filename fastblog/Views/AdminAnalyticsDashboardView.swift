@@ -82,6 +82,7 @@ struct AdminAnalyticsDashboardView: View {
                                 .padding()
                         } else if let stats = backendStats {
                             overviewSection(stats: stats)
+                            apiCostsSection(stats: stats)
                             activationFunnelSection(stats: stats)
                             retentionSection(stats: stats)
                             featureUsageSection(stats: stats)
@@ -99,6 +100,7 @@ struct AdminAnalyticsDashboardView: View {
                             .padding(.bottom, -8)
                         
                         systemHealthSection
+                        localSyncSection
                         funnelSection
                         captionAnalyticsSection
                         eventCountersSection
@@ -167,6 +169,30 @@ struct AdminAnalyticsDashboardView: View {
                 if let r = stats.retention {
                     metricCard(title: "Day 7 Retention", value: "\(r.d7Pct)%")
                 }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func apiCostsSection(stats: BackendDashboardAnalytics) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("AWS Costs & Storage Usage")
+                .font(.headline)
+            
+            if let costs = stats.apiCosts {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    metricCard(title: "AWS Monthly", value: costs.awsMonthlyCost)
+                    metricCard(title: "AWS Daily", value: costs.awsDailyCost)
+                    metricCard(title: "S3 Storage (PM)", value: costs.awsStorageGB)
+                    metricCard(title: "S3 Uploads (PM)", value: costs.awsPutsTotal)
+                }
+            } else {
+                Text("No AWS cost data available")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -374,6 +400,33 @@ struct AdminAnalyticsDashboardView: View {
         .background(Color(uiColor: .secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .onAppear { refreshCounters() }
+    }
+
+    private var localSyncSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Local Sync Status")
+                .font(.headline)
+
+            let totalLocalBlogs = createdRecapStore.recents.count
+            let cloudUploadedBlogs = createdRecapStore.recents.filter { 
+                $0.cloudState == .uploadedActive || $0.cloudState == .uploadedArchived 
+            }.count
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                metricCard(title: "Local Blogs", value: totalLocalBlogs)
+                metricCard(title: "Cloud Uploaded", value: cloudUploadedBlogs)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Device upload rate: \(percent(cloudUploadedBlogs, max(totalLocalBlogs, 1)))")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
     private var funnelSection: some View {

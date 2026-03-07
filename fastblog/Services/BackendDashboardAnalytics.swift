@@ -14,10 +14,11 @@ struct BackendDashboardAnalytics: Decodable {
     let timeToFirstBlog: BackendTimeToFirstBlog?
     let engagementQuality: BackendEngagementQuality?
     let featureUsage: BackendFeatureUsage?
+    let apiCosts: BackendApiCosts?
 
     enum CodingKeys: String, CodingKey {
         case overview, poiAccuracy, geography, categories, topActiveUsers
-        case engagement, blogMetrics, activationFunnel, retention, stickiness, timeToFirstBlog, engagementQuality, featureUsage
+        case engagement, blogMetrics, activationFunnel, retention, stickiness, timeToFirstBlog, engagementQuality, featureUsage, apiCosts
     }
 
     init(from decoder: Decoder) throws {
@@ -35,6 +36,26 @@ struct BackendDashboardAnalytics: Decodable {
         timeToFirstBlog = try? container.decode(BackendTimeToFirstBlog.self, forKey: .timeToFirstBlog)
         engagementQuality = try? container.decode(BackendEngagementQuality.self, forKey: .engagementQuality)
         featureUsage = try? container.decode(BackendFeatureUsage.self, forKey: .featureUsage)
+        apiCosts = try? container.decode(BackendApiCosts.self, forKey: .apiCosts)
+    }
+}
+
+struct BackendApiCosts: Decodable {
+    let awsMonthlyCost: String
+    let awsDailyCost: String
+    let awsStorageGB: String
+    let awsPutsTotal: String
+
+    enum CodingKeys: String, CodingKey {
+        case awsMonthlyCost, awsDailyCost, awsStorageGB, awsPutsTotal
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        awsMonthlyCost = (try? container.decode(String.self, forKey: .awsMonthlyCost)) ?? "$0.00"
+        awsDailyCost = (try? container.decode(String.self, forKey: .awsDailyCost)) ?? "$0.00"
+        awsStorageGB = (try? container.decode(String.self, forKey: .awsStorageGB)) ?? "0.0 GB"
+        awsPutsTotal = (try? container.decode(String.self, forKey: .awsPutsTotal)) ?? "0 uploads"
     }
 }
 
