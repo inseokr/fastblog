@@ -103,9 +103,7 @@ struct PlaceCaptionEditSheet: View {
         }
         .onAppear {
             editedText = caption
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                isFocused = true
-            }
+            isFocused = true
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)

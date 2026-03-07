@@ -226,7 +226,9 @@ struct AdminAnalyticsDashboardView: View {
                     metricCard(title: "Day 1 Retention", value: "\(r.d1Pct)%")
                     metricCard(title: "Day 7 Retention", value: "\(r.d7Pct)%")
                     metricCard(title: "Day 30 Retention", value: "\(r.d30Pct)%")
-                    metricCard(title: "Created 2nd Blog", value: "\(r.secondBlogPct)%")
+                    if let s = stats.stickiness {
+                        metricCard(title: "Created 2nd Blog", value: "\(s.secondBlogPct)%")
+                    }
                 }
             } else {
                 Text("No retention data")

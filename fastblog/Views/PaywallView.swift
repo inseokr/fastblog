@@ -142,7 +142,7 @@ struct PaywallView: View {
                     .font(.headline)
                     .foregroundColor(.white.opacity(0.6))
                 
-                FeatureRow(text: "5 lifetime blogs", isPro: false)
+                FeatureRow(text: "500 MB cloud storage", isPro: false)
                 FeatureRow(text: "Limited editing", isPro: false)
             }
             .padding(20)
@@ -161,7 +161,7 @@ struct PaywallView: View {
                 .kerning(1)
             
             HStack(spacing: 20) {
-                ExpireItem(icon: "checkmark.circle.fill", text: "5 blogs in the cloud")
+                ExpireItem(icon: "checkmark.circle.fill", text: "500 MB storage kept")
                 ExpireItem(icon: "archivebox.fill", text: "Old blogs archived")
                 ExpireItem(icon: "eye.fill", text: "Visible locally")
             }

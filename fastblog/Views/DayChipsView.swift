@@ -15,7 +15,7 @@ struct DayChipsView: View {
                 HStack(spacing: 8) {
                     ForEach(Array(days.enumerated()), id: \.element.id) { index, day in
                         DayChip(
-                            title: "Day \(day.dayIndex)",
+                            title: "Day \(day.dayIndex + 1)",
                             isSelected: selectedIndex == index
                         ) {
                             withAnimation(.easeInOut(duration: 0.2)) {

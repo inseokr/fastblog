@@ -91,10 +91,8 @@ final class EntitlementManager: ObservableObject {
         return false
     }
 
-    /// Free tier allows 5 active public cloud blogs.
-    static let freeTierLimit = 5
-    /// Free tier storage cap: 1GB in bytes.
-    static let freeTierStorageLimit: Int64 = 1073741824
+    /// Free tier storage cap: 500 MB in bytes.
+    static let freeTierStorageLimit: Int64 = 524_288_000
 
     var isFreeTier: Bool { !isProActive }
 
@@ -107,10 +105,9 @@ final class EntitlementManager: ObservableObject {
         return slots
     }
 
-    /// Total allowed active blogs: Pro = unlimited, Free = 5 + lifetime slots.
+    /// Total allowed active blogs: unlimited for all tiers (storage-based limit only).
     var activeCloudBlogLimit: Int? {
-        if isProActive { return nil } // unlimited
-        return Self.freeTierLimit + effectiveLifetimeSlots
+        return nil // No blog count limit; storage cap is the constraint
     }
 
     /// Human-readable plan name for Settings display.
@@ -267,12 +264,9 @@ final class EntitlementManager: ObservableObject {
         saveToDefaults()
     }
 
-    /// Check if a specific blog has entitlement (Pro active, or within free limit, or has lifetime slot).
+    /// Check if a specific blog has entitlement (all uploaded blogs are entitled; storage is the limit).
     func blogHasEntitlement(blogID: UUID, blogIndex: Int) -> Bool {
-        if isProActive { return true }
-        if lifetimeAllocatedBlogIDs.contains(blogID) { return true }
-        if blogIndex < Self.freeTierLimit { return true }
-        return false
+        return true
     }
 
     /// Whether sharing is allowed for a given blog.
