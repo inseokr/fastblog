@@ -525,33 +525,12 @@ final class CreatedRecapBlogStore: ObservableObject {
     }
 
     /// Enforces cloud storage limits based on entitlements.
+    /// No blog count limit — all uploaded blogs stay active. Storage cap is the constraint.
     func enforceArchiveRules() {
-        let limit = EntitlementManager.shared.activeCloudBlogLimit
-        guard let maxCloud = limit else {
-            // Pro user: ensure all uploaded blogs are uploadedActive
-            var changed = false
-            for i in recents.indices where recents[i].cloudState == .uploadedArchived {
-                recents[i].cloudState = .uploadedActive
-                changed = true
-            }
-            if changed { persistRecents() }
-            return
-        }
-
-        // Free tier: sort uploaded blogs by date and archive those beyond the limit
-        let uploadedBlogs = recents.filter { $0.cloudState != .localOnly }.sorted { $0.createdAt > $1.createdAt }
         var changed = false
-        for (index, blog) in uploadedBlogs.enumerated() {
-            guard let idx = recents.firstIndex(where: { $0.id == blog.id }) else { continue }
-
-            let hasLifetime = EntitlementManager.shared.lifetimeAllocatedBlogIDs.contains(blog.sourceTripId)
-            let isWithinLimit = index < maxCloud
-
-            let targetState: CloudState = (isWithinLimit || hasLifetime) ? .uploadedActive : .uploadedArchived
-            if recents[idx].cloudState != targetState {
-                recents[idx].cloudState = targetState
-                changed = true
-            }
+        for i in recents.indices where recents[i].cloudState == .uploadedArchived {
+            recents[i].cloudState = .uploadedActive
+            changed = true
         }
         if changed { persistRecents() }
     }

@@ -140,9 +140,12 @@ struct RecapBlogPageView: View {
             .fullScreenCover(isPresented: $showUploadingFullScreen) {
                 UploadingBlogView(uploadProgress: $uploadProgress, onCancel: cancelUpload)
             }
-            .alert("Upload Failed", isPresented: $showUploadErrorAlert) {
-                if uploadErrorMessage == "Cloud storage limit reached.\nRemove a published blog to continue." {
-                    Button("Manage") {
+            .alert(
+                uploadErrorMessage.contains("storage is full") ? "Storage Full" : "Upload Failed",
+                isPresented: $showUploadErrorAlert
+            ) {
+                if uploadErrorMessage.contains("storage is full") {
+                    Button("Manage Blogs") {
                         showProfileManagement = true
                     }
                     Button("OK", role: .cancel) { }
@@ -1970,7 +1973,7 @@ struct RecapBlogPageView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 60, height: 60)
-                .foregroundColor(.blue)
+                .foregroundColor(.white)
 
             VStack(spacing: 8) {
                 Text("Your First Upload!")
@@ -2171,26 +2174,13 @@ struct RecapBlogPageView: View {
             return
         }
 
-        // 🚨 Free Tier Guardrails
+        // 🚨 Free Tier Guardrails — storage-based limit only
         if EntitlementManager.shared.isFreeTier {
-            // 1. Storage Limit Check
             let currentUsage = AuthService.shared.currentUser?.storageUsedBytes ?? 0
             if currentUsage >= EntitlementManager.freeTierStorageLimit {
-                uploadErrorMessage = "Cloud storage limit reached.\nRemove a published blog to continue."
+                uploadErrorMessage = "Your storage is full.\nRemove an old blog to upload new ones."
                 showUploadErrorAlert = true
                 return
-            }
-            
-            // 2. Active Cloud Blogs Check
-            if let maxCloud = EntitlementManager.shared.activeCloudBlogLimit {
-                let currentCloudCount = createdRecapStore.visibleRecents.filter { $0.cloudState != .localOnly }.count
-                let isThisBlogAlreadyInCloud = (createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == blogId })?.cloudState ?? .localOnly) != .localOnly
-                
-                if !isThisBlogAlreadyInCloud && currentCloudCount >= maxCloud {
-                    uploadErrorMessage = "Cloud storage limit reached.\nRemove a published blog to continue."
-                    showUploadErrorAlert = true
-                    return
-                }
             }
         }
 
