@@ -1373,6 +1373,7 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Builds blog detail, resolves place names from reverse-geocoding, generates a title, and scores photos via Vision AI.
     func buildBlogDetailAsync(from trip: TripDraft) async -> RecapBlogDetail {
+        let calendar = Calendar.current
         var detail = buildBlogDetail(from: trip)
         var cityCandidates: [(city: String, order: Int)] = []
         var countryCandidates: [(country: String, order: Int)] = []
@@ -1487,6 +1488,18 @@ final class CreatedRecapBlogStore: ObservableObject {
                 let digitized = APIManager.digitizedTimeString(from: date, timeZone: tz)
                 print("[buildBlogDetail] ✅ '\(stop.placeTitle)': visitedTimeDigitized=\(digitized), tz=\(tz.identifier) (votes: \(stopOffsets.count))")
                 detail.days[dayIdx].placeStops[stopIdx].visitedTimeDigitized = digitized
+            }
+
+            let digitizedFormatter = DateFormatter()
+            digitizedFormatter.locale = Locale(identifier: "en_US_POSIX")
+            digitizedFormatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
+            digitizedFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+
+            if let earliestStopDate = detail.days[dayIdx].placeStops
+                .compactMap(\.visitedTimeDigitized)
+                .compactMap({ digitizedFormatter.date(from: $0) })
+                .min() {
+                detail.days[dayIdx].date = calendar.startOfDay(for: earliestStopDate)
             }
         }
 

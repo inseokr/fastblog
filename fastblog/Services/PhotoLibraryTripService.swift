@@ -656,27 +656,16 @@ final class PhotoLibraryTripService {
     }
 
     /// Returns the date that best represents when a photo belongs in a trip timeline.
-    /// For photos that were received/imported from another device (e.g. AirDrop, Messages),
-    /// the creationDate is the original capture date (February) while modificationDate is
-    /// when it was saved to this device (March 6). In that case we return modificationDate
-    /// so the photo lands in the correct day bucket.
     ///
-    /// We only switch to modificationDate when the gap is ≥ 28 days, which catches the
-    /// "received from a friend a month later" case without affecting photos that were merely
-    /// edited a few days after capture (where modificationDate is close to creationDate).
+    /// Trip grouping and recap headings should be based on when the photo was actually
+    /// captured, not when it was later edited or re-imported into the library. Using
+    /// modificationDate here can shift a real trip from January into February/March and
+    /// make the trip summary disagree with EXIF-backed day headings.
+    ///
+    /// We therefore prefer PHAsset.creationDate and only fall back to modificationDate
+    /// when creationDate is missing.
     private func effectiveDate(for asset: PHAsset) -> Date {
-        guard let creation = asset.creationDate else {
-            return asset.modificationDate ?? .distantPast
-        }
-        guard let modification = asset.modificationDate,
-              modification > creation else {
-            return creation
-        }
-        let daysDiff = calendar.dateComponents([.day], from: creation, to: modification).day ?? 0
-        guard daysDiff >= 28, !calendar.isDate(modification, inSameDayAs: creation) else {
-            return creation
-        }
-        return modification
+        asset.creationDate ?? asset.modificationDate ?? .distantPast
     }
 
     /// Groups assets by calendar day, but handles late-night events (midnight bridge).
@@ -711,10 +700,6 @@ final class PhotoLibraryTripService {
         // If we keyed by raw Date (startOfDay in each asset's timezone), two different
         // timezones can produce different Date values that still format to the same
         // visible date in UI (e.g. "Mar 6"), leading to duplicate "Day N" labels.
-        // For photos whose modificationDate is on a different (later) day than creationDate
-        // (e.g. a photo taken in February but re-imported/edited on March 6), we still bucket
-        // by the photo's local/capture timezone. Using device timezone here can shift a
-        // "Mar 6 1:00 PM Los Angeles" edit into "Mar 7" when the device is ahead (e.g. Asia).
         var byDay: [String: (date: Date, assets: [PHAsset])] = [:]
         for asset in assets {
             let effective = effectiveDate(for: asset)
