@@ -1441,8 +1441,12 @@ final class CreatedRecapBlogStore: ObservableObject {
             for stopIdx in detail.days[dayIdx].placeStops.indices {
                 let stop = detail.days[dayIdx].placeStops[stopIdx]
                 let photos = stop.photos.filter(\.isIncluded)
-                guard let firstPhoto = photos.min(by: { $0.timestamp < $1.timestamp }),
-                      let asset = assetMap[firstPhoto.localIdentifier ?? ""] else {
+                // Pick earliest by PHAsset.creationDate so manual date changes in Photos are respected.
+                let firstPhotoAndAsset: (RecapPhoto, PHAsset)? = photos.compactMap { photo -> (RecapPhoto, PHAsset)? in
+                    guard let id = photo.localIdentifier, let asset = assetMap[id] else { return nil }
+                    return (photo, asset)
+                }.min(by: { ($0.1.creationDate ?? .distantPast) < ($1.1.creationDate ?? .distantPast) })
+                guard let (firstPhoto, asset) = firstPhotoAndAsset else {
                     print("[buildBlogDetail] ⚠️ '\(stop.placeTitle)': skipped visitedTimeDigitized (no included photos or missing asset)")
                     continue
                 }
@@ -1683,20 +1687,29 @@ final class CreatedRecapBlogStore: ObservableObject {
             guard dayIdx < result.days.count, stopIdx < result.days[dayIdx].placeStops.count else { continue }
             let stop = result.days[dayIdx].placeStops[stopIdx]
             let photos = stop.photos.filter(\.isIncluded)
-            guard let firstPhoto = photos.min(by: { $0.timestamp < $1.timestamp }),
-                  let _ = assetMap[firstPhoto.localIdentifier ?? ""] else { continue }
+            // Pick earliest photo by current PHAsset.creationDate so manual date changes in Photos are reflected.
+            let firstPhotoAndAsset: (RecapPhoto, PHAsset)? = photos.compactMap { photo -> (RecapPhoto, PHAsset)? in
+                guard let id = photo.localIdentifier, let asset = assetMap[id] else { return nil }
+                return (photo, asset)
+            }.min(by: { ($0.1.creationDate ?? .distantPast) < ($1.1.creationDate ?? .distantPast) })
+            guard let (firstPhoto, asset) = firstPhotoAndAsset else { continue }
             let stopOffsets: [Int] = photos.compactMap { photo -> Int? in
                 guard let id = photo.localIdentifier, let tz = tzMap[id] else { return nil }
                 return (tz.secondsFromGMT() / 900) * 900
             }
             let consensusOffset = stopOffsets.isEmpty ? 0 : (stopOffsets.reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }.max(by: { $0.value < $1.value })?.key ?? 0)
             let tz = TimeZone(secondsFromGMT: consensusOffset) ?? TimeZone(identifier: "UTC")!
-            let asset = assetMap[firstPhoto.localIdentifier ?? ""]!
             let date = asset.creationDate ?? firstPhoto.timestamp
             let digitized = APIManager.digitizedTimeString(from: date, timeZone: tz)
             result.days[dayIdx].placeStops[stopIdx].visitedTimeDigitized = digitized
         }
         return result
+    }
+
+    /// Refreshes visitedTimeDigitized for every place stop from current PHAsset metadata (creationDate).
+    /// Call when opening a recap blog so displayed visit times reflect any manual date changes in Photos.
+    func refreshVisitedTimeDigitizedFromPhotoLibrary(detail: RecapBlogDetail) async -> RecapBlogDetail {
+        await applyVisitedTimeDigitized(to: detail, dayIndices: Array(detail.days.indices))
     }
 
     /// Scores every photo using Vision AI and auto-selects the best per place stop.

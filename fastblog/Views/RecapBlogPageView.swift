@@ -1172,6 +1172,14 @@ struct RecapBlogPageView: View {
     private func loadDraftIfNeeded() {
         if let saved = createdRecapStore.getBlogDetail(blogId: blogId) {
             draft = saved
+            // Refresh visit times from current PHAsset metadata so manual date changes in Photos are reflected.
+            Task { @MainActor in
+                let refreshed = await createdRecapStore.refreshVisitedTimeDigitizedFromPhotoLibrary(detail: draft)
+                if refreshed != draft {
+                    draft = refreshed
+                    createdRecapStore.saveBlogDetail(refreshed)
+                }
+            }
             // Auto-generate stories for any places that are missing them (e.g. first open after AI was added).
             Task { @MainActor in await autoFillMissingOverallStories() }
             hasFinishedInitialLoad = true

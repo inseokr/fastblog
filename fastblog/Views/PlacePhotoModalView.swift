@@ -5,6 +5,7 @@
 
 import SwiftUI
 import CoreLocation
+import Photos
 
 /// Identifiable item for presenting the place photo modal (day + stop + initial photo).
 struct PlacePhotoModalItem: Identifiable {
@@ -57,6 +58,8 @@ struct PlacePhotoModalView: View {
     @State private var resolvedTimeZoneByPhotoId: [UUID: TimeZone] = [:]
     @FocusState private var isCaptionFocused: Bool
     @State private var showRenameSheet = false
+    /// PHAsset time metadata for the current photo (creationDate, modificationDate). Loaded when photo has localIdentifier.
+    @State private var currentPhotoAssetMetadata: (creation: Date?, modification: Date?)?
 
     /// Derives the UTC offset from the EXIF digitized local time vs photo timestamps.
     /// Digitized is the stop's earliest photo time in *local* time at capture; we compare to each photo's UTC timestamp to infer offset.
@@ -86,6 +89,23 @@ struct PlacePhotoModalView: View {
     /// Effective timezone for the current photo: per-photo cache first (so all photos get correct time), then derived from digitized, then device.
     private var effectiveTimeZone: TimeZone {
         resolvedTimeZoneByPhotoId[currentPhotoId] ?? captureTimeZone ?? .current
+    }
+
+    /// Timezone label for UI. Uses named abbreviation (e.g. PST) when available; for offset-only zones
+    /// (e.g. from EXIF) shows "UTC−8" instead of "GMT-8" so all photos use a consistent style.
+    private static func timeZoneDisplayLabel(for tz: TimeZone) -> String {
+        let abbr = tz.abbreviation() ?? tz.identifier
+        if abbr.hasPrefix("GMT+") || abbr.hasPrefix("GMT-") {
+            let seconds = tz.secondsFromGMT()
+            let hours = seconds / 3600
+            let mins = abs(seconds % 3600) / 60
+            if mins == 0 {
+                return hours >= 0 ? "UTC+\(hours)" : "UTC−\(-hours)"
+            }
+            let sign = hours >= 0 ? "+" : "−"
+            return String(format: "UTC%@%d:%02d", sign, abs(hours), mins)
+        }
+        return abbr
     }
 
     /// Earliest photo in this stop by timestamp (same as used for place stop visit time).
@@ -181,6 +201,21 @@ struct PlacePhotoModalView: View {
                         updated[photoId] = tz
                         resolvedTimeZoneByPhotoId = updated
                     }
+                    .task(id: currentPhotoId) {
+                        // Load PHAsset time metadata (creation, modification) for the current photo.
+                        let photoId = currentPhotoId
+                        guard let photo = currentPhoto, let id = photo.localIdentifier, !id.isEmpty else {
+                            currentPhotoAssetMetadata = nil
+                            return
+                        }
+                        let result = await Task.detached(priority: .userInitiated) {
+                            let result = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
+                            guard let asset = result.firstObject else { return (creation: nil as Date?, modification: nil as Date?) }
+                            return (creation: asset.creationDate, modification: asset.modificationDate)
+                        }.value
+                        guard currentPhotoId == photoId else { return }
+                        currentPhotoAssetMetadata = result
+                    }
 
                 // 2. Bottom overlay
             VStack {
@@ -193,6 +228,7 @@ struct PlacePhotoModalView: View {
                     BottomInfoOverlay(
                         placeTitle: placeTitle,
                         dateTimeText: dateTimeTextForCurrentPhoto,
+                        assetTimeMetadataLines: assetTimeMetadataLinesForCurrentPhoto,
                         isEditing: $isEditing,
                         captionText: $editedCaptionText,
                         placeholder: "Leave a story for this photo...",
@@ -713,9 +749,22 @@ struct PlacePhotoModalView: View {
 
     private var dateTimeTextForCurrentPhoto: String {
         guard let photo = currentPhoto else { return "" }
-        // When showing the earliest photo, build the display from the digitized string exactly
-        // like the place stop (same time part: hours + minutes only, no Date/timezone conversion)
-        // so the modal and place stop row always show the same visit time (avoids 15-min TZ rounding).
+        let tz = effectiveTimeZone
+        let tzAbbr = Self.timeZoneDisplayLabel(for: tz)
+        let dateFmt = DateFormatter()
+        dateFmt.dateFormat = "d MMM yyyy 'at' h:mm a"
+        dateFmt.locale = Locale(identifier: "en_US_POSIX")
+        dateFmt.timeZone = tz
+
+        // Prefer PHAsset creation date when available so the main "visited time" matches the photo's
+        // actual metadata (e.g. after user manually changes date in Photos). This keeps the main
+        // line consistent with the "Created:" line below.
+        if let meta = currentPhotoAssetMetadata, let creation = meta.creation {
+            return "\(dateFmt.string(from: creation)) (\(tzAbbr))"
+        }
+
+        // When showing the earliest photo and no asset metadata yet, build from digitized string
+        // so the modal and place stop row show the same visit time (avoids 15-min TZ rounding).
         if isCurrentPhotoEarliest, let digitized = stopDigitizedTime {
             let parts = digitized.split(separator: " ")
             if parts.count == 2 {
@@ -728,7 +777,6 @@ struct PlacePhotoModalView: View {
                     let period = hours >= 12 ? "PM" : "AM"
                     let h = hours == 0 ? 12 : (hours > 12 ? hours - 12 : hours)
                     let timeStr = "\(h):\(String(format: "%02d", minutes)) \(period)"
-                    // Format date part "yyyy:MM:dd" -> "d MMM yyyy" using UTC so we just pass digits through
                     let dateParser = DateFormatter()
                     dateParser.dateFormat = "yyyy:MM:dd"
                     dateParser.timeZone = TimeZone(secondsFromGMT: 0)
@@ -738,16 +786,33 @@ struct PlacePhotoModalView: View {
                         dateDisplay.dateFormat = "d MMM yyyy"
                         dateDisplay.timeZone = TimeZone(secondsFromGMT: 0)
                         dateDisplay.locale = Locale(identifier: "en_US_POSIX")
-                        return "\(dateDisplay.string(from: date)) at \(timeStr)"
+                        return "\(dateDisplay.string(from: date)) at \(timeStr) (\(tzAbbr))"
                     }
                 }
             }
         }
-        let f = DateFormatter()
-        f.dateFormat = "d MMM yyyy 'at' h:mm a"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = effectiveTimeZone
-        return f.string(from: photo.timestamp)
+
+        // Fallback: use RecapPhoto.timestamp (e.g. from trip scan).
+        return "\(dateFmt.string(from: photo.timestamp)) (\(tzAbbr))"
+    }
+
+    /// Formatted PHAsset time metadata lines (creation, modification) with timezone, for display in the bottom overlay.
+    private var assetTimeMetadataLinesForCurrentPhoto: [String] {
+        guard let meta = currentPhotoAssetMetadata else { return [] }
+        let tz = effectiveTimeZone
+        let dateFmt = DateFormatter()
+        dateFmt.dateFormat = "d MMM yyyy 'at' h:mm a"
+        dateFmt.locale = Locale(identifier: "en_US_POSIX")
+        dateFmt.timeZone = tz
+        let tzAbbr = Self.timeZoneDisplayLabel(for: tz)
+        var lines: [String] = []
+        if let creation = meta.creation {
+            lines.append("Created: \(dateFmt.string(from: creation)) (\(tzAbbr))")
+        }
+        if let modification = meta.modification, meta.creation != modification {
+            lines.append("Modified: \(dateFmt.string(from: modification)) (\(tzAbbr))")
+        }
+        return lines
     }
 
     private func openNavigation() {
@@ -866,6 +931,8 @@ struct RightActionStack: View {
 struct BottomInfoOverlay: View {
     let placeTitle: String
     let dateTimeText: String
+    /// PHAsset time metadata lines (e.g. "Created: ... (PST)", "Modified: ... (PST)"); shown below dateTimeText when non-empty.
+    var assetTimeMetadataLines: [String] = []
     @Binding var isEditing: Bool
     @Binding var captionText: String
     let placeholder: String
@@ -916,6 +983,13 @@ struct BottomInfoOverlay: View {
                 Text(dateTimeText)
                     .font(.subheadline)
                     .foregroundColor(.white.opacity(0.95))
+                    .shadow(color: .black.opacity(0.3), radius: 1)
+            }
+
+            ForEach(assetTimeMetadataLines, id: \.self) { line in
+                Text(line)
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.8))
                     .shadow(color: .black.opacity(0.3), radius: 1)
             }
 
