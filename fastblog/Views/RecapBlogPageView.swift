@@ -2324,11 +2324,8 @@ struct RecapBlogPageView: View {
         
         // Auto-save the new draft state
         createdRecapStore.saveBlogDetail(draft)
-        
-        // Ensure selectedDayIndex is valid
-        if selectedDayIndex >= draft.days.count {
-            selectedDayIndex = max(0, draft.days.count - 1)
-        }
+        // Always land on Day 1 of whichever part was kept
+        selectedDayIndex = 0
         
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
