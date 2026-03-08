@@ -186,7 +186,7 @@ struct PlacesVisitedView: View {
                                         let pairs = stride(from: 0, to: monthGroup.places.count, by: 2).map {
                                             Array(monthGroup.places[$0 ..< min($0 + 2, monthGroup.places.count)])
                                         }
-                                        ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
+                                        ForEach(pairs, id: \.first?.id) { pair in
                                             HStack(alignment: .top, spacing: 12) {
                                                 ForEach(Array(pair.enumerated()), id: \.element.id) { colIdx, place in
                                                     let partnerIdx = colIdx == 0 ? 1 : 0

@@ -1954,10 +1954,10 @@ final class CreatedRecapBlogStore: ObservableObject {
                             return "cloud_\(idx)"
                         }
                         if let vtd = stop.visitedTimeDigitized, !vtd.isEmpty {
-                            return "vtd_\(vtd)_\(placeName)"
+                            return "vtd_\(vtd)"
                         }
                         let dayStamp = day.date.timeIntervalSince1970
-                        return "local_\(blog.sourceTripId.uuidString)_\(Int(dayStamp))_\(stop.orderIndex)_\(placeName)"
+                        return "local_\(blog.sourceTripId.uuidString)_\(Int(dayStamp))_\(stop.orderIndex)"
                     }()
 
                     let placeCaption = stop.noteText
