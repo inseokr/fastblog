@@ -1199,7 +1199,7 @@ struct RecapBlogPageView: View {
                     .fontWeight(.bold)
                     .padding(.top, 24)
                 
-                Text("Save the other part later.")
+                Text("The other part will be saved as a separate trip.")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -1261,13 +1261,30 @@ struct RecapBlogPageView: View {
                     .cornerRadius(12)
                 }
                 .buttonStyle(.plain)
+
+                Button {
+                    unsavedSplitPromptIndex = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        splitUnsavedBlog(afterDayIndex: splitIdx - 1, keepPart: 1)
+                    }
+                } label: {
+                    Text("Keep Both")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(12)
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
-            
+
             Spacer(minLength: 0)
         }
-        .presentationDetents([.fraction(0.42), .large])
+        .presentationDetents([.fraction(0.50), .large])
         .presentationDragIndicator(.visible)
         .ignoresSafeArea(edges: .bottom)
     }
@@ -1768,7 +1785,10 @@ struct RecapBlogPageView: View {
     @MainActor
     private func autoFillCaptionsAndStories() async {
         for dayIdx in draft.days.indices {
+            guard draft.days.indices.contains(dayIdx) else { break }
             for stopIdx in draft.days[dayIdx].placeStops.indices {
+                guard draft.days.indices.contains(dayIdx),
+                      draft.days[dayIdx].placeStops.indices.contains(stopIdx) else { break }
                 await autoFillCaptionsForStopAt(dayIdx: dayIdx, stopIdx: stopIdx)
             }
         }
@@ -1813,9 +1833,9 @@ struct RecapBlogPageView: View {
         }
 
         // After generating photo captions, cascade to overall story (if not manually edited).
-        guard captionsGenerated || draft.days[dayIdx].placeStops[stopIdx].overallStory?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false,
-              draft.days.indices.contains(dayIdx),
+        guard draft.days.indices.contains(dayIdx),
               draft.days[dayIdx].placeStops.indices.contains(stopIdx),
+              captionsGenerated || draft.days[dayIdx].placeStops[stopIdx].overallStory?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false,
               !draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual else { return }
 
         let updatedStop = draft.days[dayIdx].placeStops[stopIdx]
@@ -1835,7 +1855,10 @@ struct RecapBlogPageView: View {
     @MainActor
     private func autoFillMissingOverallStories() async {
         for dayIdx in draft.days.indices {
+            guard draft.days.indices.contains(dayIdx) else { break }
             for stopIdx in draft.days[dayIdx].placeStops.indices {
+                guard draft.days.indices.contains(dayIdx),
+                      draft.days[dayIdx].placeStops.indices.contains(stopIdx) else { break }
                 let stop = draft.days[dayIdx].placeStops[stopIdx]
                 guard !stop.overallStoryIsManual,
                       stop.overallStory?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false else { continue }
@@ -2322,8 +2345,10 @@ struct RecapBlogPageView: View {
             draft.removedPlaceStops = draft.removedPlaceStops.filter { part2DayIds.contains($0.dayId) }
         }
         
-        // Auto-save the new draft state
-        createdRecapStore.saveBlogDetail(draft)
+        // Auto-save the new draft state (preserve draft status so back button shows the correct "Save or Exit?" alert)
+        createdRecapStore.saveBlogDetail(draft, asDraft: true)
+        // Keep snapshot in sync so we don't get a false "Unsaved Changes?" prompt
+        draftSnapshot = draft
         // Always land on Day 1 of whichever part was kept
         selectedDayIndex = 0
         

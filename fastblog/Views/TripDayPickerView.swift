@@ -128,7 +128,7 @@ struct TripDayPickerView: View {
             HStack(spacing: 8) {
                 ForEach(Array(viewModel.trip.days.enumerated()), id: \.element.id) { index, day in
                     DayTabPill(
-                        title: "Day \(day.dayIndex + 1)",
+                        title: "Day \(day.dayIndex)",
                         isSelected: viewModel.selectedDayIndex == index
                     ) {
                         withAnimation(.easeInOut(duration: 0.2)) {

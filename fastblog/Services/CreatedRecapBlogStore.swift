@@ -230,6 +230,8 @@ final class CreatedRecapBlogStore: ObservableObject {
     @Published var pendingRecapCreated = false
     /// Set to true when a draft is saved on back navigation. Consumed by TripsView to show a toast.
     @Published var showDraftSavedToast = false
+    /// Trip ID that was just discarded (user exited without saving). Consumed by TripsView to scroll the carousel back to it.
+    @Published var lastDiscardedTripId: UUID?
     /// Date ranges of active drafts (from TripsViewModel) to exclude from scans. Written by TripsViewModel.updateOccupiedRanges().
     var draftOccupiedRanges: [(start: Date, end: Date)] = []
     /// When true, TripsViewModel clears trips and re-runs default scan (e.g. after archive rules change).
@@ -714,6 +716,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         recents.removeAll { $0.sourceTripId == sourceTripId }
         blogDetailsBySourceId.removeValue(forKey: sourceTripId)
         if pendingRecapCreated { pendingRecapCreated = false }
+        lastDiscardedTripId = sourceTripId
         needsRescan = true
         persistRecents()
         persistBlogDetails()
@@ -760,7 +763,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
 
         var allDays = daysByDate.values.sorted { $0.date < $1.date }
-        for i in allDays.indices { allDays[i].dayIndex = i }
+        for i in allDays.indices { allDays[i].dayIndex = i + 1 }
 
         // 2. Merge removed place stops
         let mergedRemoved = keepDetail.removedPlaceStops + absorbDetail.removedPlaceStops
@@ -796,7 +799,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                 let t1 = $1.photos.first?.timestamp ?? .distantPast
                 return t0 < t1
             }
-            for i in combined.indices { combined[i].dayIndex = i }
+            for i in combined.indices { combined[i].dayIndex = i + 1 }
             keepTrip.days = combined
             keepTrip.episodeLabel = nil
             tripDraftsBySourceId[keepId] = keepTrip
@@ -917,13 +920,13 @@ final class CreatedRecapBlogStore: ObservableObject {
             if splitIdx < trip.days.count - 1 {
                 var trip1 = trip
                 trip1.days = Array(trip.days[0...splitIdx])
-                for i in trip1.days.indices { trip1.days[i].dayIndex = i }
+                for i in trip1.days.indices { trip1.days[i].dayIndex = i + 1 }
                 trip1.title = title1
                 trip1.episodeLabel = "Episode 1 of 2"
                 tripDraftsBySourceId[blogId] = trip1
 
                 var trip2Days = Array(trip.days[(splitIdx + 1)...])
-                for i in trip2Days.indices { trip2Days[i].dayIndex = i }
+                for i in trip2Days.indices { trip2Days[i].dayIndex = i + 1 }
                 let trip2 = TripDraft(
                     id: newBlogId,
                     title: title2,
@@ -1388,7 +1391,7 @@ final class CreatedRecapBlogStore: ObservableObject {
             }
 
             guard !stops.isEmpty else { continue }
-            days.append(RecapBlogDay(dayIndex: dayIdx, date: dayDate, placeStops: stops))
+            days.append(RecapBlogDay(dayIndex: dayIdx + 1, date: dayDate, placeStops: stops))
         }
 
         return RecapBlogDetail(

@@ -301,10 +301,10 @@ final class TripsViewModel: ObservableObject {
     }
 
     /// Remove a trip from the list (e.g. after it was turned into a created blog). Keeps tripDrafts in sync.
-    func removeTrip(id: UUID) {
-        tripDrafts.removeAll { $0.id == id }
-        currentWindowTrips?.removeAll { $0.id == id }
-    }
+    /// Note: We no longer physically remove trips here. visibleDraftTripsNewestFirst already
+    /// filters out trips that have a created blog (via hasCreatedBlog / TripMatchingService).
+    /// Keeping trips in the arrays lets them reappear automatically if the blog is later discarded.
+    func removeTrip(id: UUID) { }
 
     init(createdRecapStore: CreatedRecapBlogStore) {
         self.createdRecapStore = createdRecapStore
