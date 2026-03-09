@@ -12,6 +12,7 @@ struct ContentView: View {
     @State private var showProfile = false
     @State private var showSeeAll = false
     @State private var selectedCreatedRecap: CreatedRecapBlog?
+    @State private var initialDayIndexForRecap: Int?
     @State private var dismissToLandingRequested = false
     /// Day index to open when navigating to a blog via the new-moments popup.
     @AppStorage("blogify.justFinishedOnboarding") private var justFinishedOnboarding = false

@@ -126,6 +126,18 @@ struct MyBlogsProfileView: View {
 
     private let backgroundBlue = Color(red: 0.05, green: 0.08, blue: 0.22)
 
+    /// If on-the-go new moments exist for a blog we have, show the alert.
+    private func checkForNewMoments() {
+        guard OnTheGoTripStore.hasNewMoments,
+              let blogId = OnTheGoTripStore.activeBlogId,
+              let title = OnTheGoTripStore.activeBlogTitle,
+              createdRecapStore.visibleRecents.contains(where: { $0.sourceTripId == blogId }) else { return }
+        newMomentsAlertBlogId = blogId
+        newMomentsAlertBlogTitle = title
+        newMomentsDayIndex = OnTheGoTripStore.newMomentsDayIndex
+        showNewMomentsAlert = true
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             backgroundBlue.ignoresSafeArea()
