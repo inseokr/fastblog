@@ -636,7 +636,7 @@ final class TripsViewModel: ObservableObject {
     func startDefaultScan() {
         showSelectPhotosIntroAfterScan = true
         scanState = .scanningDefault
-        loadingMessage = "Loading your photos…"
+        loadingMessage = "Loading your trips…"
         defaultScanProgress = 0
         newlyScannedPhotos = []
         newMomentsMatchedBlog = nil
