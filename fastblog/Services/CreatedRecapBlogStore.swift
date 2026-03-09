@@ -595,7 +595,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                 detail.days.append(newDay)
                 detail.days.sort { $0.date < $1.date }
                 // Re-assign dayIndex after sort.
-                for i in detail.days.indices { detail.days[i].dayIndex = i }
+                for i in detail.days.indices { detail.days[i].dayIndex = i + 1 }
                 dayIdx = detail.days.firstIndex(where: { cal.startOfDay(for: $0.date) == dayStart })!
             }
             guard let di = dayIdx else { continue }
