@@ -44,6 +44,8 @@ struct RecapBlogPageView: View {
     @State private var overflowStop: OverflowItem?
     @State private var showEditNameForStop: PlaceStop?
     @State private var showManagePhotosForStop: ManagePhotosItem?
+    /// The stop currently having its place caption generated (triggered by place name pick).
+    @State private var generatingCaptionStopId: UUID?
     /// Snapshot taken when ManagePhotosView opens, used to diff on dismiss for targeted cloud sync.
     @State private var managePhotosEditInfo: ManagePhotosEditInfo?
     @State private var isEditMode = true
@@ -1078,7 +1080,8 @@ struct RecapBlogPageView: View {
                     },
                     onEditPlaceCaption: {
                         placeCaptionEditItem = PlaceCaptionEditItem(dayId: day.id, stopId: stop.id)
-                    }
+                    },
+                    isGeneratingCaption: generatingCaptionStopId == stop.id
                 )
                 .id(stop.id)
                 
@@ -1775,7 +1778,9 @@ struct RecapBlogPageView: View {
               !draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual else { return }
         let stop = draft.days[dayIdx].placeStops[stopIdx]
         let dayDate = draft.days[dayIdx].date
+        generatingCaptionStopId = stopId
         let story = await StoryCaptionService.shared.generatePlaceStory(stop: stop, dayDate: dayDate)
+        generatingCaptionStopId = nil
         guard draft.days.indices.contains(dayIdx),
               draft.days[dayIdx].placeStops.indices.contains(stopIdx),
               !draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual else { return }

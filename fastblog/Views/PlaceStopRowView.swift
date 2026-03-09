@@ -45,6 +45,8 @@ struct PlaceStopRowView: View {
     var onAIOverallStoryApplied: (() -> Void)?
     /// When set, tapping the place caption row in edit mode opens the pull-up caption edit modal.
     var onEditPlaceCaption: (() -> Void)?
+    /// When true, shows a "Writing caption…" spinner inside the caption area (e.g. while place-name-triggered generation runs).
+    var isGeneratingCaption: Bool = false
 
     @FocusState private var focusedPlaceNote: Bool
     @FocusState private var focusedOverallStory: Bool
@@ -413,21 +415,34 @@ struct PlaceStopRowView: View {
 
     /// Place story row: between place info and photos. Creative placeholder to encourage writing.
     private var placeStoryRow: some View {
-        Group {
+        let isGenerating = isGeneratingCaption || isGeneratingOverallStory
+        return Group {
             if isEditMode {
-                HStack(alignment: .top, spacing: 8) {
-                    // Tappable display — opens PlaceCaptionEditSheet
+                VStack(alignment: .leading, spacing: 6) {
+                    // Tappable caption box — full width, no side column
                     Button {
-                        onEditPlaceCaption?()
+                        if !isGenerating { onEditPlaceCaption?() }
                     } label: {
-                        HStack {
-                            let trimmed = overallStory.trimmingCharacters(in: .whitespacesAndNewlines)
-                            Text(trimmed.isEmpty ? placeStoryPlaceholder : trimmed)
-                                .font(.subheadline)
-                                .foregroundColor(trimmed.isEmpty ? .secondary.opacity(0.9) : .white)
-                                .lineLimit(3)
-                                .multilineTextAlignment(.leading)
+                        Group {
+                            if isGenerating {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .secondary))
+                                        .scaleEffect(0.8)
+                                    Text("Writing caption…")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                            } else {
+                                let trimmed = overallStory.trimmingCharacters(in: .whitespacesAndNewlines)
+                                Text(trimmed.isEmpty ? placeStoryPlaceholder : trimmed)
+                                    .font(.subheadline)
+                                    .foregroundColor(trimmed.isEmpty ? .secondary.opacity(0.9) : .white)
+                                    .lineLimit(3)
+                                    .multilineTextAlignment(.leading)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
                         }
                         .padding(12)
                         .background(Color(white: 0.08))
@@ -435,7 +450,8 @@ struct PlaceStopRowView: View {
                     }
                     .buttonStyle(.plain)
 
-                    if let generate = onGenerateOverallStory {
+                    // "Generate caption" button — below the box, labeled, right-aligned
+                    if let generate = onGenerateOverallStory, !isGenerating {
                         Button {
                             isGeneratingOverallStory = true
                             Task {
@@ -447,25 +463,38 @@ struct PlaceStopRowView: View {
                                 }
                             }
                         } label: {
-                            if isGeneratingOverallStory {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    .scaleEffect(0.8)
-                                    .frame(width: 20, height: 20)
-                            } else {
+                            HStack(spacing: 4) {
                                 Image(systemName: "wand.and.stars")
-                                    .font(.body)
-                                    .foregroundColor(.white.opacity(0.9))
+                                    .font(.caption)
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                Text("Generate caption")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
                             }
                         }
-                        .disabled(isGeneratingOverallStory)
-                        .padding(.top, 12)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                 }
-                .padding(.leading, 16)
-                .padding(.trailing, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 8)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+            } else if isGeneratingCaption {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .secondary))
+                        .scaleEffect(0.8)
+                    Text("Writing caption…")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
             } else if !overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(overallStory)
                     .font(.subheadline)
