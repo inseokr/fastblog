@@ -358,18 +358,6 @@ struct RecapBlogPageView: View {
                 let managedItem = managePhotosEditInfo
                 createdRecapStore.saveBlogDetail(draft)
                 syncPhotoChangesWithCloud()
-                // Auto-fill AI captions only if photos were newly included during this session.
-                // If the user entered and exited without making any changes, skip auto-fill entirely.
-                if let item = managedItem,
-                   let stop = placeStop(dayId: item.dayId, stopId: item.stopId),
-                   stop.photos.contains(where: { photo in
-                       let wasPreviouslyIncluded = item.photoInclusionBefore[photo.id] ?? false
-                       return !wasPreviouslyIncluded && photo.isIncluded
-                   }) {
-                    Task { @MainActor in
-                        await autoFillCaptionsForStop(dayId: item.dayId, stopId: item.stopId)
-                    }
-                }
             }) { pair in
                 ManagePhotosView(
                     placeTitle: placeStop(dayId: pair.dayId, stopId: pair.stopId)?.placeTitle ?? "Photos",
@@ -1292,8 +1280,6 @@ struct RecapBlogPageView: View {
     private func loadDraftIfNeeded() {
         if let saved = createdRecapStore.getBlogDetail(blogId: blogId) {
             draft = saved
-            // Auto-generate stories for any places that are missing them (e.g. first open after AI was added).
-            Task { @MainActor in await autoFillMissingOverallStories() }
             hasFinishedInitialLoad = true
             // Process any remaining days in background (rate-limited geocoding).
             Task { @MainActor in await createdRecapStore.continueGeocodingDays(blogId: blogId) }
@@ -1307,11 +1293,9 @@ struct RecapBlogPageView: View {
             let detail = await createdRecapStore.buildBlogDetailFirstDayOnly(from: trip)
             createdRecapStore.saveBlogDetail(detail, asDraft: true)
             draft = detail
-            await autoFillMissingOverallStories()
             hasFinishedInitialLoad = true
             // Process remaining days in background (rate limit: 50 geocode/min).
             await createdRecapStore.continueGeocodingDays(blogId: blogId)
-            await autoFillCaptionsAndStories()
         }
     }
 
@@ -1512,9 +1496,11 @@ struct RecapBlogPageView: View {
                     let categories = stop.placeCategory.map { [$0] }
                     Task { try? await APIManager.shared.updatePlaceName(visitedTimeDigitized: placeKey, placeName: title, categories: categories) }
                 }
-                // Regenerate overall story with the updated place name (unless user manually wrote one).
-                let capturedDayId = day.id
-                Task { await cascadeOverallStory(dayId: capturedDayId, stopId: stopId) }
+                // Generate place caption when user picks a name — only when on-device LLM is available.
+                if LocalLLMStoryCaptionGenerator.isCapable {
+                    let capturedDayId = day.id
+                    Task { @MainActor in await generatePlaceCaption(dayId: capturedDayId, stopId: stopId) }
+                }
                 break
             }
         }
@@ -1776,6 +1762,25 @@ struct RecapBlogPageView: View {
               draft.days[dayIdx].placeStops.indices.contains(stopIdx),
               !draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual else { return }
         draft.days[dayIdx].placeStops[stopIdx].overallStory = story
+    }
+
+    // MARK: - Place Caption on Name Pick
+
+    /// Generates a place story caption when the user picks a place name.
+    /// Only runs when the on-device LLM is available and the user hasn't manually written a caption.
+    @MainActor
+    private func generatePlaceCaption(dayId: UUID, stopId: UUID) async {
+        guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }),
+              !draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual else { return }
+        let stop = draft.days[dayIdx].placeStops[stopIdx]
+        let dayDate = draft.days[dayIdx].date
+        let story = await StoryCaptionService.shared.generatePlaceStory(stop: stop, dayDate: dayDate)
+        guard draft.days.indices.contains(dayIdx),
+              draft.days[dayIdx].placeStops.indices.contains(stopIdx),
+              !draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual else { return }
+        draft.days[dayIdx].placeStops[stopIdx].overallStory = story
+        createdRecapStore.saveBlogDetail(draft)
     }
 
     // MARK: - AI Auto-Fill (Case 1: first blog creation, and when new photos are added)
