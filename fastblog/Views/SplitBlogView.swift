@@ -20,23 +20,6 @@ struct SplitBlogView: View {
     @State private var showSplitAlert = false
     @State private var showUndoBanner = false
 
-    /// When non-nil, skip the blog-selection step and go directly to the split-point picker.
-    private let preloadedBlog: CreatedRecapBlog?
-    private let preloadedDays: [RecapBlogDay]
-    /// Called after a successful split so the presenting view can react (e.g. show its own undo banner).
-    var onSplitCompleted: (() -> Void)?
-
-    init(countryName: String,
-         preloadedBlog: CreatedRecapBlog? = nil,
-         preloadedDays: [RecapBlogDay] = [],
-         onSplitCompleted: (() -> Void)? = nil) {
-        self.countryName = countryName
-        self.preloadedBlog = preloadedBlog
-        self.preloadedDays = preloadedDays
-        self.onSplitCompleted = onSplitCompleted
-    }
-
-
     // MARK: - Splittable Blogs
 
     private var splittableBlogs: [CreatedRecapBlog] {
@@ -95,18 +78,12 @@ struct SplitBlogView: View {
                 .zIndex(10)
             }
         }
-        .onAppear {
-            loadPreloadedBlogIfNeeded()
-        }
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button(preloadedBlog != nil ? "Cancel" : "Cancel") {
-                    if preloadedBlog != nil {
-                        // In preloaded mode, Cancel just dismisses the sheet
-                        dismiss()
-                    } else if selectedBlog != nil {
+                Button("Cancel") {
+                    if selectedBlog != nil {
                         withAnimation {
                             selectedBlog = nil
                             loadedDays = []
@@ -117,11 +94,9 @@ struct SplitBlogView: View {
                 }
                 .fontWeight(.semibold)
             }
-            if preloadedBlog == nil {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                        .fontWeight(.semibold)
-                }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { dismiss() }
+                    .fontWeight(.semibold)
             }
         }
         .alert(
@@ -133,8 +108,11 @@ struct SplitBlogView: View {
                 createdRecapStore.splitBlog(blogId: blog.sourceTripId, afterDayIndex: splitIdx)
                 let generator = UINotificationFeedbackGenerator()
                 generator.notificationOccurred(.success)
-                onSplitCompleted?()
-                dismiss()
+                withAnimation {
+                    selectedBlog = nil
+                    loadedDays = []
+                    showUndoBanner = true
+                }
             }
             Button("Cancel", role: .cancel) {
                 selectedSplitIndex = nil
@@ -253,7 +231,7 @@ struct SplitBlogView: View {
                     Text("Choose where to split")
                         .font(.headline)
                         .foregroundColor(.primary)
-                        .padding(.top, 24)
+                        .padding(.top, 8)
                     if let blog = selectedBlog {
                         Text(blog.title)
                             .font(.subheadline)
@@ -357,15 +335,5 @@ struct SplitBlogView: View {
         withAnimation {
             selectedBlog = blog
         }
-    }
-
-    private func loadPreloadedBlogIfNeeded() {
-        guard let blog = preloadedBlog, selectedBlog == nil else { return }
-        if !preloadedDays.isEmpty {
-            loadedDays = preloadedDays
-        } else if let detail = createdRecapStore.getBlogDetail(blogId: blog.sourceTripId) {
-            loadedDays = detail.days.sorted { $0.date < $1.date }
-        }
-        selectedBlog = blog
     }
 }

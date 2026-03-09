@@ -222,10 +222,8 @@ struct MyBlogsProfileView: View {
         .navigationDestination(item: $selectedCreatedRecap) { recap in
             RecapBlogPageView(
                 blogId: recap.sourceTripId,
-                initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId),
-                initialDayIndex: initialDayIndexForRecap
+                initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId)
             )
-            .onAppear { initialDayIndexForRecap = nil }
         }
         .navigationDestination(item: $createBlogFlowTrip) { trip in
             CreateBlogFlowView(trip: trip, startDirectlyCreating: true) { _ in
@@ -291,17 +289,6 @@ struct MyBlogsProfileView: View {
     }
 
     // MARK: - Page routing
-
-    private func checkForNewMoments() {
-        guard OnTheGoTripStore.hasNewMoments,
-              let blogId = OnTheGoTripStore.activeBlogId,
-              let title = OnTheGoTripStore.activeBlogTitle,
-              createdRecapStore.visibleRecents.contains(where: { $0.sourceTripId == blogId }) else { return }
-        newMomentsAlertBlogId = blogId
-        newMomentsAlertBlogTitle = title
-        newMomentsDayIndex = OnTheGoTripStore.newMomentsDayIndex
-        showNewMomentsAlert = true
-    }
 
     private var pageTitle: String {
         switch currentPage {
@@ -697,6 +684,8 @@ private struct MyBlogsManageSheet: View {
     @State private var showMergeView = false
     @State private var showSplitView = false
     @State private var selectedCountryForAction: String?
+    @State private var showMergeCountrySelection = false
+    @State private var showSplitCountrySelection = false
 
     private var countryNames: [String] {
         sections.map(\.country).sorted()
@@ -776,40 +765,26 @@ private struct MyBlogsManageSheet: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        if countryNames.count == 1, let only = countryNames.first {
-                            Button {
+                        Button {
+                            if countryNames.count == 1, let only = countryNames.first {
                                 selectedCountryForAction = only
                                 showMergeView = true
-                            } label: {
-                                Label("Merge Blogs", systemImage: "arrow.triangle.merge")
+                            } else if countryNames.count > 1 {
+                                showMergeCountrySelection = true
                             }
-                            Button {
+                        } label: {
+                            Label("Merge Blogs", systemImage: "arrow.triangle.merge")
+                        }
+                        
+                        Button {
+                            if countryNames.count == 1, let only = countryNames.first {
                                 selectedCountryForAction = only
                                 showSplitView = true
-                            } label: {
-                                Label("Split Blog", systemImage: "scissors")
+                            } else if countryNames.count > 1 {
+                                showSplitCountrySelection = true
                             }
-                        } else {
-                            Menu {
-                                ForEach(countryNames, id: \.self) { country in
-                                    Button(country) {
-                                        selectedCountryForAction = country
-                                        showMergeView = true
-                                    }
-                                }
-                            } label: {
-                                Label("Merge Blogs", systemImage: "arrow.triangle.merge")
-                            }
-                            Menu {
-                                ForEach(countryNames, id: \.self) { country in
-                                    Button(country) {
-                                        selectedCountryForAction = country
-                                        showSplitView = true
-                                    }
-                                }
-                            } label: {
-                                Label("Split Blog", systemImage: "scissors")
-                            }
+                        } label: {
+                            Label("Split Blog", systemImage: "scissors")
                         }
                     } label: {
                         Image(systemName: "line.3.horizontal")
@@ -845,6 +820,28 @@ private struct MyBlogsManageSheet: View {
                 Button("Cancel", role: .cancel) { blogPendingRemoval = nil }
             } message: { _ in
                 Text("This removes the blog from local storage. Your cloud blog stays available.")
+            }
+            .confirmationDialog("Merge Blogs", isPresented: $showMergeCountrySelection, titleVisibility: .visible) {
+                ForEach(countryNames, id: \.self) { country in
+                    Button(country) {
+                        selectedCountryForAction = country
+                        showMergeView = true
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Select a country to merge blogs from.")
+            }
+            .confirmationDialog("Split Blog", isPresented: $showSplitCountrySelection, titleVisibility: .visible) {
+                ForEach(countryNames, id: \.self) { country in
+                    Button(country) {
+                        selectedCountryForAction = country
+                        showSplitView = true
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Select a country to split a blog from.")
             }
         }
     }

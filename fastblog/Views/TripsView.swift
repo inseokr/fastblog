@@ -166,6 +166,20 @@ struct TripsView: View {
                 createdRecapStore.pendingRecapCreated = false
             }
         }
+        .onChange(of: createdRecapStore.lastDiscardedTripId) { _, tripId in
+            guard let tripId else { return }
+            createdRecapStore.lastDiscardedTripId = nil
+            // Scroll the carousel to the trip that just reappeared after the user discarded the blog
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                    selectedTripID = tripId
+                }
+                if let center = allTrips.first(where: { $0.id == tripId })?.centerCoordinate {
+                    let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
+                    mapPosition = .region(MKCoordinateRegion(center: center, span: span))
+                }
+            }
+        }
         .overlay {
             if let trip = tripForPopup {
                 blogCreationPopup(trip: trip)

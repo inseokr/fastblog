@@ -103,7 +103,9 @@ struct RecapBlogPageView: View {
     @State private var showUnprocessedDayAlert = false
     
     // MARK: - Split Blog Properties
-    @State private var showSplitBlogSheet = false
+    @State private var showSplitActionSheet = false
+    @State private var dayIndexToSplit: Int?
+    @State private var unsavedSplitPromptIndex: Int?
     @State private var showSplitUndoBanner = false
 
     private enum UndoAction {
@@ -118,14 +120,10 @@ struct RecapBlogPageView: View {
         }
     }
 
-    /// When set, the blog opens scrolled to this day index (0-based). Used by the "on the go" new-moments popup.
-    let initialDayIndex: Int?
-
-    init(blogId: UUID, initialTrip: TripDraft?, forceEditMode: Bool = false, initialDayIndex: Int? = nil) {
+    init(blogId: UUID, initialTrip: TripDraft?, forceEditMode: Bool = false) {
         self.blogId = blogId
         self.initialTrip = initialTrip
         self.forceEditMode = forceEditMode
-        self.initialDayIndex = initialDayIndex
         _draft = State(initialValue: RecapBlogDetail(id: blogId, title: "", days: [], coverTheme: "default"))
     }
 
@@ -144,12 +142,9 @@ struct RecapBlogPageView: View {
             .fullScreenCover(isPresented: $showUploadingFullScreen) {
                 UploadingBlogView(uploadProgress: $uploadProgress, onCancel: cancelUpload)
             }
-            .alert(
-                uploadErrorMessage.contains("storage is full") ? "Storage Full" : "Upload Failed",
-                isPresented: $showUploadErrorAlert
-            ) {
-                if uploadErrorMessage.contains("storage is full") {
-                    Button("Manage Blogs") {
+            .alert("Upload Failed", isPresented: $showUploadErrorAlert) {
+                if uploadErrorMessage == "Cloud storage limit reached.\nRemove a published blog to continue." {
+                    Button("Manage") {
                         showProfileManagement = true
                     }
                     Button("OK", role: .cancel) { }
@@ -331,7 +326,6 @@ struct RecapBlogPageView: View {
                     dayLabel: item.dayLabel,
                     caption: bindingForDayCaption(dayId: item.dayId),
                     onSave: {
-                        AppAnalytics.shared.trackCaptionWritten(type: "day_caption_created")
                         dayCaptionEditItem = nil
                         createdRecapStore.saveBlogDetail(draft)
                     },
@@ -349,7 +343,6 @@ struct RecapBlogPageView: View {
                         photos: stop.includedPhotos,
                         caption: bindingForOverallStory(dayId: item.dayId, stopId: item.stopId),
                         onSave: {
-                            AppAnalytics.shared.trackCaptionWritten(type: "place_caption_created")
                             placeCaptionEditItem = nil
                             markOverallStoryManual(dayId: item.dayId, stopId: item.stopId)
                             createdRecapStore.saveBlogDetail(draft)
@@ -393,7 +386,6 @@ struct RecapBlogPageView: View {
                 FullScreenMapView(day: day, onDismiss: {
                     fullScreenMapDay = nil
                 }, onCaptionSaved: { stopId, photoId, newCaption in
-                    AppAnalytics.shared.trackCaptionWritten(type: "photo_caption_created")
                     // Write the edited caption back into the draft and persist it
                     bindingForPhotoCaption(dayId: day.id, stopId: stopId, photoId: photoId).wrappedValue = newCaption
                     createdRecapStore.saveBlogDetail(draft)
@@ -410,27 +402,18 @@ struct RecapBlogPageView: View {
                     syncWithCloudIfNeeded()
                 }
             }
-            .sheet(isPresented: $showSplitBlogSheet, onDismiss: {
-                if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
-                    draft = updated
-                }
-            }) {
-                NavigationStack {
-                    SplitBlogView(
-                        countryName: draft.countryName ?? "Unknown",
-                        preloadedBlog: createdRecapStore.recents.first { $0.sourceTripId == blogId },
-                        preloadedDays: draft.days,
-                        onSplitCompleted: {
-                            showSplitUndoBanner = true
-                        }
-                    )
-                    .environmentObject(createdRecapStore)
-                }
-            }
             .sheet(isPresented: $showFirstUploadEmailModal) {
                 firstUploadEmailModalContent()
                     .presentationDetents([.fraction(0.45), .medium])
                     .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: Binding(
+                get: { unsavedSplitPromptIndex != nil },
+                set: { if !$0 { unsavedSplitPromptIndex = nil } }
+            )) {
+                if let splitIdx = unsavedSplitPromptIndex {
+                    unsavedSplitModal(splitIdx: splitIdx)
+                }
             }
             .modifier(coreContentAlertsAndLifecycleModifier())
             .alert("Save or Exit?", isPresented: $showNewBlogExitConfirmation) {
@@ -559,15 +542,9 @@ struct RecapBlogPageView: View {
                     }
                 }
                 .onChange(of: hasFinishedInitialLoad) { _, finished in
-                    if finished {
-                        // Jump to a specific day when requested (e.g. from new-moments popup).
-                        if let idx = initialDayIndex, idx > 0, idx < draft.days.count {
-                            selectedDayIndex = idx
-                        }
-                        if isEditMode {
-                            withAnimation(.easeOut(duration: 0.3)) {
-                                proxy.scrollTo("page-top", anchor: .top)
-                            }
+                    if finished && isEditMode {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            proxy.scrollTo("page-top", anchor: .top)
                         }
                     }
                 }
@@ -621,22 +598,18 @@ struct RecapBlogPageView: View {
                             .padding(.horizontal, 16)
                             .padding(.vertical, 14)
                             .background(
-                                Capsule()
-                                    .fill(.ultraThinMaterial)
-                                    .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color(uiColor: .label).opacity(0.88))
                             )
                             .padding(.horizontal, 20)
-                            .padding(.bottom, Self.dayFilterApproxHeight + 20)
-                        }
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .zIndex(20)
                     }
+                }
 
-                    if !isKeyboardVisible {
-                        // Day Filter fixed at bottom
-                        dayFilterSection
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
+                if !isKeyboardVisible {
+                    // Day Filter fixed at bottom
+                    dayFilterSection
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
             .ignoresSafeArea(.keyboard)
             .background(Color.black)
@@ -853,7 +826,7 @@ struct RecapBlogPageView: View {
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(Array(draft.days.enumerated()), id: \.element.id) { index, day in
-                    dayPill(title: "Day \(day.dayIndex + 1)", index: index, day: day, processingIndex: processingIndex)
+                    dayPill(title: "Day \(day.dayIndex)", index: index, day: day, processingIndex: processingIndex)
                         .id(day.id)
                 }
             }
@@ -1008,17 +981,16 @@ struct RecapBlogPageView: View {
                 
                 Spacer()
                 
-                // Only show split icon if there are at least 2 days and this isn't the *last* day
-                if isEditMode, draft.days.count >= 2, let dayIdx = draft.days.firstIndex(where: { $0.id == day.id }), dayIdx < draft.days.count - 1 {
+                // Only show split icon if there are at least 2 days and this isn't the *first* day
+                if isEditMode, draft.days.count >= 2, let dayIdx = draft.days.firstIndex(where: { $0.id == day.id }), dayIdx > 0 {
                     Button {
-                        // Make sure the blog exists in the local store so SplitBlogView can read it.
-                        if !createdRecapStore.hasCreatedBlog(sourceTripId: blogId) {
-                            createdRecapStore.saveBlogDetail(draft, asDraft: true)
+                        let isJustCreated = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
+                        if isJustCreated {
+                            unsavedSplitPromptIndex = dayIdx
                         } else {
-                            // Ensure any unsaved edits to the draft are captured before parsing in the modal.
-                            createdRecapStore.saveBlogDetail(draft)
+                            dayIndexToSplit = dayIdx
+                            showSplitActionSheet = true
                         }
-                        showSplitBlogSheet = true
                     } label: {
                         Image(systemName: "scissors")
                             .font(.system(size: 16, weight: .semibold))
@@ -1028,6 +1000,28 @@ struct RecapBlogPageView: View {
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
+                    .confirmationDialog(
+                        "Split Blog Here?",
+                        isPresented: $showSplitActionSheet,
+                        titleVisibility: .visible
+                    ) {
+                        if let splitIdx = dayIndexToSplit {
+                            Button("Split Blog Here") {
+                                splitSavedBlog(afterDayIndex: splitIdx - 1)
+                            }
+                        }
+                        Button("Cancel", role: .cancel) {
+                            dayIndexToSplit = nil
+                        }
+                    } message: {
+                        if let splitIdx = dayIndexToSplit {
+                            let part1Count = splitIdx
+                            let part2Count = draft.days.count - part1Count
+                            Text("This will create two separate blogs:\n\nPart 1: Day 1–\(part1Count) (\(part1Count) day\(part1Count == 1 ? "" : "s"))\nPart 2: Day \(part1Count + 1)–\(draft.days.count) (\(part2Count) day\(part2Count == 1 ? "" : "s"))")
+                        } else {
+                            Text("Split this blog into two separate blogs.")
+                        }
+                    }
                 }
             }
             .padding(.top, 4)
@@ -1149,9 +1143,6 @@ struct RecapBlogPageView: View {
                         },
                         onRemovePhoto: { photoId in
                             removePhoto(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
-                        },
-                        onSavePlaceName: { name, category, coordinate in
-                            updatePlaceTitle(stopId: item.stopId, to: name, category: category, coordinate: coordinate)
                         }
                     )
                 } else {
@@ -1169,17 +1160,138 @@ struct RecapBlogPageView: View {
         .presentationBackground(.black)
     }
 
+    @ViewBuilder
+    private func unsavedSplitModal(splitIdx: Int) -> some View {
+        let part1Count = splitIdx
+        let part2Count = draft.days.count - splitIdx
+        
+        let part1StartDate = draft.days[0..<splitIdx].first?.date
+        let part1EndDate = draft.days[0..<splitIdx].last?.date
+        let part1DateStr = CreatedRecapBlogStore.formatDateRange(start: part1StartDate, end: part1EndDate) ?? "Unknown Date"
+        
+        let part2StartDate = draft.days[splitIdx...].first?.date
+        let part2EndDate = draft.days[splitIdx...].last?.date
+        let part2DateStr = CreatedRecapBlogStore.formatDateRange(start: part2StartDate, end: part2EndDate) ?? "Unknown Date"
+        
+        let part1Cities = draft.days[0..<splitIdx]
+            .flatMap(\.placeStops)
+            .compactMap { $0.placeSubtitle }
+            .filter { !$0.isEmpty }
+        
+        // Remove duplicates while preserving order
+        var seen1 = Set<String>()
+        let part1UniqueCities = part1Cities.filter { seen1.insert($0).inserted }
+        let part1CityString = part1UniqueCities.joined(separator: ", ")
+        
+        let part2Cities = draft.days[splitIdx...]
+            .flatMap(\.placeStops)
+            .compactMap { $0.placeSubtitle }
+            .filter { !$0.isEmpty }
+        
+        var seen2 = Set<String>()
+        let part2UniqueCities = part2Cities.filter { seen2.insert($0).inserted }
+        let part2CityString = part2UniqueCities.joined(separator: ", ")
+        
+        VStack(spacing: 24) {
+            VStack(spacing: 8) {
+                Text("Choose which part to keep")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .padding(.top, 24)
+                
+                Text("The other part will be saved as a separate trip.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
+            
+            VStack(spacing: 16) {
+                Button {
+                    unsavedSplitPromptIndex = nil
+                    // delay slightly to allow sheet dismissal
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        splitUnsavedBlog(afterDayIndex: splitIdx - 1, keepPart: 1)
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Keep Part 1")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        Text("Days 1–\(part1Count) (\(part1DateStr))")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        if !part1CityString.isEmpty {
+                            Text(part1CityString)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(Color(.secondarySystemBackground))
+                    .cornerRadius(12)
+                }
+                .buttonStyle(.plain)
+                
+                Button {
+                    unsavedSplitPromptIndex = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        splitUnsavedBlog(afterDayIndex: splitIdx - 1, keepPart: 2)
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Keep Part 2")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        Text("Days \(part1Count + 1)–\(draft.days.count) (\(part2DateStr))")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        if !part2CityString.isEmpty {
+                            Text(part2CityString)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(Color(.secondarySystemBackground))
+                    .cornerRadius(12)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    unsavedSplitPromptIndex = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        splitUnsavedBlog(afterDayIndex: splitIdx - 1, keepPart: 1)
+                    }
+                } label: {
+                    Text("Keep Both")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(12)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+
+            Spacer(minLength: 0)
+        }
+        .presentationDetents([.fraction(0.50), .large])
+        .presentationDragIndicator(.visible)
+        .ignoresSafeArea(edges: .bottom)
+    }
+
     private func loadDraftIfNeeded() {
         if let saved = createdRecapStore.getBlogDetail(blogId: blogId) {
             draft = saved
-            // Refresh visit times from current PHAsset metadata so manual date changes in Photos are reflected.
-            Task { @MainActor in
-                let refreshed = await createdRecapStore.refreshVisitedTimeDigitizedFromPhotoLibrary(detail: draft)
-                if refreshed != draft {
-                    draft = refreshed
-                    createdRecapStore.saveBlogDetail(refreshed)
-                }
-            }
             // Auto-generate stories for any places that are missing them (e.g. first open after AI was added).
             Task { @MainActor in await autoFillMissingOverallStories() }
             hasFinishedInitialLoad = true
@@ -1521,7 +1633,7 @@ struct RecapBlogPageView: View {
                 Button {
                     dayCaptionEditItem = DayCaptionEditItem(
                         dayId: day.id,
-                        dayLabel: "Day \(day.dayIndex + 1) · \(day.shortDateText)"
+                        dayLabel: "Day \(day.dayIndex) · \(day.shortDateText)"
                     )
                 } label: {
                     let trimmed = captionBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1673,7 +1785,10 @@ struct RecapBlogPageView: View {
     @MainActor
     private func autoFillCaptionsAndStories() async {
         for dayIdx in draft.days.indices {
+            guard draft.days.indices.contains(dayIdx) else { break }
             for stopIdx in draft.days[dayIdx].placeStops.indices {
+                guard draft.days.indices.contains(dayIdx),
+                      draft.days[dayIdx].placeStops.indices.contains(stopIdx) else { break }
                 await autoFillCaptionsForStopAt(dayIdx: dayIdx, stopIdx: stopIdx)
             }
         }
@@ -1718,9 +1833,9 @@ struct RecapBlogPageView: View {
         }
 
         // After generating photo captions, cascade to overall story (if not manually edited).
-        guard captionsGenerated || draft.days[dayIdx].placeStops[stopIdx].overallStory?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false,
-              draft.days.indices.contains(dayIdx),
+        guard draft.days.indices.contains(dayIdx),
               draft.days[dayIdx].placeStops.indices.contains(stopIdx),
+              captionsGenerated || draft.days[dayIdx].placeStops[stopIdx].overallStory?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false,
               !draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual else { return }
 
         let updatedStop = draft.days[dayIdx].placeStops[stopIdx]
@@ -1740,7 +1855,10 @@ struct RecapBlogPageView: View {
     @MainActor
     private func autoFillMissingOverallStories() async {
         for dayIdx in draft.days.indices {
+            guard draft.days.indices.contains(dayIdx) else { break }
             for stopIdx in draft.days[dayIdx].placeStops.indices {
+                guard draft.days.indices.contains(dayIdx),
+                      draft.days[dayIdx].placeStops.indices.contains(stopIdx) else { break }
                 let stop = draft.days[dayIdx].placeStops[stopIdx]
                 guard !stop.overallStoryIsManual,
                       stop.overallStory?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false else { continue }
@@ -1991,7 +2109,7 @@ struct RecapBlogPageView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 60, height: 60)
-                .foregroundColor(.white)
+                .foregroundColor(.blue)
 
             VStack(spacing: 8) {
                 Text("Your First Upload!")
@@ -2183,6 +2301,85 @@ struct RecapBlogPageView: View {
         createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.blogKey
     }
 
+    // MARK: - Split Logic
+
+    /// Splits a blog that hasn't been saved yet.
+    /// - Parameters:
+    ///   - afterDayIndex: The index of the day to split after.
+    ///   - keepPart: 1 to keep the first part (Days 1...afterDayIndex+1), 2 to keep the second part.
+    private func splitUnsavedBlog(afterDayIndex: Int, keepPart: Int) {
+        // We do a similar split to CreatedRecapBlogStore.splitBlog, but we just want to update `draft`
+        // and optionally save the part we keep, discarding the rest since it was never saved anyway.
+        // Actually, the user asked "we ask the user which blog they would like to create". 
+        // We will just keep the chosen part in the current view and discard the other part.
+        
+        var part1Days = Array(draft.days[0...afterDayIndex])
+        var part2Days = Array(draft.days[(afterDayIndex + 1)...])
+        
+        for i in part1Days.indices { part1Days[i].dayIndex = i + 1 }
+        for i in part2Days.indices { part2Days[i].dayIndex = i + 1 }
+
+        let baseTitle = draft.title
+            .replacingOccurrences(of: " \\(Part \\d+ of \\d+\\)", with: "", options: .regularExpression)
+            .replacingOccurrences(of: " \\(Episode \\d+ of \\d+\\)", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+
+        if keepPart == 1 {
+            draft.title = baseTitle
+            draft.days = part1Days
+            
+            // Filter removed stops
+            let part1DayIds = Set(part1Days.map(\.id))
+            draft.removedPlaceStops = draft.removedPlaceStops.filter { part1DayIds.contains($0.dayId) }
+            
+        } else {
+            draft.title = baseTitle
+            draft.days = part2Days
+            
+            // Adjust Cover Photo if needed
+            let part2CoverIdentifier = part2Days.first?.placeStops.first?.photos.first(where: \.isIncluded)?.localIdentifier
+            draft.selectedCoverPhotoIdentifier = part2CoverIdentifier
+            
+            // Filter removed stops
+            let part2DayIds = Set(part2Days.map(\.id))
+            draft.removedPlaceStops = draft.removedPlaceStops.filter { part2DayIds.contains($0.dayId) }
+        }
+        
+        // Auto-save the new draft state (preserve draft status so back button shows the correct "Save or Exit?" alert)
+        createdRecapStore.saveBlogDetail(draft, asDraft: true)
+        // Keep snapshot in sync so we don't get a false "Unsaved Changes?" prompt
+        draftSnapshot = draft
+        // Always land on Day 1 of whichever part was kept
+        selectedDayIndex = 0
+        
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+        
+        // Preserve the discarded part in the Trips list
+        createdRecapStore.splitUnsavedTrip(tripId: blogId, afterDayIndex: afterDayIndex, keepPart: keepPart)
+    }
+
+    /// Splits a blog that has already been saved/created (Edit Mode).
+    private func splitSavedBlog(afterDayIndex: Int) {
+        // We just call the store's split functionality on the current blogId and afterDayIndex.
+        createdRecapStore.splitBlog(blogId: blogId, afterDayIndex: afterDayIndex)
+        
+        // Since the current view is for `blogId`, which is now Part 1, we should refresh `draft`
+        if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
+            draft = updated
+            if selectedDayIndex >= draft.days.count {
+                selectedDayIndex = max(0, draft.days.count - 1)
+            }
+            
+            // Show the Undo Banner
+            withAnimation {
+                showSplitUndoBanner = true
+            }
+            
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.success)
+        }
+    }
 
     private func uploadBlogPhotos() {
         guard !isUploading else { return }
@@ -2192,13 +2389,26 @@ struct RecapBlogPageView: View {
             return
         }
 
-        // 🚨 Free Tier Guardrails — storage-based limit only
+        // 🚨 Free Tier Guardrails
         if EntitlementManager.shared.isFreeTier {
+            // 1. Storage Limit Check
             let currentUsage = AuthService.shared.currentUser?.storageUsedBytes ?? 0
             if currentUsage >= EntitlementManager.freeTierStorageLimit {
-                uploadErrorMessage = "Your storage is full.\nRemove an old blog to upload new ones."
+                uploadErrorMessage = "Cloud storage limit reached.\nRemove a published blog to continue."
                 showUploadErrorAlert = true
                 return
+            }
+            
+            // 2. Active Cloud Blogs Check
+            if let maxCloud = EntitlementManager.shared.activeCloudBlogLimit {
+                let currentCloudCount = createdRecapStore.visibleRecents.filter { $0.cloudState != .localOnly }.count
+                let isThisBlogAlreadyInCloud = (createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == blogId })?.cloudState ?? .localOnly) != .localOnly
+                
+                if !isThisBlogAlreadyInCloud && currentCloudCount >= maxCloud {
+                    uploadErrorMessage = "Cloud storage limit reached.\nRemove a published blog to continue."
+                    showUploadErrorAlert = true
+                    return
+                }
             }
         }
 

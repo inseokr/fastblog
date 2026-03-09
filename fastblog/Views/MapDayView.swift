@@ -380,7 +380,7 @@ struct FullScreenMapView: View {
                     Spacer()
 
                     VStack(spacing: 2) {
-                        Text("Day \(day.dayIndex + 1)")
+                        Text("Day \(day.dayIndex)")
                             .font(.headline)
                             .fontWeight(.bold)
                             .foregroundColor(.white)

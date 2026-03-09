@@ -230,6 +230,8 @@ final class CreatedRecapBlogStore: ObservableObject {
     @Published var pendingRecapCreated = false
     /// Set to true when a draft is saved on back navigation. Consumed by TripsView to show a toast.
     @Published var showDraftSavedToast = false
+    /// Trip ID that was just discarded (user exited without saving). Consumed by TripsView to scroll the carousel back to it.
+    @Published var lastDiscardedTripId: UUID?
     /// Date ranges of active drafts (from TripsViewModel) to exclude from scans. Written by TripsViewModel.updateOccupiedRanges().
     var draftOccupiedRanges: [(start: Date, end: Date)] = []
     /// When true, TripsViewModel clears trips and re-runs default scan (e.g. after archive rules change).
@@ -381,7 +383,6 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Call when user completes the Create Blog sequence (before showing RecapSavedView).
     func addCreatedBlog(trip: TripDraft) {
-        AppAnalytics.shared.trackEvent(name: "blog_created")
         let startDate = trip.earliestDate
         let endDate = trip.latestDate
         let tempDetail = buildBlogDetail(from: trip)
@@ -422,20 +423,6 @@ final class CreatedRecapBlogStore: ObservableObject {
         pendingRecapCreated = true
         persistRecents()
         persistTripDrafts()
-
-        // If the trip just ended within the last 14 days the user may still be travelling.
-        // Track it so we can surface "new moments" popup when they re-open the app.
-        if let endDate = blog.tripEndDate {
-            let daysSinceEnd = Calendar.current.dateComponents([.day], from: endDate, to: Date()).day ?? Int.max
-            if daysSinceEnd <= 14 {
-                OnTheGoTripStore.markTripAsActive(
-                    blogId: blog.sourceTripId,
-                    title: blog.title,
-                    tripEndDate: endDate,
-                    country: blog.countryName
-                )
-            }
-        }
     }
 
     /// Dismiss the "Recap Blog has been created!" banner.
@@ -539,12 +526,33 @@ final class CreatedRecapBlogStore: ObservableObject {
     }
 
     /// Enforces cloud storage limits based on entitlements.
-    /// No blog count limit — all uploaded blogs stay active. Storage cap is the constraint.
     func enforceArchiveRules() {
+        let limit = EntitlementManager.shared.activeCloudBlogLimit
+        guard let maxCloud = limit else {
+            // Pro user: ensure all uploaded blogs are uploadedActive
+            var changed = false
+            for i in recents.indices where recents[i].cloudState == .uploadedArchived {
+                recents[i].cloudState = .uploadedActive
+                changed = true
+            }
+            if changed { persistRecents() }
+            return
+        }
+
+        // Free tier: sort uploaded blogs by date and archive those beyond the limit
+        let uploadedBlogs = recents.filter { $0.cloudState != .localOnly }.sorted { $0.createdAt > $1.createdAt }
         var changed = false
-        for i in recents.indices where recents[i].cloudState == .uploadedArchived {
-            recents[i].cloudState = .uploadedActive
-            changed = true
+        for (index, blog) in uploadedBlogs.enumerated() {
+            guard let idx = recents.firstIndex(where: { $0.id == blog.id }) else { continue }
+
+            let hasLifetime = EntitlementManager.shared.lifetimeAllocatedBlogIDs.contains(blog.sourceTripId)
+            let isWithinLimit = index < maxCloud
+
+            let targetState: CloudState = (isWithinLimit || hasLifetime) ? .uploadedActive : .uploadedArchived
+            if recents[idx].cloudState != targetState {
+                recents[idx].cloudState = targetState
+                changed = true
+            }
         }
         if changed { persistRecents() }
     }
@@ -711,11 +719,17 @@ final class CreatedRecapBlogStore: ObservableObject {
     /// Persist edited blog detail. Call when user taps Save on RecapBlogPageView. Updates the corresponding recents entry.
     /// - Parameter asDraft: If true, preserves the existing lastEditedAt (keeping it nil if it was a draft).
     func saveBlogDetail(_ detail: RecapBlogDetail, asDraft: Bool = false) {
-        AppAnalytics.shared.trackEvent(name: "blog_saved")
         blogDetailsBySourceId[detail.id] = detail
         guard let idx = recents.firstIndex(where: { $0.sourceTripId == detail.id }) else { return }
         let old = recents[idx]
         let country = (detail.countryName.flatMap { $0.isEmpty || $0 == "Unknown" ? nil : $0 }) ?? old.countryName
+
+        // Use the dates from detail to accurately reflect removals/splits
+        let newStart = detail.days.first?.date ?? old.tripStartDate
+        let newEnd = detail.days.last?.date ?? old.tripEndDate
+        let newDateRange = Self.formatDateRange(start: newStart, end: newEnd) ?? old.tripDateRangeText
+        let newSelectedCount = detail.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
+
         recents[idx] = CreatedRecapBlog(
             id: old.id,
             sourceTripId: old.sourceTripId,
@@ -723,12 +737,12 @@ final class CreatedRecapBlogStore: ObservableObject {
             createdAt: old.createdAt,
             coverImageName: detail.coverTheme,
             coverAssetIdentifier: detail.selectedCoverPhotoIdentifier,
-            selectedPhotoCount: old.selectedPhotoCount,
+            selectedPhotoCount: newSelectedCount,
             countryName: country,
-            tripDateRangeText: old.tripDateRangeText,
+            tripDateRangeText: newDateRange,
             lastEditedAt: asDraft ? old.lastEditedAt : Date(),
-            tripStartDate: old.tripStartDate,
-            tripEndDate: old.tripEndDate,
+            tripStartDate: newStart,
+            tripEndDate: newEnd,
             totalPlaceVisitCount: detail.days.reduce(0) { $0 + $1.placeStops.count },
             tripDurationDays: detail.days.count,
             caption: primaryCaption(from: detail),
@@ -849,6 +863,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         recents.removeAll { $0.sourceTripId == sourceTripId }
         blogDetailsBySourceId.removeValue(forKey: sourceTripId)
         if pendingRecapCreated { pendingRecapCreated = false }
+        lastDiscardedTripId = sourceTripId
         needsRescan = true
         persistRecents()
         persistBlogDetails()
@@ -895,7 +910,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
 
         var allDays = daysByDate.values.sorted { $0.date < $1.date }
-        for i in allDays.indices { allDays[i].dayIndex = i }
+        for i in allDays.indices { allDays[i].dayIndex = i + 1 }
 
         // 2. Merge removed place stops
         let mergedRemoved = keepDetail.removedPlaceStops + absorbDetail.removedPlaceStops
@@ -931,7 +946,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                 let t1 = $1.photos.first?.timestamp ?? .distantPast
                 return t0 < t1
             }
-            for i in combined.indices { combined[i].dayIndex = i }
+            for i in combined.indices { combined[i].dayIndex = i + 1 }
             keepTrip.days = combined
             keepTrip.episodeLabel = nil
             tripDraftsBySourceId[keepId] = keepTrip
@@ -964,8 +979,8 @@ final class CreatedRecapBlogStore: ObservableObject {
         // 1. Split days
         var part1Days = Array(detail.days[0...afterDayIndex])
         var part2Days = Array(detail.days[(afterDayIndex + 1)...])
-        for i in part1Days.indices { part1Days[i].dayIndex = i }
-        for i in part2Days.indices { part2Days[i].dayIndex = i }
+        for i in part1Days.indices { part1Days[i].dayIndex = i + 1 }
+        for i in part2Days.indices { part2Days[i].dayIndex = i + 1 }
 
         // 2. Split removed place stops by day
         let part1DayIds = Set(part1Days.map(\.id))
@@ -1052,13 +1067,13 @@ final class CreatedRecapBlogStore: ObservableObject {
             if splitIdx < trip.days.count - 1 {
                 var trip1 = trip
                 trip1.days = Array(trip.days[0...splitIdx])
-                for i in trip1.days.indices { trip1.days[i].dayIndex = i }
+                for i in trip1.days.indices { trip1.days[i].dayIndex = i + 1 }
                 trip1.title = title1
                 trip1.episodeLabel = "Episode 1 of 2"
                 tripDraftsBySourceId[blogId] = trip1
 
                 var trip2Days = Array(trip.days[(splitIdx + 1)...])
-                for i in trip2Days.indices { trip2Days[i].dayIndex = i }
+                for i in trip2Days.indices { trip2Days[i].dayIndex = i + 1 }
                 let trip2 = TripDraft(
                     id: newBlogId,
                     title: title2,
@@ -1082,6 +1097,81 @@ final class CreatedRecapBlogStore: ObservableObject {
         blogDetailsBySourceId[newBlogId] = detail2
         persistRecents()
         persistBlogDetails()
+        persistTripDrafts()
+        needsRescan = true
+    }
+
+    /// Splits an unsaved trip draft into two, keeping one part for the current editor and preserving the other part as a new TripDraft.
+    func splitUnsavedTrip(tripId: UUID, afterDayIndex: Int, keepPart: Int) {
+        guard let trip = tripDraftsBySourceId[tripId],
+              afterDayIndex >= 0,
+              afterDayIndex < trip.days.count - 1 else {
+            return
+        }
+        
+        // 1. Split days
+        let splitIdx = afterDayIndex
+        var part1Days = Array(trip.days[0...splitIdx])
+        var part2Days = Array(trip.days[(splitIdx + 1)...])
+        for i in part1Days.indices { part1Days[i].dayIndex = i + 1 }
+        for i in part2Days.indices { part2Days[i].dayIndex = i + 1 }
+        
+        let baseTitle = trip.title
+            .replacingOccurrences(of: " \\(Part \\d+ of \\d+\\)", with: "", options: .regularExpression)
+            .replacingOccurrences(of: " \\(Episode \\d+ of \\d+\\)", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        
+        let title1 = "\(baseTitle) (Part 1 of 2)"
+        let title2 = "\(baseTitle) (Part 2 of 2)"
+        
+        // 2. Formulate the two TripDrafts
+        let start1 = part1Days.first?.photos.first?.timestamp
+        let end1 = part1Days.last?.photos.last?.timestamp
+        let dateRange1 = Self.formatDateRange(start: start1, end: end1) ?? ""
+        
+        var trip1 = trip
+        trip1.title = title1
+        trip1.days = part1Days
+        trip1.dateRangeText = dateRange1
+        trip1.episodeLabel = "Episode 1 of 2"
+        
+        let start2 = part2Days.first?.photos.first?.timestamp
+        let end2 = part2Days.last?.photos.last?.timestamp
+        let dateRange2 = Self.formatDateRange(start: start2, end: end2) ?? ""
+        
+        // Provide a cover image fallback for the second part
+        let part2CoverIdentifier = part2Days.first?.photos.first(where: \.isSelected)?.localIdentifier
+            ?? trip.coverAssetIdentifier
+        
+        let newTripId = UUID()
+        let trip2 = TripDraft(
+            id: newTripId,
+            title: title2,
+            dateRangeText: dateRange2,
+            days: part2Days,
+            coverImageName: trip.coverImageName,
+            isScannedFromDefaultRange: trip.isScannedFromDefaultRange,
+            coverTheme: trip.coverTheme,
+            coverAssetIdentifier: part2CoverIdentifier,
+            episodeLabel: "Episode 2 of 2"
+        )
+        
+        // 3. Assign the kept part to the original tripId, and the discarded part to the new ID.
+        if keepPart == 1 {
+            tripDraftsBySourceId[tripId] = trip1
+            tripDraftsBySourceId[newTripId] = trip2
+        } else {
+            // we want the editor (which continues using 'tripId') to have part 2.
+            var trip2WithOriginalID = trip2
+            trip2WithOriginalID.id = tripId
+            
+            var trip1WithNewID = trip1
+            trip1WithNewID.id = newTripId
+            
+            tripDraftsBySourceId[tripId] = trip2WithOriginalID
+            tripDraftsBySourceId[newTripId] = trip1WithNewID
+        }
+        
         persistTripDrafts()
         needsRescan = true
     }
@@ -1448,7 +1538,7 @@ final class CreatedRecapBlogStore: ObservableObject {
             }
 
             guard !stops.isEmpty else { continue }
-            days.append(RecapBlogDay(dayIndex: dayIdx, date: dayDate, placeStops: stops))
+            days.append(RecapBlogDay(dayIndex: dayIdx + 1, date: dayDate, placeStops: stops))
         }
 
         return RecapBlogDetail(
@@ -1520,7 +1610,6 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Builds blog detail, resolves place names from reverse-geocoding, generates a title, and scores photos via Vision AI.
     func buildBlogDetailAsync(from trip: TripDraft) async -> RecapBlogDetail {
-        let calendar = Calendar.current
         var detail = buildBlogDetail(from: trip)
         var cityCandidates: [(city: String, order: Int)] = []
         var countryCandidates: [(country: String, order: Int)] = []
@@ -1589,12 +1678,8 @@ final class CreatedRecapBlogStore: ObservableObject {
             for stopIdx in detail.days[dayIdx].placeStops.indices {
                 let stop = detail.days[dayIdx].placeStops[stopIdx]
                 let photos = stop.photos.filter(\.isIncluded)
-                // Pick earliest by PHAsset.creationDate so manual date changes in Photos are respected.
-                let firstPhotoAndAsset: (RecapPhoto, PHAsset)? = photos.compactMap { photo -> (RecapPhoto, PHAsset)? in
-                    guard let id = photo.localIdentifier, let asset = assetMap[id] else { return nil }
-                    return (photo, asset)
-                }.min(by: { ($0.1.creationDate ?? .distantPast) < ($1.1.creationDate ?? .distantPast) })
-                guard let (firstPhoto, asset) = firstPhotoAndAsset else {
+                guard let firstPhoto = photos.min(by: { $0.timestamp < $1.timestamp }),
+                      let asset = assetMap[firstPhoto.localIdentifier ?? ""] else {
                     print("[buildBlogDetail] ⚠️ '\(stop.placeTitle)': skipped visitedTimeDigitized (no included photos or missing asset)")
                     continue
                 }
@@ -1636,75 +1721,12 @@ final class CreatedRecapBlogStore: ObservableObject {
                 print("[buildBlogDetail] ✅ '\(stop.placeTitle)': visitedTimeDigitized=\(digitized), tz=\(tz.identifier) (votes: \(stopOffsets.count))")
                 detail.days[dayIdx].placeStops[stopIdx].visitedTimeDigitized = digitized
             }
-
-            let digitizedFormatter = DateFormatter()
-            digitizedFormatter.locale = Locale(identifier: "en_US_POSIX")
-            digitizedFormatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
-            digitizedFormatter.timeZone = TimeZone(secondsFromGMT: 0)
-
-            if let earliestStopDate = detail.days[dayIdx].placeStops
-                .compactMap(\.visitedTimeDigitized)
-                .compactMap({ digitizedFormatter.date(from: $0) })
-                .min() {
-                detail.days[dayIdx].date = calendar.startOfDay(for: earliestStopDate)
-            }
         }
 
         // Score photos with iOS Vision AI and auto-select best per place stop.
         detail = await applyPhotoQualitySelection(to: detail)
 
-        // Pick cover: best photo from each place, then best of those (so we don't always pick from the first place).
-        if let bestCoverId = bestCoverIdentifierFromDetail(detail) {
-            detail.selectedCoverPhotoIdentifier = bestCoverId
-        }
-
         return detail
-    }
-
-    /// Best cover for a detail: one best-scoring included photo per place stop, then the highest-scoring of those.
-    private func bestCoverIdentifierFromDetail(_ detail: RecapBlogDetail) -> String? {
-        var bestPerPlace: [(identifier: String, score: Double)] = []
-        for day in detail.days {
-            for stop in day.placeStops {
-                let included = stop.photos.filter(\.isIncluded)
-                guard !included.isEmpty else { continue }
-                let withScores = included.filter { $0.qualityScore != nil }
-                let best = withScores.isEmpty
-                    ? included.first
-                    : withScores.max(by: { ($0.qualityScore?.totalScore ?? -1) < ($1.qualityScore?.totalScore ?? -1) })
-                guard let photo = best, let id = photo.localIdentifier else { continue }
-                let score = photo.qualityScore?.totalScore ?? -1
-                bestPerPlace.append((id, score))
-            }
-        }
-        guard !bestPerPlace.isEmpty else { return nil }
-        let top = bestPerPlace.max(by: { $0.score < $1.score })
-        return top?.identifier
-    }
-
-    /// Best cover for a trip draft: best-scoring selected photo per day, then the best of those. Uses Vision AI scoring.
-    func bestCoverAssetIdentifier(for trip: TripDraft) async -> String? {
-        let allIds = trip.days.flatMap { day in
-            day.photos.filter(\.isSelected).compactMap(\.localIdentifier)
-        }
-        guard !allIds.isEmpty else { return nil }
-        let scorer = PhotoQualityScorer.shared
-        let scores = await scorer.scorePhotos(identifiers: allIds)
-        guard !scores.isEmpty else {
-            return trip.days.flatMap(\.photos).first(where: { $0.isSelected })?.localIdentifier
-        }
-        var bestPerDay: [(identifier: String, score: Double)] = []
-        for day in trip.days {
-            let dayIds = day.photos.filter(\.isSelected).compactMap(\.localIdentifier)
-            guard !dayIds.isEmpty else { continue }
-            let bestId = dayIds.max { (scores[$0]?.totalScore ?? -1) < (scores[$1]?.totalScore ?? -1) }
-            if let id = bestId, let score = scores[id] {
-                bestPerDay.append((id, score.totalScore))
-            }
-        }
-        guard !bestPerDay.isEmpty else { return nil }
-        let top = bestPerDay.max(by: { $0.score < $1.score })
-        return top?.identifier
     }
 
     // MARK: - Day-by-day processing (rate limit 50 geocode/min)
@@ -1754,9 +1776,6 @@ final class CreatedRecapBlogStore: ObservableObject {
         detail = await applyVisitedTimeDigitized(to: detail, dayIndices: [firstDayIdx])
         if Task.isCancelled { return detail }
         detail = await applyPhotoQualitySelection(to: detail, dayIndices: [firstDayIdx])
-        if let bestCoverId = bestCoverIdentifierFromDetail(detail) {
-            detail.selectedCoverPhotoIdentifier = bestCoverId
-        }
         return detail
     }
 
@@ -1847,29 +1866,20 @@ final class CreatedRecapBlogStore: ObservableObject {
             guard dayIdx < result.days.count, stopIdx < result.days[dayIdx].placeStops.count else { continue }
             let stop = result.days[dayIdx].placeStops[stopIdx]
             let photos = stop.photos.filter(\.isIncluded)
-            // Pick earliest photo by current PHAsset.creationDate so manual date changes in Photos are reflected.
-            let firstPhotoAndAsset: (RecapPhoto, PHAsset)? = photos.compactMap { photo -> (RecapPhoto, PHAsset)? in
-                guard let id = photo.localIdentifier, let asset = assetMap[id] else { return nil }
-                return (photo, asset)
-            }.min(by: { ($0.1.creationDate ?? .distantPast) < ($1.1.creationDate ?? .distantPast) })
-            guard let (firstPhoto, asset) = firstPhotoAndAsset else { continue }
+            guard let firstPhoto = photos.min(by: { $0.timestamp < $1.timestamp }),
+                  let _ = assetMap[firstPhoto.localIdentifier ?? ""] else { continue }
             let stopOffsets: [Int] = photos.compactMap { photo -> Int? in
                 guard let id = photo.localIdentifier, let tz = tzMap[id] else { return nil }
                 return (tz.secondsFromGMT() / 900) * 900
             }
             let consensusOffset = stopOffsets.isEmpty ? 0 : (stopOffsets.reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }.max(by: { $0.value < $1.value })?.key ?? 0)
             let tz = TimeZone(secondsFromGMT: consensusOffset) ?? TimeZone(identifier: "UTC")!
+            let asset = assetMap[firstPhoto.localIdentifier ?? ""]!
             let date = asset.creationDate ?? firstPhoto.timestamp
             let digitized = APIManager.digitizedTimeString(from: date, timeZone: tz)
             result.days[dayIdx].placeStops[stopIdx].visitedTimeDigitized = digitized
         }
         return result
-    }
-
-    /// Refreshes visitedTimeDigitized for every place stop from current PHAsset metadata (creationDate).
-    /// Call when opening a recap blog so displayed visit times reflect any manual date changes in Photos.
-    func refreshVisitedTimeDigitizedFromPhotoLibrary(detail: RecapBlogDetail) async -> RecapBlogDetail {
-        await applyVisitedTimeDigitized(to: detail, dayIndices: Array(detail.days.indices))
     }
 
     /// Scores every photo using Vision AI and auto-selects the best per place stop.
@@ -2104,10 +2114,10 @@ final class CreatedRecapBlogStore: ObservableObject {
                             return "cloud_\(idx)"
                         }
                         if let vtd = stop.visitedTimeDigitized, !vtd.isEmpty {
-                            return "vtd_\(vtd)_\(placeName)"
+                            return "vtd_\(vtd)"
                         }
                         let dayStamp = day.date.timeIntervalSince1970
-                        return "local_\(blog.sourceTripId.uuidString)_\(Int(dayStamp))_\(stop.orderIndex)_\(placeName)"
+                        return "local_\(blog.sourceTripId.uuidString)_\(Int(dayStamp))_\(stop.orderIndex)"
                     }()
 
                     let placeCaption = stop.noteText
