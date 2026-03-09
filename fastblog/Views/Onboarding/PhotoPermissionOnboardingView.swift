@@ -10,6 +10,7 @@ struct PhotoPermissionOnboardingView: View {
     @ObservedObject var photoAuth: PhotosAuthorizationManager
     /// Called after the permission request completes with the resulting status.
     var onResult: ((PHAuthorizationStatus) -> Void)? = nil
+    var onBack: (() -> Void)? = nil
 
     // Staggered animation phases (similar to ProblemStatementView)
     @State private var showIcon = false
@@ -31,6 +32,20 @@ struct PhotoPermissionOnboardingView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
+                if let onBack = onBack {
+                    HStack {
+                        Button(action: onBack) {
+                            Image(systemName: "chevron.left")
+                                .font(.title3.weight(.bold))
+                                .foregroundColor(.white)
+                                .padding(.leading, 8)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, OnboardingConstants.Layout.horizontalPadding)
+                    .padding(.top, OnboardingConstants.Layout.titleTopPadding)
+                }
+                
                 Spacer()
                 
                 // Icon Header

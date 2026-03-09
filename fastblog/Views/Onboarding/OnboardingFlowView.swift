@@ -36,18 +36,29 @@ struct OnboardingFlowView: View {
                     step = .neighborhood
                 }
             } else if step == .neighborhood {
-                NeighborhoodSelectionView {
-                    step = .photoPermissionOnboarding
-                }
-            } else if step == .photoPermissionOnboarding {
-                PhotoPermissionOnboardingView(photoAuth: photoAuth) { resultStatus in
-                    if resultStatus == .authorized || resultStatus == .limited {
-                        OnboardingStore.hasCompletedOnboarding = true
-                        onComplete()
-                    } else if resultStatus == .denied || resultStatus == .restricted {
-                        step = .photoPermissionDenied
+                NeighborhoodSelectionView(
+                    onSelect: {
+                        step = .photoPermissionOnboarding
+                    },
+                    onBack: {
+                        step = .neighborhoodIntro
                     }
-                }
+                )
+            } else if step == .photoPermissionOnboarding {
+                PhotoPermissionOnboardingView(
+                    photoAuth: photoAuth,
+                    onResult: { resultStatus in
+                        if resultStatus == .authorized || resultStatus == .limited {
+                            OnboardingStore.hasCompletedOnboarding = true
+                            onComplete()
+                        } else if resultStatus == .denied || resultStatus == .restricted {
+                            step = .photoPermissionDenied
+                        }
+                    },
+                    onBack: {
+                        step = .neighborhood
+                    }
+                )
             } else {
                 PhotosPermissionView(
                     status: photoAuth.status,

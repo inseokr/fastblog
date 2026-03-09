@@ -9,7 +9,8 @@ import SwiftUI
 
 struct NeighborhoodSelectionView: View {
     var onSelect: () -> Void
-
+    var onBack: (() -> Void)?
+    
     @State private var mapRegion: MKCoordinateRegion
     @StateObject private var searchHelper = CitySearchHelper()
     @StateObject private var onboardingState = OnboardingState()
@@ -20,10 +21,12 @@ struct NeighborhoodSelectionView: View {
     @State private var pendingSpan: MKCoordinateSpan?
     @State private var isResolvingPlace = false
     @State private var resolvePlaceTask: Task<Void, Never>?
-    @FocusState private var isSearchFocused: Bool
+    @FocusState private var isFocused: Bool
+    @State private var isMapRevealed = false
 
-    init(onSelect: @escaping () -> Void) {
+    init(onSelect: @escaping () -> Void, onBack: (() -> Void)? = nil) {
         self.onSelect = onSelect
+        self.onBack = onBack
         _mapRegion = State(initialValue: MKCoordinateRegion(
             center: OnboardingConstants.Map.defaultCenter,
             span: MKCoordinateSpan(
@@ -37,7 +40,11 @@ struct NeighborhoodSelectionView: View {
         ZStack(alignment: .bottom) {
             VStack(spacing: 0) {
                 topSection
-                mapSection
+                if isMapRevealed {
+                    mapSection
+                } else {
+                    Spacer()
+                }
             }
             if hasPendingSelection {
                 doneButtonAtBottom
@@ -47,10 +54,14 @@ struct NeighborhoodSelectionView: View {
         .preferredColorScheme(.dark)
         .ignoresSafeArea(.keyboard)
         .onAppear {
+            isFocused = true
             locationManager.requestLocation()
             searchHelper.onRegionSelected = { region, name in
-                mapRegion = region
-                isSearchFocused = false
+                isFocused = false
+                searchHelper.suggestions = []
+                hasPendingSelection = true
+                pendingCenter = region.center
+                pendingSpan = region.span
                 if let name = name {
                     searchHelper.query = name
                 }
@@ -75,12 +86,26 @@ struct NeighborhoodSelectionView: View {
 
     private var topSection: some View {
         VStack(spacing: OnboardingConstants.Layout.spacingBetweenTitleAndSearch) {
-            Text("Set Home")
-                .font(.title)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.top, OnboardingConstants.Layout.titleTopPadding)
+            ZStack {
+                if let onBack = onBack {
+                    HStack {
+                        Button(action: onBack) {
+                            Image(systemName: "chevron.left")
+                                .font(.title3.weight(.bold))
+                                .foregroundColor(.white)
+                                .padding(.leading, 8)
+                        }
+                        Spacer()
+                    }
+                }
+                
+                Text("Set Home")
+                    .font(.title)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+            }
+            .padding(.top, OnboardingConstants.Layout.titleTopPadding)
 
             searchField
             if isResolvingPlace {
@@ -98,24 +123,36 @@ struct NeighborhoodSelectionView: View {
     }
 
     private var searchField: some View {
-        ZStack(alignment: .leading) {
-            if searchHelper.query.isEmpty {
-                Text("Select Area On Map")
-                    .font(.body)
-                    .foregroundColor(Color(white: 0.45))
-                    .padding(.leading, 16)
+        VStack(spacing: 8) {
+            ZStack(alignment: .leading) {
+                if searchHelper.query.isEmpty {
+                    Text("Search for your city or neighborhood")
+                        .font(.body)
+                        .foregroundColor(Color(white: 0.45))
+                        .padding(.leading, 16)
+                }
+                TextField("", text: $searchHelper.query)
+                    .textFieldStyle(.plain)
+                    .foregroundColor(.black.opacity(0.85))
+                    .focused($isFocused)
+                    .padding(12)
+                    .onChange(of: isFocused) { _, focused in
+                        if !focused {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                if !isFocused { searchHelper.suggestions = [] }
+                            }
+                        }
+                    }
             }
-            TextField("", text: $searchHelper.query)
-                .textFieldStyle(.plain)
-                .foregroundColor(.black.opacity(0.85))
-                .padding(12)
-                .focused($isSearchFocused)
-                .onSubmit { isSearchFocused = false }
+            .background(OnboardingConstants.Colors.searchBackground)
+            .cornerRadius(OnboardingConstants.Layout.searchCornerRadius)
+            .accessibilityLabel("Select area on map")
+            .accessibilityHint("Type to see suggestions, or pan the map and tap Select to choose an area")
+            
+            if searchHelper.query.isEmpty && !hasPendingSelection && !isMapRevealed {
+                useCurrentLocationButton
+            }
         }
-        .background(OnboardingConstants.Colors.searchBackground)
-        .cornerRadius(OnboardingConstants.Layout.searchCornerRadius)
-        .accessibilityLabel("Select area on map")
-        .accessibilityHint("Type to see suggestions, or pan the map and tap Select to choose an area")
     }
 
     @ViewBuilder
@@ -199,6 +236,48 @@ struct NeighborhoodSelectionView: View {
         .background(OnboardingConstants.Colors.background)
         .accessibilityLabel("Done")
         .accessibilityHint("Save neighborhood and continue")
+    }
+
+    private var useCurrentLocationButton: some View {
+        Button {
+            isFocused = false
+            isMapRevealed = true
+            if let coord = locationManager.lastCoordinate {
+                mapRegion = MKCoordinateRegion(
+                    center: coord,
+                    span: MKCoordinateSpan(
+                        latitudeDelta: OnboardingConstants.Map.defaultSpanLat,
+                        longitudeDelta: OnboardingConstants.Map.defaultSpanLon
+                    )
+                )
+            } else {
+                locationManager.requestLocation()
+            }
+        } label: {
+            HStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(Color.blue.opacity(0.2))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "location.fill")
+                        .foregroundColor(.blue)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Use Current Location")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                    Text("Find neighborhood near you")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                Spacer()
+            }
+            .padding()
+            .background(Color.white.opacity(0.05))
+            .cornerRadius(16)
+        }
+        .padding(.top, 4)
     }
 
     /// Called when user taps Select: capture center/span and reverse geocode to update the text field. Does not navigate.

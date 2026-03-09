@@ -43,6 +43,7 @@ final class CitySearchHelper: NSObject, ObservableObject {
     }
 
     func selectSuggestion(_ completion: MKLocalSearchCompletion) {
+        suggestions = []
         let request = MKLocalSearch.Request(completion: completion)
         let search = MKLocalSearch(request: request)
         isSearching = true
