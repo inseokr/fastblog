@@ -381,7 +381,8 @@ struct TripsView: View {
                 .opacity((showLoadMorePopup || viewModel.isLoadingOlderTrips) ? 0 : 1)
                 .disabled(showLoadMorePopup || viewModel.isLoadingOlderTrips)
             }
-            #if DEBUG
+            // Scan Debug ladybug — hidden for now; set to DEBUG to show.
+            #if false
             ToolbarItem(placement: .topBarLeading) {
                 Button {
                     viewModel.runDebugScan()
@@ -400,7 +401,8 @@ struct TripsView: View {
                 draftSavedToast
             }
         }
-        #if DEBUG
+        // Scan Debug sheet — hidden for now; set to DEBUG to show.
+        #if false
         .sheet(isPresented: $showDebugScanSheet) {
             ScanDebugSheet(info: viewModel.debugScanInfo, isLoading: viewModel.isRunningDebugScan)
                 .onChange(of: viewModel.isRunningDebugScan) { _, loading in
