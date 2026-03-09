@@ -114,7 +114,7 @@ struct NeighborhoodSelectionView: View {
                     .foregroundColor(.white.opacity(0.8))
             }
             // Only show while typing and not after a selection is confirmed
-            if isSearchFocused && !hasPendingSelection {
+            if isFocused && !hasPendingSelection {
                 suggestionList
             }
         }
@@ -158,27 +158,24 @@ struct NeighborhoodSelectionView: View {
     @ViewBuilder
     private var suggestionList: some View {
         if !searchHelper.suggestions.isEmpty {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(searchHelper.suggestions.enumerated()), id: \.element.uniqueKey) { _, completion in
-                        Button {
-                            isSearchFocused = false
-                            searchHelper.selectSuggestion(completion)
-                        } label: {
-                            Text(suggestionDisplayText(completion))
-                                .font(.body)
-                                .foregroundColor(.white)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
-                        }
-                        .buttonStyle(.plain)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(searchHelper.suggestions.enumerated()), id: \.element.uniqueKey) { _, completion in
+                    Button {
+                        isFocused = false
+                        searchHelper.selectSuggestion(completion)
+                    } label: {
+                        Text(suggestionDisplayText(completion))
+                            .font(.body)
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
                     }
+                    .buttonStyle(.plain)
                 }
             }
-            .frame(maxHeight: 220)
             .background(OnboardingConstants.Colors.background)
             .cornerRadius(OnboardingConstants.Layout.searchCornerRadius)
             .overlay(
