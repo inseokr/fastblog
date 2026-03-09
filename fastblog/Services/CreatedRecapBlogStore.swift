@@ -254,9 +254,13 @@ final class CreatedRecapBlogStore: ObservableObject {
     // MARK: - Persistence
 
     private static let storageDirectory: URL = {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let dir = docs.appendingPathComponent("CreatedBlogs", isDirectory: true)
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = appSupport.appendingPathComponent("CreatedBlogs", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var dirForResource = dir
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        try? dirForResource.setResourceValues(resourceValues)
         return dir
     }()
 
