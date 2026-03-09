@@ -20,6 +20,7 @@ struct NeighborhoodSelectionView: View {
     @State private var pendingSpan: MKCoordinateSpan?
     @State private var isResolvingPlace = false
     @State private var resolvePlaceTask: Task<Void, Never>?
+    @FocusState private var isSearchFocused: Bool
 
     init(onSelect: @escaping () -> Void) {
         self.onSelect = onSelect
@@ -44,10 +45,12 @@ struct NeighborhoodSelectionView: View {
         }
         .background(OnboardingConstants.Colors.background)
         .preferredColorScheme(.dark)
+        .ignoresSafeArea(.keyboard)
         .onAppear {
             locationManager.requestLocation()
             searchHelper.onRegionSelected = { region, name in
                 mapRegion = region
+                isSearchFocused = false
                 if let name = name {
                     searchHelper.query = name
                 }
@@ -85,8 +88,8 @@ struct NeighborhoodSelectionView: View {
                     .font(.subheadline)
                     .foregroundColor(.white.opacity(0.8))
             }
-            // Only show suggestion list when not showing a pending selection (avoid extra white box with same name)
-            if !hasPendingSelection {
+            // Only show while typing and not after a selection is confirmed
+            if isSearchFocused && !hasPendingSelection {
                 suggestionList
             }
         }
@@ -106,6 +109,8 @@ struct NeighborhoodSelectionView: View {
                 .textFieldStyle(.plain)
                 .foregroundColor(.black.opacity(0.85))
                 .padding(12)
+                .focused($isSearchFocused)
+                .onSubmit { isSearchFocused = false }
         }
         .background(OnboardingConstants.Colors.searchBackground)
         .cornerRadius(OnboardingConstants.Layout.searchCornerRadius)
@@ -116,23 +121,27 @@ struct NeighborhoodSelectionView: View {
     @ViewBuilder
     private var suggestionList: some View {
         if !searchHelper.suggestions.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(searchHelper.suggestions.enumerated()), id: \.element.uniqueKey) { _, completion in
-                    Button {
-                        searchHelper.selectSuggestion(completion)
-                    } label: {
-                        Text(suggestionDisplayText(completion))
-                            .font(.body)
-                            .foregroundColor(.white)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(searchHelper.suggestions.enumerated()), id: \.element.uniqueKey) { _, completion in
+                        Button {
+                            isSearchFocused = false
+                            searchHelper.selectSuggestion(completion)
+                        } label: {
+                            Text(suggestionDisplayText(completion))
+                                .font(.body)
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
+            .frame(maxHeight: 220)
             .background(OnboardingConstants.Colors.background)
             .cornerRadius(OnboardingConstants.Layout.searchCornerRadius)
             .overlay(

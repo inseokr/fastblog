@@ -23,6 +23,9 @@ struct TripsView: View {
     @State private var suppressMapAnimation = false
     /// True after a scan completes with weak results while access is Limited — gates the top banner.
     @State private var showLimitedBannerAfterWeakScan = false
+    #if DEBUG
+    @State private var showDebugScanSheet = false
+    #endif
     /// Show "Load more trips?" popup when user scrolls past the last trip.
     @State private var showLoadMorePopup = false
     /// Show "Load newer trips?" popup when user swipes past the first trip.
@@ -42,6 +45,9 @@ struct TripsView: View {
     /// Used in the completion callback because createdRecapStore may have already filtered the trip
     /// out of allTrips by the time the callback fires, making removedTripIndex unreliable.
     @State private var nextTripIDAfterCreation: UUID? = nil
+    /// Initial day index passed into TripDayPickerView — set to the latest day for new-moments
+    /// navigation, 0 for all other navigation paths.
+    @State private var tripInitialDayIndex: Int = 0
 
     init(viewModel: TripsViewModel, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         _viewModel = ObservedObject(wrappedValue: viewModel)
@@ -105,6 +111,7 @@ struct TripsView: View {
         .navigationDestination(item: $selectedTrip) { trip in
             TripDayPickerView(
                 trip: viewModel.tripForPicker(trip),
+                initialDayIndex: tripInitialDayIndex,
                 onStartCreateBlog: { createBlogFlowTrip = $0 }
             )
         }
@@ -236,6 +243,65 @@ struct TripsView: View {
                 }
             }
         }
+        // New moments detected — show the newly-scanned-photos sheet.
+        .sheet(isPresented: $viewModel.showNewlyScannedSheet) {
+            NewlyScannedPhotosSheet(
+                photos: viewModel.newlyScannedPhotos,
+                matchedTrip: viewModel.newMomentsInExistingTrip,
+                matchedBlog: viewModel.newMomentsMatchedBlog,
+                onGoToTrip: {
+                    viewModel.showNewlyScannedSheet = false
+                    // Also inject photos into the blog so they're not lost —
+                    // "View Trip" acknowledges the photos, which saves the cutoff,
+                    // but without injecting they'd never appear in the blog detail.
+                    if let blog = viewModel.newMomentsMatchedBlog {
+                        createdRecapStore.injectPhotos(
+                            viewModel.newlyScannedPhotos,
+                            intoSourceTripId: blog.sourceTripId
+                        )
+                    }
+                    if let trip = viewModel.newMomentsInExistingTrip {
+                        tripInitialDayIndex = viewModel.newMomentsLatestDayIndex
+                        selectedTripID = trip.id
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                            selectedTrip = trip
+                        }
+                    }
+                    viewModel.clearNewMomentsSignal()
+                },
+                onGoToBlog: {
+                    viewModel.showNewlyScannedSheet = false
+                    if let blog = viewModel.newMomentsMatchedBlog {
+                        // Inject new photos into the blog's RecapBlogDetail before navigating.
+                        createdRecapStore.injectPhotos(
+                            viewModel.newlyScannedPhotos,
+                            intoSourceTripId: blog.sourceTripId
+                        )
+                        let recap = createdRecapStore.visibleRecents.first(where: { $0.id == blog.id })
+                        if let recap { selectedCreatedRecap = recap }
+                    }
+                    viewModel.clearNewMomentsSignal()
+                },
+                onDismiss: {
+                    viewModel.showNewlyScannedSheet = false
+                    if viewModel.newMomentsSheetTriggeredByCreateButton {
+                        viewModel.dismissNewMomentsAndOpenPendingCreateFlow()
+                    } else {
+                        viewModel.resetNewMomentsState()
+                    }
+                }
+            )
+        }
+        // When Create-blog check completes with no new photos (or user tapped "Later"), open the create flow.
+        .onChange(of: viewModel.openCreateFlowForPendingTrip) { _, shouldOpen in
+            guard shouldOpen, let trip = viewModel.pendingTripForCreateFlow else { return }
+            createBlogFlowTrip = trip
+            viewModel.clearPendingCreateFlow()
+        }
+        // Reset initial day index when trip detail view is dismissed normally.
+        .onChange(of: selectedTrip) { _, newTrip in
+            if newTrip == nil { tripInitialDayIndex = 0 }
+        }
         // Find More scan completed — always land on the newest (latest-dated) trip.
         // Without this, the old selectedTripID is no longer valid in the refreshed trip list
         // and SwiftUI defaults the scroll position to the end of the carousel.
@@ -301,12 +367,36 @@ struct TripsView: View {
                 .opacity((showLoadMorePopup || viewModel.isLoadingOlderTrips) ? 0 : 1)
                 .disabled(showLoadMorePopup || viewModel.isLoadingOlderTrips)
             }
+            #if DEBUG
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    viewModel.runDebugScan()
+                    showDebugScanSheet = true
+                } label: {
+                    Image(systemName: viewModel.isRunningDebugScan ? "arrow.clockwise.circle" : "ladybug")
+                        .font(.body)
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                .disabled(viewModel.isRunningDebugScan)
+            }
+            #endif
         }
         .overlay(alignment: .top) {
             if createdRecapStore.showDraftSavedToast {
                 draftSavedToast
             }
         }
+        #if DEBUG
+        .sheet(isPresented: $showDebugScanSheet) {
+            ScanDebugSheet(info: viewModel.debugScanInfo, isLoading: viewModel.isRunningDebugScan)
+                .onChange(of: viewModel.isRunningDebugScan) { _, loading in
+                    // Sheet was opened immediately — keep it open and let it populate.
+                    if !loading && viewModel.debugScanInfo == nil {
+                        showDebugScanSheet = false
+                    }
+                }
+        }
+        #endif
         .onDisappear {
             createdRecapStore.showDraftSavedToast = false
         }
@@ -381,7 +471,7 @@ struct TripsView: View {
             mapPosition: $mapPosition,
             onTripTapped: { trip in
                 if trip.id == selectedTripID {
-                    createBlogFlowTrip = trip
+                    viewModel.initiateCreateBlogFlow(trip: trip)
                 } else {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
                         selectedTripID = trip.id
@@ -501,8 +591,8 @@ struct TripsView: View {
                         isSelected: trip.id == selectedTripID,
                         onTap: {
                             if trip.id == selectedTripID {
-                                // Already centered — open blog creation
-                                createBlogFlowTrip = trip
+                                // Already centered — check for new photos, then open blog creation
+                                viewModel.initiateCreateBlogFlow(trip: trip)
                             } else {
                                 // Not centered yet — just snap it into focus
                                 withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
@@ -1293,6 +1383,387 @@ struct TripCoverImage: View {
         }
     }
 }
+
+// MARK: - Newly Scanned Photos Sheet
+
+private let newMomentsSheetBg    = Color(red: 10/255, green: 14/255, blue: 52/255)
+private let newMomentsCardBg     = Color(red: 28/255, green: 33/255, blue: 72/255)
+private let newMomentsDivider    = Color.white.opacity(0.12)
+
+struct NewlyScannedPhotosSheet: View {
+    let photos: [MockPhoto]
+    let matchedTrip: TripDraft?
+    let matchedBlog: CreatedRecapBlog?
+    var onGoToTrip: (() -> Void)?
+    var onGoToBlog: (() -> Void)?
+    var onDismiss: () -> Void
+
+    // Up to 4 thumbnails in the preview strip.
+    private var previewPhotos: [MockPhoto] { Array(photos.prefix(4)) }
+
+    private var coverAssetId: String? {
+        matchedBlog?.coverAssetIdentifier
+            ?? matchedTrip?.coverAssetIdentifier
+            ?? photos.first?.localIdentifier
+    }
+
+    private var entityTitle: String {
+        matchedBlog?.title ?? matchedTrip?.displayTitle ?? "Your Trip"
+    }
+
+    private var entityDateRange: String {
+        matchedBlog?.tripDateRangeText
+            ?? matchedTrip?.tripDateRangeDisplayText
+            ?? ""
+    }
+
+    private var entityDuration: String {
+        if let blog = matchedBlog {
+            let d = blog.tripDurationDays
+            return "\(d) day\(d == 1 ? "" : "s")"
+        }
+        if let trip = matchedTrip {
+            let d = trip.days.count
+            return "\(d) day\(d == 1 ? "" : "s")"
+        }
+        return ""
+    }
+
+    private var newPhotoLabel: String {
+        let n = photos.count
+        return "\(n) new photo\(n == 1 ? "" : "s") found"
+    }
+
+    var body: some View {
+        ZStack {
+            newMomentsSheetBg.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                // Drag handle
+                Capsule()
+                    .fill(Color.white.opacity(0.3))
+                    .frame(width: 36, height: 4)
+                    .padding(.top, 10)
+                    .padding(.bottom, 16)
+
+                // Cover photo hero
+                coverHero
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+
+                // Trip/blog info card
+                infoCard
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+
+                // New photo preview strip
+                photoStrip
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 24)
+
+                // Action buttons
+                actionButtons
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 32)
+            }
+        }
+        .preferredColorScheme(.dark)
+        .presentationDetents([.fraction(0.72)])
+        .presentationDragIndicator(.hidden)
+    }
+
+    // MARK: - Cover hero
+
+    @ViewBuilder
+    private var coverHero: some View {
+        ZStack(alignment: .bottomLeading) {
+            Group {
+                if let assetId = coverAssetId {
+                    AssetPhotoView(assetIdentifier: assetId, cornerRadius: 0, targetSize: CGSize(width: 600, height: 400))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 160)
+                } else {
+                    Rectangle()
+                        .fill(newMomentsCardBg)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 160)
+                        .overlay(
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .font(.system(size: 40))
+                                .foregroundColor(.white.opacity(0.3))
+                        )
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+
+            // Gradient overlay at bottom
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.55)],
+                startPoint: .top, endPoint: .bottom
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .frame(height: 80)
+
+            // Badge: "N new photos"
+            HStack(spacing: 5) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(newPhotoLabel)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Color.blue.opacity(0.85))
+            .clipShape(Capsule())
+            .padding(10)
+        }
+    }
+
+    // MARK: - Info card
+
+    private var infoCard: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entityTitle)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                if !entityDateRange.isEmpty {
+                    Text(entityDateRange)
+                        .font(.system(size: 13))
+                        .foregroundColor(.white.opacity(0.55))
+                }
+            }
+            Spacer()
+            if !entityDuration.isEmpty {
+                VStack(spacing: 2) {
+                    Text(entityDuration)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                    Text("trip")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(newMomentsCardBg)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    // MARK: - Photo strip (up to 4 thumbnails)
+
+    @ViewBuilder
+    private var photoStrip: some View {
+        if !previewPhotos.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("New Moments")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.5))
+                    .textCase(.uppercase)
+
+                HStack(spacing: 6) {
+                    ForEach(previewPhotos) { photo in
+                        Group {
+                            if let id = photo.localIdentifier {
+                                AssetPhotoView(assetIdentifier: id, cornerRadius: 0, targetSize: CGSize(width: 160, height: 160))
+                            } else {
+                                MockPhotoView(seed: photo.id.hashValue, cornerRadius: 0, showIcon: false, iconName: photo.imageName)
+                            }
+                        }
+                        .frame(width: 70, height: 70)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    // "+N more" pill when there are extra photos
+                    if photos.count > 4 {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(newMomentsCardBg)
+                                .frame(width: 70, height: 70)
+                            Text("+\(photos.count - 4)")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+                    }
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    // MARK: - Action buttons
+
+    private var actionButtons: some View {
+        VStack(spacing: 10) {
+            if matchedBlog != nil {
+                Button(action: { onGoToBlog?() }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "book.closed.fill")
+                        Text("Add to Blog")
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 15)
+                    .background(Color.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 13))
+                }
+            } else if matchedTrip != nil {
+                Button(action: { onGoToTrip?() }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "map.fill")
+                        Text("View Trip")
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 15)
+                    .background(Color.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 13))
+                }
+            }
+
+            Button(action: onDismiss) {
+                Text("Later")
+                    .font(.system(size: 15))
+                    .foregroundColor(.white.opacity(0.6))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(newMomentsCardBg)
+                    .clipShape(RoundedRectangle(cornerRadius: 13))
+            }
+        }
+    }
+}
+
+// MARK: - Debug Scan Sheet
+
+#if DEBUG
+private struct ScanDebugSheet: View {
+    let info: ScanDebugInfo?
+    let isLoading: Bool
+
+    private static let tsFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d, yyyy  HH:mm:ss"
+        return f
+    }()
+
+    private func ts(_ date: Date?) -> String {
+        guard let d = date else { return "—" }
+        return Self.tsFormatter.string(from: d)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if isLoading && info == nil {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                        Text("Scanning photos…").foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let info {
+                    List {
+                        summarySection(info)
+                        if info.entries.isEmpty {
+                            Section("Photo Groups") {
+                                Text("No trips found in this window.")
+                                    .foregroundColor(.secondary)
+                                    .font(.footnote)
+                            }
+                        } else {
+                            ForEach(info.entries) { entry in
+                                entrySection(entry, lastScanned: info.lastScannedDate)
+                            }
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                } else {
+                    Text("No scan data yet.").foregroundColor(.secondary)
+                }
+            }
+            .navigationTitle("Scan Debug")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    @ViewBuilder
+    private func summarySection(_ info: ScanDebugInfo) -> some View {
+        Section("Summary") {
+            LabeledContent("Scanned at", value: ts(info.scannedAt))
+            LabeledContent("Last scan", value: ts(info.lastScannedDate))
+            LabeledContent("Fetch window start", value: ts(info.fetchStart))
+            LabeledContent("Trip groups found", value: "\(info.entries.count)")
+            let totalNew = info.entries.reduce(0) { $0 + $1.newPhotoCount }
+            let totalAll = info.entries.reduce(0) { $0 + $1.totalPhotos }
+            LabeledContent("Photos (total / new)", value: "\(totalAll) / \(totalNew)")
+        }
+    }
+
+    @ViewBuilder
+    private func entrySection(_ entry: ScanDebugInfo.TripEntry, lastScanned: Date?) -> some View {
+        Section {
+            // Match badge row
+            HStack(spacing: 6) {
+                matchBadge(entry.match)
+                if entry.within24hOfExisting {
+                    Text("≤24 h")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Color.orange.opacity(0.18))
+                        .foregroundColor(.orange)
+                        .clipShape(Capsule())
+                }
+                Spacer()
+            }
+
+            LabeledContent("Date range", value: entry.dateRange)
+            LabeledContent("Photos total", value: "\(entry.totalPhotos)")
+
+            let newLabel = lastScanned == nil ? "Photos (no prior scan)" : "New (after last scan)"
+            LabeledContent(newLabel, value: "\(entry.newPhotoCount)")
+                .foregroundColor(entry.newPhotoCount > 0 ? .green : .primary)
+
+            if case .savedBlog(_, let cutoff) = entry.match {
+                LabeledContent("Blog cutoff", value: ts(cutoff))
+                LabeledContent("After cutoff", value: "\(entry.photosAfterCutoff)")
+                    .foregroundColor(entry.photosAfterCutoff > 0 ? .green : .secondary)
+            }
+
+            if entry.within24hOfExisting {
+                Text("This trip's start is within 24 h of an existing draft or blog boundary — likely the same ongoing trip.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        } header: {
+            Text(entry.title)
+                .textCase(nil)
+                .font(.subheadline.weight(.semibold))
+        }
+    }
+
+    @ViewBuilder
+    private func matchBadge(_ match: ScanDebugInfo.TripMatch) -> some View {
+        let (label, color): (String, Color) = {
+            switch match {
+            case .newTrip:             return ("New Trip", .blue)
+            case .existingDraft(let t): return ("Draft: \(t)", .purple)
+            case .savedBlog(let t, _):  return ("Blog: \(t)", .green)
+            }
+        }()
+        Text(label)
+            .font(.caption2.weight(.semibold))
+            .lineLimit(1)
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(color.opacity(0.15))
+            .foregroundColor(color)
+            .clipShape(Capsule())
+    }
+}
+#endif
 
 #Preview {
     NavigationStack {

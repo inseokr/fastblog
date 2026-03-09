@@ -14,6 +14,46 @@ enum FindMoreScanResult: Equatable {
     case success(Int)
 }
 
+#if DEBUG
+/// Diagnostic report produced by `TripsViewModel.runDebugScan()`.
+/// Shows what photos exist since the last scan and how they'd be classified.
+struct ScanDebugInfo {
+    enum TripMatch {
+        case newTrip
+        case existingDraft(String)
+        case savedBlog(String, cutoff: Date?)
+
+        var label: String {
+            switch self {
+            case .newTrip:                    return "New Trip"
+            case .existingDraft(let t):       return "Draft: \(t)"
+            case .savedBlog(let t, _):        return "Blog: \(t)"
+            }
+        }
+
+        var isNew: Bool { if case .newTrip = self { return true }; return false }
+        var isBlog: Bool { if case .savedBlog = self { return true }; return false }
+    }
+
+    struct TripEntry: Identifiable {
+        var id = UUID()
+        var title: String
+        var dateRange: String
+        var totalPhotos: Int
+        var newPhotoCount: Int         // photos after lastScannedDate
+        var match: TripMatch
+        var within24hOfExisting: Bool  // trip start within 24 h of any draft/blog boundary
+        var blogCutoff: Date?          // set when match == .savedBlog
+        var photosAfterCutoff: Int     // photos that would pass the cutoff filter
+    }
+
+    var scannedAt: Date
+    var lastScannedDate: Date?
+    var fetchStart: Date               // actual start of the photo query window
+    var entries: [TripEntry]
+}
+#endif
+
 @MainActor
 final class TripsViewModel: ObservableObject {
     @Published var tripDrafts: [TripDraft] = []
@@ -109,6 +149,240 @@ final class TripsViewModel: ObservableObject {
     @Published var isParsingChat: Bool = false
     @Published var needsConfirmationForParse: Bool = false
     @Published var pendingParseResult: NLPParseResult? = nil
+
+    // MARK: - Debug Scan Info
+
+    #if DEBUG
+    /// Populated by `runDebugScan()` — shows recent-photo analysis without touching live scan state.
+    @Published var debugScanInfo: ScanDebugInfo? = nil
+    /// True while `runDebugScan()` is fetching from the photo library.
+    @Published var isRunningDebugScan: Bool = false
+    #endif
+
+    // MARK: - New Moments State
+
+    /// When set after a scan, new photos were detected in an existing trip since the last scan.
+    /// TripsView presents an alert offering to navigate to that trip.
+    @Published var newMomentsInExistingTrip: TripDraft? = nil
+    /// 0-based index of the latest day in the trip with new moments. Used to open the right day.
+    @Published var newMomentsLatestDayIndex: Int = 0
+
+    // MARK: - Newly Scanned Photos
+
+    /// Photos discovered since the previous scan. Populated by both incremental and full scans.
+    @Published var newlyScannedPhotos: [MockPhoto] = []
+    /// When new photos match an already-created blog rather than a draft.
+    @Published var newMomentsMatchedBlog: CreatedRecapBlog? = nil
+    /// Present the newly-scanned-photos sheet when true.
+    @Published var showNewlyScannedSheet: Bool = false
+
+    /// When the user tapped Create blog we ran a new-photos check first. If they tap "Later" on the sheet, open the create flow for this trip.
+    @Published var pendingTripForCreateFlow: TripDraft? = nil
+    /// When true, the view should set createBlogFlowTrip = pendingTripForCreateFlow and then call clearPendingCreateFlow().
+    @Published var openCreateFlowForPendingTrip: Bool = false
+    /// True when the new-moments sheet was shown from the Create blog tap (so "Later" should open the pending create flow).
+    @Published var newMomentsSheetTriggeredByCreateButton: Bool = false
+
+    /// Clears the new-moments signal after the user has ACTED on it (Go to Blog / Go to Trip).
+    /// Persists the blog notification cutoff so the same photos are not surfaced again.
+    func clearNewMomentsSignal() {
+        if let blog = newMomentsMatchedBlog,
+           let maxPhotoDate = newlyScannedPhotos.map(\.timestamp).max() {
+            // Use max photo timestamp (not Date()) so only photos up to the last shown
+            // photo are silenced. Genuinely newer photos still surface on the next scan.
+            // Guard: if photos are empty for any reason, skip saving to avoid accidentally
+            // setting a future cutoff via Date() that would silence real new photos.
+            ScanSessionStore.saveBlogNotifiedDate(maxPhotoDate, for: blog.id)
+        }
+        resetNewMomentsState()
+        pendingTripForCreateFlow = nil
+        newMomentsSheetTriggeredByCreateButton = false
+        openCreateFlowForPendingTrip = false
+    }
+
+    /// Presents the new-moments sheet after a brief delay so the view
+    /// has finished transitioning from the scan loading state to the main content.
+    private func presentNewMomentsSheetIfNeeded() {
+        guard !newlyScannedPhotos.isEmpty else { return }
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            self?.showNewlyScannedSheet = true
+        }
+    }
+
+    /// Called when the user taps the Create blog button (selected trip card). Runs a quick
+    /// check for new photos since the last scan that belong to an existing blog. If found,
+    /// presents the new-moments sheet; otherwise opens the create flow for the given trip.
+    func initiateCreateBlogFlow(trip: TripDraft) {
+        pendingTripForCreateFlow = trip
+        newMomentsSheetTriggeredByCreateButton = true
+
+        let userId = currentUserId
+        let lastScanned = ScanSessionStore.lastScannedDate(for: userId)
+
+        guard let lastDate = lastScanned else {
+            openCreateFlowForPendingTrip = true
+            return
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            let cal = Calendar.current
+            let now = Date()
+            let fetchStart = cal.date(byAdding: .day, value: -Self.fetchPaddingDays, to: lastDate) ?? lastDate
+
+            let newTrips = await photoLibraryService.scanInDateRange(
+                startDate: fetchStart,
+                endDate: now,
+                occupiedDateRanges: []
+            )
+            let incrementalWindowStart = cal.startOfDay(for: lastDate)
+            let incrementalTrips = newTrips.filter { trip in
+                self.tripOverlapsWindow(trip, windowStart: incrementalWindowStart, windowEnd: now)
+            }
+
+            var blogPhotos: [MockPhoto] = []
+            var matchedBlog: CreatedRecapBlog? = nil
+            for t in incrementalTrips {
+                guard let blog = self.findMatchingSavedBlog(for: t) else { continue }
+                let allPhotos = t.days.flatMap(\.photos)
+                let cutoff = ScanSessionStore.lastBlogNotifiedDate(for: blog.id) ?? .distantPast
+                let recent = allPhotos.filter { $0.timestamp > cutoff }
+                if !recent.isEmpty {
+                    blogPhotos.append(contentsOf: recent)
+                    if matchedBlog == nil { matchedBlog = blog }
+                }
+            }
+
+            await MainActor.run {
+                if let blog = matchedBlog, !blogPhotos.isEmpty {
+                    self.newlyScannedPhotos = blogPhotos
+                    self.newMomentsMatchedBlog = blog
+                    self.newMomentsInExistingTrip = nil
+                    self.newMomentsLatestDayIndex = 0
+                    self.presentNewMomentsSheetIfNeeded()
+                } else {
+                    self.openCreateFlowForPendingTrip = true
+                }
+            }
+        }
+    }
+
+    /// Called when the user taps "Later" on the new-moments sheet and that sheet was
+    /// shown from the Create blog button. Opens the create flow for the pending trip.
+    func dismissNewMomentsAndOpenPendingCreateFlow() {
+        resetNewMomentsState()
+        newMomentsSheetTriggeredByCreateButton = false
+        openCreateFlowForPendingTrip = true
+    }
+
+    /// Call after the view has set createBlogFlowTrip from the pending trip. Clears pending state.
+    func clearPendingCreateFlow() {
+        pendingTripForCreateFlow = nil
+        openCreateFlowForPendingTrip = false
+        newMomentsSheetTriggeredByCreateButton = false
+    }
+
+    /// Clears only the in-memory new-moments state WITHOUT persisting a cutoff.
+    /// Use for "Later" dismissal — the same photos will re-appear on the next scan.
+    func resetNewMomentsState() {
+        newMomentsInExistingTrip = nil
+        newMomentsLatestDayIndex = 0
+        newlyScannedPhotos = []
+        newMomentsMatchedBlog = nil
+    }
+
+    // MARK: - Debug Scan Logic
+
+    #if DEBUG
+    /// Fetches photos from the last scanned date to now, groups them into trips using the
+    /// same clustering logic as the real scan, and annotates each trip with whether it
+    /// matches an existing draft (within 24 h) or a saved blog (with its cutoff).
+    /// Purely informative — does not modify new-moments state or present the sheet.
+    func runDebugScan() {
+        guard !isRunningDebugScan else { return }
+        isRunningDebugScan = true
+        let userId = currentUserId
+        let lastScanned = ScanSessionStore.lastScannedDate(for: userId)
+        let now = Date()
+        let cal = Calendar.current
+        // Scan window: last 24 h at minimum, or since last scan (whichever is earlier).
+        let since24h = cal.date(byAdding: .hour, value: -24, to: now) ?? now
+        let fetchStart = lastScanned.map { min($0, since24h) } ?? since24h
+
+        Task {
+            let trips = await photoLibraryService.scanInDateRange(
+                startDate: fetchStart,
+                endDate: now,
+                occupiedDateRanges: []
+            )
+
+            let entries: [ScanDebugInfo.TripEntry] = trips.map { trip in
+                let allPhotos = trip.days.flatMap(\.photos)
+                let newPhotos: [MockPhoto]
+                if let last = lastScanned {
+                    newPhotos = allPhotos.filter { $0.timestamp > last }
+                } else {
+                    newPhotos = allPhotos
+                }
+
+                // Check blog match first.
+                let match: ScanDebugInfo.TripMatch
+                var cutoff: Date? = nil
+                var afterCutoff = 0
+                if let blog = findMatchingSavedBlog(for: trip) {
+                    cutoff = ScanSessionStore.lastBlogNotifiedDate(for: blog.id)
+                    afterCutoff = allPhotos.filter { $0.timestamp > (cutoff ?? .distantPast) }.count
+                    match = .savedBlog(blog.title, cutoff: cutoff)
+                } else if let existing = tripDrafts.first(where: { areTripsRelated($0, trip) }) {
+                    match = .existingDraft(existing.title)
+                } else {
+                    match = .newTrip
+                }
+
+                // Within-24h check: is the trip's start within 24 h of any draft end OR start?
+                let within24h: Bool = {
+                    guard let tripStart = trip.earliestDate else { return false }
+                    for draft in tripDrafts {
+                        if let dEnd = draft.latestDate, abs(tripStart.timeIntervalSince(dEnd)) < 86400 { return true }
+                        if let dStart = draft.earliestDate, abs(tripStart.timeIntervalSince(dStart)) < 86400 { return true }
+                    }
+                    for blog in createdRecapStore.visibleRecents {
+                        if let bEnd = blog.tripEndDate, abs(tripStart.timeIntervalSince(bEnd)) < 86400 { return true }
+                        if let bStart = blog.tripStartDate, abs(tripStart.timeIntervalSince(bStart)) < 86400 { return true }
+                    }
+                    return false
+                }()
+
+                return ScanDebugInfo.TripEntry(
+                    title: trip.title,
+                    dateRange: trip.dateRangeText,
+                    totalPhotos: allPhotos.count,
+                    newPhotoCount: newPhotos.count,
+                    match: match,
+                    within24hOfExisting: within24h,
+                    blogCutoff: cutoff,
+                    photosAfterCutoff: afterCutoff
+                )
+            }
+
+            await MainActor.run {
+                self.debugScanInfo = ScanDebugInfo(
+                    scannedAt: now,
+                    lastScannedDate: lastScanned,
+                    fetchStart: fetchStart,
+                    entries: entries
+                )
+                self.isRunningDebugScan = false
+            }
+        }
+    }
+    #endif
+
+    /// Current user ID for per-user scan-session storage. "guest" for unauthenticated.
+    private var currentUserId: String {
+        AuthStateManager.shared.currentUserId ?? "guest"
+    }
 
     /// Tracks whether the Find More sheet has been opened at least once this session.
     /// Stays `false` until after the first open; reset only happens on first open (cold start).
@@ -335,95 +609,534 @@ final class TripsViewModel: ObservableObject {
     /// trips straddling a boundary are captured in full.
     private static let fetchPaddingDays = 10
 
+    #if DEBUG
+    private static let scanDebugFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return f
+    }()
+    private func scanDbg(_ date: Date?) -> String {
+        guard let d = date else { return "nil" }
+        return Self.scanDebugFmt.string(from: d)
+    }
+    #endif
+
+    /// Deduplicates photos by localIdentifier so the same asset is not added multiple times.
+    private func dedupePhotosByLocalId(_ photos: [MockPhoto]) -> [MockPhoto] {
+        var seen = Set<String>()
+        return photos.filter { photo in
+            guard let id = photo.localIdentifier else { return true }
+            if seen.contains(id) { return false }
+            seen.insert(id)
+            return true
+        }
+    }
+
     func startDefaultScan() {
         showSelectPhotosIntroAfterScan = true
         scanState = .scanningDefault
         loadingMessage = "Loading your photos…"
         defaultScanProgress = 0
+        newlyScannedPhotos = []
+        newMomentsMatchedBlog = nil
+        showNewlyScannedSheet = false
         AppAnalytics.shared.trackEvent(name: "trip_scan_started")
         let occupiedRanges = createdRecapStore.occupiedDateRanges()
+        let userId = currentUserId
+        let previousLastScanned = ScanSessionStore.lastScannedDate(for: userId)
+
+        #if DEBUG
+        debugPrint("[Scan] ──── startDefaultScan ────")
+        debugPrint("[Scan] lastScannedDate = \(scanDbg(previousLastScanned))")
+        debugPrint("[Scan] tripDrafts.count = \(tripDrafts.count)")
+        debugPrint("[Scan] savedBlogs.count = \(createdRecapStore.visibleRecents.count)")
+        for (i, blog) in createdRecapStore.visibleRecents.enumerated() {
+            debugPrint("[Scan]   blog[\(i)] \"\(blog.title)\" createdAt=\(scanDbg(blog.createdAt)) start=\(scanDbg(blog.tripStartDate)) end=\(scanDbg(blog.tripEndDate)) country=\(blog.countryName ?? "nil")")
+        }
+        debugPrint("[Scan] occupiedRanges.count = \(occupiedRanges.count)")
+        for (i, r) in occupiedRanges.enumerated() {
+            debugPrint("[Scan]   range[\(i)] = \(scanDbg(r.start)) → \(scanDbg(r.end))")
+        }
+        #endif
+
         Task {
             let cal = Calendar.current
             let now = Date()
-            let windowStart = cal.startOfDay(for: cal.date(byAdding: .day, value: -ScanConfig.windowDays, to: now) ?? now)
+            let fullWindowStart = cal.startOfDay(for: cal.date(byAdding: .day, value: -ScanConfig.windowDays, to: now) ?? now)
             let windowEnd = now
 
-            // Pad the fetch start so boundary trips that started just before the window
-            // are captured in full — then filtered out by earliestDate below.
-            let fetchStart = cal.date(byAdding: .day, value: -Self.fetchPaddingDays, to: windowStart) ?? windowStart
+            // Incremental scan: only fetch photos since the last scan when we already have
+            // trips in memory. Saves time and allows merging new moments into existing trips.
+            let canDoIncremental = previousLastScanned != nil
+                && previousLastScanned! > fullWindowStart
+                && !tripDrafts.isEmpty
 
-            let allTrips = await photoLibraryService.scanInDateRange(
-                startDate: fetchStart,
-                endDate: windowEnd,
-                occupiedDateRanges: occupiedRanges,
-                progress: { [weak self] value in
-                    Task { @MainActor in
-                        self?.defaultScanProgress = value
+            #if DEBUG
+            debugPrint("[Scan] canDoIncremental = \(canDoIncremental)  (hasLastScanned=\(previousLastScanned != nil) lastScanned>\(scanDbg(fullWindowStart))=\(previousLastScanned.map { $0 > fullWindowStart } ?? false) tripDrafts.isEmpty=\(tripDrafts.isEmpty))")
+            #endif
+
+            if canDoIncremental, let lastDate = previousLastScanned {
+                loadingMessage = "Checking for new moments…"
+
+                // Pad behind lastDate so trips that straddle the boundary are complete.
+                let fetchStart = cal.date(byAdding: .day, value: -Self.fetchPaddingDays, to: lastDate) ?? lastDate
+
+                #if DEBUG
+                debugPrint("[Scan] mode = INCREMENTAL")
+                debugPrint("[Scan] fetchStart = \(scanDbg(fetchStart))  (lastScanned − \(Self.fetchPaddingDays)d)")
+                debugPrint("[Scan] fetchEnd   = \(scanDbg(windowEnd))")
+                #endif
+
+                // Pass empty occupied ranges so photos in saved-blog date
+                // ranges are still found and can be matched to the blog.
+                let newTrips = await photoLibraryService.scanInDateRange(
+                    startDate: fetchStart,
+                    endDate: windowEnd,
+                    occupiedDateRanges: [],
+                    progress: { [weak self] value in
+                        Task { @MainActor in self?.defaultScanProgress = value }
                     }
-                }
-            )
+                )
 
-            // Keep trips that overlap the window so boundary-spanning split trips
-            // still show their first episode.
-            let windowTrips = allTrips.filter { trip in
-                tripOverlapsWindow(trip, windowStart: windowStart, windowEnd: windowEnd)
+                // Keep only trips that overlap the incremental window.
+                // Use startOfDay because trip dates are day-granular (midnight),
+                // while lastDate is a precise timestamp within the day.
+                let incrementalWindowStart = cal.startOfDay(for: lastDate)
+                let incrementalTrips = newTrips.filter { trip in
+                    tripOverlapsWindow(trip, windowStart: incrementalWindowStart, windowEnd: windowEnd)
+                }
+
+                #if DEBUG
+                debugPrint("[Scan] scanned trips = \(newTrips.count), after window filter = \(incrementalTrips.count)")
+                #endif
+
+                ScanSessionStore.saveLastScannedDate(now, for: userId)
+                AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
+
+                #if DEBUG
+                debugPrint("[Scan] saved lastScannedDate = \(scanDbg(now))")
+                #endif
+
+                mergeIncrementalTrips(incrementalTrips, since: lastDate)
+                scanState = .idle
+                presentNewMomentsSheetIfNeeded()
+
+            } else {
+                // Full scan: first launch, no in-memory trips, or last scan is too old.
+                let fetchStart = cal.date(byAdding: .day, value: -Self.fetchPaddingDays, to: fullWindowStart) ?? fullWindowStart
+
+                #if DEBUG
+                debugPrint("[Scan] mode = FULL")
+                debugPrint("[Scan] fetchStart = \(scanDbg(fetchStart))  (windowStart − \(Self.fetchPaddingDays)d)")
+                debugPrint("[Scan] fetchEnd   = \(scanDbg(windowEnd))")
+                #endif
+
+                let allTrips = await photoLibraryService.scanInDateRange(
+                    startDate: fetchStart,
+                    endDate: windowEnd,
+                    occupiedDateRanges: occupiedRanges,
+                    progress: { [weak self] value in
+                        Task { @MainActor in self?.defaultScanProgress = value }
+                    }
+                )
+
+                let windowTrips = allTrips.filter { trip in
+                    tripOverlapsWindow(trip, windowStart: fullWindowStart, windowEnd: windowEnd)
+                }
+
+                windowCache[windowCacheKey(start: fullWindowStart, end: windowEnd)] = windowTrips
+
+                #if DEBUG
+                debugPrint("[Scan] scanned trips = \(allTrips.count), after window filter = \(windowTrips.count)")
+                #endif
+
+                AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
+                AppAnalytics.shared.incrementCounter("trips_detected", by: windowTrips.count)
+
+                tripDrafts = windowTrips
+                currentWindowTrips = nil
+                earliestScannedDate = fullWindowStart
+                latestScannedDate = windowEnd
+
+                // Detect new moments in draft trips since the last scan.
+                if let lastDate = previousLastScanned {
+                    detectNewMomentsInTrips(windowTrips, since: lastDate)
+                }
+
+                // Always run the saved-blog micro-scan so we detect photos for created blogs
+                // even on the very first scan (previousLastScanned may be nil).
+                // Scan the full 90-day window so we never miss older photos.
+                #if DEBUG
+                debugPrint("[Scan] FULL: micro-scan for saved-blog photos (full window)")
+                #endif
+
+                let blogCheckTrips = await photoLibraryService.scanInDateRange(
+                    startDate: fetchStart,
+                    endDate: windowEnd,
+                    occupiedDateRanges: []
+                )
+
+                #if DEBUG
+                debugPrint("[Scan] FULL: micro-scan returned \(blogCheckTrips.count) trip(s)")
+                #endif
+
+                collectNewPhotosForSavedBlogs(from: blogCheckTrips)
+
+                #if DEBUG
+                debugPrint("[Scan] FULL: newlyScannedPhotos=\(newlyScannedPhotos.count) matchedBlog=\(newMomentsMatchedBlog?.title ?? "none") showSheet=\(!newlyScannedPhotos.isEmpty)")
+                #endif
+
+                // Record the scan date so the next launch can do an incremental check.
+                ScanSessionStore.saveLastScannedDate(now, for: userId)
+
+                #if DEBUG
+                debugPrint("[Scan] saved lastScannedDate = \(scanDbg(now))")
+                #endif
+
+                scanState = .idle
+
+                detectNewMomentsForOnTheGoTrip(scannedDrafts: windowTrips)
+                newlyScannedPhotos = dedupePhotosByLocalId(newlyScannedPhotos)
+                presentNewMomentsSheetIfNeeded()
+            }
+        }
+    }
+
+    // MARK: - New Moments Detection (full-scan path)
+
+    /// After a full scan, checks whether any draft trip contains photos taken after `lastScanned`.
+    /// Collects the new photos and signals the first such trip for UI prompting.
+    private func detectNewMomentsInTrips(_ trips: [TripDraft], since lastScanned: Date) {
+        var collected: [MockPhoto] = []
+        for trip in trips {
+            let newPhotos = trip.days.flatMap { $0.photos.filter { $0.timestamp > lastScanned } }
+            if !newPhotos.isEmpty {
+                collected.append(contentsOf: newPhotos)
+                if newMomentsInExistingTrip == nil {
+                    newMomentsInExistingTrip = trip
+                    newMomentsLatestDayIndex = max(0, trip.days.count - 1)
+                }
+            }
+        }
+        if !collected.isEmpty {
+            newlyScannedPhotos.append(contentsOf: collected)
+        }
+    }
+
+    /// After a full scan, checks for new photos that belong to saved blogs.
+    /// The main scan excluded these via `occupiedDateRanges`; this uses a
+    /// micro-scan result run without that filter.
+    private func collectNewPhotosForSavedBlogs(from trips: [TripDraft]) {
+        #if DEBUG
+        debugPrint("[Scan] collectNewPhotosForSavedBlogs: checking \(trips.count) trip(s)")
+        #endif
+        var blogPhotos: [MockPhoto] = []
+        for trip in trips {
+            guard let blog = findMatchingSavedBlog(for: trip) else { continue }
+            let allPhotos = trip.days.flatMap(\.photos)
+            let cutoff = ScanSessionStore.lastBlogNotifiedDate(for: blog.id) ?? .distantPast
+            let recentPhotos = allPhotos.filter { $0.timestamp > cutoff }
+            #if DEBUG
+            debugPrint("[Scan]   trip \"\(trip.title)\" cutoff=\(scanDbg(cutoff)) totalPhotos=\(allPhotos.count) afterCutoff=\(recentPhotos.count)")
+            for p in allPhotos {
+                let kept = p.timestamp > cutoff
+                debugPrint("[Scan]     photo id=\(p.localIdentifier?.suffix(8) ?? "nil") ts=\(scanDbg(p.timestamp)) > cutoff=\(scanDbg(cutoff)) → kept=\(kept)")
+            }
+            #endif
+            if !recentPhotos.isEmpty {
+                blogPhotos.append(contentsOf: recentPhotos)
+                if newMomentsMatchedBlog == nil { newMomentsMatchedBlog = blog }
+            }
+        }
+        #if DEBUG
+        debugPrint("[Scan] collectNewPhotosForSavedBlogs: total new = \(blogPhotos.count), showSheet = \(!blogPhotos.isEmpty)")
+        #endif
+        if !blogPhotos.isEmpty {
+            newlyScannedPhotos.append(contentsOf: blogPhotos)
+        }
+    }
+
+    // MARK: - Incremental Scan Merging
+
+    /// Merges newly-scanned trips (incremental path) into the existing `tripDrafts`.
+    /// Photos are merged into matching days and new days are appended.
+    /// Also matches against saved blogs so new photos for an existing blog are tracked.
+    /// `since` is the previous lastScannedDate — only photos after this time are shown as new.
+    private func mergeIncrementalTrips(_ newTrips: [TripDraft], since lastScanned: Date) {
+        guard !newTrips.isEmpty else {
+            #if DEBUG
+            debugPrint("[Scan] mergeIncremental: no new trips to merge")
+            #endif
+            return
+        }
+
+        #if DEBUG
+        debugPrint("[Scan] mergeIncremental: processing \(newTrips.count) new trip(s), since=\(scanDbg(lastScanned))")
+        #endif
+
+        var updatedExistingTrip: TripDraft? = nil
+        var remainingNew: [TripDraft] = []
+        var collectedNewPhotos: [MockPhoto] = []
+
+        for newTrip in newTrips {
+            // 1. Check saved blogs first — new photos may belong to an already-created blog.
+            if let blog = findMatchingSavedBlog(for: newTrip) {
+                let allPhotos = newTrip.days.flatMap(\.photos)
+                // Use blog.createdAt as the cutoff — photos taken after the blog
+                // was created are genuinely new, regardless of when the last scan ran.
+                // This prevents photos from being missed when a previous scan had bugs
+                // or when the photo timestamp falls between blog creation and lastScanned.
+                let cutoff = ScanSessionStore.lastBlogNotifiedDate(for: blog.id) ?? .distantPast
+                let photos = allPhotos.filter { $0.timestamp > cutoff }
+                collectedNewPhotos.append(contentsOf: photos)
+                if !photos.isEmpty && newMomentsMatchedBlog == nil { newMomentsMatchedBlog = blog }
+                #if DEBUG
+                debugPrint("[Scan] mergeIncremental: matched saved blog \"\(blog.title)\" cutoff=\(scanDbg(cutoff)) totalPhotos=\(allPhotos.count) afterFilter=\(photos.count)")
+                for p in allPhotos {
+                    let kept = p.timestamp > cutoff
+                    debugPrint("[Scan]   photo id=\(p.localIdentifier?.suffix(8) ?? "nil") ts=\(scanDbg(p.timestamp)) > cutoff=\(scanDbg(cutoff)) → kept=\(kept)")
+                }
+                #endif
+                continue
             }
 
-            // Cache the window-filtered results for instant restore later.
-            windowCache[windowCacheKey(start: windowStart, end: windowEnd)] = windowTrips
-
-            AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
-            AppAnalytics.shared.incrementCounter("trips_detected", by: windowTrips.count)
-
-            tripDrafts = windowTrips
-            // Reset window so the carousel shows the fresh default scan results.
-            currentWindowTrips = nil
-            earliestScannedDate = windowStart
-            latestScannedDate = windowEnd
-            scanState = .idle
-
-            // Check if the user has an active on-the-go blog and new moments were found.
-            detectNewMomentsForOnTheGoTrip(scannedDrafts: windowTrips)
+            // 2. Check existing drafts — merge photos into matching trip.
+            if let idx = tripDrafts.firstIndex(where: { areTripsRelated($0, newTrip) }) {
+                let beforeIds = Set(tripDrafts[idx].days.flatMap(\.photos).compactMap(\.localIdentifier))
+                let (merged, didChange) = appendDaysFromTrip(newTrip, into: tripDrafts[idx])
+                tripDrafts[idx] = merged
+                if didChange {
+                    let freshPhotos = merged.days.flatMap(\.photos).filter { p in
+                        guard let lid = p.localIdentifier else { return false }
+                        return !beforeIds.contains(lid)
+                    }
+                    collectedNewPhotos.append(contentsOf: freshPhotos)
+                    if updatedExistingTrip == nil { updatedExistingTrip = merged }
+                }
+                #if DEBUG
+                debugPrint("[Scan] mergeIncremental: merged into draft \"\(tripDrafts[idx].title)\" didChange=\(didChange) days=\(merged.days.count) photos=\(merged.totalPhotoCount)")
+                #endif
+            } else {
+                // 3. Unrelated — new standalone trip. Only collect genuinely new photos.
+                remainingNew.append(newTrip)
+                let newPhotos = newTrip.days.flatMap(\.photos).filter { $0.timestamp > lastScanned }
+                collectedNewPhotos.append(contentsOf: newPhotos)
+                #if DEBUG
+                debugPrint("[Scan] mergeIncremental: new standalone trip \"\(newTrip.title)\" days=\(newTrip.days.count) photos=\(newTrip.totalPhotoCount) genuinelyNew=\(newPhotos.count)")
+                #endif
+            }
         }
+
+        let saved = createdRecapStore.visibleRecents
+        let deduped = remainingNew.filter {
+            !createdRecapStore.hasCreatedBlog(sourceTripId: $0.id)
+            && !TripMatchingService.isTripSaved(draft: $0, against: saved)
+        }
+        if !deduped.isEmpty {
+            tripDrafts.append(contentsOf: deduped)
+            showSelectPhotosIntroAfterScan = false
+        }
+
+        newlyScannedPhotos = dedupePhotosByLocalId(collectedNewPhotos)
+
+        #if DEBUG
+        debugPrint("[Scan] ──── mergeIncremental RESULT ────")
+        debugPrint("[Scan]   mergedIntoDraft=\(updatedExistingTrip != nil)")
+        debugPrint("[Scan]   newStandalone=\(deduped.count)")
+        debugPrint("[Scan]   collectedNewPhotos=\(collectedNewPhotos.count)")
+        debugPrint("[Scan]   matchedBlog=\(newMomentsMatchedBlog?.title ?? "none")")
+        debugPrint("[Scan]   totalDrafts=\(tripDrafts.count)")
+        for p in collectedNewPhotos {
+            debugPrint("[Scan]   newPhoto: id=\(p.localIdentifier?.suffix(8) ?? "nil") ts=\(scanDbg(p.timestamp))")
+        }
+        debugPrint("[Scan] ──────────────────────────────")
+        #endif
+
+        if let updated = updatedExistingTrip {
+            newMomentsInExistingTrip = updated
+            newMomentsLatestDayIndex = max(0, updated.days.count - 1)
+        } else if newMomentsMatchedBlog == nil, let firstNew = deduped.first {
+            newMomentsInExistingTrip = firstNew
+            newMomentsLatestDayIndex = max(0, firstNew.days.count - 1)
+        }
+
+        AppAnalytics.shared.incrementCounter("trips_detected", by: remainingNew.count)
+        detectNewMomentsForOnTheGoTrip(scannedDrafts: tripDrafts)
+    }
+
+    /// Returns a saved blog whose date range overlaps or continues from the given trip.
+    /// Comparisons are day-granular because trip dates are midnight-based (parsed from
+    /// dateText) while blog dates may carry intra-day time components.
+    private func findMatchingSavedBlog(for trip: TripDraft) -> CreatedRecapBlog? {
+        guard let tripStart = trip.earliestDate else {
+            #if DEBUG
+            debugPrint("[Scan] findMatchingSavedBlog: trip has no earliestDate, skipping")
+            #endif
+            return nil
+        }
+        let tripEnd = trip.latestDate ?? tripStart
+        let cal = Calendar.current
+
+        #if DEBUG
+        debugPrint("[Scan] findMatchingSavedBlog: trip \"\(trip.title)\" tripStart=\(scanDbg(tripStart)) tripEnd=\(scanDbg(tripEnd)) checking \(createdRecapStore.visibleRecents.count) blog(s)")
+        #endif
+
+        for blog in createdRecapStore.visibleRecents {
+            guard let blogStart = blog.tripStartDate, let blogEnd = blog.tripEndDate else {
+                #if DEBUG
+                debugPrint("[Scan]   blog \"\(blog.title)\" — no start/end date, skip")
+                #endif
+                continue
+            }
+
+            let blogStartDay = cal.startOfDay(for: blogStart)
+            let blogEndDay   = cal.startOfDay(for: blogEnd)
+
+            let overlaps  = tripEnd >= blogStartDay && tripStart <= blogEndDay
+            let dayDiff   = cal.dateComponents([.day], from: blogEndDay, to: tripStart).day ?? Int.max
+            let continues = dayDiff >= 0 && dayDiff <= 7
+
+            #if DEBUG
+            let blogCountry = blog.countryName ?? "nil"
+            let tripCountry = trip.primaryCountryDisplayName ?? "nil"
+            debugPrint("[Scan]   blog \"\(blog.title)\" blogStart=\(scanDbg(blogStartDay)) blogEnd=\(scanDbg(blogEndDay)) overlaps=\(overlaps) dayDiff=\(dayDiff) continues=\(continues) blogCountry=\(blogCountry) tripCountry=\(tripCountry)")
+            #endif
+
+            guard overlaps || continues else { continue }
+
+            if let bc = blog.countryName?.lowercased(), !bc.isEmpty,
+               let tc = trip.primaryCountryDisplayName?.lowercased(), !tc.isEmpty {
+                if bc == tc {
+                    #if DEBUG
+                    debugPrint("[Scan]   → MATCHED blog \"\(blog.title)\" (country match)")
+                    #endif
+                    return blog
+                }
+                #if DEBUG
+                debugPrint("[Scan]   → country mismatch: blog=\(bc) trip=\(tc), skip")
+                #endif
+            } else {
+                #if DEBUG
+                debugPrint("[Scan]   → MATCHED blog \"\(blog.title)\" (no country filter)")
+                #endif
+                return blog
+            }
+        }
+        #if DEBUG
+        debugPrint("[Scan] findMatchingSavedBlog: no match found")
+        #endif
+        return nil
+    }
+
+    /// Returns true when `newTrip` overlaps with or is a temporal continuation
+    /// of `existing` (starts within 7 days of the existing trip's end date).
+    private func areTripsRelated(_ existing: TripDraft, _ newTrip: TripDraft) -> Bool {
+        guard let existingStart = existing.earliestDate,
+              let existingEnd = existing.latestDate,
+              let newStart = newTrip.earliestDate else { return false }
+        let newEnd = newTrip.latestDate ?? newStart
+
+        let countriesMatch: Bool = {
+            guard let ec = existing.primaryCountryDisplayName?.lowercased(), !ec.isEmpty,
+                  let nc = newTrip.primaryCountryDisplayName?.lowercased(), !nc.isEmpty else {
+                return true
+            }
+            return ec == nc
+        }()
+
+        // Overlapping date ranges → same trip (e.g. new photo falls within existing trip dates).
+        if newEnd >= existingStart && newStart <= existingEnd {
+            return countriesMatch
+        }
+
+        // Forward continuation: new trip starts within 7 days after existing trip ends.
+        let dayDiff = Calendar.current.dateComponents([.day], from: existingEnd, to: newStart).day ?? Int.max
+        guard dayDiff >= 0 && dayDiff <= 7 else { return false }
+        return countriesMatch
+    }
+
+    /// Merges `newTrip` into `existing`: new photos are added to matching days,
+    /// and entirely new days are appended. Returns `(merged, didChange)`.
+    private func appendDaysFromTrip(_ newTrip: TripDraft, into existing: TripDraft) -> (TripDraft, Bool) {
+        var merged = existing
+        var didChange = false
+
+        let existingDates = Set(existing.days.map(\.dateText))
+
+        for newDay in newTrip.days where existingDates.contains(newDay.dateText) {
+            guard let dayIdx = merged.days.firstIndex(where: { $0.dateText == newDay.dateText }) else { continue }
+            let existingIds = Set(merged.days[dayIdx].photos.compactMap(\.localIdentifier))
+            let freshPhotos = newDay.photos.filter { photo in
+                guard let lid = photo.localIdentifier else { return false }
+                return !existingIds.contains(lid)
+            }
+            if !freshPhotos.isEmpty {
+                merged.days[dayIdx].photos.append(contentsOf: freshPhotos)
+                merged.days[dayIdx].photos.sort { $0.timestamp < $1.timestamp }
+                didChange = true
+            }
+        }
+
+        let uniqueNewDays = newTrip.days.filter { !existingDates.contains($0.dateText) }
+        if !uniqueNewDays.isEmpty {
+            didChange = true
+            let fmt = DateFormatter()
+            fmt.locale = Locale.current
+            fmt.dateStyle = .medium
+
+            var allDays = (merged.days + uniqueNewDays).sorted {
+                (fmt.date(from: $0.dateText) ?? .distantPast) < (fmt.date(from: $1.dateText) ?? .distantPast)
+            }
+            allDays = allDays.enumerated().map { idx, day in
+                var d = day; d.dayIndex = idx; return d
+            }
+            merged.days = allDays
+        }
+
+        return (merged, didChange)
     }
 
     /// After a default scan, check whether any scanned drafts are temporal continuations
     /// of the user's currently active on-the-go blog.  When they are, signal new moments
     /// so the next "Tap to Blog" tap shows the update popup.
     private func detectNewMomentsForOnTheGoTrip(scannedDrafts: [TripDraft]) {
+        debugPrint("[detectNewMomentsForOnTheGoTrip] called with \(scannedDrafts.count) scanned drafts")
+
         guard let activeBlogId = OnTheGoTripStore.activeBlogId,
               OnTheGoTripStore.isTripStillOngoing() else {
-            // Trip has been over for too long — stop tracking.
             if OnTheGoTripStore.activeBlogId != nil && !OnTheGoTripStore.isTripStillOngoing() {
                 OnTheGoTripStore.markTripAsEnded()
             }
+            debugPrint("[detectNewMomentsForOnTheGoTrip] no active on-the-go trip or trip ended, skipping")
             return
         }
 
         guard let activeBlog = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == activeBlogId }),
-              let blogEndDate = activeBlog.tripEndDate else { return }
+              let blogEndDate = activeBlog.tripEndDate else {
+            debugPrint("[detectNewMomentsForOnTheGoTrip] active blog not found or no tripEndDate")
+            return
+        }
 
         let cal = Calendar.current
-        let blogCountry = (activeBlog.countryName ?? OnTheGoTripStore.tripCountry)?.lowercased()
 
-        // A continuation draft starts within 7 days of the blog's last day and
-        // belongs to the same country (when country info is available).
+        // A continuation draft starts within 7 days of the blog's last day.
         let continuationDrafts = scannedDrafts.filter { draft in
             guard let earliest = draft.earliestDate else { return false }
             let dayDiff = cal.dateComponents([.day], from: blogEndDate, to: earliest).day ?? Int.max
-            guard dayDiff >= 0 && dayDiff <= 7 else { return false }
-            if let bc = blogCountry, !bc.isEmpty,
-               let dc = draft.primaryCountryDisplayName?.lowercased(), !dc.isEmpty {
-                return bc == dc
-            }
-            // No country info on one side → accept by date proximity alone.
-            return true
+            return dayDiff >= 0 && dayDiff <= 7
         }
 
+        debugPrint("[detectNewMomentsForOnTheGoTrip] blogEndDate=\(blogEndDate), continuationDrafts.count=\(continuationDrafts.count)")
+
         if !continuationDrafts.isEmpty {
-            // Point the user at the last day of the existing blog.
             let lastDayIndex = max(0, activeBlog.tripDurationDays - 1)
+            let continuationPhotos = continuationDrafts.flatMap { $0.days.flatMap(\.photos) }
+            newlyScannedPhotos.append(contentsOf: continuationPhotos)
+            newlyScannedPhotos = dedupePhotosByLocalId(newlyScannedPhotos)
+            if newMomentsMatchedBlog == nil { newMomentsMatchedBlog = activeBlog }
             OnTheGoTripStore.signalNewMoments(dayIndex: lastDayIndex)
+            debugPrint("[detectNewMomentsForOnTheGoTrip] signaled new moments, lastDayIndex=\(lastDayIndex), continuationPhotos=\(continuationPhotos.count), newlyScannedPhotos.total=\(newlyScannedPhotos.count)")
         }
     }
 
@@ -590,6 +1303,14 @@ final class TripsViewModel: ObservableObject {
                 // Cache the Find More results for instant restore.
                 if let ws = earliestScannedDate, let we = latestScannedDate {
                     windowCache[windowCacheKey(start: ws, end: we)] = newTrips
+                }
+
+                // Record last-scanned date only when the selected end range is the current month.
+                // Older-timeline scans should not update the incremental baseline.
+                let now = Date()
+                let cal2 = Calendar.current
+                if endYear == cal2.component(.year, from: now) && endMonth == cal2.component(.month, from: now) {
+                    ScanSessionStore.saveLastScannedDate(now, for: currentUserId)
                 }
             }
 

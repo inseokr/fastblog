@@ -549,6 +549,153 @@ final class CreatedRecapBlogStore: ObservableObject {
         if changed { persistRecents() }
     }
 
+    /// Injects newly scanned photos into an existing blog's RecapBlogDetail.
+    /// Each photo is matched to the appropriate RecapBlogDay by calendar date, and within
+    /// that day to the closest PlaceStop by time gap (≤ gapHoursNewSegment). If no close
+    /// stop exists, a new stop is appended to the day. New days are created when needed.
+    /// The updated detail is saved automatically.
+    func injectPhotos(_ newPhotos: [MockPhoto], intoSourceTripId sourceTripId: UUID) {
+        guard !newPhotos.isEmpty else { return }
+        guard var detail = blogDetailsBySourceId[sourceTripId]
+                ?? tripDraftsBySourceId[sourceTripId].map({ buildBlogDetail(from: $0) }) else { return }
+
+        let cal = Calendar.current
+        let gapLimit: TimeInterval = Double(ScanConfig.gapHoursNewSegment) * 3600
+        let locationLimit: Double = ScanConfig.placeClusterMeters
+
+        // Deduplicate against photos already in the blog.
+        let existingIds = Set(detail.days.flatMap(\.placeStops).flatMap(\.photos).compactMap(\.localIdentifier))
+        let photos = newPhotos.filter { photo in
+            guard let lid = photo.localIdentifier else { return true }
+            return !existingIds.contains(lid)
+        }
+        guard !photos.isEmpty else { return }
+
+        // Group incoming photos by calendar day.
+        let byDay = Dictionary(grouping: photos) { photo in
+            cal.startOfDay(for: photo.timestamp)
+        }
+
+        var modifiedDayIndices: Set<Int> = []
+
+        for (dayStart, dayPhotos) in byDay.sorted(by: { $0.key < $1.key }) {
+            // Find or create the matching RecapBlogDay.
+            var dayIdx = detail.days.firstIndex(where: { cal.startOfDay(for: $0.date) == dayStart })
+            if dayIdx == nil {
+                // Create a new day and insert it in chronological order.
+                let newDay = RecapBlogDay(dayIndex: 0, date: dayStart, placeStops: [])
+                detail.days.append(newDay)
+                detail.days.sort { $0.date < $1.date }
+                // Re-assign dayIndex after sort.
+                for i in detail.days.indices { detail.days[i].dayIndex = i }
+                dayIdx = detail.days.firstIndex(where: { cal.startOfDay(for: $0.date) == dayStart })!
+            }
+            guard let di = dayIdx else { continue }
+
+            var unmatchedRecapPhotos: [RecapPhoto] = []
+
+            for photo in dayPhotos.sorted(by: { $0.timestamp < $1.timestamp }) {
+                let recapPhoto = RecapPhoto(
+                    id: photo.id,
+                    timestamp: photo.timestamp,
+                    location: photo.location,
+                    imageName: photo.imageName,
+                    isIncluded: false,
+                    localIdentifier: photo.localIdentifier
+                )
+
+                // Find best matching stop by time proximity + optional location proximity.
+                var bestIdx: Int? = nil
+                var bestGap: TimeInterval = .greatestFiniteMagnitude
+                for (si, stop) in detail.days[di].placeStops.enumerated() {
+                    let stopPhotos = stop.photos
+                    guard let earliest = stopPhotos.map(\.timestamp).min(),
+                          let latest = stopPhotos.map(\.timestamp).max() else { continue }
+                    let gapBefore = max(0, earliest.timeIntervalSince(photo.timestamp))
+                    let gapAfter  = max(0, photo.timestamp.timeIntervalSince(latest))
+                    let gap = min(gapBefore, gapAfter)
+                    guard gap <= gapLimit else { continue }
+
+                    if let photoCoord = photo.location, let stopCoord = stop.representativeLocation {
+                        let photoLoc = CLLocation(latitude: photoCoord.latitude, longitude: photoCoord.longitude)
+                        let stopLoc  = CLLocation(latitude: stopCoord.latitude, longitude: stopCoord.longitude)
+                        guard photoLoc.distance(from: stopLoc) <= locationLimit else { continue }
+                    }
+
+                    if gap < bestGap {
+                        bestGap = gap
+                        bestIdx = si
+                    }
+                }
+
+                if let si = bestIdx {
+                    detail.days[di].placeStops[si].photos.append(recapPhoto)
+                    detail.days[di].placeStops[si].photos.sort { $0.timestamp < $1.timestamp }
+                    modifiedDayIndices.insert(di)
+                } else {
+                    unmatchedRecapPhotos.append(recapPhoto)
+                }
+            }
+
+            // Cluster unmatched photos into new place stops using the same
+            // algorithm that groups photos when building the blog initially.
+            if !unmatchedRecapPhotos.isEmpty {
+                let inputs = unmatchedRecapPhotos.map { p in
+                    ClusterPhotoInput(id: p.id, timestamp: p.timestamp, location: p.location)
+                }
+                let baseIndex = detail.days[di].placeStops.count
+                let groups = clusteringService.placeStops(from: inputs) { idx in
+                    "Stop \(baseIndex + idx + 1)"
+                }
+                for (_, groupInputs) in groups {
+                    let groupPhotos = groupInputs.compactMap { input in
+                        unmatchedRecapPhotos.first { $0.id == input.id }
+                    }.sorted { $0.timestamp < $1.timestamp }
+                    let repLoc = groupPhotos.compactMap(\.location).first
+                    let newStop = PlaceStop(
+                        orderIndex: detail.days[di].placeStops.count,
+                        placeTitle: "Stop \(detail.days[di].placeStops.count + 1)",
+                        representativeLocation: repLoc,
+                        photos: groupPhotos
+                    )
+                    detail.days[di].placeStops.append(newStop)
+                }
+                modifiedDayIndices.insert(di)
+            }
+        }
+
+        saveBlogDetail(detail, asDraft: true)
+
+        // Run same business logic as initial selection: score quality, then preselect only good-quality photos per stop.
+        if !modifiedDayIndices.isEmpty {
+            Task {
+                await applyPhotoQualitySelectionForBlog(sourceTripId: sourceTripId, dayIndices: Array(modifiedDayIndices))
+            }
+        }
+
+        // Update blog metadata to reflect newly injected photos.
+        if let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }) {
+            let allDayDates = detail.days.map(\.date)
+            if let minDate = allDayDates.min(),
+               (recents[idx].tripStartDate == nil || minDate < recents[idx].tripStartDate!) {
+                recents[idx].tripStartDate = minDate
+            }
+            if let maxDate = allDayDates.max(),
+               (recents[idx].tripEndDate == nil || maxDate > recents[idx].tripEndDate!) {
+                recents[idx].tripEndDate = maxDate
+            }
+            recents[idx].tripDateRangeText = Self.formatDateRange(
+                start: recents[idx].tripStartDate,
+                end: recents[idx].tripEndDate
+            )
+            recents[idx].selectedPhotoCount = detail.days
+                .flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
+            recents[idx].totalPlaceVisitCount = detail.days.reduce(0) { $0 + $1.placeStops.count }
+            recents[idx].tripDurationDays = detail.days.count
+            persistRecents()
+        }
+    }
+
     /// Representative coordinate for a blog (first photo with location in its trip draft). Nil if no draft or no location.
     func coordinate(for sourceTripId: UUID) -> CLLocationCoordinate2D? {
         guard let trip = tripDraftsBySourceId[sourceTripId] else { return nil }
@@ -1765,6 +1912,19 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
 
         return updated
+    }
+
+    /// Loads blog detail, runs quality scoring and auto-selection for the given days, then saves.
+    /// Used after injecting newly scanned photos so only good-quality photos are preselected.
+    private func applyPhotoQualitySelectionForBlog(sourceTripId: UUID, dayIndices: [Int]) async {
+        guard let detail = blogDetailsBySourceId[sourceTripId], !dayIndices.isEmpty else { return }
+        let updated = await applyPhotoQualitySelection(to: detail, dayIndices: dayIndices)
+        saveBlogDetail(updated, asDraft: true)
+        if let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }) {
+            recents[idx].selectedPhotoCount = updated.days
+                .flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
+            persistRecents()
+        }
     }
 
     // MARK: - Private Helpers

@@ -40,8 +40,14 @@ struct ContentView: View {
             }
             .fullScreenCover(isPresented: $showSeeAll) {
                 NavigationStack {
-                    MyBlogsProfileView(createdRecapStore: createdRecapStore, selectedCreatedRecap: $selectedCreatedRecap)
-                        .environmentObject(createdRecapStore)
+                    MyBlogsProfileView(
+                        createdRecapStore: createdRecapStore,
+                        selectedCreatedRecap: $selectedCreatedRecap,
+                        initialDayIndexForRecap: $initialDayIndexForRecap,
+                        tripsViewModel: tripsViewModel,
+                        onDismissCover: { showSeeAll = false }
+                    )
+                    .environmentObject(createdRecapStore)
                 }
             }
             // Only push from Landing if we are staying on Landing (not showing Trips)

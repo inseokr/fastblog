@@ -177,6 +177,13 @@ struct LandingView: View {
             isPresented: $showNewMomentsAlert
         ) {
             Button("View") {
+                if let blogId = newMomentsAlertBlogId {
+                    createdRecapStore.injectPhotos(
+                        tripsViewModel.newlyScannedPhotos,
+                        intoSourceTripId: blogId
+                    )
+                }
+                tripsViewModel.clearNewMomentsSignal()
                 OnTheGoTripStore.clearNewMoments()
                 if let blogId = newMomentsAlertBlogId,
                    let recap = createdRecapStore.displayRecents.first(where: { $0.sourceTripId == blogId }) {
@@ -297,22 +304,28 @@ struct LandingView: View {
 
     private var scanCTA: some View {
         Button {
+            // let's print some default around this logic.
+            print("scanCTA tapped")
+            print("OnTheGoTripStore.hasNewMoments: \(OnTheGoTripStore.hasNewMoments)")
+            tripsViewModel.startDefaultScan()
+            pendingNavigateAfterScan = true
+            return
             // Check for on-the-go new moments first — only when the user already has a created blog.
-            if OnTheGoTripStore.hasNewMoments,
-               let blogId = OnTheGoTripStore.activeBlogId,
-               let title = OnTheGoTripStore.activeBlogTitle,
-               createdRecapStore.visibleRecents.contains(where: { $0.sourceTripId == blogId }) {
-                newMomentsAlertBlogId = blogId
-                newMomentsAlertBlogTitle = title
-                newMomentsAlertDayIndex = OnTheGoTripStore.newMomentsDayIndex
-                showNewMomentsAlert = true
-            } else if tripsViewModel.tripDrafts.isEmpty {
-                // Start scan — navigation will happen when scan finishes (via onChange below)
-                tripsViewModel.startDefaultScan()
-                pendingNavigateAfterScan = true
-            } else {
-                showTrips = true
-            }
+            // if OnTheGoTripStore.hasNewMoments,
+            //    let blogId = OnTheGoTripStore.activeBlogId,
+            //    let title = OnTheGoTripStore.activeBlogTitle,
+            //    createdRecapStore.visibleRecents.contains(where: { $0.sourceTripId == blogId }) {
+            //     newMomentsAlertBlogId = blogId
+            //     newMomentsAlertBlogTitle = title
+            //     newMomentsAlertDayIndex = OnTheGoTripStore.newMomentsDayIndex
+            //     showNewMomentsAlert = true
+            // } else if tripsViewModel.tripDrafts.isEmpty {
+            //     // Start scan — navigation will happen when scan finishes (via onChange below)
+            //     tripsViewModel.startDefaultScan()
+            //     pendingNavigateAfterScan = true
+            // } else {
+            //     showTrips = true
+            // }
         } label: {
             ZStack {
                 ZStack {

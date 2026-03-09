@@ -155,6 +155,7 @@
 		BB000303 /* MyStatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000302 /* MyStatsView.swift */; };
 		BB00M001 /* BackendDashboardAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00M002 /* BackendDashboardAnalytics.swift */; };
 		BB0002E1 /* OnTheGoTripStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002E0 /* OnTheGoTripStore.swift */; };
+		BB0002F1 /* ScanSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F0 /* ScanSessionStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -311,6 +312,7 @@
 		F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalLLMStoryCaptionGenerator.swift; sourceTree = "<group>"; };
 		BB00M002 /* BackendDashboardAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendDashboardAnalytics.swift; sourceTree = "<group>"; };
 		BB0002E0 /* OnTheGoTripStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnTheGoTripStore.swift; sourceTree = "<group>"; };
+		BB0002F0 /* ScanSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanSessionStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -508,6 +510,7 @@
 				BB0001D4 /* MemoryRecallService.swift */,
 				BB00018F /* NeighborhoodStore.swift */,
 				BB0002E0 /* OnTheGoTripStore.swift */,
+				BB0002F0 /* ScanSessionStore.swift */,
 				BB000191 /* OnboardingStore.swift */,
 				BB000193 /* PhotoAssetService.swift */,
 				BB000195 /* PhotoLibraryTripService.swift */,
@@ -709,6 +712,7 @@
 				BB00018E /* MockTripDataService.swift in Sources */,
 				BB000190 /* NeighborhoodStore.swift in Sources */,
 				BB0002E1 /* OnTheGoTripStore.swift in Sources */,
+				BB0002F1 /* ScanSessionStore.swift in Sources */,
 				BB000192 /* OnboardingStore.swift in Sources */,
 				BB000194 /* PhotoAssetService.swift in Sources */,
 				BB000196 /* PhotoLibraryTripService.swift in Sources */,

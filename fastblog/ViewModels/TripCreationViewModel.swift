@@ -10,8 +10,9 @@ import Foundation
 final class TripCreationViewModel: ObservableObject {
     @Published var trip: TripDraft
 
-    init(trip: TripDraft) {
+    init(trip: TripDraft, initialDayIndex: Int = 0) {
         self.trip = trip
+        self.selectedDayIndex = initialDayIndex
     }
 
     @Published var selectedDayIndex: Int = 0

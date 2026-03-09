@@ -14,8 +14,8 @@ struct TripDayPickerView: View {
     @State private var showNoPhotosAlert = false
     @State private var scrollToEdgeAfterDayChange: DayChangeScrollEdge? = nil
 
-    init(trip: TripDraft, onStartCreateBlog: @escaping (TripDraft) -> Void = { _ in }, isEditMode: Bool = false, onUpdate: ((TripDraft) -> Void)? = nil) {
-        _viewModel = StateObject(wrappedValue: TripCreationViewModel(trip: trip))
+    init(trip: TripDraft, initialDayIndex: Int = 0, onStartCreateBlog: @escaping (TripDraft) -> Void = { _ in }, isEditMode: Bool = false, onUpdate: ((TripDraft) -> Void)? = nil) {
+        _viewModel = StateObject(wrappedValue: TripCreationViewModel(trip: trip, initialDayIndex: initialDayIndex))
         self.onStartCreateBlog = onStartCreateBlog
         self.isEditMode = isEditMode
         self.onUpdate = onUpdate

@@ -83,6 +83,10 @@ struct MyBlogsProfileView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
+    @Binding var initialDayIndexForRecap: Int?
+    @ObservedObject var tripsViewModel: TripsViewModel
+    /// Called when user taps "View" on new-moments alert so the parent can dismiss the fullScreenCover.
+    var onDismissCover: (() -> Void)? = nil
     @StateObject private var viewModel = MyBlogsProfileViewModel()
     // Page navigation (ZStack-based, bottom bar persists across all pages)
     @State private var currentPage: MyBlogsPage = .blogs
@@ -106,11 +110,18 @@ struct MyBlogsProfileView: View {
     @State private var newMomentsAlertBlogTitle = ""
     @State private var newMomentsAlertBlogId: UUID? = nil
     @State private var newMomentsDayIndex: Int? = nil
-    /// Day index to open when navigating into a blog from the new-moments popup.
-    @State private var initialDayIndexForRecap: Int? = nil
 
-    init(createdRecapStore: CreatedRecapBlogStore, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
+    init(
+        createdRecapStore: CreatedRecapBlogStore,
+        selectedCreatedRecap: Binding<CreatedRecapBlog?>,
+        initialDayIndexForRecap: Binding<Int?> = .constant(nil),
+        tripsViewModel: TripsViewModel,
+        onDismissCover: (() -> Void)? = nil
+    ) {
         _selectedCreatedRecap = selectedCreatedRecap
+        _initialDayIndexForRecap = initialDayIndexForRecap
+        _tripsViewModel = ObservedObject(wrappedValue: tripsViewModel)
+        self.onDismissCover = onDismissCover
     }
 
     private let backgroundBlue = Color(red: 0.05, green: 0.08, blue: 0.22)
@@ -247,11 +258,19 @@ struct MyBlogsProfileView: View {
             isPresented: $showNewMomentsAlert
         ) {
             Button("View") {
+                if let blogId = newMomentsAlertBlogId {
+                    createdRecapStore.injectPhotos(
+                        tripsViewModel.newlyScannedPhotos,
+                        intoSourceTripId: blogId
+                    )
+                }
+                tripsViewModel.clearNewMomentsSignal()
                 OnTheGoTripStore.clearNewMoments()
                 if let blogId = newMomentsAlertBlogId,
                    let recap = createdRecapStore.displayRecents.first(where: { $0.sourceTripId == blogId }) {
                     initialDayIndexForRecap = newMomentsDayIndex
                     selectedCreatedRecap = recap
+                    onDismissCover?()
                 }
             }
             Button("Ok", role: .cancel) {
@@ -835,7 +854,9 @@ private struct MyBlogsManageSheet: View {
     NavigationStack {
         MyBlogsProfileView(
             createdRecapStore: CreatedRecapBlogStore.shared,
-            selectedCreatedRecap: .constant(nil)
+            selectedCreatedRecap: .constant(nil),
+            initialDayIndexForRecap: .constant(nil),
+            tripsViewModel: TripsViewModel(createdRecapStore: CreatedRecapBlogStore.shared)
         )
         .environmentObject(CreatedRecapBlogStore.shared)
     }
