@@ -835,13 +835,21 @@ final class TripsViewModel: ObservableObject {
         for trip in trips {
             guard let blog = findMatchingSavedBlog(for: trip) else { continue }
             let allPhotos = trip.days.flatMap(\.photos)
-            let cutoff = ScanSessionStore.lastBlogNotifiedDate(for: blog.id) ?? .distantPast
-            let recentPhotos = allPhotos.filter { $0.timestamp > cutoff }
+            let cutoff = ScanSessionStore.lastBlogNotifiedDate(for: blog.id) ?? blog.tripEndDate ?? blog.createdAt
+            let existingIds = Set(
+                createdRecapStore.getBlogDetail(blogId: blog.sourceTripId)?
+                    .days.flatMap(\.placeStops).flatMap(\.photos).compactMap(\.localIdentifier) ?? []
+            )
+            let recentPhotos = allPhotos.filter { p in
+                p.timestamp > cutoff && (p.localIdentifier.map { !existingIds.contains($0) } ?? true)
+            }
             #if DEBUG
-            debugPrint("[Scan]   trip \"\(trip.title)\" cutoff=\(scanDbg(cutoff)) totalPhotos=\(allPhotos.count) afterCutoff=\(recentPhotos.count)")
+            debugPrint("[Scan]   trip \"\(trip.title)\" cutoff=\(scanDbg(cutoff)) totalPhotos=\(allPhotos.count) existingInBlog=\(existingIds.count) afterCutoff=\(recentPhotos.count)")
             for p in allPhotos {
-                let kept = p.timestamp > cutoff
-                debugPrint("[Scan]     photo id=\(p.localIdentifier?.suffix(8) ?? "nil") ts=\(scanDbg(p.timestamp)) > cutoff=\(scanDbg(cutoff)) → kept=\(kept)")
+                let afterCutoff = p.timestamp > cutoff
+                let alreadyInBlog = p.localIdentifier.map { existingIds.contains($0) } ?? false
+                let kept = afterCutoff && !alreadyInBlog
+                debugPrint("[Scan]     photo id=\(p.localIdentifier?.suffix(8) ?? "nil") ts=\(scanDbg(p.timestamp)) afterCutoff=\(afterCutoff) alreadyInBlog=\(alreadyInBlog) → kept=\(kept)")
             }
             #endif
             if !recentPhotos.isEmpty {
@@ -883,19 +891,26 @@ final class TripsViewModel: ObservableObject {
             // 1. Check saved blogs first — new photos may belong to an already-created blog.
             if let blog = findMatchingSavedBlog(for: newTrip) {
                 let allPhotos = newTrip.days.flatMap(\.photos)
-                // Use blog.createdAt as the cutoff — photos taken after the blog
-                // was created are genuinely new, regardless of when the last scan ran.
-                // This prevents photos from being missed when a previous scan had bugs
-                // or when the photo timestamp falls between blog creation and lastScanned.
-                let cutoff = ScanSessionStore.lastBlogNotifiedDate(for: blog.id) ?? .distantPast
-                let photos = allPhotos.filter { $0.timestamp > cutoff }
+                // Use tripEndDate (or createdAt) as the fallback cutoff — photos taken
+                // during the trip are already in the blog; only photos taken after the
+                // trip ended are genuinely new. .distantPast would surface all trip photos.
+                let cutoff = ScanSessionStore.lastBlogNotifiedDate(for: blog.id) ?? blog.tripEndDate ?? blog.createdAt
+                let existingIds = Set(
+                    createdRecapStore.getBlogDetail(blogId: blog.sourceTripId)?
+                        .days.flatMap(\.placeStops).flatMap(\.photos).compactMap(\.localIdentifier) ?? []
+                )
+                let photos = allPhotos.filter { p in
+                    p.timestamp > cutoff && (p.localIdentifier.map { !existingIds.contains($0) } ?? true)
+                }
                 collectedNewPhotos.append(contentsOf: photos)
                 if !photos.isEmpty && newMomentsMatchedBlog == nil { newMomentsMatchedBlog = blog }
                 #if DEBUG
-                debugPrint("[Scan] mergeIncremental: matched saved blog \"\(blog.title)\" cutoff=\(scanDbg(cutoff)) totalPhotos=\(allPhotos.count) afterFilter=\(photos.count)")
+                debugPrint("[Scan] mergeIncremental: matched saved blog \"\(blog.title)\" cutoff=\(scanDbg(cutoff)) totalPhotos=\(allPhotos.count) existingInBlog=\(existingIds.count) afterFilter=\(photos.count)")
                 for p in allPhotos {
-                    let kept = p.timestamp > cutoff
-                    debugPrint("[Scan]   photo id=\(p.localIdentifier?.suffix(8) ?? "nil") ts=\(scanDbg(p.timestamp)) > cutoff=\(scanDbg(cutoff)) → kept=\(kept)")
+                    let afterCutoff = p.timestamp > cutoff
+                    let alreadyInBlog = p.localIdentifier.map { existingIds.contains($0) } ?? false
+                    let kept = afterCutoff && !alreadyInBlog
+                    debugPrint("[Scan]   photo id=\(p.localIdentifier?.suffix(8) ?? "nil") ts=\(scanDbg(p.timestamp)) afterCutoff=\(afterCutoff) alreadyInBlog=\(alreadyInBlog) → kept=\(kept)")
                 }
                 #endif
                 continue
