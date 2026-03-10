@@ -31,9 +31,6 @@ struct ContentView: View {
                     selectedCreatedRecap: $selectedCreatedRecap,
                     tripsViewModel: tripsViewModel
                 )
-                .navigationDestination(isPresented: $showTrips) {
-                    TripsView(viewModel: tripsViewModel, selectedCreatedRecap: $selectedCreatedRecap)
-                }
                 .navigationDestination(isPresented: $showProfile) {
                     ProfileView(selectedCreatedRecap: $selectedCreatedRecap)
                         .environmentObject(createdRecapStore)
@@ -64,6 +61,22 @@ struct ContentView: View {
                 }
             }
 
+            // Trips overlay (fade in/out instead of navigation push/pop swipe).
+            if showTrips {
+                NavigationStack {
+                    TripsView(
+                        viewModel: tripsViewModel,
+                        selectedCreatedRecap: $selectedCreatedRecap,
+                        onDismiss: {
+                            withAnimation(.easeInOut(duration: 0.22)) {
+                                showTrips = false
+                            }
+                        }
+                    )
+                }
+                .transition(.opacity)
+                .zIndex(5)
+            }
             
             if tripsViewModel.scanState != .idle {
                 LoadingScanView(
@@ -79,6 +92,7 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
+        .animation(.easeInOut(duration: 0.22), value: showTrips)
         .environmentObject(createdRecapStore)
         .environment(\.dismissToLanding, {
             dismissToLandingRequested = true

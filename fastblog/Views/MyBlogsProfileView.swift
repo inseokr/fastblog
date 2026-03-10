@@ -74,8 +74,11 @@ private struct PlaceVisitedMiniCard: View {
         }
         .frame(width: 140)
         .padding(10)
-        .background(Color.white.opacity(0.10))
-        .cornerRadius(14)
+        .background(Color.clear)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+        )
     }
 }
 
@@ -440,10 +443,6 @@ struct MyBlogsProfileView: View {
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.white.opacity(0.85))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.12))
-                        .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
             }
@@ -500,7 +499,12 @@ struct MyBlogsProfileView: View {
                     selectedPlaceForModal = nil
                 }
             )
-            .presentationDetents([.large])
+            // Use an almost-full-screen detent to visually touch the bottom edge
+            // while still behaving like a pull-up modal.
+            .presentationDetents([.fraction(0.999)])
+            .presentationDragIndicator(.hidden)
+            .presentationCornerRadius(24)
+            .presentationBackground(.black)
         } else {
             Color.clear.onAppear { selectedPlaceForModal = nil }
         }

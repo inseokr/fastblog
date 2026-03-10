@@ -12,6 +12,7 @@ struct TripsView: View {
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Environment(\.dismiss) private var dismiss
+    var onDismiss: (() -> Void)? = nil
     @StateObject private var photoAuth = PhotosAuthorizationManager()
     @AppStorage("blogify.skipSelectPhotosIntro") private var skipSelectPhotosIntro = false
     @State private var selectedTrip: TripDraft?
@@ -49,9 +50,14 @@ struct TripsView: View {
     /// navigation, 0 for all other navigation paths.
     @State private var tripInitialDayIndex: Int = 0
 
-    init(viewModel: TripsViewModel, selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
+    init(
+        viewModel: TripsViewModel,
+        selectedCreatedRecap: Binding<CreatedRecapBlog?>,
+        onDismiss: (() -> Void)? = nil
+    ) {
         _viewModel = ObservedObject(wrappedValue: viewModel)
         _selectedCreatedRecap = selectedCreatedRecap
+        self.onDismiss = onDismiss
     }
 
     private var shouldShowSelectPhotosIntro: Bool {
@@ -323,7 +329,11 @@ struct TripsView: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button {
-                    dismiss()
+                    if let onDismiss {
+                        onDismiss()
+                    } else {
+                        dismiss()
+                    }
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 17, weight: .semibold))

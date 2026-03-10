@@ -408,7 +408,7 @@ struct PlacePhotoModalView: View {
                                 commitCaption()
                                 onDismiss()
                             }) {
-                                Text("Save")
+                                Text("Done")
                                     .font(.system(size: 14, weight: .bold))
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 16)
