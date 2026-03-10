@@ -404,6 +404,7 @@ private struct PlaceVisitedPhotoModalWrapper: View {
                 initialPhotoId: initialPhotoId,
                 stopDigitizedTime: nil,
                 blogIsEditMode: false,
+                showAssetTimeMetadata: false,
                 photoCaption: { photoId in
                     Binding(
                         get: { liveCaptions[photoId] ?? photos.first(where: { $0.id == photoId })?.caption ?? "" },

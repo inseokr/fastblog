@@ -26,6 +26,8 @@ struct PlacePhotoModalView: View {
     /// Used to derive the capture location's timezone for correct photo time display.
     let stopDigitizedTime: String?
     var blogIsEditMode: Bool = false
+    /// When false, hide PHAsset "Created/Modified" metadata lines (useful for read-only presentation).
+    var showAssetTimeMetadata: Bool = true
     var autoFocusCaption: Bool = false
     var photoCaption: (UUID) -> Binding<String>
     var onDismiss: () -> Void
@@ -128,6 +130,7 @@ struct PlacePhotoModalView: View {
         initialPhotoId: UUID,
         stopDigitizedTime: String? = nil,
         blogIsEditMode: Bool = false,
+        showAssetTimeMetadata: Bool = true,
         autoFocusCaption: Bool = false,
         photoCaption: @escaping (UUID) -> Binding<String>,
         onDismiss: @escaping () -> Void,
@@ -144,6 +147,7 @@ struct PlacePhotoModalView: View {
         self.initialPhotoId = initialPhotoId
         self.stopDigitizedTime = stopDigitizedTime
         self.blogIsEditMode = blogIsEditMode
+        self.showAssetTimeMetadata = showAssetTimeMetadata
         self.autoFocusCaption = autoFocusCaption
         self.photoCaption = photoCaption
         self.onDismiss = onDismiss
@@ -233,6 +237,7 @@ struct PlacePhotoModalView: View {
                         placeTitle: placeTitle,
                         dateTimeText: dateTimeTextForCurrentPhoto,
                         assetTimeMetadataLines: assetTimeMetadataLinesForCurrentPhoto,
+                        showAssetTimeMetadata: showAssetTimeMetadata,
                         isEditing: $isEditing,
                         captionText: $editedCaptionText,
                         placeholder: "Leave a story for this photo...",
@@ -901,6 +906,8 @@ struct BottomInfoOverlay: View {
     let dateTimeText: String
     /// PHAsset time metadata lines (e.g. "Created: ... (PST)", "Modified: ... (PST)"); shown below dateTimeText when non-empty.
     var assetTimeMetadataLines: [String] = []
+    /// When false, suppress Created/Modified metadata lines.
+    var showAssetTimeMetadata: Bool = true
     @Binding var isEditing: Bool
     @Binding var captionText: String
     let placeholder: String
@@ -954,11 +961,13 @@ struct BottomInfoOverlay: View {
                     .shadow(color: .black.opacity(0.3), radius: 1)
             }
 
-            ForEach(assetTimeMetadataLines, id: \.self) { line in
-                Text(line)
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.8))
-                    .shadow(color: .black.opacity(0.3), radius: 1)
+            if showAssetTimeMetadata {
+                ForEach(assetTimeMetadataLines, id: \.self) { line in
+                    Text(line)
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.8))
+                        .shadow(color: .black.opacity(0.3), radius: 1)
+                }
             }
 
             if blogIsEditMode {

@@ -1213,6 +1213,7 @@ struct RecapBlogPageView: View {
                         initialPhotoId: includedPhotos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : includedPhotos[0].id,
                         stopDigitizedTime: stop.visitedTimeDigitized,
                         blogIsEditMode: isEditMode,
+                        showAssetTimeMetadata: isEditMode,
                         autoFocusCaption: item.autoFocusCaption,
                         photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
                         onDismiss: { placePhotoModalItem = nil },

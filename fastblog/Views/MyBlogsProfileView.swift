@@ -480,6 +480,7 @@ struct MyBlogsProfileView: View {
                 initialPhotoId: initialPhotoId,
                 stopDigitizedTime: nil,
                 blogIsEditMode: false,
+                showAssetTimeMetadata: false,
                 photoCaption: { photoId in
                     let caption = photos.first(where: { $0.id == photoId })?.caption ?? ""
                     return Binding(
