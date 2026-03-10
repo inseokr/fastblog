@@ -398,6 +398,8 @@ final class TripsViewModel: ObservableObject {
     private var loadOlderScanTask: Task<Void, Never>?
     /// Tracks the running load-newer scan task so it can be cancelled.
     private var loadNewerScanTask: Task<Void, Never>?
+    /// Tracks the running default scan task so it can be cancelled.
+    private var defaultScanTask: Task<Void, Never>?
 
     // MARK: - Session Window Cache
     /// In-memory cache: normalized window key → scanned trips for that window.
@@ -637,6 +639,13 @@ final class TripsViewModel: ObservableObject {
         }
     }
 
+    func cancelDefaultScan() {
+        defaultScanTask?.cancel()
+        defaultScanTask = nil
+        scanState = .idle
+        defaultScanProgress = 0
+    }
+
     func startDefaultScan() {
         showSelectPhotosIntroAfterScan = true
         scanState = .scanningDefault
@@ -664,7 +673,7 @@ final class TripsViewModel: ObservableObject {
         }
         #endif
 
-        Task {
+        defaultScanTask = Task {
             let cal = Calendar.current
             let now = Date()
             let fullWindowStart = cal.startOfDay(for: cal.date(byAdding: .day, value: -ScanConfig.windowDays, to: now) ?? now)

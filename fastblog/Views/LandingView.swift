@@ -25,10 +25,7 @@ struct LandingView: View {
     @State private var showSettings = false
     @State private var showAuth = false
     /// True while we're waiting for a scan to finish before navigating to Trips.
-    @State private var pendingNavigateAfterScan = false
-    /// CTA text cycles every 5 seconds: "Tap to Blog" ↔ "Create A Blog Today"
-    @State private var ctaIsAlternate = false
-    @State private var ctaOpacity: Double = 1
+
     /// Fade-in opacity for the CTA label on first launch. Starts hidden, fades in after the button appears.
     @State private var ctaTextOpacity: Double = 0
 
@@ -42,7 +39,6 @@ struct LandingView: View {
     @State private var avatarImageData: Data?
 
     private let landingBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
-    private let ctaInterval: TimeInterval = 5
 
     var body: some View {
         ZStack {
@@ -58,17 +54,9 @@ struct LandingView: View {
                     Button {
                         showSettings = true
                     } label: {
-                        ZStack {
-                            Circle()
-                                .fill(LinearGradient(
-                                    colors: [Color(red: 0.2, green: 0.5, blue: 1), Color(red: 0.1, green: 0.3, blue: 0.8)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                ))
-                                .frame(width: 32, height: 32)
-                            Image(systemName: "gearshape.fill")
-                                .font(.system(size: 16))
-                                .foregroundColor(.white)
-                        }
+                        Image(systemName: "gearshape.fill")
+                            .font(.title2)
+                            .foregroundColor(.white)
                     }
                     .simultaneousGesture(
                         LongPressGesture(minimumDuration: 1.5).onEnded { _ in
@@ -137,15 +125,6 @@ struct LandingView: View {
                 .zIndex(10)
             }
 
-            // Scanning overlay — fades in on top of landing while scan runs
-            if tripsViewModel.scanState != .idle {
-                LoadingScanView(
-                    message: tripsViewModel.loadingMessage,
-                    progress: tripsViewModel.defaultScanProgress > 0 ? tripsViewModel.defaultScanProgress : nil
-                )
-                .transition(.opacity)
-                .zIndex(20)
-            }
         }
         .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
         .preferredColorScheme(.dark)
@@ -166,13 +145,6 @@ struct LandingView: View {
                     }
                 }
         )
-        .onReceive(Timer.publish(every: ctaInterval, on: .main, in: .common).autoconnect()) { _ in
-            withAnimation(.easeInOut(duration: 0.5)) { ctaOpacity = 0 }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                ctaIsAlternate.toggle()
-                withAnimation(.easeInOut(duration: 0.5)) { ctaOpacity = 1 }
-            }
-        }
         .sheet(isPresented: $showSettings) {
             SettingsView(onProfileTapped: {
                 showProfile = true
@@ -211,10 +183,6 @@ struct LandingView: View {
         .onAppear {
             AppAnalytics.shared.trackEvent(name: "app_opened")
             avatarImageData = authService.profileImageData
-            // If a scan is already running (e.g. from onboarding), track it for navigation
-            if tripsViewModel.scanState != .idle {
-                pendingNavigateAfterScan = true
-            }
             // If already past splash (e.g. navigating back), show everything immediately
             if splashManager.phase == .done {
                 circlesScale = 1.0
@@ -241,13 +209,6 @@ struct LandingView: View {
         }
         .onChange(of: authService.currentUser?.id) { _, _ in
             avatarImageData = authService.profileImageData
-        }
-        // Navigate to TripsView once scanning finishes
-        .onChange(of: tripsViewModel.scanState) { _, newState in
-            if newState == .idle && pendingNavigateAfterScan {
-                pendingNavigateAfterScan = false
-                showTrips = true
-            }
         }
     }
 
@@ -314,7 +275,11 @@ struct LandingView: View {
             print("scanCTA tapped")
             print("OnTheGoTripStore.hasNewMoments: \(OnTheGoTripStore.hasNewMoments)")
             tripsViewModel.startDefaultScan()
-            pendingNavigateAfterScan = true
+            // Delay navigation until the scan overlay is fully opaque,
+            // so the push happens invisibly behind it (fade instead of slide-from-right)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                showTrips = true
+            }
             return
             // Check for on-the-go new moments first — only when the user already has a created blog.
             // if OnTheGoTripStore.hasNewMoments,
@@ -353,23 +318,13 @@ struct LandingView: View {
                     value: circlesScale
                 )
                 
-                // Both lines in same spot so they stay centered when cross-fading
-                ZStack {
-                    Text("Tap to Blog")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                        .opacity((ctaIsAlternate ? 0 : ctaOpacity) * ctaTextOpacity)
-                    Text("Create A Blog Today")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                        .opacity((ctaIsAlternate ? ctaOpacity : 0) * ctaTextOpacity)
-                }
-                .frame(maxWidth: .infinity)
-                .animation(.easeInOut(duration: 0.5), value: ctaIsAlternate)
-                .animation(.easeInOut(duration: 0.5), value: ctaOpacity)
-                .offset(y: -156)
+                Text("Tap to Blog")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .opacity(ctaTextOpacity)
+                    .frame(maxWidth: .infinity)
+                    .offset(y: -156)
             }
         }
         .buttonStyle(.plain)

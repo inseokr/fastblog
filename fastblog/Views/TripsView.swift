@@ -89,7 +89,13 @@ struct TripsView: View {
     var body: some View {
         Group {
             if viewModel.scanState != .idle {
-                LoadingScanView(message: viewModel.loadingMessage)
+                LoadingScanView(
+                    message: viewModel.loadingMessage,
+                    onCancel: {
+                        viewModel.cancelDefaultScan()
+                    }
+                )
+                .transition(.opacity)
             } else if shouldShowSelectPhotosIntro {
                 SelectPhotosIntroView { dontShowAgain in
                     if dontShowAgain { skipSelectPhotosIntro = true }
@@ -98,10 +104,13 @@ struct TripsView: View {
                 .navigationTitle("Trips")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)
+                .transition(.opacity)
             } else {
                 mainContent
+                    .transition(.opacity)
             }
         }
+        .animation(.easeInOut(duration: 0.4), value: viewModel.scanState)
         .navigationDestination(item: $selectedCreatedRecap) { recap in
             RecapBlogPageView(
                 blogId: recap.sourceTripId,

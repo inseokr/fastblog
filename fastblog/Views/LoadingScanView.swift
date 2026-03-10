@@ -22,7 +22,7 @@ struct LoadingScanView: View {
     @State private var nodeFade: [Bool] = [false, false, false]
 
     private let timerStepLabels = [
-        "Reading your photo library…",
+        "Organizing…",
         "Grouping days into trips…",
         "Almost done…"
     ]
@@ -33,7 +33,7 @@ struct LoadingScanView: View {
     private var progressStepLabel: String {
         guard let p = progress else { return timerStepLabels[stepLabelIndex] }
         switch p {
-        case ..<0.20: return "Reading your photo library…"
+        case ..<0.20: return "Organizing…"
         case 0.20..<0.40: return "Filtering trip photos…"
         case 0.40..<0.85: return "Grouping days into trips…"
         default: return "Almost done…"
@@ -54,26 +54,29 @@ struct LoadingScanView: View {
                     .ignoresSafeArea()
             }
 
-            VStack(spacing: 36) {
+            ZStack {
                 scanAnimation
-                messageSection
+                
+                VStack(spacing: 36) {
+                    messageSection
 
-                if let onCancel {
-                    Button {
-                        onCancel()
-                    } label: {
-                        Text("Cancel")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.white.opacity(0.7))
-                            .padding(.horizontal, 32)
-                            .padding(.vertical, 10)
-                            .background(Color.white.opacity(0.12))
-                            .cornerRadius(10)
+                    if let onCancel {
+                        Button {
+                            onCancel()
+                        } label: {
+                            Text("Cancel")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(.white.opacity(0.7))
+                                .padding(.horizontal, 32)
+                                .padding(.vertical, 10)
+                                .background(Color.white.opacity(0.12))
+                                .cornerRadius(10)
+                        }
                     }
                 }
+                .offset(y: 220)
             }
-            .offset(y: -44)
         }
         .preferredColorScheme(.dark)
         .onAppear {

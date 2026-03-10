@@ -12,6 +12,7 @@ struct PlacePhotoModalItem: Identifiable {
     let dayId: UUID
     let stopId: UUID
     let initialPhotoId: UUID
+    var autoFocusCaption: Bool = false
     var id: String { "\(dayId.uuidString)-\(stopId.uuidString)-\(initialPhotoId.uuidString)" }
 }
 
@@ -25,6 +26,7 @@ struct PlacePhotoModalView: View {
     /// Used to derive the capture location's timezone for correct photo time display.
     let stopDigitizedTime: String?
     var blogIsEditMode: Bool = false
+    var autoFocusCaption: Bool = false
     var photoCaption: (UUID) -> Binding<String>
     var onDismiss: () -> Void
     var onViewBlog: (() -> Void)?
@@ -126,6 +128,7 @@ struct PlacePhotoModalView: View {
         initialPhotoId: UUID,
         stopDigitizedTime: String? = nil,
         blogIsEditMode: Bool = false,
+        autoFocusCaption: Bool = false,
         photoCaption: @escaping (UUID) -> Binding<String>,
         onDismiss: @escaping () -> Void,
         onViewBlog: (() -> Void)? = nil,
@@ -141,6 +144,7 @@ struct PlacePhotoModalView: View {
         self.initialPhotoId = initialPhotoId
         self.stopDigitizedTime = stopDigitizedTime
         self.blogIsEditMode = blogIsEditMode
+        self.autoFocusCaption = autoFocusCaption
         self.photoCaption = photoCaption
         self.onDismiss = onDismiss
         self.onViewBlog = onViewBlog
@@ -423,44 +427,6 @@ struct PlacePhotoModalView: View {
                 zoomablePhotoOverlay(photo: photo)
             }
 
-            // 6. Tap + swipe only over the middle (photo) area; no contentShape on the stack so top/bottom pass through to bar and thumbnails.
-            if !isZoomMode {
-                VStack(spacing: 0) {
-                    Color.clear.frame(height: 80)
-                    Button {
-                        debugPrint("[PlacePhotoModal] Photo area double-tapped → entering zoom, photoId=\(currentPhotoId)")
-                        accumulatedZoomScale = 1.0
-                        accumulatedDragOffset = .zero
-                        withAnimation(.easeInOut(duration: 0.25)) { isZoomMode = true }
-                    } label: {
-                        Color.clear
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .simultaneousGesture(TapGesture(count: 2).onEnded {
-                        accumulatedZoomScale = 1.0
-                        accumulatedDragOffset = .zero
-                        withAnimation(.easeInOut(duration: 0.25)) { isZoomMode = true }
-                    })
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 40)
-                            .onEnded { value in
-                                let dx = value.translation.width
-                                guard abs(dx) > 40 else { return }
-                                guard let idx = photos.firstIndex(where: { $0.id == currentPhotoId }) else { return }
-                                if dx < 0, idx + 1 < photos.count {
-                                    withAnimation(.easeInOut(duration: 0.25)) { currentPhotoId = photos[idx + 1].id }
-                                } else if dx > 0, idx > 0 {
-                                    withAnimation(.easeInOut(duration: 0.25)) { currentPhotoId = photos[idx - 1].id }
-                                }
-                            }
-                    )
-                    Color.clear.frame(height: 220)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
@@ -634,7 +600,9 @@ struct PlacePhotoModalView: View {
                 captionWhenEditingStarted = currentCaption
                 titleWhenEditingStarted = placeTitle
                 isEditing = true
-                // Do NOT auto-focus — keyboard should only appear when user taps the caption field
+                if autoFocusCaption {
+                    isCaptionFocused = true
+                }
             }
         }
         .onChange(of: currentPhotoId) { _, _ in

@@ -156,9 +156,13 @@ struct CreateBlogFlowView: View {
     }
 
     private func goToLanding() {
-        // Now clean up the trip from drafts and dismiss
-        onClose(trip.id)
+        // Navigate to the new blog first (behind the fullScreenCover)
+        // so it's already loaded when the cover slides down.
         dismissToLanding()
+        // Delay dismissing the cover to let the blog view render underneath
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            onClose(trip.id)
+        }
     }
 }
 

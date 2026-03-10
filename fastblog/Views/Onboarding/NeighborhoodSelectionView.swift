@@ -40,7 +40,13 @@ struct NeighborhoodSelectionView: View {
         ZStack(alignment: .bottom) {
             VStack(spacing: 0) {
                 topSection
-                if isMapRevealed {
+                if isFocused && !hasPendingSelection && !searchHelper.suggestions.isEmpty {
+                    ScrollView {
+                        suggestionList
+                    }
+                    .scrollDismissesKeyboard(.never)
+                    .padding(.horizontal, OnboardingConstants.Layout.horizontalPadding)
+                } else if isMapRevealed {
                     mapSection
                 } else {
                     Spacer()
@@ -52,7 +58,6 @@ struct NeighborhoodSelectionView: View {
         }
         .background(OnboardingConstants.Colors.background)
         .preferredColorScheme(.dark)
-        .ignoresSafeArea(.keyboard)
         .onAppear {
             isFocused = true
             locationManager.requestLocation()
@@ -112,10 +117,6 @@ struct NeighborhoodSelectionView: View {
                 Text("Finding area…")
                     .font(.subheadline)
                     .foregroundColor(.white.opacity(0.8))
-            }
-            // Only show while typing and not after a selection is confirmed
-            if isFocused && !hasPendingSelection {
-                suggestionList
             }
         }
         .padding(.horizontal, OnboardingConstants.Layout.horizontalPadding)

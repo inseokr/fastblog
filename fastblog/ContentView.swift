@@ -22,46 +22,63 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            LandingView(
-                showTrips: $showTrips,
-                showProfile: $showProfile,
-                showSeeAll: $showSeeAll,
-                selectedCreatedRecap: $selectedCreatedRecap,
-                tripsViewModel: tripsViewModel
-            )
-            .navigationDestination(isPresented: $showTrips) {
-                TripsView(viewModel: tripsViewModel, selectedCreatedRecap: $selectedCreatedRecap)
-            }
-            .navigationDestination(isPresented: $showProfile) {
-                ProfileView(selectedCreatedRecap: $selectedCreatedRecap)
-                    .environmentObject(createdRecapStore)
-            }
-            .fullScreenCover(isPresented: $showSeeAll) {
-                NavigationStack {
-                    MyBlogsProfileView(
-                        createdRecapStore: createdRecapStore,
-                        selectedCreatedRecap: $selectedCreatedRecap,
-                        initialDayIndexForRecap: $initialDayIndexForRecap,
-                        tripsViewModel: tripsViewModel,
-                        onDismissCover: { showSeeAll = false }
-                    )
-                    .environmentObject(createdRecapStore)
+        ZStack {
+            NavigationStack {
+                LandingView(
+                    showTrips: $showTrips,
+                    showProfile: $showProfile,
+                    showSeeAll: $showSeeAll,
+                    selectedCreatedRecap: $selectedCreatedRecap,
+                    tripsViewModel: tripsViewModel
+                )
+                .navigationDestination(isPresented: $showTrips) {
+                    TripsView(viewModel: tripsViewModel, selectedCreatedRecap: $selectedCreatedRecap)
+                }
+                .navigationDestination(isPresented: $showProfile) {
+                    ProfileView(selectedCreatedRecap: $selectedCreatedRecap)
+                        .environmentObject(createdRecapStore)
+                }
+                .fullScreenCover(isPresented: $showSeeAll) {
+                    NavigationStack {
+                        MyBlogsProfileView(
+                            createdRecapStore: createdRecapStore,
+                            selectedCreatedRecap: $selectedCreatedRecap,
+                            initialDayIndexForRecap: $initialDayIndexForRecap,
+                            tripsViewModel: tripsViewModel,
+                            onDismissCover: { showSeeAll = false }
+                        )
+                        .environmentObject(createdRecapStore)
+                    }
+                }
+                // Only push from Landing if we are staying on Landing (not showing Trips)
+                .navigationDestination(isPresented: Binding(
+                    get: { selectedCreatedRecap != nil && !showTrips && !showProfile && !showSeeAll },
+                    set: { if !$0 { selectedCreatedRecap = nil } }
+                )) {
+                    if let recap = selectedCreatedRecap {
+                        RecapBlogPageView(
+                            blogId: recap.sourceTripId,
+                            initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId),
+                        )
+                    }
                 }
             }
-            // Only push from Landing if we are staying on Landing (not showing Trips)
-            .navigationDestination(isPresented: Binding(
-                get: { selectedCreatedRecap != nil && !showTrips && !showProfile && !showSeeAll },
-                set: { if !$0 { selectedCreatedRecap = nil } }
-            )) {
-                if let recap = selectedCreatedRecap {
-                    RecapBlogPageView(
-                        blogId: recap.sourceTripId,
-                        initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId),
-                    )
-                }
+
+            
+            if tripsViewModel.scanState != .idle {
+                LoadingScanView(
+                    message: tripsViewModel.loadingMessage,
+                    progress: tripsViewModel.defaultScanProgress > 0 ? tripsViewModel.defaultScanProgress : nil,
+                    onCancel: {
+                        tripsViewModel.cancelDefaultScan()
+                        showTrips = false
+                    }
+                )
+                .transition(.opacity)
+                .zIndex(20)
             }
         }
+        .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
         .environmentObject(createdRecapStore)
         .environment(\.dismissToLanding, {
             dismissToLandingRequested = true
@@ -70,10 +87,16 @@ struct ContentView: View {
             if requested {
                 dismissToLandingRequested = false
                 // After blog creation, navigate to the new recap blog on top of TripsView
-                // so back button returns to Trips page for creating more blogs
+                // so back button returns to Trips page for creating more blogs.
+                // Use a non-animated transaction so the blog appears instantly behind
+                // the fullScreenCover instead of sliding in from the right.
                 if let latest = createdRecapStore.displayRecents.first {
                     showTrips = true
-                    selectedCreatedRecap = latest
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        selectedCreatedRecap = latest
+                    }
                 } else {
                     showTrips = false
                 }
@@ -83,12 +106,9 @@ struct ContentView: View {
             if justFinishedOnboarding {
                 justFinishedOnboarding = false
                 if tripsViewModel.tripDrafts.isEmpty {
-                    // Scan starts — LandingView shows the scanning overlay,
-                    // then navigates to TripsView when scan finishes.
                     tripsViewModel.startDefaultScan()
-                } else {
-                    showTrips = true
                 }
+                showTrips = true
             }
         }
     }

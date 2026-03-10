@@ -59,14 +59,14 @@ struct PhotoPermissionOnboardingView: View {
 
                 // Copy
                 VStack(spacing: 16) {
-                    Text("Find trips automatically")
+                    Text("Your photos already tell the story")
                         .font(.system(size: 32, weight: .bold))
                         .foregroundColor(.white)
                         .multilineTextAlignment(.center)
                         .opacity(showHeadline ? 1 : 0)
                         .offset(y: showHeadline ? 0 : 8)
 
-                    Text("Bloggo groups photos by date and location to build recap blogs.")
+                    Text("Bloggo finds trips in your camera roll using date and location so you can create blogs in seconds.")
                         .font(.title3)
                         .foregroundColor(.white.opacity(0.7))
                         .multilineTextAlignment(.center)
@@ -74,7 +74,7 @@ struct PhotoPermissionOnboardingView: View {
                         .opacity(showBody ? 1 : 0)
                         .offset(y: showBody ? 0 : 8)
                     
-                    Text("Photos stay on your device. Upload is optional.")
+                    Text("Your photos stay private on your device. Nothing uploads unless you choose to publish.")
                         .font(.footnote)
                         .foregroundColor(.white.opacity(0.5))
                         .multilineTextAlignment(.center)
@@ -108,7 +108,7 @@ struct PhotoPermissionOnboardingView: View {
                             }
                         }
                     } label: {
-                        Text("Allow Full Access")
+                        Text("Allow Photo Access")
                             .font(.headline)
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)

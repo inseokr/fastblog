@@ -24,7 +24,7 @@ struct CreatingRecapView: View {
 
     private let earlyStepLabels = [
         "Selecting your photos…",
-        "Writing your story…"
+        "Organizing moments…"
     ]
 
     var body: some View {

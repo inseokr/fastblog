@@ -712,63 +712,67 @@ private struct MyBlogsManageSheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    VStack(spacing: 8) {
-                        Image(systemName: "internaldrive")
-                            .font(.system(size: 38))
-                            .foregroundColor(.blue)
-                            .padding(.bottom, 4)
-                        Text("Manage Blogs")
-                            .font(.system(.title2, design: .serif).weight(.medium))
-                        Text("Remove blog from your device")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 32)
-                    }
-                    .padding(.top, 28)
-                    .padding(.bottom, 4)
+            ZStack {
+                Color(uiColor: .systemGroupedBackground)
+                    .ignoresSafeArea()
 
-                    // Country sections
-                    if sections.isEmpty {
-                        Text("No local blogs to manage.")
-                            .foregroundColor(.secondary)
-                            .padding(.top, 24)
-                    } else {
-                        ForEach(sections, id: \.country) { section in
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(section.country)
-                                    .font(.headline)
-                                    .padding(.horizontal, 16)
+                ScrollView {
+                    VStack(spacing: 24) {
+                        VStack(spacing: 8) {
+                            Image(systemName: "internaldrive")
+                                .font(.system(size: 38))
+                                .foregroundColor(.blue)
+                                .padding(.bottom, 4)
+                            Text("Manage Blogs")
+                                .font(.system(.title2, design: .serif).weight(.medium))
+                            Text("Remove blog from your device")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 32)
+                        }
+                        .padding(.top, 28)
+                        .padding(.bottom, 4)
 
-                                LazyVStack(spacing: 10) {
-                                    ForEach(section.blogs) { blog in
-                                        Button {
-                                            onBlogSelected(blog)
-                                        } label: {
-                                            CountryManageRow(
-                                                blog: blog,
-                                                isInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
-                                                isRemoved: removedBlogIDs.contains(blog.id),
-                                                onRemove: {
-                                                    blogPendingRemoval = blog
-                                                    showRemoveAlert = true
-                                                }
-                                            )
+                        // Country sections
+                        if sections.isEmpty {
+                            Text("No local blogs to manage.")
+                                .foregroundColor(.secondary)
+                                .padding(.top, 24)
+                        } else {
+                            ForEach(sections, id: \.country) { section in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(section.country)
+                                        .font(.headline)
+                                        .padding(.horizontal, 16)
+
+                                    LazyVStack(spacing: 10) {
+                                        ForEach(section.blogs) { blog in
+                                            Button {
+                                                onBlogSelected(blog)
+                                            } label: {
+                                                CountryManageRow(
+                                                    blog: blog,
+                                                    isInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
+                                                    isRemoved: removedBlogIDs.contains(blog.id),
+                                                    onRemove: {
+                                                        blogPendingRemoval = blog
+                                                        showRemoveAlert = true
+                                                    }
+                                                )
+                                            }
+                                            .buttonStyle(.plain)
                                         }
-                                        .buttonStyle(.plain)
                                     }
+                                    .padding(.horizontal, 16)
                                 }
-                                .padding(.horizontal, 16)
                             }
                         }
-                    }
 
-                    Spacer(minLength: 40)
+                        Spacer(minLength: 40)
+                    }
                 }
             }
-            .background(Color(uiColor: .systemGroupedBackground))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

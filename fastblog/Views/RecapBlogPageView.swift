@@ -265,20 +265,10 @@ struct RecapBlogPageView: View {
                         showBlogSettings = false
                         isEditMode = true
                     },
-                    onAddNewMoments: {
+                    onAddNewMoments: newMomentPhotos.isEmpty ? nil : {
                         showBlogSettings = false
-                        Task { @MainActor in
-                            isCheckingNewMoments = true
-                            let photos = await createdRecapStore.scanForNewMoments(blogId: blogId)
-                            isCheckingNewMoments = false
-                            if photos.isEmpty {
-                                // No new photos found — nothing to show
-                            } else {
-                                newMomentPhotos = photos
-                                withAnimation(.easeInOut(duration: 0.3)) {
-                                    showNewMomentsReviewSheet = true
-                                }
-                            }
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            showNewMomentsReviewSheet = true
                         }
                     },
                     onDelete: {
@@ -1169,7 +1159,7 @@ struct RecapBlogPageView: View {
                         markPhotoCaptionManual(dayId: day.id, stopId: stop.id, photoId: photoId)
                     },
                     onCaptionTapped: { photoId in
-                        placePhotoModalItem = PlacePhotoModalItem(dayId: day.id, stopId: stop.id, initialPhotoId: photoId)
+                        placePhotoModalItem = PlacePhotoModalItem(dayId: day.id, stopId: stop.id, initialPhotoId: photoId, autoFocusCaption: true)
                     },
                     onOverallStoryUserEdited: {
                         markOverallStoryManual(dayId: day.id, stopId: stop.id)
@@ -1223,6 +1213,7 @@ struct RecapBlogPageView: View {
                         initialPhotoId: includedPhotos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : includedPhotos[0].id,
                         stopDigitizedTime: stop.visitedTimeDigitized,
                         blogIsEditMode: isEditMode,
+                        autoFocusCaption: item.autoFocusCaption,
                         photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
                         onDismiss: { placePhotoModalItem = nil },
                         onGenerateCaption: { photo, placeName, placeSubtitle in
