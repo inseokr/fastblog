@@ -1941,6 +1941,47 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
     }
 
+    // MARK: - New Moments Scan
+
+    /// Lightweight scan for new photos that could be added to a recent blog.
+    /// Returns an empty array if the blog is too old or no new photos are found.
+    func scanForNewMoments(blogId: UUID) async -> [MockPhoto] {
+        guard let detail = blogDetailsBySourceId[blogId] else { return [] }
+
+        // Determine the blog's latest photo date.
+        let allPhotos = detail.days.flatMap(\.placeStops).flatMap(\.photos)
+        let latestPhotoDate = allPhotos.map(\.timestamp).max()
+        let blogEndDate = detail.days.last?.date
+        let scanStart = latestPhotoDate ?? blogEndDate ?? Date.distantPast
+
+        // Only scan for blogs whose last day is within 14 days of today.
+        let lastDayDate = detail.days.last?.date ?? Date.distantPast
+        let daysSinceLastDay = Calendar.current.dateComponents([.day], from: lastDayDate, to: Date()).day ?? Int.max
+        guard daysSinceLastDay <= 14 else { return [] }
+
+        // Apply per-blog cutoff so dismissed photos don't resurface.
+        let cutoff = ScanSessionStore.lastBlogNotifiedDate(for: blogId) ?? scanStart
+
+        // Scan photo library from cutoff to now.
+        let trips = await PhotoLibraryTripService.shared.scanInDateRange(
+            startDate: cutoff,
+            endDate: Date()
+        )
+
+        // Collect all photos from scanned trips.
+        let scannedPhotos = trips.flatMap { $0.days.flatMap(\.photos) }
+        guard !scannedPhotos.isEmpty else { return [] }
+
+        // Deduplicate against photos already in the blog.
+        let existingIds = Set(allPhotos.compactMap(\.localIdentifier))
+        let newPhotos = scannedPhotos.filter { photo in
+            photo.timestamp > cutoff
+            && (photo.localIdentifier.map { !existingIds.contains($0) } ?? true)
+        }
+
+        return newPhotos.sorted { $0.timestamp < $1.timestamp }
+    }
+
     // MARK: - Private Helpers
 
     private func primaryFromCandidates(_ candidates: [(country: String, order: Int)]) -> String {

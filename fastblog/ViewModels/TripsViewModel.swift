@@ -206,7 +206,11 @@ final class TripsViewModel: ObservableObject {
         guard !newlyScannedPhotos.isEmpty else { return }
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 600_000_000)
-            self?.showNewlyScannedSheet = true
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    self?.showNewlyScannedSheet = true
+                }
+            }
         }
     }
 

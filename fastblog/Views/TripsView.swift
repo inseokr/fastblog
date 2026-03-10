@@ -257,55 +257,8 @@ struct TripsView: View {
                 }
             }
         }
-        // New moments detected — show the newly-scanned-photos sheet.
-        .sheet(isPresented: $viewModel.showNewlyScannedSheet) {
-            NewlyScannedPhotosSheet(
-                photos: viewModel.newlyScannedPhotos,
-                matchedTrip: viewModel.newMomentsInExistingTrip,
-                matchedBlog: viewModel.newMomentsMatchedBlog,
-                onGoToTrip: {
-                    viewModel.showNewlyScannedSheet = false
-                    // Also inject photos into the blog so they're not lost —
-                    // "View Trip" acknowledges the photos, which saves the cutoff,
-                    // but without injecting they'd never appear in the blog detail.
-                    if let blog = viewModel.newMomentsMatchedBlog {
-                        createdRecapStore.injectPhotos(
-                            viewModel.newlyScannedPhotos,
-                            intoSourceTripId: blog.sourceTripId
-                        )
-                    }
-                    if let trip = viewModel.newMomentsInExistingTrip {
-                        tripInitialDayIndex = viewModel.newMomentsLatestDayIndex
-                        selectedTripID = trip.id
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                            selectedTrip = trip
-                        }
-                    }
-                    viewModel.clearNewMomentsSignal()
-                },
-                onGoToBlog: {
-                    viewModel.showNewlyScannedSheet = false
-                    if let blog = viewModel.newMomentsMatchedBlog {
-                        // Inject new photos into the blog's RecapBlogDetail before navigating.
-                        createdRecapStore.injectPhotos(
-                            viewModel.newlyScannedPhotos,
-                            intoSourceTripId: blog.sourceTripId
-                        )
-                        let recap = createdRecapStore.visibleRecents.first(where: { $0.id == blog.id })
-                        if let recap { selectedCreatedRecap = recap }
-                    }
-                    viewModel.clearNewMomentsSignal()
-                },
-                onDismiss: {
-                    viewModel.showNewlyScannedSheet = false
-                    if viewModel.newMomentsSheetTriggeredByCreateButton {
-                        viewModel.dismissNewMomentsAndOpenPendingCreateFlow()
-                    } else {
-                        viewModel.resetNewMomentsState()
-                    }
-                }
-            )
-        }
+        // New moments detected overlay.
+        .overlay(newlyScannedOverlay)
         // When Create-blog check completes with no new photos (or user tapped "Later"), open the create flow.
         .onChange(of: viewModel.openCreateFlowForPendingTrip) { _, shouldOpen in
             guard shouldOpen, let trip = viewModel.pendingTripForCreateFlow else { return }
@@ -1150,6 +1103,80 @@ struct TripsView: View {
         }
         .zIndex(200)
     }
+    // MARK: - Newly Scanned Overlay
+
+    @ViewBuilder
+    private var newlyScannedOverlay: some View {
+        if viewModel.showNewlyScannedSheet {
+            ZStack {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            viewModel.showNewlyScannedSheet = false
+                        }
+                        if viewModel.newMomentsSheetTriggeredByCreateButton {
+                            viewModel.dismissNewMomentsAndOpenPendingCreateFlow()
+                        } else {
+                            viewModel.clearNewMomentsSignal()
+                        }
+                    }
+                    .transition(.opacity)
+                    .zIndex(9)
+
+                NewlyScannedPhotosSheet(
+                    photos: viewModel.newlyScannedPhotos,
+                    matchedTrip: viewModel.newMomentsInExistingTrip,
+                    matchedBlog: viewModel.newMomentsMatchedBlog,
+                    onGoToTrip: {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            viewModel.showNewlyScannedSheet = false
+                        }
+                        if let blog = viewModel.newMomentsMatchedBlog {
+                            createdRecapStore.injectPhotos(
+                                viewModel.newlyScannedPhotos,
+                                intoSourceTripId: blog.sourceTripId
+                            )
+                        }
+                        if let trip = viewModel.newMomentsInExistingTrip {
+                            tripInitialDayIndex = viewModel.newMomentsLatestDayIndex
+                            selectedTripID = trip.id
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                selectedTrip = trip
+                            }
+                        }
+                        viewModel.clearNewMomentsSignal()
+                    },
+                    onGoToBlog: {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            viewModel.showNewlyScannedSheet = false
+                        }
+                        if let blog = viewModel.newMomentsMatchedBlog {
+                            createdRecapStore.injectPhotos(
+                                viewModel.newlyScannedPhotos,
+                                intoSourceTripId: blog.sourceTripId
+                            )
+                            let recap = createdRecapStore.visibleRecents.first(where: { $0.id == blog.id })
+                            if let recap { selectedCreatedRecap = recap }
+                        }
+                        viewModel.clearNewMomentsSignal()
+                    },
+                    onDismiss: {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            viewModel.showNewlyScannedSheet = false
+                        }
+                        if viewModel.newMomentsSheetTriggeredByCreateButton {
+                            viewModel.dismissNewMomentsAndOpenPendingCreateFlow()
+                        } else {
+                            viewModel.clearNewMomentsSignal()
+                        }
+                    }
+                )
+                .transition(.move(edge: .bottom))
+                .zIndex(10)
+            }
+        }
+    }
 }
 
 // MARK: - Trip Carousel Card
@@ -1450,10 +1477,13 @@ struct NewlyScannedPhotosSheet: View {
         return "\(n) new photo\(n == 1 ? "" : "s") found"
     }
 
-    var body: some View {
-        ZStack {
-            newMomentsSheetBg.ignoresSafeArea()
+    @State private var dragOffset: CGFloat = 0
 
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+
+            // Sheet content
             VStack(spacing: 0) {
                 // Drag handle
                 Capsule()
@@ -1462,111 +1492,104 @@ struct NewlyScannedPhotosSheet: View {
                     .padding(.top, 10)
                     .padding(.bottom, 16)
 
-                // Cover photo hero
-                coverHero
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        blogCard
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 24)
 
-                // Trip/blog info card
-                infoCard
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+                        // New photo preview strip
+                        photoStrip
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 16)
+                    }
+                }
 
-                // New photo preview strip
-                photoStrip
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 24)
-
-                // Action buttons
+                // Action buttons pinned at bottom
                 actionButtons
                     .padding(.horizontal, 16)
+                    .padding(.top, 12)
                     .padding(.bottom, 32)
             }
+            .frame(maxHeight: UIScreen.main.bounds.height * 0.80)
+            .background(newMomentsSheetBg)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .offset(y: max(dragOffset, 0))
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        dragOffset = value.translation.height
+                    }
+                    .onEnded { value in
+                        if value.translation.height > 120 {
+                            onDismiss()
+                        } else {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                dragOffset = 0
+                            }
+                        }
+                    }
+            )
         }
+        .ignoresSafeArea()
         .preferredColorScheme(.dark)
-        .presentationDetents([.fraction(0.72)])
-        .presentationDragIndicator(.hidden)
     }
 
-    // MARK: - Cover hero
+    // MARK: - Blog Card
 
     @ViewBuilder
-    private var coverHero: some View {
-        ZStack(alignment: .bottomLeading) {
-            Group {
-                if let assetId = coverAssetId {
-                    AssetPhotoView(assetIdentifier: assetId, cornerRadius: 0, targetSize: CGSize(width: 600, height: 400))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 160)
-                } else {
-                    Rectangle()
-                        .fill(newMomentsCardBg)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 160)
-                        .overlay(
-                            Image(systemName: "photo.on.rectangle.angled")
-                                .font(.system(size: 40))
-                                .foregroundColor(.white.opacity(0.3))
-                        )
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-
-            // Gradient overlay at bottom
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.55)],
-                startPoint: .top, endPoint: .bottom
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .frame(height: 80)
-
-            // Badge: "N new photos"
-            HStack(spacing: 5) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 11, weight: .semibold))
-                Text(newPhotoLabel)
-                    .font(.system(size: 12, weight: .semibold))
-            }
-            .foregroundColor(.white)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(Color.blue.opacity(0.85))
-            .clipShape(Capsule())
-            .padding(10)
-        }
-    }
-
-    // MARK: - Info card
-
-    private var infoCard: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(entityTitle)
-                    .font(.system(size: 16, weight: .semibold))
+    private var blogCard: some View {
+        let themeName = matchedBlog?.coverImageName ?? matchedTrip?.coverTheme ?? "blue"
+        VStack(alignment: .leading, spacing: 12) {
+            TripCoverImage(theme: themeName, coverAssetIdentifier: coverAssetId)
+                .frame(height: 250)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(alignment: .bottomLeading) {
+                    // Badge: "N new photos"
+                    HStack(spacing: 5) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(newPhotoLabel)
+                            .font(.system(size: 12, weight: .semibold))
+                    }
                     .foregroundColor(.white)
-                    .lineLimit(1)
-                if !entityDateRange.isEmpty {
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.blue.opacity(0.85))
+                    .clipShape(Capsule())
+                    .padding(10)
+                }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .center) {
                     Text(entityDateRange)
-                        .font(.system(size: 13))
-                        .foregroundColor(.white.opacity(0.55))
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                        .textCase(.uppercase)
+                    Spacer()
+                }
+
+                Text(entityTitle)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+
+                HStack {
+                    if !entityDuration.isEmpty {
+                        Text(entityDuration)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
                 }
             }
-            Spacer()
-            if !entityDuration.isEmpty {
-                VStack(spacing: 2) {
-                    Text(entityDuration)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
-                    Text("trip")
-                        .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.5))
-                }
-            }
+            .padding(.horizontal, 4)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(newMomentsCardBg)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .contentShape(Rectangle())
     }
 
     // MARK: - Photo strip (up to 4 thumbnails)
@@ -1575,10 +1598,9 @@ struct NewlyScannedPhotosSheet: View {
     private var photoStrip: some View {
         if !previewPhotos.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Text("New Moments")
+                Text("NEW MOMENTS FOUND")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.white.opacity(0.5))
-                    .textCase(.uppercase)
 
                 HStack(spacing: 6) {
                     ForEach(previewPhotos) { photo in
@@ -1606,6 +1628,7 @@ struct NewlyScannedPhotosSheet: View {
                     Spacer()
                 }
             }
+            .contentShape(Rectangle())
         }
     }
 
