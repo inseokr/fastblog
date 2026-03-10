@@ -73,6 +73,7 @@ struct LoadingScanView: View {
                     }
                 }
             }
+            .offset(y: -44)
         }
         .preferredColorScheme(.dark)
         .onAppear {

@@ -104,6 +104,12 @@ struct RecapBlogPageView: View {
     /// Alert when user taps a day that is not yet processed (geocoding still in progress).
     @State private var showUnprocessedDayAlert = false
     
+    // MARK: - New Moments
+    @State private var newMomentPhotos: [MockPhoto] = []
+    @State private var showNewMomentsReviewSheet = false
+    @State private var isCheckingNewMoments = false
+    @State private var hasCheckedNewMoments = false
+
     // MARK: - Split Blog Properties
     @State private var showSplitActionSheet = false
     @State private var dayIndexToSplit: Int?
@@ -259,6 +265,22 @@ struct RecapBlogPageView: View {
                         showBlogSettings = false
                         isEditMode = true
                     },
+                    onAddNewMoments: {
+                        showBlogSettings = false
+                        Task { @MainActor in
+                            isCheckingNewMoments = true
+                            let photos = await createdRecapStore.scanForNewMoments(blogId: blogId)
+                            isCheckingNewMoments = false
+                            if photos.isEmpty {
+                                // No new photos found — nothing to show
+                            } else {
+                                newMomentPhotos = photos
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    showNewMomentsReviewSheet = true
+                                }
+                            }
+                        }
+                    },
                     onDelete: {
                         createdRecapStore.deleteBlog(sourceTripId: blogId)
                         dismiss()
@@ -405,6 +427,35 @@ struct RecapBlogPageView: View {
                     unsavedSplitModal(splitIdx: splitIdx)
                 }
             }
+            .overlay {
+                if showNewMomentsReviewSheet {
+                    Color.black.opacity(0.4)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                showNewMomentsReviewSheet = false
+                            }
+                        }
+                        .transition(.opacity)
+                        .zIndex(9)
+                }
+            }
+            .overlay {
+                if showNewMomentsReviewSheet {
+                    NewMomentsReviewSheet(
+                        photos: newMomentPhotos,
+                        blogTitle: draft.title,
+                        onAdd: { selected in addNewMomentsToBlog(selected) },
+                        onLater: {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                showNewMomentsReviewSheet = false
+                            }
+                        }
+                    )
+                    .transition(.move(edge: .bottom))
+                    .zIndex(10)
+                }
+            }
             .modifier(coreContentAlertsAndLifecycleModifier())
             .alert("Save or Exit?", isPresented: $showNewBlogExitConfirmation) {
                 Button("Continue Later") {
@@ -464,6 +515,13 @@ struct RecapBlogPageView: View {
                         // Restore card sits right under the cover photo/title in edit mode
                         if isEditMode && !draft.removedPlaceStops.isEmpty {
                             restoreRemovedPlacesCard
+                                .padding(.horizontal, 16)
+                                .padding(.top, 8)
+                                .padding(.bottom, 12)
+                        }
+                        // New moments card — shown when lightweight scan found new photos
+                        if !newMomentPhotos.isEmpty {
+                            newMomentsCard
                                 .padding(.horizontal, 16)
                                 .padding(.top, 8)
                                 .padding(.bottom, 12)
@@ -952,6 +1010,51 @@ struct RecapBlogPageView: View {
         .buttonStyle(.plain)
     }
 
+    /// Inline card shown when new photos were detected for this recent blog.
+    private var newMomentsCard: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                showNewMomentsReviewSheet = true
+            }
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.green.opacity(0.15))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(.green)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(newMomentPhotos.count) new photo\(newMomentPhotos.count == 1 ? "" : "s") found")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                    Text("Tap to review and add to your blog")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Color(white: 0.14))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.green.opacity(0.25), lineWidth: 1)
+        )
+    }
+
     private func daySection(day: RecapBlogDay) -> some View {
         let isDayLoading = !day.isPlaceNamesResolved
         return VStack(alignment: .leading, spacing: 16) {
@@ -1286,6 +1389,8 @@ struct RecapBlogPageView: View {
             hasFinishedInitialLoad = true
             // Process any remaining days in background (rate-limited geocoding).
             Task { @MainActor in await createdRecapStore.continueGeocodingDays(blogId: blogId) }
+            // Check for new moments if this is a recent blog.
+            checkForNewMomentsIfRecent()
             return
         }
         guard let trip = initialTrip ?? createdRecapStore.tripDraft(for: blogId) else {
@@ -1300,6 +1405,49 @@ struct RecapBlogPageView: View {
             // Process remaining days in background (rate limit: 50 geocode/min).
             await createdRecapStore.continueGeocodingDays(blogId: blogId)
         }
+    }
+
+    // MARK: - New Moments Scan
+
+    private func checkForNewMomentsIfRecent() {
+        guard !hasCheckedNewMoments else { return }
+        hasCheckedNewMoments = true
+        Task { @MainActor in
+            isCheckingNewMoments = true
+            let photos = await createdRecapStore.scanForNewMoments(blogId: blogId)
+            newMomentPhotos = photos
+            isCheckingNewMoments = false
+        }
+    }
+
+    private func addNewMomentsToBlog(_ selected: [MockPhoto]) {
+        guard !selected.isEmpty else { return }
+        createdRecapStore.injectPhotos(selected, intoSourceTripId: blogId)
+        // Save cutoff so these photos don't resurface.
+        if let maxDate = newMomentPhotos.map(\.timestamp).max() {
+            ScanSessionStore.saveBlogNotifiedDate(maxDate, for: blogId)
+        }
+        // Reload the draft with injected photos.
+        if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
+            draft = updated
+            draftSnapshot = updated
+        }
+        newMomentPhotos = []
+        withAnimation(.easeInOut(duration: 0.3)) {
+            showNewMomentsReviewSheet = false
+        }
+    }
+
+    private func dismissNewMoments() {
+        newMomentPhotos = []
+    }
+
+    private func dismissAndSuppressNewMoments() {
+        // Save cutoff so these photos don't resurface until genuinely new ones appear.
+        if let maxDate = newMomentPhotos.map(\.timestamp).max() {
+            ScanSessionStore.saveBlogNotifiedDate(maxDate, for: blogId)
+        }
+        newMomentPhotos = []
     }
 
     /// All included photos across all days/stops, for cover photo selection.
@@ -2752,6 +2900,166 @@ struct ProcessingDayPopup: View {
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .shadow(color: .black.opacity(0.45), radius: 30, y: 10)
             .padding(.horizontal, 40)
+        }
+    }
+}
+
+// MARK: - New Moments Review Sheet
+
+private struct NewMomentsReviewSheet: View {
+    let photos: [MockPhoto]
+    let blogTitle: String
+    var onAdd: ([MockPhoto]) -> Void
+    var onLater: () -> Void
+
+    @State private var selectedIds: Set<UUID> = []
+    @State private var dragOffset: CGFloat = 0
+
+    private var allSelected: Bool { selectedIds.count == photos.count }
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 2),
+        GridItem(.flexible(), spacing: 2),
+        GridItem(.flexible(), spacing: 2)
+    ]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+
+            // Sheet content
+            VStack(spacing: 0) {
+                // Drag handle
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.secondary.opacity(0.4))
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 12)
+
+                VStack(spacing: 6) {
+                    Text("\(photos.count) New Photo\(photos.count == 1 ? "" : "s")")
+                        .font(.title3)
+                        .fontWeight(.bold)
+
+                    Text("Select photos to add to blog")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.top, 20)
+
+                // Select All row
+                HStack {
+                    Spacer()
+                    Button {
+                        if allSelected {
+                            selectedIds.removeAll()
+                        } else {
+                            selectedIds = Set(photos.map(\.id))
+                        }
+                    } label: {
+                        Text(allSelected ? "Deselect All" : "Select All")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(allSelected ? .red : .green)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 8)
+
+                // Photo grid
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 2) {
+                        ForEach(photos) { photo in
+                            let isSelected = selectedIds.contains(photo.id)
+                            Button {
+                                if isSelected {
+                                    selectedIds.remove(photo.id)
+                                } else {
+                                    selectedIds.insert(photo.id)
+                                }
+                            } label: {
+                                ZStack(alignment: .topTrailing) {
+                                    Group {
+                                        if let lid = photo.localIdentifier {
+                                            AssetPhotoView(assetIdentifier: lid, cornerRadius: 0)
+                                                .aspectRatio(3/4, contentMode: .fill)
+                                                .clipped()
+                                        } else {
+                                            MockPhotoView(seed: photo.id.hashValue, cornerRadius: 0)
+                                                .aspectRatio(3/4, contentMode: .fill)
+                                        }
+                                    }
+                                    .overlay(
+                                        Color.black.opacity(isSelected ? 0.4 : 0)
+                                    )
+
+                                    if isSelected {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.system(size: 22))
+                                            .foregroundStyle(.white, .green)
+                                            .padding(6)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                // Action buttons pinned at bottom
+                VStack(spacing: 12) {
+                    Button {
+                        let selected = photos.filter { selectedIds.contains($0.id) }
+                        onAdd(selected)
+                    } label: {
+                        Text(selectedIds.isEmpty ? "Add to Blog" : "Add \(selectedIds.count) Photo\(selectedIds.count == 1 ? "" : "s")")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(selectedIds.isEmpty ? Color.green.opacity(0.4) : Color.green)
+                            .cornerRadius(14)
+                    }
+                    .disabled(selectedIds.isEmpty)
+
+                    Button {
+                        onLater()
+                    } label: {
+                        Text("Later")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 12)
+                .padding(.bottom, 32)
+            }
+            .frame(maxHeight: UIScreen.main.bounds.height * 0.75)
+            .background(Color.black)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .offset(y: max(dragOffset, 0))
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        dragOffset = value.translation.height
+                    }
+                    .onEnded { value in
+                        if value.translation.height > 120 {
+                            onLater()
+                        } else {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                dragOffset = 0
+                            }
+                        }
+                    }
+            )
+        }
+        .ignoresSafeArea()
+        .onAppear {
+            selectedIds = Set(photos.map(\.id))
         }
     }
 }

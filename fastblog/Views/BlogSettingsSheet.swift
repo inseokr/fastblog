@@ -12,6 +12,7 @@ struct BlogSettingsSheet: View {
     var blogKey: Int?
     var onSave: () -> Void
     var onEditMode: (() -> Void)? = nil
+    var onAddNewMoments: (() -> Void)? = nil
     var onDelete: () -> Void
     var onRemoveLocalOnly: (() -> Void)? = nil
     var onRemoveFromCloud: (() -> Void)? = nil
@@ -75,6 +76,14 @@ struct BlogSettingsSheet: View {
                     Label("Restore Places (\(draft.removedPlaceStops.count))", systemImage: "arrow.uturn.backward.circle")
                         .lineLimit(1)
                         .truncationMode(.tail)
+                }
+            }
+            if onAddNewMoments != nil {
+                Button {
+                    onAddNewMoments?()
+                    dismiss()
+                } label: {
+                    Label("Add New Moments", systemImage: "plus.circle")
                 }
             }
         }
