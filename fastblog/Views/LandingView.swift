@@ -58,9 +58,17 @@ struct LandingView: View {
                     Button {
                         showSettings = true
                     } label: {
-                        Image(systemName: "gearshape.fill")
-                            .font(.title2)
-                            .foregroundColor(.white)
+                        ZStack {
+                            Circle()
+                                .fill(LinearGradient(
+                                    colors: [Color(red: 0.2, green: 0.5, blue: 1), Color(red: 0.1, green: 0.3, blue: 0.8)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                ))
+                                .frame(width: 32, height: 32)
+                            Image(systemName: "gearshape.fill")
+                                .font(.system(size: 16))
+                                .foregroundColor(.white)
+                        }
                     }
                     .simultaneousGesture(
                         LongPressGesture(minimumDuration: 1.5).onEnded { _ in
