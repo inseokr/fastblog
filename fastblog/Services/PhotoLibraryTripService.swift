@@ -458,9 +458,14 @@ final class PhotoLibraryTripService {
 
     /// Core date-range scanner used by all public overloads. Fetches photos in [startDate, endDate),
     /// applies local exclusion, groups by day, and returns TripDraft array.
+    /// A padding of 15 days is automatically applied backwards to ensure trips crossing the
+    /// start boundary are fetched in full, then filtered to only those overlapping the actual window.
     func scanInDateRange(startDate: Date, endDate: Date, occupiedDateRanges: [(start: Date, end: Date)] = [], progress: ((Double) -> Void)? = nil) async -> [TripDraft] {
+        let paddingDays = ScanConfig.maxTripDays * 2 + 1 // e.g. 15 days
+        let fetchStart = calendar.date(byAdding: .day, value: -paddingDays, to: startDate) ?? startDate
+
         let options = PHFetchOptions()
-        options.predicate = NSPredicate(format: "creationDate >= %@ AND creationDate < %@", startDate as NSDate, endDate as NSDate)
+        options.predicate = NSPredicate(format: "creationDate >= %@ AND creationDate < %@", fetchStart as NSDate, endDate as NSDate)
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
 
         let fetchResult = PHAsset.fetchAssets(with: .image, options: options)
@@ -571,7 +576,12 @@ final class PhotoLibraryTripService {
                 coverAssetIdentifier: coverIdentifier,
                 episodeLabel: episodeLabel
             )
-            trips.append(draft)
+            // Only keep trips that actually overlap the requested window
+            // (e.g. the trip's end date is on or after the requested start boundary).
+            let tripEndDate = draft.latestDate ?? firstDate
+            if tripEndDate >= startDate {
+                trips.append(draft)
+            }
         }
         progress?(1.0)
         return trips

@@ -699,6 +699,9 @@ struct TripsView: View {
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 24)
+        .onAppear {
+            viewModel.autoLoadOlderTripsIfNeeded()
+        }
     }
 
     // MARK: - Find More Trips CTA

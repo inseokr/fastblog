@@ -737,31 +737,61 @@ final class TripsViewModel: ObservableObject {
 
             } else {
                 // Full scan: first launch, no in-memory trips, or last scan is too old.
-                let fetchStart = cal.date(byAdding: .day, value: -Self.fetchPaddingDays, to: fullWindowStart) ?? fullWindowStart
+                // Loop to dynamically expand the scan backwards by 90-day intervals if we can't find at least 3 viable trips.
+                // Cap expansion at 4 attempts (~1 year).
+                var windowTrips: [TripDraft] = []
+                var windowStart = fullWindowStart
+                var windowTripsCount = 0
+                let saved = createdRecapStore.visibleRecents
+                
+                for attempt in 1...4 {
+                    let fetchStart = cal.date(byAdding: .day, value: -Self.fetchPaddingDays, to: windowStart) ?? windowStart
 
-                #if DEBUG
-                debugPrint("[Scan] mode = FULL")
-                debugPrint("[Scan] fetchStart = \(scanDbg(fetchStart))  (windowStart − \(Self.fetchPaddingDays)d)")
-                debugPrint("[Scan] fetchEnd   = \(scanDbg(windowEnd))")
-                #endif
+                    #if DEBUG
+                    debugPrint("[Scan] mode = FULL (Attempt \(attempt))")
+                    debugPrint("[Scan] fetchStart = \(scanDbg(fetchStart))  (windowStart − \(Self.fetchPaddingDays)d)")
+                    debugPrint("[Scan] fetchEnd   = \(scanDbg(windowEnd))")
+                    #endif
 
-                let allTrips = await photoLibraryService.scanInDateRange(
-                    startDate: fetchStart,
-                    endDate: windowEnd,
-                    occupiedDateRanges: occupiedRanges,
-                    progress: { [weak self] value in
-                        Task { @MainActor in self?.defaultScanProgress = value }
+                    let allTrips = await photoLibraryService.scanInDateRange(
+                        startDate: fetchStart,
+                        endDate: windowEnd,
+                        occupiedDateRanges: occupiedRanges,
+                        progress: { [weak self] value in
+                            Task { @MainActor in
+                                // Compress progress into the attempt so it doesn't jump wildly backwards.
+                                let base = Double(attempt - 1) * 0.25
+                                self?.defaultScanProgress = base + (value * 0.25)
+                            }
+                        }
+                    )
+
+                    let currentPassTrips = allTrips.filter { trip in
+                        tripOverlapsWindow(trip, windowStart: windowStart, windowEnd: windowEnd)
                     }
-                )
 
-                let windowTrips = allTrips.filter { trip in
-                    tripOverlapsWindow(trip, windowStart: fullWindowStart, windowEnd: windowEnd)
+                    // Count how many of these trips would actually be "visible" to the user
+                    // (meaning they haven't already been created into blogs).
+                    let visibleCountForThisPass = currentPassTrips.filter { trip in
+                        !createdRecapStore.hasCreatedBlog(sourceTripId: trip.id)
+                        && !TripMatchingService.isTripSaved(draft: trip, against: saved)
+                    }.count
+                    
+                    windowTrips = currentPassTrips
+                    windowTripsCount = visibleCountForThisPass
+                    
+                    if windowTripsCount >= 3 {
+                        break // We found enough trips
+                    } else if attempt < 4 {
+                        // We found fewer than 3 usable trips, check further back in history
+                        windowStart = cal.date(byAdding: .day, value: -ScanConfig.windowDays, to: windowStart) ?? windowStart
+                    }
                 }
 
-                windowCache[windowCacheKey(start: fullWindowStart, end: windowEnd)] = windowTrips
+                windowCache[windowCacheKey(start: windowStart, end: windowEnd)] = windowTrips
 
                 #if DEBUG
-                debugPrint("[Scan] scanned trips = \(allTrips.count), after window filter = \(windowTrips.count)")
+                debugPrint("[Scan] final visible trips = \(windowTripsCount), after window filter = \(windowTrips.count)")
                 #endif
 
                 AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
@@ -769,7 +799,7 @@ final class TripsViewModel: ObservableObject {
 
                 tripDrafts = windowTrips
                 currentWindowTrips = nil
-                earliestScannedDate = fullWindowStart
+                earliestScannedDate = windowStart
                 latestScannedDate = windowEnd
 
                 // Detect new moments in draft trips since the last scan.
@@ -779,13 +809,15 @@ final class TripsViewModel: ObservableObject {
 
                 // Always run the saved-blog micro-scan so we detect photos for created blogs
                 // even on the very first scan (previousLastScanned may be nil).
-                // Scan the full 90-day window so we never miss older photos.
+                // Scan the full dynamic window so we never miss older photos.
                 #if DEBUG
                 debugPrint("[Scan] FULL: micro-scan for saved-blog photos (full window)")
                 #endif
-
+                
+                // Fetch start for micro-scan should still be the padded earliest start
+                let finalFetchStart = cal.date(byAdding: .day, value: -Self.fetchPaddingDays, to: windowStart) ?? windowStart
                 let blogCheckTrips = await photoLibraryService.scanInDateRange(
-                    startDate: fetchStart,
+                    startDate: finalFetchStart,
                     endDate: windowEnd,
                     occupiedDateRanges: []
                 )
@@ -1361,55 +1393,96 @@ final class TripsViewModel: ObservableObject {
 
         let cal = Calendar.current
         let windowEnd = cal.startOfDay(for: earliest)
-        guard let windowStart = cal.date(byAdding: .day, value: -ScanConfig.windowDays, to: windowEnd) else { return }
+        guard var windowStart = cal.date(byAdding: .day, value: -ScanConfig.windowDays, to: windowEnd) else { return }
 
-        let cacheKey = windowCacheKey(start: windowStart, end: windowEnd)
-
-        // ── Cache hit — restore instantly, no scan needed. ──
-        if let cached = windowCache[cacheKey] {
-            olderTripsResult = .none              // reset so .onChange fires
-            let count = applyWindowTrips(cached, windowStart: windowStart, windowEnd: windowEnd)
-            olderTripsResult = count > 0 ? .success(count) : .empty
-            return
-        }
-
-        // ── Cache miss — full photo scan. ──
         isLoadingOlderTrips = true
         loadOlderProgress = 0
         olderTripsResult = .none
         AppAnalytics.shared.trackEvent(name: "trip_scan_started")
 
-        // Pad the fetch range so trips straddling a window boundary are built in full.
-        let fetchStart = cal.date(byAdding: .day, value: -Self.fetchPaddingDays, to: windowStart) ?? windowStart
-        let fetchEnd = cal.date(byAdding: .day, value: Self.fetchPaddingDays, to: windowEnd) ?? windowEnd
-
         let occupiedRanges = createdRecapStore.occupiedDateRanges()
+        
         loadOlderScanTask = Task {
-            let allTrips = await photoLibraryService.scanInDateRange(
-                startDate: fetchStart,
-                endDate: fetchEnd,
-                occupiedDateRanges: occupiedRanges,
-                progress: { [weak self] value in
-                    Task { @MainActor in self?.loadOlderProgress = value }
+            var finalWindowTrips: [TripDraft] = []
+            var finalWindowStart = windowStart
+            var finalVisibleCount = 0
+            
+            let saved = createdRecapStore.visibleRecents
+
+            for attempt in 1...4 {
+                let cacheKey = windowCacheKey(start: windowStart, end: windowEnd)
+                
+                // Track trips found in this specific attempt
+                var currentPassTrips: [TripDraft] = []
+                
+                if let cached = windowCache[cacheKey] {
+                    currentPassTrips = cached
+                } else {
+                    // Pad the fetch range so trips straddling a window boundary are built in full.
+                    let fetchStart = cal.date(byAdding: .day, value: -Self.fetchPaddingDays, to: windowStart) ?? windowStart
+                    let fetchEnd = cal.date(byAdding: .day, value: Self.fetchPaddingDays, to: windowEnd) ?? windowEnd
+                    
+                    let allTrips = await photoLibraryService.scanInDateRange(
+                        startDate: fetchStart,
+                        endDate: fetchEnd,
+                        occupiedDateRanges: occupiedRanges,
+                        progress: { [weak self] value in
+                            Task { @MainActor in
+                                let base = Double(attempt - 1) * 0.25
+                                self?.loadOlderProgress = base + (value * 0.25)
+                            }
+                        }
+                    )
+                    guard !Task.isCancelled else { return }
+
+                    // Keep trips that overlap the actual window [windowStart, windowEnd).
+                    currentPassTrips = allTrips.filter { trip in
+                        tripOverlapsWindow(trip, windowStart: windowStart, windowEnd: windowEnd)
+                    }
+
+                    // Cache for instant restore on future visits.
+                    windowCache[cacheKey] = currentPassTrips
                 }
-            )
+
+                let visibleCountForThisPass = currentPassTrips.filter { trip in
+                    !createdRecapStore.hasCreatedBlog(sourceTripId: trip.id)
+                    && !TripMatchingService.isTripSaved(draft: trip, against: saved)
+                }.count
+                
+                finalWindowTrips = currentPassTrips
+                finalWindowStart = windowStart
+                finalVisibleCount = visibleCountForThisPass
+                
+                if finalVisibleCount >= 3 {
+                    break // We found enough trips
+                } else if attempt < 4 {
+                    // We found fewer than 3 usable trips, check further back in history
+                    windowStart = cal.date(byAdding: .day, value: -ScanConfig.windowDays, to: windowStart) ?? windowStart
+                }
+            }
+            
             guard !Task.isCancelled else { return }
 
-            // Keep trips that overlap the actual window [windowStart, windowEnd).
-            let windowTrips = allTrips.filter { trip in
-                tripOverlapsWindow(trip, windowStart: windowStart, windowEnd: windowEnd)
-            }
-
-            // Cache for instant restore on future visits.
-            windowCache[cacheKey] = windowTrips
-
             AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
-            AppAnalytics.shared.incrementCounter("trips_detected", by: windowTrips.count)
+            AppAnalytics.shared.incrementCounter("trips_detected", by: finalWindowTrips.count)
 
-            let count = applyWindowTrips(windowTrips, windowStart: windowStart, windowEnd: windowEnd)
+            let count = applyWindowTrips(finalWindowTrips, windowStart: finalWindowStart, windowEnd: windowEnd)
             olderTripsResult = count > 0 ? .success(count) : .empty
             isLoadingOlderTrips = false
         }
+    }
+    
+    /// Triggered from the UI when the current window becomes empty (e.g. all trips converted to blogs).
+    /// Automatically fetches older trips if idle and no custom date range is active.
+    func autoLoadOlderTripsIfNeeded() {
+        guard scanState == .idle,
+              !isLoadingOlderTrips,
+              !hasPerformedCustomScan,
+              visibleDraftTripsNewestFirst.isEmpty else {
+            return
+        }
+        
+        loadOlderTrips()
     }
 
     /// Cancel an in-progress load-older scan.
