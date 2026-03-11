@@ -44,7 +44,7 @@ struct BlogSettingsSheet: View {
                 settingsList
                 deleteButton
             }
-            .navigationTitle("Blog Settings")
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { navigationToolbar }
             .sheet(isPresented: $showTitleChange) { titleChangeSheet }
