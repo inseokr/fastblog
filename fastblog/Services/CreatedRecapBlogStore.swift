@@ -1622,6 +1622,8 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Builds blog detail, resolves place names from reverse-geocoding, generates a title, and scores photos via Vision AI.
     func buildBlogDetailAsync(from trip: TripDraft) async -> RecapBlogDetail {
+        // print out debug
+        print("[buildBlogDetailAsync] Building detail for trip '\(trip.title)' with \(trip.days.count) days")
         var detail = buildBlogDetail(from: trip)
         var cityCandidates: [(city: String, order: Int)] = []
         var countryCandidates: [(country: String, order: Int)] = []
@@ -1737,7 +1739,7 @@ final class CreatedRecapBlogStore: ObservableObject {
 
         // Score photos with iOS Vision AI and auto-select best per place stop.
         detail = await applyPhotoQualitySelection(to: detail)
-
+        updateCoverPhotoFromQualityScores(&detail)
         return detail
     }
 
@@ -1788,6 +1790,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         detail = await applyVisitedTimeDigitized(to: detail, dayIndices: [firstDayIdx])
         if Task.isCancelled { return detail }
         detail = await applyPhotoQualitySelection(to: detail, dayIndices: [firstDayIdx])
+        updateCoverPhotoFromQualityScores(&detail)
         return detail
     }
 
@@ -1816,6 +1819,7 @@ final class CreatedRecapBlogStore: ObservableObject {
             return
         }
         updatedDetail.days[dayIdx].isPlaceNamesResolved = true
+        updateCoverPhotoFromQualityScores(&updatedDetail)
         blogDetailsBySourceId[blogId] = updatedDetail
         persistBlogDetails()
         processingDayIndexByBlogId.removeValue(forKey: blogId)
@@ -1892,6 +1896,34 @@ final class CreatedRecapBlogStore: ObservableObject {
             result.days[dayIdx].placeStops[stopIdx].visitedTimeDigitized = digitized
         }
         return result
+    }
+
+    /// Updates selectedCoverPhotoIdentifier to the highest-scoring included photo across all scored days.
+    /// Should be called after each applyPhotoQualitySelection pass so the cover improves as scoring progresses.
+    private func updateCoverPhotoFromQualityScores(_ detail: inout RecapBlogDetail) {
+        let scoredPhotos = detail.days
+            .flatMap(\.placeStops)
+            .flatMap(\.photos)
+            .filter(\.isIncluded)
+            .filter({ $0.qualityScore != nil })
+        print("[CoverPhoto] Scored \(scoredPhotos.count) included photo(s)")
+        for photo in scoredPhotos.sorted(by: { ($0.qualityScore?.totalScore ?? 0) > ($1.qualityScore?.totalScore ?? 0) }).prefix(5) {
+            let hasFace = (photo.qualityScore?.facePenalty ?? 0) > 0
+            print("[CoverPhoto]   id=\(photo.localIdentifier?.prefix(8) ?? "nil")… total=\(String(format: "%.3f", photo.qualityScore?.totalScore ?? 0)) aesthetics=\(String(format: "%.3f", photo.qualityScore?.aesthetics ?? 0)) sharpness=\(String(format: "%.3f", photo.qualityScore?.sharpness ?? 0)) face=\(hasFace)")
+        }
+        // Prefer scenic/landscape photos (no detected faces) over photos with people.
+        // Fall back to all scored photos if no face-free candidates exist.
+        let scenicPhotos = scoredPhotos.filter({ ($0.qualityScore?.facePenalty ?? 0) == 0 })
+        let candidates = scenicPhotos.isEmpty ? scoredPhotos : scenicPhotos
+        let prevCoverId = detail.selectedCoverPhotoIdentifier
+        if let bestPhoto = candidates.max(by: { ($0.qualityScore?.totalScore ?? 0) < ($1.qualityScore?.totalScore ?? 0) }),
+           let bestPhotoId = bestPhoto.localIdentifier {
+            let usedFallback = scenicPhotos.isEmpty && !scoredPhotos.isEmpty
+            detail.selectedCoverPhotoIdentifier = bestPhotoId
+            print("[CoverPhoto] Updated cover: \(prevCoverId?.prefix(8) ?? "nil")… → \(bestPhotoId.prefix(8))… (score=\(String(format: "%.3f", bestPhoto.qualityScore?.totalScore ?? 0))\(usedFallback ? ", fallback: no scenic photos" : ""))")
+        } else {
+            print("[CoverPhoto] No scored photos found — keeping initial cover: \(prevCoverId?.prefix(8) ?? "nil")…")
+        }
     }
 
     /// Scores every photo using Vision AI and auto-selects the best per place stop.
