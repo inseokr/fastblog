@@ -27,6 +27,12 @@ struct BlogSettingsSheet: View {
     @State private var showRemoveFromCloudConfirmation = false
     @State private var showRestorePlaces = false
     @State private var showCustomDeletePopup = false
+    
+    // PDF Export State
+    @State private var isExportingPDF = false
+    @State private var pdfExportURL: URL? = nil
+    @State private var showPDFShareSheet = false
+    @State private var exportError: String? = nil
 
     private var hasCloudPhotos: Bool {
         draft.hasCloudPhotos
@@ -47,6 +53,19 @@ struct BlogSettingsSheet: View {
             .overlay { customDeletePopup }
             .alert("Remove from Cloud?", isPresented: $showRemoveFromCloudConfirmation) { removeCloudAlertButtons } message: { removeCloudAlertMessage }
             .sheet(isPresented: $showRestorePlaces) { restorePlacesSheet }
+            .sheet(isPresented: $showPDFShareSheet) {
+                if let url = pdfExportURL {
+                    ShareSheet(items: [url])
+                }
+            }
+            .alert("Export Error", isPresented: Binding(
+                get: { exportError != nil },
+                set: { if !$0 { exportError = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(exportError ?? "")
+            }
             .preferredColorScheme(.dark)
         }
     }
@@ -142,6 +161,7 @@ struct BlogSettingsSheet: View {
         .padding(.bottom, 16)
     }
 
+    @ToolbarContentBuilder
     private var navigationToolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
             Button {
@@ -150,6 +170,47 @@ struct BlogSettingsSheet: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 14))
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                exportToPDF()
+            } label: {
+                if isExportingPDF {
+                    ProgressView()
+                        .tint(.white)
+                        .scaleEffect(0.8)
+                } else {
+                    Text("Export")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.blue)
+                        .clipShape(Capsule())
+                }
+            }
+            .disabled(isExportingPDF)
+        }
+    }
+    
+    private func exportToPDF() {
+        isExportingPDF = true
+        exportError = nil
+        Task {
+            do {
+                let url = try await PDFExportService.generatePDF(from: draft)
+                await MainActor.run {
+                    self.pdfExportURL = url
+                    self.isExportingPDF = false
+                    self.showPDFShareSheet = true
+                }
+            } catch {
+                await MainActor.run {
+                    self.exportError = error.localizedDescription
+                    self.isExportingPDF = false
+                }
             }
         }
     }
