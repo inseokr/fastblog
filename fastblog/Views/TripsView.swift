@@ -1244,8 +1244,8 @@ struct TripCarouselCard: View {
                             .foregroundColor(.white.opacity(0.85))
                     }
 
-                    // Subtitle: daysSeasonText (e.g. "7 days • Mar 2024") or date range + duration
-                    Text(trip.daysSeasonText.isEmpty ? "\(trip.tripDateRangeDisplayText)  ·  \(durationText)" : trip.daysSeasonText)
+                    // Subtitle: Date range + duration
+                    Text("\(trip.tripDateRangeDisplayText)  •  \(durationText)")
                         .font(.caption2)
                         .foregroundColor(.white.opacity(0.7))
 
@@ -1295,11 +1295,13 @@ struct TripCarouselCard: View {
 struct TripCoverImage: View {
     let theme: String
     var coverAssetIdentifier: String? = nil
+    var coverCloudURL: String? = nil
     var targetSize: CGSize = CGSize(width: 600, height: 400)
 
-    init(theme: String, coverAssetIdentifier: String? = nil, targetSize: CGSize = CGSize(width: 600, height: 400)) {
+    init(theme: String, coverAssetIdentifier: String? = nil, coverCloudURL: String? = nil, targetSize: CGSize = CGSize(width: 600, height: 400)) {
         self.theme = theme
         self.coverAssetIdentifier = coverAssetIdentifier
+        self.coverCloudURL = coverCloudURL
         self.targetSize = targetSize
     }
 
@@ -1307,6 +1309,7 @@ struct TripCoverImage: View {
     init(trip: TripDraft, targetSize: CGSize = CGSize(width: 600, height: 400)) {
         self.theme = trip.coverTheme
         self.coverAssetIdentifier = trip.coverAssetIdentifier
+        self.coverCloudURL = nil // Drafts are local only
         self.targetSize = targetSize
     }
 
@@ -1315,6 +1318,14 @@ struct TripCoverImage: View {
             gradientForTheme(theme)
             if let id = coverAssetIdentifier {
                 AssetPhotoView(assetIdentifier: id, cornerRadius: 0, targetSize: targetSize)
+            } else if let cloudURL = coverCloudURL, let url = URL(string: cloudURL) {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    }
+                }
             }
             optionalAssetOverlay
         }
