@@ -145,17 +145,17 @@
 		BB00022B /* ResetPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000229 /* ResetPasswordView.swift */; };
 		BB00022C /* SplashStateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00022D /* SplashStateManager.swift */; };
 		BB00022E /* CountryManageBlogsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00022F /* CountryManageBlogsSheet.swift */; };
+		BB000231 /* PhotoAccessRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000230 /* PhotoAccessRow.swift */; };
 		BB000240 /* MergeBlogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000241 /* MergeBlogsView.swift */; };
 		BB000242 /* SplitBlogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000243 /* SplitBlogView.swift */; };
-		BB000231 /* PhotoAccessRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000230 /* PhotoAccessRow.swift */; };
-		BB00F002 /* PlacesVisitedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F001 /* PlacesVisitedView.swift */; };
-		BB00F004 /* PlaceVisitedDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F003 /* PlaceVisitedDetailView.swift */; };
-		BB00A001 /* Analytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00A002 /* Analytics.swift */; };
-		BB000301 /* AdminAnalyticsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000300 /* AdminAnalyticsDashboardView.swift */; };
-		BB000303 /* MyStatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000302 /* MyStatsView.swift */; };
-		BB00M001 /* BackendDashboardAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00M002 /* BackendDashboardAnalytics.swift */; };
 		BB0002E1 /* OnTheGoTripStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002E0 /* OnTheGoTripStore.swift */; };
 		BB0002F1 /* ScanSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F0 /* ScanSessionStore.swift */; };
+		BB000301 /* AdminAnalyticsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000300 /* AdminAnalyticsDashboardView.swift */; };
+		BB000303 /* MyStatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000302 /* MyStatsView.swift */; };
+		BB00A001 /* Analytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00A002 /* Analytics.swift */; };
+		BB00F002 /* PlacesVisitedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F001 /* PlacesVisitedView.swift */; };
+		BB00F004 /* PlaceVisitedDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F003 /* PlaceVisitedDetailView.swift */; };
+		BB00M001 /* BackendDashboardAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00M002 /* BackendDashboardAnalytics.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -225,9 +225,6 @@
 		BB000177 /* OnboardingConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingConstants.swift; sourceTree = "<group>"; };
 		BB000179 /* OnboardingFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlowView.swift; sourceTree = "<group>"; };
 		BB00017B /* OnboardingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingState.swift; sourceTree = "<group>"; };
-		BB00A002 /* Analytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Analytics.swift; sourceTree = "<group>"; };
-		BB000300 /* AdminAnalyticsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminAnalyticsDashboardView.swift; sourceTree = "<group>"; };
-		BB000302 /* MyStatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyStatsView.swift; sourceTree = "<group>"; };
 		BB00017D /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
 		BB00017F /* CreatedRecapBlogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreatedRecapBlogStore.swift; sourceTree = "<group>"; };
 		BB000181 /* DayToTripGrouper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayToTripGrouper.swift; sourceTree = "<group>"; };
@@ -304,15 +301,18 @@
 		BB000229 /* ResetPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResetPasswordView.swift; sourceTree = "<group>"; };
 		BB00022D /* SplashStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashStateManager.swift; sourceTree = "<group>"; };
 		BB00022F /* CountryManageBlogsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryManageBlogsSheet.swift; sourceTree = "<group>"; };
+		BB000230 /* PhotoAccessRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoAccessRow.swift; sourceTree = "<group>"; };
 		BB000241 /* MergeBlogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MergeBlogsView.swift; sourceTree = "<group>"; };
 		BB000243 /* SplitBlogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitBlogView.swift; sourceTree = "<group>"; };
-		BB000230 /* PhotoAccessRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoAccessRow.swift; sourceTree = "<group>"; };
-		BB00F001 /* PlacesVisitedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacesVisitedView.swift; sourceTree = "<group>"; };
-		BB00F003 /* PlaceVisitedDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceVisitedDetailView.swift; sourceTree = "<group>"; };
-		F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalLLMStoryCaptionGenerator.swift; sourceTree = "<group>"; };
-		BB00M002 /* BackendDashboardAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendDashboardAnalytics.swift; sourceTree = "<group>"; };
 		BB0002E0 /* OnTheGoTripStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnTheGoTripStore.swift; sourceTree = "<group>"; };
 		BB0002F0 /* ScanSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanSessionStore.swift; sourceTree = "<group>"; };
+		BB000300 /* AdminAnalyticsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminAnalyticsDashboardView.swift; sourceTree = "<group>"; };
+		BB000302 /* MyStatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyStatsView.swift; sourceTree = "<group>"; };
+		BB00A002 /* Analytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Analytics.swift; sourceTree = "<group>"; };
+		BB00F001 /* PlacesVisitedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacesVisitedView.swift; sourceTree = "<group>"; };
+		BB00F003 /* PlaceVisitedDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceVisitedDetailView.swift; sourceTree = "<group>"; };
+		BB00M002 /* BackendDashboardAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendDashboardAnalytics.swift; sourceTree = "<group>"; };
+		F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalLLMStoryCaptionGenerator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -392,7 +392,7 @@
 			path = ViewModels;
 			sourceTree = "<group>";
 		};
-				BB0001B2 /* Views */ = {
+		BB0001B2 /* Views */ = {
 			isa = PBXGroup;
 			children = (
 				BB0001DA /* AppLaunchSplashView.swift */,
@@ -591,7 +591,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1500;
-				LastUpgradeCheck = 1500;
+				LastUpgradeCheck = 2620;
 			};
 			buildConfigurationList = AA000041 /* Build configuration list for PBXProject "fastblog" */;
 			compatibilityVersion = "Xcode 14.0";
@@ -788,19 +788,48 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"DEBUG=1",
 					"$(inherited)",
 				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -811,13 +840,41 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				VALIDATE_PRODUCT = YES;
@@ -830,6 +887,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
@@ -845,6 +904,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fastblog.fastblog;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -857,6 +917,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
@@ -872,6 +934,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fastblog.fastblog;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";

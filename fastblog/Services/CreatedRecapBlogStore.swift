@@ -423,6 +423,14 @@ final class CreatedRecapBlogStore: ObservableObject {
             ownerUserId: resolvedUserId
         )
         tripDraftsBySourceId[trip.id] = trip
+        // Cache the blog detail so that on the next scan, existingIds is populated
+        // correctly and photos already in the blog are not flagged as "new moments".
+        blogDetailsBySourceId[trip.id] = tempDetail
+        // Set the per-blog notification cutoff to the latest photo timestamp so that
+        // the very next scan does not re-surface photos already in the blog.
+        if let maxDate = tempDetail.days.flatMap(\.placeStops).flatMap(\.photos).map(\.timestamp).max() {
+            ScanSessionStore.saveBlogNotifiedDate(maxDate, for: blog.id)
+        }
         recents.insert(blog, at: 0)
         pendingRecapCreated = true
         persistRecents()
@@ -1949,6 +1957,8 @@ final class CreatedRecapBlogStore: ObservableObject {
         guard let detail = blogDetailsBySourceId[blogId] else { return [] }
 
         // Determine the blog's latest photo date.
+        // allPhotos includes ALL photos in place groups regardless of isIncluded,
+        // so the upper bound is based on every photo in the trip (selected or not).
         let allPhotos = detail.days.flatMap(\.placeStops).flatMap(\.photos)
         let latestPhotoDate = allPhotos.map(\.timestamp).max()
         let blogEndDate = detail.days.last?.date
@@ -1959,23 +1969,30 @@ final class CreatedRecapBlogStore: ObservableObject {
         let daysSinceLastDay = Calendar.current.dateComponents([.day], from: lastDayDate, to: Date()).day ?? Int.max
         guard daysSinceLastDay <= 14 else { return [] }
 
+        // Upper bound: only photos within 24 hours of the blog's last photo are
+        // considered part of this blog. Photos from a separate trip days later
+        // belong to a different blog and must not appear here.
+        let upperBound = Calendar.current.date(byAdding: .hour, value: 24, to: scanStart) ?? scanStart
+
         // Apply per-blog cutoff so dismissed photos don't resurface.
         let cutoff = ScanSessionStore.lastBlogNotifiedDate(for: blogId) ?? scanStart
 
-        // Scan photo library from cutoff to now.
+        // Scan photo library from cutoff to upper bound.
         let trips = await PhotoLibraryTripService.shared.scanInDateRange(
             startDate: cutoff,
-            endDate: Date()
+            endDate: upperBound
         )
 
         // Collect all photos from scanned trips.
         let scannedPhotos = trips.flatMap { $0.days.flatMap(\.photos) }
         guard !scannedPhotos.isEmpty else { return [] }
 
-        // Deduplicate against photos already in the blog.
+        // Deduplicate against photos already in the blog, and enforce the 24-hour
+        // upper bound so no photos from a later separate trip slip through.
         let existingIds = Set(allPhotos.compactMap(\.localIdentifier))
         let newPhotos = scannedPhotos.filter { photo in
             photo.timestamp > cutoff
+            && photo.timestamp <= upperBound
             && (photo.localIdentifier.map { !existingIds.contains($0) } ?? true)
         }
 

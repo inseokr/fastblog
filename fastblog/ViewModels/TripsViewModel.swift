@@ -1026,30 +1026,15 @@ final class TripsViewModel: ObservableObject {
             let continues = dayDiff >= 0 && dayDiff <= 7
 
             #if DEBUG
-            let blogCountry = blog.countryName ?? "nil"
-            let tripCountry = trip.primaryCountryDisplayName ?? "nil"
-            debugPrint("[Scan]   blog \"\(blog.title)\" blogStart=\(scanDbg(blogStartDay)) blogEnd=\(scanDbg(blogEndDay)) overlaps=\(overlaps) dayDiff=\(dayDiff) continues=\(continues) blogCountry=\(blogCountry) tripCountry=\(tripCountry)")
+            debugPrint("[Scan]   blog \"\(blog.title)\" blogStart=\(scanDbg(blogStartDay)) blogEnd=\(scanDbg(blogEndDay)) overlaps=\(overlaps) dayDiff=\(dayDiff) continues=\(continues)")
             #endif
 
             guard overlaps || continues else { continue }
 
-            if let bc = blog.countryName?.lowercased(), !bc.isEmpty,
-               let tc = trip.primaryCountryDisplayName?.lowercased(), !tc.isEmpty {
-                if bc == tc {
-                    #if DEBUG
-                    debugPrint("[Scan]   → MATCHED blog \"\(blog.title)\" (country match)")
-                    #endif
-                    return blog
-                }
-                #if DEBUG
-                debugPrint("[Scan]   → country mismatch: blog=\(bc) trip=\(tc), skip")
-                #endif
-            } else {
-                #if DEBUG
-                debugPrint("[Scan]   → MATCHED blog \"\(blog.title)\" (no country filter)")
-                #endif
-                return blog
-            }
+            #if DEBUG
+            debugPrint("[Scan]   → MATCHED blog \"\(blog.title)\" (date overlap/continuation)")
+            #endif
+            return blog
         }
         #if DEBUG
         debugPrint("[Scan] findMatchingSavedBlog: no match found")
