@@ -13,6 +13,8 @@
 		719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */; };
 		7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000061 /* GoogleSignIn */; };
 		7D19D079975A2110DB757EE7 /* BlogPDFView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E304D9246790A5FC17716A85 /* BlogPDFView.swift */; };
+		PD00PD02 /* PDFPreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = PD00PD01 /* PDFPreviewSheet.swift */; };
+		EX00EX02 /* ExportingPDFView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EX00EX01 /* ExportingPDFView.swift */; };
 		A31B7C85BABD6199A2A43BB7 /* PDFExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F5C55E3E5D4C283468EF581 /* PDFExportService.swift */; };
 		BB000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000101 /* ContentView.swift */; };
 		BB000104 /* fastblogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000103 /* fastblogApp.swift */; };
@@ -320,6 +322,8 @@
 		BB00F003 /* PlaceVisitedDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceVisitedDetailView.swift; sourceTree = "<group>"; };
 		BB00M002 /* BackendDashboardAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendDashboardAnalytics.swift; sourceTree = "<group>"; };
 		E304D9246790A5FC17716A85 /* BlogPDFView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BlogPDFView.swift; sourceTree = "<group>"; };
+		PD00PD01 /* PDFPreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFPreviewSheet.swift; sourceTree = "<group>"; };
+		EX00EX01 /* ExportingPDFView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportingPDFView.swift; sourceTree = "<group>"; };
 		F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalLLMStoryCaptionGenerator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -470,6 +474,8 @@
 				2C198E17B0447F89CC98721F /* DayCaptionEditSheet.swift */,
 				B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */,
 				E304D9246790A5FC17716A85 /* BlogPDFView.swift */,
+				PD00PD01 /* PDFPreviewSheet.swift */,
+				EX00EX01 /* ExportingPDFView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -793,6 +799,8 @@
 				A31B7C85BABD6199A2A43BB7 /* PDFExportService.swift in Sources */,
 				0C30D67375CF715A0AE52995 /* MapSnapshotHelper.swift in Sources */,
 				7D19D079975A2110DB757EE7 /* BlogPDFView.swift in Sources */,
+				PD00PD02 /* PDFPreviewSheet.swift in Sources */,
+				EX00EX02 /* ExportingPDFView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
