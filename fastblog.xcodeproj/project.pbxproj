@@ -116,6 +116,7 @@
 		BB0001E1 /* RecallCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001E0 /* RecallCard.swift */; };
 		BB0001E3 /* StoreKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001E2 /* StoreKitManager.swift */; };
 		BB0001E5 /* EntitlementManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001E4 /* EntitlementManager.swift */; };
+		EA00EA02 /* EarlyAccessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA00EA01 /* EarlyAccessManager.swift */; };
 		BB0001E7 /* DraftReminderNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001E6 /* DraftReminderNotificationManager.swift */; };
 		BB0001E9 /* PlaceCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001E8 /* PlaceCardView.swift */; };
 		BB0001EC /* PhotoQualityScorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001EB /* PhotoQualityScorer.swift */; };
@@ -271,6 +272,7 @@
 		BB0001E0 /* RecallCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecallCard.swift; sourceTree = "<group>"; };
 		BB0001E2 /* StoreKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitManager.swift; sourceTree = "<group>"; };
 		BB0001E4 /* EntitlementManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntitlementManager.swift; sourceTree = "<group>"; };
+		EA00EA01 /* EarlyAccessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EarlyAccessManager.swift; sourceTree = "<group>"; };
 		BB0001E6 /* DraftReminderNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftReminderNotificationManager.swift; sourceTree = "<group>"; };
 		BB0001E8 /* PlaceCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceCardView.swift; sourceTree = "<group>"; };
 		BB0001EB /* PhotoQualityScorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoQualityScorer.swift; sourceTree = "<group>"; };
@@ -504,6 +506,7 @@
 				BB00017F /* CreatedRecapBlogStore.swift */,
 				BB000181 /* DayToTripGrouper.swift */,
 				BB0001E6 /* DraftReminderNotificationManager.swift */,
+				EA00EA01 /* EarlyAccessManager.swift */,
 				BB0001E4 /* EntitlementManager.swift */,
 				BB0001CF /* FindMoreTripsAgent.swift */,
 				BB000183 /* GeoDistanceHelper.swift */,
@@ -756,6 +759,7 @@
 				BB0001DF /* SubscriptionSettingsView.swift in Sources */,
 				BB0001E1 /* RecallCard.swift in Sources */,
 				BB0001E3 /* StoreKitManager.swift in Sources */,
+				EA00EA02 /* EarlyAccessManager.swift in Sources */,
 				BB0001E5 /* EntitlementManager.swift in Sources */,
 				BB0001E7 /* DraftReminderNotificationManager.swift in Sources */,
 				BB0001E9 /* PlaceCardView.swift in Sources */,

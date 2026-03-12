@@ -63,7 +63,7 @@ struct RecapBlogPageView: View {
     @State private var draftSnapshot: RecapBlogDetail?
     @AppStorage("blogify.showFirstTimeSaveTip") private var showFirstTimeSaveTip = true
     @AppStorage("hasUploadedFirstBlog") private var hasUploadedFirstBlog = false
-    @State private var showFirstUploadEmailModal = false
+    @State private var showCloudOnboardingModal = false
     @State private var newlyUploadedBlogKey: Int? = nil
     @State private var showSaveTipAlert = false
     @State private var showFirstSaveBanner = false
@@ -90,7 +90,14 @@ struct RecapBlogPageView: View {
     @State private var uploadErrorMessage = ""
     @State private var showRemoveFromCloudAlert = false
     @State private var showAuth = false
-    @State private var showSignInAlert = false
+    @State private var pendingEarlyAccessAfterAuth = false
+    @State private var pendingExportAfterAuth = false
+    @State private var showEarlyAccessModal = false
+    @AppStorage("hasJoinedEarlyAccess") private var hasJoinedEarlyAccess = false
+    @State private var earlyAccessSignedUp = false
+    @State private var isExportingPDF = false
+    @State private var pdfExportURL: URL?
+    @State private var showPDFShareSheet = false
     @State private var showProfileManagement = false
     @State private var showRestorePlaces = false
     /// Tracks whether AI auto-fill is running so we don't show the blog as empty during generation.
@@ -142,6 +149,48 @@ struct RecapBlogPageView: View {
     }
 
     private func bodyContent(screenHeight: CGFloat) -> some View {
+        bodyContentBase(screenHeight: screenHeight)
+            .fullScreenCover(isPresented: $showAuth) {
+                AuthView(onAuthenticated: {
+                    showAuth = false
+                    if pendingEarlyAccessAfterAuth {
+                        pendingEarlyAccessAfterAuth = false
+                        let user = AuthService.shared.currentUser
+                        EarlyAccessManager.shared.recordSignup(
+                            username: user?.username ?? user?.displayName ?? "",
+                            email: user?.email ?? ""
+                        )
+                        hasJoinedEarlyAccess = true
+                        earlyAccessSignedUp = true
+                        showEarlyAccessModal = true
+                    } else if pendingExportAfterAuth {
+                        pendingExportAfterAuth = false
+                        exportBlogToPDF()
+                    }
+                })
+                .environmentObject(authService)
+            }
+            .sheet(isPresented: $showEarlyAccessModal) {
+                earlyAccessModalContent()
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $showPDFShareSheet) {
+                if let url = pdfExportURL {
+                    ShareSheet(items: [url])
+                }
+            }
+            .sheet(isPresented: $showProfileManagement, onDismiss: {
+                if let updatedDetail = createdRecapStore.getBlogDetail(blogId: blogId) {
+                    draft = updatedDetail
+                }
+            }) {
+                ProfileManagementView()
+                    .environmentObject(createdRecapStore)
+            }
+    }
+
+    private func bodyContentBase(screenHeight: CGFloat) -> some View {
         coreContent(screenHeight: screenHeight)
             .overlay(alignment: .top) { firstSaveBannerOverlay }
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showFirstSaveBanner)
@@ -161,14 +210,6 @@ struct RecapBlogPageView: View {
                 }
             } message: {
                 Text(uploadErrorMessage)
-            }
-            .alert("Sign In Required", isPresented: $showSignInAlert) {
-                Button("Sign In") {
-                    showAuth = true
-                }
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text("You need to sign in to upload your blog to the cloud.")
             }
             .alert("Remove from Cloud?", isPresented: $showRemoveFromCloudAlert) {
                 Button("Yes", role: .destructive) {
@@ -203,7 +244,6 @@ struct RecapBlogPageView: View {
                    updated.days.count == draft.days.count, !updated.days.isEmpty {
                     draft = updated
                 }
-                // Auto-dismiss the popup once every day is ready
                 if showUnprocessedDayAlert {
                     let stillProcessing = createdRecapStore.processingDayIndexByBlogId[blogId] != nil
                     let allResolved = draft.days.allSatisfy { $0.isPlaceNamesResolved }
@@ -213,20 +253,6 @@ struct RecapBlogPageView: View {
                         }
                     }
                 }
-            }
-            .fullScreenCover(isPresented: $showAuth) {
-                AuthView(onAuthenticated: {
-                    showAuth = false
-                })
-                .environmentObject(authService)
-            }
-            .sheet(isPresented: $showProfileManagement, onDismiss: {
-                if let updatedDetail = createdRecapStore.getBlogDetail(blogId: blogId) {
-                    draft = updatedDetail
-                }
-            }) {
-                ProfileManagementView()
-                    .environmentObject(createdRecapStore)
             }
             .preferredColorScheme(.dark)
     }
@@ -369,7 +395,7 @@ struct RecapBlogPageView: View {
             }
             .sheet(item: $showManagePhotosForStop, onDismiss: {
                 // Capture dayId/stopId before syncPhotoChangesWithCloud clears managePhotosEditInfo.
-                let managedItem = managePhotosEditInfo
+                let _ = managePhotosEditInfo
                 createdRecapStore.saveBlogDetail(draft)
                 syncPhotoChangesWithCloud()
             }) { pair in
@@ -404,9 +430,9 @@ struct RecapBlogPageView: View {
                     syncWithCloudIfNeeded()
                 }
             }
-            .sheet(isPresented: $showFirstUploadEmailModal) {
-                firstUploadEmailModalContent()
-                    .presentationDetents([.fraction(0.45), .medium])
+            .sheet(isPresented: $showCloudOnboardingModal) {
+                cloudOnboardingModalContent()
+                    .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: Binding(
@@ -803,21 +829,17 @@ struct RecapBlogPageView: View {
                             }
 
                             Button {
-                                print("SHARE BUTTON CLICKED in recap blog page. blogIsInCloud: \(blogIsInCloud)")
-                                if blogIsInCloud {
-                                    showShareSheet = true
+                                if authService.isSignedIn {
+                                    exportBlogToPDF()
                                 } else {
-                                    showSaveTipAlert = false
-                                    DispatchQueue.main.async {
-                                        showUploadPromptAlert = true
-                                        print("Setting showUploadPromptAlert = true")
-                                    }
+                                    pendingExportAfterAuth = true
+                                    showAuth = true
                                 }
                             } label: {
                                 HStack(spacing: 6) {
-                                    Image(systemName: "square.and.arrow.up")
+                                    Image(systemName: "doc.text")
                                         .font(.system(size: 14, weight: .medium))
-                                    Text("Share")
+                                    Text("Export")
                                         .font(.subheadline)
                                         .fontWeight(.medium)
                                 }
@@ -1249,7 +1271,6 @@ struct RecapBlogPageView: View {
     @ViewBuilder
     private func unsavedSplitModal(splitIdx: Int) -> some View {
         let part1Count = splitIdx
-        let part2Count = draft.days.count - splitIdx
         
         let part1StartDate = draft.days[0..<splitIdx].first?.date
         let part1EndDate = draft.days[0..<splitIdx].last?.date
@@ -2137,23 +2158,16 @@ struct RecapBlogPageView: View {
                         if blogIsInCloud {
                             showRemoveFromCloudAlert = true
                         } else {
-                            uploadBlogPhotos()
+                            showEarlyAccessModal = true
                         }
                     } label: {
-                        if isUploading {
-                            ProgressView()
-                                .tint(.white)
-                                .frame(width: 22, height: 22)
-                        } else {
-                            Image(systemName: blogIsInCloud ? "checkmark.icloud.fill" : "icloud.and.arrow.up")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 22, height: 22)
-                                .foregroundColor(blogIsInCloud ? .green : .white)
-                        }
+                        Image(systemName: blogIsInCloud ? "checkmark.icloud.fill" : "icloud.and.arrow.up")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 22, height: 22)
+                            .foregroundColor(blogIsInCloud ? .green : .white)
                     }
                     .buttonStyle(.plain)
-                    .disabled(isUploading)
                     .padding(.leading, 12)
 
                     Button {
@@ -2252,50 +2266,220 @@ struct RecapBlogPageView: View {
 
 
     @ViewBuilder
-    private func firstUploadEmailModalContent() -> some View {
-        VStack(spacing: 24) {
+    private func cloudOnboardingModalContent() -> some View {
+        VStack(spacing: 0) {
+            // Scrollable content area
+            VStack(spacing: 20) {
+                Image(systemName: "cloud.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 60, height: 60)
+                    .foregroundColor(.blue)
+                    .padding(.top, 8)
 
-            Image(systemName: "envelope.circle.fill")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 60, height: 60)
-                .foregroundColor(.blue)
+                VStack(spacing: 8) {
+                    Text("Your Blog is in the Cloud!")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.primary)
 
-            VStack(spacing: 8) {
-                Text("Your First Upload!")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .multilineTextAlignment(.center)
-                    .foregroundColor(.primary)
+                    Text("Your blogs can now be uploaded to the cloud for web editing and sharing.")
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                }
 
-                Text("Would you like to email this blog link to yourself to edit it on your PC?")
-                    .font(.body)
-                    .multilineTextAlignment(.center)
+                VStack(alignment: .leading, spacing: 14) {
+                    cloudFeatureRow(icon: "pencil.and.outline", text: "Edit on any device via web")
+                    cloudFeatureRow(icon: "arrow.clockwise.icloud", text: "Automatic cloud backup")
+                    cloudFeatureRow(icon: "link", text: "Share your blog via a web link")
+                }
+                .padding(16)
+                .background(Color(.systemGray6).opacity(0.5))
+                .cornerRadius(12)
+
+                Text("Cloud access is currently available through early access.")
+                    .font(.caption)
                     .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
             }
-            
-            Button {
-                sendEmailToSelf()
-                showFirstUploadEmailModal = false
-            } label: {
-                Text("Send Link via Email")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .cornerRadius(12)
+            .padding(.horizontal, 24)
+
+            Spacer()
+
+            // Fixed bottom buttons
+            VStack(spacing: 12) {
+                Button {
+                    sendEmailToSelf()
+                    showCloudOnboardingModal = false
+                } label: {
+                    Text("Send Link via Email")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .cornerRadius(12)
+                }
+
+                Button("Done") {
+                    showCloudOnboardingModal = false
+                }
+                .font(.subheadline)
+                .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 16)
-            
-            Button("Not right now") {
-                showFirstUploadEmailModal = false
-            }
-            .font(.subheadline)
-            .foregroundColor(.secondary)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
         }
-        .padding(24)
+        .padding(.top, 24)
         .preferredColorScheme(.dark)
+    }
+
+    private func cloudFeatureRow(icon: String, text: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(.blue)
+                .frame(width: 24)
+            Text(text)
+                .font(.subheadline)
+                .foregroundColor(.primary)
+        }
+    }
+
+    @ViewBuilder
+    private func earlyAccessModalContent() -> some View {
+        VStack(spacing: 0) {
+            // Content area
+            VStack(spacing: 20) {
+                Image(systemName: "cloud.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 50, height: 50)
+                    .foregroundColor(.blue)
+                    .padding(.top, 8)
+
+                if earlyAccessSignedUp || hasJoinedEarlyAccess {
+                    // Confirmation state
+                    VStack(spacing: 8) {
+                        Text("You're on the List!")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.primary)
+
+                        Text("We're expanding cloud publishing access in batches as Bloggo launches. We'll notify you as soon as additional uploads are available. Thank you for your patience!")
+                            .font(.body)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.secondary)
+                    }
+
+                } else {
+                    // Initial state
+                    VStack(spacing: 8) {
+                        Text("Early Access For Cloud Publishing")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.primary)
+
+                        Text("We are gradually expanding cloud publishing as Bloggo launches. Join early access to unlock additional uploads!")
+                            .font(.body)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+
+            // Fixed bottom buttons
+            VStack(spacing: 12) {
+                if earlyAccessSignedUp || hasJoinedEarlyAccess {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("Signed Up!")
+                            .font(.headline)
+                            .foregroundColor(.green)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.green.opacity(0.15))
+                    .cornerRadius(12)
+                } else {
+                    Button {
+                        if authService.isSignedIn {
+                            // Signed-in user: record signup immediately
+                            let user = AuthService.shared.currentUser
+                            EarlyAccessManager.shared.recordSignup(
+                                username: user?.username ?? user?.displayName ?? "",
+                                email: user?.email ?? ""
+                            )
+                            withAnimation {
+                                hasJoinedEarlyAccess = true
+                                earlyAccessSignedUp = true
+                            }
+                        } else {
+                            // Guest: send to auth, then return to confirmed modal
+                            showEarlyAccessModal = false
+                            pendingEarlyAccessAfterAuth = true
+                            showAuth = true
+                        }
+                    } label: {
+                        Text("Join Early Access")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .cornerRadius(12)
+                    }
+                }
+
+                Button {
+                    showEarlyAccessModal = false
+                    if authService.isSignedIn {
+                        exportBlogToPDF()
+                    } else {
+                        pendingExportAfterAuth = true
+                        showAuth = true
+                    }
+                } label: {
+                    Text("Export as PDF Instead")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+        .padding(.top, 24)
+        .preferredColorScheme(.dark)
+        .onAppear {
+            earlyAccessSignedUp = hasJoinedEarlyAccess
+        }
+    }
+
+    private func exportBlogToPDF() {
+        isExportingPDF = true
+        Task {
+            do {
+                let url = try await PDFExportService.generatePDF(from: draft)
+                await MainActor.run {
+                    self.pdfExportURL = url
+                    self.isExportingPDF = false
+                    self.showPDFShareSheet = true
+                }
+            } catch {
+                await MainActor.run {
+                    self.isExportingPDF = false
+                    uploadErrorMessage = "PDF export failed: \(error.localizedDescription)"
+                    showUploadErrorAlert = true
+                }
+            }
+        }
     }
 
     private func sendEmailToSelf() {
@@ -2533,11 +2717,7 @@ struct RecapBlogPageView: View {
 
     private func uploadBlogPhotos() {
         guard !isUploading else { return }
-        // Use the published @ObservableObject state — never stale unlike keychain reads.
-        guard authService.isSignedIn else {
-            showSignInAlert = true
-            return
-        }
+        guard authService.isSignedIn else { return }
 
         // 🚨 Free Tier Guardrails
         if EntitlementManager.shared.isFreeTier {
@@ -2633,7 +2813,7 @@ struct RecapBlogPageView: View {
                                 if !hasUploadedFirstBlog {
                                     hasUploadedFirstBlog = true
                                     newlyUploadedBlogKey = blogKey
-                                    showFirstUploadEmailModal = true
+                                    showCloudOnboardingModal = true
                                 }
                             }
                         }
