@@ -1,18 +1,39 @@
 import MapKit
 import SwiftUI
 
+// MARK: - Standalone full-screen Places Visited (from home icon)
+struct PlacesVisitedStandaloneView: View {
+    @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
+    @Binding var selectedCreatedRecap: CreatedRecapBlog?
+    var onDismiss: () -> Void
+
+    @State private var searchText: String = ""
+    @State private var showPlacesMap: Bool = false
+
+    var body: some View {
+        PlacesVisitedView(
+            searchText: $searchText,
+            showPlacesMap: $showPlacesMap,
+            selectedCreatedRecap: $selectedCreatedRecap
+        )
+        .navigationTitle("Places Visited")
+        .navigationBarTitleDisplayMode(.inline)
+        .preferredColorScheme(.dark)
+    }
+}
+
 struct PlacesVisitedView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
 
     @Binding var searchText: String
     @Binding var showPlacesMap: Bool
+    @Binding var selectedCreatedRecap: CreatedRecapBlog?
 
     @State private var selectedYear: Int? = nil
     @State private var selectedCountry: String? = nil
     @State private var selectedCategory: String? = nil
 
     @State private var selectedPlaceForModal: VisitedPlaceSummary?
-    @State private var selectedCreatedRecap: CreatedRecapBlog?
 
     private let searchBarHeight: CGFloat = 56
     private let mapButtonSize: CGFloat = 52
@@ -225,15 +246,10 @@ struct PlacesVisitedView: View {
                 selectedYear: $selectedYear,
                 selectedCountry: $selectedCountry,
                 selectedCategory: $selectedCategory,
-                searchText: $searchText
+                searchText: $searchText,
+                selectedCreatedRecap: $selectedCreatedRecap
             )
             .environmentObject(createdRecapStore)
-        }
-        .navigationDestination(item: $selectedCreatedRecap) { recap in
-            RecapBlogPageView(
-                blogId: recap.sourceTripId,
-                initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId)
-            )
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -555,10 +571,10 @@ private struct PlacesVisitedMapView: View {
     @Binding var selectedCountry: String?
     @Binding var selectedCategory: String?
     @Binding var searchText: String
+    @Binding var selectedCreatedRecap: CreatedRecapBlog?
 
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var selectedPlaceForModal: VisitedPlaceSummary?
-    @State private var selectedCreatedRecap: CreatedRecapBlog?
 
     private let defaultRegion = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
@@ -789,12 +805,6 @@ private struct PlacesVisitedMapView: View {
             )
             .environmentObject(createdRecapStore)
             .presentationDetents([.large])
-        }
-        .navigationDestination(item: $selectedCreatedRecap) { recap in
-            RecapBlogPageView(
-                blogId: recap.sourceTripId,
-                initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId)
-            )
         }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {

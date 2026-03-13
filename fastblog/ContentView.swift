@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var showTrips = false
     @State private var showProfile = false
     @State private var showSeeAll = false
+    @State private var showPlacesVisited = false
     @State private var selectedCreatedRecap: CreatedRecapBlog?
     @State private var initialDayIndexForRecap: Int?
     @State private var dismissToLandingRequested = false
@@ -28,6 +29,7 @@ struct ContentView: View {
                     showTrips: $showTrips,
                     showProfile: $showProfile,
                     showSeeAll: $showSeeAll,
+                    showPlacesVisited: $showPlacesVisited,
                     selectedCreatedRecap: $selectedCreatedRecap,
                     tripsViewModel: tripsViewModel
                 )
@@ -47,16 +49,15 @@ struct ContentView: View {
                         .environmentObject(createdRecapStore)
                     }
                 }
-                // Only push from Landing if we are staying on Landing (not showing Trips)
-                .navigationDestination(isPresented: Binding(
-                    get: { selectedCreatedRecap != nil && !showTrips && !showProfile && !showSeeAll },
-                    set: { if !$0 { selectedCreatedRecap = nil } }
-                )) {
-                    if let recap = selectedCreatedRecap {
-                        RecapBlogPageView(
-                            blogId: recap.sourceTripId,
-                            initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId),
-                        )
+                .navigationDestination(isPresented: $showPlacesVisited) {
+                    PlacesVisitedStandaloneView(
+                        selectedCreatedRecap: $selectedCreatedRecap,
+                        onDismiss: { showPlacesVisited = false }
+                    )
+                    .environmentObject(createdRecapStore)
+                    .onDisappear { showPlacesVisited = false }
+                    .onChange(of: selectedCreatedRecap) { _, new in
+                        if new != nil { showPlacesVisited = false }
                     }
                 }
             }
@@ -78,6 +79,20 @@ struct ContentView: View {
                 .zIndex(5)
             }
             
+            // Blog overlay: fade in/out when user selects a blog from anywhere (Map, Country List, Recent List).
+            if let recap = selectedCreatedRecap {
+                NavigationStack {
+                    RecapBlogPageView(
+                        blogId: recap.sourceTripId,
+                        initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId),
+                        onRequestDismiss: { selectedCreatedRecap = nil }
+                    )
+                    .environmentObject(createdRecapStore)
+                }
+                .transition(.opacity)
+                .zIndex(10)
+            }
+
             if tripsViewModel.scanState != .idle {
                 LoadingScanView(
                     message: tripsViewModel.loadingMessage,
@@ -93,6 +108,7 @@ struct ContentView: View {
         }
         .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
         .animation(.easeInOut(duration: 0.22), value: showTrips)
+        .animation(.easeInOut(duration: 0.25), value: selectedCreatedRecap != nil)
         .environmentObject(createdRecapStore)
         .environment(\.dismissToLanding, {
             dismissToLandingRequested = true

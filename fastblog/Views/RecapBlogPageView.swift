@@ -34,6 +34,8 @@ struct RecapBlogPageView: View {
     let blogId: UUID
     let initialTrip: TripDraft?
     let forceEditMode: Bool
+    /// When set (e.g. when presented as overlay), called instead of environment dismiss to close the blog.
+    var onRequestDismiss: (() -> Void)? = nil
 
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @EnvironmentObject private var authService: AuthService
@@ -93,6 +95,9 @@ struct RecapBlogPageView: View {
     @State private var pendingEarlyAccessAfterAuth = false
     @State private var pendingCloudUploadAfterAuth = false
     @State private var pendingExportAfterAuth = false
+    /// Single pull-up modal: two states — .earlyAccessPrompt (join CTA) or .onTheList (confirmation).
+    @State private var earlyAccessModalState: EarlyAccessModalState? = nil
+    @AppStorage("hasJoinedEarlyAccess") private var hasJoinedEarlyAccess = false
     @State private var showEarlyAccessModal = false
     @State private var earlyAccessSignedUp = false
     @State private var isExportingPDF = false
@@ -135,11 +140,28 @@ struct RecapBlogPageView: View {
         }
     }
 
-    init(blogId: UUID, initialTrip: TripDraft?, forceEditMode: Bool = false) {
+    /// Single early-access pull-up modal: two states — prompt to join, or "You're on the list" confirmation.
+    /// We use this same pull-up (not a separate black-background modal) for both; it stays visible when guest taps "Join Early Access" and auth is presented on top, then updates to "You're on the list" after sign-in.
+    private enum EarlyAccessModalState: Identifiable {
+        case earlyAccessPrompt
+        case onTheList
+        var id: Self { self }
+    }
+
+    init(blogId: UUID, initialTrip: TripDraft?, forceEditMode: Bool = false, onRequestDismiss: (() -> Void)? = nil) {
         self.blogId = blogId
         self.initialTrip = initialTrip
         self.forceEditMode = forceEditMode
+        self.onRequestDismiss = onRequestDismiss
         _draft = State(initialValue: RecapBlogDetail(id: blogId, title: "", days: [], coverTheme: "default"))
+    }
+
+    private func performDismiss() {
+        if let onRequestDismiss {
+            onRequestDismiss()
+        } else {
+            dismiss()
+        }
     }
 
     var body: some View {
@@ -160,6 +182,42 @@ struct RecapBlogPageView: View {
     private func bodyContent(screenHeight: CGFloat) -> some View {
         bodyContentBase(screenHeight: screenHeight)
             .fullScreenCover(isPresented: $showAuth) {
+                AuthView(
+                    onAuthenticated: {
+                        if pendingEarlyAccessAfterAuth {
+                            // Stay on the blog and keep the same pull-up modal; register via API and update to "You're on the list".
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                            pendingEarlyAccessAfterAuth = false
+                            Task {
+                                await EarlyAccessManager.shared.registerWaitlist()
+                                await MainActor.run {
+                                    hasJoinedEarlyAccess = true
+                                    earlyAccessModalState = .onTheList
+                                    showAuth = false
+                                }
+                            }
+                        } else if pendingExportAfterAuth {
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                            Task { @MainActor in
+                                try? await Task.sleep(nanoseconds: 350_000_000)
+                                showAuth = false
+                                try? await Task.sleep(nanoseconds: 500_000_000)
+                                pendingExportAfterAuth = false
+                                exportBlogToPDF()
+                            }
+                        } else {
+                            showAuth = false
+                        }
+                    },
+                    onDismiss: {
+                        // User closed Create account without signing in; clear the pull-up so it doesn't look like it's reopening when the cover dismisses.
+                        if pendingEarlyAccessAfterAuth {
+                            earlyAccessModalState = nil
+                        }
+                        showAuth = false
+                    },
+                    hostControlsDismiss: true
+                )
                 AuthView(onAuthenticated: {
                     showAuth = false
                     if pendingEarlyAccessAfterAuth {
@@ -177,8 +235,8 @@ struct RecapBlogPageView: View {
                 })
                 .environmentObject(authService)
             }
-            .sheet(isPresented: $showEarlyAccessModal) {
-                earlyAccessModalContent()
+            .sheet(item: $earlyAccessModalState) { state in
+                earlyAccessModalContent(state: state)
                     .presentationDetents([.medium])
                     .presentationDragIndicator(.visible)
             }
@@ -306,11 +364,11 @@ struct RecapBlogPageView: View {
                     },
                     onDelete: {
                         createdRecapStore.deleteBlog(sourceTripId: blogId)
-                        dismiss()
+                        performDismiss()
                     },
                     onRemoveLocalOnly: {
                         createdRecapStore.removeLocalCopy(sourceTripId: blogId)
-                        dismiss()
+                        performDismiss()
                     },
                     onRemoveFromCloud: {
                         createdRecapStore.removeFromCloud(blogId: blogId)
@@ -484,11 +542,11 @@ struct RecapBlogPageView: View {
                 Button("Continue Later") {
                     createdRecapStore.saveBlogDetail(draft, asDraft: true)
                     createdRecapStore.showDraftSavedToast = true
-                    dismiss()
+                    performDismiss()
                 }
                 Button("Exit", role: .destructive) {
                     createdRecapStore.deleteBlog(sourceTripId: blogId)
-                    dismiss()
+                    performDismiss()
                 }
                 Button("Cancel", role: .cancel) { }
             } message: {
@@ -2127,7 +2185,7 @@ struct RecapBlogPageView: View {
                     }
                 } else {
                     print("🔙 View mode, dismissing")
-                    dismiss()
+                    performDismiss()
                 }
             } label: {
                 Image(systemName: "chevron.left")
@@ -2165,6 +2223,8 @@ struct RecapBlogPageView: View {
                         if blogIsInCloud {
                             showRemoveFromCloudAlert = true
                         } else {
+                            let onList = hasJoinedEarlyAccess || EarlyAccessManager.shared.hasRegistered
+                            earlyAccessModalState = onList ? .onTheList : .earlyAccessPrompt
                             handleCloudUploadTap()
                         }
                     } label: {
@@ -2355,7 +2415,8 @@ struct RecapBlogPageView: View {
     }
 
     @ViewBuilder
-    private func earlyAccessModalContent() -> some View {
+    private func earlyAccessModalContent(state: EarlyAccessModalState) -> some View {
+        let isOnTheList = (state == .onTheList)
         VStack(spacing: 0) {
             // Content area
             VStack(spacing: 20) {
@@ -2375,22 +2436,21 @@ struct RecapBlogPageView: View {
                             .multilineTextAlignment(.center)
                             .foregroundColor(.primary)
 
-                        Text("We're expanding cloud publishing access in batches as Bloggo launches. We'll notify you as soon as additional uploads are available. Thank you for your patience!")
+                        Text("We'll notify you when cloud publishing becomes available. Uploading your blogs to the cloud lets you edit and share them from any device.")
                             .font(.body)
                             .multilineTextAlignment(.center)
                             .foregroundColor(.secondary)
                     }
-
                 } else {
-                    // Initial state
+                    // Early Access prompt state
                     VStack(spacing: 8) {
-                        Text("Early Access For Cloud Publishing")
+                        Text("Early Access Feature")
                             .font(.title2)
                             .fontWeight(.bold)
                             .multilineTextAlignment(.center)
                             .foregroundColor(.primary)
 
-                        Text("We are gradually expanding cloud publishing as Bloggo launches. Join early access to unlock additional uploads!")
+                        Text("Cloud publishing is a limited early access. \(authService.isSignedIn ? "Join the waitlist!" : "Create an account to join the waitlist!")")
                             .font(.body)
                             .multilineTextAlignment(.center)
                             .foregroundColor(.secondary)
@@ -2418,14 +2478,14 @@ struct RecapBlogPageView: View {
                 } else {
                     Button {
                         if authService.isSignedIn {
-                            // Signed-in user: call backend API to register
                             Task {
                                 await EarlyAccessManager.shared.registerWaitlist()
-                                withAnimation { earlyAccessSignedUp = true }
+                                await MainActor.run {
+                                    hasJoinedEarlyAccess = true
+                                    earlyAccessModalState = .onTheList
+                                }
                             }
                         } else {
-                            // Guest: sign in first, then register
-                            showEarlyAccessModal = false
                             pendingEarlyAccessAfterAuth = true
                             showAuth = true
                         }
@@ -2441,7 +2501,7 @@ struct RecapBlogPageView: View {
                 }
 
                 Button {
-                    showEarlyAccessModal = false
+                    earlyAccessModalState = nil
                     if authService.isSignedIn {
                         exportBlogToPDF()
                     } else {
@@ -2493,8 +2553,12 @@ struct RecapBlogPageView: View {
                 let url = try await PDFExportService.generatePDF(from: draft)
                 await MainActor.run {
                     self.pdfExportURL = url
-                    self.isExportingPDF = false
                     self.showPDFPreview = true
+                    // Keep the exporting overlay (animation + percentage) visible until the preview sheet has had time to present, then hide it so the transition feels smooth.
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 550_000_000) // ~0.55s for sheet to be ready
+                        self.isExportingPDF = false
+                    }
                 }
             } catch {
                 await MainActor.run {

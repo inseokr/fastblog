@@ -117,12 +117,6 @@ struct TripsView: View {
             }
         }
         .animation(.easeInOut(duration: 0.4), value: viewModel.scanState)
-        .navigationDestination(item: $selectedCreatedRecap) { recap in
-            RecapBlogPageView(
-                blogId: recap.sourceTripId,
-                initialTrip: CreatedRecapBlogStore.shared.tripDraft(for: recap.sourceTripId)
-            )
-        }
         .navigationDestination(item: $selectedTrip) { trip in
             TripDayPickerView(
                 trip: viewModel.tripForPicker(trip),

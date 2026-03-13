@@ -34,6 +34,7 @@ struct PDFPreviewSheet: View {
                         showShareSheet = true
                     }
                     .fontWeight(.semibold)
+                    .foregroundStyle(.blue)
                 }
             }
             .sheet(isPresented: $showShareSheet) {

@@ -15,11 +15,15 @@ struct AuthView: View {
     @State private var showEmailSignUp = false
     @State private var showEmailLogin = false
     @State private var showGoogleComingSoon = false
+    /// When true, the main "Create account" content is visible. Fades to false when user goes to email sign-up/login so they don't see it again when the sheet dismisses.
+    @State private var mainContentVisible = true
 
     // Callback for post-auth navigation (e.g. continue cloud upload)
     var onAuthenticated: (() -> Void)?
     /// Called when the view should close itself (used when presented as a ZStack overlay).
     var onDismiss: (() -> Void)?
+    /// When true, the host will dismiss (e.g. after keyboard down + delay); this view does not call dismiss() after onAuthenticated.
+    var hostControlsDismiss: Bool = false
 
     // MARK: - Body
 
@@ -36,10 +40,9 @@ struct AuthView: View {
                         AuthService.Analytics.track(.authCancelled)
                         if let onDismiss { onDismiss() } else { dismiss() }
                     } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title2)
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(.white.opacity(0.6))
+                        Image(systemName: "xmark")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.5))
                     }
                     .padding(.leading, 20)
                     .padding(.top, 20)
@@ -63,6 +66,8 @@ struct AuthView: View {
                     .padding(.top, 24)
                     .padding(.bottom, 40)
             }
+            .opacity(mainContentVisible ? 1 : 0)
+            .animation(.easeOut(duration: 0.15), value: mainContentVisible)
 
             // Full-screen loading overlay
             if authService.isLoading {
@@ -83,26 +88,37 @@ struct AuthView: View {
         } message: {
             Text("Google Sign In is coming soon. Please use Apple or Email for now.")
         }
-        .sheet(isPresented: $showEmailSignUp) {
+        .sheet(isPresented: $showEmailSignUp, onDismiss: {
+            // If user exited without signing in, show the Create account page again instead of navy blue.
+            if authService.currentUser == nil {
+                withAnimation(.easeOut(duration: 0.15)) { mainContentVisible = true }
+            }
+        }) {
             EmailSignUpView(onAuthenticated: {
                 showEmailSignUp = false
                 onAuthenticated?()
-                dismiss()
+                if !hostControlsDismiss { dismiss() }
             })
             .environmentObject(authService)
         }
-        .sheet(isPresented: $showEmailLogin) {
+        .sheet(isPresented: $showEmailLogin, onDismiss: {
+            if authService.currentUser == nil {
+                withAnimation(.easeOut(duration: 0.15)) { mainContentVisible = true }
+            }
+        }) {
             EmailLoginView(onAuthenticated: {
                 showEmailLogin = false
                 onAuthenticated?()
-                dismiss()
+                if !hostControlsDismiss { dismiss() }
             })
             .environmentObject(authService)
         }
         .onChange(of: authService.currentUser) { _, user in
             if user != nil {
                 onAuthenticated?()
-                if let onDismiss { onDismiss() } else { dismiss() }
+                if !hostControlsDismiss {
+                    if let onDismiss { onDismiss() } else { dismiss() }
+                }
             }
         }
         .onAppear {
@@ -114,11 +130,11 @@ struct AuthView: View {
 
     private var headerSection: some View {
         VStack(spacing: 14) {
-            // App icon mark
+            // App icon mark (same size as home page logo)
             Image("ScanIcon")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 80, height: 80)
+                .frame(width: 100, height: 100)
                 .shadow(color: .blue.opacity(0.4), radius: 20)
 
             Text("Create your account")
@@ -126,7 +142,7 @@ struct AuthView: View {
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
 
-            Text("Save blogs to the cloud, edit on desktop,\nand access your blogs anywhere.")
+            Text("Export as PDFs · Secure cloud backup · Edit on desktop · Access from any device")
                 .font(.subheadline)
                 .foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
@@ -182,8 +198,15 @@ struct AuthView: View {
             }
             */
 
+            Text("Use the same sign in method on web to edit your blogs.")
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.45))
+                .multilineTextAlignment(.center)
+                .padding(.bottom, 4)
+
             // Email
             Button {
+                withAnimation(.easeOut(duration: 0.25)) { mainContentVisible = false }
                 showEmailSignUp = true
                 AuthService.Analytics.track(.authProviderSelected(provider: "email"))
             } label: {
@@ -204,18 +227,13 @@ struct AuthView: View {
                 .cornerRadius(14)
             }
             .buttonStyle(.plain)
-
-            Text("Use the same sign in method on web to edit your blogs.")
-                .font(.caption)
-                .foregroundColor(.white.opacity(0.45))
-                .multilineTextAlignment(.center)
-                .padding(.top, 4)
         }
     }
 
     private var footerSection: some View {
         VStack(spacing: 8) {
             Button {
+                withAnimation(.easeOut(duration: 0.25)) { mainContentVisible = false }
                 showEmailLogin = true
             } label: {
                 HStack(spacing: 0) {

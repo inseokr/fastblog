@@ -10,6 +10,7 @@ struct LandingView: View {
     @Binding var showTrips: Bool
     @Binding var showProfile: Bool
     @Binding var showSeeAll: Bool
+    @Binding var showPlacesVisited: Bool
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     /// Passed back to ContentView so RecapBlogPageView opens at the right day.
     @ObservedObject var tripsViewModel: TripsViewModel
@@ -70,38 +71,13 @@ struct LandingView: View {
                     //     .foregroundColor(.white)
                     Spacer()
                     Button {
-                        if authService.isSignedIn {
-                            showProfile = true
-                        } else {
-                            showAuth = true
-                        }
+                        showPlacesVisited = true
                     } label: {
-                        if let user = authService.currentUser {
-                            // Signed-in avatar
-                            if let data = avatarImageData, let uiImage = UIImage(data: data) {
-                                Image(uiImage: uiImage)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 32, height: 32)
-                                    .clipShape(Circle())
-                            } else {
-                                ZStack {
-                                    Circle()
-                                        .fill(LinearGradient(
-                                            colors: [Color(red: 0.2, green: 0.5, blue: 1), Color(red: 0.1, green: 0.3, blue: 0.8)],
-                                            startPoint: .topLeading, endPoint: .bottomTrailing
-                                        ))
-                                        .frame(width: 32, height: 32)
-                                    Text(user.initials)
-                                        .font(.system(size: 13, weight: .bold))
-                                        .foregroundColor(.white)
-                                }
-                            }
-                        } else {
-                            Image(systemName: "person.crop.circle")
-                                .font(.title2)
-                                .foregroundColor(.white)
-                        }
+                        Image("PlacesVisitedIcon")
+                            .resizable()
+                            .renderingMode(.template)
+                            .foregroundColor(.white)
+                            .frame(width: 28, height: 28)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -711,12 +687,14 @@ private struct SettingsView: View {
                     showNeighborhoodSheet = false
                 })
             }
-            .fullScreenCover(isPresented: $showAuth) {
+            .sheet(isPresented: $showAuth) {
                 AuthView(onAuthenticated: {
                     showAuth = false
                     dismiss()
                 })
                 .environmentObject(authService)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
             }
             .onAppear {
                 customProfileImageData = authService.profileImageData
@@ -866,6 +844,7 @@ struct AllRecentsSheet: View {
             showTrips: .constant(false),
             showProfile: .constant(false),
             showSeeAll: .constant(false),
+            showPlacesVisited: .constant(false),
             selectedCreatedRecap: .constant(nil),
             tripsViewModel: TripsViewModel(createdRecapStore: CreatedRecapBlogStore.shared)
         )

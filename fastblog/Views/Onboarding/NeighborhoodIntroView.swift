@@ -30,23 +30,17 @@ struct NeighborhoodIntroView: View {
                         .frame(width: 36, height: 5)
                         .padding(.top, 12)
 
-                    // Header with title and close button
-                    ZStack {
-                        Text("Set Home")
-                            .font(.headline)
-                            .foregroundColor(.white)
-
-                        HStack {
-                            Button {
-                                onDismiss()
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(.headline)
-                                    .foregroundColor(.white.opacity(0.6))
-                                    .padding()
-                            }
-                            Spacer()
+                    // Header with close button
+                    HStack {
+                        Button {
+                            onDismiss()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.headline)
+                                .foregroundColor(.white.opacity(0.6))
+                                .padding()
                         }
+                        Spacer()
                     }
                     .padding(.top, 8)
 

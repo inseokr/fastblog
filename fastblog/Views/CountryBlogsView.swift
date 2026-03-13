@@ -7,13 +7,22 @@
 
 import SwiftUI
 
+/// PreferenceKey to report the first row's minY for "at top" detection (swipe-down-to-dismiss).
+private struct CountryListScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct CountryBlogsView: View {
     let section: CountrySection
     @Binding var selectedBlog: CreatedRecapBlog?
     @Binding var showMap: Bool
     @Binding var searchText: String
+    /// Reported to parent for swipe-down-to-dismiss when at top. Optional so callers can omit.
+    @Binding var scrollOffset: CGFloat
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
-    @State private var localSelectedBlog: CreatedRecapBlog?
     @State private var showManageSheet = false
 
     // Cloud removal
@@ -112,9 +121,9 @@ struct CountryBlogsView: View {
                 }
 
                 List {
-                    ForEach(filteredAndSortedBlogs) { blog in
+                    ForEach(Array(filteredAndSortedBlogs.enumerated()), id: \.element.id) { index, blog in
                         Button {
-                            localSelectedBlog = blog
+                            selectedBlog = blog
                         } label: {
                             CountryBlogRowView(
                                 blog: blog,
@@ -126,7 +135,7 @@ struct CountryBlogsView: View {
                                 },
                                 onEditBlog: {
                                     openInEditMode = true
-                                    localSelectedBlog = blog
+                                    selectedBlog = blog
                                 },
                                 onDeleteBlog: {
                                     blogToDelete = blog
@@ -137,7 +146,16 @@ struct CountryBlogsView: View {
                         .buttonStyle(.plain)
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
-                        .listRowBackground(Color.clear)
+                        .listRowBackground(Group {
+                            if index == 0 {
+                                GeometryReader { g in
+                                    Color.clear.preference(
+                                        key: CountryListScrollOffsetKey.self,
+                                        value: g.frame(in: .named("countryList")).minY
+                                    )
+                                }
+                            }
+                        })
                         // ─── Swipe-left trailing action ───────────────────
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
@@ -154,6 +172,11 @@ struct CountryBlogsView: View {
                 }
                 .listStyle(.plain)
                 .padding(.top, 4)
+                .coordinateSpace(name: "countryList")
+                .onPreferenceChange(CountryListScrollOffsetKey.self) { scrollOffset = $0 }
+                .onChange(of: filteredAndSortedBlogs.isEmpty) { _, isEmpty in
+                    if isEmpty { scrollOffset = 0 }
+                }
                 .safeAreaInset(edge: .bottom) {
                     Color.clear.frame(height: 132)
                 }
@@ -208,17 +231,9 @@ struct CountryBlogsView: View {
             CountryMapView(
                 countryName: section.countryName,
                 blogs: filteredAndSortedBlogs,
-                selectedCreatedRecap: $localSelectedBlog
+                selectedCreatedRecap: $selectedBlog
             )
             .environmentObject(createdRecapStore)
-        }
-        .navigationDestination(item: $localSelectedBlog) { recap in
-            RecapBlogPageView(
-                blogId: recap.sourceTripId,
-                initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId),
-                forceEditMode: openInEditMode
-            )
-            .onDisappear { openInEditMode = false }
         }
         // ─── Confirmation Sheet for Delete ────────────────────────────────
         .confirmationDialog(

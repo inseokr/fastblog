@@ -44,8 +44,6 @@ struct ProfilePageView: View {
     @State private var selectedCountryID: String? = nil
     @State private var showMyMap = false
     @State private var showManagementSheet = false
-    /// Local navigation state — avoids conflicting with the global selectedCreatedRecap binding
-    @State private var selectedBlogToOpen: CreatedRecapBlog? = nil
     @State private var isSearchActive = false
     @FocusState private var isSearchFocused: Bool
     @State private var showUploadPromptAlert = false
@@ -118,7 +116,7 @@ struct ProfilePageView: View {
                                 countryFilterBar
                                 StoryFeedSection(
                                     blogs: filteredBlogs,
-                                    selectedBlog: $selectedBlogToOpen,
+                                    selectedBlog: $selectedCreatedRecap,
                                     isSearchFocused: $isSearchFocused,
                                     onShareUnuploaded: { blog in
                                         blogToUpload = blog
@@ -143,7 +141,7 @@ struct ProfilePageView: View {
                         } else {
                             StoryFeedSection(
                                 blogs: localBlogs,
-                                selectedBlog: $selectedBlogToOpen,
+                                selectedBlog: $selectedCreatedRecap,
                                 isSearchFocused: $isSearchFocused,
                                 onShareUnuploaded: { blog in
                                     blogToUpload = blog
@@ -224,12 +222,6 @@ struct ProfilePageView: View {
         .navigationDestination(isPresented: $showMyMap) {
             MyMapView(selectedCreatedRecap: $selectedCreatedRecap)
         }
-        .navigationDestination(item: $selectedBlogToOpen) { recap in
-            RecapBlogPageView(
-                blogId: recap.sourceTripId,
-                initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId)
-            )
-        }
     }
 
     @State private var showShare = false
@@ -266,7 +258,7 @@ struct ProfilePageView: View {
         .alert("Upload to Cloud?", isPresented: $showUploadPromptAlert) {
             Button("Yes") {
                 if let blog = blogToUpload {
-                    selectedBlogToOpen = blog
+                    selectedCreatedRecap = blog
                 }
             }
             Button("No", role: .cancel) { }

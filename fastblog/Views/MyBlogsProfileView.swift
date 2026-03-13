@@ -11,7 +11,6 @@ import SwiftUI
 private enum MyBlogsPage: Equatable {
     case blogs
     case country(CountrySection)
-    case places
 }
 
 private let searchBarHeight: CGFloat = 56
@@ -23,62 +22,6 @@ private struct MyBlogsScrollOffsetKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value += nextValue()
-    }
-}
-
-private struct PlaceVisitedMiniCard: View {
-    let place: VisitedPlaceSummary
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .bottomLeading) {
-                if let hero = place.heroPhoto {
-                    RecapPhotoThumbnail(photo: hero, cornerRadius: 12, showIcon: false, targetSize: CGSize(width: 520, height: 520))
-                        .frame(width: 140, height: 112)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                } else {
-                    Color.white.opacity(0.12)
-                        .frame(width: 140, height: 112)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .overlay {
-                            Image(systemName: "photo")
-                                .foregroundColor(.white.opacity(0.5))
-                        }
-                }
-
-                if place.photos.count > 1 {
-                    Text("+\(max(0, place.photos.count - 1))")
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Color.black.opacity(0.55))
-                        .clipShape(Capsule())
-                        .padding(8)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(place.displayName)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-
-                Text(place.cityDisplay ?? place.country)
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.75))
-                    .lineLimit(1)
-            }
-        }
-        .frame(width: 140)
-        .padding(10)
-        .background(Color.clear)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.white.opacity(0.18), lineWidth: 1)
-        )
     }
 }
 
@@ -98,15 +41,14 @@ struct MyBlogsProfileView: View {
     // Per-page map destinations
     @State private var showMyMap = false
     @State private var showCountryMap: Bool = false
-    @State private var showPlacesMap: Bool = false
-
-    @State private var selectedPlaceForModal: VisitedPlaceSummary?
     @State private var showManage = false
     @State private var isSearchActive = false
     @FocusState private var isSearchFocused: Bool
     @State private var selectedUnsavedTripPhotos: TripDraft?
     @State private var createBlogFlowTrip: TripDraft?
     @State private var scrollOffset: CGFloat = 0
+    /// Scroll offset for country page — used for swipe-down-to-dismiss when at top.
+    @State private var countryScrollOffset: CGFloat = 0
 
     // On-the-go new-moments popup
     @State private var showNewMomentsAlert = false
@@ -158,7 +100,6 @@ struct MyBlogsProfileView: View {
                         switch currentPage {
                         case .blogs:   showMyMap = true
                         case .country: showCountryMap = true
-                        case .places:  showPlacesMap.toggle()
                         }
                     }
                     .padding(.trailing, horizontalPadding)
@@ -172,20 +113,20 @@ struct MyBlogsProfileView: View {
             DragGesture().onEnded { value in
                 let isHorizontal = abs(value.translation.width) > abs(value.translation.height)
                 if currentPage == .blogs {
-                    // Swipe down to dismiss My Blogs
+                    // Swipe down to dismiss My Blogs when at top
                     if !isHorizontal && scrollOffset >= -20 && value.translation.height > 60 {
                         dismiss()
                     }
                 } else {
+                    // On country (and any other sub-page): swipe down at top to dismiss entire My Blogs sheet
+                    if !isHorizontal && value.translation.height > 60 && countryScrollOffset >= -20 {
+                        dismiss()
+                        return
+                    }
                     // Swipe right to go back to blogs page
                     if isHorizontal && value.translation.width > 60 {
-                        switch currentPage {
-                        case .country:
-                            break
-                        case .places:
+                        if case .country = currentPage {
                             withAnimation(.easeInOut(duration: 0.26)) { currentPage = .blogs }
-                        case .blogs:
-                            break
                         }
                     }
                 }
@@ -205,7 +146,7 @@ struct MyBlogsProfileView: View {
                         Image(systemName: "xmark")
                             .font(.body.weight(.semibold))
                     }
-                case .country, .places:
+                case .country:
                     Button {
                         isSearchFocused = false
                         withAnimation(.easeInOut(duration: 0.26)) {
@@ -228,17 +169,8 @@ struct MyBlogsProfileView: View {
                 }
             }
         }
-        .sheet(item: $selectedPlaceForModal) { place in
-            placeModalSheet(place: place)
-        }
         .navigationDestination(isPresented: $showMyMap) {
             MyMapView(selectedCreatedRecap: $selectedCreatedRecap)
-        }
-        .navigationDestination(item: $selectedCreatedRecap) { recap in
-            RecapBlogPageView(
-                blogId: recap.sourceTripId,
-                initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId)
-            )
         }
         .navigationDestination(item: $createBlogFlowTrip) { trip in
             CreateBlogFlowView(trip: trip, startDirectlyCreating: true) { _ in
@@ -292,11 +224,13 @@ struct MyBlogsProfileView: View {
         } message: {
             Text("Your trip has new content since you last looked. Tap View to go to the latest day.")
         }
-        .onChange(of: currentPage) { _, _ in
+        .onChange(of: currentPage) { _, newPage in
             sharedSearchText = ""
             viewModel.searchText = ""
             isSearchActive = false
-            showPlacesMap = false
+            if case .country = newPage {
+                countryScrollOffset = 0
+            }
         }
         .onChange(of: sharedSearchText) { _, newValue in
             if case .blogs = currentPage { viewModel.searchText = newValue }
@@ -309,7 +243,6 @@ struct MyBlogsProfileView: View {
         switch currentPage {
         case .blogs: return "My Blogs"
         case .country(let section): return section.countryName.isEmpty || section.countryName == "Unknown" ? "Other" : section.countryName
-        case .places: return "Places Visited"
         }
     }
 
@@ -323,17 +256,11 @@ struct MyBlogsProfileView: View {
                 section: section,
                 selectedBlog: $selectedCreatedRecap,
                 showMap: $showCountryMap,
-                searchText: $sharedSearchText
-            )
-            .environmentObject(createdRecapStore)
-            .transition(.move(edge: .trailing).combined(with: .opacity))
-        case .places:
-            PlacesVisitedView(
                 searchText: $sharedSearchText,
-                showPlacesMap: $showPlacesMap
+                scrollOffset: $countryScrollOffset
             )
             .environmentObject(createdRecapStore)
-            .transition(.move(edge: .trailing).combined(with: .opacity))
+            .transition(.opacity)
         }
     }
 
@@ -344,9 +271,6 @@ struct MyBlogsProfileView: View {
             Group {
                 if false && !isSearchActive && !viewModel.unsavedTrips.isEmpty {
                     unsavedTripsSection
-                }
-                if !isSearchActive && !createdRecapStore.visitedPlaces.isEmpty {
-                    placesVisitedSection
                 }
                 if false && !isSearchActive && !createdRecapStore.visibleRecents.isEmpty {
                     recentBlogsSection
@@ -384,7 +308,7 @@ struct MyBlogsProfileView: View {
         }
         .coordinateSpace(name: "MyBlogsScroll")
         .onPreferenceChange(MyBlogsScrollOffsetKey.self) { value in scrollOffset = value }
-        .transition(.move(edge: .leading).combined(with: .opacity))
+        .transition(.opacity)
     }
 
     // MARK: - Persistent bottom bar
@@ -395,7 +319,6 @@ struct MyBlogsProfileView: View {
         switch currentPage {
         case .blogs:   placeholder = "Search city or blog title"; isDark = true
         case .country: placeholder = "Search blog title";          isDark = false
-        case .places:  placeholder = "Search places";               isDark = false
         }
         return HStack(spacing: 12) {
             Image(systemName: "magnifyingglass")
@@ -422,92 +345,6 @@ struct MyBlogsProfileView: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal, horizontalPadding)
         .padding(.bottom, 12)
-    }
-
-    // "Recent Blogs" horizontal scroll matching the home page style
-    private var placesVisitedSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Places Visited")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-                    .padding(.top, 16)
-
-                Spacer()
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.26)) { currentPage = .places }
-                } label: {
-                    Text("View All")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white.opacity(0.85))
-                }
-                .buttonStyle(.plain)
-            }
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(createdRecapStore.visitedPlaces.prefix(10)) { place in
-                        Button {
-                            selectedPlaceForModal = place
-                        } label: {
-                            PlaceVisitedMiniCard(place: place)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.bottom, 8)
-            }
-            .frame(height: 178)
-        }
-        .padding(.bottom, 8)
-    }
-
-    @ViewBuilder
-    private func placeModalSheet(place: VisitedPlaceSummary) -> some View {
-        let photos = place.photos
-        if let initialPhotoId = photos.first?.id {
-            PlacePhotoModalView(
-                placeTitle: Binding(
-                    get: { place.displayName },
-                    set: { _ in }
-                ),
-                placeSubtitle: place.cityDisplay ?? place.country,
-                photos: photos,
-                initialPhotoId: initialPhotoId,
-                stopDigitizedTime: nil,
-                blogIsEditMode: false,
-                showAssetTimeMetadata: false,
-                photoCaption: { photoId in
-                    let caption = photos.first(where: { $0.id == photoId })?.caption ?? ""
-                    return Binding(
-                        get: { caption },
-                        set: { _ in }
-                    )
-                },
-                onDismiss: { selectedPlaceForModal = nil },
-                onViewBlog: {
-                    guard let blogId = place.relatedBlogs.first?.blogId,
-                          let recap = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == blogId }) else { return }
-                    selectedPlaceForModal = nil
-                    selectedCreatedRecap = recap
-                },
-                onRemovePhoto: { photoId in
-                    createdRecapStore.removePhotoFromBlog(photoId: photoId)
-                    selectedPlaceForModal = nil
-                }
-            )
-            // Use an almost-full-screen detent to visually touch the bottom edge
-            // while still behaving like a pull-up modal.
-            .presentationDetents([.fraction(0.999)])
-            .presentationDragIndicator(.hidden)
-            .presentationCornerRadius(24)
-            .presentationBackground(.black)
-        } else {
-            Color.clear.onAppear { selectedPlaceForModal = nil }
-        }
     }
 
     private var recentBlogsSection: some View {

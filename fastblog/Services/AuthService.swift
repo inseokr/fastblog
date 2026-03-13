@@ -127,6 +127,8 @@ final class AuthService: NSObject, ObservableObject {
         currentUser = nil
         persist(nil)
         setJwtToken(nil)
+        // Waitlist is tied to the account; clear device-local early access state so guest sees the prompt again.
+        UserDefaults.standard.set(false, forKey: "hasJoinedEarlyAccess")
         Analytics.track(.authCancelled) // reuse existing or add dedicated event
     }
 

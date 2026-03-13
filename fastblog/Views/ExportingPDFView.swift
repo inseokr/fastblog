@@ -10,16 +10,8 @@ struct ExportingPDFView: View {
     @State private var ringRotation: Double = 0
     @State private var assembledStep: Int = 0
     @State private var pulseScale: CGFloat = 1
-    @State private var stepLabelIndex: Int = 0
-    @State private var progressPercent: Int = 0
-    @State private var colorProgress: CGFloat = 0
 
     private let navyBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
-
-    private let earlyStepLabels = [
-        "Laying out your blog...",
-        "Rendering photos..."
-    ]
 
     var body: some View {
         ZStack {
@@ -41,7 +33,7 @@ struct ExportingPDFView: View {
 
     private var exportAnimation: some View {
         ZStack {
-            // Outer rotating dashed ring
+            // Outer rotating dashed ring — runs forever
             Circle()
                 .trim(from: 0, to: 0.75)
                 .stroke(
@@ -52,20 +44,20 @@ struct ExportingPDFView: View {
                 .rotationEffect(.degrees(ringRotation))
                 .animation(.linear(duration: 2).repeatForever(autoreverses: false), value: ringRotation)
 
-            // Filling progress ring
+            // Inner progress ring — fills and empties in a loop so it never stops moving
             Circle()
                 .trim(from: 0, to: ringTrim)
                 .stroke(Color.blue, lineWidth: 4)
                 .frame(width: 120, height: 120)
                 .rotationEffect(.degrees(-90))
-                .animation(.easeInOut(duration: 1.8), value: ringTrim)
+                .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: ringTrim)
 
             // Export-themed building block icons
             ForEach(0..<3, id: \.self) { index in
                 buildingNode(at: index)
             }
 
-            // Central app logo with subtle pulse
+            // Central app logo with subtle pulse — runs forever
             Image("ScanIcon")
                 .resizable()
                 .scaledToFit()
@@ -93,71 +85,36 @@ struct ExportingPDFView: View {
     }
 
     private var messageSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             Text("Exporting to PDF...")
                 .font(.title2)
                 .fontWeight(.bold)
                 .foregroundColor(.primary)
                 .multilineTextAlignment(.center)
 
-            Group {
-                if stepLabelIndex < earlyStepLabels.count {
-                    Text(earlyStepLabels[stepLabelIndex])
-                } else {
-                    Text("\(progressPercent)%")
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                }
-            }
-            .font(.subheadline)
-            .foregroundColor(.secondary)
-            .animation(.easeInOut(duration: 0.3), value: stepLabelIndex)
+            Text("This may take a moment")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
         }
         .padding(.horizontal, 24)
     }
 
     private func startAnimations() {
-        // Background slowly transitions to navy blue
-        withAnimation(.easeIn(duration: 4.5)) {
-            colorProgress = 1
-        }
-
-        // Progress ring fills over ~1.8s
+        // Progress ring: loop 0 → 1 → 0 so it never stops (repeatForever on the view handles the cycle)
         ringTrim = 1
 
-        // Dashed ring rotation (continuous)
+        // Dashed ring rotation — continuous
         ringRotation = 360
 
-        // Gentle pulse on logo
+        // Gentle pulse on logo — continuous
         pulseScale = 1.08
 
-        // Assemble nodes one by one
+        // Assemble nodes one by one (quick, then they stay visible)
         for step in 1...3 {
             let delay = 0.4 + Double(step) * 0.35
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 assembledStep = step
-            }
-        }
-
-        // Cycle through early step labels, then switch to percentage mode
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            withAnimation(.easeInOut(duration: 0.25)) { stepLabelIndex = 1 }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
-            withAnimation(.easeInOut(duration: 0.25)) { stepLabelIndex = 2 }
-            // Animate percentage from 0 → 99 — keeps ticking until dismissed
-            let tickInterval = 0.06
-            let totalTicks = 200 // enough headroom (~12s before hitting 99)
-            for i in 0..<totalTicks {
-                DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * tickInterval) {
-                    // Ease-out curve: fast at start, slows toward 99
-                    let t = Double(i) / Double(totalTicks)
-                    let eased = 1 - pow(1 - t, 2.5)
-                    let raw = Int(eased * 99)
-                    withAnimation(.easeOut(duration: tickInterval)) {
-                        progressPercent = min(raw, 99)
-                    }
-                }
             }
         }
     }
