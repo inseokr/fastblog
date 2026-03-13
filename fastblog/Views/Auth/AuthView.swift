@@ -95,6 +95,7 @@ struct AuthView: View {
             }
         }) {
             EmailSignUpView(onAuthenticated: {
+                mainContentVisible = true
                 showEmailSignUp = false
                 onAuthenticated?()
                 if !hostControlsDismiss { dismiss() }
@@ -107,6 +108,7 @@ struct AuthView: View {
             }
         }) {
             EmailLoginView(onAuthenticated: {
+                mainContentVisible = true
                 showEmailLogin = false
                 onAuthenticated?()
                 if !hostControlsDismiss { dismiss() }
@@ -115,6 +117,7 @@ struct AuthView: View {
         }
         .onChange(of: authService.currentUser) { _, user in
             if user != nil {
+                mainContentVisible = true
                 onAuthenticated?()
                 if !hostControlsDismiss {
                     if let onDismiss { onDismiss() } else { dismiss() }
