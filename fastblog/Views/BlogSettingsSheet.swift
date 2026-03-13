@@ -31,7 +31,7 @@ struct BlogSettingsSheet: View {
     // PDF Export State
     @State private var isExportingPDF = false
     @State private var pdfExportURL: URL? = nil
-    @State private var showPDFShareSheet = false
+    @State private var showPDFPreview = false
     @State private var exportError: String? = nil
 
     private var hasCloudPhotos: Bool {
@@ -39,23 +39,24 @@ struct BlogSettingsSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack {
-                settingsList
-                deleteButton
-            }
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { navigationToolbar }
-            .sheet(isPresented: $showTitleChange) { titleChangeSheet }
-            .sheet(isPresented: $showCoverChange, onDismiss: handleCoverPickerDismiss) { coverPhotoPicker }
-            .alert("Delete Blog?", isPresented: $showDeleteConfirmation) { deleteAlertButtons } message: { deleteAlertMessage }
-            .overlay { customDeletePopup }
-            .alert("Remove from Cloud?", isPresented: $showRemoveFromCloudConfirmation) { removeCloudAlertButtons } message: { removeCloudAlertMessage }
-            .sheet(isPresented: $showRestorePlaces) { restorePlacesSheet }
-            .sheet(isPresented: $showPDFShareSheet) {
+        ZStack {
+            NavigationStack {
+                VStack {
+                    settingsList
+                    deleteButton
+                }
+                .navigationTitle("")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { navigationToolbar }
+                .sheet(isPresented: $showTitleChange) { titleChangeSheet }
+                .sheet(isPresented: $showCoverChange, onDismiss: handleCoverPickerDismiss) { coverPhotoPicker }
+                .alert("Delete Blog?", isPresented: $showDeleteConfirmation) { deleteAlertButtons } message: { deleteAlertMessage }
+                .overlay { customDeletePopup }
+                .alert("Remove from Cloud?", isPresented: $showRemoveFromCloudConfirmation) { removeCloudAlertButtons } message: { removeCloudAlertMessage }
+                .sheet(isPresented: $showRestorePlaces) { restorePlacesSheet }
+                .sheet(isPresented: $showPDFPreview) {
                 if let url = pdfExportURL {
-                    ShareSheet(items: [url])
+                    PDFPreviewSheet(pdfURL: url)
                 }
             }
             .alert("Export Error", isPresented: Binding(
@@ -66,8 +67,16 @@ struct BlogSettingsSheet: View {
             } message: {
                 Text(exportError ?? "")
             }
-            .preferredColorScheme(.dark)
+                .preferredColorScheme(.dark)
+            }
+
+            if isExportingPDF {
+                ExportingPDFView()
+                    .transition(.opacity)
+                    .zIndex(100)
+            }
         }
+        .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
     }
 
     private var settingsList: some View {
@@ -204,7 +213,7 @@ struct BlogSettingsSheet: View {
                 await MainActor.run {
                     self.pdfExportURL = url
                     self.isExportingPDF = false
-                    self.showPDFShareSheet = true
+                    self.showPDFPreview = true
                 }
             } catch {
                 await MainActor.run {

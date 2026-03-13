@@ -97,7 +97,7 @@ struct RecapBlogPageView: View {
     @State private var earlyAccessSignedUp = false
     @State private var isExportingPDF = false
     @State private var pdfExportURL: URL?
-    @State private var showPDFShareSheet = false
+    @State private var showPDFPreview = false
     @State private var showProfileManagement = false
     @State private var showRestorePlaces = false
     /// Tracks whether AI auto-fill is running so we don't show the blog as empty during generation.
@@ -143,9 +143,18 @@ struct RecapBlogPageView: View {
     }
 
     var body: some View {
-        GeometryReader { screenGeo in
-            bodyContent(screenHeight: screenGeo.size.height)
+        ZStack {
+            GeometryReader { screenGeo in
+                bodyContent(screenHeight: screenGeo.size.height)
+            }
+
+            if isExportingPDF {
+                ExportingPDFView()
+                    .transition(.opacity)
+                    .zIndex(100)
+            }
         }
+        .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
     }
 
     private func bodyContent(screenHeight: CGFloat) -> some View {
@@ -173,9 +182,9 @@ struct RecapBlogPageView: View {
                     .presentationDetents([.medium])
                     .presentationDragIndicator(.visible)
             }
-            .sheet(isPresented: $showPDFShareSheet) {
+            .sheet(isPresented: $showPDFPreview) {
                 if let url = pdfExportURL {
-                    ShareSheet(items: [url])
+                    PDFPreviewSheet(pdfURL: url)
                 }
             }
             .sheet(isPresented: $showProfileManagement, onDismiss: {
@@ -2150,7 +2159,7 @@ struct RecapBlogPageView: View {
                         .fixedSize()
                 }
                 .buttonStyle(.plain)
-            } else {
+            } else if !isExportingPDF {
                 HStack(spacing: 16) {
                     Button {
                         if blogIsInCloud {
@@ -2477,7 +2486,7 @@ struct RecapBlogPageView: View {
                 await MainActor.run {
                     self.pdfExportURL = url
                     self.isExportingPDF = false
-                    self.showPDFShareSheet = true
+                    self.showPDFPreview = true
                 }
             } catch {
                 await MainActor.run {
