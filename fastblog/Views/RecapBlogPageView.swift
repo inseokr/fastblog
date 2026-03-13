@@ -525,12 +525,11 @@ struct RecapBlogPageView: View {
                     performDismiss()
                 }
                 Button("Exit", role: .destructive) {
-                    createdRecapStore.deleteBlog(sourceTripId: blogId)
                     performDismiss()
                 }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("\"Continue Later\" saves your blog as a draft. \"Exit\" will discard all changes.")
+                Text("\"Continue Later\" saves your blog as a draft. \"Exit\" discards unsaved changes but keeps your draft.")
             }
     }
 
