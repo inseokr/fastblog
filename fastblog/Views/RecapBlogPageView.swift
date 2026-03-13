@@ -2470,11 +2470,19 @@ struct RecapBlogPageView: View {
             showAuth = true
             return
         }
-        let level = authService.currentUser?.userLevel ?? .normal
-        if level == .premium {
+        let cachedLevel = authService.currentUser?.userLevel ?? .normal
+        if cachedLevel.isPremiumOrAbove {
             uploadBlogPhotos()
         } else {
-            showEarlyAccessModal = true
+            // Refresh from server in case the user recently upgraded
+            Task {
+                let latestLevel = await authService.refreshUserLevel() ?? .normal
+                if latestLevel.isPremiumOrAbove {
+                    uploadBlogPhotos()
+                } else {
+                    showEarlyAccessModal = true
+                }
+            }
         }
     }
 

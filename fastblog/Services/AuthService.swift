@@ -439,6 +439,45 @@ extension AuthService {
         }
     }
 
+    // MARK: - User Level Refresh
+
+    private struct UserLevelResponse: Decodable {
+        let result: String
+        let userLevel: String
+    }
+
+    /// Fetches the latest userLevel from the server and updates the local user state.
+    /// - Returns: The refreshed UserLevel, or nil if the request failed or user is not signed in.
+    @discardableResult
+    func refreshUserLevel() async -> UserLevel? {
+        guard isSignedIn else { return nil }
+        do {
+            let response: UserLevelResponse = try await APIManager.shared.get(
+                endpoint: "/user/level",
+                requiresAuth: true
+            )
+            guard response.result == "OK" else { return nil }
+            let level = UserLevel(rawValue: response.userLevel) ?? .normal
+            if var updated = currentUser {
+                updated = AuthUser(
+                    id: updated.id,
+                    email: updated.email,
+                    displayName: updated.displayName,
+                    username: updated.username,
+                    provider: updated.provider,
+                    storageUsedBytes: updated.storageUsedBytes,
+                    userLevel: level
+                )
+                currentUser = updated
+                persist(updated)
+            }
+            return level
+        } catch {
+            print("⚠️ refreshUserLevel failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     private func finishSignIn(user: AuthUser) {
         currentUser = user
         persist(user)

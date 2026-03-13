@@ -14,6 +14,11 @@ enum AuthProvider: String, Codable, Sendable {
 enum UserLevel: String, Codable, Sendable {
     case normal
     case premium
+    case influencer
+
+    var isPremiumOrAbove: Bool {
+        self == .premium || self == .influencer
+    }
 }
 
 struct AuthUser: Codable, Equatable, Sendable {
