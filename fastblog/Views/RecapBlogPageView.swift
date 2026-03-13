@@ -176,15 +176,12 @@ struct RecapBlogPageView: View {
                 AuthView(
                     onAuthenticated: {
                         if pendingEarlyAccessAfterAuth {
-                            // Dismiss keyboard first, then dismiss Create Account so the blog isn't shown with keyboard over it.
+                            // Immediately return to the blog with the confirmation pull-up; register via API in the background.
                             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                             pendingEarlyAccessAfterAuth = false
                             hasJoinedEarlyAccess = true
                             earlyAccessShowOnListConfirm = true
-                            Task { @MainActor in
-                                try? await Task.sleep(nanoseconds: 280_000_000)
-                                showAuth = false
-                            }
+                            showAuth = false
                             Task {
                                 await EarlyAccessManager.shared.registerWaitlist()
                             }

@@ -89,13 +89,12 @@ struct AuthView: View {
             Text("Google Sign In is coming soon. Please use Apple or Email for now.")
         }
         .sheet(isPresented: $showEmailSignUp, onDismiss: {
-            // If user exited without signing in, show the Create account page again instead of navy blue.
             if authService.currentUser == nil {
-                withAnimation(.easeOut(duration: 0.15)) { mainContentVisible = true }
+                withAnimation(.easeOut(duration: 0.06)) { mainContentVisible = true }
             }
         }) {
             EmailSignUpView(onAuthenticated: {
-                mainContentVisible = true
+                if !hostControlsDismiss { mainContentVisible = true }
                 showEmailSignUp = false
                 onAuthenticated?()
                 if !hostControlsDismiss { dismiss() }
@@ -104,11 +103,11 @@ struct AuthView: View {
         }
         .sheet(isPresented: $showEmailLogin, onDismiss: {
             if authService.currentUser == nil {
-                withAnimation(.easeOut(duration: 0.15)) { mainContentVisible = true }
+                withAnimation(.easeOut(duration: 0.06)) { mainContentVisible = true }
             }
         }) {
             EmailLoginView(onAuthenticated: {
-                mainContentVisible = true
+                if !hostControlsDismiss { mainContentVisible = true }
                 showEmailLogin = false
                 onAuthenticated?()
                 if !hostControlsDismiss { dismiss() }
@@ -117,7 +116,7 @@ struct AuthView: View {
         }
         .onChange(of: authService.currentUser) { _, user in
             if user != nil {
-                mainContentVisible = true
+                if !hostControlsDismiss { mainContentVisible = true }
                 onAuthenticated?()
                 if !hostControlsDismiss {
                     if let onDismiss { onDismiss() } else { dismiss() }
@@ -209,7 +208,9 @@ struct AuthView: View {
 
             // Email
             Button {
-                withAnimation(.easeOut(duration: 0.25)) { mainContentVisible = false }
+                if !hostControlsDismiss {
+                    withAnimation(.easeOut(duration: 0.15)) { mainContentVisible = false }
+                }
                 showEmailSignUp = true
                 AuthService.Analytics.track(.authProviderSelected(provider: "email"))
             } label: {
@@ -236,7 +237,9 @@ struct AuthView: View {
     private var footerSection: some View {
         VStack(spacing: 8) {
             Button {
-                withAnimation(.easeOut(duration: 0.25)) { mainContentVisible = false }
+                if !hostControlsDismiss {
+                    withAnimation(.easeOut(duration: 0.15)) { mainContentVisible = false }
+                }
                 showEmailLogin = true
             } label: {
                 HStack(spacing: 0) {
