@@ -410,6 +410,7 @@ struct RecapBlogPageView: View {
                     onSave: {
                         dayCaptionEditItem = nil
                         createdRecapStore.saveBlogDetail(draft)
+                        syncDayCaptionToCloudIfNeeded(dayId: item.dayId)
                     },
                     onCancel: {
                         dayCaptionEditItem = nil
@@ -428,6 +429,7 @@ struct RecapBlogPageView: View {
                             placeCaptionEditItem = nil
                             markOverallStoryManual(dayId: item.dayId, stopId: item.stopId)
                             createdRecapStore.saveBlogDetail(draft)
+                            syncOverallStoryToCloudIfNeeded(dayId: item.dayId, stopId: item.stopId)
                         },
                         onCancel: {
                             placeCaptionEditItem = nil
@@ -459,6 +461,7 @@ struct RecapBlogPageView: View {
                     // Write the edited caption back into the draft and persist it
                     bindingForPhotoCaption(dayId: day.id, stopId: stopId, photoId: photoId).wrappedValue = newCaption
                     createdRecapStore.saveBlogDetail(draft)
+                    syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: false, photoId: photoId)
                 })
             }
             .sheet(item: $placePhotoModalItem, onDismiss: {
@@ -1293,6 +1296,9 @@ struct RecapBlogPageView: View {
                         },
                         onRemovePhoto: { photoId in
                             removePhoto(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
+                        },
+                        onCaptionCommitted: { photoId in
+                            syncStoryToCloudIfNeeded(stopId: item.stopId, isPlaceNote: false, photoId: photoId)
                         }
                     )
                 } else {
@@ -1904,21 +1910,52 @@ struct RecapBlogPageView: View {
 
     /// Pushes the current place note or photo caption to the backend when the blog is in the cloud. Call when user taps Done on the keyboard toolbar.
     private func syncStoryToCloudIfNeeded(stopId: UUID, isPlaceNote: Bool, photoId: UUID?) {
-        guard blogIsInCloud else { return }
+        guard blogIsInCloud else {
+            print("⏭️ [syncStory] skipped — blog not in cloud")
+            return
+        }
         guard let day = draft.days.first(where: { $0.placeStops.contains(where: { $0.id == stopId }) }),
               let stop = day.placeStops.first(where: { $0.id == stopId }),
-              let placeKey = stop.visitedTimeDigitized else { return }
+              let placeKey = stop.visitedTimeDigitized else {
+            print("⚠️ [syncStory] skipped — could not resolve stop or placeKey for stopId:\(stopId)")
+            return
+        }
         Task {
             if isPlaceNote {
                 let storyText = stop.noteText ?? ""
+                print("🔵 [syncStory] place note → updateStory placeKey:\(placeKey) text:\"\(storyText)\"")
                 try? await APIManager.shared.updateStory(placeKey: placeKey, storyText: storyText, photoIndex: nil)
             } else if let pid = photoId,
                       let photo = stop.photos.first(where: { $0.id == pid }) {
                 let included = stop.photos.filter(\.isIncluded)
-                guard let filteredIndex = included.firstIndex(where: { $0.id == pid }) else { return }
+                guard let filteredIndex = included.firstIndex(where: { $0.id == pid }) else {
+                    print("⚠️ [syncStory] skipped — photo \(pid) not found in included list")
+                    return
+                }
                 let storyText = photo.caption ?? ""
+                print("🔵 [syncStory] photo caption → updateStory placeKey:\(placeKey) photoIndex:\(filteredIndex) text:\"\(storyText)\"")
                 try? await APIManager.shared.updateStory(placeKey: placeKey, storyText: storyText, photoIndex: filteredIndex, photoIndexType: "filtered")
             }
+        }
+    }
+
+    /// Pushes the place overall story (overallStory) to the backend when the blog is in the cloud.
+    private func syncOverallStoryToCloudIfNeeded(dayId: UUID, stopId: UUID) {
+        guard blogIsInCloud else { return }
+        guard let stop = placeStop(dayId: dayId, stopId: stopId),
+              let placeKey = stop.visitedTimeDigitized else { return }
+        let storyText = stop.overallStory ?? ""
+        Task { try? await APIManager.shared.updateStory(placeKey: placeKey, storyText: storyText) }
+    }
+
+    /// Pushes the day caption to the backend for every place in that day when the blog is in the cloud.
+    private func syncDayCaptionToCloudIfNeeded(dayId: UUID) {
+        guard blogIsInCloud else { return }
+        guard let day = draft.days.first(where: { $0.id == dayId }) else { return }
+        let storyText = day.dayCaption ?? ""
+        for stop in day.placeStops {
+            guard let placeKey = stop.visitedTimeDigitized else { continue }
+            Task { try? await APIManager.shared.updateStory(placeKey: placeKey, storyText: storyText) }
         }
     }
 

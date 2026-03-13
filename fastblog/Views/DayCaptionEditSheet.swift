@@ -21,7 +21,6 @@ struct DayCaptionEditSheet: View {
         NavigationStack {
             ZStack(alignment: .bottom) {
                 Color(uiColor: .systemBackground).ignoresSafeArea()
-
                 VStack(spacing: 0) {
                     // ── Caption editor ────────────────────────────────────
                     ZStack(alignment: .topLeading) {

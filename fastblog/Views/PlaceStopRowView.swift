@@ -400,6 +400,7 @@ struct PlaceStopRowView: View {
                             }
                         },
                         onDone: {
+                            print("🟠 [PlaceStopRowView] Done tapped — stopId:\(stop.id) focusedPlaceNote:\(focusedPlaceNote) focusedOverallStory:\(focusedOverallStory) focusedPhotoId:\(String(describing: focusedPhotoId))")
                             onDoneEditingStory?(stop.id, focusedPlaceNote || focusedOverallStory, focusedPhotoId)
                             focusedPlaceNote = false
                             focusedOverallStory = false

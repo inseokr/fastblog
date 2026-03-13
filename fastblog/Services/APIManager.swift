@@ -634,6 +634,8 @@ final class APIManager {
     ///   - photoIndex: If nil, updates place-level story; if set, updates that photo's story (index in filtered/included list).
     ///   - photoIndexType: "filtered" when photoIndex is index in included photos; "all" for full photoList index. Default "filtered".
     func updateStory(placeKey: String, storyText: String, photoIndex: Int? = nil, photoIndexType: String = "filtered") async throws {
+        let level = photoIndex == nil ? "place" : "photo[\(photoIndex!)]"
+        print("🟡 [updateStory] START — level:\(level) placeKey:\(placeKey) text:\"\(storyText)\"")
         var payload: [String: Any] = [
             "placeKey": placeKey,
             "storyText": storyText
@@ -643,12 +645,18 @@ final class APIManager {
             payload["photoIndexType"] = photoIndexType
         }
         let body = try JSONSerialization.data(withJSONObject: payload)
-        let _: GenericResponse = try await request(
-            endpoint: "/placeVisitHistory/story",
-            method: "POST",
-            body: body,
-            requiresAuth: true
-        )
+        do {
+            let _: GenericResponse = try await request(
+                endpoint: "/placeVisitHistory/story",
+                method: "POST",
+                body: body,
+                requiresAuth: true
+            )
+            print("✅ [updateStory] SUCCESS — level:\(level) placeKey:\(placeKey)")
+        } catch {
+            print("❌ [updateStory] FAILED — level:\(level) placeKey:\(placeKey) error:\(error)")
+            throw error
+        }
     }
 
     /// Updates a single photo's inclusion state on the backend.
