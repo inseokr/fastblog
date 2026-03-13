@@ -456,13 +456,27 @@ final class APIManager {
         let utc = TimeZone(identifier: "UTC")!
         let defaultDigitizedTime = "1970:01:01 00:00:00"
 
+        // Debug: summarize story coverage before building payload
+        let totalDays = detail.days.count
+        let daysWithStory = detail.days.filter { $0.dayCaption != nil && !($0.dayCaption?.isEmpty ?? true) }.count
+        let allStops = detail.days.flatMap(\.placeStops)
+        let stopsWithStory = allStops.filter { $0.noteText != nil && !($0.noteText?.isEmpty ?? true) }.count
+        let allIncludedPhotos = allStops.flatMap { $0.photos.filter(\.isIncluded) }
+        let photosWithStory = allIncludedPhotos.filter { $0.caption != nil && !($0.caption?.isEmpty ?? true) }.count
+        print("📝 [createBlogWithPlaces] Story coverage — days: \(daysWithStory)/\(totalDays) have dayStory, stops: \(stopsWithStory)/\(allStops.count) have placeStory, photos: \(photosWithStory)/\(allIncludedPhotos.count) have photoStory")
+
         // Build placeList from all days/stops, tracking which (dayIdx, stopIdx) each entry maps to.
         var placeList: [[String: Any]] = []
         var placeStopMapping: [PlaceStopBuildInfo] = []
         for (dayIdx, day) in detail.days.enumerated() {
+            let dayStoryPreview = day.dayCaption.map { "\"\($0.prefix(40))\"" } ?? "nil"
+            print("📅 [createBlogWithPlaces] Day[\(dayIdx)] dayStory=\(dayStoryPreview), stops=\(day.placeStops.count)")
             for (stopIdx, stop) in day.placeStops.enumerated() {
                 let includedPhotos = stop.photos.filter(\.isIncluded)
-                guard !includedPhotos.isEmpty else { continue }
+                guard !includedPhotos.isEmpty else {
+                    print("   ↳ Stop[\(stopIdx)] '\(stop.placeTitle)' — skipped (no included photos)")
+                    continue
+                }
 
                 let coord: [String: Double] = {
                     if let loc = stop.representativeLocation {
@@ -501,6 +515,7 @@ final class APIManager {
                     ]
                     if let caption = photo.caption, !caption.isEmpty {
                         photoEntry["story"] = caption
+                        print("      📷 photo story set: \"\(caption.prefix(40))\"")
                     }
                     photoList.append(photoEntry)
                 }
@@ -521,6 +536,9 @@ final class APIManager {
                     "categories": categories,
                     "photoList": photoList
                 ]
+                let placeStoryNote = stop.noteText.map { "\"\($0.prefix(40))\"" } ?? "nil"
+                let dayStoryNote = day.dayCaption.map { "\"\($0.prefix(40))\"" } ?? "nil"
+                print("   ↳ Stop[\(stopIdx)] '\(stop.placeTitle)' — \(photoList.count) photos, placeStory=\(placeStoryNote), dayStory=\(dayStoryNote)")
                 if let noteText = stop.noteText, !noteText.isEmpty {
                     place["story"] = noteText
                 }
@@ -546,6 +564,12 @@ final class APIManager {
             ],
             "placeList": placeList
         ]
+
+        let placesWithDayStory = placeList.filter { $0["dayStory"] != nil }.count
+        let placesWithPlaceStory = placeList.filter { $0["story"] != nil }.count
+        let totalPhotosInPayload = placeList.compactMap { $0["photoList"] as? [[String: Any]] }.flatMap { $0 }
+        let photosWithStoryInPayload = totalPhotosInPayload.filter { $0["story"] != nil }.count
+        print("📦 [createBlogWithPlaces] Payload summary — \(placeList.count) places, dayStory: \(placesWithDayStory), placeStory: \(placesWithPlaceStory), photoStory: \(photosWithStoryInPayload)/\(totalPhotosInPayload.count)")
 
         let body = try JSONSerialization.data(withJSONObject: payload)
         let response: CreateBlogResponse = try await request(
@@ -625,6 +649,28 @@ final class APIManager {
             body: body,
             requiresAuth: true
         )
+    }
+
+    /// Updates the day-level story for an already-published blog.
+    /// - Parameters:
+    ///   - blogKey: The server-assigned blog key.
+    ///   - dateKey: Zero-based index of the day within the trip.
+    ///   - story: Story text. Pass "" to clear.
+    func updateDayStory(blogKey: Int, dateKey: Int, story: String) async throws {
+        print("🟡 [updateDayStory] blogKey=\(blogKey) dateKey=\(dateKey) text=\"\(story.prefix(60))\"")
+        let payload: [String: Any] = [
+            "blogKey": blogKey,
+            "dateKey": dateKey,
+            "story": story
+        ]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let _: GenericResponse = try await request(
+            endpoint: "/trips/day-story",
+            method: "POST",
+            body: body,
+            requiresAuth: true
+        )
+        print("✅ [updateDayStory] done — blogKey=\(blogKey) dateKey=\(dateKey)")
     }
 
     /// Updates place-level or photo-level story on the backend (placeVisitHistory).

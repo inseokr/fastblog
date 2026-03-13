@@ -1948,15 +1948,17 @@ struct RecapBlogPageView: View {
         Task { try? await APIManager.shared.updateStory(placeKey: placeKey, storyText: storyText) }
     }
 
-    /// Pushes the day caption to the backend for every place in that day when the blog is in the cloud.
+    /// Pushes the day caption to the backend via /trips/day-story when the blog is in the cloud.
     private func syncDayCaptionToCloudIfNeeded(dayId: UUID) {
         guard blogIsInCloud else { return }
-        guard let day = draft.days.first(where: { $0.id == dayId }) else { return }
-        let storyText = day.dayCaption ?? ""
-        for stop in day.placeStops {
-            guard let placeKey = stop.visitedTimeDigitized else { continue }
-            Task { try? await APIManager.shared.updateStory(placeKey: placeKey, storyText: storyText) }
+        guard let blogKey = currentBlogKey else {
+            print("⚠️ [syncDayCaption] skipped — no blogKey")
+            return
         }
+        guard let day = draft.days.first(where: { $0.id == dayId }) else { return }
+        let dateKey = day.dayIndex - 1  // dayIndex is 1-based; API expects 0-based
+        let storyText = day.dayCaption ?? ""
+        Task { try? await APIManager.shared.updateDayStory(blogKey: blogKey, dateKey: dateKey, story: storyText) }
     }
 
     // MARK: - AI Caption Tracking
