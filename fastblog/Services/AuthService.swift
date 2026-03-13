@@ -489,6 +489,12 @@ extension AuthService {
         }
         isLoading = false
         Analytics.track(.authSuccess)
+        // Refresh userLevel from server and sync waitlist state so premium users don't see the waitlist modal.
+        Task { @MainActor in
+            if let level = await refreshUserLevel() {
+                EarlyAccessManager.shared.syncFromUserLevel(level)
+            }
+        }
     }
 
     func isValidEmail(_ email: String) -> Bool {

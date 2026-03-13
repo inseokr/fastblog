@@ -2200,9 +2200,7 @@ struct RecapBlogPageView: View {
                         if blogIsInCloud {
                             showRemoveFromCloudAlert = true
                         } else {
-                            let onList = hasJoinedEarlyAccess || EarlyAccessManager.shared.hasRegistered
-                            earlyAccessShowOnListConfirm = onList
-                            earlyAccessSheetPresented = true
+                            handleCloudUploadTap()
                         }
                     } label: {
                         Image(systemName: blogIsInCloud ? "checkmark.icloud.fill" : "icloud.and.arrow.up")
@@ -2507,6 +2505,7 @@ struct RecapBlogPageView: View {
             Task {
                 let latestLevel = await authService.refreshUserLevel() ?? .normal
                 if latestLevel.isPremiumOrAbove {
+                    EarlyAccessManager.shared.syncFromUserLevel(latestLevel)
                     uploadBlogPhotos()
                 } else {
                     let onList = hasJoinedEarlyAccess || EarlyAccessManager.shared.hasRegistered
