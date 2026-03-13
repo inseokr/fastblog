@@ -264,6 +264,7 @@ private struct UserPayload: Decodable {
     let username: String?
     let name: String?
     let storageUsedBytes: Int64?
+    let userLevel: String?
 }
 
 private struct UsernameCheckResponse: Decodable {
@@ -365,7 +366,8 @@ extension AuthService {
             displayName: actualDisplayName,
             username: response.user?.username,
             provider: .email,
-            storageUsedBytes: response.user?.storageUsedBytes ?? 0
+            storageUsedBytes: response.user?.storageUsedBytes ?? 0,
+            userLevel: UserLevel(rawValue: response.user?.userLevel ?? "normal") ?? .normal
         )
         // Persist login identifier for forgot-password pre-fill (username or email)
         let loginId = response.user?.username ?? (isUsername ? email : email)

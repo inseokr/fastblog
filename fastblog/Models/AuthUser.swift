@@ -11,6 +11,11 @@ enum AuthProvider: String, Codable, Sendable {
     case email
 }
 
+enum UserLevel: String, Codable, Sendable {
+    case normal
+    case premium
+}
+
 struct AuthUser: Codable, Equatable, Sendable {
     let id: String
     let email: String?
@@ -18,6 +23,7 @@ struct AuthUser: Codable, Equatable, Sendable {
     let username: String?
     let provider: AuthProvider
     var storageUsedBytes: Int64?
+    var userLevel: UserLevel?
 
     var initials: String {
         // Priority: username → displayName → first letter of email → "?"

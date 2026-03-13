@@ -91,9 +91,9 @@ struct RecapBlogPageView: View {
     @State private var showRemoveFromCloudAlert = false
     @State private var showAuth = false
     @State private var pendingEarlyAccessAfterAuth = false
+    @State private var pendingCloudUploadAfterAuth = false
     @State private var pendingExportAfterAuth = false
     @State private var showEarlyAccessModal = false
-    @AppStorage("hasJoinedEarlyAccess") private var hasJoinedEarlyAccess = false
     @State private var earlyAccessSignedUp = false
     @State private var isExportingPDF = false
     @State private var pdfExportURL: URL?
@@ -155,14 +155,12 @@ struct RecapBlogPageView: View {
                     showAuth = false
                     if pendingEarlyAccessAfterAuth {
                         pendingEarlyAccessAfterAuth = false
-                        let user = AuthService.shared.currentUser
-                        EarlyAccessManager.shared.recordSignup(
-                            username: user?.username ?? user?.displayName ?? "",
-                            email: user?.email ?? ""
-                        )
-                        hasJoinedEarlyAccess = true
+                        Task { await EarlyAccessManager.shared.registerWaitlist() }
                         earlyAccessSignedUp = true
                         showEarlyAccessModal = true
+                    } else if pendingCloudUploadAfterAuth {
+                        pendingCloudUploadAfterAuth = false
+                        handleCloudUploadTap()
                     } else if pendingExportAfterAuth {
                         pendingExportAfterAuth = false
                         exportBlogToPDF()
@@ -2158,7 +2156,7 @@ struct RecapBlogPageView: View {
                         if blogIsInCloud {
                             showRemoveFromCloudAlert = true
                         } else {
-                            showEarlyAccessModal = true
+                            handleCloudUploadTap()
                         }
                     } label: {
                         Image(systemName: blogIsInCloud ? "checkmark.icloud.fill" : "icloud.and.arrow.up")
@@ -2359,7 +2357,7 @@ struct RecapBlogPageView: View {
                     .foregroundColor(.blue)
                     .padding(.top, 8)
 
-                if earlyAccessSignedUp || hasJoinedEarlyAccess {
+                if earlyAccessSignedUp || EarlyAccessManager.shared.hasRegistered {
                     // Confirmation state
                     VStack(spacing: 8) {
                         Text("You're on the List!")
@@ -2396,7 +2394,7 @@ struct RecapBlogPageView: View {
 
             // Fixed bottom buttons
             VStack(spacing: 12) {
-                if earlyAccessSignedUp || hasJoinedEarlyAccess {
+                if earlyAccessSignedUp || EarlyAccessManager.shared.hasRegistered {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundColor(.green)
@@ -2411,18 +2409,13 @@ struct RecapBlogPageView: View {
                 } else {
                     Button {
                         if authService.isSignedIn {
-                            // Signed-in user: record signup immediately
-                            let user = AuthService.shared.currentUser
-                            EarlyAccessManager.shared.recordSignup(
-                                username: user?.username ?? user?.displayName ?? "",
-                                email: user?.email ?? ""
-                            )
-                            withAnimation {
-                                hasJoinedEarlyAccess = true
-                                earlyAccessSignedUp = true
+                            // Signed-in user: call backend API to register
+                            Task {
+                                await EarlyAccessManager.shared.registerWaitlist()
+                                withAnimation { earlyAccessSignedUp = true }
                             }
                         } else {
-                            // Guest: send to auth, then return to confirmed modal
+                            // Guest: sign in first, then register
                             showEarlyAccessModal = false
                             pendingEarlyAccessAfterAuth = true
                             showAuth = true
@@ -2458,7 +2451,21 @@ struct RecapBlogPageView: View {
         .padding(.top, 24)
         .preferredColorScheme(.dark)
         .onAppear {
-            earlyAccessSignedUp = hasJoinedEarlyAccess
+            earlyAccessSignedUp = EarlyAccessManager.shared.hasRegistered
+        }
+    }
+
+    private func handleCloudUploadTap() {
+        guard authService.isSignedIn else {
+            pendingCloudUploadAfterAuth = true
+            showAuth = true
+            return
+        }
+        let level = authService.currentUser?.userLevel ?? .normal
+        if level == .premium {
+            uploadBlogPhotos()
+        } else {
+            showEarlyAccessModal = true
         }
     }
 

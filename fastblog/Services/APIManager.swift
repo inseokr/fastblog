@@ -490,7 +490,7 @@ final class APIManager {
                     }
                     let location = asset?.location ?? photo.location.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
                     let photoLocation: [String: Double] = location.map { ["latitude": $0.coordinate.latitude, "longitude": $0.coordinate.longitude] } ?? coord
-                    photoList.append([
+                    var photoEntry: [String: Any] = [
                         "uri": uri,
                         "digitizedTime": digitizedTime,
                         "creationTime": creationTimeMs,
@@ -498,14 +498,18 @@ final class APIManager {
                         "selected": true,
                         "coverPhotoScore": (photo.qualityScore?.totalScore).map { $0 as Any } ?? NSNull(),
                         "localUri": NSNull()
-                    ])
+                    ]
+                    if let caption = photo.caption, !caption.isEmpty {
+                        photoEntry["story"] = caption
+                    }
+                    photoList.append(photoEntry)
                 }
 
                 let visitedTime = earliestCreationTimeMs != 0 ? earliestCreationTimeMs : Int64(Date().timeIntervalSince1970 * 1000)
                 let placeVisitedTimeDigitized = earliestDigitizedTime ?? (photoList.first?["digitizedTime"] as? String) ?? defaultDigitizedTime
 
                 let categories: [String] = stop.placeCategory.map { [$0] } ?? ["unknown"]
-                let place: [String: Any] = [
+                var place: [String: Any] = [
                     "visitedTimeDigitized": placeVisitedTimeDigitized,
                     "visitedTime": visitedTime,
                     "visitedCity": stop.placeSubtitle ?? "",
@@ -517,6 +521,12 @@ final class APIManager {
                     "categories": categories,
                     "photoList": photoList
                 ]
+                if let noteText = stop.noteText, !noteText.isEmpty {
+                    place["story"] = noteText
+                }
+                if let dayCaption = day.dayCaption, !dayCaption.isEmpty {
+                    place["dayStory"] = dayCaption
+                }
                 placeStopMapping.append(PlaceStopBuildInfo(
                     dayIdx: dayIdx,
                     stopIdx: stopIdx,
@@ -887,6 +897,31 @@ final class APIManager {
         
         let response: FinalizeResponse = try await post(endpoint: "/blog/finalizePublish", body: payload)
         return response.blogKey
+    }
+
+    // MARK: - Waitlist Registration
+
+    struct WaitlistResponse: Decodable {
+        let result: String?
+        let message: String?
+        let registeredAt: String?
+    }
+
+    /// Registers a user on the early-access waitlist.
+    /// POST /waitlist — public endpoint (no auth required).
+    /// Throws on network/server errors; silently succeeds on 409 (already registered).
+    func registerWaitlist(userName: String, email: String) async throws {
+        struct WaitlistPayload: Encodable {
+            let userName: String
+            let email: String
+        }
+        let payload = WaitlistPayload(userName: userName, email: email)
+        do {
+            let _: WaitlistResponse = try await post(endpoint: "/waitlist", body: payload, requiresAuth: false)
+        } catch APIError.httpError(let statusCode, _) where statusCode == 409 {
+            // Already on the waitlist — treat as success
+            print("ℹ️ APIManager.registerWaitlist: already registered (409)")
+        }
     }
 }
 

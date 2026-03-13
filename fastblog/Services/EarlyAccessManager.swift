@@ -2,61 +2,38 @@
 //  EarlyAccessManager.swift
 //  fastblog
 //
-//  Tracks users who join the early access waitlist for cloud publishing.
-//  Stores signups as a JSON array in the app's Documents directory.
+//  Manages early-access waitlist registration.
+//  Calls the backend API to register the signed-in user and tracks
+//  local registration state in UserDefaults.
 //
 
 import Foundation
 
-struct EarlyAccessSignup: Codable {
-    let username: String
-    let email: String
-    let signedUpAt: Date
-}
-
+@MainActor
 final class EarlyAccessManager {
     static let shared = EarlyAccessManager()
 
-    private let fileName = "early_access_signups.json"
-
-    private var fileURL: URL {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return docs.appendingPathComponent(fileName)
-    }
+    private let hasRegisteredKey = "bloggo.earlyAccess.hasRegistered"
 
     private init() {}
 
-    func recordSignup(username: String, email: String) {
-        var signups = getSignups()
-        // Avoid duplicate entries for the same email
-        guard !signups.contains(where: { $0.email == email }) else { return }
-        let entry = EarlyAccessSignup(username: username, email: email, signedUpAt: Date())
-        signups.append(entry)
-        save(signups)
+    /// Whether this device has already successfully registered for the waitlist.
+    var hasRegistered: Bool {
+        UserDefaults.standard.bool(forKey: hasRegisteredKey)
     }
 
-    func getSignups() -> [EarlyAccessSignup] {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
+    /// Registers the current signed-in user on the waitlist via the backend API.
+    /// Safe to call multiple times — skips if already registered locally.
+    func registerWaitlist() async {
+        guard !hasRegistered else { return }
+        let user = AuthService.shared.currentUser
+        let userName = user?.username ?? user?.displayName ?? user?.email ?? ""
+        let email = user?.email ?? ""
         do {
-            let data = try Data(contentsOf: fileURL)
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return try decoder.decode([EarlyAccessSignup].self, from: data)
+            try await APIManager.shared.registerWaitlist(userName: userName, email: email)
+            UserDefaults.standard.set(true, forKey: hasRegisteredKey)
         } catch {
-            print("⚠️ EarlyAccessManager: failed to read signups – \(error.localizedDescription)")
-            return []
-        }
-    }
-
-    private func save(_ signups: [EarlyAccessSignup]) {
-        do {
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = .prettyPrinted
-            let data = try encoder.encode(signups)
-            try data.write(to: fileURL, options: .atomic)
-        } catch {
-            print("⚠️ EarlyAccessManager: failed to save signups – \(error.localizedDescription)")
+            print("⚠️ EarlyAccessManager: waitlist registration failed – \(error.localizedDescription)")
         }
     }
 }
