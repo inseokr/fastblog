@@ -15,6 +15,10 @@ struct LoadingScanView: View {
     var progress: Double? = nil
     /// When non-nil, shows a gray Cancel button at the bottom.
     var onCancel: (() -> Void)? = nil
+    /// When non-nil, shows a primary "Use Camera" button at the bottom.
+    var onUseCamera: (() -> Void)? = nil
+    /// When non-nil, shows an X close button in the top-right corner.
+    var onClose: (() -> Void)? = nil
 
     @State private var ringRotation: Double = 0
     @State private var pulseScale: CGFloat = 1
@@ -56,11 +60,38 @@ struct LoadingScanView: View {
 
             ZStack {
                 scanAnimation
-                
+
                 VStack(spacing: 36) {
                     messageSection
 
-                    if let onCancel {
+                    if let onUseCamera {
+                        Button {
+                            onUseCamera()
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "camera.fill")
+                                    .font(.system(size: 15, weight: .semibold))
+                                Text("Use Camera")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 32)
+                            .padding(.vertical, 11)
+                            .background(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.18, green: 0.40, blue: 0.78),
+                                        Color(red: 0.25, green: 0.35, blue: 0.72)
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .cornerRadius(12)
+                            .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+                        }
+                    } else if let onCancel {
                         Button {
                             onCancel()
                         } label: {
@@ -76,6 +107,23 @@ struct LoadingScanView: View {
                     }
                 }
                 .offset(y: 220)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .overlay(alignment: .topTrailing) {
+            if let onClose {
+                Button {
+                    onClose()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.85))
+                        .padding(10)
+                        .background(Color.white.opacity(0.16))
+                        .clipShape(Circle())
+                }
+                .padding(.top, 20)
+                .padding(.trailing, 20)
             }
         }
         .preferredColorScheme(.dark)

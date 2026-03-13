@@ -29,5 +29,16 @@
 	<true/>
 	<key>ShareTokenKey</key>
 	<string>$(SHARE_TOKEN_KEY)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>We use your camera so you can capture moments and add them to your blog.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>We save your in-app camera photos to your photo library so they can appear in your travel blogs.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>We add location to your captured photos so they appear correctly on the map and in your travel blogs.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

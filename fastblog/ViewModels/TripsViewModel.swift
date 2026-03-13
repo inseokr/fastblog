@@ -214,6 +214,72 @@ final class TripsViewModel: ObservableObject {
         }
     }
 
+    /// Adds a trip draft created from the in-app camera (e.g. when user taps "Not Now"
+    /// on the Start Blog prompt). Inserts at the front so it appears as the newest trip.
+    /// Sets this flag so TripsView scrolls to it when the camera is dismissed.
+    @Published var pendingScrollToCameraTripID: UUID? = nil
+
+    func addCameraTripDraft(_ trip: TripDraft) {
+        tripDrafts.insert(trip, at: 0)
+        lastSelectedVisibleTripID = trip.id
+        pendingScrollToCameraTripID = trip.id
+        if var window = currentWindowTrips {
+            window.insert(trip, at: 0)
+            currentWindowTrips = window
+        }
+    }
+
+    /// Returns a camera-created trip draft (coverImageName == "camera.fill") that matches
+    /// the capture date — same day or within 7 days after the draft's last day.
+    func cameraTripDraftMatching(captureDate: Date) -> TripDraft? {
+        let cal = Calendar.current
+        let captureDay = cal.startOfDay(for: captureDate)
+        let drafts = tripDrafts.filter { $0.coverImageName == "camera.fill" }
+        for draft in drafts {
+            guard let draftEnd = draft.latestDate else { continue }
+            let draftEndDay = cal.startOfDay(for: draftEnd)
+            let draftStartDay = cal.startOfDay(for: draft.earliestDate ?? draftEnd)
+            if captureDay >= draftStartDay && captureDay <= draftEndDay { return draft }
+            let dayDiff = cal.dateComponents([.day], from: draftEndDay, to: captureDay).day ?? Int.max
+            if dayDiff >= 1 && dayDiff <= 7 { return draft }
+        }
+        return nil
+    }
+
+    /// Appends photos to an existing camera trip draft. Merges into existing days or adds new days.
+    func appendPhotosToCameraDraft(tripId: UUID, newPhotos: [MockPhoto]) {
+        guard let idx = tripDrafts.firstIndex(where: { $0.id == tripId }),
+              tripDrafts[idx].coverImageName == "camera.fill" else { return }
+        let cal = Calendar.current
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale.current
+        dateFormatter.dateStyle = .medium
+        let byDay = Dictionary(grouping: newPhotos) { cal.startOfDay(for: $0.timestamp) }
+        let days: [TripDay] = byDay.sorted { $0.key < $1.key }.enumerated().map { index, pair in
+            let dayStart = pair.key
+            let dayPhotos = pair.value.sorted { $0.timestamp < $1.timestamp }
+            return TripDay(dayIndex: index, dateText: dateFormatter.string(from: dayStart), photos: dayPhotos)
+        }
+        let stubTrip = TripDraft(
+            title: "",
+            dateRangeText: "",
+            days: days,
+            coverImageName: "camera.fill",
+            isScannedFromDefaultRange: false
+        )
+        let (merged, didChange) = appendDaysFromTrip(stubTrip, into: tripDrafts[idx])
+        if didChange {
+            tripDrafts[idx] = merged
+            lastSelectedVisibleTripID = tripId
+            pendingScrollToCameraTripID = tripId
+            if var window = currentWindowTrips, let wi = window.firstIndex(where: { $0.id == tripId }) {
+                var w = window
+                w[wi] = merged
+                currentWindowTrips = w
+            }
+        }
+    }
+
     /// Called when the user taps the Create blog button (selected trip card). Runs a quick
     /// check for new photos since the last scan that belong to an existing blog. If found,
     /// presents the new-moments sheet; otherwise opens the create flow for the given trip.

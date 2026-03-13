@@ -93,20 +93,7 @@ struct ContentView: View {
                 .zIndex(10)
             }
 
-            if tripsViewModel.scanState != .idle {
-                LoadingScanView(
-                    message: tripsViewModel.loadingMessage,
-                    progress: tripsViewModel.defaultScanProgress > 0 ? tripsViewModel.defaultScanProgress : nil,
-                    onCancel: {
-                        tripsViewModel.cancelDefaultScan()
-                        showTrips = false
-                    }
-                )
-                .transition(.opacity)
-                .zIndex(20)
-            }
         }
-        .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
         .animation(.easeInOut(duration: 0.22), value: showTrips)
         .animation(.easeInOut(duration: 0.25), value: selectedCreatedRecap != nil)
         .environmentObject(createdRecapStore)

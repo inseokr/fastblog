@@ -667,14 +667,21 @@ final class CreatedRecapBlogStore: ObservableObject {
                 let groups = clusteringService.placeStops(from: inputs) { idx in
                     "Stop \(baseIndex + idx + 1)"
                 }
-                for (_, groupInputs) in groups {
+                for (orderIndex, groupInputs) in groups {
                     let groupPhotos = groupInputs.compactMap { input in
                         unmatchedRecapPhotos.first { $0.id == input.id }
                     }.sorted { $0.timestamp < $1.timestamp }
                     let repLoc = groupPhotos.compactMap(\.location).first
+                    // Use "Captured Moment" for camera-only photos (no location), "Stop N" otherwise
+                    let placeTitle: String
+                    if repLoc == nil {
+                        placeTitle = groups.count > 1 ? "Captured Moment \(orderIndex + 1)" : "Captured Moment"
+                    } else {
+                        placeTitle = "Stop \(detail.days[di].placeStops.count + 1)"
+                    }
                     let newStop = PlaceStop(
                         orderIndex: detail.days[di].placeStops.count,
-                        placeTitle: "Stop \(detail.days[di].placeStops.count + 1)",
+                        placeTitle: placeTitle,
                         representativeLocation: repLoc,
                         photos: groupPhotos
                     )
@@ -879,6 +886,11 @@ final class CreatedRecapBlogStore: ObservableObject {
         needsRescan = true
         persistRecents()
         persistBlogDetails()
+        // If the user deleted the blog they were adding to from the in-app camera, clear
+        // the on-the-go state so the "Start Blog" prompt will show again next camera session.
+        if OnTheGoTripStore.activeBlogId == sourceTripId {
+            OnTheGoTripStore.markTripAsEnded()
+        }
     }
 
     // MARK: - Merge & Split

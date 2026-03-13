@@ -61,8 +61,8 @@ struct MapDayView: View {
                 }
             }
             
-            // Mileage markers between points
-            ForEach(0..<markers.count - 1, id: \.self) { i in
+            // Mileage markers between points (guard: 0..<-1 would crash)
+            ForEach(0..<max(0, markers.count - 1), id: \.self) { i in
                 let start = markers[i]
                 let end = markers[i+1]
                 if let dist = distanceString(from: start.coordinate, to: end.coordinate) {
