@@ -127,8 +127,9 @@ final class AuthService: NSObject, ObservableObject {
         currentUser = nil
         persist(nil)
         setJwtToken(nil)
-        // Waitlist is tied to the account; clear device-local early access state so guest sees the prompt again.
+        // Waitlist is tied to the account; clear device-local early access state so guest sees "Join Early Access" again.
         UserDefaults.standard.set(false, forKey: "hasJoinedEarlyAccess")
+        UserDefaults.standard.set(false, forKey: "bloggo.earlyAccess.hasRegistered")
         Analytics.track(.authCancelled) // reuse existing or add dedicated event
     }
 
