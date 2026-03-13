@@ -84,7 +84,7 @@ struct DayCaptionEditSheet: View {
         .onAppear {
             editedText = caption
             // slight delay so the sheet finishes its animation before keyboard appears
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 isFocused = true
             }
         }
