@@ -4,80 +4,117 @@ struct BlogPDFView: View {
     let draft: RecapBlogDetail
     let mapSnapshots: [UUID: UIImage] // Key: Day ID
     let preloadedImages: [UUID: UIImage] // Key: Photo ID (or cover photo asset ID)
-    
+
     // US Letter size in points (72 points per inch)
     // 8.5 x 11 inches = 612 x 792 points
     let contentWidth: CGFloat = 540 // 612 - 72 (1 inch margins total)
-    
+    private let accentColor = Color(red: 0.18, green: 0.38, blue: 0.88)
+
     var body: some View {
         VStack(spacing: 0) {
-            // Cover Page content
+            // Cover Page (Option A: full-bleed hero + gradient overlay)
             coverPage
-            
+
             // Days
-            ForEach(draft.days) { day in
-                daySection(day: day)
+            ForEach(Array(draft.days.enumerated()), id: \.element.id) { index, day in
+                daySection(day: day, dayIndex: index + 1)
             }
         }
         .frame(width: contentWidth)
-        .padding(36) // Margin for the entire block
-        .background(Color.white) // Force white background for PDF
-        // Apply global text colors for light mode since paper is white
+        .padding(36)
+        .background(Color.white)
         .environment(\.colorScheme, .light)
     }
-    
+
     // Sentinel UUID used by PDFExportService to store the cover photo
     private static let coverPhotoUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
 
+    // MARK: - Cover Page
+
     @ViewBuilder
     private var coverPage: some View {
-        VStack(spacing: 24) {
+        let pageWidth = contentWidth + 72 // negate 36pt padding on each side
+        let pageHeight = pageWidth * 1.3
+
+        ZStack(alignment: .bottom) {
             if let img = coverImage {
                 Image(uiImage: img)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: contentWidth, height: contentWidth * 1.2)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .frame(width: pageWidth, height: pageHeight)
                     .clipped()
             } else {
                 Rectangle()
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(width: contentWidth, height: contentWidth * 1.2)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: pageWidth, height: pageHeight)
             }
-            
-            VStack(spacing: 8) {
+
+            // Gradient scrim
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.75)],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+            .frame(width: pageWidth, height: pageHeight * 0.55)
+
+            // Overlaid title
+            VStack(alignment: .leading, spacing: 6) {
                 Text(draft.title)
-                    .font(.system(size: 32, weight: .bold))
-                    .foregroundColor(.black)
-                    .multilineTextAlignment(.center)
-                
+                    .font(.system(size: 44, weight: .heavy))
+                    .foregroundColor(.white)
+                    .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 Text(tripDurationText)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.gray)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
             }
-            .padding(.bottom, 40)
+            .frame(width: pageWidth, alignment: .leading)
+            .padding(.horizontal, 44)
+            .padding(.bottom, 48)
         }
+        .padding(.horizontal, -36) // bleed beyond margin
     }
-    
+
+    // MARK: - Day Section
+
     @ViewBuilder
-    private func daySection(day: RecapBlogDay) -> some View {
+    private func daySection(day: RecapBlogDay, dayIndex: Int) -> some View {
         VStack(alignment: .leading, spacing: 24) {
-            // Day Header
-            VStack(alignment: .leading, spacing: 4) {
-                Text(day.shortDateText)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundColor(.black)
-                
-                if let caption = day.dayCaption, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text(caption)
-                        .font(.body)
-                        .foregroundColor(.black.opacity(0.8))
+            // Full-width accent rule
+            Rectangle()
+                .fill(accentColor)
+                .frame(height: 3)
+                .padding(.top, 48)
+
+            // Day header with watermark number (Option C)
+            ZStack(alignment: .leading) {
+                Text("\(dayIndex)")
+                    .font(.system(size: 110, weight: .heavy))
+                    .foregroundColor(accentColor.opacity(0.07))
+                    .offset(x: -8, y: -8)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("DAY \(dayIndex)")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(accentColor)
+                        .tracking(2.5)
+
+                    Text(day.shortDateText)
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundColor(.black)
                 }
             }
-            .padding(.top, 40) // Space before each day
-            
+            .frame(height: 56)
+
+            if let caption = day.dayCaption, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(caption)
+                    .font(.system(size: 15))
+                    .italic()
+                    .foregroundColor(.black.opacity(0.75))
+                    .lineSpacing(4)
+            }
+
             // Map Snapshot
             if let mapImage = mapSnapshots[day.id] {
                 Image(uiImage: mapImage)
@@ -86,68 +123,113 @@ struct BlogPDFView: View {
                     .frame(width: contentWidth)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
-            
-            // Moments (Unrolled horizontally scrolled stops into a vertical list)
+
+            // Place stops
             ForEach(Array(day.placeStops.enumerated()), id: \.element.id) { index, stop in
                 placeStopSection(stop: stop, index: index + 1)
             }
         }
     }
-    
+
+    // MARK: - Place Stop Section (Option D: sidebar for 1 photo, strip for many)
+
     @ViewBuilder
     private func placeStopSection(stop: PlaceStop, index: Int) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Place Header
-            HStack(spacing: 8) {
-                Text("\(index)")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(width: 24, height: 24)
-                    .background(Circle().fill(Color.blue))
-                
+        let includedPhotos = stop.photos.filter(\.isIncluded)
+        let story = stop.overallStory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let hasStory = !story.isEmpty
+
+        VStack(alignment: .leading, spacing: 12) {
+            // Place badge + title
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(accentColor)
+                    .frame(width: 26, height: 26)
+                    .overlay(
+                        Text("\(index)")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                    )
+
                 Text(stop.placeTitle)
-                    .font(.headline)
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.black)
-                    
+
                 Spacer()
             }
-            
-            if let story = stop.overallStory, !story.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(story)
-                    .font(.body)
-                    .foregroundColor(.black.opacity(0.9))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            
-            // Photos
-            ForEach(stop.photos.filter(\.isIncluded)) { photo in
-                VStack(alignment: .leading, spacing: 12) {
-                    if let img = preloadedImages[photo.id] {
-                        Image(uiImage: img)
-                            .resizable()
-                            .scaledToFit() // Maintain aspect ratio for PDF
-                            .frame(maxWidth: contentWidth)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            if includedPhotos.count == 1 {
+                // Photo-left, text-right sidebar
+                let photoWidth = contentWidth * 0.42
+
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if let img = preloadedImages[includedPhotos[0].id] {
+                            Image(uiImage: img)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: photoWidth, height: photoWidth * 0.85)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .clipped()
+                        }
+                        if let caption = includedPhotos[0].caption,
+                           !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Text(caption)
+                                .font(.system(size: 10))
+                                .italic()
+                                .foregroundColor(.gray)
+                                .frame(width: photoWidth)
+                        }
                     }
-                    
-                    if let caption = photo.caption, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text(caption)
-                            .font(.subheadline)
-                            .foregroundColor(.black.opacity(0.8))
+
+                    if hasStory {
+                        Text(story)
+                            .font(.system(size: 15))
+                            .foregroundColor(.black.opacity(0.88))
+                            .lineSpacing(4)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(.bottom, 16)
+            } else {
+                // Multiple photos: story first, then photo strip
+                if hasStory {
+                    Text(story)
+                        .font(.system(size: 15))
+                        .foregroundColor(.black.opacity(0.88))
+                        .lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                ForEach(includedPhotos) { photo in
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let img = preloadedImages[photo.id] {
+                            Image(uiImage: img)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: contentWidth)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        if let caption = photo.caption,
+                           !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Text(caption)
+                                .font(.system(size: 11))
+                                .italic()
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    .padding(.bottom, 6)
+                }
             }
         }
-        .padding(.top, 24)
+        .padding(.top, 20)
     }
-    
+
+    // MARK: - Helpers
+
     private var tripDurationText: String {
         guard let firstDate = draft.days.first?.date,
-              let lastDate = draft.days.last?.date else {
-            return ""
-        }
+              let lastDate = draft.days.last?.date else { return "" }
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d"
         let dayCount = draft.days.count
@@ -159,27 +241,17 @@ struct BlogPDFView: View {
         formatter.dateFormat = "MMM d, yyyy"
         return "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate)) · \(dayCount) day\(dayCount == 1 ? "" : "s")"
     }
-    
-    /// Resolves the cover photo from preloaded images.
-    /// PDFExportService stores it under a sentinel UUID, and also maps it
-    /// to any matching RecapPhoto id.
+
     private var coverImage: UIImage? {
-        // 1. Try sentinel UUID (always set by PDFExportService)
-        if let img = preloadedImages[Self.coverPhotoUUID] {
-            return img
-        }
-        // 2. Try matching a RecapPhoto whose localIdentifier == cover id
+        if let img = preloadedImages[Self.coverPhotoUUID] { return img }
         if let coverId = draft.selectedCoverPhotoIdentifier {
             let allPhotos = draft.days.flatMap(\.placeStops).flatMap(\.photos)
             if let match = allPhotos.first(where: { $0.localIdentifier == coverId }) {
                 return preloadedImages[match.id]
             }
         }
-        // 3. Fallback: first included photo
         let firstIncluded = draft.days.flatMap(\.placeStops).flatMap(\.photos).first(where: \.isIncluded)
-        if let first = firstIncluded {
-            return preloadedImages[first.id]
-        }
+        if let first = firstIncluded { return preloadedImages[first.id] }
         return nil
     }
 }
