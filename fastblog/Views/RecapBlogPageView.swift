@@ -1389,12 +1389,7 @@ struct RecapBlogPageView: View {
                 Text("Choose which part to keep")
                     .font(.headline)
                     .fontWeight(.bold)
-                    .padding(.top, 24)
-
-                Text("The other part will be saved as a separate trip.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
+                    .padding(.top, 32)
                     .padding(.horizontal, 24)
             }
 
@@ -1406,7 +1401,7 @@ struct RecapBlogPageView: View {
                     }
                 } label: {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Keep Part 1")
+                        Text("Part 1")
                             .font(.headline)
                             .foregroundColor(.primary)
                         Text(part1DateStr)
@@ -1433,7 +1428,7 @@ struct RecapBlogPageView: View {
                     }
                 } label: {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Keep Part 2")
+                        Text("Part 2")
                             .font(.headline)
                             .foregroundColor(.primary)
                         Text(part2DateStr)
@@ -1475,7 +1470,7 @@ struct RecapBlogPageView: View {
 
             Spacer(minLength: 0)
         }
-        .presentationDetents([.fraction(0.50), .large])
+        .presentationDetents([.fraction(0.50)])
         .presentationDragIndicator(.visible)
         .ignoresSafeArea(edges: .bottom)
     }
