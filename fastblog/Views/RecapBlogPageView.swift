@@ -121,6 +121,11 @@ struct RecapBlogPageView: View {
     @State private var isCheckingNewMoments = false
     @State private var hasCheckedNewMoments = false
 
+    /// Number of unique places in new moments (for "N moments found").
+    private var newMomentsPlaceCount: Int {
+        Set(newMomentPhotos.map { $0.locationName ?? "Moment" }).count
+    }
+
     // MARK: - Split Blog Properties
     @State private var showSplitActionSheet = false
     @State private var dayIndexToSplit: Int?
@@ -333,7 +338,7 @@ struct RecapBlogPageView: View {
                         showBlogSettings = false
                         isEditMode = true
                     },
-                    onAddNewMoments: newMomentPhotos.isEmpty ? nil : {
+                    onAddNewMoments: newMomentsPlaceCount == 0 ? nil : {
                         showBlogSettings = false
                         withAnimation(.easeInOut(duration: 0.3)) {
                             showNewMomentsReviewSheet = true
@@ -580,7 +585,7 @@ struct RecapBlogPageView: View {
                                 .padding(.bottom, 12)
                         }
                         // New moments card — shown when lightweight scan found new photos
-                        if !newMomentPhotos.isEmpty {
+                        if newMomentsPlaceCount > 0 {
                             newMomentsCard
                                 .padding(.horizontal, 16)
                                 .padding(.top, 8)
@@ -1121,7 +1126,7 @@ struct RecapBlogPageView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(newMomentPhotos.count) new photo\(newMomentPhotos.count == 1 ? "" : "s") found")
+                    Text("\(newMomentsPlaceCount) moment\(newMomentsPlaceCount == 1 ? "" : "s") found")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
@@ -1136,6 +1141,8 @@ struct RecapBlogPageView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 14)
@@ -3205,121 +3212,101 @@ struct ProcessingDayPopup: View {
 
 // MARK: - New Moments Review Sheet
 
+private let newMomentsTimeFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "h:mm a"
+    f.locale = Locale(identifier: "en_US_POSIX")
+    return f
+}()
+
+/// One place group for the new moments sheet: key (e.g. location name) and photos sorted earliest → latest.
+private struct NewMomentPlaceGroup: Identifiable {
+    var id: String { placeKey }
+    let placeKey: String
+    let photos: [MockPhoto]
+    var earliestTimestamp: Date { photos.map(\.timestamp).min() ?? .distantPast }
+}
+
 private struct NewMomentsReviewSheet: View {
     let photos: [MockPhoto]
     let blogTitle: String
     var onAdd: ([MockPhoto]) -> Void
     var onLater: () -> Void
 
-    @State private var selectedIds: Set<UUID> = []
+    /// Place keys the user chose to hide (whole card dimmed, those photos excluded from add count).
+    @State private var hiddenPlaceKeys: Set<String> = []
     @State private var dragOffset: CGFloat = 0
 
-    private var allSelected: Bool { selectedIds.count == photos.count }
+    /// Photos grouped by place (locationName ?? "Moment"), groups sorted earliest → latest.
+    private var placeGroups: [NewMomentPlaceGroup] {
+        let grouped = Dictionary(grouping: photos) { $0.locationName ?? "Moment" }
+        return grouped.map { key, list in
+            NewMomentPlaceGroup(placeKey: key, photos: list.sorted { $0.timestamp < $1.timestamp })
+        }.sorted { $0.earliestTimestamp < $1.earliestTimestamp }
+    }
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2)
-    ]
+    private var visibleCount: Int {
+        placeGroups
+            .filter { !hiddenPlaceKeys.contains($0.placeKey) }
+            .flatMap(\.photos)
+            .count
+    }
+
+    private var visiblePhotos: [MockPhoto] {
+        placeGroups
+            .filter { !hiddenPlaceKeys.contains($0.placeKey) }
+            .flatMap(\.photos)
+    }
+
+    /// Gray background to match cloud early access pull-up.
+    private var sheetBackground: Color {
+        Color(uiColor: .secondarySystemGroupedBackground)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
 
-            // Sheet content
             VStack(spacing: 0) {
-                // Drag handle
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(Color.secondary.opacity(0.4))
-                    .frame(width: 40, height: 5)
+                Capsule()
+                    .fill(Color.primary.opacity(0.25))
+                    .frame(width: 36, height: 4)
                     .padding(.top, 12)
+                    .padding(.bottom, 16)
 
-                VStack(spacing: 6) {
-                    Text("\(photos.count) New Photo\(photos.count == 1 ? "" : "s")")
-                        .font(.title3)
-                        .fontWeight(.bold)
+                Text("New moments found")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                Text("Hide any places you don’t want to add")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .padding(.top, 2)
+                    .padding(.bottom, 16)
 
-                    Text("Select photos to add to blog")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.top, 20)
-
-                // Select All row
-                HStack {
-                    Spacer()
-                    Button {
-                        if allSelected {
-                            selectedIds.removeAll()
-                        } else {
-                            selectedIds = Set(photos.map(\.id))
-                        }
-                    } label: {
-                        Text(allSelected ? "Deselect All" : "Select All")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(allSelected ? .red : .green)
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                .padding(.bottom, 8)
-
-                // Photo grid
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 2) {
-                        ForEach(photos) { photo in
-                            let isSelected = selectedIds.contains(photo.id)
-                            Button {
-                                if isSelected {
-                                    selectedIds.remove(photo.id)
-                                } else {
-                                    selectedIds.insert(photo.id)
-                                }
-                            } label: {
-                                ZStack(alignment: .topTrailing) {
-                                    Group {
-                                        if let lid = photo.localIdentifier {
-                                            AssetPhotoView(assetIdentifier: lid, cornerRadius: 0)
-                                                .aspectRatio(3/4, contentMode: .fill)
-                                                .clipped()
-                                        } else {
-                                            MockPhotoView(seed: photo.id.hashValue, cornerRadius: 0)
-                                                .aspectRatio(3/4, contentMode: .fill)
-                                        }
-                                    }
-                                    .overlay(
-                                        Color.black.opacity(isSelected ? 0.4 : 0)
-                                    )
-
-                                    if isSelected {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .font(.system(size: 22))
-                                            .foregroundStyle(.white, .green)
-                                            .padding(6)
-                                    }
-                                }
-                            }
-                            .buttonStyle(.plain)
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 12) {
+                        ForEach(placeGroups) { group in
+                            newMomentPlaceCard(group: group)
                         }
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
                 }
 
-                // Action buttons pinned at bottom
                 VStack(spacing: 12) {
                     Button {
-                        let selected = photos.filter { selectedIds.contains($0.id) }
-                        onAdd(selected)
+                        onAdd(visiblePhotos)
                     } label: {
-                        Text(selectedIds.isEmpty ? "Add to Blog" : "Add \(selectedIds.count) Photo\(selectedIds.count == 1 ? "" : "s")")
+                        Text(visibleCount == 0 ? "Add 0 Moments" : "Add \(visibleCount) Moment\(visibleCount == 1 ? "" : "s")")
                             .font(.headline)
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(selectedIds.isEmpty ? Color.green.opacity(0.4) : Color.green)
+                            .padding(.vertical, 15)
+                            .background(visibleCount > 0 ? Color.green : Color.green.opacity(0.4))
                             .cornerRadius(14)
                     }
-                    .disabled(selectedIds.isEmpty)
+                    .disabled(visibleCount == 0)
 
                     Button {
                         onLater()
@@ -3336,30 +3323,96 @@ private struct NewMomentsReviewSheet: View {
                 .padding(.top, 12)
                 .padding(.bottom, 32)
             }
-            .frame(maxHeight: UIScreen.main.bounds.height * 0.75)
-            .background(Color.black)
+            .frame(maxHeight: UIScreen.main.bounds.height * 0.80)
+            .background(sheetBackground)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .offset(y: max(dragOffset, 0))
             .gesture(
                 DragGesture()
-                    .onChanged { value in
-                        dragOffset = value.translation.height
-                    }
+                    .onChanged { value in dragOffset = value.translation.height }
                     .onEnded { value in
                         if value.translation.height > 120 {
                             onLater()
                         } else {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                dragOffset = 0
-                            }
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { dragOffset = 0 }
                         }
                     }
             )
         }
         .ignoresSafeArea()
-        .onAppear {
-            selectedIds = Set(photos.map(\.id))
+    }
+
+    private func newMomentPlaceCard(group: NewMomentPlaceGroup) -> some View {
+        let isHidden = hiddenPlaceKeys.contains(group.placeKey)
+        let thumbSize: CGFloat = 72
+        let thumbSpacing: CGFloat = 8
+        let displayedPhotos = Array(group.photos.prefix(3))
+        let extraCount = group.photos.count - 3
+        return HStack(alignment: .top, spacing: 0) {
+            // Photo strip: at most 3 thumbnails
+            HStack(spacing: thumbSpacing) {
+                ForEach(displayedPhotos) { photo in
+                    Group {
+                        if let lid = photo.localIdentifier {
+                            AssetPhotoView(assetIdentifier: lid, cornerRadius: 8, targetSize: CGSize(width: 200, height: 200))
+                                .aspectRatio(contentMode: .fill)
+                        } else {
+                            MockPhotoView(seed: photo.id.hashValue, cornerRadius: 8, showIcon: false, iconName: photo.imageName)
+                                .aspectRatio(contentMode: .fill)
+                        }
+                    }
+                    .frame(width: thumbSize, height: thumbSize)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }
+            .padding(.vertical, 4)
+            .frame(width: displayedPhotos.isEmpty ? 0 : CGFloat(displayedPhotos.count) * (thumbSize + thumbSpacing) - thumbSpacing)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(group.placeKey)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                Text(newMomentsTimeFormatter.string(from: group.earliestTimestamp))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.secondary)
+                if extraCount > 0 {
+                    Text("+\(extraCount) more")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 12)
+            .padding(.top, 4)
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if isHidden {
+                        hiddenPlaceKeys.remove(group.placeKey)
+                    } else {
+                        hiddenPlaceKeys.insert(group.placeKey)
+                    }
+                }
+            } label: {
+                Image(systemName: isHidden ? "eye" : "eye.slash")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(isHidden ? .green : .secondary)
+                    .frame(width: 36, height: 36)
+            }
+            .buttonStyle(.plain)
         }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(uiColor: .tertiarySystemGroupedBackground))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                )
+        )
+        .opacity(isHidden ? 0.35 : 1.0)
     }
 }
 
