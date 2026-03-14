@@ -43,6 +43,8 @@ struct PlacePhotoModalView: View {
     /// Called when the user saves a place name edit from within this modal.
     /// Provides (newName, category, coordinate) so the caller can update the store and regenerate captions.
     var onSavePlaceName: ((String, String?, CLLocationCoordinate2D?) -> Void)?
+    /// Called when the user commits the caption (Done/Save). Use to sync story to cloud.
+    var onCaptionCommitted: ((UUID) -> Void)? = nil
 
     @State private var currentPhotoId: UUID
     @State private var isGeneratingCaption = false
@@ -139,7 +141,8 @@ struct PlacePhotoModalView: View {
         onAICaptionApplied: ((UUID) -> Void)? = nil,
         onPhotoCaptionManuallyEdited: ((UUID) -> Void)? = nil,
         onRemovePhoto: ((UUID) -> Void)? = nil,
-        onSavePlaceName: ((String, String?, CLLocationCoordinate2D?) -> Void)? = nil
+        onSavePlaceName: ((String, String?, CLLocationCoordinate2D?) -> Void)? = nil,
+        onCaptionCommitted: ((UUID) -> Void)? = nil
     ) {
         self._placeTitle = placeTitle
         self.placeSubtitle = placeSubtitle
@@ -157,6 +160,7 @@ struct PlacePhotoModalView: View {
         self.onPhotoCaptionManuallyEdited = onPhotoCaptionManuallyEdited
         self.onRemovePhoto = onRemovePhoto
         self.onSavePlaceName = onSavePlaceName
+        self.onCaptionCommitted = onCaptionCommitted
         _currentPhotoId = State(initialValue: initialPhotoId)
     }
 
@@ -817,7 +821,9 @@ struct PlacePhotoModalView: View {
         if !titleText.isEmpty {
             placeTitle = titleText
         }
+        let committedPhotoId = currentPhotoId
         isEditing = false
+        onCaptionCommitted?(committedPhotoId)
     }
 
     private func revertChanges() {

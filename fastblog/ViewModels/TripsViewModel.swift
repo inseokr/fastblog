@@ -482,8 +482,7 @@ final class TripsViewModel: ObservableObject {
     }
 
     /// Keep a trip when any portion overlaps the visible window.
-    /// This preserves Episode 1 for long trips that start just before the window
-    /// but continue into it.
+    /// This preserves long trips that start just before the window but continue into it.
     private func tripOverlapsWindow(_ trip: TripDraft, windowStart: Date, windowEnd: Date) -> Bool {
         guard let start = trip.earliestDate else { return false }
         let end = trip.latestDate ?? start
@@ -712,7 +711,11 @@ final class TripsViewModel: ObservableObject {
         defaultScanProgress = 0
     }
 
-    func startDefaultScan() {
+    /// When true, skips incremental scan and runs a full-window scan (e.g. after user selects more photos in Limited Library picker).
+    func startDefaultScan(forceFullScan: Bool = false) {
+        if forceFullScan {
+            PhotoLibraryTripService.invalidateScanCache()
+        }
         showSelectPhotosIntroAfterScan = true
         scanState = .scanningDefault
         loadingMessage = "Loading your trips…"
@@ -723,7 +726,7 @@ final class TripsViewModel: ObservableObject {
         AppAnalytics.shared.trackEvent(name: "trip_scan_started")
         let occupiedRanges = createdRecapStore.occupiedDateRanges()
         let userId = currentUserId
-        let previousLastScanned = ScanSessionStore.lastScannedDate(for: userId)
+        let previousLastScanned = forceFullScan ? nil : ScanSessionStore.lastScannedDate(for: userId)
 
         #if DEBUG
         debugPrint("[Scan] ──── startDefaultScan ────")
@@ -1088,11 +1091,11 @@ final class TripsViewModel: ObservableObject {
             let blogEndDay   = cal.startOfDay(for: blogEnd)
 
             let overlaps  = tripEnd >= blogStartDay && tripStart <= blogEndDay
-            let dayDiff   = cal.dateComponents([.day], from: blogEndDay, to: tripStart).day ?? Int.max
-            let continues = dayDiff >= 0 && dayDiff <= 7
+            let hourDiff  = cal.dateComponents([.hour], from: blogEnd, to: tripStart).hour ?? Int.max
+            let continues = hourDiff >= 0 && hourDiff <= 24
 
             #if DEBUG
-            debugPrint("[Scan]   blog \"\(blog.title)\" blogStart=\(scanDbg(blogStartDay)) blogEnd=\(scanDbg(blogEndDay)) overlaps=\(overlaps) dayDiff=\(dayDiff) continues=\(continues)")
+            debugPrint("[Scan]   blog \"\(blog.title)\" blogStart=\(scanDbg(blogStartDay)) blogEnd=\(scanDbg(blogEndDay)) overlaps=\(overlaps) hourDiff=\(hourDiff) continues=\(continues)")
             #endif
 
             guard overlaps || continues else { continue }

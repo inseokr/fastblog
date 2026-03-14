@@ -22,6 +22,14 @@ final class EarlyAccessManager {
         UserDefaults.standard.bool(forKey: hasRegisteredKey)
     }
 
+    /// Updates local waitlist state from the current user level (e.g. after login or refresh).
+    /// Premium/influencer users are treated as past the waitlist.
+    func syncFromUserLevel(_ level: UserLevel) {
+        if level.isPremiumOrAbove {
+            UserDefaults.standard.set(true, forKey: hasRegisteredKey)
+        }
+    }
+
     /// Registers the current signed-in user on the waitlist via the backend API.
     /// Safe to call multiple times — skips if already registered locally.
     func registerWaitlist() async {

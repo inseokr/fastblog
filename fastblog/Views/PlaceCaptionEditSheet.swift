@@ -103,7 +103,10 @@ struct PlaceCaptionEditSheet: View {
         }
         .onAppear {
             editedText = caption
-            isFocused = true
+            // slight delay so the sheet finishes its animation before keyboard appears
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                isFocused = true
+            }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)

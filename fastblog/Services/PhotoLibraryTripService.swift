@@ -168,9 +168,12 @@ final class PhotoLibraryTripService {
             debugPrint("[Scan] totalFetched=\(totalFetched) missingLocation=\(missingLocationCount) excludedWithin50mi=\(excludedWithin50Count) includedBeyond50mi=\(includedBeyond50Count)")
             #endif
         } else {
+            remaining = allAssets.filter { $0.location != nil }
+            #if DEBUG
             if !allAssets.isEmpty {
-                debugPrint("[Scan] Neighborhood center not set; no trips returned. Set neighborhood in onboarding.")
+                debugPrint("[Scan] Neighborhood center not set; including \(remaining.count) assets with location.")
             }
+            #endif
         }
 
         let remainingForTripsCount = remaining.count
@@ -232,10 +235,6 @@ final class PhotoLibraryTripService {
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
             let placeSummary = await buildTripPlaceSummary(for: tripDays)
             let title = placeSummary.title
-            var episodeLabel: String? = nil
-            if let part = item.partNumber, let total = item.totalParts, total > 1 {
-                episodeLabel = "Episode \(part) of \(total)"
-            }
             let coverAsset = segment.first
             let coverIdentifier = coverAsset?.localIdentifier
 
@@ -285,8 +284,7 @@ final class PhotoLibraryTripService {
                 draftCreatedAgoText: "From your photo library",
                 daysSeasonText: daysSeasonText,
                 coverTheme: "default",
-                coverAssetIdentifier: coverIdentifier,
-                episodeLabel: episodeLabel
+                coverAssetIdentifier: coverIdentifier
             )
             trips.append(draft)
         }
@@ -361,10 +359,6 @@ final class PhotoLibraryTripService {
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
             let placeSummary = await buildTripPlaceSummary(for: tripDays)
             let title = placeSummary.title
-            var episodeLabel: String? = nil
-            if let part = item.partNumber, let total = item.totalParts, total > 1 {
-                episodeLabel = "Episode \(part) of \(total)"
-            }
             let coverAsset = assets.first
             let coverIdentifier = coverAsset?.localIdentifier
 
@@ -412,8 +406,7 @@ final class PhotoLibraryTripService {
                 draftCreatedAgoText: "From your photo library",
                 daysSeasonText: daysSeasonText,
                 coverTheme: "default",
-                coverAssetIdentifier: coverIdentifier,
-                episodeLabel: episodeLabel
+                coverAssetIdentifier: coverIdentifier
             )
             results.append(TripScanResult(assets: assets, draft: draft))
         }
@@ -482,6 +475,9 @@ final class PhotoLibraryTripService {
                     remaining.append(asset)
                 }
             }
+        } else {
+            // No neighborhood set: include all assets with location so single-photo trips can appear
+            remaining = allAssets.filter { $0.location != nil }
         }
         progress?(0.15)
 
@@ -517,10 +513,6 @@ final class PhotoLibraryTripService {
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
             let placeSummary = await buildTripPlaceSummary(for: tripDays)
             let title = placeSummary.title
-            var episodeLabel: String? = nil
-            if let part = item.partNumber, let total = item.totalParts, total > 1 {
-                episodeLabel = "Episode \(part) of \(total)"
-            }
             let coverAsset = segment.first
             let coverIdentifier = coverAsset?.localIdentifier
 
@@ -568,8 +560,7 @@ final class PhotoLibraryTripService {
                 draftCreatedAgoText: "From your photo library",
                 daysSeasonText: daysSeasonText,
                 coverTheme: "default",
-                coverAssetIdentifier: coverIdentifier,
-                episodeLabel: episodeLabel
+                coverAssetIdentifier: coverIdentifier
             )
             trips.append(draft)
         }

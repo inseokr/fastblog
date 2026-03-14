@@ -95,6 +95,8 @@ struct RecapBlogPageView: View {
     @State private var pendingEarlyAccessAfterAuth = false
     @State private var pendingCloudUploadAfterAuth = false
     @State private var pendingExportAfterAuth = false
+    /// When true, shows "Sign in or Cancel" alert for guest tapping Export.
+    @State private var showExportSignInAlert = false
     /// Single pull-up modal: shown when non-nil; content is "You're on the list" when true, else "Join Early Access" prompt.
     @State private var earlyAccessSheetPresented: Bool = false
     @State private var earlyAccessShowOnListConfirm: Bool = false
@@ -120,6 +122,11 @@ struct RecapBlogPageView: View {
     @State private var showNewMomentsReviewSheet = false
     @State private var isCheckingNewMoments = false
     @State private var hasCheckedNewMoments = false
+
+    /// Number of unique places in new moments (for "N moments found").
+    private var newMomentsPlaceCount: Int {
+        Set(newMomentPhotos.map { $0.locationName ?? "Moment" }).count
+    }
 
     // MARK: - Split Blog Properties
     @State private var showSplitActionSheet = false
@@ -269,6 +276,18 @@ struct RecapBlogPageView: View {
             } message: {
                 Text("This blog needs to be uploaded to the cloud before you can share a link. Would you like to upload it now?")
             }
+            .alert("Sign in to Export", isPresented: $showExportSignInAlert) {
+                Button("Sign in") {
+                    showExportSignInAlert = false
+                    pendingExportAfterAuth = true
+                    showAuth = true
+                }
+                Button("Cancel", role: .cancel) {
+                    showExportSignInAlert = false
+                }
+            } message: {
+                Text("Create an account or sign in to export your blog as PDF.")
+            }
             .overlay {
                 if showUnprocessedDayAlert {
                     ProcessingDayPopup {
@@ -333,7 +352,7 @@ struct RecapBlogPageView: View {
                         showBlogSettings = false
                         isEditMode = true
                     },
-                    onAddNewMoments: newMomentPhotos.isEmpty ? nil : {
+                    onAddNewMoments: newMomentsPlaceCount == 0 ? nil : {
                         showBlogSettings = false
                         withAnimation(.easeInOut(duration: 0.3)) {
                             showNewMomentsReviewSheet = true
@@ -410,6 +429,7 @@ struct RecapBlogPageView: View {
                     onSave: {
                         dayCaptionEditItem = nil
                         createdRecapStore.saveBlogDetail(draft)
+                        syncDayCaptionToCloudIfNeeded(dayId: item.dayId)
                     },
                     onCancel: {
                         dayCaptionEditItem = nil
@@ -428,6 +448,7 @@ struct RecapBlogPageView: View {
                             placeCaptionEditItem = nil
                             markOverallStoryManual(dayId: item.dayId, stopId: item.stopId)
                             createdRecapStore.saveBlogDetail(draft)
+                            syncOverallStoryToCloudIfNeeded(dayId: item.dayId, stopId: item.stopId)
                         },
                         onCancel: {
                             placeCaptionEditItem = nil
@@ -459,6 +480,7 @@ struct RecapBlogPageView: View {
                     // Write the edited caption back into the draft and persist it
                     bindingForPhotoCaption(dayId: day.id, stopId: stopId, photoId: photoId).wrappedValue = newCaption
                     createdRecapStore.saveBlogDetail(draft)
+                    syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: false, photoId: photoId)
                 })
             }
             .sheet(item: $placePhotoModalItem, onDismiss: {
@@ -522,12 +544,11 @@ struct RecapBlogPageView: View {
                     performDismiss()
                 }
                 Button("Exit", role: .destructive) {
-                    createdRecapStore.deleteBlog(sourceTripId: blogId)
                     performDismiss()
                 }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("\"Continue Later\" saves your blog as a draft. \"Exit\" will discard all changes.")
+                Text("\"Continue Later\" saves your blog as a draft. \"Exit\" discards unsaved changes but keeps your draft.")
             }
     }
 
@@ -578,7 +599,7 @@ struct RecapBlogPageView: View {
                                 .padding(.bottom, 12)
                         }
                         // New moments card — shown when lightweight scan found new photos
-                        if !newMomentPhotos.isEmpty {
+                        if newMomentsPlaceCount > 0 {
                             newMomentsCard
                                 .padding(.horizontal, 16)
                                 .padding(.top, 8)
@@ -874,8 +895,7 @@ struct RecapBlogPageView: View {
                                 if authService.isSignedIn {
                                     exportBlogToPDF()
                                 } else {
-                                    pendingExportAfterAuth = true
-                                    showAuth = true
+                                    showExportSignInAlert = true
                                 }
                             } label: {
                                 HStack(spacing: 6) {
@@ -920,6 +940,43 @@ struct RecapBlogPageView: View {
         }
         formatter.dateFormat = "MMM d, yyyy"
         return "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate)) · \(dayCount) day\(dayCount == 1 ? "" : "s")"
+    }
+
+    /// Returns a date suitable for passing to `formatDateRange` that matches the calendar
+    /// date the user sees in the day row header (i.e. `shortDateText`).
+    ///
+    /// `shortDateText` reads the EXIF `visitedTimeDigitized` date string as-is in UTC,
+    /// so "2025:01:01" → Jan 1 regardless of timezone. `formatDateRange` however uses
+    /// `Calendar.current` (local timezone) to extract y/m/d from a `Date`. A UTC-midnight
+    /// date would become the *previous* day in any timezone west of UTC.
+    ///
+    /// Solution: parse the EXIF date string in UTC to get y/m/d, then rebuild as local
+    /// **noon** using those same components so `Calendar.current` extracts the correct day
+    /// in every timezone.
+    private func splitPreviewDate(for day: RecapBlogDay) -> Date {
+        if let digitized = day.placeStops.first?.visitedTimeDigitized {
+            let parts = digitized.split(separator: " ")
+            if parts.count == 2 {
+                let parser = DateFormatter()
+                parser.dateFormat = "yyyy:MM:dd"
+                parser.timeZone = TimeZone(secondsFromGMT: 0)
+                if let exifUTCDate = parser.date(from: String(parts[0])) {
+                    var utcCal = Calendar(identifier: .gregorian)
+                    utcCal.timeZone = TimeZone(secondsFromGMT: 0)!
+                    // Extract the calendar date components as written in the EXIF string.
+                    var comps = utcCal.dateComponents([.year, .month, .day], from: exifUTCDate)
+                    // Rebuild at local noon — Calendar.current then gives the right y/m/d
+                    // regardless of the device's UTC offset.
+                    comps.hour = 12
+                    comps.minute = 0
+                    comps.second = 0
+                    if let localNoon = Calendar.current.date(from: comps) {
+                        return localNoon
+                    }
+                }
+            }
+        }
+        return day.date
     }
 
     /// Day filter fixed at top; scrollable content (map + timeline) sits below it.
@@ -1082,7 +1139,7 @@ struct RecapBlogPageView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(newMomentPhotos.count) new photo\(newMomentPhotos.count == 1 ? "" : "s") found")
+                    Text("\(newMomentsPlaceCount) moment\(newMomentsPlaceCount == 1 ? "" : "s") found")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
@@ -1097,6 +1154,8 @@ struct RecapBlogPageView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 14)
@@ -1128,7 +1187,8 @@ struct RecapBlogPageView: View {
                 
                 Spacer()
                 
-                // Only show split icon if there are at least 2 days and this isn't the *first* day
+                // Scissors on Day N (dayIdx > 0) means "split before Day N":
+                // Part 1 = Days 1..N-1, Part 2 = Days N..end. Not shown on Day 1.
                 if isEditMode, draft.days.count >= 2, let dayIdx = draft.days.firstIndex(where: { $0.id == day.id }), dayIdx > 0 {
                     Button {
                         let isJustCreated = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
@@ -1161,10 +1221,10 @@ struct RecapBlogPageView: View {
                             dayIndexToSplit = nil
                         }
                     } message: {
-                        if let splitIdx = dayIndexToSplit {
-                            let part1Count = splitIdx
-                            let part2Count = draft.days.count - part1Count
-                            Text("This will create two separate blogs:\n\nPart 1: Day 1–\(part1Count) (\(part1Count) day\(part1Count == 1 ? "" : "s"))\nPart 2: Day \(part1Count + 1)–\(draft.days.count) (\(part2Count) day\(part2Count == 1 ? "" : "s"))")
+                        if let splitIdx = dayIndexToSplit, splitIdx > 0, splitIdx < draft.days.count {
+                            let p1 = CreatedRecapBlogStore.formatDateRange(start: draft.days.first?.date, end: draft.days[splitIdx - 1].date) ?? "—"
+                            let p2 = CreatedRecapBlogStore.formatDateRange(start: draft.days[splitIdx].date, end: draft.days.last?.date) ?? "—"
+                            Text("This will create two separate blogs:\n\nPart 1: \(p1)\nPart 2: \(p2)")
                         } else {
                             Text("Split this blog into two separate blogs.")
                         }
@@ -1293,6 +1353,9 @@ struct RecapBlogPageView: View {
                         },
                         onRemovePhoto: { photoId in
                             removePhoto(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
+                        },
+                        onCaptionCommitted: { photoId in
+                            syncStoryToCloudIfNeeded(stopId: item.stopId, isPlaceNote: false, photoId: photoId)
                         }
                     )
                 } else {
@@ -1312,62 +1375,56 @@ struct RecapBlogPageView: View {
 
     @ViewBuilder
     private func unsavedSplitModal(splitIdx: Int) -> some View {
-        let part1Count = splitIdx
-        
-        let part1StartDate = draft.days[0..<splitIdx].first?.date
-        let part1EndDate = draft.days[0..<splitIdx].last?.date
+        // splitIdx is the 0-based array index of the day where scissors was tapped.
+        // Scissors on Day N means "split before Day N": Part 1 = Days 1..N-1, Part 2 = Days N..end.
+        let part1Days = Array(draft.days[0..<splitIdx])
+        let part2Days = Array(draft.days[splitIdx...])
+
+        let part1StartDate = part1Days.first.map(splitPreviewDate(for:))
+        let part1EndDate = part1Days.last.map(splitPreviewDate(for:))
         let part1DateStr = CreatedRecapBlogStore.formatDateRange(start: part1StartDate, end: part1EndDate) ?? "Unknown Date"
-        
-        let part2StartDate = draft.days[splitIdx...].first?.date
-        let part2EndDate = draft.days[splitIdx...].last?.date
+
+        let part2StartDate = part2Days.first.map(splitPreviewDate(for:))
+        let part2EndDate = part2Days.last.map(splitPreviewDate(for:))
         let part2DateStr = CreatedRecapBlogStore.formatDateRange(start: part2StartDate, end: part2EndDate) ?? "Unknown Date"
-        
-        let part1Cities = draft.days[0..<splitIdx]
+
+        let part1Cities = part1Days
             .flatMap(\.placeStops)
             .compactMap { $0.placeSubtitle }
             .filter { !$0.isEmpty }
-        
-        // Remove duplicates while preserving order
+
         var seen1 = Set<String>()
-        let part1UniqueCities = part1Cities.filter { seen1.insert($0).inserted }
-        let part1CityString = part1UniqueCities.joined(separator: ", ")
-        
-        let part2Cities = draft.days[splitIdx...]
+        let part1CityString = part1Cities.filter { seen1.insert($0).inserted }.joined(separator: ", ")
+
+        let part2Cities = part2Days
             .flatMap(\.placeStops)
             .compactMap { $0.placeSubtitle }
             .filter { !$0.isEmpty }
-        
+
         var seen2 = Set<String>()
-        let part2UniqueCities = part2Cities.filter { seen2.insert($0).inserted }
-        let part2CityString = part2UniqueCities.joined(separator: ", ")
-        
+        let part2CityString = part2Cities.filter { seen2.insert($0).inserted }.joined(separator: ", ")
+
         VStack(spacing: 24) {
             VStack(spacing: 8) {
                 Text("Choose which part to keep")
                     .font(.headline)
                     .fontWeight(.bold)
-                    .padding(.top, 24)
-                
-                Text("The other part will be saved as a separate trip.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
+                    .padding(.top, 32)
                     .padding(.horizontal, 24)
             }
-            
+
             VStack(spacing: 16) {
                 Button {
                     unsavedSplitPromptIndex = nil
-                    // delay slightly to allow sheet dismissal
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         splitUnsavedBlog(afterDayIndex: splitIdx - 1, keepPart: 1)
                     }
                 } label: {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Keep Part 1")
+                        Text("Part 1")
                             .font(.headline)
                             .foregroundColor(.primary)
-                        Text("Days 1–\(part1Count) (\(part1DateStr))")
+                        Text(part1DateStr)
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                         if !part1CityString.isEmpty {
@@ -1383,7 +1440,7 @@ struct RecapBlogPageView: View {
                     .cornerRadius(12)
                 }
                 .buttonStyle(.plain)
-                
+
                 Button {
                     unsavedSplitPromptIndex = nil
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -1391,10 +1448,10 @@ struct RecapBlogPageView: View {
                     }
                 } label: {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Keep Part 2")
+                        Text("Part 2")
                             .font(.headline)
                             .foregroundColor(.primary)
-                        Text("Days \(part1Count + 1)–\(draft.days.count) (\(part2DateStr))")
+                        Text(part2DateStr)
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                         if !part2CityString.isEmpty {
@@ -1433,7 +1490,7 @@ struct RecapBlogPageView: View {
 
             Spacer(minLength: 0)
         }
-        .presentationDetents([.fraction(0.50), .large])
+        .presentationDetents([.fraction(0.50)])
         .presentationDragIndicator(.visible)
         .ignoresSafeArea(edges: .bottom)
     }
@@ -1904,22 +1961,55 @@ struct RecapBlogPageView: View {
 
     /// Pushes the current place note or photo caption to the backend when the blog is in the cloud. Call when user taps Done on the keyboard toolbar.
     private func syncStoryToCloudIfNeeded(stopId: UUID, isPlaceNote: Bool, photoId: UUID?) {
-        guard blogIsInCloud else { return }
+        guard blogIsInCloud else {
+            print("⏭️ [syncStory] skipped — blog not in cloud")
+            return
+        }
         guard let day = draft.days.first(where: { $0.placeStops.contains(where: { $0.id == stopId }) }),
               let stop = day.placeStops.first(where: { $0.id == stopId }),
-              let placeKey = stop.visitedTimeDigitized else { return }
+              let placeKey = stop.visitedTimeDigitized else {
+            print("⚠️ [syncStory] skipped — could not resolve stop or placeKey for stopId:\(stopId)")
+            return
+        }
         Task {
             if isPlaceNote {
                 let storyText = stop.noteText ?? ""
+                print("🔵 [syncStory] place note → updateStory placeKey:\(placeKey) text:\"\(storyText)\"")
                 try? await APIManager.shared.updateStory(placeKey: placeKey, storyText: storyText, photoIndex: nil)
             } else if let pid = photoId,
                       let photo = stop.photos.first(where: { $0.id == pid }) {
                 let included = stop.photos.filter(\.isIncluded)
-                guard let filteredIndex = included.firstIndex(where: { $0.id == pid }) else { return }
+                guard let filteredIndex = included.firstIndex(where: { $0.id == pid }) else {
+                    print("⚠️ [syncStory] skipped — photo \(pid) not found in included list")
+                    return
+                }
                 let storyText = photo.caption ?? ""
+                print("🔵 [syncStory] photo caption → updateStory placeKey:\(placeKey) photoIndex:\(filteredIndex) text:\"\(storyText)\"")
                 try? await APIManager.shared.updateStory(placeKey: placeKey, storyText: storyText, photoIndex: filteredIndex, photoIndexType: "filtered")
             }
         }
+    }
+
+    /// Pushes the place overall story (overallStory) to the backend when the blog is in the cloud.
+    private func syncOverallStoryToCloudIfNeeded(dayId: UUID, stopId: UUID) {
+        guard blogIsInCloud else { return }
+        guard let stop = placeStop(dayId: dayId, stopId: stopId),
+              let placeKey = stop.visitedTimeDigitized else { return }
+        let storyText = stop.overallStory ?? ""
+        Task { try? await APIManager.shared.updateStory(placeKey: placeKey, storyText: storyText) }
+    }
+
+    /// Pushes the day caption to the backend via /trips/day-story when the blog is in the cloud.
+    private func syncDayCaptionToCloudIfNeeded(dayId: UUID) {
+        guard blogIsInCloud else { return }
+        guard let blogKey = currentBlogKey else {
+            print("⚠️ [syncDayCaption] skipped — no blogKey")
+            return
+        }
+        guard let day = draft.days.first(where: { $0.id == dayId }) else { return }
+        let dateKey = day.dayIndex - 1  // dayIndex is 1-based; API expects 0-based
+        let storyText = day.dayCaption ?? ""
+        Task { try? await APIManager.shared.updateDayStory(blogKey: blogKey, dateKey: dateKey, story: storyText) }
     }
 
     // MARK: - AI Caption Tracking
@@ -2200,9 +2290,7 @@ struct RecapBlogPageView: View {
                         if blogIsInCloud {
                             showRemoveFromCloudAlert = true
                         } else {
-                            let onList = hasJoinedEarlyAccess || EarlyAccessManager.shared.hasRegistered
-                            earlyAccessShowOnListConfirm = onList
-                            earlyAccessSheetPresented = true
+                            handleCloudUploadTap()
                         }
                     } label: {
                         Image(systemName: blogIsInCloud ? "checkmark.icloud.fill" : "icloud.and.arrow.up")
@@ -2477,8 +2565,7 @@ struct RecapBlogPageView: View {
                     if authService.isSignedIn {
                         exportBlogToPDF()
                     } else {
-                        pendingExportAfterAuth = true
-                        showAuth = true
+                        showExportSignInAlert = true
                     }
                 } label: {
                     Text("Export as PDF Instead")
@@ -2507,6 +2594,7 @@ struct RecapBlogPageView: View {
             Task {
                 let latestLevel = await authService.refreshUserLevel() ?? .normal
                 if latestLevel.isPremiumOrAbove {
+                    EarlyAccessManager.shared.syncFromUserLevel(latestLevel)
                     uploadBlogPhotos()
                 } else {
                     let onList = hasJoinedEarlyAccess || EarlyAccessManager.shared.hasRegistered
@@ -2714,7 +2802,6 @@ struct RecapBlogPageView: View {
 
         let baseTitle = draft.title
             .replacingOccurrences(of: " \\(Part \\d+ of \\d+\\)", with: "", options: .regularExpression)
-            .replacingOccurrences(of: " \\(Episode \\d+ of \\d+\\)", with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
 
         if keepPart == 1 {
@@ -3137,121 +3224,101 @@ struct ProcessingDayPopup: View {
 
 // MARK: - New Moments Review Sheet
 
+private let newMomentsTimeFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "h:mm a"
+    f.locale = Locale(identifier: "en_US_POSIX")
+    return f
+}()
+
+/// One place group for the new moments sheet: key (e.g. location name) and photos sorted earliest → latest.
+private struct NewMomentPlaceGroup: Identifiable {
+    var id: String { placeKey }
+    let placeKey: String
+    let photos: [MockPhoto]
+    var earliestTimestamp: Date { photos.map(\.timestamp).min() ?? .distantPast }
+}
+
 private struct NewMomentsReviewSheet: View {
     let photos: [MockPhoto]
     let blogTitle: String
     var onAdd: ([MockPhoto]) -> Void
     var onLater: () -> Void
 
-    @State private var selectedIds: Set<UUID> = []
+    /// Place keys the user chose to hide (whole card dimmed, those photos excluded from add count).
+    @State private var hiddenPlaceKeys: Set<String> = []
     @State private var dragOffset: CGFloat = 0
 
-    private var allSelected: Bool { selectedIds.count == photos.count }
+    /// Photos grouped by place (locationName ?? "Moment"), groups sorted earliest → latest.
+    private var placeGroups: [NewMomentPlaceGroup] {
+        let grouped = Dictionary(grouping: photos) { $0.locationName ?? "Moment" }
+        return grouped.map { key, list in
+            NewMomentPlaceGroup(placeKey: key, photos: list.sorted { $0.timestamp < $1.timestamp })
+        }.sorted { $0.earliestTimestamp < $1.earliestTimestamp }
+    }
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2)
-    ]
+    private var visibleCount: Int {
+        placeGroups
+            .filter { !hiddenPlaceKeys.contains($0.placeKey) }
+            .flatMap(\.photos)
+            .count
+    }
+
+    private var visiblePhotos: [MockPhoto] {
+        placeGroups
+            .filter { !hiddenPlaceKeys.contains($0.placeKey) }
+            .flatMap(\.photos)
+    }
+
+    /// Gray background to match cloud early access pull-up.
+    private var sheetBackground: Color {
+        Color(uiColor: .secondarySystemGroupedBackground)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
 
-            // Sheet content
             VStack(spacing: 0) {
-                // Drag handle
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(Color.secondary.opacity(0.4))
-                    .frame(width: 40, height: 5)
+                Capsule()
+                    .fill(Color.primary.opacity(0.25))
+                    .frame(width: 36, height: 4)
                     .padding(.top, 12)
+                    .padding(.bottom, 16)
 
-                VStack(spacing: 6) {
-                    Text("\(photos.count) New Photo\(photos.count == 1 ? "" : "s")")
-                        .font(.title3)
-                        .fontWeight(.bold)
+                Text("New moments found")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                Text("Hide any places you don’t want to add")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .padding(.top, 2)
+                    .padding(.bottom, 16)
 
-                    Text("Select photos to add to blog")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.top, 20)
-
-                // Select All row
-                HStack {
-                    Spacer()
-                    Button {
-                        if allSelected {
-                            selectedIds.removeAll()
-                        } else {
-                            selectedIds = Set(photos.map(\.id))
-                        }
-                    } label: {
-                        Text(allSelected ? "Deselect All" : "Select All")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(allSelected ? .red : .green)
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                .padding(.bottom, 8)
-
-                // Photo grid
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 2) {
-                        ForEach(photos) { photo in
-                            let isSelected = selectedIds.contains(photo.id)
-                            Button {
-                                if isSelected {
-                                    selectedIds.remove(photo.id)
-                                } else {
-                                    selectedIds.insert(photo.id)
-                                }
-                            } label: {
-                                ZStack(alignment: .topTrailing) {
-                                    Group {
-                                        if let lid = photo.localIdentifier {
-                                            AssetPhotoView(assetIdentifier: lid, cornerRadius: 0)
-                                                .aspectRatio(3/4, contentMode: .fill)
-                                                .clipped()
-                                        } else {
-                                            MockPhotoView(seed: photo.id.hashValue, cornerRadius: 0)
-                                                .aspectRatio(3/4, contentMode: .fill)
-                                        }
-                                    }
-                                    .overlay(
-                                        Color.black.opacity(isSelected ? 0.4 : 0)
-                                    )
-
-                                    if isSelected {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .font(.system(size: 22))
-                                            .foregroundStyle(.white, .green)
-                                            .padding(6)
-                                    }
-                                }
-                            }
-                            .buttonStyle(.plain)
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 12) {
+                        ForEach(placeGroups) { group in
+                            newMomentPlaceCard(group: group)
                         }
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
                 }
 
-                // Action buttons pinned at bottom
                 VStack(spacing: 12) {
                     Button {
-                        let selected = photos.filter { selectedIds.contains($0.id) }
-                        onAdd(selected)
+                        onAdd(visiblePhotos)
                     } label: {
-                        Text(selectedIds.isEmpty ? "Add to Blog" : "Add \(selectedIds.count) Photo\(selectedIds.count == 1 ? "" : "s")")
+                        Text(visibleCount == 0 ? "Add 0 Moments" : "Add \(visibleCount) Moment\(visibleCount == 1 ? "" : "s")")
                             .font(.headline)
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(selectedIds.isEmpty ? Color.green.opacity(0.4) : Color.green)
+                            .padding(.vertical, 15)
+                            .background(visibleCount > 0 ? Color.green : Color.green.opacity(0.4))
                             .cornerRadius(14)
                     }
-                    .disabled(selectedIds.isEmpty)
+                    .disabled(visibleCount == 0)
 
                     Button {
                         onLater()
@@ -3268,30 +3335,96 @@ private struct NewMomentsReviewSheet: View {
                 .padding(.top, 12)
                 .padding(.bottom, 32)
             }
-            .frame(maxHeight: UIScreen.main.bounds.height * 0.75)
-            .background(Color.black)
+            .frame(maxHeight: UIScreen.main.bounds.height * 0.80)
+            .background(sheetBackground)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .offset(y: max(dragOffset, 0))
             .gesture(
                 DragGesture()
-                    .onChanged { value in
-                        dragOffset = value.translation.height
-                    }
+                    .onChanged { value in dragOffset = value.translation.height }
                     .onEnded { value in
                         if value.translation.height > 120 {
                             onLater()
                         } else {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                dragOffset = 0
-                            }
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { dragOffset = 0 }
                         }
                     }
             )
         }
         .ignoresSafeArea()
-        .onAppear {
-            selectedIds = Set(photos.map(\.id))
+    }
+
+    private func newMomentPlaceCard(group: NewMomentPlaceGroup) -> some View {
+        let isHidden = hiddenPlaceKeys.contains(group.placeKey)
+        let thumbSize: CGFloat = 72
+        let thumbSpacing: CGFloat = 8
+        let displayedPhotos = Array(group.photos.prefix(3))
+        let extraCount = group.photos.count - 3
+        return HStack(alignment: .top, spacing: 0) {
+            // Photo strip: at most 3 thumbnails
+            HStack(spacing: thumbSpacing) {
+                ForEach(displayedPhotos) { photo in
+                    Group {
+                        if let lid = photo.localIdentifier {
+                            AssetPhotoView(assetIdentifier: lid, cornerRadius: 8, targetSize: CGSize(width: 200, height: 200))
+                                .aspectRatio(contentMode: .fill)
+                        } else {
+                            MockPhotoView(seed: photo.id.hashValue, cornerRadius: 8, showIcon: false, iconName: photo.imageName)
+                                .aspectRatio(contentMode: .fill)
+                        }
+                    }
+                    .frame(width: thumbSize, height: thumbSize)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }
+            .padding(.vertical, 4)
+            .frame(width: displayedPhotos.isEmpty ? 0 : CGFloat(displayedPhotos.count) * (thumbSize + thumbSpacing) - thumbSpacing)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(group.placeKey)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                Text(newMomentsTimeFormatter.string(from: group.earliestTimestamp))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.secondary)
+                if extraCount > 0 {
+                    Text("+\(extraCount) more")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 12)
+            .padding(.top, 4)
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if isHidden {
+                        hiddenPlaceKeys.remove(group.placeKey)
+                    } else {
+                        hiddenPlaceKeys.insert(group.placeKey)
+                    }
+                }
+            } label: {
+                Image(systemName: isHidden ? "eye" : "eye.slash")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(isHidden ? .green : .secondary)
+                    .frame(width: 36, height: 36)
+            }
+            .buttonStyle(.plain)
         }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(uiColor: .tertiarySystemGroupedBackground))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                )
+        )
+        .opacity(isHidden ? 0.35 : 1.0)
     }
 }
 

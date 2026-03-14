@@ -14,6 +14,8 @@ struct LandingView: View {
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     /// Passed back to ContentView so RecapBlogPageView opens at the right day.
     @ObservedObject var tripsViewModel: TripsViewModel
+    /// When provided, "Tap to Blog" calls this instead of setting showTrips; parent shows Trips when scan is ready.
+    var onTapToBlog: (() -> Void)? = nil
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @EnvironmentObject private var authService: AuthService
     @EnvironmentObject private var splashManager: SplashStateManager
@@ -247,48 +249,14 @@ struct LandingView: View {
 
     private var scanCTA: some View {
         Button {
-            // #region agent log
-            let _agentLog_payload_lv: [String: Any] = [
-                "sessionId": "f5599d",
-                "runId": "pre-fix",
-                "hypothesisId": "H2",
-                "location": "LandingView.swift:scanCTA",
-                "message": "scanCTA tapped, starting default scan",
-                "data": [
-                    "hasNewMoments": OnTheGoTripStore.hasNewMoments
-                ],
-                "timestamp": Int(Date().timeIntervalSince1970 * 1000)
-            ]
-            if let _agentLog_data = try? JSONSerialization.data(withJSONObject: _agentLog_payload_lv) {
-                // Write to local debug log file (may be no-op on device)
-                let _agentLog_url = URL(fileURLWithPath: "/Users/justinseo/Desktop/fastblog/.cursor/debug-f5599d.log")
-                if !FileManager.default.fileExists(atPath: _agentLog_url.path) {
-                    FileManager.default.createFile(atPath: _agentLog_url.path, contents: nil, attributes: nil)
-                }
-                if let _agentLog_handle = try? FileHandle(forWritingTo: _agentLog_url) {
-                    _agentLog_handle.seekToEndOfFile()
-                    _agentLog_handle.write(_agentLog_data)
-                    _agentLog_handle.write(Data([0x0a]))
-                    try? _agentLog_handle.close()
-                }
-                // Also send to debug ingest endpoint so logs work from simulator/device
-                if let url = URL(string: "http://127.0.0.1:7413/ingest/74888078-3f6a-4639-8372-d416f6cdf04c") {
-                    var request = URLRequest(url: url)
-                    request.httpMethod = "POST"
-                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    request.setValue("f5599d", forHTTPHeaderField: "X-Debug-Session-Id")
-                    request.httpBody = _agentLog_data
-                    URLSession.shared.dataTask(with: request).resume()
+            if let onTapToBlog = onTapToBlog {
+                onTapToBlog()
+            } else {
+                tripsViewModel.startDefaultScan()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                    showTrips = true
                 }
             }
-            // #endregion agent log
-            tripsViewModel.startDefaultScan()
-            // Delay navigation until the scan overlay is fully opaque,
-            // so the push happens invisibly behind it (fade instead of slide-from-right)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                showTrips = true
-            }
-            return
             // Check for on-the-go new moments first — only when the user already has a created blog.
             // if OnTheGoTripStore.hasNewMoments,
             //    let blogId = OnTheGoTripStore.activeBlogId,

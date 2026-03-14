@@ -456,13 +456,27 @@ final class APIManager {
         let utc = TimeZone(identifier: "UTC")!
         let defaultDigitizedTime = "1970:01:01 00:00:00"
 
+        // Debug: summarize story coverage before building payload
+        let totalDays = detail.days.count
+        let daysWithStory = detail.days.filter { $0.dayCaption != nil && !($0.dayCaption?.isEmpty ?? true) }.count
+        let allStops = detail.days.flatMap(\.placeStops)
+        let stopsWithStory = allStops.filter { $0.noteText != nil && !($0.noteText?.isEmpty ?? true) }.count
+        let allIncludedPhotos = allStops.flatMap { $0.photos.filter(\.isIncluded) }
+        let photosWithStory = allIncludedPhotos.filter { $0.caption != nil && !($0.caption?.isEmpty ?? true) }.count
+        print("📝 [createBlogWithPlaces] Story coverage — days: \(daysWithStory)/\(totalDays) have dayStory, stops: \(stopsWithStory)/\(allStops.count) have placeStory, photos: \(photosWithStory)/\(allIncludedPhotos.count) have photoStory")
+
         // Build placeList from all days/stops, tracking which (dayIdx, stopIdx) each entry maps to.
         var placeList: [[String: Any]] = []
         var placeStopMapping: [PlaceStopBuildInfo] = []
         for (dayIdx, day) in detail.days.enumerated() {
+            let dayStoryPreview = day.dayCaption.map { "\"\($0.prefix(40))\"" } ?? "nil"
+            print("📅 [createBlogWithPlaces] Day[\(dayIdx)] dayStory=\(dayStoryPreview), stops=\(day.placeStops.count)")
             for (stopIdx, stop) in day.placeStops.enumerated() {
                 let includedPhotos = stop.photos.filter(\.isIncluded)
-                guard !includedPhotos.isEmpty else { continue }
+                guard !includedPhotos.isEmpty else {
+                    print("   ↳ Stop[\(stopIdx)] '\(stop.placeTitle)' — skipped (no included photos)")
+                    continue
+                }
 
                 let coord: [String: Double] = {
                     if let loc = stop.representativeLocation {
@@ -497,10 +511,12 @@ final class APIManager {
                         "location": photoLocation,
                         "selected": true,
                         "coverPhotoScore": (photo.qualityScore?.totalScore).map { $0 as Any } ?? NSNull(),
-                        "localUri": NSNull()
+                        "localUri": NSNull(),
+                        "inAppPhoto": true
                     ]
                     if let caption = photo.caption, !caption.isEmpty {
                         photoEntry["story"] = caption
+                        print("      📷 photo story set: \"\(caption.prefix(40))\"")
                     }
                     photoList.append(photoEntry)
                 }
@@ -521,11 +537,12 @@ final class APIManager {
                     "categories": categories,
                     "photoList": photoList
                 ]
-                if let noteText = stop.noteText, !noteText.isEmpty {
-                    place["story"] = noteText
-                }
-                if let dayCaption = day.dayCaption, !dayCaption.isEmpty {
-                    place["dayStory"] = dayCaption
+                let placeStoryNote = stop.noteText.map { "\"\($0.prefix(40))\"" } ?? "nil"
+                let dayStoryNote = day.dayCaption.map { "\"\($0.prefix(40))\"" } ?? "nil"
+                print("   ↳ Stop[\(stopIdx)] '\(stop.placeTitle)' — \(photoList.count) photos, placeStory=\(placeStoryNote), dayStory=\(dayStoryNote)")
+                let storyText = (stop.noteText?.isEmpty == false ? stop.noteText : stop.overallStory)
+                if let storyText = storyText, !storyText.isEmpty {
+                    place["story"] = storyText
                 }
                 placeStopMapping.append(PlaceStopBuildInfo(
                     dayIdx: dayIdx,
@@ -536,16 +553,34 @@ final class APIManager {
             }
         }
 
+        let dayFormatter = DateFormatter()
+        dayFormatter.dateFormat = "yyyy-MM-dd"
+        let dayStoriesArray: [[String: Any]] = detail.days.compactMap { day in
+            guard let caption = day.dayCaption, !caption.isEmpty else { return nil }
+            return ["date": dayFormatter.string(from: day.date), "story": caption]
+        }
+
+        var blogMetaData: [String: Any] = [
+            "title": detail.title,
+            "startTimestamp": startMs,
+            "endTimestamp": endMs,
+            "destinationName": detail.countryName ?? ""
+        ]
+        if !dayStoriesArray.isEmpty {
+            blogMetaData["dayStories"] = dayStoriesArray
+        }
+
         let payload: [String: Any] = [
             "username": username,
-            "blogMetaData": [
-                "title": detail.title,
-                "startTimestamp": startMs,
-                "endTimestamp": endMs,
-                "destinationName": detail.countryName ?? ""
-            ],
+            "blogMetaData": blogMetaData,
             "placeList": placeList
         ]
+
+        let placesWithDayStory = dayStoriesArray.count
+        let placesWithPlaceStory = placeList.filter { $0["story"] != nil }.count
+        let totalPhotosInPayload = placeList.compactMap { $0["photoList"] as? [[String: Any]] }.flatMap { $0 }
+        let photosWithStoryInPayload = totalPhotosInPayload.filter { $0["story"] != nil }.count
+        print("📦 [createBlogWithPlaces] Payload summary — \(placeList.count) places, dayStories: \(placesWithDayStory), placeStory: \(placesWithPlaceStory), photoStory: \(photosWithStoryInPayload)/\(totalPhotosInPayload.count)")
 
         let body = try JSONSerialization.data(withJSONObject: payload)
         let response: CreateBlogResponse = try await request(
@@ -627,6 +662,28 @@ final class APIManager {
         )
     }
 
+    /// Updates the day-level story for an already-published blog.
+    /// - Parameters:
+    ///   - blogKey: The server-assigned blog key.
+    ///   - dateKey: Zero-based index of the day within the trip.
+    ///   - story: Story text. Pass "" to clear.
+    func updateDayStory(blogKey: Int, dateKey: Int, story: String) async throws {
+        print("🟡 [updateDayStory] blogKey=\(blogKey) dateKey=\(dateKey) text=\"\(story.prefix(60))\"")
+        let payload: [String: Any] = [
+            "blogKey": blogKey,
+            "dateKey": dateKey,
+            "story": story
+        ]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let _: GenericResponse = try await request(
+            endpoint: "/trips/day-story",
+            method: "POST",
+            body: body,
+            requiresAuth: true
+        )
+        print("✅ [updateDayStory] done — blogKey=\(blogKey) dateKey=\(dateKey)")
+    }
+
     /// Updates place-level or photo-level story on the backend (placeVisitHistory).
     /// - Parameters:
     ///   - placeKey: visitedTimeDigitized for the place.
@@ -634,6 +691,8 @@ final class APIManager {
     ///   - photoIndex: If nil, updates place-level story; if set, updates that photo's story (index in filtered/included list).
     ///   - photoIndexType: "filtered" when photoIndex is index in included photos; "all" for full photoList index. Default "filtered".
     func updateStory(placeKey: String, storyText: String, photoIndex: Int? = nil, photoIndexType: String = "filtered") async throws {
+        let level = photoIndex == nil ? "place" : "photo[\(photoIndex!)]"
+        print("🟡 [updateStory] START — level:\(level) placeKey:\(placeKey) text:\"\(storyText)\"")
         var payload: [String: Any] = [
             "placeKey": placeKey,
             "storyText": storyText
@@ -643,12 +702,18 @@ final class APIManager {
             payload["photoIndexType"] = photoIndexType
         }
         let body = try JSONSerialization.data(withJSONObject: payload)
-        let _: GenericResponse = try await request(
-            endpoint: "/placeVisitHistory/story",
-            method: "POST",
-            body: body,
-            requiresAuth: true
-        )
+        do {
+            let _: GenericResponse = try await request(
+                endpoint: "/placeVisitHistory/story",
+                method: "POST",
+                body: body,
+                requiresAuth: true
+            )
+            print("✅ [updateStory] SUCCESS — level:\(level) placeKey:\(placeKey)")
+        } catch {
+            print("❌ [updateStory] FAILED — level:\(level) placeKey:\(placeKey) error:\(error)")
+            throw error
+        }
     }
 
     /// Updates a single photo's inclusion state on the backend.
@@ -677,6 +742,7 @@ final class APIManager {
         var photoDict: [String: Any] = [
             "uri": cloudURL,
             "digitizedTime": digitizedTime,
+            "inAppPhoto": true
         ]
         // Include caption/story so the backend preserves it alongside the photo state change.
         if let caption = photo.caption {
