@@ -95,6 +95,8 @@ struct RecapBlogPageView: View {
     @State private var pendingEarlyAccessAfterAuth = false
     @State private var pendingCloudUploadAfterAuth = false
     @State private var pendingExportAfterAuth = false
+    /// When true, shows "Sign in or Cancel" alert for guest tapping Export.
+    @State private var showExportSignInAlert = false
     /// Single pull-up modal: shown when non-nil; content is "You're on the list" when true, else "Join Early Access" prompt.
     @State private var earlyAccessSheetPresented: Bool = false
     @State private var earlyAccessShowOnListConfirm: Bool = false
@@ -273,6 +275,18 @@ struct RecapBlogPageView: View {
                 Button("No", role: .cancel) { }
             } message: {
                 Text("This blog needs to be uploaded to the cloud before you can share a link. Would you like to upload it now?")
+            }
+            .alert("Sign in to Export", isPresented: $showExportSignInAlert) {
+                Button("Sign in") {
+                    showExportSignInAlert = false
+                    pendingExportAfterAuth = true
+                    showAuth = true
+                }
+                Button("Cancel", role: .cancel) {
+                    showExportSignInAlert = false
+                }
+            } message: {
+                Text("Create an account or sign in to export your blog as PDF.")
             }
             .overlay {
                 if showUnprocessedDayAlert {
@@ -881,8 +895,7 @@ struct RecapBlogPageView: View {
                                 if authService.isSignedIn {
                                     exportBlogToPDF()
                                 } else {
-                                    pendingExportAfterAuth = true
-                                    showAuth = true
+                                    showExportSignInAlert = true
                                 }
                             } label: {
                                 HStack(spacing: 6) {
@@ -2552,8 +2565,7 @@ struct RecapBlogPageView: View {
                     if authService.isSignedIn {
                         exportBlogToPDF()
                     } else {
-                        pendingExportAfterAuth = true
-                        showAuth = true
+                        showExportSignInAlert = true
                     }
                 } label: {
                     Text("Export as PDF Instead")
