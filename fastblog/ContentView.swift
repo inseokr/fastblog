@@ -9,6 +9,8 @@ struct ContentView: View {
     @StateObject private var createdRecapStore = CreatedRecapBlogStore.shared
     @StateObject private var tripsViewModel: TripsViewModel
     @State private var showTrips = false
+    /// When true, show Trips overlay when scan reaches .idle (so it fades in when ready).
+    @State private var pendingShowTripsWhenIdle = false
     @State private var showProfile = false
     @State private var showSeeAll = false
     @State private var showPlacesVisited = false
@@ -31,7 +33,11 @@ struct ContentView: View {
                     showSeeAll: $showSeeAll,
                     showPlacesVisited: $showPlacesVisited,
                     selectedCreatedRecap: $selectedCreatedRecap,
-                    tripsViewModel: tripsViewModel
+                    tripsViewModel: tripsViewModel,
+                    onTapToBlog: {
+                        tripsViewModel.startDefaultScan()
+                        pendingShowTripsWhenIdle = true
+                    }
                 )
                 .navigationDestination(isPresented: $showProfile) {
                     ProfileView(selectedCreatedRecap: $selectedCreatedRecap)
@@ -100,6 +106,7 @@ struct ContentView: View {
                     onCancel: {
                         tripsViewModel.cancelDefaultScan()
                         showTrips = false
+                        pendingShowTripsWhenIdle = false
                     }
                 )
                 .transition(.opacity)
@@ -113,6 +120,14 @@ struct ContentView: View {
         .environment(\.dismissToLanding, {
             dismissToLandingRequested = true
         })
+        .onChange(of: tripsViewModel.scanState) { _, newState in
+            if newState == .idle && pendingShowTripsWhenIdle {
+                pendingShowTripsWhenIdle = false
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    showTrips = true
+                }
+            }
+        }
         .onChange(of: dismissToLandingRequested) { _, requested in
             if requested {
                 dismissToLandingRequested = false
@@ -137,8 +152,10 @@ struct ContentView: View {
                 justFinishedOnboarding = false
                 if tripsViewModel.tripDrafts.isEmpty {
                     tripsViewModel.startDefaultScan()
+                    pendingShowTripsWhenIdle = true
+                } else {
+                    showTrips = true
                 }
-                showTrips = true
             }
         }
     }

@@ -166,10 +166,7 @@ struct PlacesVisitedView: View {
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal, 20)
 
-                                if createdRecapStore.visitedPlaces.isEmpty {
-                                    Button("Create Blog") { }
-                                        .buttonStyle(.borderedProminent)
-                                } else {
+                                if !createdRecapStore.visitedPlaces.isEmpty {
                                     Button("Clear filters") {
                                         selectedYear = nil
                                         selectedCountry = nil

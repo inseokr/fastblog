@@ -14,6 +14,8 @@ struct LandingView: View {
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     /// Passed back to ContentView so RecapBlogPageView opens at the right day.
     @ObservedObject var tripsViewModel: TripsViewModel
+    /// When provided, "Tap to Blog" calls this instead of setting showTrips; parent shows Trips when scan is ready.
+    var onTapToBlog: (() -> Void)? = nil
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @EnvironmentObject private var authService: AuthService
     @EnvironmentObject private var splashManager: SplashStateManager
@@ -247,16 +249,14 @@ struct LandingView: View {
 
     private var scanCTA: some View {
         Button {
-            // let's print some default around this logic.
-            print("scanCTA tapped")
-            print("OnTheGoTripStore.hasNewMoments: \(OnTheGoTripStore.hasNewMoments)")
-            tripsViewModel.startDefaultScan()
-            // Delay navigation until the scan overlay is fully opaque,
-            // so the push happens invisibly behind it (fade instead of slide-from-right)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                showTrips = true
+            if let onTapToBlog = onTapToBlog {
+                onTapToBlog()
+            } else {
+                tripsViewModel.startDefaultScan()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                    showTrips = true
+                }
             }
-            return
             // Check for on-the-go new moments first — only when the user already has a created blog.
             // if OnTheGoTripStore.hasNewMoments,
             //    let blogId = OnTheGoTripStore.activeBlogId,

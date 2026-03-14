@@ -645,7 +645,11 @@ final class TripsViewModel: ObservableObject {
         defaultScanProgress = 0
     }
 
-    func startDefaultScan() {
+    /// When true, skips incremental scan and runs a full-window scan (e.g. after user selects more photos in Limited Library picker).
+    func startDefaultScan(forceFullScan: Bool = false) {
+        if forceFullScan {
+            PhotoLibraryTripService.invalidateScanCache()
+        }
         showSelectPhotosIntroAfterScan = true
         scanState = .scanningDefault
         loadingMessage = "Loading your trips…"
@@ -656,7 +660,7 @@ final class TripsViewModel: ObservableObject {
         AppAnalytics.shared.trackEvent(name: "trip_scan_started")
         let occupiedRanges = createdRecapStore.occupiedDateRanges()
         let userId = currentUserId
-        let previousLastScanned = ScanSessionStore.lastScannedDate(for: userId)
+        let previousLastScanned = forceFullScan ? nil : ScanSessionStore.lastScannedDate(for: userId)
 
         #if DEBUG
         debugPrint("[Scan] ──── startDefaultScan ────")

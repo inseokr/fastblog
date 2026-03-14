@@ -168,9 +168,12 @@ final class PhotoLibraryTripService {
             debugPrint("[Scan] totalFetched=\(totalFetched) missingLocation=\(missingLocationCount) excludedWithin50mi=\(excludedWithin50Count) includedBeyond50mi=\(includedBeyond50Count)")
             #endif
         } else {
+            remaining = allAssets.filter { $0.location != nil }
+            #if DEBUG
             if !allAssets.isEmpty {
-                debugPrint("[Scan] Neighborhood center not set; no trips returned. Set neighborhood in onboarding.")
+                debugPrint("[Scan] Neighborhood center not set; including \(remaining.count) assets with location.")
             }
+            #endif
         }
 
         let remainingForTripsCount = remaining.count
@@ -472,6 +475,9 @@ final class PhotoLibraryTripService {
                     remaining.append(asset)
                 }
             }
+        } else {
+            // No neighborhood set: include all assets with location so single-photo trips can appear
+            remaining = allAssets.filter { $0.location != nil }
         }
         progress?(0.15)
 

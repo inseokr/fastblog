@@ -49,6 +49,12 @@ struct TripsView: View {
     /// Initial day index passed into TripDayPickerView — set to the latest day for new-moments
     /// navigation, 0 for all other navigation paths.
     @State private var tripInitialDayIndex: Int = 0
+    /// When true, the next time scan goes idle we select the latest trip (e.g. after limited picker added photos).
+    @State private var selectLatestTripWhenScanIdle = false
+    /// When set, scroll carousel to this trip (used after photo selection; applied after a short delay so list is populated).
+    @State private var pendingScrollToTripID: UUID? = nil
+    /// Trip IDs to show a "New" badge for (from the current photo-selection session). Cleared when user leaves Trips page.
+    @State private var newTripIDsFromPhotoSelection: Set<UUID> = []
 
     init(
         viewModel: TripsViewModel,
@@ -76,6 +82,17 @@ struct TripsView: View {
             return savedTrip
         }
         return trips.first
+    }
+
+    /// After photo selection, the list may not have updated when scanState goes idle. Schedule a delayed read of the list and set pendingScrollToTripID so we scroll once the list is populated.
+    private func scheduleScrollToLatestTripAfterPhotoSelection() {
+        let vm = viewModel
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000) // 0.45s for list to update
+            let trips = vm.visibleDraftTripsNewestFirst
+            guard let first = trips.first else { return }
+            pendingScrollToTripID = first.id
+        }
     }
 
     /// Find the trip whose coordinate is closest to a given map center point.
@@ -381,6 +398,7 @@ struct TripsView: View {
         #endif
         .onDisappear {
             createdRecapStore.showDraftSavedToast = false
+            newTripIDsFromPhotoSelection = []
         }
         // Surface the Limited banner only when scan finishes with weak results
         .onChange(of: viewModel.scanState) { oldState, newState in
@@ -390,10 +408,16 @@ struct TripsView: View {
                     // Re-scan triggered by returning from blog flow — keep the user's scroll position.
                     preserveScrollOnNextScan = false
                 } else {
-                    // Normal scan (initial load, Find More, etc.) — restore last position or land on newest trip.
                     let trips = allTrips
-                    if let target = preferredTrip(from: trips) {
-                        selectedTripID = target.id
+                    let afterPhotoSelection = selectLatestTripWhenScanIdle
+                    if selectLatestTripWhenScanIdle {
+                        selectLatestTripWhenScanIdle = false
+                        // Scroll to the new trip after list has updated. Don't rely on onChange(list) — it can run before this handler, so we schedule a delayed scroll.
+                        scheduleScrollToLatestTripAfterPhotoSelection()
+                    }
+                    let target: TripDraft? = afterPhotoSelection ? nil : preferredTrip(from: trips)
+                    if let target = target {
+                        withAnimation(.easeInOut(duration: 0.45)) { selectedTripID = target.id }
                         if let center = target.centerCoordinate {
                             let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
                             mapPosition = .region(MKCoordinateRegion(center: center, span: span))
@@ -501,6 +525,21 @@ struct TripsView: View {
                 mapPosition = .region(MKCoordinateRegion(center: center, span: span))
             }
         }
+        // After photo selection: delayed scroll to latest trip (pendingScrollToTripID set by scheduleScrollToLatestTripAfterPhotoSelection)
+        .onChange(of: pendingScrollToTripID) { _, id in
+            guard let id = id else { return }
+            let trips = viewModel.visibleDraftTripsNewestFirst
+            guard let trip = trips.first(where: { $0.id == id }) else {
+                pendingScrollToTripID = nil
+                return
+            }
+            newTripIDsFromPhotoSelection = Set(trips.map(\.id))
+            withAnimation(.easeInOut(duration: 0.45)) { selectedTripID = id }
+            if let center = trip.centerCoordinate {
+                mapPosition = .region(MKCoordinateRegion(center: center, span: MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)))
+            }
+            pendingScrollToTripID = nil
+        }
     }
 
 
@@ -571,6 +610,7 @@ struct TripsView: View {
                     TripCarouselCard(
                         trip: trip,
                         isSelected: trip.id == selectedTripID,
+                        showNewBadge: newTripIDsFromPhotoSelection.contains(trip.id),
                         onTap: {
                             if trip.id == selectedTripID {
                                 // Already centered — check for new photos, then open blog creation
@@ -599,8 +639,8 @@ struct TripsView: View {
         .contentMargins(.horizontal, 24)
         .frame(height: 240)
         // Detect swipes past either end of the carousel.
-        // • Left-swipe on last card   → "Load older trips"
-        // • Right-swipe on first card → "Load newer trips" (only when a newer window exists)
+        // • Left-swipe on last card   → "Load older trips" (or same popup when only one trip)
+        // • Right-swipe on first card → "Load newer trips" when multiple trips; when only one trip, show load-more popup (Allow Full Access / Select More Photos / Cancel for limited)
         .simultaneousGesture(
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
@@ -617,10 +657,14 @@ struct TripsView: View {
 
                     if isRightwardDrag,
                        selectedTripID == allTrips.first?.id,
-                       viewModel.canLoadNewerTrips,
                        !viewModel.isLoadingNewerTrips,
                        !showLoadNewerPopup {
-                        withAnimation(.easeOut(duration: 0.3)) { showLoadNewerPopup = true }
+                        if allTrips.count == 1 {
+                            // Single trip: show load-more popup (limited users get Allow Full Access / Select More Photos / Cancel)
+                            withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
+                        } else if viewModel.canLoadNewerTrips {
+                            withAnimation(.easeOut(duration: 0.3)) { showLoadNewerPopup = true }
+                        }
                     }
                 }
         )
@@ -643,47 +687,6 @@ struct TripsView: View {
                     Text("Try scanning a different date range")
                         .font(.subheadline)
                         .foregroundColor(.white.opacity(0.6))
-                }
-            }
-
-            if photoAuth.status == .limited {
-                HStack(spacing: 10) {
-                    Button {
-                        presentLimitedLibraryPicker()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "photo.badge.plus")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text("Add More Photos")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 10)
-                        .background(
-                            Capsule().fill(
-                                LinearGradient(
-                                    colors: [Color(red: 0.18, green: 0.40, blue: 0.78),
-                                             Color(red: 0.25, green: 0.35, blue: 0.72)],
-                                    startPoint: .leading, endPoint: .trailing
-                                )
-                            )
-                        )
-                        .clipShape(Capsule())
-                    }
-
-                    Button {
-                        viewModel.openFindMoreSheet()
-                    } label: {
-                        Text("Change Range")
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.7))
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 10)
-                            .background(Capsule().fill(Color.white.opacity(0.1)))
-                            .clipShape(Capsule())
-                    }
                 }
             }
         }
@@ -786,9 +789,13 @@ struct TripsView: View {
         PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: rootViewController) { _ in
             DispatchQueue.main.async {
                 photoAuth.refreshStatus()
-                // Hide the banner and kick off a fresh scan to reflect newly added photos
                 withAnimation { showLimitedBannerAfterWeakScan = false }
-                viewModel.startDefaultScan()
+                selectLatestTripWhenScanIdle = true
+            }
+            // Give the Photos library a moment to expose newly selected assets before we scan
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+                viewModel.startDefaultScan(forceFullScan: true)
             }
         }
     }
@@ -1197,6 +1204,7 @@ struct TripsView: View {
 struct TripCarouselCard: View {
     let trip: TripDraft
     var isSelected: Bool = false
+    var showNewBadge: Bool = false
     var onTap: () -> Void = {}
 
     private static let cornerRadius: CGFloat = 18
@@ -1252,6 +1260,19 @@ struct TripCarouselCard: View {
                     .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
                 }
                 .padding(14)
+            }
+            // "New" badge — top left (trips from this session's photo selection)
+            .overlay(alignment: .topLeading) {
+                if showNewBadge {
+                    Text("New")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.green))
+                        .padding(10)
+                }
             }
             // Subtle "tap to create" hint only on the selected card
             .overlay(alignment: .topTrailing) {
@@ -1489,9 +1510,14 @@ struct NewlyScannedPhotosSheet: View {
         return ""
     }
 
+    /// Main notification label: "# Moments – Add to [Blog Name]" when matched to a saved blog, else "N moment(s) found".
     private var newPhotoLabel: String {
         let n = photos.count
-        return "\(n) new photo\(n == 1 ? "" : "s") found"
+        let momentText = "\(n) moment\(n == 1 ? "" : "s")"
+        if let blog = matchedBlog {
+            return "\(momentText) – Add to \"\(blog.title)\""
+        }
+        return "\(momentText) found"
     }
 
     @State private var dragOffset: CGFloat = 0
@@ -1563,12 +1589,13 @@ struct NewlyScannedPhotosSheet: View {
                 .frame(maxWidth: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .overlay(alignment: .bottomLeading) {
-                    // Badge: "N new photos"
+                    // Badge: "# Moments – Add to [Blog Name]" or "N moment(s) found"
                     HStack(spacing: 5) {
                         Image(systemName: "sparkles")
                             .font(.system(size: 11, weight: .semibold))
                         Text(newPhotoLabel)
                             .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(2)
                     }
                     .foregroundColor(.white)
                     .padding(.horizontal, 10)
@@ -1653,11 +1680,11 @@ struct NewlyScannedPhotosSheet: View {
 
     private var actionButtons: some View {
         VStack(spacing: 10) {
-            if matchedBlog != nil {
+            if let blog = matchedBlog {
                 Button(action: { onGoToBlog?() }) {
                     HStack(spacing: 8) {
                         Image(systemName: "book.closed.fill")
-                        Text("Add to Blog")
+                        Text("Add to \"\(blog.title)\"")
                             .fontWeight(.semibold)
                     }
                     .foregroundColor(.white)
