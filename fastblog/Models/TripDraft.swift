@@ -21,10 +21,8 @@ struct TripDraft: Identifiable, Equatable, Hashable, Codable, Sendable {
     var coverTheme: String
     /// When set, show this asset as the cover image instead of theme gradient (e.g. from photo library scan).
     var coverAssetIdentifier: String?
-    /// When trip was split into multiple parts, e.g. "Episode 1 of 2". Shown on its own row below the title.
-    var episodeLabel: String?
 
-    init(id: UUID = UUID(), title: String, dateRangeText: String, days: [TripDay], coverImageName: String, isScannedFromDefaultRange: Bool, draftCreatedAgoText: String = "Draft created recently", daysSeasonText: String = "", coverTheme: String = "default", coverAssetIdentifier: String? = nil, episodeLabel: String? = nil) {
+    init(id: UUID = UUID(), title: String, dateRangeText: String, days: [TripDay], coverImageName: String, isScannedFromDefaultRange: Bool, draftCreatedAgoText: String = "Draft created recently", daysSeasonText: String = "", coverTheme: String = "default", coverAssetIdentifier: String? = nil) {
         self.id = id
         self.title = title
         self.dateRangeText = dateRangeText
@@ -35,20 +33,6 @@ struct TripDraft: Identifiable, Equatable, Hashable, Codable, Sendable {
         self.daysSeasonText = daysSeasonText
         self.coverTheme = coverTheme
         self.coverAssetIdentifier = coverAssetIdentifier
-        self.episodeLabel = episodeLabel
-    }
-
-    /// Title without " (Part X of Y)" suffix. Used so the episode can be shown on its own row.
-    var displayTitle: String {
-        guard let match = title.wholeMatch(of: #/^(.+)\s+\(Part\s+(\d+)\s+of\s+(\d+)\)$/#) else { return title }
-        return String(match.1).trimmingCharacters(in: .whitespaces)
-    }
-
-    /// "Episode X of Y" when trip was split. From episodeLabel (new data) or parsed from title " (Part X of Y)" (legacy).
-    var displayEpisodeLabel: String? {
-        if let ep = episodeLabel, !ep.isEmpty { return ep }
-        guard let match = title.wholeMatch(of: #/^.+\(Part\s+(\d+)\s+of\s+(\d+)\)$/#) else { return nil }
-        return "Episode \(match.1) of \(match.2)"
     }
 
     /// Center coordinate for map annotation (average of all photo locations). Nil if no photos have location.

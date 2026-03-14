@@ -416,8 +416,7 @@ final class TripsViewModel: ObservableObject {
     }
 
     /// Keep a trip when any portion overlaps the visible window.
-    /// This preserves Episode 1 for long trips that start just before the window
-    /// but continue into it.
+    /// This preserves long trips that start just before the window but continue into it.
     private func tripOverlapsWindow(_ trip: TripDraft, windowStart: Date, windowEnd: Date) -> Bool {
         guard let start = trip.earliestDate else { return false }
         let end = trip.latestDate ?? start

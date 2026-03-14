@@ -1224,19 +1224,12 @@ struct TripCarouselCard: View {
             // Trip info — bottom left
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 5) {
-                    // Trip title (base title only; episode on next row when split)
-                    Text(trip.displayTitle)
+                    // Trip title
+                    Text(trip.title)
                         .font(.subheadline)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
                         .lineLimit(1)
-
-                    // Episode line when trip was split (e.g. "Episode 1 of 2")
-                    if let episode = trip.displayEpisodeLabel, !episode.isEmpty {
-                        Text(episode)
-                            .font(.caption2)
-                            .foregroundColor(.white.opacity(0.85))
-                    }
 
                     // Subtitle: Date range + duration
                     Text("\(trip.tripDateRangeDisplayText)  •  \(durationText)")
@@ -1475,7 +1468,7 @@ struct NewlyScannedPhotosSheet: View {
     }
 
     private var entityTitle: String {
-        matchedBlog?.title ?? matchedTrip?.displayTitle ?? "Your Trip"
+        matchedBlog?.title ?? matchedTrip?.title ?? "Your Trip"
     }
 
     private var entityDateRange: String {

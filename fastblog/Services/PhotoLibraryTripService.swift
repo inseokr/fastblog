@@ -232,10 +232,6 @@ final class PhotoLibraryTripService {
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
             let placeSummary = await buildTripPlaceSummary(for: tripDays)
             let title = placeSummary.title
-            var episodeLabel: String? = nil
-            if let part = item.partNumber, let total = item.totalParts, total > 1 {
-                episodeLabel = "Episode \(part) of \(total)"
-            }
             let coverAsset = segment.first
             let coverIdentifier = coverAsset?.localIdentifier
 
@@ -285,8 +281,7 @@ final class PhotoLibraryTripService {
                 draftCreatedAgoText: "From your photo library",
                 daysSeasonText: daysSeasonText,
                 coverTheme: "default",
-                coverAssetIdentifier: coverIdentifier,
-                episodeLabel: episodeLabel
+                coverAssetIdentifier: coverIdentifier
             )
             trips.append(draft)
         }
@@ -361,10 +356,6 @@ final class PhotoLibraryTripService {
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
             let placeSummary = await buildTripPlaceSummary(for: tripDays)
             let title = placeSummary.title
-            var episodeLabel: String? = nil
-            if let part = item.partNumber, let total = item.totalParts, total > 1 {
-                episodeLabel = "Episode \(part) of \(total)"
-            }
             let coverAsset = assets.first
             let coverIdentifier = coverAsset?.localIdentifier
 
@@ -412,8 +403,7 @@ final class PhotoLibraryTripService {
                 draftCreatedAgoText: "From your photo library",
                 daysSeasonText: daysSeasonText,
                 coverTheme: "default",
-                coverAssetIdentifier: coverIdentifier,
-                episodeLabel: episodeLabel
+                coverAssetIdentifier: coverIdentifier
             )
             results.append(TripScanResult(assets: assets, draft: draft))
         }
@@ -517,10 +507,6 @@ final class PhotoLibraryTripService {
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
             let placeSummary = await buildTripPlaceSummary(for: tripDays)
             let title = placeSummary.title
-            var episodeLabel: String? = nil
-            if let part = item.partNumber, let total = item.totalParts, total > 1 {
-                episodeLabel = "Episode \(part) of \(total)"
-            }
             let coverAsset = segment.first
             let coverIdentifier = coverAsset?.localIdentifier
 
@@ -568,8 +554,7 @@ final class PhotoLibraryTripService {
                 draftCreatedAgoText: "From your photo library",
                 daysSeasonText: daysSeasonText,
                 coverTheme: "default",
-                coverAssetIdentifier: coverIdentifier,
-                episodeLabel: episodeLabel
+                coverAssetIdentifier: coverIdentifier
             )
             trips.append(draft)
         }

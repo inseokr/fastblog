@@ -924,6 +924,43 @@ struct RecapBlogPageView: View {
         return "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate)) · \(dayCount) day\(dayCount == 1 ? "" : "s")"
     }
 
+    /// Returns a date suitable for passing to `formatDateRange` that matches the calendar
+    /// date the user sees in the day row header (i.e. `shortDateText`).
+    ///
+    /// `shortDateText` reads the EXIF `visitedTimeDigitized` date string as-is in UTC,
+    /// so "2025:01:01" → Jan 1 regardless of timezone. `formatDateRange` however uses
+    /// `Calendar.current` (local timezone) to extract y/m/d from a `Date`. A UTC-midnight
+    /// date would become the *previous* day in any timezone west of UTC.
+    ///
+    /// Solution: parse the EXIF date string in UTC to get y/m/d, then rebuild as local
+    /// **noon** using those same components so `Calendar.current` extracts the correct day
+    /// in every timezone.
+    private func splitPreviewDate(for day: RecapBlogDay) -> Date {
+        if let digitized = day.placeStops.first?.visitedTimeDigitized {
+            let parts = digitized.split(separator: " ")
+            if parts.count == 2 {
+                let parser = DateFormatter()
+                parser.dateFormat = "yyyy:MM:dd"
+                parser.timeZone = TimeZone(secondsFromGMT: 0)
+                if let exifUTCDate = parser.date(from: String(parts[0])) {
+                    var utcCal = Calendar(identifier: .gregorian)
+                    utcCal.timeZone = TimeZone(secondsFromGMT: 0)!
+                    // Extract the calendar date components as written in the EXIF string.
+                    var comps = utcCal.dateComponents([.year, .month, .day], from: exifUTCDate)
+                    // Rebuild at local noon — Calendar.current then gives the right y/m/d
+                    // regardless of the device's UTC offset.
+                    comps.hour = 12
+                    comps.minute = 0
+                    comps.second = 0
+                    if let localNoon = Calendar.current.date(from: comps) {
+                        return localNoon
+                    }
+                }
+            }
+        }
+        return day.date
+    }
+
     /// Day filter fixed at top; scrollable content (map + timeline) sits below it.
     private var dayFilterSection: some View {
         let processingIndex = createdRecapStore.processingDayIndexByBlogId[blogId]
@@ -1130,7 +1167,8 @@ struct RecapBlogPageView: View {
                 
                 Spacer()
                 
-                // Only show split icon if there are at least 2 days and this isn't the *first* day
+                // Scissors on Day N (dayIdx > 0) means "split before Day N":
+                // Part 1 = Days 1..N-1, Part 2 = Days N..end. Not shown on Day 1.
                 if isEditMode, draft.days.count >= 2, let dayIdx = draft.days.firstIndex(where: { $0.id == day.id }), dayIdx > 0 {
                     Button {
                         let isJustCreated = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
@@ -1163,10 +1201,10 @@ struct RecapBlogPageView: View {
                             dayIndexToSplit = nil
                         }
                     } message: {
-                        if let splitIdx = dayIndexToSplit {
-                            let part1Count = splitIdx
-                            let part2Count = draft.days.count - part1Count
-                            Text("This will create two separate blogs:\n\nPart 1: Day 1–\(part1Count) (\(part1Count) day\(part1Count == 1 ? "" : "s"))\nPart 2: Day \(part1Count + 1)–\(draft.days.count) (\(part2Count) day\(part2Count == 1 ? "" : "s"))")
+                        if let splitIdx = dayIndexToSplit, splitIdx > 0, splitIdx < draft.days.count {
+                            let p1 = CreatedRecapBlogStore.formatDateRange(start: draft.days.first?.date, end: draft.days[splitIdx - 1].date) ?? "—"
+                            let p2 = CreatedRecapBlogStore.formatDateRange(start: draft.days[splitIdx].date, end: draft.days.last?.date) ?? "—"
+                            Text("This will create two separate blogs:\n\nPart 1: \(p1)\nPart 2: \(p2)")
                         } else {
                             Text("Split this blog into two separate blogs.")
                         }
@@ -1317,53 +1355,52 @@ struct RecapBlogPageView: View {
 
     @ViewBuilder
     private func unsavedSplitModal(splitIdx: Int) -> some View {
-        let part1Count = splitIdx
-        
-        let part1StartDate = draft.days[0..<splitIdx].first?.date
-        let part1EndDate = draft.days[0..<splitIdx].last?.date
+        // splitIdx is the 0-based array index of the day where scissors was tapped.
+        // Scissors on Day N means "split before Day N": Part 1 = Days 1..N-1, Part 2 = Days N..end.
+        let part1Days = Array(draft.days[0..<splitIdx])
+        let part2Days = Array(draft.days[splitIdx...])
+
+        let part1StartDate = part1Days.first.map(splitPreviewDate(for:))
+        let part1EndDate = part1Days.last.map(splitPreviewDate(for:))
         let part1DateStr = CreatedRecapBlogStore.formatDateRange(start: part1StartDate, end: part1EndDate) ?? "Unknown Date"
-        
-        let part2StartDate = draft.days[splitIdx...].first?.date
-        let part2EndDate = draft.days[splitIdx...].last?.date
+
+        let part2StartDate = part2Days.first.map(splitPreviewDate(for:))
+        let part2EndDate = part2Days.last.map(splitPreviewDate(for:))
         let part2DateStr = CreatedRecapBlogStore.formatDateRange(start: part2StartDate, end: part2EndDate) ?? "Unknown Date"
-        
-        let part1Cities = draft.days[0..<splitIdx]
+
+        let part1Cities = part1Days
             .flatMap(\.placeStops)
             .compactMap { $0.placeSubtitle }
             .filter { !$0.isEmpty }
-        
-        // Remove duplicates while preserving order
+
         var seen1 = Set<String>()
-        let part1UniqueCities = part1Cities.filter { seen1.insert($0).inserted }
-        let part1CityString = part1UniqueCities.joined(separator: ", ")
-        
-        let part2Cities = draft.days[splitIdx...]
+        let part1CityString = part1Cities.filter { seen1.insert($0).inserted }.joined(separator: ", ")
+
+        let part2Cities = part2Days
             .flatMap(\.placeStops)
             .compactMap { $0.placeSubtitle }
             .filter { !$0.isEmpty }
-        
+
         var seen2 = Set<String>()
-        let part2UniqueCities = part2Cities.filter { seen2.insert($0).inserted }
-        let part2CityString = part2UniqueCities.joined(separator: ", ")
-        
+        let part2CityString = part2Cities.filter { seen2.insert($0).inserted }.joined(separator: ", ")
+
         VStack(spacing: 24) {
             VStack(spacing: 8) {
                 Text("Choose which part to keep")
                     .font(.headline)
                     .fontWeight(.bold)
                     .padding(.top, 24)
-                
+
                 Text("The other part will be saved as a separate trip.")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
             }
-            
+
             VStack(spacing: 16) {
                 Button {
                     unsavedSplitPromptIndex = nil
-                    // delay slightly to allow sheet dismissal
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         splitUnsavedBlog(afterDayIndex: splitIdx - 1, keepPart: 1)
                     }
@@ -1372,7 +1409,7 @@ struct RecapBlogPageView: View {
                         Text("Keep Part 1")
                             .font(.headline)
                             .foregroundColor(.primary)
-                        Text("Days 1–\(part1Count) (\(part1DateStr))")
+                        Text(part1DateStr)
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                         if !part1CityString.isEmpty {
@@ -1388,7 +1425,7 @@ struct RecapBlogPageView: View {
                     .cornerRadius(12)
                 }
                 .buttonStyle(.plain)
-                
+
                 Button {
                     unsavedSplitPromptIndex = nil
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -1399,7 +1436,7 @@ struct RecapBlogPageView: View {
                         Text("Keep Part 2")
                             .font(.headline)
                             .foregroundColor(.primary)
-                        Text("Days \(part1Count + 1)–\(draft.days.count) (\(part2DateStr))")
+                        Text(part2DateStr)
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                         if !part2CityString.isEmpty {
@@ -2751,7 +2788,6 @@ struct RecapBlogPageView: View {
 
         let baseTitle = draft.title
             .replacingOccurrences(of: " \\(Part \\d+ of \\d+\\)", with: "", options: .regularExpression)
-            .replacingOccurrences(of: " \\(Episode \\d+ of \\d+\\)", with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
 
         if keepPart == 1 {

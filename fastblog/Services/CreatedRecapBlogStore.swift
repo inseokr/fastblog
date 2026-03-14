@@ -960,7 +960,6 @@ final class CreatedRecapBlogStore: ObservableObject {
             }
             for i in combined.indices { combined[i].dayIndex = i + 1 }
             keepTrip.days = combined
-            keepTrip.episodeLabel = nil
             tripDraftsBySourceId[keepId] = keepTrip
         }
 
@@ -1002,7 +1001,6 @@ final class CreatedRecapBlogStore: ObservableObject {
         // 3. Generate titles
         let baseTitle = detail.title
             .replacingOccurrences(of: " \\(Part \\d+ of \\d+\\)", with: "", options: .regularExpression)
-            .replacingOccurrences(of: " \\(Episode \\d+ of \\d+\\)", with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
         let title1 = "\(baseTitle) (Part 1 of 2)"
         let title2 = "\(baseTitle) (Part 2 of 2)"
@@ -1081,7 +1079,6 @@ final class CreatedRecapBlogStore: ObservableObject {
                 trip1.days = Array(trip.days[0...splitIdx])
                 for i in trip1.days.indices { trip1.days[i].dayIndex = i + 1 }
                 trip1.title = title1
-                trip1.episodeLabel = "Episode 1 of 2"
                 tripDraftsBySourceId[blogId] = trip1
 
                 var trip2Days = Array(trip.days[(splitIdx + 1)...])
@@ -1094,8 +1091,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                     coverImageName: trip.coverImageName,
                     isScannedFromDefaultRange: trip.isScannedFromDefaultRange,
                     coverTheme: trip.coverTheme,
-                    coverAssetIdentifier: trip.coverAssetIdentifier,
-                    episodeLabel: "Episode 2 of 2"
+                    coverAssetIdentifier: trip.coverAssetIdentifier
                 )
                 tripDraftsBySourceId[newBlogId] = trip2
             }
@@ -1130,7 +1126,6 @@ final class CreatedRecapBlogStore: ObservableObject {
         
         let baseTitle = trip.title
             .replacingOccurrences(of: " \\(Part \\d+ of \\d+\\)", with: "", options: .regularExpression)
-            .replacingOccurrences(of: " \\(Episode \\d+ of \\d+\\)", with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
         
         let title1 = "\(baseTitle) (Part 1 of 2)"
@@ -1145,7 +1140,6 @@ final class CreatedRecapBlogStore: ObservableObject {
         trip1.title = title1
         trip1.days = part1Days
         trip1.dateRangeText = dateRange1
-        trip1.episodeLabel = "Episode 1 of 2"
         
         let start2 = part2Days.first?.photos.first?.timestamp
         let end2 = part2Days.last?.photos.last?.timestamp
@@ -1164,8 +1158,7 @@ final class CreatedRecapBlogStore: ObservableObject {
             coverImageName: trip.coverImageName,
             isScannedFromDefaultRange: trip.isScannedFromDefaultRange,
             coverTheme: trip.coverTheme,
-            coverAssetIdentifier: part2CoverIdentifier,
-            episodeLabel: "Episode 2 of 2"
+            coverAssetIdentifier: part2CoverIdentifier
         )
         
         // 3. Assign the kept part to the original tripId, and the discarded part to the new ID.
