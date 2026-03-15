@@ -10,15 +10,33 @@ struct PlacesVisitedStandaloneView: View {
     @State private var searchText: String = ""
     @State private var showPlacesMap: Bool = false
 
+    private let backgroundBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
+
     var body: some View {
         PlacesVisitedView(
             searchText: $searchText,
             showPlacesMap: $showPlacesMap,
             selectedCreatedRecap: $selectedCreatedRecap
         )
+        .background(backgroundBlue.ignoresSafeArea())
+        .scrollContentBackground(.hidden)
         .navigationTitle("Places Visited")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
         .preferredColorScheme(.dark)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        onDismiss()
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.body.weight(.semibold))
+                }
+            }
+        }
     }
 }
 
@@ -34,10 +52,14 @@ struct PlacesVisitedView: View {
     @State private var selectedCategory: String? = nil
 
     @State private var selectedPlaceForModal: VisitedPlaceSummary?
+    @FocusState private var isSearchFocused: Bool
+    @State private var isSearchActive: Bool = false
 
     private let searchBarHeight: CGFloat = 56
     private let mapButtonSize: CGFloat = 52
     private let horizontalPadding: CGFloat = 16
+    /// Bottom bar padding (match My Blogs layout).
+    private let bottomBarHorizontalPadding: CGFloat = 20
 
     private let gridColumns: [GridItem] = [
         GridItem(.flexible(), spacing: 12, alignment: .top),
@@ -231,9 +253,34 @@ struct PlacesVisitedView: View {
                         }
                     }
                     .padding(.horizontal, horizontalPadding)
-                    .padding(.bottom, 132)
+                    .padding(.bottom, 140)
                 }
             }
+
+            // Persistent bottom bar (search + map), same design as My Blogs
+            VStack(spacing: 0) {
+                Spacer()
+                HStack {
+                    Spacer()
+                    Button {
+                        isSearchFocused = false
+                        showPlacesMap = true
+                    } label: {
+                        Image(systemName: "map.fill")
+                            .font(.title2)
+                            .foregroundColor(.white)
+                            .frame(width: mapButtonSize, height: mapButtonSize)
+                            .background(Color.blue)
+                            .clipShape(Capsule())
+                            .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, bottomBarHorizontalPadding)
+                    .padding(.bottom, 16)
+                }
+                placesSearchBar
+            }
+            .allowsHitTesting(true)
         }
         .sheet(item: $selectedPlaceForModal) { place in
             placeModalSheet(place: place)
@@ -351,15 +398,43 @@ struct PlacesVisitedView: View {
         .padding(.vertical, 8)
     }
 
+    private var placesSearchBar: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.white.opacity(0.7))
+            TextField("Search place, city, or country", text: $searchText)
+                .foregroundColor(.white)
+                .autocorrectionDisabled()
+                .focused($isSearchFocused)
+                .onTapGesture { isSearchActive = true }
+            if isSearchActive {
+                Button {
+                    searchText = ""
+                    isSearchFocused = false
+                    isSearchActive = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(height: searchBarHeight)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, bottomBarHorizontalPadding)
+        .padding(.bottom, 12)
+    }
+
     private func chip(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
                 .font(.subheadline)
                 .fontWeight(isSelected ? .semibold : .regular)
-                .foregroundColor(isSelected ? Color(uiColor: .systemBackground) : .primary)
+                .foregroundColor(isSelected ? .white : .primary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(isSelected ? Color.primary : Color(uiColor: .systemGray5))
+                .background(isSelected ? Color.blue : Color(uiColor: .systemGray5))
                 .clipShape(Capsule())
                 .lineLimit(1)
         }

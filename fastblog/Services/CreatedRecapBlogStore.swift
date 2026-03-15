@@ -719,6 +719,9 @@ final class CreatedRecapBlogStore: ObservableObject {
                 .flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
             recents[idx].totalPlaceVisitCount = detail.days.reduce(0) { $0 + $1.placeStops.count }
             recents[idx].tripDurationDays = detail.days.count
+            // Mark as edited so the blog appears in "My blogs" / Latest (e.g. "Edited Today").
+            recents[idx].lastEditedAt = Date()
+            recents[idx].syncStatus = .needsUpload
             persistRecents()
         }
     }
@@ -1615,8 +1618,10 @@ final class CreatedRecapBlogStore: ObservableObject {
             }
 
             guard !placeStops.isEmpty else { continue }
+            // Use the earliest selected photo's calendar day so Day 2's date matches its photos (camera trips use 0-based dayIndex; we use 1-based for display).
             let dayDate = day.photos.filter(\.isSelected).map(\.timestamp).min().map { calendar.startOfDay(for: $0) } ?? Date()
-            days.append(RecapBlogDay(dayIndex: day.dayIndex, date: dayDate, placeStops: placeStops))
+            let oneBasedIndex = days.count + 1
+            days.append(RecapBlogDay(dayIndex: oneBasedIndex, date: dayDate, placeStops: placeStops))
         }
 
         // Default cover: first included photo's localIdentifier, fallback to trip's cover asset.

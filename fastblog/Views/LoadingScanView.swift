@@ -111,20 +111,34 @@ struct LoadingScanView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .overlay(alignment: .topTrailing) {
-            if let onClose {
-                Button {
-                    onClose()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.85))
-                        .padding(10)
-                        .background(Color.white.opacity(0.16))
-                        .clipShape(Circle())
+            HStack(spacing: 12) {
+                if let onUseCamera {
+                    Button {
+                        onUseCamera()
+                    } label: {
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.85))
+                            .padding(10)
+                            .background(Color.white.opacity(0.16))
+                            .clipShape(Circle())
+                    }
                 }
-                .padding(.top, 20)
-                .padding(.trailing, 20)
+                if let onClose {
+                    Button {
+                        onClose()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.85))
+                            .padding(10)
+                            .background(Color.white.opacity(0.16))
+                            .clipShape(Circle())
+                    }
+                }
             }
+            .padding(.top, 20)
+            .padding(.trailing, 20)
         }
         .preferredColorScheme(.dark)
         .onAppear {

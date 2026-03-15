@@ -66,7 +66,7 @@ struct FindMoreTripsSheet: View {
                 viewModel.dismissFindMoreSheet()
                 dismiss()
             } label: {
-                Image(systemName: "xmark")
+                Text("Close")
                     .font(.body.weight(.bold))
                     .foregroundColor(Color(white: 0.7))
             }
