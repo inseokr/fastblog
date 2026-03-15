@@ -42,7 +42,42 @@ final class APIManager {
     let baseURL = "https://pocketverse.herokuapp.com/LS_API"
     let fileServerURL = "https://ls-file-server-4312402ca23f.herokuapp.com/LS_FS_API"    
     private init() {}
-    
+
+    // MARK: - Cloud URL Helpers
+
+    /// Strips AWS signing query params from a URL, returning the permanent URL without expiry parameters.
+    static func stripQueryParams(from urlString: String) -> String {
+        guard let url = URL(string: urlString),
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return urlString
+        }
+        components.query = nil
+        components.fragment = nil
+        return components.url?.absoluteString ?? urlString
+    }
+
+    /// Fetches a fresh short-lived signed URL for the given permanent cloud URL.
+    /// The permanent URL should have no query params (e.g., from `stripQueryParams`).
+    func fetchSignedPhotoURL(permanentURL: String) async throws -> URL {
+        guard let parsed = URL(string: permanentURL) else { throw APIError.invalidURL }
+        // Extract the path component and strip the leading slash so the backend receives a relative path.
+        let path = parsed.path.hasPrefix("/") ? String(parsed.path.dropFirst()) : parsed.path
+        let encoded = path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? path
+
+        struct SignedURLResponse: Decodable {
+            let result: String?
+            let url: String?
+            let signedUrl: String?
+            var resolvedURL: String? { url ?? signedUrl }
+        }
+
+        let response: SignedURLResponse = try await request(endpoint: "/media/signed-url?path=\(encoded)")
+        guard let urlStr = response.resolvedURL, let signedURL = URL(string: urlStr) else {
+            throw APIError.invalidResponse
+        }
+        return signedURL
+    }
+
     // MARK: - Generic Request Method
     
     /// Performs an authenticated or unauthenticated HTTP request
@@ -272,11 +307,13 @@ final class APIManager {
             throw APIError.decodingFailed(error)
         }
 
-        guard let cloudURL = result.path, !cloudURL.isEmpty else {
+        guard let rawURL = result.path, !rawURL.isEmpty else {
             AppAnalytics.shared.trackEvent(name: "upload_failed")
             throw APIError.invalidResponse
         }
 
+        // Store the permanent URL (no signing query params) so it never expires locally.
+        let cloudURL = APIManager.stripQueryParams(from: rawURL)
         print("   ✅ Uploaded → \(cloudURL)")
         AppAnalytics.shared.trackEvent(name: "upload_success")
         return cloudURL

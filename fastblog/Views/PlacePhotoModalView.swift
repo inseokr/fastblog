@@ -162,6 +162,7 @@ struct PlacePhotoModalView: View {
         self.onSavePlaceName = onSavePlaceName
         self.onCaptionCommitted = onCaptionCommitted
         _currentPhotoId = State(initialValue: initialPhotoId)
+        debugPrint("[PlacePhotoModal] photos: \(photos)")
     }
 
     private var currentPhoto: RecapPhoto? {
@@ -252,6 +253,7 @@ struct PlacePhotoModalView: View {
                     )
                 }
                 if !blogIsEditMode && !isEditing {
+                    // print photos
                     if photos.count > 1 {
                         PlacePhotoThumbnailStrip(
                             photos: photos,

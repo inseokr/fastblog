@@ -601,6 +601,32 @@ class PDFExportService {
             result.coverImage = result.photos[first.id]
         }
 
+        // Fetch cloud photos for any included photos that have no local asset.
+        let cloudPhotos = allIncluded.filter { $0.localIdentifier == nil && $0.cloudURL != nil }
+        if !cloudPhotos.isEmpty {
+            await withTaskGroup(of: (UUID, UIImage?).self) { group in
+                for photo in cloudPhotos {
+                    guard let permanentURL = photo.cloudURL else { continue }
+                    group.addTask {
+                        do {
+                            let signedURL = try await APIManager.shared.fetchSignedPhotoURL(permanentURL: permanentURL)
+                            let (data, _) = try await URLSession.shared.data(from: signedURL)
+                            return (photo.id, UIImage(data: data))
+                        } catch {
+                            return (photo.id, nil)
+                        }
+                    }
+                }
+                for await (photoId, image) in group {
+                    guard let image else { continue }
+                    result.photos[photoId] = image
+                    if result.coverImage == nil {
+                        result.coverImage = image
+                    }
+                }
+            }
+        }
+
         return result
     }
 
