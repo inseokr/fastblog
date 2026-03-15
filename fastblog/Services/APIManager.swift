@@ -56,6 +56,17 @@ final class APIManager {
         return components.url?.absoluteString ?? urlString
     }
 
+    /// Registers the APNs device token with the backend so the server can send push notifications.
+    func registerDeviceToken(_ token: String) async {
+        struct TokenBody: Encodable { let deviceToken: String }
+        struct TokenResponse: Decodable { let result: String? }
+        do {
+            let _: TokenResponse = try await post(endpoint: "/bloggo/device-token", body: TokenBody(deviceToken: token))
+        } catch {
+            print("[APNs] Failed to register device token: \(error)")
+        }
+    }
+
     /// Fetches a fresh short-lived signed URL for the given permanent cloud URL.
     /// The permanent URL should have no query params (e.g., from `stripQueryParams`).
     func fetchSignedPhotoURL(permanentURL: String) async throws -> URL {

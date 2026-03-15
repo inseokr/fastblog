@@ -408,13 +408,40 @@ class PDFExportService {
 
         // ── Photos — 2-column grid (app: 240x240 square, HStack spacing 10) ──
         if !photosWithImages.isEmpty {
+            let pageBeforePhotos = pen.pageNumber
             pen.skip(8) // app: photo strip top padding 8
+            // If skipping pushed us to a new page, fill continuation background
+            if pen.pageNumber != pageBeforePhotos {
+                let rowCount = (photosWithImages.count + 1) / 2
+                let estRemaining = CGFloat(rowCount) * (photoSize + 45) + cardPadding + 8
+                let contH = min(estRemaining, pen.maxY - pen.y)
+                if let gc = UIGraphicsGetCurrentContext(), contH > 0 {
+                    gc.saveGState()
+                    gc.setFillColor(cardBg.cgColor)
+                    gc.fill(CGRect(x: pen.margin, y: pen.y, width: contentW, height: contH))
+                    gc.restoreGState()
+                }
+            }
             let colW = photoSize
             let colH = photoSize
 
             for row in stride(from: 0, to: photosWithImages.count, by: 2) {
+                let pageBeforeEnsure = pen.pageNumber
                 // Ensure room for at least one photo row
                 pen.ensureRoom(colH + 40)
+
+                // If a page break occurred inside the card, draw continuation background
+                if pen.pageNumber != pageBeforeEnsure {
+                    let rowsLeft = (photosWithImages.count - row + 1) / 2
+                    let estRemaining = CGFloat(rowsLeft) * (colH + 45) + cardPadding + 8
+                    let contH = min(estRemaining, pen.maxY - pen.y)
+                    if let gc = UIGraphicsGetCurrentContext(), contH > 0 {
+                        gc.saveGState()
+                        gc.setFillColor(cardBg.cgColor)
+                        gc.fill(CGRect(x: pen.margin, y: pen.y, width: contentW, height: contH))
+                        gc.restoreGState()
+                    }
+                }
 
                 let (leftPhoto, leftImg) = photosWithImages[row]
                 let leftRect = CGRect(x: cardLeft, y: pen.y, width: colW, height: colH)

@@ -3,6 +3,7 @@
 //  Capper
 //
 
+import UIKit
 import UserNotifications
 
 enum DraftReminderNotificationManager {
@@ -12,7 +13,13 @@ enum DraftReminderNotificationManager {
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
             guard settings.authorizationStatus == .notDetermined else { return }
-            center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+            center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+                if granted {
+                    DispatchQueue.main.async {
+                        UIApplication.shared.registerForRemoteNotifications()
+                    }
+                }
+            }
         }
     }
 
