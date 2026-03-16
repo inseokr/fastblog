@@ -301,7 +301,6 @@
 		BB000216 /* UploadingBlogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadingBlogView.swift; sourceTree = "<group>"; };
 		BB000218 /* SecureShareToken.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureShareToken.swift; sourceTree = "<group>"; };
 		BB000219 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
-		BB00021A /* Secrets.xcconfig.example */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig.example; sourceTree = "<group>"; };
 		BB000221 /* PhotoTagService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoTagService.swift; sourceTree = "<group>"; };
 		BB000223 /* StoryCaptionGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryCaptionGenerator.swift; sourceTree = "<group>"; };
 		BB000225 /* StoryCaptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryCaptionService.swift; sourceTree = "<group>"; };
@@ -356,7 +355,6 @@
 				BB00022D /* SplashStateManager.swift */,
 				BB0001EF /* Info.plist */,
 				BB000219 /* Secrets.xcconfig */,
-				BB00021A /* Secrets.xcconfig.example */,
 				BB0001B0 /* Models */,
 				BB0001B1 /* ViewModels */,
 				BB0001B2 /* Views */,
