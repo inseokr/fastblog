@@ -30,6 +30,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
         print("[APNs] Device token: \(token)")
+        // Persist the token so it can be sent to the backend once the user has an account.
+        UserDefaults.standard.set(token, forKey: DraftReminderNotificationManager.pendingDeviceTokenKey)
+        // Only register with the backend if the user is already logged in.
+        guard AuthService.shared.currentJwtToken != nil else {
+            print("[APNs] No auth token — device token saved for post-login registration")
+            return
+        }
         Task { await APIManager.shared.registerDeviceToken(token) }
     }
 
@@ -78,6 +85,7 @@ struct fastblogApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var isAppReady = false
     @State private var pendingResetToken: String?
+    @State private var showNotificationDeniedAlert = false
 
     #if DEBUG
         /// Flip to `true` to skip splash + onboarding and land directly on ManagePhotosView.
@@ -123,7 +131,18 @@ struct fastblogApp: App {
                         createdRecapStore.importAnonymousDrafts(into: userId)
                         authStateManager.checkAndPromptImportIfNeeded()
                         Task { await createdRecapStore.syncFromCloud() }
+                        // Register any pending APNs token now that the user has an account.
+                        Task {
+                            let isDenied = await DraftReminderNotificationManager.handlePostLoginSetup()
+                            if isDenied { showNotificationDeniedAlert = true }
+                        }
                     }
+                }
+                .alert("Enable Notifications", isPresented: $showNotificationDeniedAlert) {
+                    Button("Open Settings") { openSettings() }
+                    Button("Not Now", role: .cancel) {}
+                } message: {
+                    Text("Turn on notifications to get updates about your blogs. You can enable them in Settings.")
                 }
         }
     }

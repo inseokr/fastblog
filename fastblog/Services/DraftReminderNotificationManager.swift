@@ -8,6 +8,7 @@ import UserNotifications
 
 enum DraftReminderNotificationManager {
     private static let categoryIdentifier = "DRAFT_REMINDER"
+    static let pendingDeviceTokenKey = "bloggo.pendingDeviceToken"
 
     static func requestPermissionIfNeeded() {
         let center = UNUserNotificationCenter.current()
@@ -20,6 +21,41 @@ enum DraftReminderNotificationManager {
                     }
                 }
             }
+        }
+    }
+
+    /// Called after account creation / login.
+    /// - Registers the pending APNs token with the backend if permission is already granted.
+    /// - Re-requests permission if it was never determined.
+    /// - Returns `true` if permission is currently denied (so the caller can prompt the user to go to Settings).
+    @discardableResult
+    static func handlePostLoginSetup() async -> Bool {
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+
+        switch settings.authorizationStatus {
+        case .authorized, .provisional:
+            // Already approved — ensure we're registered and flush any pending token.
+            await MainActor.run { UIApplication.shared.registerForRemoteNotifications() }
+            if let token = UserDefaults.standard.string(forKey: pendingDeviceTokenKey) {
+                await APIManager.shared.registerDeviceToken(token)
+            }
+            return false
+
+        case .notDetermined:
+            // Permission not yet requested (or reset). Ask once more now that an account exists.
+            center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+                if granted {
+                    DispatchQueue.main.async {
+                        UIApplication.shared.registerForRemoteNotifications()
+                    }
+                }
+            }
+            return false
+
+        default:
+            // Denied — caller should prompt the user to open Settings.
+            return true
         }
     }
 

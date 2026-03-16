@@ -2560,17 +2560,27 @@ struct RecapBlogPageView: View {
                     }
                 }
 
-                Button {
-                    earlyAccessSheetPresented = false
-                    if authService.isSignedIn {
-                        exportBlogToPDF()
-                    } else {
-                        showExportSignInAlert = true
+                if isOnList {
+                    Button {
+                        earlyAccessSheetPresented = false
+                    } label: {
+                        Text("Done")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
                     }
-                } label: {
-                    Text("Export as PDF Instead")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                } else {
+                    Button {
+                        earlyAccessSheetPresented = false
+                        if authService.isSignedIn {
+                            exportBlogToPDF()
+                        } else {
+                            showExportSignInAlert = true
+                        }
+                    } label: {
+                        Text("Export as PDF Instead")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
             .padding(.horizontal, 24)
