@@ -597,6 +597,8 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
 
         var modifiedDayIndices: Set<Int> = []
+        // Tracks (dayIndex, stopIndex) for newly created stops that have a location and need geocoding.
+        var newStopsToGeocode: [(dayIdx: Int, stopIdx: Int)] = []
 
         for (dayStart, dayPhotos) in byDay.sorted(by: { $0.key < $1.key }) {
             // Find or create the matching RecapBlogDay.
@@ -635,6 +637,17 @@ final class CreatedRecapBlogStore: ObservableObject {
                     let gapAfter  = max(0, photo.timestamp.timeIntervalSince(latest))
                     let gap = min(gapBefore, gapAfter)
                     guard gap <= gapLimit else { continue }
+
+                    // Reject if another stop was visited in the gap between this stop and the new photo.
+                    // This prevents a return-visit photo from being merged into the earlier visit.
+                    if gapAfter > 0 {
+                        let hasInterveningStop = detail.days[di].placeStops.enumerated().contains { otherSi, other in
+                            guard otherSi != si else { return false }
+                            guard let otherEarliest = other.photos.map(\.timestamp).min() else { return false }
+                            return otherEarliest > latest && otherEarliest < photo.timestamp
+                        }
+                        if hasInterveningStop { continue }
+                    }
 
                     if let photoCoord = photo.location, let stopCoord = stop.representativeLocation {
                         let photoLoc = CLLocation(latitude: photoCoord.latitude, longitude: photoCoord.longitude)
@@ -679,13 +692,17 @@ final class CreatedRecapBlogStore: ObservableObject {
                     } else {
                         placeTitle = "Stop \(detail.days[di].placeStops.count + 1)"
                     }
+                    let newStopIdx = detail.days[di].placeStops.count
                     let newStop = PlaceStop(
-                        orderIndex: detail.days[di].placeStops.count,
+                        orderIndex: newStopIdx,
                         placeTitle: placeTitle,
                         representativeLocation: repLoc,
                         photos: groupPhotos
                     )
                     detail.days[di].placeStops.append(newStop)
+                    if repLoc != nil {
+                        newStopsToGeocode.append((dayIdx: di, stopIdx: newStopIdx))
+                    }
                 }
                 modifiedDayIndices.insert(di)
             }
@@ -696,6 +713,22 @@ final class CreatedRecapBlogStore: ObservableObject {
         // Run same business logic as initial selection: score quality, then preselect only good-quality photos per stop.
         if !modifiedDayIndices.isEmpty {
             Task {
+                // Geocode any newly created stops that have location data.
+                if !newStopsToGeocode.isEmpty,
+                   var geocodedDetail = blogDetailsBySourceId[sourceTripId] {
+                    for entry in newStopsToGeocode {
+                        let di = entry.dayIdx
+                        let si = entry.stopIdx
+                        guard di < geocodedDetail.days.count,
+                              si < geocodedDetail.days[di].placeStops.count,
+                              let coord = geocodedDetail.days[di].placeStops[si].representativeLocation else { continue }
+                        let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+                        let place = await GeocodingService.shared.place(for: loc)
+                        geocodedDetail.days[di].placeStops[si].placeTitle = "Near \(place.areaName)"
+                        geocodedDetail.days[di].placeStops[si].placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+                    }
+                    saveBlogDetail(geocodedDetail, asDraft: true)
+                }
                 await applyPhotoQualitySelectionForBlog(sourceTripId: sourceTripId, dayIndices: Array(modifiedDayIndices))
             }
         }
