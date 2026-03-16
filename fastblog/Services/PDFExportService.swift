@@ -2,6 +2,66 @@ import UIKit
 import MapKit
 import Photos
 
+// MARK: - PDF Export Options
+
+enum FontTheme: String, CaseIterable, Codable {
+    case classic  = "Classic"
+    case serif    = "Serif"
+    case rounded  = "Rounded"
+
+    var label: String { rawValue }
+    var subtitle: String {
+        switch self {
+        case .classic: return "Clean & modern"
+        case .serif:   return "Editorial & print"
+        case .rounded: return "Friendly & soft"
+        }
+    }
+}
+
+enum PhotoShape: String, CaseIterable, Codable {
+    case rounded   = "Rounded"
+    case squircle  = "Squircle"
+    case circle    = "Circle"
+    case rectangle = "Rectangle"
+    case arch      = "Arch"
+    case diamond   = "Diamond"
+    case hexagon   = "Hexagon"
+
+    var label: String { rawValue }
+    var subtitle: String {
+        switch self {
+        case .rounded:   return "Light corners"
+        case .squircle:  return "Smooth corners"
+        case .circle:    return "Circular crop"
+        case .rectangle: return "Sharp edges"
+        case .arch:      return "Dome top"
+        case .diamond:   return "Angular gem"
+        case .hexagon:   return "Honeycomb"
+        }
+    }
+
+    func next() -> PhotoShape {
+        let all = PhotoShape.allCases
+        return all[(all.firstIndex(of: self)! + 1) % all.count]
+    }
+}
+
+/// Per-position photo shapes for the 2-column PDF grid.
+/// - `leftShape`   — left column in a paired row
+/// - `rightShape`  — right column in a paired row
+/// - `singleShape` — a photo that occupies its row alone (only 1 total, or last odd photo)
+struct PDFPhotoShapeOptions: Codable, Equatable {
+    var leftShape:   PhotoShape = .rounded
+    var rightShape:  PhotoShape = .rounded
+    var singleShape: PhotoShape = .rounded
+}
+
+struct PDFExportOptions: Codable, Equatable {
+    var fontTheme:        FontTheme          = .classic
+    var photoShapeOptions: PDFPhotoShapeOptions = PDFPhotoShapeOptions()
+}
+
 @MainActor
 class PDFExportService {
 
@@ -35,9 +95,30 @@ class PDFExportService {
     static let photoGap: CGFloat = 10 // app's HStack spacing between photos
     static let photoSize: CGFloat = (cardInteriorW - photoGap) / 2 // ~249pt per photo
 
+    // MARK: - Font Helper
+
+    static func font(for theme: FontTheme, size: CGFloat, weight: UIFont.Weight = .regular) -> UIFont {
+        switch theme {
+        case .classic:
+            return UIFont.systemFont(ofSize: size, weight: weight)
+        case .serif:
+            // Map common weights to Georgia variants (bold / regular)
+            let isBold = (weight == .bold || weight == .semibold || weight == .heavy || weight == .black)
+            let name = isBold ? "Georgia-Bold" : "Georgia"
+            return UIFont(name: name, size: size) ?? UIFont.systemFont(ofSize: size, weight: weight)
+        case .rounded:
+            // SF Rounded via font descriptor
+            let baseFont = UIFont.systemFont(ofSize: size, weight: weight)
+            if let desc = baseFont.fontDescriptor.withDesign(.rounded) {
+                return UIFont(descriptor: desc, size: size)
+            }
+            return baseFont
+        }
+    }
+
     // MARK: - Public Entry Point
 
-    static func generatePDF(from draft: RecapBlogDetail) async throws -> URL {
+    static func generatePDF(from draft: RecapBlogDetail, options: PDFExportOptions = PDFExportOptions()) async throws -> URL {
         let assets = await preloadAssets(from: draft)
 
         let safeTitle = draft.title
@@ -84,8 +165,8 @@ class PDFExportService {
             shadow.shadowBlurRadius = 6
             shadow.shadowOffset = CGSize(width: 0, height: 2)
 
-            let titleFont = UIFont.systemFont(ofSize: 28, weight: .bold)
-            let subFont = UIFont.systemFont(ofSize: 15, weight: .medium)
+            let titleFont = Self.font(for: options.fontTheme, size: 28, weight: .bold)
+            let subFont = Self.font(for: options.fontTheme, size: 15, weight: .medium)
 
             let titleAttrs: [NSAttributedString.Key: Any] = [
                 .font: titleFont, .foregroundColor: UIColor.white, .shadow: shadow
@@ -148,7 +229,7 @@ class PDFExportService {
             if let appIcon = appLogo {
                 let iconSize: CGFloat = 22
                 let createdText = "Created with Bloggo"
-                let createdFont = UIFont.systemFont(ofSize: 13, weight: .medium)
+                let createdFont = Self.font(for: options.fontTheme, size: 13, weight: .medium)
                 let createdAttrs: [NSAttributedString.Key: Any] = [
                     .font: createdFont,
                     .foregroundColor: UIColor.darkGray
@@ -178,14 +259,14 @@ class PDFExportService {
 
                 // Day header — at the top of the page
                 pen.drawLeft(day.shortDateText,
-                             font: .systemFont(ofSize: 20, weight: .bold), color: .black)
+                             font: Self.font(for: options.fontTheme, size: 20, weight: .bold), color: .black)
 
                 // Day caption
                 if let caption = day.dayCaption,
                    !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     pen.skip(4)
                     pen.drawLeft(caption,
-                                 font: .systemFont(ofSize: 15),
+                                 font: Self.font(for: options.fontTheme, size: 15),
                                  color: UIColor.darkGray)
                     pen.skip(8)
                 } else {
@@ -210,7 +291,8 @@ class PDFExportService {
                         stop: stop,
                         number: i + 1,
                         badgeColor: badgeColor,
-                        photos: assets.photos
+                        photos: assets.photos,
+                        options: options
                     )
                     pen.skip(24) // gap between cards
                 }
@@ -227,7 +309,8 @@ class PDFExportService {
         stop: PlaceStop,
         number: Int,
         badgeColor: UIColor,
-        photos: [UUID: UIImage]
+        photos: [UUID: UIImage],
+        options: PDFExportOptions
     ) {
         let includedPhotos = stop.photos.filter(\.isIncluded)
         let photosWithImages = includedPhotos.compactMap { p -> (RecapPhoto, UIImage)? in
@@ -242,16 +325,19 @@ class PDFExportService {
         let cardLeft = pen.margin + cardPadding
         let cardContentW = cardInteriorW
         let titleW = cardContentW - badgeSize - 12
-        let titleFont = UIFont.systemFont(ofSize: 17, weight: .semibold)
+        let titleFont = Self.font(for: options.fontTheme, size: 17, weight: .semibold)
+        let subFont12 = Self.font(for: options.fontTheme, size: 12)
+        let bodyFont15 = Self.font(for: options.fontTheme, size: 15)
+        let captionFont = Self.font(for: options.fontTheme, size: 12)
 
         // ── Pre-compute card height for background and cohesion ──
         let estTitleH = max(badgeSize, estimateTextHeight(stop.placeTitle, font: titleFont, width: titleW))
         var estContentH: CGFloat = estTitleH
         if hasSubtitle, let sub = stop.placeSubtitle {
-            estContentH += 2 + estimateTextHeight(sub, font: .systemFont(ofSize: 12), width: titleW)
+            estContentH += 2 + estimateTextHeight(sub, font: subFont12, width: titleW)
         }
         if hasStory, let story = stop.overallStory {
-            estContentH += 8 + estimateTextHeight(story, font: .systemFont(ofSize: 15), width: cardContentW)
+            estContentH += 8 + estimateTextHeight(story, font: bodyFont15, width: cardContentW)
         }
         if !photosWithImages.isEmpty {
             estContentH += 8
@@ -263,12 +349,12 @@ class PDFExportService {
                 if li < photosWithImages.count,
                    let c = photosWithImages[li].0.caption,
                    !c.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    capH = 6 + min(estimateTextHeight(c, font: .systemFont(ofSize: 12), width: photoSize), 32)
+                    capH = 6 + min(estimateTextHeight(c, font: captionFont, width: photoSize), 32)
                 }
                 if li + 1 < photosWithImages.count,
                    let c = photosWithImages[li + 1].0.caption,
                    !c.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    capH = max(capH, 3 + min(estimateTextHeight(c, font: .systemFont(ofSize: 12), width: photoSize), 32))
+                    capH = max(capH, 3 + min(estimateTextHeight(c, font: captionFont, width: photoSize), 32))
                 }
                 estContentH += capH
             }
@@ -278,7 +364,7 @@ class PDFExportService {
         // Cohesion: keep header + first photo row on the same page
         let firstPhotoH: CGFloat = photosWithImages.isEmpty ? 0 : 8 + photoSize
         let storySnippetH: CGFloat = hasStory
-            ? min(8 + estimateTextHeight(stop.overallStory ?? "", font: .systemFont(ofSize: 15), width: cardContentW), 68)
+            ? min(8 + estimateTextHeight(stop.overallStory ?? "", font: bodyFont15, width: cardContentW), 68)
             : 0
         let cohesionH = cardPadding + estTitleH
             + (hasSubtitle ? 17 : 0)
@@ -368,7 +454,7 @@ class PDFExportService {
         if hasSubtitle, let subtitle = stop.placeSubtitle {
             pen.skip(2)
             let subAttrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 12),
+                .font: subFont12,
                 .foregroundColor: UIColor.darkGray
             ]
             let subSize = subtitle.boundingRect(
@@ -389,7 +475,7 @@ class PDFExportService {
         if hasStory, let story = stop.overallStory {
             pen.skip(8)
             let storyAttrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 15),
+                .font: bodyFont15,
                 .foregroundColor: UIColor.darkGray
             ]
             let storySize = story.boundingRect(
@@ -445,18 +531,21 @@ class PDFExportService {
 
                 let (leftPhoto, leftImg) = photosWithImages[row]
                 let leftRect = CGRect(x: cardLeft, y: pen.y, width: colW, height: colH)
-                drawSquarePhoto(leftImg, in: leftRect, cornerRadius: 8)
+                let hasPair = row + 1 < photosWithImages.count
+                let leftShape = hasPair
+                    ? options.photoShapeOptions.leftShape
+                    : options.photoShapeOptions.singleShape
+                drawPhoto(leftImg, in: leftRect, shape: leftShape)
 
-                if row + 1 < photosWithImages.count {
+                if hasPair {
                     let (_, rightImg) = photosWithImages[row + 1]
                     let rightRect = CGRect(x: cardLeft + colW + photoGap, y: pen.y,
                                            width: colW, height: colH)
-                    drawSquarePhoto(rightImg, in: rightRect, cornerRadius: 8)
+                    drawPhoto(rightImg, in: rightRect, shape: options.photoShapeOptions.rightShape)
                 }
                 pen.y += colH
 
                 // Captions (app: .caption, 2 line limit)
-                let captionFont = UIFont.systemFont(ofSize: 12)
                 let captionColor = UIColor.darkGray
                 var captionH: CGFloat = 0
 
@@ -524,11 +613,59 @@ class PDFExportService {
 
     // MARK: - Photo Drawing
 
-    private static func drawSquarePhoto(_ image: UIImage, in rect: CGRect, cornerRadius: CGFloat) {
+    private static func drawPhoto(_ image: UIImage, in rect: CGRect, shape: PhotoShape) {
         guard let gc = UIGraphicsGetCurrentContext() else { return }
         gc.saveGState()
-        if cornerRadius > 0 {
-            UIBezierPath(roundedRect: rect, cornerRadius: cornerRadius).addClip()
+        switch shape {
+        case .rounded:
+            UIBezierPath(roundedRect: rect, cornerRadius: 8).addClip()
+
+        case .squircle:
+            // Large continuous-feel corner radius (~25% of the shorter side)
+            let cr = min(rect.width, rect.height) * 0.25
+            UIBezierPath(roundedRect: rect, cornerRadius: cr).addClip()
+
+        case .circle:
+            UIBezierPath(ovalIn: rect).addClip()
+
+        case .rectangle:
+            break // no clip needed — sharp corners
+
+        case .arch:
+            // Flat bottom + semicircle top (dome)
+            // In UIKit (y+ down): arc from angle π→0 clockwise passes through 270° = top of view
+            let path = UIBezierPath()
+            let r = rect.width / 2
+            path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.midY))
+            path.addArc(withCenter: CGPoint(x: rect.midX, y: rect.midY),
+                        radius: r, startAngle: .pi, endAngle: 0, clockwise: true)
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.close()
+            path.addClip()
+
+        case .diamond:
+            // Rotated 45° square — vertices at the four edge midpoints
+            let path = UIBezierPath()
+            path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+            path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.midY))
+            path.close()
+            path.addClip()
+
+        case .hexagon:
+            // Pointy-top hexagon inscribed in the bounding rect
+            let path = UIBezierPath()
+            let cx = rect.midX, cy = rect.midY
+            let r = min(rect.width, rect.height) / 2
+            for i in 0..<6 {
+                let angle = CGFloat(-Double.pi / 2) + CGFloat(i) * CGFloat(Double.pi / 3)
+                let pt = CGPoint(x: cx + r * cos(angle), y: cy + r * sin(angle))
+                if i == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
+            }
+            path.close()
+            path.addClip()
         }
         // Scale-to-fill (crop to square) — matching app's .fill + .clipped()
         let imgAspect = image.size.width / image.size.height

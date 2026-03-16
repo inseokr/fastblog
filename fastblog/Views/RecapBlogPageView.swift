@@ -104,6 +104,8 @@ struct RecapBlogPageView: View {
     @State private var isExportingPDF = false
     @State private var pdfExportURL: URL?
     @State private var showPDFPreview = false
+    @State private var showPDFExportOptions = false
+    @AppStorage("pdfExportOptions") private var pdfExportOptionsData: Data = (try? JSONEncoder().encode(PDFExportOptions())) ?? Data()
     @State private var showProfileManagement = false
     @State private var showRestorePlaces = false
     /// Tracks whether AI auto-fill is running so we don't show the blog as empty during generation.
@@ -202,7 +204,7 @@ struct RecapBlogPageView: View {
                                 showAuth = false
                                 try? await Task.sleep(nanoseconds: 500_000_000)
                                 pendingExportAfterAuth = false
-                                exportBlogToPDF()
+                                showPDFExportOptions = true
                             }
                         } else {
                             showAuth = false
@@ -227,6 +229,17 @@ struct RecapBlogPageView: View {
                 if let url = pdfExportURL {
                     PDFPreviewSheet(pdfURL: url)
                 }
+            }
+            .sheet(isPresented: $showPDFExportOptions) {
+                PDFExportOptionsSheet(
+                    options: Binding(
+                        get: { (try? JSONDecoder().decode(PDFExportOptions.self, from: pdfExportOptionsData)) ?? PDFExportOptions() },
+                        set: { pdfExportOptionsData = (try? JSONEncoder().encode($0)) ?? Data() }
+                    ),
+                    onExport: { opts in exportBlogToPDF(options: opts) }
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showProfileManagement, onDismiss: {
                 if let updatedDetail = createdRecapStore.getBlogDetail(blogId: blogId) {
@@ -908,7 +921,7 @@ struct RecapBlogPageView: View {
 
                             Button {
                                 if authService.isSignedIn {
-                                    exportBlogToPDF()
+                                    showPDFExportOptions = true
                                 } else {
                                     showExportSignInAlert = true
                                 }
@@ -2556,7 +2569,7 @@ struct RecapBlogPageView: View {
                     Button {
                         earlyAccessSheetPresented = false
                         if authService.isSignedIn {
-                            exportBlogToPDF()
+                            showPDFExportOptions = true
                         } else {
                             showExportSignInAlert = true
                         }
@@ -2599,11 +2612,11 @@ struct RecapBlogPageView: View {
         }
     }
 
-    private func exportBlogToPDF() {
+    private func exportBlogToPDF(options: PDFExportOptions = PDFExportOptions()) {
         isExportingPDF = true
         Task {
             do {
-                let url = try await PDFExportService.generatePDF(from: draft)
+                let url = try await PDFExportService.generatePDF(from: draft, options: options)
                 await MainActor.run {
                     self.pdfExportURL = url
                     self.showPDFPreview = true
