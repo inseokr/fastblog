@@ -47,7 +47,7 @@ private struct TripPlaceSummary {
     }
 }
 
-/// Scans the photo library for the last 90 days and builds trip drafts.
+/// Full access: scans the last windowDays (90). Limited access: use scanAllForLimitedAccess (no date limit, any selected photo with location).
 /// Only photos with valid location and strictly > minMiles from neighborhood center are included.
 /// Photos without location are excluded. When neighborhood is not set, no trips are returned.
 final class PhotoLibraryTripService {
@@ -568,6 +568,103 @@ final class PhotoLibraryTripService {
         return trips
     }
 
+    /// For Limited Photo Access: fetches all photos the app can see (user’s selection), no date window.
+    /// Includes any asset with location + timestamp; no 50-mile-from-home filter so every selected photo can form a trip.
+    func scanAllForLimitedAccess(occupiedDateRanges: [(start: Date, end: Date)] = [], progress: ((Double) -> Void)? = nil) async -> [TripDraft] {
+        let options = PHFetchOptions()
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+
+        let fetchResult = PHAsset.fetchAssets(with: .image, options: options)
+        var allAssets: [PHAsset] = []
+        fetchResult.enumerateObjects { asset, _, _ in
+            if asset.mediaSubtypes.contains(.photoScreenshot) { return }
+            allAssets.append(asset)
+        }
+        allAssets = filterOutAssetsInOccupiedRanges(allAssets, occupiedDateRanges: occupiedDateRanges)
+        progress?(0.05)
+
+        let remaining = allAssets.filter { $0.location != nil }
+        progress?(0.15)
+
+        guard !remaining.isEmpty else { return [] }
+
+        let sortedByDate = remaining.sorted { effectiveDate(for: $0) < effectiveDate(for: $1) }
+        let dayGroups = await groupAssetsByDay(sortedByDate)
+        let sortedDayGroups = dayGroups.sorted { $0.date < $1.date }
+        guard !sortedDayGroups.isEmpty else { return [] }
+        progress?(0.25)
+
+        let dayClusters = await buildDayClusters(from: sortedDayGroups, progress: progress)
+        progress?(0.90)
+        let groupingResult = DayToTripGrouper.groupDaysIntoTrips(
+            days: dayClusters,
+            maxGapDaysToBridge: ScanConfig.maxGapDaysToBridge,
+            debugLogging: TripClusteringDebug.isEnabled
+        )
+
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        let monthYearFormatter = DateFormatter()
+        monthYearFormatter.dateFormat = "MMM yyyy"
+
+        let splitTrips = splitTripsByMaxDays(groupingResult.trips, maxDays: ScanConfig.maxTripDays)
+        var trips: [TripDraft] = []
+        for item in splitTrips {
+            let tripDays = item.days
+            guard !tripDays.isEmpty else { continue }
+            let segment = tripDays.flatMap { $0.assets }
+            let firstDate = tripDays.first!.dayDate
+            let lastDate = tripDays.last!.dayDate
+            let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
+            let placeSummary = await buildTripPlaceSummary(for: tripDays)
+            let title = placeSummary.title
+            let coverAsset = segment.first
+            let coverIdentifier = coverAsset?.localIdentifier
+
+            let tripDaysModels: [TripDay] = tripDays.enumerated().map { dayIndex, dayCluster in
+                let dateText = formatter.string(from: dayCluster.dayDate)
+                let sortedDayAssets = dayCluster.assets.sorted { effectiveDate(for: $0) < effectiveDate(for: $1) }
+                let photos: [MockPhoto] = sortedDayAssets.map { asset in
+                    let coord: PhotoCoordinate? = asset.location.map { loc in
+                        PhotoCoordinate(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude)
+                    }
+                    return MockPhoto(
+                        imageName: "photo",
+                        timestamp: effectiveDate(for: asset),
+                        locationName: placeSummary.cityName,
+                        countryName: placeSummary.countryName,
+                        isSelected: false,
+                        localIdentifier: asset.localIdentifier,
+                        location: coord
+                    )
+                }
+                return TripDay(
+                    dayIndex: dayIndex + 1,
+                    dateText: dateText,
+                    photos: photos,
+                    countryCode: placeSummary.countryCode,
+                    countryName: placeSummary.countryName,
+                    cityName: placeSummary.cityName
+                )
+            }
+
+            let daysSeasonText = "\(tripDaysModels.count) days • \(monthYearFormatter.string(from: firstDate))"
+            let draft = TripDraft(
+                title: title,
+                dateRangeText: dateRangeText,
+                days: tripDaysModels,
+                coverImageName: "default",
+                isScannedFromDefaultRange: false,
+                draftCreatedAgoText: "From your photo library",
+                daysSeasonText: daysSeasonText,
+                coverTheme: "default",
+                coverAssetIdentifier: coverIdentifier
+            )
+            trips.append(draft)
+        }
+        progress?(1.0)
+        return trips
+    }
 
     /// Splits assets into segments: a gap larger than gapHours between consecutive photos starts a new segment (new trip).
     private func segmentByTemporalGap(_ assets: [PHAsset], gapHours: Int) -> [[PHAsset]] {

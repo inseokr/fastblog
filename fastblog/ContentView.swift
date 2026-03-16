@@ -68,21 +68,25 @@ struct ContentView: View {
                 }
             }
 
-            // Trips overlay (fade in/out instead of navigation push/pop swipe).
-            if showTrips {
+            // Trips overlay — added when user taps "Tap to Blog"; opacity-only fade (no slide).
+            if showTrips || pendingShowTripsWhenIdle {
                 NavigationStack {
                     TripsView(
                         viewModel: tripsViewModel,
                         selectedCreatedRecap: $selectedCreatedRecap,
                         onDismiss: {
-                            withAnimation(.easeInOut(duration: 0.22)) {
+                            withAnimation(.easeInOut(duration: 0.3)) {
                                 showTrips = false
                             }
                         }
                     )
                 }
-                .transition(.opacity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .opacity(showTrips ? 1 : 0)
+                .allowsHitTesting(showTrips)
+                .animation(.easeInOut(duration: 0.35), value: showTrips)
                 .zIndex(5)
+                .transition(.identity)
             }
             
             // Blog overlay: fade in/out when user selects a blog from anywhere (Map, Country List, Recent List).
@@ -114,7 +118,7 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
-        .animation(.easeInOut(duration: 0.22), value: showTrips)
+        .animation(.easeInOut(duration: 0.35), value: showTrips)
         .animation(.easeInOut(duration: 0.25), value: selectedCreatedRecap != nil)
         .environmentObject(createdRecapStore)
         .environment(\.dismissToLanding, {

@@ -53,6 +53,21 @@ struct TripMatchingService {
                     return true
                 }
             }
+
+            // 4. Forward continuation: trip starts within 24 h after blog ends (same trip, new photos)
+            let hourDiff = Calendar.current.dateComponents([.hour], from: blogEnd, to: draftStart).hour ?? Int.max
+            if hourDiff >= 0 && hourDiff <= 24 {
+                if let draftCountry = draft.primaryCountryDisplayName,
+                   let blogCountry = blog.countryName,
+                   !draftCountry.isEmpty,
+                   !blogCountry.isEmpty {
+                    if draftCountry.lowercased() == blogCountry.lowercased() {
+                        return true
+                    }
+                } else {
+                    return true
+                }
+            }
         }
 
         return false
@@ -83,6 +98,21 @@ struct TripMatchingService {
             // Exact same single day
             if calendar.isDate(draftDate, inSameDayAs: blogStart) && calendar.isDate(draftDate, inSameDayAs: blogEnd) {
                  return true
+            }
+
+            // Forward continuation: single-day trip starts within 24 h after blog ends
+            let hourDiff = calendar.dateComponents([.hour], from: blogEnd, to: draftDate).hour ?? Int.max
+            if hourDiff >= 0 && hourDiff <= 24 {
+                if let draftCountry = draft.primaryCountryDisplayName,
+                   let blogCountry = blog.countryName,
+                   !draftCountry.isEmpty,
+                   !blogCountry.isEmpty {
+                    if draftCountry.lowercased() == blogCountry.lowercased() {
+                        return true
+                    }
+                } else {
+                    return true
+                }
             }
         }
         return false

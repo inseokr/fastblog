@@ -7,7 +7,7 @@ import Foundation
 
 /// Central config for trip scan: window, local exclusion, and segmentation thresholds.
 enum ScanConfig {
-    /// Default scan window in days (e.g. last 90 days = ~3 months). Restored to 90 days to include older trips like December.
+    /// Default scan window in days for Full access only. Limited access uses all selected photos (no date limit).
     static let windowDays = 90
 
     /// Photos within this many miles of neighborhood center are excluded from trips (non-trip / local).
