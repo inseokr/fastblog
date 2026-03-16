@@ -1327,11 +1327,13 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     private let sessionQueue = DispatchQueue(label: "bloggo.camera.session")
     private let photoOutput = AVCapturePhotoOutput()
     private let locationManager = CLLocationManager()
+    private var videoDevice: AVCaptureDevice?
 
     private var captureCompletion: ((UIImage?, String?) -> Void)?
 
     @Published var isConfigured = false
     @Published var authorizationDenied = false
+    @Published private(set) var zoomFactor: CGFloat = 1.0
     /// Current location for embedding in captured photos. Updated when camera runs.
     @Published private(set) var currentLocation: CLLocation?
 
@@ -1378,6 +1380,7 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
                     self.session.commitConfiguration()
                     return
                 }
+                self.videoDevice = device
                 let input = try AVCaptureDeviceInput(device: device)
                 if self.session.canAddInput(input) {
                     self.session.addInput(input)
@@ -1405,6 +1408,22 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
             let settings = AVCapturePhotoSettings()
             self.captureCompletion = completion
             self.photoOutput.capturePhoto(with: settings, delegate: self)
+        }
+    }
+
+    /// Clamps and applies a zoom factor to the active camera device.
+    func setZoomFactor(_ factor: CGFloat) {
+        sessionQueue.async {
+            guard let device = self.videoDevice else { return }
+            let clamped = max(1.0, min(factor, device.maxAvailableVideoZoomFactor))
+            do {
+                try device.lockForConfiguration()
+                device.videoZoomFactor = clamped
+                device.unlockForConfiguration()
+            } catch {}
+            DispatchQueue.main.async {
+                self.zoomFactor = clamped
+            }
         }
     }
 
@@ -1559,6 +1578,10 @@ struct CameraCaptureView: View {
     @State private var showNearHomeConfirmation: Bool = false
     @State private var pendingNearHomeCapture: (image: UIImage, timestamp: Date)?
     @State private var nearHomeDoNotShowAgain: Bool = false
+    // Zoom
+    @State private var zoomBaseScale: CGFloat = 1.0
+    @State private var showZoomIndicator: Bool = false
+    @State private var zoomIndicatorTask: Task<Void, Never>? = nil
 
     private static let nearHomeAlertSuppressedKey = "bloggo.nearHomeAlertSuppressed"
     private static let nearHomeSuppressedPreferKeepKey = "bloggo.nearHomeSuppressedPreferKeep"
@@ -1573,6 +1596,23 @@ struct CameraCaptureView: View {
                 } else if cameraController.isConfigured {
                     CameraPreviewView(session: cameraController.session)
                         .ignoresSafeArea()
+                        .gesture(
+                            MagnificationGesture()
+                                .onChanged { value in
+                                    let newZoom = max(1.0, min(zoomBaseScale * value, 10.0))
+                                    cameraController.setZoomFactor(newZoom)
+                                    showZoomIndicator = true
+                                    zoomIndicatorTask?.cancel()
+                                }
+                                .onEnded { value in
+                                    zoomBaseScale = max(1.0, min(zoomBaseScale * value, 10.0))
+                                    zoomIndicatorTask = Task {
+                                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                                        guard !Task.isCancelled else { return }
+                                        await MainActor.run { showZoomIndicator = false }
+                                    }
+                                }
+                        )
                 } else {
                     Color.black
                         .ignoresSafeArea()
@@ -1601,6 +1641,23 @@ struct CameraCaptureView: View {
                 }
                 shutterBar
                     .padding(.bottom, 24)
+            }
+
+            // Zoom level indicator — appears while pinching, fades out
+            if showZoomIndicator {
+                VStack {
+                    Text(String(format: "%.1f×", cameraController.zoomFactor))
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Capsule())
+                        .transition(.opacity)
+                    Spacer()
+                }
+                .padding(.top, 12)
+                .animation(.easeInOut(duration: 0.2), value: showZoomIndicator)
             }
         }
         .navigationBarBackButtonHidden(true)
