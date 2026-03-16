@@ -109,7 +109,6 @@ struct RecapBlogPageView: View {
     /// Tracks whether AI auto-fill is running so we don't show the blog as empty during generation.
     @State private var isAutoFillingCaptions = false
     /// The day ID currently having its caption AI-generated (nil when idle).
-    @State private var isGeneratingDayCaptionForDayId: UUID?
     /// Day caption pull-up sheet trigger.
     @State private var dayCaptionEditItem: DayCaptionEditItem?
     /// Place caption pull-up sheet trigger.
@@ -433,6 +432,13 @@ struct RecapBlogPageView: View {
                     },
                     onCancel: {
                         dayCaptionEditItem = nil
+                    },
+                    onEnhance: { userText in
+                        guard let day = draft.days.first(where: { $0.id == item.dayId }) else { return userText }
+                        return await StoryCaptionService.shared.enhanceDaySummary(day: day, userText: userText)
+                    },
+                    onEnhanceApplied: {
+                        createdRecapStore.saveBlogDetail(draft)
                     }
                 )
             }
@@ -452,6 +458,15 @@ struct RecapBlogPageView: View {
                         },
                         onCancel: {
                             placeCaptionEditItem = nil
+                        },
+                        onEnhance: { userText in
+                            guard let currentStop = placeStop(dayId: item.dayId, stopId: item.stopId),
+                                  let dayDate = draft.days.first(where: { $0.id == item.dayId })?.date else { return userText }
+                            let captions = currentStop.photos.filter(\.isIncluded).map { $0.caption ?? "" }
+                            return await StoryCaptionService.shared.enhanceOverallPlaceStory(stop: currentStop, userText: userText, dayDate: dayDate, photoCaptions: captions)
+                        },
+                        onEnhanceApplied: {
+                            markOverallStoryAI(dayId: item.dayId, stopId: item.stopId)
                         }
                     )
                 }
@@ -1872,7 +1887,6 @@ struct RecapBlogPageView: View {
     @ViewBuilder
     private func dayCaptionRow(day: RecapBlogDay) -> some View {
         let captionBinding = bindingForDayCaption(dayId: day.id)
-        let isGenerating = isGeneratingDayCaptionForDayId == day.id
         if isEditMode {
             HStack(alignment: .top, spacing: 8) {
                 // Tappable display — opens DayCaptionEditSheet
@@ -1894,43 +1908,6 @@ struct RecapBlogPageView: View {
                         .cornerRadius(10)
                 }
                 .buttonStyle(.plain)
-
-                // Wand only appears when the user has written something
-                if !captionBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Button {
-                        guard !isGenerating else { return }
-                        isGeneratingDayCaptionForDayId = day.id
-                        let userText = captionBinding.wrappedValue
-                        Task {
-                            let text = await StoryCaptionService.shared.enhanceDaySummary(day: day, userText: userText)
-                            await MainActor.run {
-                                guard let idx = draft.days.firstIndex(where: { $0.id == day.id }) else { return }
-                                draft.days[idx].dayCaption = text.isEmpty ? nil : text
-                                isGeneratingDayCaptionForDayId = nil
-                                createdRecapStore.saveBlogDetail(draft)
-                            }
-                        }
-                    } label: {
-                        if isGenerating {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                .scaleEffect(0.8)
-                                .frame(width: 20, height: 20)
-                        } else {
-                            Image(systemName: "wand.and.stars")
-                                .font(.body)
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                        }
-                    }
-                    .disabled(isGenerating)
-                    .padding(.top, 12)
-                }
             }
             .padding(.bottom, 4)
         } else if !(day.dayCaption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

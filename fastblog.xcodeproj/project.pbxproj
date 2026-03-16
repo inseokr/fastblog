@@ -11,6 +11,7 @@
 		0C30D67375CF715A0AE52995 /* MapSnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A586130A3384B2A62AC27350 /* MapSnapshotHelper.swift */; };
 		315C7029393A82205980943C /* DayCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C198E17B0447F89CC98721F /* DayCaptionEditSheet.swift */; };
 		719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */; };
+		BB0002A1 /* StoryWritingStyleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002A2; };
 		7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000061 /* GoogleSignIn */; };
 		7D19D079975A2110DB757EE7 /* BlogPDFView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E304D9246790A5FC17716A85 /* BlogPDFView.swift */; };
 		A31B7C85BABD6199A2A43BB7 /* PDFExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F5C55E3E5D4C283468EF581 /* PDFExportService.swift */; };
@@ -173,6 +174,7 @@
 		A586130A3384B2A62AC27350 /* MapSnapshotHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MapSnapshotHelper.swift; sourceTree = "<group>"; };
 		AA000003 /* Bloggo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Bloggo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PlaceCaptionEditSheet.swift; sourceTree = "<group>"; };
+		BB0002A2 /* StoryWritingStyleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryWritingStyleSheet.swift; sourceTree = "<group>"; };
 		BB000101 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		BB000103 /* fastblogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = fastblogApp.swift; sourceTree = "<group>"; };
 		BB000105 /* MyBlogsProfileViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyBlogsProfileViewModel.swift; sourceTree = "<group>"; };
@@ -475,6 +477,7 @@
 				BB0001CB /* Components */,
 				2C198E17B0447F89CC98721F /* DayCaptionEditSheet.swift */,
 				B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */,
+				BB0002A2 /* StoryWritingStyleSheet.swift */,
 				E304D9246790A5FC17716A85 /* BlogPDFView.swift */,
 				PD00PD01 /* PDFPreviewSheet.swift */,
 				EX00EX01 /* ExportingPDFView.swift */,
@@ -798,6 +801,7 @@
 				0B1189F592CFDEDAF3305FAB /* PhotoPermissionOnboardingView.swift in Sources */,
 				315C7029393A82205980943C /* DayCaptionEditSheet.swift in Sources */,
 				719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */,
+				BB0002A1 /* StoryWritingStyleSheet.swift in Sources */,
 				A31B7C85BABD6199A2A43BB7 /* PDFExportService.swift in Sources */,
 				0C30D67375CF715A0AE52995 /* MapSnapshotHelper.swift in Sources */,
 				7D19D079975A2110DB757EE7 /* BlogPDFView.swift in Sources */,

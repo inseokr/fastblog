@@ -452,40 +452,6 @@ struct PlaceStopRowView: View {
                         .cornerRadius(10)
                     }
                     .buttonStyle(.plain)
-
-                    // Magic wand — only shown when user has written some story text
-                    if let generate = onGenerateOverallStory,
-                       !isGenerating,
-                       !overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Button {
-                            isGeneratingOverallStory = true
-                            let currentText = overallStory
-                            Task {
-                                let text = await generate(currentText)
-                                await MainActor.run {
-                                    overallStory = text
-                                    isGeneratingOverallStory = false
-                                    onAIOverallStoryApplied?()
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "wand.and.stars")
-                                    .font(.caption)
-                                    .foregroundStyle(
-                                        LinearGradient(
-                                            colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                Text("Enhance story")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)

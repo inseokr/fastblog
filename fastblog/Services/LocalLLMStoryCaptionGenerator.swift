@@ -368,6 +368,18 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         return await runSession(instructions: instructions, prompt: prompt)
     }
 
+    // MARK: - User Writing Style
+
+    /// Reads the user's saved writing style prompt from AppStorage.
+    /// Falls back to the default prompt when nothing has been set.
+    private var userWritingStyleInstruction: String {
+        let stored = UserDefaults.standard.string(forKey: StoryWritingStyle.storageKey) ?? ""
+        let style = stored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? StoryWritingStyle.defaultPrompt
+            : stored
+        return "Additional user provided writing guideline: \(style)"
+    }
+
     // MARK: - Language Detection
 
     /// Detects the dominant language of the user's text and returns an explicit instruction
@@ -400,9 +412,10 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             Output only the caption. No preamble — just the text.
             """
         let prompt = """
-            The user wrote: "\(context.userText)"\(tagsLine)\(langInstruction)
+            The user wrote: "\(context.userText)"\(langInstruction)
+            \(userWritingStyleInstruction)
 
-            Complete this into one short, warm travel caption. Output only the text.
+            Complete this into one short travel caption. Output only the text.
             """
 
         return await runSession(instructions: instructions, prompt: prompt)
@@ -437,9 +450,10 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         ].joined(separator: "\n\n")
 
         let prompt = """
-            The user wrote: "\(context.userText)"\(tagsLine)\(timePart)\(countPart)\(contextBlock)\(langInstruction)
+            The user wrote: "\(context.userText)"\(contextBlock)\(langInstruction)
+            \(userWritingStyleInstruction)
 
-            Complete and enrich this into a warm travel blog note. Output only the story text.
+            Complete and enrich this into a short travel blog note. Output only the story text.
             """
 
         return await runSession(instructions: instructions, prompt: prompt)
@@ -481,8 +495,9 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 
         let prompt = """
             The user wrote: "\(context.userText)"\(placePart)\(captionsBlock)\(langInstruction)
+            \(userWritingStyleInstruction)
 
-            Complete and enrich this into a warm travel blog summary. Output only the story text.
+            Complete and enrich this into a short travel blog summary. Output only the story text.
             """
 
         return await runSession(instructions: instructions, prompt: prompt)
@@ -506,8 +521,9 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             """
         let prompt = """
             The user wrote: "\(context.userText)"\(datePart)\(placesPart)\(langInstruction)
+            \(userWritingStyleInstruction)
 
-            Complete this into one short, warm day story. Output only the text.
+            Complete this into one short day story. Output only the text.
             """
 
         return await runSession(instructions: instructions, prompt: prompt)

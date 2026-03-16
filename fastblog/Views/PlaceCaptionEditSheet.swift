@@ -14,8 +14,15 @@ struct PlaceCaptionEditSheet: View {
     @Binding var caption: String
     var onSave: () -> Void
     var onCancel: () -> Void
+    /// When provided, the Enhance button is shown. Receives current draft; returns AI-enriched text.
+    var onEnhance: ((String) async -> String)? = nil
+    /// Called after AI successfully applies a result (so caller can mark overallStoryIsManual = false).
+    var onEnhanceApplied: (() -> Void)? = nil
 
     @State private var editedText: String = ""
+    @State private var isEnhancing = false
+    /// Captures the user's own text before the first AI run, enabling "Revert to original".
+    @State private var originalDraft: String? = nil
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -45,17 +52,83 @@ struct PlaceCaptionEditSheet: View {
                 }
                 .frame(maxHeight: .infinity)
 
-                // ── Clear button — shown only when text is non-empty ──
-                if !editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Button(role: .destructive) {
-                        withAnimation(.easeInOut(duration: 0.18)) {
-                            editedText = ""
+                // ── Action bar — shown when text is non-empty ─────────
+                let trimmedText = editedText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedText.isEmpty {
+                    HStack(spacing: 16) {
+                        // Clear (destructive) — always left
+                        Button(role: .destructive) {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                editedText = ""
+                                originalDraft = nil
+                            }
+                        } label: {
+                            Label("Clear", systemImage: "trash")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
                         }
-                    } label: {
-                        Label("Clear caption", systemImage: "trash")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
+
+                        Spacer()
+
+                        // Revert — only after AI has run at least once
+                        if let draft = originalDraft {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.18)) {
+                                    editedText = draft
+                                    originalDraft = nil
+                                }
+                            } label: {
+                                Label("Revert", systemImage: "arrow.uturn.backward")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        // Enhance — only when onEnhance is wired up
+                        if let enhance = onEnhance {
+                            Button {
+                                if originalDraft == nil { originalDraft = editedText }
+                                let textToEnhance = editedText
+                                isEnhancing = true
+                                Task {
+                                    let result = await enhance(textToEnhance)
+                                    await MainActor.run {
+                                        editedText = result
+                                        isEnhancing = false
+                                        onEnhanceApplied?()
+                                    }
+                                }
+                            } label: {
+                                if isEnhancing {
+                                    HStack(spacing: 4) {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle())
+                                            .scaleEffect(0.75)
+                                        Text("Enhancing…")
+                                            .font(.subheadline)
+                                            .foregroundColor(.secondary)
+                                    }
+                                } else {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "wand.and.stars")
+                                            .font(.subheadline)
+                                            .foregroundStyle(
+                                                LinearGradient(
+                                                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                )
+                                            )
+                                        Text("Enhance")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                    }
+                                }
+                            }
+                            .disabled(isEnhancing)
+                        }
                     }
+                    .padding(.horizontal, 20)
                     .padding(.vertical, 12)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
