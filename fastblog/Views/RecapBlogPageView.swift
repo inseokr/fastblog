@@ -1268,16 +1268,17 @@ struct RecapBlogPageView: View {
                     onDoneEditingStory: { stopId, isPlaceNote, photoId in
                         syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: isPlaceNote, photoId: photoId)
                     },
-                    onGeneratePlaceStory: {
-                        await StoryCaptionService.shared.generatePlaceStory(stop: stop, dayDate: day.date)
+                    onGeneratePlaceStory: { userText in
+                        guard let currentStop = placeStop(dayId: day.id, stopId: stop.id) else { return userText }
+                        return await StoryCaptionService.shared.enhancePlaceStory(stop: currentStop, userText: userText, dayDate: day.date)
                     },
-                    onGenerateOverallStory: {
-                        guard let currentStop = placeStop(dayId: day.id, stopId: stop.id) else { return "" }
+                    onGenerateOverallStory: { userText in
+                        guard let currentStop = placeStop(dayId: day.id, stopId: stop.id) else { return userText }
                         let captions = currentStop.photos.filter(\.isIncluded).map { $0.caption ?? "" }
-                        return await StoryCaptionService.shared.generateOverallPlaceStory(stop: currentStop, dayDate: day.date, photoCaptions: captions)
+                        return await StoryCaptionService.shared.enhanceOverallPlaceStory(stop: currentStop, userText: userText, dayDate: day.date, photoCaptions: captions)
                     },
-                    onGeneratePhotoCaption: { photo in
-                        await StoryCaptionService.shared.generateCaption(photo: photo, placeName: stop.placeTitle, placeSubtitle: stop.placeSubtitle)
+                    onGeneratePhotoCaption: { photo, userText in
+                        await StoryCaptionService.shared.enhanceCaption(photo: photo, userText: userText, placeName: stop.placeTitle, placeSubtitle: stop.placeSubtitle)
                     },
                     onPhotoUserEdited: { photoId in
                         markPhotoCaptionManual(dayId: day.id, stopId: stop.id, photoId: photoId)
@@ -1341,8 +1342,8 @@ struct RecapBlogPageView: View {
                         autoFocusCaption: item.autoFocusCaption,
                         photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
                         onDismiss: { placePhotoModalItem = nil },
-                        onGenerateCaption: { photo, placeName, placeSubtitle in
-                            await StoryCaptionService.shared.generateCaption(photo: photo, placeName: placeName, placeSubtitle: placeSubtitle)
+                        onGenerateCaption: { photo, placeName, placeSubtitle, userText in
+                            await StoryCaptionService.shared.enhanceCaption(photo: photo, userText: userText, placeName: placeName, placeSubtitle: placeSubtitle)
                         },
                         onAICaptionApplied: { photoId in
                             markPhotoCaptionAI(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
@@ -1759,11 +1760,7 @@ struct RecapBlogPageView: View {
                     let categories = stop.placeCategory.map { [$0] }
                     Task { try? await APIManager.shared.updatePlaceName(visitedTimeDigitized: placeKey, placeName: title, categories: categories) }
                 }
-                // Generate place caption when user picks a name — only when on-device LLM is available.
-                if LocalLLMStoryCaptionGenerator.isCapable {
-                    let capturedDayId = day.id
-                    Task { @MainActor in await generatePlaceCaption(dayId: capturedDayId, stopId: stopId) }
-                }
+                // Story generation is now user-initiated via the magic wand (enhance flow).
                 break
             }
         }
@@ -1898,32 +1895,42 @@ struct RecapBlogPageView: View {
                 }
                 .buttonStyle(.plain)
 
-                Button {
-                    guard !isGenerating else { return }
-                    isGeneratingDayCaptionForDayId = day.id
-                    Task {
-                        let text = await StoryCaptionService.shared.generateDaySummary(day: day)
-                        await MainActor.run {
-                            guard let idx = draft.days.firstIndex(where: { $0.id == day.id }) else { return }
-                            draft.days[idx].dayCaption = text.isEmpty ? nil : text
-                            isGeneratingDayCaptionForDayId = nil
-                            createdRecapStore.saveBlogDetail(draft)
+                // Wand only appears when the user has written something
+                if !captionBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Button {
+                        guard !isGenerating else { return }
+                        isGeneratingDayCaptionForDayId = day.id
+                        let userText = captionBinding.wrappedValue
+                        Task {
+                            let text = await StoryCaptionService.shared.enhanceDaySummary(day: day, userText: userText)
+                            await MainActor.run {
+                                guard let idx = draft.days.firstIndex(where: { $0.id == day.id }) else { return }
+                                draft.days[idx].dayCaption = text.isEmpty ? nil : text
+                                isGeneratingDayCaptionForDayId = nil
+                                createdRecapStore.saveBlogDetail(draft)
+                            }
+                        }
+                    } label: {
+                        if isGenerating {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(0.8)
+                                .frame(width: 20, height: 20)
+                        } else {
+                            Image(systemName: "wand.and.stars")
+                                .font(.body)
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
                         }
                     }
-                } label: {
-                    if isGenerating {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(0.8)
-                            .frame(width: 20, height: 20)
-                    } else {
-                        Image(systemName: "wand.and.stars")
-                            .font(.body)
-                            .foregroundColor(.white.opacity(0.9))
-                    }
+                    .disabled(isGenerating)
+                    .padding(.top, 12)
                 }
-                .disabled(isGenerating)
-                .padding(.top, 12)
             }
             .padding(.bottom, 4)
         } else if !(day.dayCaption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

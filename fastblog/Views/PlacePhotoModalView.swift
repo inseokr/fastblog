@@ -32,8 +32,9 @@ struct PlacePhotoModalView: View {
     var photoCaption: (UUID) -> Binding<String>
     var onDismiss: () -> Void
     var onViewBlog: (() -> Void)?
-    /// When provided, a "Generate" button is shown in the caption editing panel. Called with (photo, placeName, placeSubtitle); returns generated caption.
-    var onGenerateCaption: ((RecapPhoto, String, String?) async -> String)?
+    /// When provided, a magic wand button is shown in the caption editing panel (only when user has written text).
+    /// Called with (photo, placeName, placeSubtitle, userText); returns enriched caption.
+    var onGenerateCaption: ((RecapPhoto, String, String?, String) async -> String)?
     /// Called after the AI wand applies a caption. Used to mark captionIsManual = false and cascade overall story.
     var onAICaptionApplied: ((UUID) -> Void)?
     /// Called when the user manually edits a photo caption in the modal. Used to mark captionIsManual = true.
@@ -137,7 +138,7 @@ struct PlacePhotoModalView: View {
         photoCaption: @escaping (UUID) -> Binding<String>,
         onDismiss: @escaping () -> Void,
         onViewBlog: (() -> Void)? = nil,
-        onGenerateCaption: ((RecapPhoto, String, String?) async -> String)? = nil,
+        onGenerateCaption: ((RecapPhoto, String, String?, String) async -> String)? = nil,
         onAICaptionApplied: ((UUID) -> Void)? = nil,
         onPhotoCaptionManuallyEdited: ((UUID) -> Void)? = nil,
         onRemovePhoto: ((UUID) -> Void)? = nil,
@@ -485,11 +486,14 @@ struct PlacePhotoModalView: View {
                                 .foregroundColor(.white)
                                 .lineLimit(2...6)
                                 .padding(12)
-                            if let generate = onGenerateCaption, let photo = currentPhoto {
+                            if let generate = onGenerateCaption,
+                               let photo = currentPhoto,
+                               !editedCaptionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 Button {
                                     isGeneratingCaption = true
+                                    let userText = editedCaptionText
                                     Task {
-                                        let text = await generate(photo, editedPlaceTitle, placeSubtitle)
+                                        let text = await generate(photo, editedPlaceTitle, placeSubtitle, userText)
                                         await MainActor.run {
                                             editedCaptionText = text
                                             photoCaption(currentPhotoId).wrappedValue = text
@@ -549,11 +553,14 @@ struct PlacePhotoModalView: View {
                                 .foregroundColor(.white)
                                 .lineLimit(2...6)
                                 .padding(12)
-                            if let generate = onGenerateCaption, let photo = currentPhoto {
+                            if let generate = onGenerateCaption,
+                               let photo = currentPhoto,
+                               !editedCaptionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 Button {
                                     isGeneratingCaption = true
+                                    let userText = editedCaptionText
                                     Task {
-                                        let text = await generate(photo, editedPlaceTitle, placeSubtitle)
+                                        let text = await generate(photo, editedPlaceTitle, placeSubtitle, userText)
                                         await MainActor.run {
                                             editedCaptionText = text
                                             photoCaption(currentPhotoId).wrappedValue = text
