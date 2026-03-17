@@ -188,7 +188,14 @@ struct PlacesVisitedView: View {
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal, 20)
 
-                                if !createdRecapStore.visitedPlaces.isEmpty {
+                                // Only treat year / country / category as "filters" for this button.
+                                // Plain text search alone should NOT surface the Clear filters button.
+                                let hasActiveFilters =
+                                    selectedYear != nil ||
+                                    selectedCountry != nil ||
+                                    selectedCategory != nil
+
+                                if !createdRecapStore.visitedPlaces.isEmpty && hasActiveFilters {
                                     Button("Clear filters") {
                                         selectedYear = nil
                                         selectedCountry = nil
@@ -297,13 +304,28 @@ struct PlacesVisitedView: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("All Countries") { selectedCountry = nil }
-                    ForEach(availableCountries, id: \.self) { c in
-                        Button(c) { selectedCountry = c }
+                if isSearchActive {
+                    Button("Done") {
+                        searchText = ""
+                        isSearchFocused = false
+                        isSearchActive = false
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder),
+                            to: nil,
+                            from: nil,
+                            for: nil
+                        )
                     }
-                } label: {
-                    Image(systemName: selectedCountry == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                    .fontWeight(.semibold)
+                } else {
+                    Menu {
+                        Button("All Countries") { selectedCountry = nil }
+                        ForEach(availableCountries, id: \.self) { c in
+                            Button(c) { selectedCountry = c }
+                        }
+                    } label: {
+                        Image(systemName: selectedCountry == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                    }
                 }
             }
             if selectedYear != nil || selectedCountry != nil || selectedCategory != nil {
@@ -407,11 +429,9 @@ struct PlacesVisitedView: View {
                 .autocorrectionDisabled()
                 .focused($isSearchFocused)
                 .onTapGesture { isSearchActive = true }
-            if isSearchActive {
+            if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Button {
                     searchText = ""
-                    isSearchFocused = false
-                    isSearchActive = false
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.white.opacity(0.5))
@@ -647,6 +667,8 @@ private struct PlacesVisitedMapView: View {
 
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var selectedPlaceForModal: VisitedPlaceSummary?
+    @State private var isSearchActive: Bool = false
+    @FocusState private var isSearchFocused: Bool
 
     private let defaultRegion = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
@@ -781,6 +803,39 @@ private struct PlacesVisitedMapView: View {
         }
     }
 
+    // MARK: - Year / Month grouping helpers (mirrors PlacesVisitedView)
+
+    private struct MonthGroup {
+        let month: Int          // 1–12
+        let monthName: String   // e.g. "March"
+        let places: [VisitedPlaceSummary]
+    }
+
+    private struct YearGroup {
+        let year: Int
+        let months: [MonthGroup]
+    }
+
+    private func groupedByYearThenMonth(_ places: [VisitedPlaceSummary]) -> [YearGroup] {
+        let cal = Calendar.current
+        let byYear = Dictionary(grouping: places) { cal.component(.year, from: $0.latestVisitDate) }
+        return byYear.keys.sorted(by: >).map { year in
+            let yearPlaces = byYear[year]!
+            let byMonth = Dictionary(grouping: yearPlaces) { cal.component(.month, from: $0.latestVisitDate) }
+            let monthGroups = byMonth.keys.sorted(by: >).map { month -> MonthGroup in
+                let formatter = DateFormatter()
+                formatter.dateFormat = "MMMM"
+                let name: String = {
+                    var comps = DateComponents(); comps.month = month; comps.year = year
+                    let date = cal.date(from: comps) ?? Date()
+                    return formatter.string(from: date)
+                }()
+                return MonthGroup(month: month, monthName: name, places: byMonth[month]!)
+            }
+            return YearGroup(year: year, months: monthGroups)
+        }
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             Map(position: $mapPosition) {
@@ -808,6 +863,7 @@ private struct PlacesVisitedMapView: View {
                 recenterToLatestPlace()
             }
 
+            // Top filter chips
             VStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Year")
@@ -859,6 +915,114 @@ private struct PlacesVisitedMapView: View {
                     endPoint: .bottom
                 )
             )
+
+            // Search overlay (dark navy, similar to My Blogs map search)
+            if isSearchActive {
+                Color(red: 5/255, green: 10/255, blue: 48/255)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+
+                VStack(spacing: 0) {
+                    // Search bar under header
+                    HStack(spacing: 12) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.white.opacity(0.7))
+                        TextField("Search place, city, or country", text: $searchText)
+                            .foregroundColor(.white)
+                            .autocorrectionDisabled()
+                            .focused($isSearchFocused)
+
+                        if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Button {
+                                searchText = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.white.opacity(0.6))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(height: 56)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color.white.opacity(0.12))
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 8)
+
+                    // List of matching places (same grouping source as main list)
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            if filteredPlaces.isEmpty {
+                                VStack(spacing: 10) {
+                                    Text("No matches")
+                                        .font(.title3)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.white)
+
+                                    Text("Try a different place, city, or country.")
+                                        .font(.subheadline)
+                                        .foregroundColor(.white.opacity(0.7))
+                                        .multilineTextAlignment(.center)
+                                        .padding(.horizontal, 20)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 44)
+                            } else {
+                                let yearGroups = groupedByYearThenMonth(filteredPlaces)
+                                LazyVStack(alignment: .leading, spacing: 0) {
+                                    ForEach(yearGroups, id: \.year) { yearGroup in
+                                        Text(String(yearGroup.year))
+                                            .font(.title)
+                                            .fontWeight(.bold)
+                                            .foregroundColor(.white)
+                                            .padding(.top, 8)
+                                            .padding(.bottom, 4)
+
+                                        ForEach(yearGroup.months, id: \.month) { monthGroup in
+                                            Text(monthGroup.monthName)
+                                                .font(.subheadline)
+                                                .fontWeight(.semibold)
+                                                .foregroundColor(.white.opacity(0.8))
+                                                .padding(.top, 10)
+                                                .padding(.bottom, 6)
+
+                                            let pairs = stride(from: 0, to: monthGroup.places.count, by: 2).map {
+                                                Array(monthGroup.places[$0 ..< min($0 + 2, monthGroup.places.count)])
+                                            }
+                                            ForEach(pairs, id: \.first?.id) { pair in
+                                                HStack(alignment: .top, spacing: 12) {
+                                                    ForEach(Array(pair.enumerated()), id: \.element.id) { colIdx, place in
+                                                        let partnerIdx = colIdx == 0 ? 1 : 0
+                                                        let partnerHasCaption = partnerIdx < pair.count && pair[partnerIdx].captionPreview != nil
+                                                        let showCaptionSpace = place.captionPreview != nil || partnerHasCaption
+                                                        Button {
+                                                            selectedPlaceForModal = place
+                                                        } label: {
+                                                            PlaceVisitedCard(place: place, showCaptionSpace: showCaptionSpace)
+                                                        }
+                                                        .buttonStyle(.plain)
+                                                        .frame(maxWidth: .infinity)
+                                                    }
+                                                    if pair.count == 1 {
+                                                        Color.clear.frame(maxWidth: .infinity)
+                                                    }
+                                                }
+                                                .padding(.bottom, 12)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 32)
+                    }
+                }
+                .transition(.opacity)
+            }
         }
         .navigationBarBackButtonHidden(true)
         .navigationTitle("Map")
@@ -888,14 +1052,44 @@ private struct PlacesVisitedMapView: View {
                 }
             }
 
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("All Countries") { selectedCountry = nil }
-                    ForEach(availableCountries, id: \.self) { c in
-                        Button(c) { selectedCountry = c }
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if isSearchActive {
+                    Button("Done") {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            isSearchActive = false
+                        }
+                        searchText = ""
+                        isSearchFocused = false
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder),
+                            to: nil,
+                            from: nil,
+                            for: nil
+                        )
                     }
-                } label: {
-                    Image(systemName: selectedCountry == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                    .fontWeight(.semibold)
+                } else {
+                    // Search icon (left)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            isSearchActive = true
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            isSearchFocused = true
+                        }
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                    }
+
+                    // Existing filter menu (right)
+                    Menu {
+                        Button("All Countries") { selectedCountry = nil }
+                        ForEach(availableCountries, id: \.self) { c in
+                            Button(c) { selectedCountry = c }
+                        }
+                    } label: {
+                        Image(systemName: selectedCountry == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                    }
                 }
             }
         }
