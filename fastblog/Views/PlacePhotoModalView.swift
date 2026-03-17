@@ -189,12 +189,12 @@ struct PlacePhotoModalView: View {
         ZStack {
                 // 1. Full screen media viewer
                 // .simultaneousGesture fires alongside TabView's own paging swipe recognizer
-                // so single taps are not swallowed by the UIScrollView underneath.
+                // so taps are not swallowed by the UIScrollView underneath.
                 fullScreenPhotoView
                     .onAppear { debugPrint("[PlacePhotoModal] fullScreenPhotoView appeared") }
                     .simultaneousGesture(
-                        TapGesture(count: 2).onEnded {
-                            debugPrint("[PlacePhotoModal] Double-tap on viewer → entering zoom mode, photoId=\(currentPhotoId)")
+                        TapGesture(count: 1).onEnded {
+                            debugPrint("[PlacePhotoModal] Tap on viewer → entering full-screen zoom mode, photoId=\(currentPhotoId)")
                             if isCaptionFocused {
                                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                             } else if !isZoomMode {

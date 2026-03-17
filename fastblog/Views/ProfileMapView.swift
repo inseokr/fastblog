@@ -14,7 +14,6 @@ struct ProfileMapView: View {
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @StateObject private var viewModel: ProfileMapViewModel
     @State private var mapPosition: MapCameraPosition = .automatic
-    @State private var selectedBlogForNavigation: CreatedRecapBlog?
     
     @State private var isSearchActive = false
     @FocusState private var isSearchFocused: Bool
@@ -25,22 +24,21 @@ struct ProfileMapView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            profileMap
-            
-            if !isSearchActive {
-                VStack {
-                    countryFilterBar
-                    Spacer()
-                }
-            }
-            
-            // Bottom UI
+        Group {
             if isSearchActive {
-                searchBar
-                    .padding(.bottom, 20)
+                // Full-screen navy search experience
+                searchOverlay
             } else {
-                bottomTripList
+                ZStack(alignment: .bottom) {
+                    profileMap
+                    
+                    VStack {
+                        countryFilterBar
+                        Spacer()
+                    }
+                    
+                    bottomTripList
+                }
             }
         }
         .ignoresSafeArea(.container, edges: .bottom)
@@ -50,17 +48,26 @@ struct ProfileMapView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    withAnimation {
-                        isSearchActive.toggle()
+                    withAnimation(.easeInOut(duration: 0.22)) {
                         if isSearchActive {
-                            isSearchFocused = true
-                        } else {
+                            // Back out of search mode
+                            isSearchActive = false
                             viewModel.searchText = ""
+                            isSearchFocused = false
+                        } else {
+                            // Enter search mode
+                            isSearchActive = true
+                            isSearchFocused = true
                         }
                     }
                 } label: {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.primary)
+                    if isSearchActive {
+                        Text("Back")
+                            .font(.body.weight(.semibold))
+                    } else {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.primary)
+                    }
                 }
             }
         }
@@ -77,12 +84,6 @@ struct ProfileMapView: View {
             withAnimation {
                 mapPosition = .region(viewModel.mapRegion)
             }
-        }
-        .navigationDestination(item: $selectedBlogForNavigation) { blog in
-            RecapBlogPageView(
-                blogId: blog.sourceTripId,
-                initialTrip: _createdRecapStore.wrappedValue.tripDraft(for: blog.sourceTripId)
-            )
         }
     }
 
@@ -109,8 +110,8 @@ struct ProfileMapView: View {
             )
             .onTapGesture {
                 if viewModel.selectedTripID == item.blog.sourceTripId {
-                    // Already selected — second tap opens the blog
-                    selectedBlogForNavigation = item.blog
+                    // Already selected — second tap opens the blog via global overlay (fade).
+                    selectedCreatedRecap = item.blog
                 } else {
                     // First tap — select and scroll card into view
                     withAnimation {
@@ -151,35 +152,85 @@ struct ProfileMapView: View {
         )
     }
     
-    // MARK: - Search Bar
+    // MARK: - Search Overlay
     
-    private var searchBar: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "magnifyingglass")
-                .foregroundColor(.white.opacity(0.7))
-            TextField("Search city or blog title", text: $viewModel.searchText)
-                .foregroundColor(.white)
-                .autocorrectionDisabled()
-                .focused($isSearchFocused)
+    private var searchOverlay: some View {
+        ZStack {
+            // Deep navy background to create clean space for results
+            Color(red: 5/255, green: 10/255, blue: 48/255)
+                .ignoresSafeArea()
             
-            if isSearchActive {
-                Button {
-                    withAnimation {
-                        viewModel.searchText = ""
-                        isSearchFocused = false
-                        isSearchActive = false
+            VStack(spacing: 16) {
+                // Search field pinned near top
+                HStack(spacing: 12) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.white.opacity(0.7))
+                    TextField("Search city or blog title", text: $viewModel.searchText)
+                        .foregroundColor(.white)
+                        .autocorrectionDisabled()
+                        .focused($isSearchFocused)
+                    
+                    if !viewModel.searchText.isEmpty {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                viewModel.searchText = ""
+                            }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.white.opacity(0.5))
+                        }
+                        .buttonStyle(.plain)
                     }
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.white.opacity(0.5))
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .frame(height: 56)
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                
+                // Autocomplete results
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 14) {
+                        let results = viewModel.visibleTrips
+                        if results.isEmpty {
+                            VStack(spacing: 8) {
+                                Text("Search by city or blog title")
+                                    .font(.subheadline)
+                                    .foregroundColor(.white.opacity(0.75))
+                                Text("Start typing to quickly jump into a blog on the map.")
+                                    .font(.footnote)
+                                    .foregroundColor(.white.opacity(0.6))
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 24)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 180, alignment: .top)
+                            .padding(.top, 24)
+                        } else {
+                            ForEach(results, id: \.sourceTripId) { trip in
+                                Button {
+                                    // Open selected blog and dismiss search
+                                    withAnimation(.easeInOut(duration: 0.22)) {
+                                        selectedCreatedRecap = trip
+                                        isSearchFocused = false
+                                        isSearchActive = false
+                                    }
+                                } label: {
+                                    ProfileMapCardView(
+                                        blog: trip,
+                                        isSelected: false,
+                                        onTap: {},
+                                        onNavigate: {}
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
+                }
             }
         }
-        .padding(.horizontal, 16)
-        .frame(height: 56)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 20)
     }
     
     @State private var scrolledTripID: UUID?
@@ -196,11 +247,11 @@ struct ProfileMapView: View {
                             blog: trip,
                             isSelected: viewModel.selectedTripID == trip.sourceTripId,
                             onTap: {
-                                // Card tap always navigates to the blog
-                                selectedBlogForNavigation = trip
+                                // Open blog via global overlay (fade)
+                                selectedCreatedRecap = trip
                             },
                             onNavigate: {
-                                selectedBlogForNavigation = trip
+                                selectedCreatedRecap = trip
                             }
                         )
                         .id(trip.sourceTripId)
@@ -307,8 +358,8 @@ private struct ProfileMapCardView: View {
     private var tripInfo: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(blog.title)
-                .font(.system(.subheadline, design: .serif))
-                .fontWeight(.bold)
+                .font(.title3)
+                .fontWeight(.semibold)
                 .foregroundColor(.white)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
@@ -316,21 +367,24 @@ private struct ProfileMapCardView: View {
             HStack(spacing: 4) {
                 if let country = blog.countryName {
                     Text(country)
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(.white.opacity(0.8))
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white.opacity(0.85))
                     Text("•")
                         .font(.caption2)
                         .foregroundColor(.white.opacity(0.4))
                 }
-                Text(blog.tripDateRangeText ?? "")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.6))
             }
+
+            // Trip duration (and places) directly under the country info
+            Text("\(blog.totalPlaceVisitCount) Place\(blog.totalPlaceVisitCount == 1 ? "" : "s") • \(blog.tripDurationDays) Day\(blog.tripDurationDays == 1 ? "" : "s")")
+                .font(.subheadline)
+                .foregroundColor(.white.opacity(0.7))
 
             if let caption = blog.caption, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(caption)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.5))
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.6))
                     .lineLimit(1)
             }
         }
@@ -394,9 +448,11 @@ struct CountryMapView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
 
     @State private var mapPosition: MapCameraPosition = .automatic
-    @State private var selectedBlogForNavigation: CreatedRecapBlog?
     @State private var selectedTripID: UUID?
     @State private var scrolledTripID: UUID?
+    @State private var isSearchActive = false
+    @State private var searchText: String = ""
+    @FocusState private var isSearchFocused: Bool
 
     init(countryName: String, blogs: [CreatedRecapBlog], selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
         self.countryName = countryName
@@ -409,6 +465,16 @@ struct CountryMapView: View {
         blogs.sorted { ($0.tripStartDate ?? $0.createdAt) > ($1.tripStartDate ?? $1.createdAt) }
     }
 
+    /// Blogs filtered by search text for the country map search overlay.
+    private var filteredBlogs: [CreatedRecapBlog] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return sortedBlogs }
+        return sortedBlogs.filter { blog in
+            blog.title.lowercased().contains(query)
+                || (blog.countryName?.lowercased().contains(query) ?? false)
+        }
+    }
+
     private var tripsWithCoordinates: [(blog: CreatedRecapBlog, coordinate: CLLocationCoordinate2D)] {
         sortedBlogs.compactMap { blog in
             guard let coord = createdRecapStore.coordinate(for: blog.sourceTripId) else { return nil }
@@ -417,24 +483,56 @@ struct CountryMapView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            // Full-screen map
-            Map(position: $mapPosition) {
-                ForEach(tripsWithCoordinates, id: \.blog.sourceTripId) { item in
-                    annotation(for: item)
-                }
-            }
-            .mapStyle(.standard(elevation: .realistic))
-            .ignoresSafeArea(edges: .bottom)
+        Group {
+            if isSearchActive {
+                countrySearchOverlay
+            } else {
+                ZStack(alignment: .bottom) {
+                    // Full-screen map
+                    Map(position: $mapPosition) {
+                        ForEach(tripsWithCoordinates, id: \.blog.sourceTripId) { item in
+                            annotation(for: item)
+                        }
+                    }
+                    .mapStyle(.standard(elevation: .realistic))
+                    .ignoresSafeArea(edges: .bottom)
 
-            // Bottom blog card strip
-            if !sortedBlogs.isEmpty {
-                bottomBlogStrip
+                    // Bottom blog card strip
+                    if !sortedBlogs.isEmpty {
+                        bottomBlogStrip
+                    }
+                }
             }
         }
         .navigationTitle(displayCountryName(countryName))
         .navigationBarTitleDisplayMode(.inline)
         .preferredColorScheme(.dark)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        if isSearchActive {
+                            // Back out of search mode
+                            isSearchActive = false
+                            searchText = ""
+                            isSearchFocused = false
+                        } else {
+                            // Enter search mode
+                            isSearchActive = true
+                            isSearchFocused = true
+                        }
+                    }
+                } label: {
+                    if isSearchActive {
+                        Text("Back")
+                            .font(.body.weight(.semibold))
+                    } else {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.primary)
+                    }
+                }
+            }
+        }
         .onAppear {
             let first = sortedBlogs.first
             if let first, let coord = createdRecapStore.coordinate(for: first.sourceTripId) {
@@ -447,12 +545,6 @@ struct CountryMapView: View {
             }
             selectedTripID = first?.sourceTripId
             scrolledTripID = first?.sourceTripId
-        }
-        .navigationDestination(item: $selectedBlogForNavigation) { blog in
-            RecapBlogPageView(
-                blogId: blog.sourceTripId,
-                initialTrip: createdRecapStore.tripDraft(for: blog.sourceTripId)
-            )
         }
     }
 
@@ -470,10 +562,11 @@ struct CountryMapView: View {
                             blog: blog,
                             isSelected: selectedTripID == blog.sourceTripId,
                             onTap: {
-                                selectedBlogForNavigation = blog
+                                // Open blog via global overlay (fade) when card is tapped.
+                                selectedCreatedRecap = blog
                             },
                             onNavigate: {
-                                selectedBlogForNavigation = blog
+                                selectedCreatedRecap = blog
                             }
                         )
                         .id(blog.sourceTripId)
@@ -513,6 +606,84 @@ struct CountryMapView: View {
         .padding(.bottom, 24)
     }
 
+    // MARK: - Country search overlay
+
+    private var countrySearchOverlay: some View {
+        ZStack {
+            // Deep navy background, matching My Blogs search UX
+            Color(red: 5/255, green: 10/255, blue: 48/255)
+                .ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                // Search field at top
+                HStack(spacing: 12) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.white.opacity(0.7))
+                    TextField("Search blogs in \(displayCountryName(countryName))", text: $searchText)
+                        .foregroundColor(.white)
+                        .autocorrectionDisabled()
+                        .focused($isSearchFocused)
+
+                    if !searchText.isEmpty {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                searchText = ""
+                            }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.white.opacity(0.5))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .frame(height: 56)
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+
+                // Filtered results for this country
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 14) {
+                        let results = filteredBlogs
+                        if results.isEmpty {
+                            VStack(spacing: 8) {
+                                Text("No blogs match your search")
+                                    .font(.subheadline)
+                                    .foregroundColor(.white.opacity(0.8))
+                                Text("Try a different city or title.")
+                                    .font(.footnote)
+                                    .foregroundColor(.white.opacity(0.6))
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 180, alignment: .top)
+                            .padding(.top, 24)
+                        } else {
+                            ForEach(results, id: \.sourceTripId) { blog in
+                                Button {
+                                    withAnimation(.easeInOut(duration: 0.22)) {
+                                        selectedCreatedRecap = blog
+                                        isSearchFocused = false
+                                        isSearchActive = false
+                                    }
+                                } label: {
+                                    ProfileMapCardView(
+                                        blog: blog,
+                                        isSelected: false,
+                                        onTap: {},
+                                        onNavigate: {}
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
+                }
+            }
+        }
+    }
+
     // MARK: - Map annotation
 
     @MapContentBuilder
@@ -524,8 +695,8 @@ struct CountryMapView: View {
             )
             .onTapGesture {
                 if selectedTripID == item.blog.sourceTripId {
-                    // Second tap → navigate
-                    selectedBlogForNavigation = item.blog
+                    // Second tap → open blog via global overlay (fade).
+                    selectedCreatedRecap = item.blog
                 } else {
                     // First tap → select + re-center
                     withAnimation {

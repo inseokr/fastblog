@@ -89,6 +89,61 @@ struct MyBlogsProfileView: View {
 
             // ── Active page content ──────────────────────────────────────
             pageContent
+                .opacity(isSearchActive && isOnBlogsPage ? 0 : 1)
+                .animation(.easeInOut(duration: 0.22), value: isSearchActive)
+
+            // ── Search focus overlay + full blog list (My Blogs only) ─────
+            if isSearchActive && isOnBlogsPage {
+                // Deep navy background, visually aligned with My Blogs.
+                backgroundBlue
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+
+                VStack(spacing: 0) {
+                    ScrollView(showsIndicators: false) {
+                        LazyVStack(spacing: 24) {
+                            let results = autocompleteBlogs
+                            if results.isEmpty {
+                                VStack(spacing: 8) {
+                                    Text("Search by city, country, or blog title")
+                                        .font(.subheadline)
+                                        .foregroundColor(.white.opacity(0.7))
+                                    Text("Start typing to quickly jump into a blog.")
+                                        .font(.footnote)
+                                        .foregroundColor(.white.opacity(0.6))
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 32)
+                            } else {
+                                ForEach(results) { blog in
+                                    Button {
+                                        isSearchFocused = false
+                                        withAnimation(.easeInOut(duration: 0.22)) {
+                                            isSearchActive = false
+                                        }
+                                        selectedCreatedRecap = blog
+                                    } label: {
+                                        CountryBlogRowView(
+                                            blog: blog,
+                                            isBlogInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
+                                            isDraft: createdRecapStore.getBlogDetail(blogId: blog.sourceTripId) == nil,
+                                            onRemoveFromCloud: {},
+                                            onEditBlog: {},
+                                            onDeleteBlog: {}
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, horizontalPadding)
+                        .padding(.top, 16)
+                        // Leave room for the bottom search bar + map button
+                        .padding(.bottom, searchBarHeight + myMapButtonSize + 40)
+                    }
+                }
+                .transition(.opacity)
+            }
 
             // ── Persistent bottom bar (always visible) ───────────────────
             VStack(spacing: 0) {
@@ -139,14 +194,27 @@ struct MyBlogsProfileView: View {
                     }
                 }
             }
-            // Manage — only on blogs page (sub-pages add their own toolbar items)
+            // Right-side actions for My Blogs page
             if case .blogs = currentPage {
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Manage") {
-                        isSearchFocused = false
-                        showManage = true
+                    if isSearchActive {
+                        Button("Done") {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                isSearchActive = false
+                            }
+                            sharedSearchText = ""
+                            isSearchFocused = false
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                        }
+                        .foregroundColor(.white)
+                        .fontWeight(.semibold)
+                    } else {
+                        Button("Manage") {
+                            isSearchFocused = false
+                            showManage = true
+                        }
+                        .foregroundColor(.white)
                     }
-                    .foregroundColor(.white)
                 }
             }
         }
@@ -227,6 +295,11 @@ struct MyBlogsProfileView: View {
         }
     }
 
+    private var isOnBlogsPage: Bool {
+        if case .blogs = currentPage { return true }
+        return false
+    }
+
     @ViewBuilder
     private var pageContent: some View {
         switch currentPage {
@@ -256,15 +329,7 @@ struct MyBlogsProfileView: View {
                 if false && !isSearchActive && !createdRecapStore.visibleRecents.isEmpty {
                     recentBlogsSection
                 }
-                if isSearchActive && !viewModel.isSearching {
-                    VStack(spacing: 12) {
-                        Text("Search by city or blog title")
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.6))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 48)
-                } else if sections.isEmpty {
+                if sections.isEmpty {
                     emptyState
                 } else {
                     LazyVStack(spacing: cardSpacing) {
@@ -308,12 +373,19 @@ struct MyBlogsProfileView: View {
                 .foregroundColor(isDark ? .white : .primary)
                 .autocorrectionDisabled()
                 .focused($isSearchFocused)
-                .onTapGesture { isSearchActive = true }
+                .onChange(of: isSearchFocused) { _, focused in
+                    guard isOnBlogsPage else { return }
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isSearchActive = focused
+                    }
+                }
             if isSearchActive {
                 Button {
                     sharedSearchText = ""
                     isSearchFocused = false
-                    isSearchActive = false
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isSearchActive = false
+                    }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(isDark ? .white.opacity(0.5) : .secondary)
@@ -326,6 +398,32 @@ struct MyBlogsProfileView: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal, horizontalPadding)
         .padding(.bottom, 12)
+    }
+
+    /// Autocomplete results used while the bottom search bar is active.
+    /// Returns a flat list of blogs across all countries, newest → oldest.
+    /// When search is empty, all blogs are shown; otherwise we filter.
+    private var autocompleteBlogs: [CreatedRecapBlog] {
+        let query = sharedSearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        // Use the same underlying data as the My Blogs country view:
+        // flatten all country sections into a single newest→oldest list.
+        let allSections = MyBlogsProfileViewModel.sections(from: createdRecapStore.countrySummaries)
+        let allBlogs = allSections.flatMap { $0.blogs }
+        let sorted = allBlogs.sorted {
+            ($0.tripStartDate ?? $0.createdAt) > ($1.tripStartDate ?? $1.createdAt)
+        }
+
+        guard !query.isEmpty else {
+            // No text yet → show all blogs, newest first
+            return sorted
+        }
+
+        return sorted.filter { blog in
+            blog.title.lowercased().contains(query)
+            || (blog.countryName?.lowercased().contains(query) ?? false)
+            || (blog.caption?.lowercased().contains(query) ?? false)
+        }
     }
 
     private var recentBlogsSection: some View {

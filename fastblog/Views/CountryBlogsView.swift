@@ -212,10 +212,24 @@ struct CountryBlogsView: View {
         .background(InteractivePopGestureDisabler())
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Manage") {
-                    showManageSheet = true
+                if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Button("Manage") {
+                        showManageSheet = true
+                    }
+                    .fontWeight(.medium)
+                } else {
+                    Button("Done") {
+                        // Exit search mode by clearing text and dismissing keyboard
+                        searchText = ""
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder),
+                            to: nil,
+                            from: nil,
+                            for: nil
+                        )
+                    }
+                    .fontWeight(.semibold)
                 }
-                .fontWeight(.medium)
             }
         }
         .sheet(isPresented: $showManageSheet) {
