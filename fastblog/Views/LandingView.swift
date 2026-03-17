@@ -1,4 +1,4 @@
-                                                    //
+at                                                     //
 //  LandingView.swift
 //  Capper
 //
@@ -335,22 +335,6 @@ struct LandingView: View {
                     showTrips = true
                 }
             }
-            // Check for on-the-go new moments first — only when the user already has a created blog.
-            // if OnTheGoTripStore.hasNewMoments,
-            //    let blogId = OnTheGoTripStore.activeBlogId,
-            //    let title = OnTheGoTripStore.activeBlogTitle,
-            //    createdRecapStore.visibleRecents.contains(where: { $0.sourceTripId == blogId }) {
-            //     newMomentsAlertBlogId = blogId
-            //     newMomentsAlertBlogTitle = title
-            //     newMomentsAlertDayIndex = OnTheGoTripStore.newMomentsDayIndex
-            //     showNewMomentsAlert = true
-            // } else if tripsViewModel.tripDrafts.isEmpty {
-            //     // Start scan — navigation will happen when scan finishes (via onChange below)
-            //     tripsViewModel.startDefaultScan()
-            //     pendingNavigateAfterScan = true
-            // } else {
-            //     showTrips = true
-            // }
         } label: {
             ZStack {
                 ZStack {
@@ -373,7 +357,7 @@ struct LandingView: View {
                 )
                 
                 if photoAuth.status == .limited {
-                    Text("Select Photos to Blog")
+                    Text(showAlternateText ? "Blog Your Trips in Seconds" : "Select Photos to Blog")
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
@@ -381,19 +365,13 @@ struct LandingView: View {
                         .frame(maxWidth: .infinity)
                         .offset(y: -156)
                 } else {
-                    VStack(spacing: 4) {
-                        Text("Tap to Blog")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        Text("Blog Your Trips in Seconds")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.white.opacity(0.8))
-                    }
-                    .foregroundColor(.white)
-                    .opacity(ctaTextOpacity)
-                    .frame(maxWidth: .infinity)
-                    .offset(y: -156)
+                    Text(showAlternateText ? "Blog Your Trips in Seconds" : "Tap to Blog")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .opacity(ctaTextOpacity)
+                        .frame(maxWidth: .infinity)
+                        .offset(y: -156)
                 }
             }
         }

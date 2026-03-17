@@ -671,8 +671,8 @@ struct RecapBlogPageView: View {
                                 .padding(.top, 8)
                                 .padding(.bottom, 12)
                         }
-                        // New moments card — only when blog has been saved and scan found new photos
-                        if hasBlogBeenSavedToDevice, newMomentsPlaceCount > 0 {
+                        // New moments card — shown when a scan found new photos for this blog.
+                        if newMomentsPlaceCount > 0 {
                             newMomentsCard
                                 .padding(.horizontal, 16)
                                 .padding(.top, 8)
@@ -1649,11 +1649,8 @@ struct RecapBlogPageView: View {
             hasFinishedInitialLoad = true
             // Process any remaining days in background (rate-limited geocoding).
             Task { @MainActor in await createdRecapStore.continueGeocodingDays(blogId: blogId) }
-            // Only check for new moments if the blog has been saved to local device.
-            // Camera-originated trips that are still just trips (never saved) get their photos in the timeline only, no "X moments found".
-            if hasBlogBeenSavedToDevice {
-                checkForNewMomentsIfRecent()
-            }
+            // Check for new moments for this recent blog (if it passes the recency + cutoff checks).
+            checkForNewMomentsIfRecent()
             return
         }
         guard let trip = initialTrip ?? createdRecapStore.tripDraft(for: blogId) else {
