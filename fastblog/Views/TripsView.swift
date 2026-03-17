@@ -1892,7 +1892,7 @@ struct CameraCaptureView: View {
                 let countToBlog = sessionSourceTripId != nil
                     ? momentCount(from: sessionCapturesForDisplay)
                     : max(attachedCountThisSession, photosCapturedThisSession)
-                if sessionSourceTripId != nil && photosCapturedThisSession > 0 {
+                if sessionSourceTripId != nil && countToBlog > 0 {
                     hasReportedDismissToast = true
                     let count = countToBlog
                     let msg = "\(count) moment\(count == 1 ? "" : "s") saved for \(title)"
@@ -1961,6 +1961,11 @@ struct CameraCaptureView: View {
                     SessionGalleryView(
                         moments: $sessionMoments,
                         allowRemove: true,
+                        onRemoveAttachedMoment: { moment in
+                            // Also remove from sessionCapturesForDisplay so the photo
+                            // won't reappear after blog creation (when gallery switches lists).
+                            sessionCapturesForDisplay.removeAll { $0.id == moment.id }
+                        },
                         onClear: {
                             sessionCapturesForDisplay = []
                             photosCapturedThisSession = 0
@@ -2258,10 +2263,15 @@ extension CameraCaptureView {
     }
 
     /// Returns the active blog's sourceTripId if capture should be routed there; nil otherwise.
+    /// If the user removed that blog, we clear on-the-go state and return nil so the next capture starts a new blog (and shows "Blog has started" prompt).
     private func activeBlogIdIfCapturedImageHandled(_ image: UIImage?, at timestamp: Date) -> UUID? {
         guard image != nil else { return nil }
         guard let activeSourceTripId = OnTheGoTripStore.activeBlogId,
               OnTheGoTripStore.isTripStillOngoing() else {
+            return nil
+        }
+        if !createdRecapStore.hasCreatedBlog(sourceTripId: activeSourceTripId) {
+            OnTheGoTripStore.markTripAsEnded()
             return nil
         }
         return activeSourceTripId
@@ -2408,7 +2418,7 @@ extension CameraCaptureView {
             let countToBlog = sessionSourceTripId != nil
                 ? momentCount(from: sessionCapturesForDisplay)
                 : max(attachedCountThisSession, photosCapturedThisSession)
-            if sessionSourceTripId != nil && photosCapturedThisSession > 0 {
+            if sessionSourceTripId != nil && countToBlog > 0 {
                 hasReportedDismissToast = true
                 let count = countToBlog
                 let msg = "\(count) moment\(count == 1 ? "" : "s") saved for \(title)"

@@ -1765,8 +1765,10 @@ final class CreatedRecapBlogStore: ObservableObject {
 
                 let consensusOffset: Int
                 if stopOffsets.isEmpty {
-                    print("[buildBlogDetail] ⚠️ '\(stop.placeTitle)': no EXIF timezone for any photo — falling back to UTC")
-                    consensusOffset = 0
+                    // No EXIF timezone (e.g. in-app camera photos) — use device timezone instead of UTC.
+                    let deviceOffset = (TimeZone.current.secondsFromGMT() / 900) * 900
+                    print("[buildBlogDetail] ⚠️ '\(stop.placeTitle)': no EXIF timezone for any photo — falling back to device timezone (offset \(deviceOffset / 3600)h)")
+                    consensusOffset = deviceOffset
                 } else {
                     // Vote: pick the offset that appears most often.
                     var tally: [Int: Int] = [:]
@@ -1944,7 +1946,8 @@ final class CreatedRecapBlogStore: ObservableObject {
                 guard let id = photo.localIdentifier, let tz = tzMap[id] else { return nil }
                 return (tz.secondsFromGMT() / 900) * 900
             }
-            let consensusOffset = stopOffsets.isEmpty ? 0 : (stopOffsets.reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }.max(by: { $0.value < $1.value })?.key ?? 0)
+            let deviceOffset = (TimeZone.current.secondsFromGMT() / 900) * 900
+            let consensusOffset = stopOffsets.isEmpty ? deviceOffset : (stopOffsets.reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }.max(by: { $0.value < $1.value })?.key ?? deviceOffset)
             let tz = TimeZone(secondsFromGMT: consensusOffset) ?? TimeZone(identifier: "UTC")!
             let asset = assetMap[firstPhoto.localIdentifier ?? ""]!
             let date = asset.creationDate ?? firstPhoto.timestamp
