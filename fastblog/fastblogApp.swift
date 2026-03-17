@@ -95,6 +95,7 @@ struct fastblogApp: App {
     var body: some Scene {
         WindowGroup {
             appContent
+                .environmentObject(photoAuth)
                 .environmentObject(authService)
                 .environmentObject(authStateManager)
                 .environmentObject(createdRecapStore)

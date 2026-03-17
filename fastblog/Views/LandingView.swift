@@ -47,6 +47,8 @@ struct LandingView: View {
     /// Per-user profile photo — loaded from authService on appear/user-change.
     @State private var avatarImageData: Data?
 
+    @StateObject private var photoAuth = PhotosAuthorizationManager()
+
     private let landingBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
 
     var body: some View {
@@ -370,13 +372,29 @@ struct LandingView: View {
                     value: circlesScale
                 )
                 
-                Text(showAlternateText ? "Blog Your Trips in Seconds" : "Tap to Blog")
-                    .font(.title2)
-                    .fontWeight(.bold)
+                if photoAuth.status == .limited {
+                    Text("Select Photos to Blog")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .opacity(ctaTextOpacity)
+                        .frame(maxWidth: .infinity)
+                        .offset(y: -156)
+                } else {
+                    VStack(spacing: 4) {
+                        Text("Tap to Blog")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        Text("Blog Your Trips in Seconds")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
                     .foregroundColor(.white)
                     .opacity(ctaTextOpacity)
                     .frame(maxWidth: .infinity)
                     .offset(y: -156)
+                }
             }
         }
         .buttonStyle(.plain)

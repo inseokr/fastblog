@@ -4,6 +4,8 @@
 //
 
 import SwiftUI
+import Photos
+import UIKit
 
 struct ContentView: View {
     @StateObject private var createdRecapStore = CreatedRecapBlogStore.shared
@@ -19,6 +21,7 @@ struct ContentView: View {
     @State private var selectedCreatedRecap: CreatedRecapBlog?
     @State private var initialDayIndexForRecap: Int?
     @State private var dismissToLandingRequested = false
+    @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
     /// Day index to open when navigating to a blog via the new-moments popup.
     @AppStorage("blogify.justFinishedOnboarding") private var justFinishedOnboarding = false
 
@@ -38,10 +41,7 @@ struct ContentView: View {
                     selectedCreatedRecap: $selectedCreatedRecap,
                     postCameraToastMessage: $postCameraToastMessage,
                     tripsViewModel: tripsViewModel,
-                    onTapToBlog: {
-                        tripsViewModel.startDefaultScan()
-                        pendingShowTripsWhenIdle = true
-                    }
+                    onTapToBlog: handleTapToBlog
                 )
                 .navigationDestination(isPresented: $showProfile) {
                     ProfileView(selectedCreatedRecap: $selectedCreatedRecap)
@@ -222,6 +222,44 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Landing CTA handling
+
+    private func handleTapToBlog() {
+        // Limited access: first open the iOS photo picker, then run a full scan and show loading → Trips.
+        if photoAuth.status == .limited {
+            presentLimitedLibraryPickerFromLanding()
+        } else {
+            // Full access or not determined: keep existing flow.
+            tripsViewModel.startDefaultScan()
+            pendingShowTripsWhenIdle = true
+        }
+    }
+
+    private func presentLimitedLibraryPickerFromLanding() {
+        DispatchQueue.main.async {
+            guard let topVC = topViewControllerForPresentation() else { return }
+            PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: topVC) { _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    photoAuth.refreshStatus()
+                    // Trigger loading → Trips flow after the user confirms with the blue checkmark.
+                    pendingShowTripsWhenIdle = true
+                    tripsViewModel.startDefaultScan(forceFullScan: true)
+                }
+            }
+        }
+    }
+
+    private func topViewControllerForPresentation() -> UIViewController? {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = windowScene.windows.first(where: { $0.isKeyWindow }) ?? windowScene.windows.first
+        else { return nil }
+        var vc = window.rootViewController
+        while let presented = vc?.presentedViewController {
+            vc = presented
+        }
+        return vc
     }
 }
 

@@ -6,6 +6,8 @@
 import SwiftUI
 import MapKit
 import Combine
+import UIKit
+import Photos
 
 private struct TitleMinYPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = .greatestFiniteMagnitude
@@ -41,6 +43,7 @@ struct RecapBlogPageView: View {
 
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @EnvironmentObject private var authService: AuthService
+    @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
     @Environment(\.dismiss) private var dismiss
 
     @State private var draft: RecapBlogDetail
@@ -119,6 +122,8 @@ struct RecapBlogPageView: View {
     @State private var placeCaptionEditItem: PlaceCaptionEditItem?
     /// Alert when user taps a day that is not yet processed (geocoding still in progress).
     @State private var showUnprocessedDayAlert = false
+    /// Limited-access users: controls the \"Photo Library Access\" prompt sheet.
+    @State private var showPhotoLibraryAccessPrompt = false
     
     // MARK: - New Moments
     @State private var newMomentPhotos: [MockPhoto] = []
@@ -319,6 +324,29 @@ struct RecapBlogPageView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.92)))
                     .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showUnprocessedDayAlert)
                     .zIndex(999)
+                }
+                if showPhotoLibraryAccessPrompt {
+                    PhotoLibraryAccessPromptView(
+                        onOpenSettings: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showPhotoLibraryAccessPrompt = false
+                            }
+                            openAppSettings()
+                        },
+                        onSelectPhotos: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showPhotoLibraryAccessPrompt = false
+                            }
+                            presentLimitedLibraryPickerFromBlog()
+                        },
+                        onClose: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showPhotoLibraryAccessPrompt = false
+                            }
+                        }
+                    )
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    .zIndex(998)
                 }
             }
             .onReceive(createdRecapStore.objectWillChange) {
@@ -623,6 +651,13 @@ struct RecapBlogPageView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         Color.clear.frame(height: 0)
                             .id("page-top")
+
+                        // Limited access users: photo library access control, shown above cover in Edit mode.
+                        if isEditMode && photoAuth.status == .limited {
+                            photoLibraryAccessBanner
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 8)
+                        }
 
                         if draft.selectedCoverPhotoIdentifier != nil {
                             coverPhotoHero(screenHeight: screenHeight)
@@ -966,6 +1001,75 @@ struct RecapBlogPageView: View {
         }
         .frame(height: screenHeight * 0.55)
         .padding(.bottom, 16)
+    }
+
+    // MARK: - Photo Library Access (Limited users)
+
+    private var photoLibraryAccessBanner: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showPhotoLibraryAccessPrompt = true
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "photo.badge.exclamationmark")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Photo Library Access")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                    Text("Limited access enabled — manage photo permissions.")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.7))
+            }
+            .padding(12)
+            .background(
+                Color.blue.opacity(0.75)
+                    .background(.ultraThinMaterial)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func openAppSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        if UIApplication.shared.canOpenURL(url) {
+            UIApplication.shared.open(url, options: [:], completionHandler: nil)
+        }
+    }
+
+    private func presentLimitedLibraryPickerFromBlog() {
+        // Similar to TripsView.presentLimitedLibraryPicker, but scoped to this blog context.
+        DispatchQueue.main.async {
+            guard let topVC = topViewControllerForPresentation() else { return }
+            let photoCountBeforePicker = photoAuth.selectedPhotoCount
+            PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: topVC) { _ in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    photoAuth.refreshStatus()
+                    // No automatic rescan here; blogs use existing trips/photos.
+                    // We only care about updated access for future scans/edits.
+                    let _ = photoCountBeforePicker
+                }
+            }
+        }
+    }
+
+    private func topViewControllerForPresentation() -> UIViewController? {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = windowScene.windows.first(where: { $0.isKeyWindow }) ?? windowScene.windows.first
+        else { return nil }
+        var vc = window.rootViewController
+        while let presented = vc?.presentedViewController {
+            vc = presented
+        }
+        return vc
     }
 
     private var tripDurationText: String {
@@ -3024,6 +3128,75 @@ struct RecapBlogPageView: View {
         let lon = location.longitude
         if let url = URL(string: "https://www.google.com/maps/dir/?api=1&destination=\(lat),\(lon)") {
             UIApplication.shared.open(url)
+        }
+    }
+}
+
+// MARK: - Photo Library Access Prompt View
+
+private struct PhotoLibraryAccessPromptView: View {
+    var onOpenSettings: () -> Void
+    var onSelectPhotos: () -> Void
+    var onClose: () -> Void
+
+    var body: some View {
+        ZStack {
+            // Dimmed, slightly blurred backdrop similar to Early Access sheet.
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+
+            VStack(spacing: 20) {
+                Text("Limited Access Enabled")
+                    .font(.title3.weight(.semibold))
+                    .foregroundColor(.primary)
+
+                Text("Enable Full Access in Settings to add photos to this blog.")
+                    .font(.body)
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
+
+                VStack(spacing: 12) {
+                    Button {
+                        onOpenSettings()
+                    } label: {
+                        Text("Open Settings")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .cornerRadius(12)
+                    }
+
+                    Button {
+                        onSelectPhotos()
+                    } label: {
+                        Text("Select Photos")
+                            .font(.headline)
+                            .foregroundColor(.blue)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue.opacity(0.1))
+                            .cornerRadius(12)
+                    }
+
+                    Button {
+                        onClose()
+                    } label: {
+                        Text("Cancel")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .padding(.top, 4)
+                    }
+                }
+            }
+            .padding(24)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .padding(.horizontal, 32)
         }
     }
 }
