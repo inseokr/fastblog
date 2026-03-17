@@ -23,6 +23,13 @@ final class ImageLoader {
             return cached
         }
 
+        // App-capture path
+        if assetIdentifier.hasPrefix(AppCapturePhotoService.prefix) {
+            let image = AppCapturePhotoService.shared.loadImage(identifier: assetIdentifier)
+            if let image { cache.setObject(image, forKey: key) }
+            return image
+        }
+
         var asset: PHAsset?
         for attempt in 0..<3 {
             let assets = PHAsset.fetchAssets(withLocalIdentifiers: [assetIdentifier], options: nil)
@@ -57,6 +64,13 @@ final class ImageLoader {
         let key = NSString(string: "\(assetIdentifier)-full-\(targetSize.width)x\(targetSize.height)")
         if let cached = cache.object(forKey: key) {
             return cached
+        }
+
+        // App-capture path
+        if assetIdentifier.hasPrefix(AppCapturePhotoService.prefix) {
+            let image = AppCapturePhotoService.shared.loadImage(identifier: assetIdentifier)
+            if let image { cache.setObject(image, forKey: key) }
+            return image
         }
 
         var asset: PHAsset?

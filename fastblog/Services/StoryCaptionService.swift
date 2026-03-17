@@ -6,6 +6,7 @@
 //  then ask the StoryCaptionGenerator (local LLM or template) to produce caption or place story.
 //
 
+import CoreGraphics
 import Foundation
 import CoreLocation
 
@@ -62,6 +63,13 @@ actor StoryCaptionService {
         } else {
             tags = []
         }
+        let context = PhotoCaptionContext(tags: tags)
+        return await generator.generateCaption(context: context)
+    }
+
+    /// Generate a caption for an in-app capture (UIImage/CGImage). Uses Vision tags from the image.
+    func generateCaptionForImage(cgImage: CGImage) async -> String {
+        let tags = await tagService.tags(for: cgImage)
         let context = PhotoCaptionContext(tags: tags)
         return await generator.generateCaption(context: context)
     }

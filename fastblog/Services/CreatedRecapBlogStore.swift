@@ -624,12 +624,13 @@ final class CreatedRecapBlogStore: ObservableObject {
             var unmatchedRecapPhotos: [RecapPhoto] = []
 
             for photo in dayPhotos.sorted(by: { $0.timestamp < $1.timestamp }) {
+                let isInAppCapture = photo.localIdentifier?.hasPrefix(AppCapturePhotoService.prefix) ?? false
                 let recapPhoto = RecapPhoto(
                     id: photo.id,
                     timestamp: photo.timestamp,
                     location: photo.location,
                     imageName: photo.imageName,
-                    isIncluded: false,
+                    isIncluded: isInAppCapture,
                     localIdentifier: photo.localIdentifier
                 )
 
@@ -1725,14 +1726,14 @@ final class CreatedRecapBlogStore: ObservableObject {
             detail.countryName = primaryCountry
         }
 
-        // Compute visitedTimeDigitized for each stop using EXIF timezone from PHAssets.
-        // This ensures the displayed visit time reflects the local timezone where photos were taken,
-        // not the device's current timezone (which may differ when the user is home after travel).
+        // Compute visitedTimeDigitized for each stop using EXIF timezone from PHAssets,
+        // or metadata from AppCapturePhotoService for bloggo-capture: photos.
         let allIncludedPhotos = detail.days.flatMap(\.placeStops).flatMap { $0.photos.filter(\.isIncluded) }
-        let assetIds = allIncludedPhotos.compactMap(\.localIdentifier)
+        // Only fetch PHAssets for non-app-capture identifiers.
+        let phAssetIds = allIncludedPhotos.compactMap(\.localIdentifier).filter { !$0.hasPrefix(AppCapturePhotoService.prefix) }
         var assetMap: [String: PHAsset] = [:]
-        if !assetIds.isEmpty {
-            let result = PHAsset.fetchAssets(withLocalIdentifiers: assetIds, options: nil)
+        if !phAssetIds.isEmpty {
+            let result = PHAsset.fetchAssets(withLocalIdentifiers: phAssetIds, options: nil)
             result.enumerateObjects { asset, _, _ in assetMap[asset.localIdentifier] = asset }
         }
         var tzMap: [String: TimeZone] = [:]
@@ -1748,9 +1749,21 @@ final class CreatedRecapBlogStore: ObservableObject {
             for stopIdx in detail.days[dayIdx].placeStops.indices {
                 let stop = detail.days[dayIdx].placeStops[stopIdx]
                 let photos = stop.photos.filter(\.isIncluded)
-                guard let firstPhoto = photos.min(by: { $0.timestamp < $1.timestamp }),
-                      let asset = assetMap[firstPhoto.localIdentifier ?? ""] else {
-                    print("[buildBlogDetail] ⚠️ '\(stop.placeTitle)': skipped visitedTimeDigitized (no included photos or missing asset)")
+                guard let firstPhoto = photos.min(by: { $0.timestamp < $1.timestamp }) else {
+                    print("[buildBlogDetail] ⚠️ '\(stop.placeTitle)': skipped visitedTimeDigitized (no included photos)")
+                    continue
+                }
+
+                // App-capture: use stored digitizedTime directly.
+                if let firstId = firstPhoto.localIdentifier, firstId.hasPrefix(AppCapturePhotoService.prefix),
+                   let meta = AppCapturePhotoService.shared.metadata(identifier: firstId) {
+                    print("[buildBlogDetail] ✅ '\(stop.placeTitle)': visitedTimeDigitized=\(meta.digitizedTime) (app-capture)")
+                    detail.days[dayIdx].placeStops[stopIdx].visitedTimeDigitized = meta.digitizedTime
+                    continue
+                }
+
+                guard let asset = assetMap[firstPhoto.localIdentifier ?? ""] else {
+                    print("[buildBlogDetail] ⚠️ '\(stop.placeTitle)': skipped visitedTimeDigitized (missing PHAsset)")
                     continue
                 }
 
@@ -1918,10 +1931,11 @@ final class CreatedRecapBlogStore: ObservableObject {
                 stop.photos.filter(\.isIncluded).map { (dayIdx, stopIdx, $0) }
             }
         }
-        let assetIds = photosToResolve.map(\.2).compactMap(\.localIdentifier)
+        // Only fetch PHAssets for non-app-capture identifiers.
+        let phAssetIds = photosToResolve.map(\.2).compactMap(\.localIdentifier).filter { !$0.hasPrefix(AppCapturePhotoService.prefix) }
         var assetMap: [String: PHAsset] = [:]
-        if !assetIds.isEmpty {
-            let fetch = PHAsset.fetchAssets(withLocalIdentifiers: assetIds, options: nil)
+        if !phAssetIds.isEmpty {
+            let fetch = PHAsset.fetchAssets(withLocalIdentifiers: phAssetIds, options: nil)
             fetch.enumerateObjects { asset, _, _ in assetMap[asset.localIdentifier] = asset }
         }
         var tzMap: [String: TimeZone] = [:]
@@ -1938,8 +1952,16 @@ final class CreatedRecapBlogStore: ObservableObject {
             guard dayIdx < result.days.count, stopIdx < result.days[dayIdx].placeStops.count else { continue }
             let stop = result.days[dayIdx].placeStops[stopIdx]
             let photos = stop.photos.filter(\.isIncluded)
-            guard let firstPhoto = photos.min(by: { $0.timestamp < $1.timestamp }),
-                  let _ = assetMap[firstPhoto.localIdentifier ?? ""] else { continue }
+            guard let firstPhoto = photos.min(by: { $0.timestamp < $1.timestamp }) else { continue }
+
+            // App-capture: use stored digitizedTime directly.
+            if let firstId = firstPhoto.localIdentifier, firstId.hasPrefix(AppCapturePhotoService.prefix),
+               let meta = AppCapturePhotoService.shared.metadata(identifier: firstId) {
+                result.days[dayIdx].placeStops[stopIdx].visitedTimeDigitized = meta.digitizedTime
+                continue
+            }
+
+            guard assetMap[firstPhoto.localIdentifier ?? ""] != nil else { continue }
             let stopOffsets: [Int] = photos.compactMap { photo -> Int? in
                 guard let id = photo.localIdentifier, let tz = tzMap[id] else { return nil }
                 return (tz.secondsFromGMT() / 900) * 900
