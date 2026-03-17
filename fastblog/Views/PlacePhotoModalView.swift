@@ -803,10 +803,7 @@ struct PlacePhotoModalView: View {
 
     /// Single tap or double tap enters zoom overlay (tap-to-zoom works the same in the modal as in the non-modal viewer).
     private func photoFullScreenImage(_ photo: RecapPhoto) -> some View {
-        RecapPhotoThumbnail(photo: photo, cornerRadius: 0, showIcon: false, targetSize: CGSize(width: 1200, height: 1200))
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .aspectRatio(contentMode: .fill)
-            .clipped()
+        HorizontalScrollablePhotoView(photo: photo)
             .contentShape(Rectangle())
             .onTapGesture(count: 2) { enterZoomMode() }
             .simultaneousGesture(
@@ -1329,5 +1326,55 @@ private struct EditPlaceNameSheet: View {
         guard !trimmed.isEmpty else { return }
         onSave(trimmed)
         dismiss()
+    }
+}
+
+/// Full-screen photo with horizontal scrolling for landscape images.
+/// Portrait images display the same as before (fill + clip).
+/// Landscape images are fit to screen height and can be panned left/right.
+private struct HorizontalScrollablePhotoView: View {
+    let photo: RecapPhoto
+    @State private var loadedImage: UIImage?
+
+    var body: some View {
+        GeometryReader { geo in
+            let screenW = geo.size.width
+            let screenH = geo.size.height
+            let displayW: CGFloat = {
+                guard let img = loadedImage, img.size.height > 0 else { return screenW }
+                let ar = img.size.width / img.size.height
+                guard ar > 1.0 else { return screenW }  // portrait: fill screen as before
+                return max(screenW, screenH * ar)        // landscape: natural width at screen height
+            }()
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                Group {
+                    if let img = loadedImage {
+                        Image(uiImage: img)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: displayW, height: screenH)
+                            .clipped()
+                    } else {
+                        RecapPhotoThumbnail(
+                            photo: photo, cornerRadius: 0, showIcon: false,
+                            targetSize: CGSize(width: 1200, height: 1200)
+                        )
+                        .frame(width: screenW, height: screenH)
+                        .clipped()
+                    }
+                }
+                .frame(width: displayW, height: screenH)
+            }
+            .frame(width: screenW, height: screenH)
+            .scrollBounceBehavior(.basedOnSize)
+        }
+        .task(id: photo.localIdentifier ?? "") {
+            guard let id = photo.localIdentifier, !id.isEmpty else { return }
+            loadedImage = await ImageLoader.shared.loadThumbnail(
+                assetIdentifier: id,
+                targetSize: CGSize(width: 1200, height: 1200)
+            )
+        }
     }
 }
