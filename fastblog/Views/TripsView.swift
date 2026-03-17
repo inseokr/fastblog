@@ -1837,8 +1837,6 @@ struct CameraCaptureView: View {
     @State private var nearHomeDoNotShowAgain: Bool = false
     /// When true, show the In-app Photo Gallery (all photos taken with in-app camera).
     @State private var isShowingInAppGallery = false
-    /// Shows the Capture icon hint in the bottom-right corner until the user starts taking photos.
-    @State private var showCaptureHintIcon: Bool = true
     @AppStorage("bloggo.hasSeenCameraTooltip") private var hasSeenCameraTooltip = false
     @State private var showCameraTooltip = false
     // Zoom
@@ -1970,25 +1968,6 @@ struct CameraCaptureView: View {
                 .opacity(flashOpacity)
                 .ignoresSafeArea()
         )
-        // Bottom-right Capture icon hint — matches the home screen Capture button icon.
-        .overlay(alignment: .bottomTrailing) {
-            if showCaptureHintIcon {
-                ZStack {
-                    Circle()
-                        .fill(Color.black.opacity(0.4))
-                        .frame(width: 52, height: 52)
-                    Image("CaptureIcon")
-                        .resizable()
-                        .renderingMode(.template)
-                        .scaledToFit()
-                        .frame(width: 32, height: 32)
-                        .foregroundColor(.white)
-                }
-                .padding(.trailing, 24)
-                .padding(.bottom, 32)
-                .transition(.opacity)
-            }
-        }
         .overlay(alignment: .top) { toastOverlay }
         .onAppear {
             // Fresh session each time camera is opened.
@@ -2314,12 +2293,6 @@ struct CameraCaptureView: View {
 
             // Center — shutter (photo only; no video/photo segment)
             Button {
-                // Hide the Capture hint icon once the user starts taking photos.
-                if showCaptureHintIcon {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showCaptureHintIcon = false
-                    }
-                }
                 // Visual capture flash
                 flashOpacity = 1
                 withAnimation(.easeOut(duration: 0.2)) {
