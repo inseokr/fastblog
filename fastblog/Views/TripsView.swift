@@ -1763,7 +1763,7 @@ struct CameraCaptureView: View {
             DragGesture(minimumDistance: 50)
                 .onEnded { value in
                     if value.translation.height < -50 {
-                        isShowingInAppGallery = true
+                        isShowingCapturesGallery = true
                     }
                 }
         )
@@ -2120,11 +2120,11 @@ struct CameraCaptureView: View {
 
     private var shutterBar: some View {
         HStack(spacing: 0) {
-            // Left — in-app photo management (gallery); circular button with thumbnail
+            // Left — Gallery icon (Bloggo Photos / all in-app captures)
             Button {
                 isShowingCapturesGallery = true
             } label: {
-                shutterBarLeftThumbnail
+                shutterBarGalleryIcon
             }
             .frame(maxWidth: .infinity)
 
@@ -2173,25 +2173,18 @@ struct CameraCaptureView: View {
             }
             .frame(maxWidth: .infinity)
 
-            // Right — screen side selection (flip front/back camera)
+            // Right — Current Photos icon + counter (opens session gallery with caption input)
             Button {
-                cameraController.switchCamera()
+                isShowingSessionGallery = true
             } label: {
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.12))
-                        .frame(width: 56, height: 56)
-                    Image(systemName: "camera.rotate.fill")
-                        .font(.system(size: 22, weight: .medium))
-                        .foregroundColor(.white)
-                }
+                shutterBarCurrentPhotosButton
             }
             .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 24)
     }
 
-    /// Loads the most recent app capture as thumbnail for the left bar button (used when no session capture yet).
+    /// Loads the most recent app capture as thumbnail for the gallery (left) bar button.
     private func loadLatestGalleryThumbnail() {
         DispatchQueue.global(qos: .userInitiated).async {
             let ids = AppCapturePhotoService.shared.allCaptureIds()
@@ -2204,14 +2197,28 @@ struct CameraCaptureView: View {
         }
     }
 
-    /// Left shutter bar button: circular thumbnail for in-app photo management, or placeholder.
-    private var shutterBarLeftThumbnail: some View {
+    /// Left: Gallery icon in boxed gray section — opens Bloggo Photos (all in-app captures).
+    private var shutterBarGalleryIcon: some View {
+        let size: CGFloat = 56
+        return ZStack {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.white.opacity(0.2))
+                .frame(width: size, height: size)
+            Image(systemName: "photo.stack.fill")
+                .font(.system(size: 24, weight: .medium))
+                .foregroundColor(.white)
+        }
+        .frame(width: size, height: size)
+    }
+
+    /// Right: Current Photos icon + counter — opens session gallery (caption input modal).
+    private var shutterBarCurrentPhotosButton: some View {
         let previewSize: CGFloat = 56
         let effectiveList = sessionMoments.isEmpty ? sessionCapturesForDisplay : sessionMoments
         let latestSessionImage = effectiveList.last?.previewImage
-        let thumbnailImage = latestSessionImage ?? latestGalleryThumbnail
-        return ZStack {
-            if let image = thumbnailImage {
+        let count = momentCount(from: effectiveList)
+        return ZStack(alignment: .bottomTrailing) {
+            if let image = latestSessionImage {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
@@ -2221,10 +2228,19 @@ struct CameraCaptureView: View {
                 Circle()
                     .fill(Color.white.opacity(0.12))
                     .frame(width: previewSize, height: previewSize)
-                Image(systemName: "photo.stack")
+                Image(systemName: "photo.on.rectangle.angled")
                     .font(.system(size: 22, weight: .medium))
                     .foregroundColor(.white)
             }
+            // Count badge
+            Text("\(count)")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.accentColor)
+                .clipShape(Capsule())
+                .offset(x: 4, y: 4)
         }
         .frame(width: previewSize, height: previewSize)
     }
