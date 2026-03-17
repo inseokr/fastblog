@@ -1363,7 +1363,7 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     @Published private(set) var zoomFactor: CGFloat = 1.0
     /// Current location for embedding in captured photos. Updated when camera runs.
     @Published private(set) var currentLocation: CLLocation?
-    /// Current camera position (back or front).
+    /// Current camera position (front or back). Updated when user taps flip button.
     @Published private(set) var position: AVCaptureDevice.Position = .back
     /// Flash mode for next capture.
     @Published var flashMode: AVCaptureDevice.FlashMode = .off
@@ -1400,10 +1400,20 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     }
 
     /// Performs all session configuration on the session queue.
+    private func setupSession() {
+        setupSession(position: .back)
+    }
+
+    /// Configures or reconfigures the capture session with the given camera position.
     private func setupSession(position: AVCaptureDevice.Position) {
         sessionQueue.async {
             self.session.beginConfiguration()
             self.session.sessionPreset = .photo
+
+            // Remove existing inputs when switching camera
+            for input in self.session.inputs {
+                self.session.removeInput(input)
+            }
 
             do {
                 guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
@@ -1416,7 +1426,7 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
                 if self.session.canAddInput(input) {
                     self.session.addInput(input)
                 }
-                if self.session.canAddOutput(self.photoOutput) {
+                if !self.session.outputs.contains(self.photoOutput), self.session.canAddOutput(self.photoOutput) {
                     self.session.addOutput(self.photoOutput)
                 }
                 DispatchQueue.main.async {
@@ -1430,42 +1440,52 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
 
             self.session.commitConfiguration()
             DispatchQueue.main.async {
+                self.zoomFactor = 1.0
                 self.isConfigured = true
             }
         }
     }
 
-    /// Switch between front and back camera.
-    func flipCamera() {
+    /// Switches between front and back camera. Safe to call from main queue.
+    func switchCamera() {
         let nextPosition: AVCaptureDevice.Position = position == .back ? .front : .back
         sessionQueue.async {
             self.session.beginConfiguration()
-            if let currentInput = self.session.inputs.first as? AVCaptureDeviceInput {
-                self.session.removeInput(currentInput)
+            for input in self.session.inputs {
+                self.session.removeInput(input)
             }
-            guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: nextPosition),
-                  let input = try? AVCaptureDeviceInput(device: device),
-                  self.session.canAddInput(input) else {
+            guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: nextPosition) else {
                 self.session.commitConfiguration()
                 return
             }
-            self.session.addInput(input)
-            self.session.commitConfiguration()
             self.videoDevice = device
+            do {
+                let input = try AVCaptureDeviceInput(device: device)
+                if self.session.canAddInput(input) {
+                    self.session.addInput(input)
+                }
+            } catch {
+                self.session.commitConfiguration()
+                return
+            }
+            self.session.commitConfiguration()
             DispatchQueue.main.async {
                 self.position = nextPosition
-                self.isConfigured = true
+                self.zoomFactor = 1.0
             }
         }
     }
 
-    /// Cycle flash: off → on → auto (back camera only; front has no flash).
+    /// Alias for switchCamera — called by the toolbar flip button.
+    func flipCamera() { switchCamera() }
+
+    /// Cycles flash mode: off → on → auto (back camera only).
     func cycleFlashMode() {
         guard position == .back else { return }
         switch flashMode {
-        case .off: flashMode = .on
-        case .on: flashMode = .auto
-        case .auto: flashMode = .off
+        case .off:   flashMode = .on
+        case .on:    flashMode = .auto
+        case .auto:  flashMode = .off
         @unknown default: flashMode = .off
         }
     }
@@ -1632,6 +1652,8 @@ struct CameraCaptureView: View {
     /// Total photos captured this session (all routes) — used for bottom-right counter.
     @State private var photosCapturedThisSession: Int = 0
     @State private var isShowingSessionGallery = false
+    @State private var isShowingCapturesGallery = false
+    @State private var latestGalleryThumbnail: UIImage? = nil
     @State private var flashOpacity: Double = 0
     @State private var toastMessage: String?
     @State private var isShowingToast: Bool = false
@@ -1783,100 +1805,7 @@ struct CameraCaptureView: View {
                 .opacity(flashOpacity)
                 .ignoresSafeArea()
         )
-        .overlay(alignment: .bottomLeading) {
-            Button {
-                isShowingInAppGallery = true
-            } label: {
-                Image(systemName: "photo.on.rectangle.angled")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 56, height: 56)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-            }
-            .accessibilityLabel("Bloggo Photos")
-            .padding(.leading, 16)
-            .padding(.bottom, 33)
-        }
-        .overlay(alignment: .bottomTrailing) {
-            Button {
-                isShowingSessionGallery = true
-            } label: {
-                let previewSize: CGFloat = 56
-                let effectiveList = sessionMoments.isEmpty ? sessionCapturesForDisplay : sessionMoments
-                let displayCount = effectiveList.count
-                let latestImage = effectiveList.last?.previewImage
-                ZStack {
-                    if let image = latestImage {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: previewSize, height: previewSize)
-                            .clipped()
-                            .cornerRadius(10)
-                    } else {
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.white.opacity(0.12))
-                            .frame(width: previewSize, height: previewSize)
-                    }
-                    // Camera icon and count (only when there are photos)
-                    HStack(spacing: 4) {
-                        Image(systemName: "camera.fill")
-                            .font(.system(size: 14))
-                        if displayCount > 0 {
-                            Text("\(displayCount)")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                    }
-                    .foregroundColor(.white)
-                    .shadow(color: .black.opacity(0.5), radius: 2)
-                }
-                .frame(width: previewSize, height: previewSize)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.white.opacity(0.8), lineWidth: 2)
-                )
-            }
-            .padding(.trailing, 16)
-            .padding(.bottom, 33)
-        }
-        .overlay(alignment: .top) {
-            if let message = toastMessage, isShowingToast {
-                HStack(spacing: 12) {
-                    Group {
-                        if message == "Blog has started" || message.contains("added to") {
-                            Image("MyBlogsIcon")
-                                .resizable()
-                                .renderingMode(.template)
-                                .foregroundColor(.green)
-                                .frame(width: 28, height: 28)
-                        } else {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.title2)
-                                .foregroundColor(.green)
-                        }
-                    }
-                    Text(message)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(.ultraThinMaterial)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                        )
-                )
-                .padding(.horizontal, 20)
-                .padding(.top, 72)
-                .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
+        .overlay(alignment: .top) { toastOverlay }
         .onAppear {
             // Fresh session each time camera is opened.
             sessionMoments = []
@@ -1886,9 +1815,7 @@ struct CameraCaptureView: View {
             sessionTripTitle = nil
             sessionSourceTripId = nil
             sessionDraftTripId = nil
-            if !hasSeenCameraTooltip {
-                showCameraTooltip = true
-            }
+            loadLatestGalleryThumbnail()
             if cameraController.isConfigured {
                 cameraController.startRunning()
             }
@@ -2012,118 +1939,164 @@ struct CameraCaptureView: View {
                 }
             }
         }
-        .overlay {
-            if showBlogStartedPrompt {
-                Color.black.opacity(0.4)
-                    .ignoresSafeArea()
-                    .onTapGesture { }
-                let blogName = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your blog"
-                VStack(spacing: 0) {
-                    Text("Blog has started, your moments will be saved to \"\(blogName)\"")
-                        .font(.subheadline)
-                        .foregroundColor(.primary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 24)
-                        .padding(.bottom, 20)
-                    HStack(spacing: 16) {
-                        Button("Ok") {
-                            showBlogStartedPrompt = false
-                        }
-                        .font(.subheadline.weight(.medium))
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity)
-                        Button("View") {
-                            showBlogStartedPrompt = false
-                            if let id = sessionSourceTripId {
-                                onNavigateToBlog?(id)
-                            }
-                        }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.blue, in: RoundedRectangle(cornerRadius: 10))
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 24)
-                }
-                .frame(maxWidth: 300)
-                .background(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                        .environment(\.colorScheme, .dark)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
-                .padding(.horizontal, 36)
-            }
+        .sheet(isPresented: $isShowingCapturesGallery, onDismiss: { loadLatestGalleryThumbnail() }) {
+            AppCaptureGalleryView()
         }
-        .overlay {
-            if showNearHomeConfirmation {
-                Color.black.opacity(0.4)
-                    .ignoresSafeArea()
-                    .onTapGesture { }
-                VStack(spacing: 0) {
-                    Text("This moment appears to be near your home. Do you want to keep it anyway?")
-                        .font(.subheadline)
-                        .foregroundColor(.primary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 24)
-                        .padding(.bottom, 12)
-                    Toggle(isOn: $nearHomeDoNotShowAgain) {
-                        Text("Do not show again")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 20)
-                    HStack(spacing: 16) {
-                        Button("Cancel") {
-                            if nearHomeDoNotShowAgain {
-                                UserDefaults.standard.set(true, forKey: Self.nearHomeAlertSuppressedKey)
-                                UserDefaults.standard.set(false, forKey: Self.nearHomeSuppressedPreferKeepKey)
-                            }
-                            pendingNearHomeCapture = nil
-                            showNearHomeConfirmation = false
-                        }
-                        .font(.subheadline.weight(.medium))
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity)
-                        Button("Keep") {
-                            if nearHomeDoNotShowAgain {
-                                UserDefaults.standard.set(true, forKey: Self.nearHomeAlertSuppressedKey)
-                                UserDefaults.standard.set(true, forKey: Self.nearHomeSuppressedPreferKeepKey)
-                            }
-                            if let pending = pendingNearHomeCapture {
-                                applyCapturedPhoto(image: pending.image, timestamp: pending.timestamp)
-                                pendingNearHomeCapture = nil
-                            }
-                            showNearHomeConfirmation = false
-                        }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.blue, in: RoundedRectangle(cornerRadius: 10))
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 24)
-                }
-                .frame(maxWidth: 300)
-                .background(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                        .environment(\.colorScheme, .dark)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
-                .padding(.horizontal, 36)
-            }
-        }
+        .overlay { blogStartedPromptOverlay }
+        .overlay { nearHomeConfirmationOverlay }
         .onChange(of: showNearHomeConfirmation) { _, show in
             if show { nearHomeDoNotShowAgain = false }
+        }
+    }
+
+    @ViewBuilder private var toastOverlay: some View {
+        if let message = toastMessage, isShowingToast {
+            HStack(spacing: 12) {
+                Group {
+                    if message == "Blog has started" || message.contains("added to") {
+                        Image("MyBlogsIcon")
+                            .resizable()
+                            .renderingMode(.template)
+                            .foregroundColor(.green)
+                            .frame(width: 28, height: 28)
+                    } else {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.green)
+                    }
+                }
+                Text(message)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+            )
+            .padding(.horizontal, 20)
+            .padding(.top, 72)
+            .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
+    @ViewBuilder private var blogStartedPromptOverlay: some View {
+        if showBlogStartedPrompt {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .onTapGesture { }
+            let blogName = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your blog"
+            VStack(spacing: 0) {
+                Text("Blog has started, your moments will be saved to \"\(blogName)\"")
+                    .font(.subheadline)
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
+                    .padding(.bottom, 20)
+                HStack(spacing: 16) {
+                    Button("Ok") {
+                        showBlogStartedPrompt = false
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    Button("View") {
+                        showBlogStartedPrompt = false
+                        if let id = sessionSourceTripId {
+                            onNavigateToBlog?(id)
+                        }
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.blue, in: RoundedRectangle(cornerRadius: 10))
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 24)
+            }
+            .frame(maxWidth: 300)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .environment(\.colorScheme, .dark)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
+            .padding(.horizontal, 36)
+        }
+    }
+
+    @ViewBuilder private var nearHomeConfirmationOverlay: some View {
+        if showNearHomeConfirmation {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .onTapGesture { }
+            VStack(spacing: 0) {
+                Text("This moment appears to be near your home. Do you want to keep it anyway?")
+                    .font(.subheadline)
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
+                    .padding(.bottom, 12)
+                Toggle(isOn: $nearHomeDoNotShowAgain) {
+                    Text("Do not show again")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 20)
+                HStack(spacing: 16) {
+                    Button("Cancel") {
+                        if nearHomeDoNotShowAgain {
+                            UserDefaults.standard.set(true, forKey: Self.nearHomeAlertSuppressedKey)
+                            UserDefaults.standard.set(false, forKey: Self.nearHomeSuppressedPreferKeepKey)
+                        }
+                        pendingNearHomeCapture = nil
+                        showNearHomeConfirmation = false
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    Button("Keep") {
+                        if nearHomeDoNotShowAgain {
+                            UserDefaults.standard.set(true, forKey: Self.nearHomeAlertSuppressedKey)
+                            UserDefaults.standard.set(true, forKey: Self.nearHomeSuppressedPreferKeepKey)
+                        }
+                        if let pending = pendingNearHomeCapture {
+                            applyCapturedPhoto(image: pending.image, timestamp: pending.timestamp)
+                            pendingNearHomeCapture = nil
+                        }
+                        showNearHomeConfirmation = false
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.blue, in: RoundedRectangle(cornerRadius: 10))
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 24)
+            }
+            .frame(maxWidth: 300)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .environment(\.colorScheme, .dark)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
+            .padding(.horizontal, 36)
         }
     }
 
@@ -2146,8 +2119,16 @@ struct CameraCaptureView: View {
     }
 
     private var shutterBar: some View {
-        HStack {
-            Spacer()
+        HStack(spacing: 0) {
+            // Left — in-app photo management (gallery); circular button with thumbnail
+            Button {
+                isShowingCapturesGallery = true
+            } label: {
+                shutterBarLeftThumbnail
+            }
+            .frame(maxWidth: .infinity)
+
+            // Center — shutter (photo only; no video/photo segment)
             Button {
                 // Visual capture flash
                 flashOpacity = 1
@@ -2190,8 +2171,62 @@ struct CameraCaptureView: View {
                         .frame(width: 62, height: 62)
                 }
             }
-            Spacer()
+            .frame(maxWidth: .infinity)
+
+            // Right — screen side selection (flip front/back camera)
+            Button {
+                cameraController.switchCamera()
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(width: 56, height: 56)
+                    Image(systemName: "camera.rotate.fill")
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundColor(.white)
+                }
+            }
+            .frame(maxWidth: .infinity)
         }
+        .padding(.horizontal, 24)
+    }
+
+    /// Loads the most recent app capture as thumbnail for the left bar button (used when no session capture yet).
+    private func loadLatestGalleryThumbnail() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let ids = AppCapturePhotoService.shared.allCaptureIds()
+            guard let first = ids.first else {
+                DispatchQueue.main.async { latestGalleryThumbnail = nil }
+                return
+            }
+            let image = AppCapturePhotoService.shared.loadImage(captureId: first)
+            DispatchQueue.main.async { latestGalleryThumbnail = image }
+        }
+    }
+
+    /// Left shutter bar button: circular thumbnail for in-app photo management, or placeholder.
+    private var shutterBarLeftThumbnail: some View {
+        let previewSize: CGFloat = 56
+        let effectiveList = sessionMoments.isEmpty ? sessionCapturesForDisplay : sessionMoments
+        let latestSessionImage = effectiveList.last?.previewImage
+        let thumbnailImage = latestSessionImage ?? latestGalleryThumbnail
+        return ZStack {
+            if let image = thumbnailImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: previewSize, height: previewSize)
+                    .clipShape(Circle())
+            } else {
+                Circle()
+                    .fill(Color.white.opacity(0.12))
+                    .frame(width: previewSize, height: previewSize)
+                Image(systemName: "photo.stack")
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundColor(.white)
+            }
+        }
+        .frame(width: previewSize, height: previewSize)
     }
 }
 
@@ -2313,105 +2348,83 @@ extension CameraCaptureView {
         return nil
     }
 
-    /// Saves the image to the photo library and injects it into the given blog. Updates the moment's injectedPhotoId when done so removal from modal can remove from blog.
+    /// Saves the image to app storage and injects it into the given blog. Updates the moment's injectedPhotoId when done so removal from modal can remove from blog.
     private func injectCapturedImageIntoBlog(_ image: UIImage?, at timestamp: Date, sourceTripId: UUID, momentId: UUID) {
         guard let image = image else { return }
         let location = cameraController.currentLocation
-        PHPhotoLibrary.shared().performChanges({
-            let request = PHAssetChangeRequest.creationRequestForAsset(from: image)
-            request.location = location
-            let placeholder = request.placeholderForCreatedAsset
-            let id = placeholder?.localIdentifier
-            if let id { UserDefaults.standard.set(id, forKey: "bloggo.lastCapturedLocalId") }
-        }, completionHandler: { success, error in
-            guard success,
-                  let localId = UserDefaults.standard.string(forKey: "bloggo.lastCapturedLocalId") else {
-                return
+        guard let captureId = try? AppCapturePhotoService.shared.saveCapture(
+            image: image, timestamp: timestamp, location: location
+        ) else { return }
+        let localId = AppCapturePhotoService.identifier(for: captureId)
+        let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
+        Task { @MainActor in
+            var locationName: String? = nil
+            var countryName: String? = nil
+            if let location {
+                let place = await GeocodingService.shared.place(for: location)
+                locationName = place.cityName != "Unknown Place" ? place.cityName : place.bestPlaceLabel
+                countryName = place.countryName != "Unknown" ? place.countryName : nil
             }
-            UserDefaults.standard.removeObject(forKey: "bloggo.lastCapturedLocalId")
-            let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
-            Task { @MainActor in
-                await Task.yield()
-                try? await Task.sleep(nanoseconds: 300_000_000)
-                var locationName: String? = nil
-                var countryName: String? = nil
-                if let location {
-                    let place = await GeocodingService.shared.place(for: location)
-                    locationName = place.cityName != "Unknown Place" ? place.cityName : place.bestPlaceLabel
-                    countryName = place.countryName != "Unknown" ? place.countryName : nil
-                }
-                let photoId = UUID()
-                let photo = MockPhoto(
-                    id: photoId,
-                    imageName: "camera.fill",
-                    timestamp: timestamp,
-                    locationName: locationName ?? "Captured Moment",
-                    countryName: countryName,
-                    isSelected: true,
-                    localIdentifier: localId,
-                    location: photoLocation
-                )
-                createdRecapStore.injectPhotos([photo], intoSourceTripId: sourceTripId)
-                sessionTripTitle = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == sourceTripId })?.title
-                attachedCountThisSession = momentCount(from: sessionCapturesForDisplay)
-                if let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == momentId }) {
-                    var m = sessionCapturesForDisplay[idx]
-                    m.injectedPhotoId = photoId
-                    sessionCapturesForDisplay[idx] = m
-                }
+            let photoId = UUID()
+            let photo = MockPhoto(
+                id: photoId,
+                imageName: "camera.fill",
+                timestamp: timestamp,
+                locationName: locationName ?? "Captured Moment",
+                countryName: countryName,
+                isSelected: true,
+                localIdentifier: localId,
+                location: photoLocation
+            )
+            createdRecapStore.injectPhotos([photo], intoSourceTripId: sourceTripId)
+            sessionTripTitle = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == sourceTripId })?.title
+            attachedCountThisSession = momentCount(from: sessionCapturesForDisplay)
+            if let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == momentId }) {
+                var m = sessionCapturesForDisplay[idx]
+                m.injectedPhotoId = photoId
+                sessionCapturesForDisplay[idx] = m
             }
-        })
+        }
     }
 
-    /// Saves the image to the photo library and appends it to the given camera trip draft. Updates the moment's injectedPhotoId when done so removal from modal can remove from draft.
+    /// Saves the image to app storage and appends it to the given camera trip draft. Updates the moment's injectedPhotoId when done so removal from modal can remove from draft.
     private func injectCapturedPhotoIntoCameraDraft(_ image: UIImage?, at timestamp: Date, tripId: UUID, momentId: UUID) {
         guard let image = image else { return }
         let location = cameraController.currentLocation
-        PHPhotoLibrary.shared().performChanges({
-            let request = PHAssetChangeRequest.creationRequestForAsset(from: image)
-            request.location = location
-            let placeholder = request.placeholderForCreatedAsset
-            let id = placeholder?.localIdentifier
-            if let id { UserDefaults.standard.set(id, forKey: "bloggo.lastCapturedLocalId") }
-        }, completionHandler: { success, error in
-            guard success,
-                  let localId = UserDefaults.standard.string(forKey: "bloggo.lastCapturedLocalId") else {
-                return
+        guard let captureId = try? AppCapturePhotoService.shared.saveCapture(
+            image: image, timestamp: timestamp, location: location
+        ) else { return }
+        let localId = AppCapturePhotoService.identifier(for: captureId)
+        let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
+        Task { @MainActor in
+            var locationName = "Captured Moment"
+            var countryName: String? = nil
+            if let location {
+                let place = await GeocodingService.shared.place(for: location)
+                locationName = place.cityName != "Unknown Place" ? place.cityName : place.bestPlaceLabel
+                countryName = place.countryName != "Unknown" ? place.countryName : nil
             }
-            UserDefaults.standard.removeObject(forKey: "bloggo.lastCapturedLocalId")
-            let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
-            Task { @MainActor in
-                await Task.yield()
-                try? await Task.sleep(nanoseconds: 300_000_000)
-                var locationName = "Captured Moment"
-                var countryName: String? = nil
-                if let location {
-                    let place = await GeocodingService.shared.place(for: location)
-                    locationName = place.cityName != "Unknown Place" ? place.cityName : place.bestPlaceLabel
-                    countryName = place.countryName != "Unknown" ? place.countryName : nil
-                }
-                let photoId = UUID()
-                let photo = MockPhoto(
-                    id: photoId,
-                    imageName: "camera.fill",
-                    timestamp: timestamp,
-                    locationName: locationName,
-                    countryName: countryName,
-                    isSelected: true,
-                    localIdentifier: localId,
-                    location: photoLocation
-                )
-                tripsViewModel.appendPhotosToCameraDraft(tripId: tripId, newPhotos: [photo])
-                let draftTitle = tripsViewModel.tripDrafts.first(where: { $0.id == tripId })?.title
-                if let t = draftTitle, !t.isEmpty { sessionTripTitle = t }
-                attachedCountThisSession = momentCount(from: sessionCapturesForDisplay)
-                if let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == momentId }) {
-                    var m = sessionCapturesForDisplay[idx]
-                    m.injectedPhotoId = photoId
-                    sessionCapturesForDisplay[idx] = m
-                }
+            let photoId = UUID()
+            let photo = MockPhoto(
+                id: photoId,
+                imageName: "camera.fill",
+                timestamp: timestamp,
+                locationName: locationName,
+                countryName: countryName,
+                isSelected: true,
+                localIdentifier: localId,
+                location: photoLocation
+            )
+            tripsViewModel.appendPhotosToCameraDraft(tripId: tripId, newPhotos: [photo])
+            let draftTitle = tripsViewModel.tripDrafts.first(where: { $0.id == tripId })?.title
+            if let t = draftTitle, !t.isEmpty { sessionTripTitle = t }
+            attachedCountThisSession = momentCount(from: sessionCapturesForDisplay)
+            if let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == momentId }) {
+                var m = sessionCapturesForDisplay[idx]
+                m.injectedPhotoId = photoId
+                sessionCapturesForDisplay[idx] = m
             }
-        })
+        }
     }
 
     private func showToast(_ message: String) {
@@ -2523,61 +2536,47 @@ extension CameraCaptureView {
         // which receives all subsequent camera captures after blog creation.
         sessionMoments = []
 
-        // Inject session photos into the trip/blog (save to library first for localIdentifiers).
+        // Inject session photos into the trip/blog (save to app storage for identifiers).
         guard !momentsWithImages.isEmpty else { return }
 
-        var placeholderIds: [String] = []
         let tripIdToUse = trip.id
         let location = cameraController.currentLocation
         let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
 
-        PHPhotoLibrary.shared().performChanges {
-            for moment in momentsWithImages {
-                guard let image = moment.previewImage else { continue }
-                let request = PHAssetChangeRequest.creationRequestForAsset(from: image)
-                request.location = location
-                if let id = request.placeholderForCreatedAsset?.localIdentifier {
-                    placeholderIds.append(id)
-                }
+        Task { @MainActor in
+            var locationName = "Captured Moment"
+            var countryName: String? = nil
+            if let location {
+                let place = await GeocodingService.shared.place(for: location)
+                locationName = place.cityName != "Unknown Place" ? place.cityName : place.bestPlaceLabel
+                countryName = place.countryName != "Unknown" ? place.countryName : nil
             }
-        } completionHandler: { success, error in
-            guard success, placeholderIds.count == momentsWithImages.count else {
-                #if DEBUG
-                if let err = error { print("[Camera] Failed to save session photos: \(err)") }
-                #endif
-                return
+            let photos: [MockPhoto] = momentsWithImages.compactMap { moment in
+                guard let image = moment.previewImage,
+                      let captureId = try? AppCapturePhotoService.shared.saveCapture(
+                          image: image, timestamp: moment.timestamp, location: location
+                      ) else { return nil }
+                let localId = AppCapturePhotoService.identifier(for: captureId)
+                return MockPhoto(
+                    id: moment.id,
+                    imageName: "camera.fill",
+                    timestamp: moment.timestamp,
+                    locationName: locationName,
+                    countryName: countryName,
+                    isSelected: true,
+                    localIdentifier: localId,
+                    location: moment.location ?? photoLocation,
+                    caption: moment.caption
+                )
             }
-            Task { @MainActor in
-                await Task.yield()
-                try? await Task.sleep(nanoseconds: 400_000_000)
-                var locationName = "Captured Moment"
-                var countryName: String? = nil
-                if let location {
-                    let place = await GeocodingService.shared.place(for: location)
-                    locationName = place.cityName != "Unknown Place" ? place.cityName : place.bestPlaceLabel
-                    countryName = place.countryName != "Unknown" ? place.countryName : nil
-                }
-                let photos: [MockPhoto] = zip(momentsWithImages, placeholderIds).map { moment, localId in
-                    MockPhoto(
-                        id: moment.id,
-                        imageName: "camera.fill",
-                        timestamp: moment.timestamp,
-                        locationName: locationName,
-                        countryName: countryName,
-                        isSelected: true,
-                        localIdentifier: localId,
-                        location: moment.location ?? photoLocation,
-                        caption: moment.caption
-                    )
-                }
-                createdRecapStore.injectPhotos(photos, intoSourceTripId: tripIdToUse)
-                // Set cover to first camera-captured photo (not the scanned trip's cover)
-                if let firstLocalId = photos.first?.localIdentifier {
-                    createdRecapStore.updateCoverAsset(sourceTripId: tripIdToUse, localIdentifier: firstLocalId)
-                }
-                sessionTripTitle = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == tripIdToUse })?.title
-                attachedCountThisSession = momentCount(from: sessionCapturesForDisplay)
+            guard !photos.isEmpty else { return }
+            createdRecapStore.injectPhotos(photos, intoSourceTripId: tripIdToUse)
+            // Set cover to first camera-captured photo (not the scanned trip's cover)
+            if let firstLocalId = photos.first?.localIdentifier {
+                createdRecapStore.updateCoverAsset(sourceTripId: tripIdToUse, localIdentifier: firstLocalId)
             }
+            sessionTripTitle = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == tripIdToUse })?.title
+            attachedCountThisSession = momentCount(from: sessionCapturesForDisplay)
         }
     }
 
@@ -2588,88 +2587,81 @@ extension CameraCaptureView {
         attachedCountThisSession = momentCount(from: sessionMoments)
         sessionMoments = []
         let location = cameraController.currentLocation
-        var placeholderIds: [String] = []
-        PHPhotoLibrary.shared().performChanges {
-            for moment in momentsWithImages {
-                guard let image = moment.previewImage else { continue }
-                let request = PHAssetChangeRequest.creationRequestForAsset(from: image)
-                request.location = location
-                if let id = request.placeholderForCreatedAsset?.localIdentifier {
-                    placeholderIds.append(id)
-                }
+        Task { @MainActor in
+            let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
+            var locationName = "Captured Moment"
+            var countryName: String? = nil
+            if let location {
+                let place = await GeocodingService.shared.place(for: location)
+                locationName = place.cityName != "Unknown Place" ? place.cityName : place.bestPlaceLabel
+                countryName = place.countryName != "Unknown" ? place.countryName : nil
             }
-        } completionHandler: { success, _ in
-            guard success, placeholderIds.count == momentsWithImages.count else { return }
-            Task { @MainActor in
-                let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
-                var locationName = "Captured Moment"
-                var countryName: String? = nil
-                if let location {
-                    let place = await GeocodingService.shared.place(for: location)
-                    locationName = place.cityName != "Unknown Place" ? place.cityName : place.bestPlaceLabel
-                    countryName = place.countryName != "Unknown" ? place.countryName : nil
-                }
-                let photos: [MockPhoto] = zip(momentsWithImages, placeholderIds).map { moment, localId in
-                    MockPhoto(
-                        id: moment.id,
-                        imageName: "camera.fill",
-                        timestamp: moment.timestamp,
-                        locationName: locationName,
-                        countryName: countryName,
-                        isSelected: true,
-                        localIdentifier: localId,
-                        location: moment.location ?? photoLocation,
-                        caption: moment.caption
-                    )
-                }
-                let cal = Calendar.current
-                let dateFormatter = DateFormatter()
-                dateFormatter.locale = Locale.current
-                dateFormatter.dateStyle = .medium
-                let byDay = Dictionary(grouping: photos) { cal.startOfDay(for: $0.timestamp) }
-                let sortedDays = byDay.sorted { $0.key < $1.key }
-                let days: [TripDay] = sortedDays.enumerated().map { index, pair in
-                    let dayStart = pair.key
-                    let dayPhotos = pair.value.sorted { $0.timestamp < $1.timestamp }
-                    return TripDay(
-                        dayIndex: index,
-                        dateText: dateFormatter.string(from: dayStart),
-                        photos: dayPhotos
-                    )
-                }
-                let tripId = UUID()
-                let title = cameraBlogTitleFromPhotos(photos: photos, locationName: locationName, countryName: countryName)
-                let dateRangeStr: String
-                if let first = sortedDays.first?.key, let last = sortedDays.last?.key {
-                    dateRangeStr = first == last
-                        ? dateFormatter.string(from: first)
-                        : "\(dateFormatter.string(from: first)) – \(dateFormatter.string(from: last))"
-                } else {
-                    dateRangeStr = dateFormatter.string(from: Date())
-                }
-                let trip = TripDraft(
-                    id: tripId,
-                    title: title,
-                    dateRangeText: dateRangeStr,
-                    days: days,
-                    coverImageName: "camera.fill",
-                    isScannedFromDefaultRange: false,
-                    draftCreatedAgoText: "Draft created recently",
-                    daysSeasonText: "",
-                    coverTheme: "default",
-                    coverAssetIdentifier: photos.first?.localIdentifier
+            let photos: [MockPhoto] = momentsWithImages.compactMap { moment in
+                guard let image = moment.previewImage,
+                      let captureId = try? AppCapturePhotoService.shared.saveCapture(
+                          image: image, timestamp: moment.timestamp, location: location
+                      ) else { return nil }
+                let localId = AppCapturePhotoService.identifier(for: captureId)
+                return MockPhoto(
+                    id: moment.id,
+                    imageName: "camera.fill",
+                    timestamp: moment.timestamp,
+                    locationName: locationName,
+                    countryName: countryName,
+                    isSelected: true,
+                    localIdentifier: localId,
+                    location: moment.location ?? photoLocation,
+                    caption: moment.caption
                 )
-                tripsViewModel.addCameraTripDraft(trip)
-                createdRecapStore.addCreatedBlog(trip: trip)
-                if let blog = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == tripId }),
-                   let endDate = blog.tripEndDate {
-                    OnTheGoTripStore.markTripAsActive(blogId: tripId, title: blog.title, tripEndDate: endDate, country: blog.countryName)
-                }
-                sessionSourceTripId = tripId
-                sessionTripTitle = title
-                attachedCountThisSession = photos.count
-                showBlogStartedPrompt = true
             }
+            guard !photos.isEmpty else { return }
+            let cal = Calendar.current
+            let dateFormatter = DateFormatter()
+            dateFormatter.locale = Locale.current
+            dateFormatter.dateStyle = .medium
+            let byDay = Dictionary(grouping: photos) { cal.startOfDay(for: $0.timestamp) }
+            let sortedDays = byDay.sorted { $0.key < $1.key }
+            let days: [TripDay] = sortedDays.enumerated().map { index, pair in
+                let dayStart = pair.key
+                let dayPhotos = pair.value.sorted { $0.timestamp < $1.timestamp }
+                return TripDay(
+                    dayIndex: index,
+                    dateText: dateFormatter.string(from: dayStart),
+                    photos: dayPhotos
+                )
+            }
+            let tripId = UUID()
+            let title = cameraBlogTitleFromPhotos(photos: photos, locationName: locationName, countryName: countryName)
+            let dateRangeStr: String
+            if let first = sortedDays.first?.key, let last = sortedDays.last?.key {
+                dateRangeStr = first == last
+                    ? dateFormatter.string(from: first)
+                    : "\(dateFormatter.string(from: first)) – \(dateFormatter.string(from: last))"
+            } else {
+                dateRangeStr = dateFormatter.string(from: Date())
+            }
+            let trip = TripDraft(
+                id: tripId,
+                title: title,
+                dateRangeText: dateRangeStr,
+                days: days,
+                coverImageName: "camera.fill",
+                isScannedFromDefaultRange: false,
+                draftCreatedAgoText: "Draft created recently",
+                daysSeasonText: "",
+                coverTheme: "default",
+                coverAssetIdentifier: photos.first?.localIdentifier
+            )
+            tripsViewModel.addCameraTripDraft(trip)
+            createdRecapStore.addCreatedBlog(trip: trip)
+            if let blog = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == tripId }),
+               let endDate = blog.tripEndDate {
+                OnTheGoTripStore.markTripAsActive(blogId: tripId, title: blog.title, tripEndDate: endDate, country: blog.countryName)
+            }
+            sessionSourceTripId = tripId
+            sessionTripTitle = title
+            attachedCountThisSession = photos.count
+            showBlogStartedPrompt = true
         }
     }
 
@@ -2694,41 +2686,35 @@ extension CameraCaptureView {
         let earliestTimestamp = momentsWithImages.map(\.timestamp).min() ?? Date()
         let existingDraft = tripsViewModel.cameraTripDraftMatching(captureDate: earliestTimestamp)
 
-        var placeholderIds: [String] = []
         let location = cameraController.currentLocation
-        PHPhotoLibrary.shared().performChanges {
-            for moment in momentsWithImages {
-                guard let image = moment.previewImage else { continue }
-                let request = PHAssetChangeRequest.creationRequestForAsset(from: image)
-                request.location = location
-                if let id = request.placeholderForCreatedAsset?.localIdentifier {
-                    placeholderIds.append(id)
-                }
+        Task { @MainActor in
+            let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
+            var locationName = "Captured Moment"
+            var countryName: String? = nil
+            if let location {
+                let place = await GeocodingService.shared.place(for: location)
+                locationName = place.cityName != "Unknown Place" ? place.cityName : place.bestPlaceLabel
+                countryName = place.countryName != "Unknown" ? place.countryName : nil
             }
-        } completionHandler: { success, _ in
-            guard success, placeholderIds.count == momentsWithImages.count else { return }
-            Task { @MainActor in
-                let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
-                var locationName = "Captured Moment"
-                var countryName: String? = nil
-                if let location {
-                    let place = await GeocodingService.shared.place(for: location)
-                    locationName = place.cityName != "Unknown Place" ? place.cityName : place.bestPlaceLabel
-                    countryName = place.countryName != "Unknown" ? place.countryName : nil
-                }
-                let photos: [MockPhoto] = zip(momentsWithImages, placeholderIds).map { moment, localId in
-                    MockPhoto(
-                        id: moment.id,
-                        imageName: "camera.fill",
-                        timestamp: moment.timestamp,
-                        locationName: locationName,
-                        countryName: countryName,
-                        isSelected: true,
-                        localIdentifier: localId,
-                        location: photoLocation,
-                        caption: moment.caption
-                    )
-                }
+            let photos: [MockPhoto] = momentsWithImages.compactMap { moment in
+                guard let image = moment.previewImage,
+                      let captureId = try? AppCapturePhotoService.shared.saveCapture(
+                          image: image, timestamp: moment.timestamp, location: location
+                      ) else { return nil }
+                let localId = AppCapturePhotoService.identifier(for: captureId)
+                return MockPhoto(
+                    id: moment.id,
+                    imageName: "camera.fill",
+                    timestamp: moment.timestamp,
+                    locationName: locationName,
+                    countryName: countryName,
+                    isSelected: true,
+                    localIdentifier: localId,
+                    location: photoLocation,
+                    caption: moment.caption
+                )
+            }
+            guard !photos.isEmpty else { return }
 
                 let cal = Calendar.current
                 let dateFormatter = DateFormatter()
@@ -2793,7 +2779,6 @@ extension CameraCaptureView {
                         tripsViewModel.addCameraTripDraft(trip)
                     }
                 }
-            }
         }
     }
 
