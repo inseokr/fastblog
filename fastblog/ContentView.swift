@@ -65,6 +65,14 @@ struct ContentView: View {
                             withAnimation(.easeInOut(duration: 0.18)) {
                                 showCameraFromHome = false
                             }
+                        },
+                        onNavigateToBlog: { sourceTripId in
+                            if let blog = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == sourceTripId }) {
+                                selectedCreatedRecap = blog
+                            }
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                showCameraFromHome = false
+                            }
                         }
                     )
                     .environmentObject(createdRecapStore)

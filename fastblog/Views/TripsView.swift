@@ -528,12 +528,21 @@ struct TripsView: View {
         }
         .fullScreenCover(isPresented: $showCameraCapture) {
             NavigationStack {
-                CameraCaptureView(tripsViewModel: viewModel, postDismissToast: nil)
+                CameraCaptureView(
+                    tripsViewModel: viewModel,
+                    postDismissToast: nil,
+                    onNavigateToBlog: { sourceTripId in
+                        if let blog = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == sourceTripId }) {
+                            selectedCreatedRecap = blog
+                        }
+                        showCameraCapture = false
+                    }
+                )
                 .environmentObject(createdRecapStore)
             }
         }
         .onChange(of: showCameraCapture) { _, isShowing in
-            // When camera dismisses, scroll to the trip with newly captured photos (if user chose "Not Now").
+            // When camera dismisses, scroll to the trip with newly captured photos (if any).
             if !isShowing, let targetID = viewModel.pendingScrollToCameraTripID,
                allTrips.contains(where: { $0.id == targetID }) {
                 withAnimation(.easeInOut(duration: 0.35)) {
@@ -1548,6 +1557,8 @@ struct CameraCaptureView: View {
     var postDismissToast: ((String) -> Void)? = nil
     /// When set (ZStack overlay presentation), called instead of dismiss().
     var onDismissOverlay: (() -> Void)? = nil
+    /// When set, "View" in the blog-started modal will call this with the blog's sourceTripId so the parent can open that blog and dismiss the camera.
+    var onNavigateToBlog: ((UUID) -> Void)? = nil
 
     @StateObject private var cameraController = CameraController()
 
@@ -1568,12 +1579,10 @@ struct CameraCaptureView: View {
     @State private var sessionSourceTripId: UUID? = nil
     /// When adding to a camera draft, the draft's tripId (so we can remove photo if user trashes from modal).
     @State private var sessionDraftTripId: UUID? = nil
-    @State private var showStartBlogPrompt: Bool = false
     @State private var hasOfferedStartBlogThisSession: Bool = false
-    @State private var ignoreStartBlogForThisTrip: Bool = false
-    /// When true, user tapped "Not Now" — photos saved as draft, skip in-camera toast.
-    @State private var didDeclineStartBlog: Bool = false
     @State private var hasReportedDismissToast: Bool = false
+    /// When true, show the "Blog has started, your moments will be saved to [name]" modal with Ok / View.
+    @State private var showBlogStartedPrompt: Bool = false
     /// When capture is near home, show confirmation before adding. Pending (image, timestamp) to add if user taps Keep.
     @State private var showNearHomeConfirmation: Bool = false
     @State private var pendingNearHomeCapture: (image: UIImage, timestamp: Date)?
@@ -1684,6 +1693,7 @@ struct CameraCaptureView: View {
                 isShowingSessionGallery = true
             } label: {
                 let previewSize: CGFloat = 56
+                // Single source of truth: counter always derived from the current list (capturing, discarding, saving for later, adding to blog).
                 let effectiveList = sessionMoments.isEmpty ? sessionCapturesForDisplay : sessionMoments
                 let displayCount = momentCount(from: effectiveList)
                 let latestImage = effectiveList.last?.previewImage
@@ -1775,27 +1785,24 @@ struct CameraCaptureView: View {
         }
         .onDisappear {
             cameraController.stopRunning()
-            // If user swipes away with unsaved session moments (no blog started / no existing blog), save as draft.
+            // If user swipes away with unsaved session moments (e.g. closed before blog creation completed), save as draft.
             if !sessionMoments.isEmpty && attachedCountThisSession == 0 {
-                didDeclineStartBlog = true
                 saveSessionAsTripDraftOnly()
             }
-            // Exit toast: if user tapped "Not Now", always "saved for later"; else "added to [title]" or "saved for later".
+            // Exit toast: when adding to a blog, show "X moment(s) saved for [Blog Name]".
             if !hasReportedDismissToast {
-                if didDeclineStartBlog && photosCapturedThisSession > 0 {
+                let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
+                let countToBlog = sessionSourceTripId != nil
+                    ? momentCount(from: sessionCapturesForDisplay)
+                    : max(attachedCountThisSession, photosCapturedThisSession)
+                if sessionSourceTripId != nil && photosCapturedThisSession > 0 {
                     hasReportedDismissToast = true
-                    let count = photosCapturedThisSession
-                    let msg = "\(count) moment\(count == 1 ? "" : "s") saved for later"
+                    let count = countToBlog
+                    let msg = "\(count) moment\(count == 1 ? "" : "s") saved for \(title)"
                     postDismissToast?(msg)
                 } else if attachedCountThisSession > 0 {
                     hasReportedDismissToast = true
-                    let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
                     let msg = "\(attachedCountThisSession) moment\(attachedCountThisSession == 1 ? "" : "s") added to \(title)"
-                    postDismissToast?(msg)
-                } else if photosCapturedThisSession > 0 {
-                    hasReportedDismissToast = true
-                    let count = photosCapturedThisSession
-                    let msg = "\(count) moment\(count == 1 ? "" : "s") saved for later"
                     postDismissToast?(msg)
                 }
             }
@@ -1803,7 +1810,14 @@ struct CameraCaptureView: View {
         .sheet(isPresented: $isShowingSessionGallery) {
             Group {
                 if !sessionMoments.isEmpty {
-                    SessionGalleryView(moments: $sessionMoments, allowRemove: true)
+                    SessionGalleryView(
+                        moments: $sessionMoments,
+                        allowRemove: true,
+                        onClear: {
+                            sessionCapturesForDisplay = []
+                            photosCapturedThisSession = 0
+                        }
+                    )
                 } else {
                     SessionGalleryView(
                         moments: $sessionCapturesForDisplay,
@@ -1826,51 +1840,31 @@ struct CameraCaptureView: View {
             }
         }
         .overlay {
-            if showStartBlogPrompt {
+            if showBlogStartedPrompt {
                 Color.black.opacity(0.4)
                     .ignoresSafeArea()
                     .onTapGesture { }
+                let blogName = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your blog"
                 VStack(spacing: 0) {
-                    Text("You're capturing a moment")
-                        .font(.title3.weight(.semibold))
+                    Text("Blog has started, your moments will be saved to \"\(blogName)\"")
+                        .font(.subheadline)
                         .foregroundColor(.primary)
                         .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
                         .padding(.top, 24)
-                        .padding(.bottom, 6)
-                    Text("Would you like to start a new blog from this trip?")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 20)
                         .padding(.bottom, 20)
-                    Rectangle()
-                        .fill(Color.primary.opacity(0.12))
-                        .frame(height: 1)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 16)
-                    HStack(alignment: .center, spacing: 12) {
-                        Text("Ignore for this trip")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Spacer(minLength: 8)
-                        Toggle("", isOn: $ignoreStartBlogForThisTrip)
-                            .labelsHidden()
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    .padding(.bottom, 20)
                     HStack(spacing: 16) {
-                        Button("Not Now", role: .cancel) {
-                            didDeclineStartBlog = true
-                            saveSessionAsTripDraftOnly()
-                            showStartBlogPrompt = false
+                        Button("Ok") {
+                            showBlogStartedPrompt = false
                         }
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity)
-                        Button("Start Blog") {
-                            startNewOnTheGoBlogFromSession()
-                            showStartBlogPrompt = false
+                        Button("View") {
+                            showBlogStartedPrompt = false
+                            if let id = sessionSourceTripId {
+                                onNavigateToBlog?(id)
+                            }
                         }
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(.white)
@@ -1949,9 +1943,6 @@ struct CameraCaptureView: View {
         }
         .onChange(of: showNearHomeConfirmation) { _, show in
             if show { nearHomeDoNotShowAgain = false }
-        }
-        .onChange(of: showStartBlogPrompt) { _, show in
-            if show { ignoreStartBlogForThisTrip = false }
         }
     }
 
@@ -2084,7 +2075,7 @@ extension CameraCaptureView {
             photosCapturedThisSession += 1
             if !hasOfferedStartBlogThisSession {
                 hasOfferedStartBlogThisSession = true
-                showStartBlogPrompt = true
+                startNewOnTheGoBlogFromSession()
             }
         }
     }
@@ -2230,27 +2221,24 @@ extension CameraCaptureView {
 
     /// Handles closing the camera. Summary toast is shown by parent after dismiss.
     private func closeCamera() {
-        // If user has unsaved session moments (declined prompt or prompt suppressed), save them as a draft.
+        // If user has unsaved session moments (e.g. closed before blog creation completed), save as draft.
         if !sessionMoments.isEmpty && attachedCountThisSession == 0 {
-            didDeclineStartBlog = true
             saveSessionAsTripDraftOnly()
         }
-        // Exit toast: if user tapped "Not Now", always "saved for later"; else "added to [title]" or "saved for later".
+        // Exit toast: when adding to a blog, show "X moment(s) saved for [Blog Name]".
         if !hasReportedDismissToast {
-            if didDeclineStartBlog && photosCapturedThisSession > 0 {
+            let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
+            let countToBlog = sessionSourceTripId != nil
+                ? momentCount(from: sessionCapturesForDisplay)
+                : max(attachedCountThisSession, photosCapturedThisSession)
+            if sessionSourceTripId != nil && photosCapturedThisSession > 0 {
                 hasReportedDismissToast = true
-                let count = photosCapturedThisSession
-                let msg = "\(count) moment\(count == 1 ? "" : "s") saved for later"
+                let count = countToBlog
+                let msg = "\(count) moment\(count == 1 ? "" : "s") saved for \(title)"
                 postDismissToast?(msg)
             } else if attachedCountThisSession > 0 {
                 hasReportedDismissToast = true
-                let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
                 let msg = "\(attachedCountThisSession) moment\(attachedCountThisSession == 1 ? "" : "s") added to \(title)"
-                postDismissToast?(msg)
-            } else if photosCapturedThisSession > 0 {
-                hasReportedDismissToast = true
-                let count = photosCapturedThisSession
-                let msg = "\(count) moment\(count == 1 ? "" : "s") saved for later"
                 postDismissToast?(msg)
             }
         }
@@ -2276,8 +2264,28 @@ extension CameraCaptureView {
 
         let momentsWithImages = sessionMoments.filter { $0.previewImage != nil }
 
+        // Validate that the selected trip is related to the camera session's timestamps.
+        // If the session moments don't overlap with the trip's date range, ignore the trip
+        // and create from session moments only (avoid pulling photos from unrelated trips).
+        let validatedTrip: TripDraft? = {
+            guard let trip = currentTrip,
+                  let tripStart = trip.earliestDate,
+                  let tripEnd = trip.latestDate else { return currentTrip }
+            let cal = Calendar.current
+            let sessionTimestamps = momentsWithImages.map(\.timestamp)
+            guard let earliestCapture = sessionTimestamps.min() else { return currentTrip }
+            let captureDay = cal.startOfDay(for: earliestCapture)
+            let tripStartDay = cal.startOfDay(for: tripStart)
+            let tripEndDay = cal.startOfDay(for: tripEnd)
+            // Trip covers the capture date, or capture is within 7 days after trip end
+            let overlaps = captureDay >= tripStartDay && captureDay <= tripEndDay
+            let dayDiff = cal.dateComponents([.day], from: tripEndDay, to: captureDay).day ?? Int.max
+            let continues = dayDiff >= 0 && dayDiff <= 7
+            return (overlaps || continues) ? trip : nil
+        }()
+
         // No existing trip: create a new trip + blog from session moments (save to library first).
-        guard let trip = currentTrip else {
+        guard let trip = validatedTrip else {
             guard !momentsWithImages.isEmpty else { return }
             createBlogFromSessionMomentsOnly(momentsWithImages: momentsWithImages)
             return
@@ -2299,12 +2307,15 @@ extension CameraCaptureView {
                 sessionTripTitle = blog.title
             }
         }
-        showToast("Blog has started")
+        showBlogStartedPrompt = true
         // So exit toast shows "X moments added to [Blog Name]" even if user exits before injection completes.
         attachedCountThisSession = momentCount(from: sessionMoments)
+        // Clear sessionMoments so the counter and gallery switch to sessionCapturesForDisplay,
+        // which receives all subsequent camera captures after blog creation.
+        sessionMoments = []
 
         // Inject session photos into the trip/blog (save to library first for localIdentifiers).
-        guard !sessionMoments.isEmpty, !momentsWithImages.isEmpty else { return }
+        guard !momentsWithImages.isEmpty else { return }
 
         var placeholderIds: [String] = []
         let tripIdToUse = trip.id
@@ -2350,15 +2361,22 @@ extension CameraCaptureView {
                     )
                 }
                 createdRecapStore.injectPhotos(photos, intoSourceTripId: tripIdToUse)
+                // Set cover to first camera-captured photo (not the scanned trip's cover)
+                if let firstLocalId = photos.first?.localIdentifier {
+                    createdRecapStore.updateCoverAsset(sourceTripId: tripIdToUse, localIdentifier: firstLocalId)
+                }
                 sessionTripTitle = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == tripIdToUse })?.title
-                attachedCountThisSession = momentCount(from: sessionMoments)
+                attachedCountThisSession = momentCount(from: sessionCapturesForDisplay)
             }
         }
     }
 
-    /// Creates a new trip draft from session moments, adds it as a blog, and shows "Blog has started".
-    /// Used when user taps "Start Blog" but there is no existing trip (e.g. camera opened from home).
+    /// Creates a new trip draft from session moments, adds it as a blog, and shows "Blog has started, you can continue to add moments".
+    /// Used when the first capture is a new trip (no existing blog or draft) — blog is created automatically.
     private func createBlogFromSessionMomentsOnly(momentsWithImages: [CapturedMoment]) {
+        // Switch UI to blog flow immediately so counter and gallery use sessionCapturesForDisplay.
+        attachedCountThisSession = momentCount(from: sessionMoments)
+        sessionMoments = []
         let location = cameraController.currentLocation
         var placeholderIds: [String] = []
         PHPhotoLibrary.shared().performChanges {
@@ -2439,13 +2457,13 @@ extension CameraCaptureView {
                 sessionSourceTripId = tripId
                 sessionTripTitle = title
                 attachedCountThisSession = photos.count
-                showToast("Blog has started")
+                showBlogStartedPrompt = true
             }
         }
     }
 
     /// Saves session photos to the library and creates or updates a trip draft (no blog).
-    /// Called when user taps "Not Now" on the Start Blog prompt — photos go to the trip card.
+    /// Called when user closes the camera with unsaved session moments (e.g. before blog creation completed).
     /// Uses the same grouping as the trip scanner: merge only when within maxGapDaysToBridge of an existing draft; otherwise group days by gap into one or more trips to avoid duplicates.
     private func saveSessionAsTripDraftOnly() {
         let momentsWithImages = sessionMoments.filter { $0.previewImage != nil }
@@ -2514,7 +2532,6 @@ extension CameraCaptureView {
                             tripsViewModel.addCameraTripDraft(trip)
                         }
                     }
-                    if !didDeclineStartBlog { showToast("Moments organized for later") }
                 } else {
                     let tripDayGroups = cameraTripDayGroupsFromPhotos(photos, cal: cal)
                     for group in tripDayGroups {
@@ -2552,7 +2569,6 @@ extension CameraCaptureView {
                         )
                         tripsViewModel.addCameraTripDraft(trip)
                     }
-                    if !didDeclineStartBlog { showToast("Moments organized for later") }
                 }
             }
         }
@@ -2667,6 +2683,8 @@ private struct SessionGalleryView: View {
     var savedToTitle: String? = nil
     /// When user removes a moment from the "Saved to" list, call this so the parent can remove from blog/draft and update count.
     var onRemoveAttachedMoment: ((CapturedMoment) -> Void)? = nil
+    /// When user taps "Clear" and confirms, call this so the parent can sync sessionCapturesForDisplay and photosCapturedThisSession.
+    var onClear: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var showClearConfirmation = false
 
@@ -2829,6 +2847,7 @@ private struct SessionGalleryView: View {
             .alert("Start fresh?", isPresented: $showClearConfirmation) {
                 Button("No", role: .cancel) { }
                 Button("Yes", role: .destructive) {
+                    onClear?()
                     moments = []
                 }
             } message: {

@@ -569,6 +569,13 @@ final class CreatedRecapBlogStore: ObservableObject {
         if changed { persistRecents() }
     }
 
+    /// Updates the cover photo of a blog identified by its source trip ID.
+    func updateCoverAsset(sourceTripId: UUID, localIdentifier: String) {
+        guard let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }) else { return }
+        recents[idx].coverAssetIdentifier = localIdentifier
+        persistRecents()
+    }
+
     /// Injects newly scanned photos into an existing blog's RecapBlogDetail.
     /// Each photo is matched to the appropriate RecapBlogDay by calendar date, and within
     /// that day to the closest PlaceStop by time gap (≤ gapHoursNewSegment). If no close
@@ -1625,7 +1632,7 @@ final class CreatedRecapBlogStore: ObservableObject {
             }
 
             // Build stops; isIncluded mirrors the user's photo selection.
-            let placeStops: [PlaceStop] = stopGroups.compactMap { orderIndex, inputs -> PlaceStop? in
+            var placeStops: [PlaceStop] = stopGroups.compactMap { orderIndex, inputs -> PlaceStop? in
                 let photos: [RecapPhoto] = inputs.map { input in
                     let photo = day.photos.first { $0.id == input.id }!
                     return RecapPhoto(
@@ -1637,7 +1644,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                         localIdentifier: photo.localIdentifier,
                         caption: nil
                     )
-                }
+                }.sorted { $0.timestamp < $1.timestamp }
                 guard photos.contains(where: \.isIncluded) else { return nil }
                 let repLoc = inputs.compactMap(\.location).first
                 return PlaceStop(
@@ -1648,6 +1655,12 @@ final class CreatedRecapBlogStore: ObservableObject {
                     photos: photos,
                     noteText: nil
                 )
+            }
+            // Re-sort stops by earliest photo timestamp and re-index after filtering.
+            placeStops.sort { ($0.photos.first?.timestamp ?? .distantFuture) < ($1.photos.first?.timestamp ?? .distantFuture) }
+            for i in placeStops.indices {
+                placeStops[i].orderIndex = i
+                placeStops[i].placeTitle = "Stop \(i + 1)"
             }
 
             guard !placeStops.isEmpty else { continue }
