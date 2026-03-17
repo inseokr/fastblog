@@ -1343,11 +1343,9 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     @Published var isConfigured = false
     @Published var authorizationDenied = false
     @Published private(set) var zoomFactor: CGFloat = 1.0
-    /// Current camera position (front or back). Updated when user taps flip button.
-    @Published private(set) var cameraPosition: AVCaptureDevice.Position = .back
     /// Current location for embedding in captured photos. Updated when camera runs.
     @Published private(set) var currentLocation: CLLocation?
-    /// Current camera position (back or front).
+    /// Current camera position (front or back). Updated when user taps flip button.
     @Published private(set) var position: AVCaptureDevice.Position = .back
     /// Flash mode for next capture.
     @Published var flashMode: AVCaptureDevice.FlashMode = .off
@@ -1424,7 +1422,6 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
 
             self.session.commitConfiguration()
             DispatchQueue.main.async {
-                self.cameraPosition = position
                 self.zoomFactor = 1.0
                 self.isConfigured = true
             }
@@ -1433,7 +1430,7 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
 
     /// Switches between front and back camera. Safe to call from main queue.
     func switchCamera() {
-        let nextPosition: AVCaptureDevice.Position = cameraPosition == .back ? .front : .back
+        let nextPosition: AVCaptureDevice.Position = position == .back ? .front : .back
         sessionQueue.async {
             self.session.beginConfiguration()
             for input in self.session.inputs {
@@ -1455,9 +1452,23 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
             }
             self.session.commitConfiguration()
             DispatchQueue.main.async {
-                self.cameraPosition = nextPosition
+                self.position = nextPosition
                 self.zoomFactor = 1.0
             }
+        }
+    }
+
+    /// Alias for switchCamera — called by the toolbar flip button.
+    func flipCamera() { switchCamera() }
+
+    /// Cycles flash mode: off → on → auto (back camera only).
+    func cycleFlashMode() {
+        guard position == .back else { return }
+        switch flashMode {
+        case .off:   flashMode = .on
+        case .on:    flashMode = .auto
+        case .auto:  flashMode = .off
+        @unknown default: flashMode = .off
         }
     }
 
@@ -1776,44 +1787,7 @@ struct CameraCaptureView: View {
                 .opacity(flashOpacity)
                 .ignoresSafeArea()
         )
-        .overlay(alignment: .top) {
-            if let message = toastMessage, isShowingToast {
-                HStack(spacing: 12) {
-                    Group {
-                        if message == "Blog has started" || message.contains("added to") {
-                            Image("MyBlogsIcon")
-                                .resizable()
-                                .renderingMode(.template)
-                                .foregroundColor(.green)
-                                .frame(width: 28, height: 28)
-                        } else {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.title2)
-                                .foregroundColor(.green)
-                        }
-                    }
-                    Text(message)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(.ultraThinMaterial)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                        )
-                )
-                .padding(.horizontal, 20)
-                .padding(.top, 72)
-                .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
+        .overlay(alignment: .top) { toastOverlay }
         .onAppear {
             // Fresh session each time camera is opened.
             sessionMoments = []
@@ -1948,118 +1922,161 @@ struct CameraCaptureView: View {
         .sheet(isPresented: $isShowingCapturesGallery, onDismiss: { loadLatestGalleryThumbnail() }) {
             AppCaptureGalleryView()
         }
-        .overlay {
-            if showBlogStartedPrompt {
-                Color.black.opacity(0.4)
-                    .ignoresSafeArea()
-                    .onTapGesture { }
-                let blogName = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your blog"
-                VStack(spacing: 0) {
-                    Text("Blog has started, your moments will be saved to \"\(blogName)\"")
-                        .font(.subheadline)
-                        .foregroundColor(.primary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 24)
-                        .padding(.bottom, 20)
-                    HStack(spacing: 16) {
-                        Button("Ok") {
-                            showBlogStartedPrompt = false
-                        }
-                        .font(.subheadline.weight(.medium))
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity)
-                        Button("View") {
-                            showBlogStartedPrompt = false
-                            if let id = sessionSourceTripId {
-                                onNavigateToBlog?(id)
-                            }
-                        }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.blue, in: RoundedRectangle(cornerRadius: 10))
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 24)
-                }
-                .frame(maxWidth: 300)
-                .background(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                        .environment(\.colorScheme, .dark)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
-                .padding(.horizontal, 36)
-            }
-        }
-        .overlay {
-            if showNearHomeConfirmation {
-                Color.black.opacity(0.4)
-                    .ignoresSafeArea()
-                    .onTapGesture { }
-                VStack(spacing: 0) {
-                    Text("This moment appears to be near your home. Do you want to keep it anyway?")
-                        .font(.subheadline)
-                        .foregroundColor(.primary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 24)
-                        .padding(.bottom, 12)
-                    Toggle(isOn: $nearHomeDoNotShowAgain) {
-                        Text("Do not show again")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 20)
-                    HStack(spacing: 16) {
-                        Button("Cancel") {
-                            if nearHomeDoNotShowAgain {
-                                UserDefaults.standard.set(true, forKey: Self.nearHomeAlertSuppressedKey)
-                                UserDefaults.standard.set(false, forKey: Self.nearHomeSuppressedPreferKeepKey)
-                            }
-                            pendingNearHomeCapture = nil
-                            showNearHomeConfirmation = false
-                        }
-                        .font(.subheadline.weight(.medium))
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity)
-                        Button("Keep") {
-                            if nearHomeDoNotShowAgain {
-                                UserDefaults.standard.set(true, forKey: Self.nearHomeAlertSuppressedKey)
-                                UserDefaults.standard.set(true, forKey: Self.nearHomeSuppressedPreferKeepKey)
-                            }
-                            if let pending = pendingNearHomeCapture {
-                                applyCapturedPhoto(image: pending.image, timestamp: pending.timestamp)
-                                pendingNearHomeCapture = nil
-                            }
-                            showNearHomeConfirmation = false
-                        }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.blue, in: RoundedRectangle(cornerRadius: 10))
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 24)
-                }
-                .frame(maxWidth: 300)
-                .background(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                        .environment(\.colorScheme, .dark)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
-                .padding(.horizontal, 36)
-            }
-        }
+        .overlay { blogStartedPromptOverlay }
+        .overlay { nearHomeConfirmationOverlay }
         .onChange(of: showNearHomeConfirmation) { _, show in
             if show { nearHomeDoNotShowAgain = false }
+        }
+    }
+
+    @ViewBuilder private var toastOverlay: some View {
+        if let message = toastMessage, isShowingToast {
+            HStack(spacing: 12) {
+                Group {
+                    if message == "Blog has started" || message.contains("added to") {
+                        Image("MyBlogsIcon")
+                            .resizable()
+                            .renderingMode(.template)
+                            .foregroundColor(.green)
+                            .frame(width: 28, height: 28)
+                    } else {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.green)
+                    }
+                }
+                Text(message)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+            )
+            .padding(.horizontal, 20)
+            .padding(.top, 72)
+            .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
+    @ViewBuilder private var blogStartedPromptOverlay: some View {
+        if showBlogStartedPrompt {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .onTapGesture { }
+            let blogName = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your blog"
+            VStack(spacing: 0) {
+                Text("Blog has started, your moments will be saved to \"\(blogName)\"")
+                    .font(.subheadline)
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
+                    .padding(.bottom, 20)
+                HStack(spacing: 16) {
+                    Button("Ok") {
+                        showBlogStartedPrompt = false
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    Button("View") {
+                        showBlogStartedPrompt = false
+                        if let id = sessionSourceTripId {
+                            onNavigateToBlog?(id)
+                        }
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.blue, in: RoundedRectangle(cornerRadius: 10))
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 24)
+            }
+            .frame(maxWidth: 300)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .environment(\.colorScheme, .dark)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
+            .padding(.horizontal, 36)
+        }
+    }
+
+    @ViewBuilder private var nearHomeConfirmationOverlay: some View {
+        if showNearHomeConfirmation {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .onTapGesture { }
+            VStack(spacing: 0) {
+                Text("This moment appears to be near your home. Do you want to keep it anyway?")
+                    .font(.subheadline)
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
+                    .padding(.bottom, 12)
+                Toggle(isOn: $nearHomeDoNotShowAgain) {
+                    Text("Do not show again")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 20)
+                HStack(spacing: 16) {
+                    Button("Cancel") {
+                        if nearHomeDoNotShowAgain {
+                            UserDefaults.standard.set(true, forKey: Self.nearHomeAlertSuppressedKey)
+                            UserDefaults.standard.set(false, forKey: Self.nearHomeSuppressedPreferKeepKey)
+                        }
+                        pendingNearHomeCapture = nil
+                        showNearHomeConfirmation = false
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    Button("Keep") {
+                        if nearHomeDoNotShowAgain {
+                            UserDefaults.standard.set(true, forKey: Self.nearHomeAlertSuppressedKey)
+                            UserDefaults.standard.set(true, forKey: Self.nearHomeSuppressedPreferKeepKey)
+                        }
+                        if let pending = pendingNearHomeCapture {
+                            applyCapturedPhoto(image: pending.image, timestamp: pending.timestamp)
+                            pendingNearHomeCapture = nil
+                        }
+                        showNearHomeConfirmation = false
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.blue, in: RoundedRectangle(cornerRadius: 10))
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 24)
+            }
+            .frame(maxWidth: 300)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .environment(\.colorScheme, .dark)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
+            .padding(.horizontal, 36)
         }
     }
 
