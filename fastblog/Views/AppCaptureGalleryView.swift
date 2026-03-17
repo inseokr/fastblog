@@ -18,6 +18,8 @@ struct AppCaptureItem: Identifiable {
     var timestamp: Date
     var caption: String?
     var location: PhotoCoordinate?
+    /// Local file URL of the Vibe audio clip (vibe.m4a), if one was recorded for this capture.
+    var localVibeURL: URL?
 }
 
 // MARK: - Gallery view
@@ -237,7 +239,8 @@ struct AppCaptureGalleryView: View {
                 image: image,
                 timestamp: info?.timestamp ?? Date(),
                 caption: info?.caption,
-                location: info?.location
+                location: info?.location,
+                localVibeURL: service.vibeFileURL(for: uuid)
             ))
         }
         items = loaded
@@ -300,15 +303,27 @@ private struct GalleryCell: View {
                         .opacity(isSelectMode && isSelected ? 0.5 : 1)
                 }
 
-                // Caption indicator dot (when not in select mode)
-                if !isSelectMode, let cap = item.caption, !cap.isEmpty {
-                    Image(systemName: "text.bubble.fill")
-                        .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.85))
-                        .padding(5)
-                        .background(Color.black.opacity(0.45))
-                        .clipShape(Circle())
-                        .padding(5)
+                // Caption / Vibe indicator dots (when not in select mode)
+                if !isSelectMode {
+                    HStack(spacing: 4) {
+                        if item.localVibeURL != nil {
+                            Image(systemName: "dot.radiowaves.left.and.right")
+                                .font(.system(size: 9))
+                                .foregroundColor(.white.opacity(0.85))
+                                .padding(5)
+                                .background(Color.black.opacity(0.45))
+                                .clipShape(Circle())
+                        }
+                        if let cap = item.caption, !cap.isEmpty {
+                            Image(systemName: "text.bubble.fill")
+                                .font(.system(size: 10))
+                                .foregroundColor(.white.opacity(0.85))
+                                .padding(5)
+                                .background(Color.black.opacity(0.45))
+                                .clipShape(Circle())
+                        }
+                    }
+                    .padding(5)
                 }
 
                 // Select mode checkmark

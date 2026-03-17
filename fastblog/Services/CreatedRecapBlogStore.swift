@@ -630,7 +630,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                     timestamp: photo.timestamp,
                     location: photo.location,
                     imageName: photo.imageName,
-                    isIncluded: false,
+                    isIncluded: isInAppCapture,   // camera captures are always shown; library photos scored later
                     localIdentifier: photo.localIdentifier
                 )
 
@@ -2058,7 +2058,6 @@ final class CreatedRecapBlogStore: ObservableObject {
                 guard !identifiers.isEmpty else { continue }
 
                 let scores = await scorer.scorePhotos(identifiers: identifiers)
-                guard !scores.isEmpty else { continue }
 
                 for photoIdx in updated.days[dayIdx].placeStops[stopIdx].photos.indices {
                     let photo = updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
@@ -2069,13 +2068,16 @@ final class CreatedRecapBlogStore: ObservableObject {
 
                 let scoredPhotos = updated.days[dayIdx].placeStops[stopIdx].photos
                 let topIds = scoredPhotos.autoSelectedIds()
-                if !topIds.isEmpty {
-                    for photoIdx in updated.days[dayIdx].placeStops[stopIdx].photos.indices {
-                        let photo = updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
-                        // Camera-captured photos are always included; smart picker only applies to scanned photos.
-                        let isCameraCapture = photo.imageName == "camera.fill"
-                        updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = isCameraCapture || topIds.contains(photo.id)
+                for photoIdx in updated.days[dayIdx].placeStops[stopIdx].photos.indices {
+                    let photo = updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
+                    // Camera-captured photos are always included; smart picker only applies to scanned library photos.
+                    let isCameraCapture = photo.imageName == "camera.fill"
+                    if isCameraCapture {
+                        updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = true
+                    } else if !topIds.isEmpty {
+                        updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = topIds.contains(photo.id)
                     }
+                    // else: no scores returned and not a camera capture → leave isIncluded unchanged
                 }
             }
         }

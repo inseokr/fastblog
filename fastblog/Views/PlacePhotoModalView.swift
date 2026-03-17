@@ -49,6 +49,9 @@ struct PlacePhotoModalView: View {
 
     @State private var currentPhotoId: UUID
     @State private var isGeneratingCaption = false
+    // Vibe
+    @StateObject private var vibePlayer = VibePlayer()
+    @State private var isVibeEnabled: Bool = false
     /// Stores the user's original caption text per photo before AI first enhances it, enabling "Revert to original".
     @State private var captionOriginalDraftByPhotoId: [UUID: String] = [:]
     @State private var isZoomMode = false
@@ -172,6 +175,13 @@ struct PlacePhotoModalView: View {
         photos.first { $0.id == currentPhotoId } ?? photos.first
     }
 
+    /// Local vibe file URL for the current photo, if it was captured with the in-app camera and has a Vibe clip.
+    private var currentVibeURL: URL? {
+        guard let id = currentPhoto?.localIdentifier,
+              let captureId = AppCapturePhotoService.uuid(from: id) else { return nil }
+        return AppCapturePhotoService.shared.vibeFileURL(for: captureId)
+    }
+
     private var currentCaption: String {
         photoCaption(currentPhotoId).wrappedValue
     }
@@ -187,25 +197,26 @@ struct PlacePhotoModalView: View {
 
     var body: some View {
         ZStack {
-                // 1. Full screen media viewer
-                // .simultaneousGesture fires alongside TabView's own paging swipe recognizer
-                // so taps are not swallowed by the UIScrollView underneath.
+                // 1. Full screen media viewer — horizontal ScrollView with paging (not TabView) so the
+                // sheet’s drag-to-dismiss doesn’t steal horizontal swipes. Tap/double-tap to zoom (same flow as non-modal).
                 fullScreenPhotoView
                     .onAppear { debugPrint("[PlacePhotoModal] fullScreenPhotoView appeared") }
                     .simultaneousGesture(
                         TapGesture(count: 1).onEnded {
-                            debugPrint("[PlacePhotoModal] Tap on viewer → entering full-screen zoom mode, photoId=\(currentPhotoId)")
                             if isCaptionFocused {
                                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                             } else if !isZoomMode {
-                                accumulatedZoomScale = 1.0
-                                accumulatedDragOffset = .zero
-                                withAnimation(.easeInOut(duration: 0.25)) {
-                                    isZoomMode = true
-                                }
+                                enterZoomMode()
                             }
                         }
                     )
+                    .task(id: currentPhotoId) {
+                        // Stop any playing Vibe and auto-play the new photo's Vibe if enabled.
+                        vibePlayer.stop()
+                        if isVibeEnabled, let url = currentVibeURL {
+                            vibePlayer.play(url: url)
+                        }
+                    }
                     .task(id: currentPhotoId) {
                         // Resolve timezone per photo so every photo (not just the first) shows correct local time.
                         let photoId = currentPhotoId
@@ -359,6 +370,30 @@ struct PlacePhotoModalView: View {
                         if !isEditing && !blogIsEditMode {
                             // Kebab menu + action buttons stacked vertically in top right
                             VStack(spacing: 16) {
+                                // Vibe button — only shown when the current photo has a Vibe clip
+                                if currentVibeURL != nil {
+                                    Button {
+                                        isVibeEnabled.toggle()
+                                        if isVibeEnabled, let url = currentVibeURL {
+                                            vibePlayer.play(url: url)
+                                        } else {
+                                            vibePlayer.stop()
+                                        }
+                                    } label: {
+                                        HStack(spacing: 5) {
+                                            Image(systemName: "dot.radiowaves.left.and.right")
+                                            Text("Vibe")
+                                        }
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(isVibeEnabled ? Color.white.opacity(0.25) : Color.black.opacity(0.35))
+                                        .clipShape(Capsule())
+                                    }
+                                    .accessibilityLabel(isVibeEnabled ? "Vibe on" : "Vibe off")
+                                }
+
                                 Menu {
                                     Button {
                                         showRenameSheet = true
@@ -447,6 +482,9 @@ struct PlacePhotoModalView: View {
         .statusBar(hidden: false)
         .onAppear {
             debugPrint("[PlacePhotoModal] Modal is active (onAppear)")
+        }
+        .onDisappear {
+            vibePlayer.stop()
         }
         .sheet(isPresented: $showRenameSheet) {
             EditPlaceStopNameSheet(
@@ -750,6 +788,8 @@ struct PlacePhotoModalView: View {
         }
     }
 
+    /// Full-width paging photo viewer. TabView with page style gives reliable horizontal swipe
+    /// in a sheet context — ScrollView(.horizontal) conflicts with the sheet's pan-to-dismiss.
     private var fullScreenPhotoView: some View {
         TabView(selection: $currentPhotoId) {
             ForEach(photos) { photo in
@@ -761,20 +801,30 @@ struct PlacePhotoModalView: View {
         .ignoresSafeArea()
     }
 
+    /// Single tap or double tap enters zoom overlay (tap-to-zoom works the same in the modal as in the non-modal viewer).
     private func photoFullScreenImage(_ photo: RecapPhoto) -> some View {
         RecapPhotoThumbnail(photo: photo, cornerRadius: 0, showIcon: false, targetSize: CGSize(width: 1200, height: 1200))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .aspectRatio(contentMode: .fill)
             .clipped()
             .contentShape(Rectangle())
-            .onTapGesture(count: 2) {
-                debugPrint("[PlacePhotoModal] Photo double-tapped → entering zoom (photo only), photoId=\(photo.id)")
-                accumulatedZoomScale = 1.0
-                accumulatedDragOffset = .zero
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    isZoomMode = true
+            .onTapGesture(count: 2) { enterZoomMode() }
+            .simultaneousGesture(
+                TapGesture(count: 1).onEnded {
+                    guard !isZoomMode else { return }
+                    if isCaptionFocused {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    } else {
+                        enterZoomMode()
+                    }
                 }
-            }
+            )
+    }
+
+    private func enterZoomMode() {
+        accumulatedZoomScale = 1.0
+        accumulatedDragOffset = .zero
+        withAnimation(.easeInOut(duration: 0.25)) { isZoomMode = true }
     }
 
     @ViewBuilder
@@ -799,7 +849,16 @@ struct PlacePhotoModalView: View {
                         MagnificationGesture()
                             .updating($pinchScale) { current, state, _ in state = current }
                             .onEnded { value in
-                                accumulatedZoomScale = max(1.0, min(5.0, accumulatedZoomScale * value))
+                                let newScale = max(1.0, min(5.0, accumulatedZoomScale * value))
+                                if newScale <= 1.05 {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        accumulatedZoomScale = 1.0
+                                        accumulatedDragOffset = .zero
+                                        isZoomMode = false
+                                    }
+                                } else {
+                                    accumulatedZoomScale = newScale
+                                }
                             },
                         DragGesture(minimumDistance: 5)
                             .updating($dragState) { value, state, _ in state = value.translation }
@@ -813,10 +872,11 @@ struct PlacePhotoModalView: View {
                 )
                 .simultaneousGesture(
                     TapGesture(count: 2).onEnded {
-                        debugPrint("[PlacePhotoModal] Double-tap in zoom overlay → resetting zoom")
+                        debugPrint("[PlacePhotoModal] Double-tap in zoom overlay → resetting zoom and exiting")
                         withAnimation(.easeInOut(duration: 0.2)) {
                             accumulatedZoomScale = 1.0
                             accumulatedDragOffset = .zero
+                            isZoomMode = false
                         }
                     }
                 )

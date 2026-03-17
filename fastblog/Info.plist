@@ -31,6 +31,8 @@
 	<string>$(SHARE_TOKEN_KEY)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>We use your camera so you can capture moments and add them to your blog.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>We record a short audio Vibe clip alongside your photo so you can relive the sounds of the moment.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>We save your in-app camera photos to your photo library so they can appear in your travel blogs.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

@@ -181,6 +181,28 @@ final class AppCapturePhotoService {
         return uuids.sorted { $0.1 > $1.1 }.map(\.0)
     }
 
+    // MARK: - Vibe file (vibe.m4a inside capture folder)
+
+    private func vibePath(for captureId: UUID) throws -> URL {
+        try captureURL(for: captureId).appendingPathComponent("vibe.m4a")
+    }
+
+    /// Copies a trimmed vibe m4a file into the capture folder. Call after `saveCapture`.
+    func saveVibe(captureId: UUID, from sourceURL: URL) throws {
+        let dest = try vibePath(for: captureId)
+        if FileManager.default.fileExists(atPath: dest.path) {
+            try FileManager.default.removeItem(at: dest)
+        }
+        try FileManager.default.copyItem(at: sourceURL, to: dest)
+    }
+
+    /// Returns the local vibe file URL for a capture if it exists on disk.
+    func vibeFileURL(for captureId: UUID) -> URL? {
+        guard let url = try? vibePath(for: captureId),
+              FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return url
+    }
+
     // MARK: - Delete
 
     func deleteCapture(captureId: UUID) {

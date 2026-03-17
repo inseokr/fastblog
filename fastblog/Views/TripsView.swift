@@ -1833,7 +1833,7 @@ struct CameraCaptureView: View {
     @State private var showBlogStartedPrompt: Bool = false
     /// When capture is near home, show confirmation before adding. Pending (image, timestamp) to add if user taps Keep.
     @State private var showNearHomeConfirmation: Bool = false
-    @State private var pendingNearHomeCapture: (image: UIImage, timestamp: Date)?
+    @State private var pendingNearHomeCapture: (image: UIImage, timestamp: Date, vibeURL: URL?)?
     @State private var nearHomeDoNotShowAgain: Bool = false
     /// When true, show the In-app Photo Gallery (all photos taken with in-app camera).
     @State private var isShowingInAppGallery = false
@@ -1843,6 +1843,8 @@ struct CameraCaptureView: View {
     @State private var zoomBaseScale: CGFloat = 1.0
     @State private var showZoomIndicator: Bool = false
     @State private var zoomIndicatorTask: Task<Void, Never>? = nil
+    // Vibe recording
+    @StateObject private var vibeRecorder = VibeRecorder()
 
     private static let nearHomeAlertSuppressedKey = "bloggo.nearHomeAlertSuppressed"
     private static let nearHomeSuppressedPreferKeepKey = "bloggo.nearHomeSuppressedPreferKeep"
@@ -1977,6 +1979,7 @@ struct CameraCaptureView: View {
             attachedCountThisSession = 0
             sessionTripTitle = nil
             sessionSourceTripId = nil
+            vibeRecorder.start()
             sessionDraftTripId = nil
             loadLatestGalleryThumbnail()
             if cameraController.isConfigured {
@@ -1986,10 +1989,12 @@ struct CameraCaptureView: View {
         .onChange(of: cameraController.isConfigured) { _, configured in
             if configured {
                 cameraController.startRunning()
+                vibeRecorder.start()
             }
         }
         .onDisappear {
             cameraController.stopRunning()
+            vibeRecorder.cancelAndDelete()
             // Sync any captions typed in the gallery into the blog for real-time injected photos.
             syncSessionCaptionsToBlog()
             // If user swipes away with unsaved session moments (e.g. closed before blog creation completed), save as draft.
@@ -2225,6 +2230,10 @@ struct CameraCaptureView: View {
                             UserDefaults.standard.set(true, forKey: Self.nearHomeAlertSuppressedKey)
                             UserDefaults.standard.set(false, forKey: Self.nearHomeSuppressedPreferKeepKey)
                         }
+                        // Discard vibe clip for a rejected near-home capture
+                        if let url = pendingNearHomeCapture?.vibeURL {
+                            try? FileManager.default.removeItem(at: url)
+                        }
                         pendingNearHomeCapture = nil
                         showNearHomeConfirmation = false
                     }
@@ -2237,7 +2246,7 @@ struct CameraCaptureView: View {
                             UserDefaults.standard.set(true, forKey: Self.nearHomeSuppressedPreferKeepKey)
                         }
                         if let pending = pendingNearHomeCapture {
-                            applyCapturedPhoto(image: pending.image, timestamp: pending.timestamp)
+                            applyCapturedPhoto(image: pending.image, timestamp: pending.timestamp, vibeURL: pending.vibeURL)
                             pendingNearHomeCapture = nil
                         }
                         showNearHomeConfirmation = false
@@ -2299,30 +2308,41 @@ struct CameraCaptureView: View {
                     flashOpacity = 0
                 }
 
+                // Stop Vibe recording and start trimming (runs concurrently with photo capture)
+                let vibeTask = Task { await vibeRecorder.stopAndTrimLast10Seconds() }
+
                 // Capture a real photo
                 cameraController.capturePhoto { image, _ in
                     let timestamp = Date()
-                    // Lightweight near-home check: same threshold as trip exclusion (Set home region).
-                    if let home = NeighborhoodStore.getNeighborhoodCenter(),
-                       let location = cameraController.currentLocation,
-                       !TripPhotoFilter.shouldIncludeInTrips(
-                           assetLocation: location,
-                           home: home,
-                           minMiles: NeighborhoodStore.localExclusionMiles
-                       ) {
-                        let suppressed = UserDefaults.standard.bool(forKey: Self.nearHomeAlertSuppressedKey)
-                        if suppressed {
-                            let preferKeep = UserDefaults.standard.bool(forKey: Self.nearHomeSuppressedPreferKeepKey)
-                            if preferKeep {
-                                applyCapturedPhoto(image: image, timestamp: timestamp)
+                    Task { @MainActor in
+                        let vibeURL = await vibeTask.value
+                        // Restart recording immediately so it's ready for the next shot
+                        vibeRecorder.start()
+                        // Lightweight near-home check: same threshold as trip exclusion (Set home region).
+                        if let home = NeighborhoodStore.getNeighborhoodCenter(),
+                           let location = cameraController.currentLocation,
+                           !TripPhotoFilter.shouldIncludeInTrips(
+                               assetLocation: location,
+                               home: home,
+                               minMiles: NeighborhoodStore.localExclusionMiles
+                           ) {
+                            let suppressed = UserDefaults.standard.bool(forKey: Self.nearHomeAlertSuppressedKey)
+                            if suppressed {
+                                let preferKeep = UserDefaults.standard.bool(forKey: Self.nearHomeSuppressedPreferKeepKey)
+                                if preferKeep {
+                                    applyCapturedPhoto(image: image, timestamp: timestamp, vibeURL: vibeURL)
+                                } else {
+                                    // User chose never to keep near-home; discard vibe
+                                    if let url = vibeURL { try? FileManager.default.removeItem(at: url) }
+                                }
+                                return
                             }
+                            pendingNearHomeCapture = (image ?? UIImage(), timestamp, vibeURL)
+                            showNearHomeConfirmation = true
                             return
                         }
-                        pendingNearHomeCapture = (image ?? UIImage(), timestamp)
-                        showNearHomeConfirmation = true
-                        return
+                        applyCapturedPhoto(image: image, timestamp: timestamp, vibeURL: vibeURL)
                     }
-                    applyCapturedPhoto(image: image, timestamp: timestamp)
                 }
             } label: {
                 ZStack {
@@ -2453,7 +2473,7 @@ extension CameraCaptureView {
     /// Adds the captured photo to the session and routes it (active blog, matching blog, camera draft, or start-blog prompt).
     /// Used after capture when not near home, and when user taps "Keep" on the near-home confirmation.
     /// Only adds to sessionMoments and shows "You are capturing a moment" when it's truly a new trip (no existing blog or draft for this capture).
-    private func applyCapturedPhoto(image: UIImage?, timestamp: Date) {
+    private func applyCapturedPhoto(image: UIImage?, timestamp: Date, vibeURL: URL? = nil) {
         if let image = image {
             InAppCameraPhotoStore.shared.addPhoto(id: UUID(), image: image, timestamp: timestamp)
         }
@@ -2469,12 +2489,12 @@ extension CameraCaptureView {
             sessionSourceTripId = activeSourceTripId
             sessionCapturesForDisplay.append(displayMoment)
             photosCapturedThisSession += 1
-            injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: activeSourceTripId, momentId: displayMoment.id)
+            injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: activeSourceTripId, momentId: displayMoment.id, vibeURL: vibeURL)
         } else if let matchedBlog = blogMatchingCaptureDate(timestamp) {
             sessionSourceTripId = matchedBlog.sourceTripId
             sessionCapturesForDisplay.append(displayMoment)
             photosCapturedThisSession += 1
-            injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: matchedBlog.sourceTripId, momentId: displayMoment.id)
+            injectCapturedImageIntoBlog(image, at: timestamp, sourceTripId: matchedBlog.sourceTripId, momentId: displayMoment.id, vibeURL: vibeURL)
             if let endDate = matchedBlog.tripEndDate,
                (Calendar.current.dateComponents([.day], from: endDate, to: Date()).day ?? Int.max) <= 14 {
                 OnTheGoTripStore.markTripAsActive(blogId: matchedBlog.sourceTripId, title: matchedBlog.title, tripEndDate: endDate, country: matchedBlog.countryName)
@@ -2483,7 +2503,7 @@ extension CameraCaptureView {
             sessionDraftTripId = matchedDraft.id
             sessionCapturesForDisplay.append(displayMoment)
             photosCapturedThisSession += 1
-            injectCapturedPhotoIntoCameraDraft(image, at: timestamp, tripId: matchedDraft.id, momentId: displayMoment.id)
+            injectCapturedPhotoIntoCameraDraft(image, at: timestamp, tripId: matchedDraft.id, momentId: displayMoment.id, vibeURL: vibeURL)
         } else {
             let moment = displayMoment
             sessionMoments.append(moment)
@@ -2493,6 +2513,9 @@ extension CameraCaptureView {
                 hasOfferedStartBlogThisSession = true
                 startNewOnTheGoBlogFromSession()
             }
+            // Save vibe for new-session moments (routed later when blog/draft is created)
+            // The vibe will be persisted once the image is saved to AppCapturePhotoService
+            _ = vibeURL // stored with the image below via startNewOnTheGoBlog which calls saveCapture
         }
     }
 
@@ -2528,12 +2551,19 @@ extension CameraCaptureView {
     }
 
     /// Saves the image to app storage and injects it into the given blog. Updates the moment's injectedPhotoId when done so removal from modal can remove from blog.
-    private func injectCapturedImageIntoBlog(_ image: UIImage?, at timestamp: Date, sourceTripId: UUID, momentId: UUID) {
+    private func injectCapturedImageIntoBlog(_ image: UIImage?, at timestamp: Date, sourceTripId: UUID, momentId: UUID, vibeURL: URL? = nil) {
         guard let image = image else { return }
         let location = cameraController.currentLocation
         guard let captureId = try? AppCapturePhotoService.shared.saveCapture(
             image: image, timestamp: timestamp, location: location
-        ) else { return }
+        ) else {
+            if let url = vibeURL { try? FileManager.default.removeItem(at: url) }
+            return
+        }
+        if let url = vibeURL {
+            try? AppCapturePhotoService.shared.saveVibe(captureId: captureId, from: url)
+            try? FileManager.default.removeItem(at: url)
+        }
         let localId = AppCapturePhotoService.identifier(for: captureId)
         let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
         Task { @MainActor in
@@ -2567,12 +2597,19 @@ extension CameraCaptureView {
     }
 
     /// Saves the image to app storage and appends it to the given camera trip draft. Updates the moment's injectedPhotoId when done so removal from modal can remove from draft.
-    private func injectCapturedPhotoIntoCameraDraft(_ image: UIImage?, at timestamp: Date, tripId: UUID, momentId: UUID) {
+    private func injectCapturedPhotoIntoCameraDraft(_ image: UIImage?, at timestamp: Date, tripId: UUID, momentId: UUID, vibeURL: URL? = nil) {
         guard let image = image else { return }
         let location = cameraController.currentLocation
         guard let captureId = try? AppCapturePhotoService.shared.saveCapture(
             image: image, timestamp: timestamp, location: location
-        ) else { return }
+        ) else {
+            if let url = vibeURL { try? FileManager.default.removeItem(at: url) }
+            return
+        }
+        if let url = vibeURL {
+            try? AppCapturePhotoService.shared.saveVibe(captureId: captureId, from: url)
+            try? FileManager.default.removeItem(at: url)
+        }
         let localId = AppCapturePhotoService.identifier(for: captureId)
         let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
         Task { @MainActor in

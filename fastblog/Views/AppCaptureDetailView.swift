@@ -24,6 +24,11 @@ struct AppCaptureDetailView: View {
     @State private var isGeneratingCaption = false
     @FocusState private var captionFocused: Bool
 
+    // MARK: - Vibe
+    @StateObject private var vibePlayer = VibePlayer()
+    /// Global toggle: once enabled, auto-plays Vibe as the user pages through photos.
+    @State private var isVibeEnabled: Bool = false
+
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .medium
@@ -56,6 +61,9 @@ struct AppCaptureDetailView: View {
                 currentIndex = idx
             }
             captionDraft = currentItem?.caption ?? ""
+        }
+        .onDisappear {
+            vibePlayer.stop()
         }
         .confirmationDialog(
             "Delete this photo?",
@@ -96,6 +104,10 @@ struct AppCaptureDetailView: View {
             if items.indices.contains(newIdx) {
                 captionDraft = items[newIdx].caption ?? ""
             }
+            vibePlayer.stop()
+            if isVibeEnabled, let url = items[safe: newIdx]?.localVibeURL {
+                vibePlayer.play(url: url)
+            }
         }
     }
 
@@ -122,6 +134,28 @@ struct AppCaptureDetailView: View {
                     Text("\(currentIndex + 1) / \(items.count)")
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(.white)
+                }
+
+                Spacer()
+
+                // Vibe toggle (only shown when current photo has a Vibe)
+                if currentItem?.localVibeURL != nil {
+                    Button {
+                        isVibeEnabled.toggle()
+                        if isVibeEnabled, let url = currentItem?.localVibeURL {
+                            vibePlayer.play(url: url)
+                        } else {
+                            vibePlayer.stop()
+                        }
+                    } label: {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 36, height: 36)
+                            .background(isVibeEnabled ? Color.white.opacity(0.25) : Color.black.opacity(0.5))
+                            .clipShape(Circle())
+                    }
+                    .accessibilityLabel(isVibeEnabled ? "Vibe on" : "Vibe off")
                 }
 
                 Spacer()
@@ -325,6 +359,7 @@ struct AppCaptureDetailView: View {
 
     private func deleteCurrentPhoto() {
         guard let item = currentItem else { return }
+        vibePlayer.stop()
         AppCapturePhotoService.shared.deleteCapture(captureId: item.id)
         onDelete(item.id)
 

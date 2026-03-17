@@ -156,6 +156,8 @@
 		BB000250 /* AppCapturePhotoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000251 /* AppCapturePhotoService.swift */; };
 		BB000252 /* AppCaptureGalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000253 /* AppCaptureGalleryView.swift */; };
 		BB000254 /* AppCaptureDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000255 /* AppCaptureDetailView.swift */; };
+		BB000260 /* VibeRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000261 /* VibeRecorder.swift */; };
+		BB000262 /* VibePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000263 /* VibePlayer.swift */; };
 		BB0002E1 /* OnTheGoTripStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002E0 /* OnTheGoTripStore.swift */; };
 		BB0002E3 /* InAppCameraPhotoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002E2 /* InAppCameraPhotoStore.swift */; };
 		BB0002F1 /* ScanSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F0 /* ScanSessionStore.swift */; };
@@ -323,6 +325,8 @@
 		BB000251 /* AppCapturePhotoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCapturePhotoService.swift; sourceTree = "<group>"; };
 		BB000253 /* AppCaptureGalleryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCaptureGalleryView.swift; sourceTree = "<group>"; };
 		BB000255 /* AppCaptureDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCaptureDetailView.swift; sourceTree = "<group>"; };
+		BB000261 /* VibeRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VibeRecorder.swift; sourceTree = "<group>"; };
+		BB000263 /* VibePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VibePlayer.swift; sourceTree = "<group>"; };
 		BB0002E0 /* OnTheGoTripStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnTheGoTripStore.swift; sourceTree = "<group>"; };
 		BB0002E2 /* InAppCameraPhotoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppCameraPhotoStore.swift; sourceTree = "<group>"; };
 		BB0002F0 /* ScanSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanSessionStore.swift; sourceTree = "<group>"; };
@@ -527,6 +531,8 @@
 				BB0001F6 /* AuthStateManager.swift */,
 				BB00017F /* CreatedRecapBlogStore.swift */,
 				BB000251 /* AppCapturePhotoService.swift */,
+				BB000261 /* VibeRecorder.swift */,
+				BB000263 /* VibePlayer.swift */,
 				BB000181 /* DayToTripGrouper.swift */,
 				BB0001E6 /* DraftReminderNotificationManager.swift */,
 				EA00EA01 /* EarlyAccessManager.swift */,
@@ -696,6 +702,8 @@
 				BB000250 /* AppCapturePhotoService.swift in Sources */,
 				BB000252 /* AppCaptureGalleryView.swift in Sources */,
 				BB000254 /* AppCaptureDetailView.swift in Sources */,
+				BB000260 /* VibeRecorder.swift in Sources */,
+				BB000262 /* VibePlayer.swift in Sources */,
 				BB000128 /* CountryCardView.swift in Sources */,
 				BB00012A /* CoverPhotoSelectView.swift in Sources */,
 				BB00012C /* CreateBlogFlowView.swift in Sources */,
