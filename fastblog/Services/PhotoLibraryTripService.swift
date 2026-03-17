@@ -450,8 +450,14 @@ final class PhotoLibraryTripService {
     }
 
     /// Core date-range scanner used by all public overloads. Fetches photos in [startDate, endDate),
-    /// applies local exclusion, groups by day, and returns TripDraft array.
-    func scanInDateRange(startDate: Date, endDate: Date, occupiedDateRanges: [(start: Date, end: Date)] = [], progress: ((Double) -> Void)? = nil) async -> [TripDraft] {
+    /// applies local exclusion (unless ignoreHomeExclusion is true), groups by day, and returns TripDraft array.
+    func scanInDateRange(
+        startDate: Date,
+        endDate: Date,
+        occupiedDateRanges: [(start: Date, end: Date)] = [],
+        ignoreHomeExclusion: Bool = false,
+        progress: ((Double) -> Void)? = nil
+    ) async -> [TripDraft] {
         let options = PHFetchOptions()
         options.predicate = NSPredicate(format: "creationDate >= %@ AND creationDate < %@", startDate as NSDate, endDate as NSDate)
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
@@ -465,7 +471,7 @@ final class PhotoLibraryTripService {
         allAssets = filterOutAssetsInOccupiedRanges(allAssets, occupiedDateRanges: occupiedDateRanges)
         progress?(0.05)
 
-        let home = NeighborhoodStore.getNeighborhoodCenter()
+        let home = ignoreHomeExclusion ? nil : NeighborhoodStore.getNeighborhoodCenter()
         let minMiles = NeighborhoodStore.localExclusionMiles
         var remaining: [PHAsset] = []
         if let homeLocation = home {

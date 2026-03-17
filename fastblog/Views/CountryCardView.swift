@@ -36,9 +36,12 @@ struct CountryCardView: View {
                 .allowsHitTesting(false)
             )
             .overlay(alignment: .topLeading) {
-                HStack(spacing: 4) {
-                    Image(systemName: "book.fill")
-                        .font(.system(size: 10, weight: .bold))
+                HStack(spacing: 5) {
+                    Image("MyBlogsIcon")
+                        .resizable()
+                        .renderingMode(.template)
+                        .foregroundColor(.white)
+                        .frame(width: 16, height: 16)
                     Text("\(section.blogs.count)")
                         .font(.system(size: 12, weight: .bold))
                 }

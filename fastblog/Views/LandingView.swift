@@ -1,4 +1,4 @@
-at                                                     //
+//
 //  LandingView.swift
 //  Capper
 //

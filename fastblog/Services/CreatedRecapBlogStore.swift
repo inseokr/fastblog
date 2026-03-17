@@ -630,10 +630,8 @@ final class CreatedRecapBlogStore: ObservableObject {
                     timestamp: photo.timestamp,
                     location: photo.location,
                     imageName: photo.imageName,
-                    isIncluded: isInAppCapture,
-                    localIdentifier: photo.localIdentifier,
-                    caption: photo.caption,
-                    captionIsManual: photo.caption != nil
+                    isIncluded: false,
+                    localIdentifier: photo.localIdentifier
                 )
 
                 // Find best matching stop by time proximity + optional location proximity.
@@ -1485,9 +1483,8 @@ final class CreatedRecapBlogStore: ObservableObject {
                                     for serverPhoto in serverPlace.photoList ?? [] {
                                         guard let story = serverPhoto.story, !story.isEmpty,
                                               let uri = serverPhoto.uri else { continue }
-                                        let permanentURI = APIManager.stripQueryParams(from: uri)
                                         for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
-                                            if detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].cloudURL == permanentURI {
+                                            if detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].cloudURL == uri {
                                                 detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].caption = story
                                                 break
                                             }
@@ -1613,7 +1610,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                         isIncluded: photo.selected ?? true,
                         localIdentifier: nil,
                         caption: caption,
-                        cloudURL: APIManager.stripQueryParams(from: uri)
+                        cloudURL: uri
                     )
                 }
 
@@ -2128,9 +2125,12 @@ final class CreatedRecapBlogStore: ObservableObject {
         let cutoff = ScanSessionStore.lastBlogNotifiedDate(for: blogId) ?? scanStart
 
         // Scan photo library from cutoff to upper bound.
+        // SPECIAL CASE: ignore the "home" exclusion here so continuation photos for this blog
+        // are still detected even if the user later set their home location to this area.
         let trips = await PhotoLibraryTripService.shared.scanInDateRange(
             startDate: cutoff,
-            endDate: upperBound
+            endDate: upperBound,
+            ignoreHomeExclusion: true
         )
 
         // Collect all photos from scanned trips.

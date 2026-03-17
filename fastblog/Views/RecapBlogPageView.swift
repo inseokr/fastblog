@@ -456,7 +456,10 @@ struct RecapBlogPageView: View {
                     placeSubtitle: item.stop.placeSubtitle,
                     onEditName: { showEditNameForStop = item.stop },
                     onManagePhotos: { openManagePhotos(dayId: item.dayId, stopId: item.stop.id) },
-                    onEditMode: { isEditMode = true },
+                    onEditMode: {
+                        // Treat this as "Edit Caption" — open the place caption edit pull-up.
+                        placeCaptionEditItem = PlaceCaptionEditItem(dayId: item.dayId, stopId: item.stop.id)
+                    },
                     onRemoveFromBlog: { removePlaceStop(dayId: item.dayId, stopId: item.stop.id) }
                 )
             }
@@ -731,11 +734,15 @@ struct RecapBlogPageView: View {
                 }
                 .onChange(of: selectedDayIndex) { _, newIndex in
                     if isEditMode {
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            proxy.scrollTo("page-top", anchor: .top)
+                        // In edit/draft mode, tapping a day pill should jump directly to that day's section.
+                        if let day = day(at: newIndex) {
+                            withAnimation(.easeOut(duration: 0.3)) {
+                                proxy.scrollTo("day-section-\(day.id)", anchor: .top)
+                            }
                         }
                         visitedDayIndices.insert(newIndex)
                     } else {
+                        // Read-only mode: keep existing behavior (cover + map at top for the selected day).
                         withAnimation(.easeOut(duration: 0.3)) {
                             proxy.scrollTo("map-anchor", anchor: .top)
                         }
