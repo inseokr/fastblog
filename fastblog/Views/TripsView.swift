@@ -1347,6 +1347,10 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     @Published private(set) var cameraPosition: AVCaptureDevice.Position = .back
     /// Current location for embedding in captured photos. Updated when camera runs.
     @Published private(set) var currentLocation: CLLocation?
+    /// Current camera position (back or front).
+    @Published private(set) var position: AVCaptureDevice.Position = .back
+    /// Flash mode for next capture.
+    @Published var flashMode: AVCaptureDevice.FlashMode = .off
 
     override init() {
         super.init()
@@ -1360,12 +1364,12 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
         let status = AVCaptureDevice.authorizationStatus(for: .video)
         switch status {
         case .authorized:
-            setupSession()
+            setupSession(position: .back)
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 guard let self else { return }
                 if granted {
-                    self.setupSession()
+                    self.setupSession(position: .back)
                 } else {
                     DispatchQueue.main.async {
                         self.authorizationDenied = true
@@ -1397,6 +1401,7 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
 
             do {
                 guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
+                guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
                     DispatchQueue.main.async { self.authorizationDenied = true }
                     self.session.commitConfiguration()
                     return
@@ -1408,6 +1413,9 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
                 }
                 if !self.session.outputs.contains(self.photoOutput), self.session.canAddOutput(self.photoOutput) {
                     self.session.addOutput(self.photoOutput)
+                }
+                DispatchQueue.main.async {
+                    self.position = position
                 }
             } catch {
                 DispatchQueue.main.async { self.authorizationDenied = true }
@@ -1459,6 +1467,9 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
         sessionQueue.async {
             guard self.isConfigured else { return }
             let settings = AVCapturePhotoSettings()
+            if self.videoDevice?.hasFlash == true {
+                settings.flashMode = self.flashMode
+            }
             self.captureCompletion = completion
             self.photoOutput.capturePhoto(with: settings, delegate: self)
         }
@@ -1633,6 +1644,10 @@ struct CameraCaptureView: View {
     @State private var showNearHomeConfirmation: Bool = false
     @State private var pendingNearHomeCapture: (image: UIImage, timestamp: Date)?
     @State private var nearHomeDoNotShowAgain: Bool = false
+    /// When true, show the In-app Photo Gallery (all photos taken with in-app camera).
+    @State private var isShowingInAppGallery = false
+    @AppStorage("bloggo.hasSeenCameraTooltip") private var hasSeenCameraTooltip = false
+    @State private var showCameraTooltip = false
     // Zoom
     @State private var zoomBaseScale: CGFloat = 1.0
     @State private var showZoomIndicator: Bool = false
@@ -1715,6 +1730,15 @@ struct CameraCaptureView: View {
                 .animation(.easeInOut(duration: 0.2), value: showZoomIndicator)
             }
         }
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 50)
+                .onEnded { value in
+                    if value.translation.height < -50 {
+                        isShowingInAppGallery = true
+                    }
+                }
+        )
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -1723,6 +1747,25 @@ struct CameraCaptureView: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.body.weight(.semibold))
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 16) {
+                    Button {
+                        cameraController.cycleFlashMode()
+                    } label: {
+                        Image(systemName: flashIconName)
+                            .font(.body.weight(.semibold))
+                    }
+                    .accessibilityLabel(flashAccessibilityLabel)
+                    .disabled(cameraController.position == .front)
+                    Button {
+                        cameraController.flipCamera()
+                    } label: {
+                        Image(systemName: "camera.rotate")
+                            .font(.body.weight(.semibold))
+                    }
+                    .accessibilityLabel("Flip camera")
                 }
             }
         }
@@ -1803,7 +1846,7 @@ struct CameraCaptureView: View {
                 let countToBlog = sessionSourceTripId != nil
                     ? momentCount(from: sessionCapturesForDisplay)
                     : max(attachedCountThisSession, photosCapturedThisSession)
-                if sessionSourceTripId != nil && photosCapturedThisSession > 0 {
+                if sessionSourceTripId != nil && countToBlog > 0 {
                     hasReportedDismissToast = true
                     let count = countToBlog
                     let msg = "\(count) moment\(count == 1 ? "" : "s") saved for \(title)"
@@ -1815,12 +1858,68 @@ struct CameraCaptureView: View {
                 }
             }
         }
+        .sheet(isPresented: $showCameraTooltip, onDismiss: {
+            hasSeenCameraTooltip = true
+        }) {
+            VStack(spacing: 0) {
+                VStack(spacing: 20) {
+                    Image(systemName: "camera.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 50, height: 50)
+                        .foregroundColor(.blue)
+                        .padding(.top, 8)
+
+                    VStack(spacing: 8) {
+                        Text("Capture moments for your trip")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.primary)
+
+                        Text("Photos taken here will appear in your blog.")
+                            .font(.body)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal, 24)
+
+                Spacer()
+
+                Button {
+                    showCameraTooltip = false
+                } label: {
+                    Text("Continue")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .cornerRadius(12)
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+            }
+            .padding(.top, 24)
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+            .preferredColorScheme(.dark)
+        }
+        .sheet(isPresented: $isShowingInAppGallery) {
+            InAppPhotoGalleryView()
+        }
         .sheet(isPresented: $isShowingSessionGallery) {
             Group {
                 if !sessionMoments.isEmpty {
                     SessionGalleryView(
                         moments: $sessionMoments,
                         allowRemove: true,
+                        onRemoveAttachedMoment: { moment in
+                            // Also remove from sessionCapturesForDisplay so the photo
+                            // won't reappear after blog creation (when gallery switches lists).
+                            sessionCapturesForDisplay.removeAll { $0.id == moment.id }
+                        },
                         onClear: {
                             sessionCapturesForDisplay = []
                             photosCapturedThisSession = 0
@@ -1903,24 +2002,22 @@ struct CameraCaptureView: View {
                     .ignoresSafeArea()
                     .onTapGesture { }
                 VStack(spacing: 0) {
-                    Text("Near home")
-                        .font(.headline)
-                        .padding(.top, 20)
-                        .padding(.bottom, 8)
                     Text("This moment appears to be near your home. Do you want to keep it anyway?")
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.primary)
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 16)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 24)
+                        .padding(.bottom, 12)
                     Toggle(isOn: $nearHomeDoNotShowAgain) {
                         Text("Do not show again")
                             .font(.subheadline)
+                            .foregroundColor(.secondary)
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 24)
                     .padding(.bottom, 20)
-                    HStack(spacing: 12) {
-                        Button("Cancel", role: .cancel) {
+                    HStack(spacing: 16) {
+                        Button("Cancel") {
                             if nearHomeDoNotShowAgain {
                                 UserDefaults.standard.set(true, forKey: Self.nearHomeAlertSuppressedKey)
                                 UserDefaults.standard.set(false, forKey: Self.nearHomeSuppressedPreferKeepKey)
@@ -1928,6 +2025,8 @@ struct CameraCaptureView: View {
                             pendingNearHomeCapture = nil
                             showNearHomeConfirmation = false
                         }
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity)
                         Button("Keep") {
                             if nearHomeDoNotShowAgain {
@@ -1940,20 +2039,46 @@ struct CameraCaptureView: View {
                             }
                             showNearHomeConfirmation = false
                         }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .fontWeight(.semibold)
+                        .padding(.vertical, 12)
+                        .background(Color.blue, in: RoundedRectangle(cornerRadius: 10))
                     }
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 20)
+                    .padding(.bottom, 24)
                 }
-                .frame(maxWidth: 280)
-                .background(Color(uiColor: .systemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-                .padding(.horizontal, 40)
+                .frame(maxWidth: 300)
+                .background(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .environment(\.colorScheme, .dark)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
+                .padding(.horizontal, 36)
             }
         }
         .onChange(of: showNearHomeConfirmation) { _, show in
             if show { nearHomeDoNotShowAgain = false }
+        }
+    }
+
+    private var flashIconName: String {
+        switch cameraController.flashMode {
+        case .off: return "bolt.slash"
+        case .on: return "bolt.fill"
+        case .auto: return "bolt.badge.automatic"
+        @unknown default: return "bolt.slash"
+        }
+    }
+
+    private var flashAccessibilityLabel: String {
+        switch cameraController.flashMode {
+        case .off: return "Flash off"
+        case .on: return "Flash on"
+        case .auto: return "Flash auto"
+        @unknown default: return "Flash"
         }
     }
 
@@ -2114,6 +2239,9 @@ extension CameraCaptureView {
     /// Used after capture when not near home, and when user taps "Keep" on the near-home confirmation.
     /// Only adds to sessionMoments and shows "You are capturing a moment" when it's truly a new trip (no existing blog or draft for this capture).
     private func applyCapturedPhoto(image: UIImage?, timestamp: Date) {
+        if let image = image {
+            InAppCameraPhotoStore.shared.addPhoto(id: UUID(), image: image, timestamp: timestamp)
+        }
         let location = cameraController.currentLocation.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
         let displayMoment = CapturedMoment(
             localIdentifier: nil,
@@ -2154,10 +2282,15 @@ extension CameraCaptureView {
     }
 
     /// Returns the active blog's sourceTripId if capture should be routed there; nil otherwise.
+    /// If the user removed that blog, we clear on-the-go state and return nil so the next capture starts a new blog (and shows "Blog has started" prompt).
     private func activeBlogIdIfCapturedImageHandled(_ image: UIImage?, at timestamp: Date) -> UUID? {
         guard image != nil else { return nil }
         guard let activeSourceTripId = OnTheGoTripStore.activeBlogId,
               OnTheGoTripStore.isTripStillOngoing() else {
+            return nil
+        }
+        if !createdRecapStore.hasCreatedBlog(sourceTripId: activeSourceTripId) {
+            OnTheGoTripStore.markTripAsEnded()
             return nil
         }
         return activeSourceTripId
@@ -2282,7 +2415,7 @@ extension CameraCaptureView {
             let countToBlog = sessionSourceTripId != nil
                 ? momentCount(from: sessionCapturesForDisplay)
                 : max(attachedCountThisSession, photosCapturedThisSession)
-            if sessionSourceTripId != nil && photosCapturedThisSession > 0 {
+            if sessionSourceTripId != nil && countToBlog > 0 {
                 hasReportedDismissToast = true
                 let count = countToBlog
                 let msg = "\(count) moment\(count == 1 ? "" : "s") saved for \(title)"
@@ -2696,6 +2829,191 @@ extension CameraCaptureView {
     }
 }
 
+// MARK: - In-app Photo Gallery
+
+/// Dedicated gallery of all photos taken with the in-app camera (latest first). 3×3 grid; Select mode: Done in toolbar, trash (bottom right) and download (bottom left) in modal.
+private struct InAppPhotoGalleryView: View {
+    @ObservedObject private var store = InAppCameraPhotoStore.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var isSelectMode = false
+    @State private var selectedIds: Set<UUID> = []
+    @State private var showRemoveConfirmation = false
+    @State private var downloadToast: String?
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 3)
+    private static let darkNavy = Color(red: 5/255, green: 10/255, blue: 48/255)
+
+    var body: some View {
+        NavigationStack {
+            ZStack(alignment: .bottom) {
+                Self.darkNavy
+                    .ignoresSafeArea()
+                Group {
+                    if store.entries.isEmpty {
+                        ContentUnavailableView(
+                            "No Bloggo photos yet",
+                            systemImage: "camera",
+                            description: Text("Photos you take with the camera will appear here.")
+                        )
+                    } else {
+                        ScrollView {
+                            LazyVGrid(columns: columns, spacing: 4) {
+                                ForEach(store.entries) { entry in
+                                    galleryCell(entry)
+                                }
+                            }
+                            .padding(4)
+                            .padding(.bottom, isSelectMode ? 72 : 0)
+                        }
+                    }
+                }
+                .navigationTitle("Bloggo Photos")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") { dismiss() }
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        if store.entries.isEmpty {
+                            EmptyView()
+                        } else if isSelectMode {
+                            Button("Done") {
+                                isSelectMode = false
+                                selectedIds = []
+                            }
+                        } else {
+                            Button("Select") {
+                                isSelectMode = true
+                            }
+                        }
+                    }
+                }
+
+                // Bottom bar: download (left), "# Photos Selected" (center), trash (right) — only in select mode
+                if isSelectMode && !store.entries.isEmpty {
+                    HStack {
+                        Button {
+                            saveSelectedToPhotoLibrary()
+                        } label: {
+                            Image(systemName: "square.and.arrow.down")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(selectedIds.isEmpty ? .gray : .white)
+                                .frame(width: 56, height: 56)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        }
+                        .disabled(selectedIds.isEmpty)
+                        .accessibilityLabel("Save selected to Photos")
+
+                        Spacer()
+
+                        Text("\(selectedIds.count) Photos Selected")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+
+                        Button {
+                            showRemoveConfirmation = true
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(selectedIds.isEmpty ? .gray : .red)
+                                .frame(width: 56, height: 56)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        }
+                        .disabled(selectedIds.isEmpty)
+                        .accessibilityLabel("Remove selected from gallery")
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
+                }
+
+                if let toast = downloadToast {
+                    Text(toast)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(.black.opacity(0.7)))
+                        .padding(.bottom, 100)
+                }
+            }
+            .alert("Remove selected photos?", isPresented: $showRemoveConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Remove", role: .destructive) {
+                    store.removePhotos(ids: selectedIds)
+                    selectedIds = []
+                    isSelectMode = false
+                }
+            } message: {
+                Text("\(selectedIds.count) photo\(selectedIds.count == 1 ? "" : "s") will be deleted from this gallery. They will not be removed from your device photo library or any blog.")
+            }
+        }
+        .presentationDetents([.fraction(1)])
+        .presentationDragIndicator(.visible)
+        .preferredColorScheme(.dark)
+    }
+
+    private func saveSelectedToPhotoLibrary() {
+        let entriesToSave = store.entries.filter { selectedIds.contains($0.id) }
+        let images = entriesToSave.compactMap { store.image(for: $0) }
+        guard !images.isEmpty else { return }
+        PHPhotoLibrary.shared().performChanges {
+            for image in images {
+                PHAssetChangeRequest.creationRequestForAsset(from: image)
+            }
+        } completionHandler: { success, _ in
+            DispatchQueue.main.async {
+                if success {
+                    downloadToast = "\(images.count) photo\(images.count == 1 ? "" : "s") saved to Photos"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { downloadToast = nil }
+                }
+            }
+        }
+    }
+
+    private func galleryCell(_ entry: InAppCameraPhotoEntry) -> some View {
+        let isSelected = selectedIds.contains(entry.id)
+        return Button {
+            if isSelectMode {
+                if isSelected {
+                    selectedIds.remove(entry.id)
+                } else {
+                    selectedIds.insert(entry.id)
+                }
+            }
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                if let image = store.image(for: entry) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+                        .aspectRatio(1, contentMode: .fill)
+                        .clipped()
+                        .opacity(isSelectMode && isSelected ? 0.5 : 1)
+                } else {
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.3))
+                        .aspectRatio(1, contentMode: .fit)
+                    Image(systemName: "photo")
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                if isSelectMode {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.title2)
+                        .foregroundColor(isSelected ? .blue : .white)
+                        .shadow(color: .black.opacity(0.5), radius: 2)
+                        .padding(6)
+                }
+            }
+            .aspectRatio(1, contentMode: .fit)
+        }
+        .buttonStyle(.plain)
+        .allowsHitTesting(isSelectMode)
+    }
+}
+
 // MARK: - Session Gallery
 
 /// Session photos pull-up: list of captured photos with thumbnails and caption field.
@@ -2853,7 +3171,7 @@ private struct SessionGalleryView: View {
                     }
                 }
             }
-            .navigationTitle("Photos Captured")
+            .navigationTitle("Current Captures")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
