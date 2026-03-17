@@ -59,7 +59,6 @@ struct NeighborhoodSelectionView: View {
         .background(OnboardingConstants.Colors.background)
         .preferredColorScheme(.dark)
         .onAppear {
-            isFocused = true
             locationManager.requestLocation()
             searchHelper.onRegionSelected = { region, name in
                 isFocused = false
@@ -69,6 +68,13 @@ struct NeighborhoodSelectionView: View {
                 pendingSpan = region.span
                 if let name = name {
                     searchHelper.query = name
+                }
+            }
+        }
+        .onChange(of: locationManager.authorizationStatus) { _, status in
+            if status == .authorizedWhenInUse || status == .authorizedAlways {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isFocused = true
                 }
             }
         }

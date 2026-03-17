@@ -9,9 +9,11 @@ import Foundation
 
 final class LocationManagerForOnboarding: NSObject, ObservableObject {
     @Published var lastCoordinate: CLLocationCoordinate2D?
+    @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
     private let manager = CLLocationManager()
 
     override init() {
+        authorizationStatus = manager.authorizationStatus
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyKilometer
@@ -19,6 +21,7 @@ final class LocationManagerForOnboarding: NSObject, ObservableObject {
 
     func requestLocation() {
         let status = manager.authorizationStatus
+        authorizationStatus = status
         if status == .authorizedWhenInUse || status == .authorizedAlways {
             manager.requestLocation()
         } else if status == .notDetermined {
@@ -31,8 +34,11 @@ final class LocationManagerForOnboarding: NSObject, ObservableObject {
 extension LocationManagerForOnboarding: CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         let status = manager.authorizationStatus
-        if status == .authorizedWhenInUse || status == .authorizedAlways {
-            manager.requestLocation()
+        DispatchQueue.main.async {
+            self.authorizationStatus = status
+            if status == .authorizedWhenInUse || status == .authorizedAlways {
+                manager.requestLocation()
+            }
         }
     }
 

@@ -124,12 +124,24 @@ final class AuthService: NSObject, ObservableObject {
     // MARK: - Sign Out
 
     func signOut() {
+        let defaults = UserDefaults.standard
+        let previousUserId = currentUser?.id
+
         currentUser = nil
         persist(nil)
         setJwtToken(nil)
         // Waitlist is tied to the account; clear device-local early access state so guest sees "Join Early Access" again.
-        UserDefaults.standard.set(false, forKey: "hasJoinedEarlyAccess")
-        UserDefaults.standard.set(false, forKey: "bloggo.earlyAccess.hasRegistered")
+        defaults.set(false, forKey: "hasJoinedEarlyAccess")
+        defaults.set(false, forKey: "bloggo.earlyAccess.hasRegistered")
+
+        // Reset first-time tooltips for the guest session only so a signed-out user (guest)
+        // sees them again. Per-account tooltip state is preserved across logout/login so that
+        // users who have already dismissed intros don't see them repeatedly.
+        // Trips intro
+        defaults.set(false, forKey: "blogify.tripsIntroSeen.guest")
+        // Capture intro
+        defaults.set(false, forKey: "blogify.captureIntroSeen.guest")
+
         Analytics.track(.authCancelled) // reuse existing or add dedicated event
     }
 

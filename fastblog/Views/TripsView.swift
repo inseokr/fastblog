@@ -61,6 +61,29 @@ struct TripsView: View {
     @State private var selectLatestTripWhenScanIdle = false
     /// Trip IDs that came from a photo-selection flow; show "new" badge on carousel until user interacts.
     @State private var newTripIDsFromPhotoSelection: Set<UUID> = []
+    /// Controls presentation of the first-time Trips intro pull-up.
+    @State private var showTripsIntroSheet: Bool = false
+
+    /// Per-identity flag for whether the Trips intro has been seen.
+    private var tripsIntroSeenForCurrentIdentity: Bool {
+        let key: String
+        if let userId = AuthService.shared.currentUser?.id {
+            key = "blogify.tripsIntroSeen.user.\(userId)"
+        } else {
+            key = "blogify.tripsIntroSeen.guest"
+        }
+        return UserDefaults.standard.bool(forKey: key)
+    }
+
+    private func markTripsIntroSeenForCurrentIdentity() {
+        let key: String
+        if let userId = AuthService.shared.currentUser?.id {
+            key = "blogify.tripsIntroSeen.user.\(userId)"
+        } else {
+            key = "blogify.tripsIntroSeen.guest"
+        }
+        UserDefaults.standard.set(true, forKey: key)
+    }
 
     init(
         viewModel: TripsViewModel,
@@ -277,7 +300,25 @@ struct TripsView: View {
             .presentationDragIndicator(.visible)
             .presentationBackground(Color(uiColor: .secondarySystemGroupedBackground))
         }
-        .onAppear { viewModel.onAppear() }
+        .sheet(isPresented: $showTripsIntroSheet, onDismiss: {
+            // Treat any dismissal path (swipe down, tap outside, Continue button) as "seen"
+            markTripsIntroSeenForCurrentIdentity()
+        }) {
+            tripsIntroModalContent()
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
+        .onAppear {
+            viewModel.onAppear()
+            // Show first-time Trips intro once, after trips are available.
+            if !tripsIntroSeenForCurrentIdentity, !allTrips.isEmpty, viewModel.scanState == .idle {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    if !tripsIntroSeenForCurrentIdentity {
+                        showTripsIntroSheet = true
+                    }
+                }
+            }
+        }
         .onChange(of: selectedCreatedRecap) { old, new in
             if new == nil && createdRecapStore.pendingRecapCreated {
                 createdRecapStore.pendingRecapCreated = false
@@ -702,11 +743,20 @@ struct TripsView: View {
         }
         // Handle the case where trips arrive after onAppear (scan data published after scanState flips to idle)
         .onChange(of: viewModel.visibleDraftTripsNewestFirst) { _, newTrips in
-            guard selectedTripID == nil, let preferredTrip = preferredTrip(from: newTrips) else { return }
-            selectedTripID = preferredTrip.id
-            if let center = preferredTrip.centerCoordinate {
-                let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
-                mapPosition = .region(MKCoordinateRegion(center: center, span: span))
+            if selectedTripID == nil, let preferredTrip = preferredTrip(from: newTrips) {
+                selectedTripID = preferredTrip.id
+                if let center = preferredTrip.centerCoordinate {
+                    let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
+                    mapPosition = .region(MKCoordinateRegion(center: center, span: span))
+                }
+            }
+            // If trips load in after the initial appearance, show the intro once.
+            if !tripsIntroSeenForCurrentIdentity, !newTrips.isEmpty, viewModel.scanState == .idle, !showTripsIntroSheet {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    if !tripsIntroSeenForCurrentIdentity {
+                        showTripsIntroSheet = true
+                    }
+                }
             }
         }
         // After photo selection: delayed scroll to latest trip (pendingScrollToTripID set by scheduleScrollToLatestTripAfterPhotoSelection)
@@ -748,6 +798,60 @@ struct TripsView: View {
         f.locale = Locale.current
         return f
     }()
+
+    // MARK: - First-time Trips Intro Pull-Up
+
+    @ViewBuilder
+    private func tripsIntroModalContent() -> some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 20) {
+                Image("MyBlogsIcon")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 52, height: 52)
+                    .padding(.top, 8)
+
+                VStack(spacing: 8) {
+                    Text("Choose a Trip")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .multilineTextAlignment(.center)
+
+                    Text("We selected the best 3 photos from your trips. Just tap one to create your blog.")
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+
+                    Text("You can always change the photos later.")
+                        .font(.subheadline)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+
+            VStack(spacing: 12) {
+                Button {
+                    markTripsIntroSeenForCurrentIdentity()
+                    showTripsIntroSheet = false
+                } label: {
+                    Text("Continue")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .cornerRadius(12)
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+        .padding(.top, 24)
+        .preferredColorScheme(.dark)
+    }
 
     // MARK: - Bottom Overlay (Carousel + CTA)
 
@@ -1733,6 +1837,8 @@ struct CameraCaptureView: View {
     @State private var nearHomeDoNotShowAgain: Bool = false
     /// When true, show the In-app Photo Gallery (all photos taken with in-app camera).
     @State private var isShowingInAppGallery = false
+    /// Shows the Capture icon hint in the bottom-right corner until the user starts taking photos.
+    @State private var showCaptureHintIcon: Bool = true
     @AppStorage("bloggo.hasSeenCameraTooltip") private var hasSeenCameraTooltip = false
     @State private var showCameraTooltip = false
     // Zoom
@@ -1864,6 +1970,25 @@ struct CameraCaptureView: View {
                 .opacity(flashOpacity)
                 .ignoresSafeArea()
         )
+        // Bottom-right Capture icon hint — matches the home screen Capture button icon.
+        .overlay(alignment: .bottomTrailing) {
+            if showCaptureHintIcon {
+                ZStack {
+                    Circle()
+                        .fill(Color.black.opacity(0.4))
+                        .frame(width: 52, height: 52)
+                    Image("CaptureIcon")
+                        .resizable()
+                        .renderingMode(.template)
+                        .scaledToFit()
+                        .frame(width: 32, height: 32)
+                        .foregroundColor(.white)
+                }
+                .padding(.trailing, 24)
+                .padding(.bottom, 32)
+                .transition(.opacity)
+            }
+        }
         .overlay(alignment: .top) { toastOverlay }
         .onAppear {
             // Fresh session each time camera is opened.
@@ -2189,6 +2314,12 @@ struct CameraCaptureView: View {
 
             // Center — shutter (photo only; no video/photo segment)
             Button {
+                // Hide the Capture hint icon once the user starts taking photos.
+                if showCaptureHintIcon {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showCaptureHintIcon = false
+                    }
+                }
                 // Visual capture flash
                 flashOpacity = 1
                 withAnimation(.easeOut(duration: 0.2)) {
