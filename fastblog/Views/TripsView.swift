@@ -1401,7 +1401,6 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
 
             do {
                 guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
-                guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
                     DispatchQueue.main.async { self.authorizationDenied = true }
                     self.session.commitConfiguration()
                     return
