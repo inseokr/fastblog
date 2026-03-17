@@ -1634,6 +1634,8 @@ struct CameraCaptureView: View {
     @State private var nearHomeDoNotShowAgain: Bool = false
     /// When true, show the In-app Photo Gallery (all photos taken with in-app camera).
     @State private var isShowingInAppGallery = false
+    @AppStorage("bloggo.hasSeenCameraTooltip") private var hasSeenCameraTooltip = false
+    @State private var showCameraTooltip = false
     // Zoom
     @State private var zoomBaseScale: CGFloat = 1.0
     @State private var showZoomIndicator: Bool = false
@@ -1782,9 +1784,8 @@ struct CameraCaptureView: View {
                 isShowingSessionGallery = true
             } label: {
                 let previewSize: CGFloat = 56
-                // Single source of truth: counter always derived from the current list (capturing, discarding, saving for later, adding to blog).
                 let effectiveList = sessionMoments.isEmpty ? sessionCapturesForDisplay : sessionMoments
-                let displayCount = momentCount(from: effectiveList)
+                let displayCount = effectiveList.count
                 let latestImage = effectiveList.last?.previewImage
                 ZStack {
                     if let image = latestImage {
@@ -1867,6 +1868,9 @@ struct CameraCaptureView: View {
             sessionTripTitle = nil
             sessionSourceTripId = nil
             sessionDraftTripId = nil
+            if !hasSeenCameraTooltip {
+                showCameraTooltip = true
+            }
             if cameraController.isConfigured {
                 cameraController.startRunning()
             }
@@ -1899,6 +1903,54 @@ struct CameraCaptureView: View {
                     postDismissToast?(msg)
                 }
             }
+        }
+        .sheet(isPresented: $showCameraTooltip, onDismiss: {
+            hasSeenCameraTooltip = true
+        }) {
+            VStack(spacing: 0) {
+                VStack(spacing: 20) {
+                    Image(systemName: "camera.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 50, height: 50)
+                        .foregroundColor(.blue)
+                        .padding(.top, 8)
+
+                    VStack(spacing: 8) {
+                        Text("Capture moments for your trip")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.primary)
+
+                        Text("Photos taken here will appear in your blog.")
+                            .font(.body)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal, 24)
+
+                Spacer()
+
+                Button {
+                    showCameraTooltip = false
+                } label: {
+                    Text("Continue")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .cornerRadius(12)
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+            }
+            .padding(.top, 24)
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+            .preferredColorScheme(.dark)
         }
         .sheet(isPresented: $isShowingInAppGallery) {
             InAppPhotoGalleryView()
