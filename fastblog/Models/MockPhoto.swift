@@ -17,8 +17,10 @@ struct MockPhoto: Identifiable, Equatable, Hashable, Codable, Sendable {
     var localIdentifier: String?
     /// When set (e.g. from PHAsset.location), used for place grouping and map.
     var location: PhotoCoordinate?
+    /// User-entered caption from the in-app camera session gallery.
+    var caption: String?
 
-    init(id: UUID = UUID(), imageName: String, timestamp: Date, locationName: String? = nil, countryName: String? = nil, isSelected: Bool = false, localIdentifier: String? = nil, location: PhotoCoordinate? = nil) {
+    init(id: UUID = UUID(), imageName: String, timestamp: Date, locationName: String? = nil, countryName: String? = nil, isSelected: Bool = false, localIdentifier: String? = nil, location: PhotoCoordinate? = nil, caption: String? = nil) {
         self.id = id
         self.imageName = imageName
         self.timestamp = timestamp
@@ -27,5 +29,6 @@ struct MockPhoto: Identifiable, Equatable, Hashable, Codable, Sendable {
         self.isSelected = isSelected
         self.localIdentifier = localIdentifier
         self.location = location
+        self.caption = caption
     }
 }

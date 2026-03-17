@@ -858,6 +858,15 @@ struct TripsView: View {
                         .foregroundColor(.white.opacity(0.6))
                 }
             }
+
+            // Swipe hint
+            HStack(spacing: 6) {
+                Image(systemName: "hand.draw")
+                    .font(.caption)
+                Text("Swipe to load more")
+                    .font(.caption)
+            }
+            .foregroundColor(.white.opacity(0.4))
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 22)
@@ -865,6 +874,15 @@ struct TripsView: View {
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 24)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 30)
+                .onEnded { value in
+                    let isHorizontalSwipe = abs(value.translation.width) > 40
+                    if isHorizontalSwipe, !showLoadMorePopup {
+                        withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
+                    }
+                }
+        )
     }
 
     // MARK: - Find More Trips CTA
@@ -1882,6 +1900,8 @@ struct CameraCaptureView: View {
         }
         .onDisappear {
             cameraController.stopRunning()
+            // Sync any captions typed in the gallery into the blog for real-time injected photos.
+            syncSessionCaptionsToBlog()
             // If user swipes away with unsaved session moments (e.g. closed before blog creation completed), save as draft.
             if !sessionMoments.isEmpty && attachedCountThisSession == 0 {
                 saveSessionAsTripDraftOnly()
@@ -2408,6 +2428,8 @@ extension CameraCaptureView {
 
     /// Handles closing the camera. Summary toast is shown by parent after dismiss.
     private func closeCamera() {
+        // Sync any captions typed in the gallery into the blog for real-time injected photos.
+        syncSessionCaptionsToBlog()
         // If user has unsaved session moments (e.g. closed before blog creation completed), save as draft.
         if !sessionMoments.isEmpty && attachedCountThisSession == 0 {
             saveSessionAsTripDraftOnly()
@@ -2544,7 +2566,8 @@ extension CameraCaptureView {
                         countryName: countryName,
                         isSelected: true,
                         localIdentifier: localId,
-                        location: moment.location ?? photoLocation
+                        location: moment.location ?? photoLocation,
+                        caption: moment.caption
                     )
                 }
                 createdRecapStore.injectPhotos(photos, intoSourceTripId: tripIdToUse)
@@ -2595,7 +2618,8 @@ extension CameraCaptureView {
                         countryName: countryName,
                         isSelected: true,
                         localIdentifier: localId,
-                        location: moment.location ?? photoLocation
+                        location: moment.location ?? photoLocation,
+                        caption: moment.caption
                     )
                 }
                 let cal = Calendar.current
@@ -2649,6 +2673,17 @@ extension CameraCaptureView {
         }
     }
 
+    /// Pushes captions from sessionCapturesForDisplay into the blog detail for any
+    /// photos that were real-time injected (have injectedPhotoId) and have a caption.
+    private func syncSessionCaptionsToBlog() {
+        let captions: [(photoId: UUID, caption: String)] = sessionCapturesForDisplay.compactMap { moment in
+            guard let photoId = moment.injectedPhotoId,
+                  let caption = moment.caption, !caption.isEmpty else { return nil }
+            return (photoId: photoId, caption: caption)
+        }
+        createdRecapStore.syncCaptions(captions)
+    }
+
     /// Saves session photos to the library and creates or updates a trip draft (no blog).
     /// Called when user closes the camera with unsaved session moments (e.g. before blog creation completed).
     /// Uses the same grouping as the trip scanner: merge only when within maxGapDaysToBridge of an existing draft; otherwise group days by gap into one or more trips to avoid duplicates.
@@ -2690,7 +2725,8 @@ extension CameraCaptureView {
                         countryName: countryName,
                         isSelected: true,
                         localIdentifier: localId,
-                        location: photoLocation
+                        location: photoLocation,
+                        caption: moment.caption
                     )
                 }
 
@@ -3059,6 +3095,7 @@ private struct SessionGalleryView: View {
     var onClear: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var showClearConfirmation = false
+    @FocusState private var isCaptionFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -3129,6 +3166,7 @@ private struct SessionGalleryView: View {
                                     get: { moments[index].caption ?? "" },
                                     set: { moments[index].caption = $0.isEmpty ? nil : $0 }
                                 ), axis: .vertical)
+                                .focused($isCaptionFocused)
                                 .font(.subheadline)
                                 .lineLimit(3...6)
                                 .padding(10)
@@ -3188,6 +3226,7 @@ private struct SessionGalleryView: View {
                                     get: { moments[index].caption ?? "" },
                                     set: { moments[index].caption = $0.isEmpty ? nil : $0 }
                                 ), axis: .vertical)
+                                .focused($isCaptionFocused)
                                 .font(.subheadline)
                                 .lineLimit(3...6)
                                 .padding(10)
@@ -3205,11 +3244,14 @@ private struct SessionGalleryView: View {
             .navigationTitle("Current Captures")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                }
                 ToolbarItem(placement: .primaryAction) {
-                    if allowRemove {
+                    if isCaptionFocused {
+                        Button("Done") {
+                            isCaptionFocused = false
+                            dismiss()
+                        }
+                        .fontWeight(.semibold)
+                    } else if allowRemove {
                         Button("Clear") {
                             showClearConfirmation = true
                         }

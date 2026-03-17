@@ -630,7 +630,9 @@ final class CreatedRecapBlogStore: ObservableObject {
                     location: photo.location,
                     imageName: photo.imageName,
                     isIncluded: false,
-                    localIdentifier: photo.localIdentifier
+                    localIdentifier: photo.localIdentifier,
+                    caption: photo.caption,
+                    captionIsManual: photo.caption != nil
                 )
 
                 // Find best matching stop by time proximity + optional location proximity.
@@ -890,6 +892,38 @@ final class CreatedRecapBlogStore: ObservableObject {
                         if detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].id == photoId {
                             detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = false
                             detailChanged = true
+                        }
+                    }
+                }
+            }
+            if detailChanged {
+                blogDetailsBySourceId[key] = detail
+                changed = true
+            }
+        }
+        if changed {
+            persistBlogDetails()
+            objectWillChange.send()
+        }
+    }
+
+    /// Syncs user-entered captions from the camera session into the blog detail.
+    /// Called when the camera is dismissed so captions typed after real-time injection are preserved.
+    func syncCaptions(_ captions: [(photoId: UUID, caption: String)]) {
+        guard !captions.isEmpty else { return }
+        var changed = false
+        for key in blogDetailsBySourceId.keys {
+            guard var detail = blogDetailsBySourceId[key] else { continue }
+            var detailChanged = false
+            for (photoId, caption) in captions {
+                for dayIdx in detail.days.indices {
+                    for stopIdx in detail.days[dayIdx].placeStops.indices {
+                        for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
+                            if detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].id == photoId {
+                                detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].caption = caption
+                                detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].captionIsManual = true
+                                detailChanged = true
+                            }
                         }
                     }
                 }
