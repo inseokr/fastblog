@@ -1812,6 +1812,10 @@ struct CameraCaptureView: View {
                     .shadow(color: .black.opacity(0.5), radius: 2)
                 }
                 .frame(width: previewSize, height: previewSize)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.white.opacity(0.8), lineWidth: 2)
+                )
             }
             .padding(.trailing, 16)
             .padding(.bottom, 33)
