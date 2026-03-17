@@ -111,6 +111,52 @@ struct DayStoryContext {
     let placeStories: [String]
 }
 
+// MARK: - Enhance Context Types
+
+/// Input for enhancing a user-written photo caption.
+struct EnhancePhotoCaptionContext {
+    /// The user's raw draft text to complete/enrich.
+    let userText: String
+    let tags: [String]
+}
+
+/// Input for enhancing a user-written place story.
+struct EnhancePlaceStoryContext {
+    /// The user's raw draft text to complete/enrich.
+    let userText: String
+    let tags: [String]
+    let placeName: String
+    let placeSubtitle: String?
+    let dateTimeText: String
+    let photoCount: Int
+    let categoryID: PlaceCategoryID
+    let nameConfidence: PlaceNameConfidence
+    let timeOfDay: String?
+    let isIndoor: Bool?
+}
+
+/// Input for enhancing a user-written day story.
+struct EnhanceDayStoryContext {
+    /// The user's raw draft text to complete/enrich.
+    let userText: String
+    let dayDateText: String
+    /// Each place's overallStory or placeTitle as fallback, in visit order.
+    let placeStories: [String]
+}
+
+/// Input for enhancing a user-written overall place story.
+struct EnhanceOverallPlaceStoryContext {
+    /// The user's raw draft text to complete/enrich.
+    let userText: String
+    let photoCaptions: [String]
+    let tags: [String]
+    let placeName: String
+    let placeSubtitle: String?
+    let dateTimeText: String
+    let categoryID: PlaceCategoryID
+    let nameConfidence: PlaceNameConfidence
+}
+
 // MARK: - Protocol
 
 /// Provider that generates caption or place story text. Replace with a real local LLM when available.
@@ -121,6 +167,17 @@ protocol StoryCaptionGeneratorProtocol: Sendable {
     func generateOverallPlaceStory(context: OverallPlaceStoryContext) async -> String
     /// One-sentence summary of the whole day from all place stories.
     func generateDaySummary(context: DayStoryContext) async -> String
+
+    // MARK: Enhance (user has written a draft — LLM completes/enriches it)
+
+    /// Completes and enriches the user's photo caption draft.
+    func enhanceCaption(context: EnhancePhotoCaptionContext) async -> String
+    /// Completes and enriches the user's place story draft.
+    func enhancePlaceStory(context: EnhancePlaceStoryContext) async -> String
+    /// Completes and enriches the user's overall place story draft.
+    func enhanceOverallPlaceStory(context: EnhanceOverallPlaceStoryContext) async -> String
+    /// Completes and enriches the user's day story draft.
+    func enhanceDaySummary(context: EnhanceDayStoryContext) async -> String
 }
 
 // MARK: - Template Fallback
@@ -200,5 +257,23 @@ final class TemplateStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         }
         let names = stories.prefix(3).joined(separator: ", ")
         return "\(context.dayDateText): \(names)."
+    }
+
+    // MARK: Enhance (template fallback — returns user text as-is; LLM not available)
+
+    func enhanceCaption(context: EnhancePhotoCaptionContext) async -> String {
+        context.userText
+    }
+
+    func enhancePlaceStory(context: EnhancePlaceStoryContext) async -> String {
+        context.userText
+    }
+
+    func enhanceOverallPlaceStory(context: EnhanceOverallPlaceStoryContext) async -> String {
+        context.userText
+    }
+
+    func enhanceDaySummary(context: EnhanceDayStoryContext) async -> String {
+        context.userText
     }
 }

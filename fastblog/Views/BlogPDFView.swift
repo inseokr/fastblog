@@ -9,6 +9,7 @@ struct BlogPDFView: View {
     // 8.5 x 11 inches = 612 x 792 points
     let contentWidth: CGFloat = 540 // 612 - 72 (1 inch margins total)
     private let accentColor = Color(red: 0.18, green: 0.38, blue: 0.88)
+    private let cardBackground = Color(red: 0.96, green: 0.97, blue: 0.99)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -138,8 +139,9 @@ struct BlogPDFView: View {
         let includedPhotos = stop.photos.filter(\.isIncluded)
         let story = stop.overallStory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let hasStory = !story.isEmpty
+        let cardPadding: CGFloat = 14
 
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             // Place badge + title
             HStack(spacing: 10) {
                 RoundedRectangle(cornerRadius: 6)
@@ -157,6 +159,10 @@ struct BlogPDFView: View {
 
                 Spacer()
             }
+            .padding(.horizontal, cardPadding)
+            .padding(.top, cardPadding)
+            .padding(.bottom, 10)
+            .background(cardBackground)
 
             if includedPhotos.count == 1 {
                 // Photo-left, text-right sidebar
@@ -191,23 +197,30 @@ struct BlogPDFView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                .padding(.horizontal, cardPadding)
+                .padding(.bottom, cardPadding)
+                .background(cardBackground)
             } else {
-                // Multiple photos: story first, then photo strip
+                // Multiple photos: story first, then each photo with matching background
                 if hasStory {
                     Text(story)
                         .font(.system(size: 15))
                         .foregroundColor(.black.opacity(0.88))
                         .lineSpacing(4)
                         .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, cardPadding)
+                        .padding(.bottom, 10)
+                        .background(cardBackground)
                 }
 
-                ForEach(includedPhotos) { photo in
+                ForEach(Array(includedPhotos.enumerated()), id: \.element.id) { photoIndex, photo in
+                    let isLast = photoIndex == includedPhotos.count - 1
                     VStack(alignment: .leading, spacing: 6) {
                         if let img = preloadedImages[photo.id] {
                             Image(uiImage: img)
                                 .resizable()
                                 .scaledToFit()
-                                .frame(maxWidth: contentWidth)
+                                .frame(maxWidth: contentWidth - cardPadding * 2)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                         if let caption = photo.caption,
@@ -218,10 +231,15 @@ struct BlogPDFView: View {
                                 .foregroundColor(.gray)
                         }
                     }
-                    .padding(.bottom, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, cardPadding)
+                    .padding(.bottom, isLast ? cardPadding : 10)
+                    .background(cardBackground)
                 }
             }
         }
+        .background(cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .padding(.top, 20)
     }
 

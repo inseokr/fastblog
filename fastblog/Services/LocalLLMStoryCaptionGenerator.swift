@@ -12,6 +12,7 @@
 //
 
 import Foundation
+import NaturalLanguage
 
 #if canImport(FoundationModels)
 import FoundationModels
@@ -75,6 +76,50 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         }
 #endif
         return await templateFallback.generateDaySummary(context: context)
+    }
+
+    func enhanceCaption(context: EnhancePhotoCaptionContext) async -> String {
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if let result = await enhanceCaptionWithLLM(context: context) {
+                return result
+            }
+        }
+#endif
+        return await templateFallback.enhanceCaption(context: context)
+    }
+
+    func enhancePlaceStory(context: EnhancePlaceStoryContext) async -> String {
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if let result = await enhancePlaceStoryWithLLM(context: context) {
+                return result
+            }
+        }
+#endif
+        return await templateFallback.enhancePlaceStory(context: context)
+    }
+
+    func enhanceOverallPlaceStory(context: EnhanceOverallPlaceStoryContext) async -> String {
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if let result = await enhanceOverallPlaceStoryWithLLM(context: context) {
+                return result
+            }
+        }
+#endif
+        return await templateFallback.enhanceOverallPlaceStory(context: context)
+    }
+
+    func enhanceDaySummary(context: EnhanceDayStoryContext) async -> String {
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if let result = await enhanceDaySummaryWithLLM(context: context) {
+                return result
+            }
+        }
+#endif
+        return await templateFallback.enhanceDaySummary(context: context)
     }
 
 #if canImport(FoundationModels)
@@ -318,6 +363,167 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             \(storiesBlock)
 
             Output only the one-sentence day summary. No introduction, no first person (I/we/my).
+            """
+
+        return await runSession(instructions: instructions, prompt: prompt)
+    }
+
+    // MARK: - User Writing Style
+
+    /// Reads the user's saved writing style prompt from AppStorage.
+    /// Falls back to the default prompt when nothing has been set.
+    private var userWritingStyleInstruction: String {
+        let stored = UserDefaults.standard.string(forKey: StoryWritingStyle.storageKey) ?? ""
+        let style = stored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? StoryWritingStyle.defaultPrompt
+            : stored
+        return "Additional user provided writing guideline: \(style)"
+    }
+
+    // MARK: - Language Detection
+
+    /// Detects the dominant language of the user's text and returns an explicit instruction
+    /// like "Respond in Korean." to inject into enhance prompts.
+    /// Returns an empty string when the language is English or cannot be determined.
+    private func languageInstruction(for text: String) -> String {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        guard let lang = recognizer.dominantLanguage,
+              lang != .undetermined,
+              lang != .english else { return "" }
+        let name = Locale(identifier: "en_US").localizedString(forLanguageCode: lang.rawValue) ?? lang.rawValue
+        return "Respond in \(name)."
+    }
+
+    // MARK: - Enhance Generators
+
+    @available(iOS 26.0, *)
+    private func enhanceCaptionWithLLM(context: EnhancePhotoCaptionContext) async -> String? {
+        let tagsLine = context.tags.isEmpty ? "" : "\nPhoto tags: \(context.tags.prefix(8).joined(separator: ", "))."
+        let langLine = languageInstruction(for: context.userText)
+        let langInstruction = langLine.isEmpty ? "" : "\n\(langLine)"
+
+        let instructions = """
+            You help people write their travel blog. \
+            A user has written a rough photo caption. Complete and enrich it. \
+            Keep the user's voice and key details. Complete any unfinished thought. \
+            1 short sentence only — simple, warm, casual. Like texting a friend. \
+            No hashtags or emoji. No first person (no "I", "we", "my"). \
+            Output only the caption. No preamble — just the text.
+            """
+        let prompt = """
+            The user wrote: "\(context.userText)"\(langInstruction)
+            \(userWritingStyleInstruction)
+
+            Complete this into one short travel caption. Output only the text.
+            """
+
+        return await runSession(instructions: instructions, prompt: prompt)
+    }
+
+    @available(iOS 26.0, *)
+    private func enhancePlaceStoryWithLLM(context: EnhancePlaceStoryContext) async -> String? {
+        let tagsLine = context.tags.isEmpty ? "" : "\nPhoto tags: \(context.tags.prefix(8).joined(separator: ", "))."
+        let timePart = context.dateTimeText.isEmpty ? "" : "\nVisited: \(context.dateTimeText)."
+        let countPart = context.photoCount > 1 ? "\n\(context.photoCount) photos from this stop." : ""
+        let langLine = languageInstruction(for: context.userText)
+        let langInstruction = langLine.isEmpty ? "" : "\n\(langLine)"
+
+        var contextLines: [String] = []
+        if let tod = context.timeOfDay { contextLines.append("Time of day: \(tod)") }
+        if let indoor = context.isIndoor { contextLines.append("Environment: \(indoor ? "indoor" : "outdoor")") }
+        let contextBlock = contextLines.isEmpty ? "" : "\n" + contextLines.joined(separator: ", ") + "."
+
+        let baseSystem = """
+            You help people write their travel blog. \
+            A user has written a rough note about a place they visited. \
+            Complete and enrich it — keep their voice and key details, complete any unfinished thought. \
+            1-2 short sentences max. Simple, warm, casual — like telling a friend. \
+            No hashtags or emoji. No first person (no "I", "we", "my"). \
+            Output only the story. No preamble — just the text.
+            """
+
+        let instructions = [
+            baseSystem,
+            categoryModifier(for: context.categoryID),
+            nameConfidenceModifier(for: context.nameConfidence, placeName: context.placeName)
+        ].joined(separator: "\n\n")
+
+        let prompt = """
+            The user wrote: "\(context.userText)"\(contextBlock)\(langInstruction)
+            \(userWritingStyleInstruction)
+
+            Complete and enrich this into a short travel blog note. Output only the story text.
+            """
+
+        return await runSession(instructions: instructions, prompt: prompt)
+    }
+
+    @available(iOS 26.0, *)
+    private func enhanceOverallPlaceStoryWithLLM(context: EnhanceOverallPlaceStoryContext) async -> String? {
+        let captions = context.photoCaptions.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let captionsBlock = captions.isEmpty
+            ? ""
+            : "\nPhoto captions:\n" + captions.prefix(6).enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+        let langLine = languageInstruction(for: context.userText)
+        let langInstruction = langLine.isEmpty ? "" : "\n\(langLine)"
+
+        let placePart: String
+        switch context.nameConfidence {
+        case .official, .semi:
+            let line = [context.placeName, context.placeSubtitle]
+                .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+            placePart = line.isEmpty ? "" : "\nPlace: \(line)."
+        case .generic:
+            placePart = ""
+        }
+
+        let baseSystem = """
+            You help people write their travel blog. \
+            A user has written a rough summary for a place they visited. \
+            Complete and enrich it — keep their voice, 1 short sentence only. \
+            Simple, warm, casual — like telling a friend. \
+            No hashtags or emoji. No first person (no "I", "we", "my"). \
+            Output only the story. No preamble — just the text.
+            """
+
+        let instructions = [
+            baseSystem,
+            categoryModifier(for: context.categoryID),
+            nameConfidenceModifier(for: context.nameConfidence, placeName: context.placeName)
+        ].joined(separator: "\n\n")
+
+        let prompt = """
+            The user wrote: "\(context.userText)"\(placePart)\(captionsBlock)\(langInstruction)
+            \(userWritingStyleInstruction)
+
+            Complete and enrich this into a short travel blog summary. Output only the story text.
+            """
+
+        return await runSession(instructions: instructions, prompt: prompt)
+    }
+
+    @available(iOS 26.0, *)
+    private func enhanceDaySummaryWithLLM(context: EnhanceDayStoryContext) async -> String? {
+        let stories = context.placeStories.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let placesPart = stories.isEmpty ? "" : "\nPlaces visited: " + stories.prefix(5).joined(separator: ", ") + "."
+        let datePart = context.dayDateText.isEmpty ? "" : "\nDate: \(context.dayDateText)."
+        let langLine = languageInstruction(for: context.userText)
+        let langInstruction = langLine.isEmpty ? "" : "\n\(langLine)"
+
+        let instructions = """
+            You help people write their travel blog. \
+            A user has written a rough note about their travel day. \
+            Complete and enrich it — keep their voice, 1 short sentence only. \
+            Simple, warm, casual — like telling a friend what the day was like. \
+            No hashtags or emoji. No first person (no "I", "we", "my"). No date in the output. \
+            Output only the day story. No preamble — just the text.
+            """
+        let prompt = """
+            The user wrote: "\(context.userText)"\(datePart)\(placesPart)\(langInstruction)
+            \(userWritingStyleInstruction)
+
+            Complete this into one short day story. Output only the text.
             """
 
         return await runSession(instructions: instructions, prompt: prompt)

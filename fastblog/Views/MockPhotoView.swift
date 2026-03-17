@@ -163,7 +163,42 @@ struct MockPhotoThumbnail: View {
     }
 }
 
-/// Convenience for RecapPhoto. Shows real image when localIdentifier is set.
+/// Loads and displays a cloud-hosted photo by its permanent (unsigned) URL.
+/// Fetches a fresh signed URL from the API on demand.
+struct CloudPhotoView: View {
+    let permanentURL: String
+    var cornerRadius: CGFloat = 8
+
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image = image {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                MockPhotoView(seed: permanentURL.hashValue, cornerRadius: cornerRadius, showIcon: true)
+            }
+        }
+        .clipped()
+        .cornerRadius(cornerRadius)
+        .task(id: permanentURL) {
+            guard image == nil else { return }
+            do {
+                let signedURL = try await APIManager.shared.fetchSignedPhotoURL(permanentURL: permanentURL)
+                let (data, _) = try await URLSession.shared.data(from: signedURL)
+                if !Task.isCancelled, let loaded = UIImage(data: data) {
+                    image = loaded
+                }
+            } catch {
+                print("⚠️ CloudPhotoView: failed to load \(permanentURL): \(error)")
+            }
+        }
+    }
+}
+
+/// Convenience for RecapPhoto. Prefers local PHAsset, falls back to cloud URL if local is unavailable.
 struct RecapPhotoThumbnail: View {
     let photo: RecapPhoto
     var cornerRadius: CGFloat = 8
@@ -172,8 +207,10 @@ struct RecapPhotoThumbnail: View {
 
     var body: some View {
         Group {
-            if let id = photo.localIdentifier {
+            if let id = photo.localIdentifier, !id.isEmpty {
                 AssetPhotoView(assetIdentifier: id, cornerRadius: cornerRadius, targetSize: targetSize)
+            } else if let cloudURL = photo.cloudURL, !cloudURL.isEmpty {
+                CloudPhotoView(permanentURL: cloudURL, cornerRadius: cornerRadius)
             } else {
                 MockPhotoView(
                     seed: photo.id.hashValue,

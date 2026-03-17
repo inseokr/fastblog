@@ -1485,8 +1485,9 @@ final class CreatedRecapBlogStore: ObservableObject {
                                     for serverPhoto in serverPlace.photoList ?? [] {
                                         guard let story = serverPhoto.story, !story.isEmpty,
                                               let uri = serverPhoto.uri else { continue }
+                                        let permanentURI = APIManager.stripQueryParams(from: uri)
                                         for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
-                                            if detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].cloudURL == uri {
+                                            if detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].cloudURL == permanentURI {
                                                 detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].caption = story
                                                 break
                                             }
@@ -1612,7 +1613,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                         isIncluded: photo.selected ?? true,
                         localIdentifier: nil,
                         caption: caption,
-                        cloudURL: uri
+                        cloudURL: APIManager.stripQueryParams(from: uri)
                     )
                 }
 

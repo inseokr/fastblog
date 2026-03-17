@@ -27,12 +27,14 @@ struct PlaceStopRowView: View {
     var onEditName: (() -> Void)?
     /// Called when user taps Done on the keyboard toolbar; (stopId, isPlaceNote, photoId if photo caption).
     var onDoneEditingStory: ((UUID, Bool, UUID?) -> Void)?
-    /// When set, a "Generate" button is shown for the place note. Returns AI-generated place story.
-    var onGeneratePlaceStory: (() async -> String)?
-    /// When set, a "Generate" button is shown for the overall story. Returns quick summary from photo captions.
-    var onGenerateOverallStory: (() async -> String)?
-    /// When set, a "Generate" button is shown for each photo caption. Returns AI-generated caption for that photo.
-    var onGeneratePhotoCaption: ((RecapPhoto) async -> String)?
+    /// When set, a magic wand button is shown for the place note (only when user has written text).
+    /// Receives the user's current draft; returns the enriched story.
+    var onGeneratePlaceStory: ((String) async -> String)?
+    /// When set, a magic wand button is shown for the overall story (only when user has written text).
+    /// Receives the user's current draft; returns the enriched story.
+    var onGenerateOverallStory: ((String) async -> String)?
+    /// Reserved for future use. Photo caption enhancement happens in PlacePhotoModalView.
+    var onGeneratePhotoCaption: ((RecapPhoto, String) async -> String)?
     /// Called after the user types in a photo caption field (not AI). Used to mark captionIsManual = true.
     var onPhotoUserEdited: ((UUID) -> Void)?
     /// Called when the user taps a photo caption (read mode) — used to open the Edit Caption modal.
@@ -450,37 +452,6 @@ struct PlaceStopRowView: View {
                         .cornerRadius(10)
                     }
                     .buttonStyle(.plain)
-
-                    // "Generate caption" button — below the box, labeled, right-aligned
-                    if let generate = onGenerateOverallStory, !isGenerating {
-                        Button {
-                            isGeneratingOverallStory = true
-                            Task {
-                                let text = await generate()
-                                await MainActor.run {
-                                    overallStory = text
-                                    isGeneratingOverallStory = false
-                                    onAIOverallStoryApplied?()
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "wand.and.stars")
-                                    .font(.caption)
-                                    .foregroundStyle(
-                                        LinearGradient(
-                                            colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                Text("Generate caption")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)

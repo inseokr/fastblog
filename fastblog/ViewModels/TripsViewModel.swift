@@ -5,6 +5,7 @@
 
 import Combine
 import Foundation
+import Photos
 import SwiftUI
 
 /// Result of a Find More scan: no result yet, no new trips in range, or success with count of new trips appended.
@@ -775,6 +776,40 @@ final class TripsViewModel: ObservableObject {
         #endif
 
         defaultScanTask = Task {
+            let isLimitedAccess = PHPhotoLibrary.authorizationStatus(for: .readWrite) == .limited
+
+            if isLimitedAccess {
+                // Limited access: no date window — use all selected photos with location + timestamp.
+                #if DEBUG
+                debugPrint("[Scan] mode = LIMITED (all selected photos)")
+                #endif
+
+                let allTrips = await photoLibraryService.scanAllForLimitedAccess(
+                    occupiedDateRanges: occupiedRanges,
+                    progress: { [weak self] value in
+                        Task { @MainActor in self?.defaultScanProgress = value }
+                    }
+                )
+
+                tripDrafts = allTrips
+                currentWindowTrips = nil
+                if let first = allTrips.first?.days.first?.photos.first?.timestamp,
+                   let last = allTrips.last?.days.last?.photos.last?.timestamp {
+                    earliestScannedDate = first
+                    latestScannedDate = last
+                } else {
+                    earliestScannedDate = nil
+                    latestScannedDate = nil
+                }
+
+                AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
+                AppAnalytics.shared.incrementCounter("trips_detected", by: allTrips.count)
+                ScanSessionStore.saveLastScannedDate(Date(), for: userId)
+                scanState = .idle
+                presentNewMomentsSheetIfNeeded()
+                return
+            }
+
             let cal = Calendar.current
             let now = Date()
             let fullWindowStart = cal.startOfDay(for: cal.date(byAdding: .day, value: -ScanConfig.windowDays, to: now) ?? now)

@@ -5,15 +5,66 @@
 
 import SwiftUI
 import UIKit
+import UserNotifications
 
-final class AppDelegate: NSObject, UIApplicationDelegate {
+final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     static var orientationLock: UIInterfaceOrientationMask = .portrait
+
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
 
     func application(
         _ application: UIApplication,
         supportedInterfaceOrientationsFor window: UIWindow?
     ) -> UIInterfaceOrientationMask {
         Self.orientationLock
+    }
+
+    // MARK: - APNs Registration
+
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
+        print("[APNs] Device token: \(token)")
+        // Persist the token so it can be sent to the backend once the user has an account.
+        UserDefaults.standard.set(token, forKey: DraftReminderNotificationManager.pendingDeviceTokenKey)
+        // Only register with the backend if the user is already logged in.
+        guard AuthService.shared.currentJwtToken != nil else {
+            print("[APNs] No auth token — device token saved for post-login registration")
+            return
+        }
+        Task { await APIManager.shared.registerDeviceToken(token) }
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        print("[APNs] Registration failed: \(error)")
+    }
+
+    // MARK: - UNUserNotificationCenterDelegate
+
+    /// Show notifications as banners even when app is in the foreground.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound, .badge])
+    }
+
+    /// Handle notification tap (background / quit state).
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        print("[APNs] Notification tapped: \(userInfo)")
+        // TODO: Parse userInfo and navigate to the relevant screen
+        completionHandler()
     }
 }
 
@@ -34,6 +85,7 @@ struct fastblogApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var isAppReady = false
     @State private var pendingResetToken: String?
+    @State private var showNotificationDeniedAlert = false
 
     #if DEBUG
         /// Flip to `true` to skip splash + onboarding and land directly on ManagePhotosView.
@@ -79,7 +131,18 @@ struct fastblogApp: App {
                         createdRecapStore.importAnonymousDrafts(into: userId)
                         authStateManager.checkAndPromptImportIfNeeded()
                         Task { await createdRecapStore.syncFromCloud() }
+                        // Register any pending APNs token now that the user has an account.
+                        Task {
+                            let isDenied = await DraftReminderNotificationManager.handlePostLoginSetup()
+                            if isDenied { showNotificationDeniedAlert = true }
+                        }
                     }
+                }
+                .alert("Enable Notifications", isPresented: $showNotificationDeniedAlert) {
+                    Button("Open Settings") { openSettings() }
+                    Button("Not Now", role: .cancel) {}
+                } message: {
+                    Text("Turn on notifications to get updates about your blogs. You can enable them in Settings.")
                 }
         }
     }

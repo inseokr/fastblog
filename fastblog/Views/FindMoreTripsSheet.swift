@@ -152,10 +152,11 @@ struct FindMoreTripsSheet: View {
     private func presentLimitedPickerFromSheet() {
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let rootViewController = windowScene.windows.first?.rootViewController else { return }
+        let photoCountBeforePicker = photoAuth.selectedPhotoCount
         PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: rootViewController) { _ in
             DispatchQueue.main.async {
                 photoAuth.refreshStatus()
-                // Auto-kick a scan with the newly available photos
+                guard photoAuth.selectedPhotoCount != photoCountBeforePicker else { return }
                 viewModel.scanFindMoreTripsInRange()
             }
         }

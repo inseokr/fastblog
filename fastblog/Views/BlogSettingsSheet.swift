@@ -19,6 +19,7 @@ struct BlogSettingsSheet: View {
     /// Called after the user restores a removed place so the parent can persist the draft.
     var onRestore: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(StoryWritingStyle.storageKey) private var writingStyle: String = ""
 
     @State private var showTitleChange = false
     @State private var showCoverChange = false
@@ -27,6 +28,7 @@ struct BlogSettingsSheet: View {
     @State private var showRemoveFromCloudConfirmation = false
     @State private var showRestorePlaces = false
     @State private var showCustomDeletePopup = false
+    @State private var showWritingStyle = false
 
     private var hasCloudPhotos: Bool {
         draft.hasCloudPhotos
@@ -44,10 +46,11 @@ struct BlogSettingsSheet: View {
                 .toolbar { navigationToolbar }
                 .sheet(isPresented: $showTitleChange) { titleChangeSheet }
                 .sheet(isPresented: $showCoverChange, onDismiss: handleCoverPickerDismiss) { coverPhotoPicker }
+                .sheet(isPresented: $showRestorePlaces) { restorePlacesSheet }
+                .sheet(isPresented: $showWritingStyle) { StoryWritingStyleSheet() }
                 .alert("Delete Blog?", isPresented: $showDeleteConfirmation) { deleteAlertButtons } message: { deleteAlertMessage }
                 .overlay { customDeletePopup }
                 .alert("Remove from Cloud?", isPresented: $showRemoveFromCloudConfirmation) { removeCloudAlertButtons } message: { removeCloudAlertMessage }
-                .sheet(isPresented: $showRestorePlaces) { restorePlacesSheet }
                 .preferredColorScheme(.dark)
             }
         }
@@ -57,6 +60,7 @@ struct BlogSettingsSheet: View {
         List {
             editAndRestoreSection
             titleAndCoverSection
+            writingStyleSection
             cloudSection
         }
     }
@@ -104,6 +108,21 @@ struct BlogSettingsSheet: View {
             } label: {
                 Label("Change Cover Photo", systemImage: "photo")
             }
+        }
+    }
+
+    private var writingStyleSection: some View {
+        let activeStyle = writingStyle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayPrompt = activeStyle.isEmpty ? StoryWritingStyle.defaultPrompt : activeStyle
+        return Section {
+            Button {
+                showWritingStyle = true
+            } label: {
+                Label("Writing Style", systemImage: "wand.and.stars")
+            }
+        } footer: {
+            Text(displayPrompt)
+                .lineLimit(3)
         }
     }
 

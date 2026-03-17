@@ -182,6 +182,127 @@ actor StoryCaptionService {
         return await generator.generateOverallPlaceStory(context: context)
     }
 
+    // MARK: - Enhance (user has written a draft)
+
+    /// Completes and enriches the user's photo caption draft using available metadata.
+    func enhanceCaption(
+        photo: RecapPhoto,
+        userText: String,
+        placeName: String,
+        placeSubtitle: String?
+    ) async -> String {
+        let tags: [String]
+        if let lid = photo.localIdentifier {
+            tags = await tagService.tags(forLocalIdentifier: lid)
+        } else {
+            tags = []
+        }
+        let context = EnhancePhotoCaptionContext(userText: userText, tags: tags)
+        return await generator.enhanceCaption(context: context)
+    }
+
+    /// Completes and enriches the user's place story draft using place metadata and photo tags.
+    func enhancePlaceStory(
+        stop: PlaceStop,
+        userText: String,
+        dayDate: Date?
+    ) async -> String {
+        let included = stop.photos.filter(\.isIncluded)
+        var tagSet: [String] = []
+        for photo in included.prefix(3) {
+            if let lid = photo.localIdentifier {
+                let photoTags = await tagService.tags(forLocalIdentifier: lid)
+                for t in photoTags where !tagSet.contains(t) { tagSet.append(t) }
+            }
+        }
+        let tz = await captureTimeZone(for: stop)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d MMM yyyy 'at' h:mm a"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = tz
+        let dateTimeText: String
+        let earliestDate: Date?
+        if let t = included.map(\.timestamp).min() {
+            dateTimeText = formatter.string(from: t)
+            earliestDate = t
+        } else if let d = dayDate {
+            dateTimeText = formatter.string(from: d)
+            earliestDate = d
+        } else {
+            dateTimeText = ""
+            earliestDate = nil
+        }
+        let context = EnhancePlaceStoryContext(
+            userText: userText,
+            tags: tagSet,
+            placeName: stop.placeTitle,
+            placeSubtitle: stop.placeSubtitle,
+            dateTimeText: dateTimeText,
+            photoCount: included.count,
+            categoryID: PlaceCategoryID.from(mkCategory: stop.placeCategory),
+            nameConfidence: PlaceNameConfidence.from(placeName: stop.placeTitle),
+            timeOfDay: earliestDate.map { timeOfDayLabel(from: $0, in: tz) },
+            isIndoor: isIndoor(from: tagSet)
+        )
+        return await generator.enhancePlaceStory(context: context)
+    }
+
+    /// Completes and enriches the user's overall place story draft using photo captions and metadata.
+    func enhanceOverallPlaceStory(
+        stop: PlaceStop,
+        userText: String,
+        dayDate: Date?,
+        photoCaptions: [String]
+    ) async -> String {
+        let included = stop.photos.filter(\.isIncluded)
+        var tagSet: [String] = []
+        for photo in included.prefix(3) {
+            if let lid = photo.localIdentifier {
+                let photoTags = await tagService.tags(forLocalIdentifier: lid)
+                for t in photoTags where !tagSet.contains(t) { tagSet.append(t) }
+            }
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d MMM yyyy 'at' h:mm a"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = await captureTimeZone(for: stop)
+        let dateTimeText: String
+        if let t = included.map(\.timestamp).min() {
+            dateTimeText = formatter.string(from: t)
+        } else if let d = dayDate {
+            dateTimeText = formatter.string(from: d)
+        } else {
+            dateTimeText = ""
+        }
+        let context = EnhanceOverallPlaceStoryContext(
+            userText: userText,
+            photoCaptions: photoCaptions,
+            tags: tagSet,
+            placeName: stop.placeTitle,
+            placeSubtitle: stop.placeSubtitle,
+            dateTimeText: dateTimeText,
+            categoryID: PlaceCategoryID.from(mkCategory: stop.placeCategory),
+            nameConfidence: PlaceNameConfidence.from(placeName: stop.placeTitle)
+        )
+        return await generator.enhanceOverallPlaceStory(context: context)
+    }
+
+    /// Completes and enriches the user's day story draft using place stories as context.
+    func enhanceDaySummary(day: RecapBlogDay, userText: String) async -> String {
+        let placeStories = day.placeStops.map { stop -> String in
+            let story = stop.overallStory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return story.isEmpty ? stop.placeTitle : story
+        }
+        let context = EnhanceDayStoryContext(
+            userText: userText,
+            dayDateText: day.shortDateText,
+            placeStories: placeStories
+        )
+        return await generator.enhanceDaySummary(context: context)
+    }
+
+    // MARK: - Day Summary
+
     /// Generate a one-sentence summary of the whole day from all place stories.
     /// Falls back to place titles when no overallStory is set for a stop.
     func generateDaySummary(day: RecapBlogDay) async -> String {

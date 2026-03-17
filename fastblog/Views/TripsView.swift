@@ -83,6 +83,12 @@ struct TripsView: View {
         viewModel.visibleDraftTripsNewestFirst
     }
 
+    /// True when the newest trip’s latest date is in the current month — used to hide "Load newer trips" when already in current month.
+    private var latestTripIsInCurrentMonth: Bool {
+        guard let first = allTrips.first, let latest = first.latestDate else { return false }
+        return Calendar.current.isDate(latest, equalTo: Date(), toGranularity: .month)
+    }
+
     /// Restore the user's last visible selection when possible; otherwise fall back to the first trip.
     private func preferredTrip(from trips: [TripDraft]) -> TripDraft? {
         if let savedID = viewModel.lastSelectedVisibleTripID,
@@ -138,7 +144,7 @@ struct TripsView: View {
                         }
                     }
                 )
-                .transition(.opacity)
+                .transition(.opacity.animation(.easeInOut(duration: 0.4)))
             } else if shouldShowSelectPhotosIntro {
                 SelectPhotosIntroView { dontShowAgain in
                     if dontShowAgain { skipSelectPhotosIntro = true }
@@ -147,13 +153,12 @@ struct TripsView: View {
                 .navigationTitle("Trips")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)
-                .transition(.opacity)
+                .transition(.opacity.animation(.easeInOut(duration: 0.4)))
             } else {
                 mainContent
-                    .transition(.opacity)
+                    .transition(.opacity.animation(.easeInOut(duration: 0.4)))
             }
         }
-        .animation(.easeInOut(duration: 0.4), value: viewModel.scanState)
         .navigationDestination(item: $selectedTrip) { trip in
             TripDayPickerView(
                 trip: viewModel.tripForPicker(trip),
@@ -446,9 +451,17 @@ struct TripsView: View {
         ZStack(alignment: .bottom) {
             mapViewLayer
             VStack(spacing: 0) {
-                if photoAuth.status == .limited && showLimitedBannerAfterWeakScan {
-                    limitedAccessHelper
-                        .padding(.top, 60)
+                // When limited, reserve fixed top space so hiding the banner doesn’t cause header jump
+                if photoAuth.status == .limited {
+                    ZStack {
+                        if showLimitedBannerAfterWeakScan {
+                            limitedAccessHelper
+                                .transition(.opacity)
+                        }
+                    }
+                    .frame(minHeight: 76)
+                    .animation(.easeInOut(duration: 0.25), value: showLimitedBannerAfterWeakScan)
+                    .padding(.top, 60)
                 }
                 Spacer()
                 bottomOverlay
@@ -480,16 +493,18 @@ struct TripsView: View {
                 .opacity((showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips) ? 0 : 1)
                 .disabled(showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips)
             }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    viewModel.showFindMoreSheet = true
-                } label: {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
+            if photoAuth.status != .limited {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        viewModel.openFindMoreSheet()
+                    } label: {
+                        Image(systemName: "sparkle.magnifyingglass")
+                            .font(.body)
+                            .foregroundColor(.white)
+                    }
+                    .opacity((showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips) ? 0 : 1)
+                    .disabled(showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips)
                 }
-                .opacity((showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips) ? 0 : 1)
-                .disabled(showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips)
             }
             // Scan Debug ladybug — hidden for now; set to DEBUG to show.
             #if false
@@ -793,11 +808,9 @@ struct TripsView: View {
                         }
                     )
                     .containerRelativeFrame(.horizontal, count: 5, span: 4, spacing: 16)
-                    .scrollTransition(.animated(.spring(response: 0.35, dampingFraction: 0.8))) { content, phase in
+                    .scrollTransition(.animated(.easeInOut(duration: 0.2))) { content, phase in
                         content
-                            .opacity(phase.isIdentity ? 1.0 : 0.55)
-                            .scaleEffect(phase.isIdentity ? 1.0 : 0.88)
-                            .offset(y: phase.isIdentity ? 0 : 8)
+                            .opacity(phase.isIdentity ? 1.0 : 0.6)
                     }
                 }
             }
@@ -808,28 +821,29 @@ struct TripsView: View {
         .contentMargins(.horizontal, 24)
         .frame(height: 240)
         // Detect swipes past either end of the carousel.
-        // • Left-swipe on last card   → "Load older trips" (or same popup when only one trip)
-        // • Right-swipe on first card → "Load newer trips" when multiple trips; when only one trip, show load-more popup (Allow Full Access / Select More Photos / Cancel for limited)
+        // • Left-swipe on last card (or the only card) → "Load older trips"
+        // • Right-swipe on first card (or the only card) → "Load newer trips" when multiple trips; when only one trip, show newer popup if available
         .simultaneousGesture(
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
                     let isLeftwardDrag  = value.translation.width < -40
                     let isRightwardDrag = value.translation.width >  40
 
+                    // Left drag → Load older trips (last card when multiple, or the only card when single)
                     if isLeftwardDrag,
                        selectedTripID == allTrips.last?.id,
-                       allTrips.count > 1,
                        !viewModel.isLoadingOlderTrips,
                        !showLoadMorePopup {
                         withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
                     }
 
+                    // Right drag → Load newer trips only when latest trip is not in current month; single trip uses load-more popup
                     if isRightwardDrag,
                        selectedTripID == allTrips.first?.id,
                        !viewModel.isLoadingNewerTrips,
-                       !showLoadNewerPopup {
+                       !showLoadNewerPopup,
+                       !latestTripIsInCurrentMonth {
                         if allTrips.count == 1 {
-                            // Single trip: show load-more popup (limited users get Allow Full Access / Select More Photos / Cancel)
                             withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
                         } else if viewModel.canLoadNewerTrips {
                             withAnimation(.easeOut(duration: 0.3)) { showLoadNewerPopup = true }
@@ -844,7 +858,7 @@ struct TripsView: View {
     private var emptyState: some View {
         VStack(spacing: 16) {
             VStack(spacing: 8) {
-                Text(viewModel.hasPerformedCustomScan ? "No trips found in this range" : "No trips found in the last 90 days")
+                Text("No Trips Found")
                     .font(.headline)
                     .foregroundColor(.white)
                 if photoAuth.status == .limited {
@@ -964,27 +978,40 @@ struct TripsView: View {
         )
         .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
         .padding(.horizontal, 24)
-        .transition(.move(edge: .top).combined(with: .opacity))
-    }
+.transition(.opacity)
+        }
 
     private func presentLimitedLibraryPicker() {
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let rootViewController = windowScene.windows.first?.rootViewController else {
-            return
+        // Defer to next run loop so the button tap finishes and the sheet can animate in smoothly
+        DispatchQueue.main.async { [self] in
+            guard let topVC = topViewControllerForPresentation() else { return }
+            let photoCountBeforePicker = photoAuth.selectedPhotoCount
+            PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: topVC) { _ in
+                // Defer state updates so the system modal dismissal and nav bar re-layout complete first (avoids header jump)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    photoAuth.refreshStatus()
+                    withAnimation(.easeInOut(duration: 0.25)) { showLimitedBannerAfterWeakScan = false }
+                    // Only run scan when the user changed selection; skip "Loading your trips" when they exited without adding/removing photos
+                    guard photoAuth.selectedPhotoCount != photoCountBeforePicker else { return }
+                    selectLatestTripWhenScanIdle = true
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
+                        viewModel.startDefaultScan(forceFullScan: true)
+                    }
+                }
+            }
         }
+    }
 
-        PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: rootViewController) { _ in
-            DispatchQueue.main.async {
-                photoAuth.refreshStatus()
-                withAnimation { showLimitedBannerAfterWeakScan = false }
-                selectLatestTripWhenScanIdle = true
-            }
-            // Give the Photos library a moment to expose newly selected assets before we scan
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
-                viewModel.startDefaultScan(forceFullScan: true)
-            }
+    private func topViewControllerForPresentation() -> UIViewController? {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = windowScene.windows.first(where: { $0.isKeyWindow }) ?? windowScene.windows.first
+        else { return nil }
+        var vc = window.rootViewController
+        while let presented = vc?.presentedViewController {
+            vc = presented
         }
+        return vc
     }
 
     // MARK: - Toast
@@ -1025,7 +1052,7 @@ struct TripsView: View {
         .padding(.top, 8)
         .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
         .zIndex(100)
-        .transition(.move(edge: .top).combined(with: .opacity))
+        .transition(.opacity)
         .task {
             try? await Task.sleep(nanoseconds: 5 * 1_000_000_000)
             withAnimation {
@@ -1097,7 +1124,7 @@ struct TripsView: View {
             )
             .shadow(radius: 20)
             .padding(.horizontal, 40)
-            .transition(.scale.combined(with: .opacity))
+            .transition(.opacity)
         }
         .zIndex(200)
     }
@@ -1217,7 +1244,7 @@ struct TripsView: View {
             )
             .shadow(radius: 20)
             .padding(.horizontal, 40)
-            .transition(.scale.combined(with: .opacity))
+            .transition(.opacity)
         }
         .zIndex(200)
     }
@@ -1268,19 +1295,51 @@ struct TripsView: View {
                 }
 
                 VStack(spacing: 10) {
-                    Button {
-                        withAnimation { showLoadNewerPopup = false }
-                        viewModel.loadNewerTrips()
-                    } label: {
-                        Text("Yes")
-                            .fontWeight(.semibold)
+                    if photoAuth.status == .limited {
+                        Button {
+                            withAnimation { showLoadNewerPopup = false }
+                            openSettings()
+                        } label: {
+                            Text("Allow Full Access")
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color.blue)
+                                .cornerRadius(10)
+                        }
+
+                        Button {
+                            withAnimation { showLoadNewerPopup = false }
+                            presentLimitedLibraryPicker()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "photo.badge.plus")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text("Select More Photos")
+                                    .fontWeight(.semibold)
+                            }
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Color.blue)
+                            .background(Color.white.opacity(0.15))
                             .cornerRadius(10)
+                        }
+                    } else {
+                        Button {
+                            withAnimation { showLoadNewerPopup = false }
+                            viewModel.loadNewerTrips()
+                        } label: {
+                            Text("Yes, load more")
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color.blue)
+                                .cornerRadius(10)
+                        }
+                        .disabled(viewModel.newerTripsResult == .empty)
                     }
-                    .disabled(viewModel.newerTripsResult == .empty)
 
                     Button {
                         withAnimation { showLoadNewerPopup = false }
@@ -1308,7 +1367,7 @@ struct TripsView: View {
             )
             .shadow(radius: 20)
             .padding(.horizontal, 40)
-            .transition(.scale.combined(with: .opacity))
+            .transition(.opacity)
         }
         .zIndex(200)
     }

@@ -32,8 +32,9 @@ struct PlacePhotoModalView: View {
     var photoCaption: (UUID) -> Binding<String>
     var onDismiss: () -> Void
     var onViewBlog: (() -> Void)?
-    /// When provided, a "Generate" button is shown in the caption editing panel. Called with (photo, placeName, placeSubtitle); returns generated caption.
-    var onGenerateCaption: ((RecapPhoto, String, String?) async -> String)?
+    /// When provided, a magic wand button is shown in the caption editing panel (only when user has written text).
+    /// Called with (photo, placeName, placeSubtitle, userText); returns enriched caption.
+    var onGenerateCaption: ((RecapPhoto, String, String?, String) async -> String)?
     /// Called after the AI wand applies a caption. Used to mark captionIsManual = false and cascade overall story.
     var onAICaptionApplied: ((UUID) -> Void)?
     /// Called when the user manually edits a photo caption in the modal. Used to mark captionIsManual = true.
@@ -48,6 +49,8 @@ struct PlacePhotoModalView: View {
 
     @State private var currentPhotoId: UUID
     @State private var isGeneratingCaption = false
+    /// Stores the user's original caption text per photo before AI first enhances it, enabling "Revert to original".
+    @State private var captionOriginalDraftByPhotoId: [UUID: String] = [:]
     @State private var isZoomMode = false
     @State private var accumulatedZoomScale: CGFloat = 1.0
     @State private var accumulatedDragOffset: CGSize = .zero
@@ -137,7 +140,7 @@ struct PlacePhotoModalView: View {
         photoCaption: @escaping (UUID) -> Binding<String>,
         onDismiss: @escaping () -> Void,
         onViewBlog: (() -> Void)? = nil,
-        onGenerateCaption: ((RecapPhoto, String, String?) async -> String)? = nil,
+        onGenerateCaption: ((RecapPhoto, String, String?, String) async -> String)? = nil,
         onAICaptionApplied: ((UUID) -> Void)? = nil,
         onPhotoCaptionManuallyEdited: ((UUID) -> Void)? = nil,
         onRemovePhoto: ((UUID) -> Void)? = nil,
@@ -162,6 +165,7 @@ struct PlacePhotoModalView: View {
         self.onSavePlaceName = onSavePlaceName
         self.onCaptionCommitted = onCaptionCommitted
         _currentPhotoId = State(initialValue: initialPhotoId)
+        debugPrint("[PlacePhotoModal] photos: \(photos)")
     }
 
     private var currentPhoto: RecapPhoto? {
@@ -252,6 +256,7 @@ struct PlacePhotoModalView: View {
                     )
                 }
                 if !blogIsEditMode && !isEditing {
+                    // print photos
                     if photos.count > 1 {
                         PlacePhotoThumbnailStrip(
                             photos: photos,
@@ -459,7 +464,7 @@ struct PlacePhotoModalView: View {
             if isEditing {
                 if blogIsEditMode {
                     // ── Blog edit mode: caption TextField anchored above keyboard ──
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(editedPlaceTitle)
                                 .font(.title3)
@@ -475,40 +480,95 @@ struct PlacePhotoModalView: View {
                         }
                         .padding(.bottom, 4)
 
-                        HStack(alignment: .top, spacing: 8) {
-                            TextField("Leave a story for this photo...", text: $editedCaptionText, axis: .vertical)
-                                .focused($isCaptionFocused)
-                                .textFieldStyle(.plain)
-                                .font(.body)
-                                .foregroundColor(.white)
-                                .lineLimit(2...6)
-                                .padding(12)
-                            if let generate = onGenerateCaption, let photo = currentPhoto {
-                                Button {
-                                    isGeneratingCaption = true
-                                    Task {
-                                        let text = await generate(photo, editedPlaceTitle, placeSubtitle)
-                                        await MainActor.run {
-                                            editedCaptionText = text
-                                            photoCaption(currentPhotoId).wrappedValue = text
-                                            isGeneratingCaption = false
-                                            onAICaptionApplied?(currentPhotoId)
-                                        }
+                        TextField("Leave a story for this photo...", text: $editedCaptionText, axis: .vertical)
+                            .focused($isCaptionFocused)
+                            .textFieldStyle(.plain)
+                            .font(.body)
+                            .foregroundColor(.white)
+                            .lineLimit(2...6)
+                            .padding(12)
+
+                        // Action bar — mirrors place story sheet layout
+                        let trimmed = editedCaptionText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty {
+                            HStack(spacing: 16) {
+                                Button(role: .destructive) {
+                                    withAnimation(.easeInOut(duration: 0.18)) {
+                                        editedCaptionText = ""
+                                        captionOriginalDraftByPhotoId.removeValue(forKey: currentPhotoId)
                                     }
                                 } label: {
-                                    if isGeneratingCaption {
-                                        ProgressView()
-                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                            .scaleEffect(0.8)
-                                            .frame(width: 20, height: 20)
-                                    } else {
-                                        Image(systemName: "wand.and.stars")
-                                            .font(.body)
-                                            .foregroundColor(.white)
+                                    Label("Clear", systemImage: "trash")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                }
+
+                                Spacer()
+
+                                if let originalDraft = captionOriginalDraftByPhotoId[currentPhotoId] {
+                                    Button {
+                                        withAnimation(.easeInOut(duration: 0.18)) {
+                                            editedCaptionText = originalDraft
+                                            captionOriginalDraftByPhotoId.removeValue(forKey: currentPhotoId)
+                                        }
+                                    } label: {
+                                        Label("Revert", systemImage: "arrow.uturn.backward")
+                                            .font(.subheadline)
+                                            .foregroundColor(.white.opacity(0.75))
                                     }
                                 }
-                                .disabled(isGeneratingCaption)
+
+                                if let generate = onGenerateCaption, let photo = currentPhoto {
+                                    Button {
+                                        let photoId = currentPhotoId
+                                        if captionOriginalDraftByPhotoId[photoId] == nil {
+                                            captionOriginalDraftByPhotoId[photoId] = editedCaptionText
+                                        }
+                                        isGeneratingCaption = true
+                                        let userText = editedCaptionText
+                                        Task {
+                                            let text = await generate(photo, editedPlaceTitle, placeSubtitle, userText)
+                                            await MainActor.run {
+                                                editedCaptionText = text
+                                                photoCaption(photoId).wrappedValue = text
+                                                isGeneratingCaption = false
+                                                onAICaptionApplied?(photoId)
+                                            }
+                                        }
+                                    } label: {
+                                        if isGeneratingCaption {
+                                            HStack(spacing: 4) {
+                                                ProgressView()
+                                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                                    .scaleEffect(0.75)
+                                                Text("Enhancing…")
+                                                    .font(.subheadline)
+                                                    .foregroundColor(.white.opacity(0.75))
+                                            }
+                                        } else {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "wand.and.stars")
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(
+                                                        LinearGradient(
+                                                            colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                                            startPoint: .topLeading,
+                                                            endPoint: .bottomTrailing
+                                                        )
+                                                    )
+                                                Text("Enhance")
+                                                    .font(.subheadline)
+                                                    .fontWeight(.medium)
+                                                    .foregroundColor(.white)
+                                            }
+                                        }
+                                    }
+                                    .disabled(isGeneratingCaption)
+                                }
                             }
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 8)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
                     }
                     .padding(.horizontal, 20)
@@ -523,7 +583,7 @@ struct PlacePhotoModalView: View {
                     )
                 } else {
                     // ── Read mode editing panel ──
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(editedPlaceTitle)
                                 .font(.title3)
@@ -539,40 +599,95 @@ struct PlacePhotoModalView: View {
                         }
                         .padding(.bottom, 4)
 
-                        HStack(alignment: .top, spacing: 8) {
-                            TextField("Leave a story for this photo...", text: $editedCaptionText, axis: .vertical)
-                                .focused($isCaptionFocused)
-                                .textFieldStyle(.plain)
-                                .font(.body)
-                                .foregroundColor(.white)
-                                .lineLimit(2...6)
-                                .padding(12)
-                            if let generate = onGenerateCaption, let photo = currentPhoto {
-                                Button {
-                                    isGeneratingCaption = true
-                                    Task {
-                                        let text = await generate(photo, editedPlaceTitle, placeSubtitle)
-                                        await MainActor.run {
-                                            editedCaptionText = text
-                                            photoCaption(currentPhotoId).wrappedValue = text
-                                            isGeneratingCaption = false
-                                            onAICaptionApplied?(currentPhotoId)
-                                        }
+                        TextField("Leave a story for this photo...", text: $editedCaptionText, axis: .vertical)
+                            .focused($isCaptionFocused)
+                            .textFieldStyle(.plain)
+                            .font(.body)
+                            .foregroundColor(.white)
+                            .lineLimit(2...6)
+                            .padding(12)
+
+                        // Action bar — mirrors place story sheet layout
+                        let trimmed = editedCaptionText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty {
+                            HStack(spacing: 16) {
+                                Button(role: .destructive) {
+                                    withAnimation(.easeInOut(duration: 0.18)) {
+                                        editedCaptionText = ""
+                                        captionOriginalDraftByPhotoId.removeValue(forKey: currentPhotoId)
                                     }
                                 } label: {
-                                    if isGeneratingCaption {
-                                        ProgressView()
-                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                            .scaleEffect(0.8)
-                                            .frame(width: 20, height: 20)
-                                    } else {
-                                        Image(systemName: "wand.and.stars")
-                                            .font(.body)
-                                            .foregroundColor(.white)
+                                    Label("Clear", systemImage: "trash")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                }
+
+                                Spacer()
+
+                                if let originalDraft = captionOriginalDraftByPhotoId[currentPhotoId] {
+                                    Button {
+                                        withAnimation(.easeInOut(duration: 0.18)) {
+                                            editedCaptionText = originalDraft
+                                            captionOriginalDraftByPhotoId.removeValue(forKey: currentPhotoId)
+                                        }
+                                    } label: {
+                                        Label("Revert", systemImage: "arrow.uturn.backward")
+                                            .font(.subheadline)
+                                            .foregroundColor(.white.opacity(0.75))
                                     }
                                 }
-                                .disabled(isGeneratingCaption)
+
+                                if let generate = onGenerateCaption, let photo = currentPhoto {
+                                    Button {
+                                        let photoId = currentPhotoId
+                                        if captionOriginalDraftByPhotoId[photoId] == nil {
+                                            captionOriginalDraftByPhotoId[photoId] = editedCaptionText
+                                        }
+                                        isGeneratingCaption = true
+                                        let userText = editedCaptionText
+                                        Task {
+                                            let text = await generate(photo, editedPlaceTitle, placeSubtitle, userText)
+                                            await MainActor.run {
+                                                editedCaptionText = text
+                                                photoCaption(photoId).wrappedValue = text
+                                                isGeneratingCaption = false
+                                                onAICaptionApplied?(photoId)
+                                            }
+                                        }
+                                    } label: {
+                                        if isGeneratingCaption {
+                                            HStack(spacing: 4) {
+                                                ProgressView()
+                                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                                    .scaleEffect(0.75)
+                                                Text("Enhancing…")
+                                                    .font(.subheadline)
+                                                    .foregroundColor(.white.opacity(0.75))
+                                            }
+                                        } else {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "wand.and.stars")
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(
+                                                        LinearGradient(
+                                                            colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                                            startPoint: .topLeading,
+                                                            endPoint: .bottomTrailing
+                                                        )
+                                                    )
+                                                Text("Enhance")
+                                                    .font(.subheadline)
+                                                    .fontWeight(.medium)
+                                                    .foregroundColor(.white)
+                                            }
+                                        }
+                                    }
+                                    .disabled(isGeneratingCaption)
+                                }
                             }
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 8)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
                     }
                     .padding(.horizontal, 20)
