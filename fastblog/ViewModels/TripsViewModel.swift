@@ -203,9 +203,10 @@ final class TripsViewModel: ObservableObject {
 
     /// Presents the new-moments sheet after a brief delay so the view
     /// has finished transitioning from the scan loading state to the main content.
-    /// Only shown when new moments belong to an existing created blog (on-the-go); not for draft-only matches.
+    /// Shown when new moments belong to a saved blog OR to an existing draft trip.
     private func presentNewMomentsSheetIfNeeded() {
-        guard !newlyScannedPhotos.isEmpty, newMomentsMatchedBlog != nil else { return }
+        guard !newlyScannedPhotos.isEmpty,
+              newMomentsMatchedBlog != nil || newMomentsInExistingTrip != nil else { return }
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 600_000_000)
             await MainActor.run {
