@@ -14,6 +14,8 @@ struct ContentView: View {
     @State private var showProfile = false
     @State private var showSeeAll = false
     @State private var showPlacesVisited = false
+    @State private var showCameraFromHome = false
+    @State private var postCameraToastMessage: String?
     @State private var selectedCreatedRecap: CreatedRecapBlog?
     @State private var initialDayIndexForRecap: Int?
     @State private var dismissToLandingRequested = false
@@ -32,7 +34,9 @@ struct ContentView: View {
                     showProfile: $showProfile,
                     showSeeAll: $showSeeAll,
                     showPlacesVisited: $showPlacesVisited,
+                    showCameraFromHome: $showCameraFromHome,
                     selectedCreatedRecap: $selectedCreatedRecap,
+                    postCameraToastMessage: $postCameraToastMessage,
                     tripsViewModel: tripsViewModel,
                     onTapToBlog: {
                         tripsViewModel.startDefaultScan()
@@ -43,29 +47,76 @@ struct ContentView: View {
                     ProfileView(selectedCreatedRecap: $selectedCreatedRecap)
                         .environmentObject(createdRecapStore)
                 }
-                .fullScreenCover(isPresented: $showSeeAll) {
-                    NavigationStack {
-                        MyBlogsProfileView(
-                            createdRecapStore: createdRecapStore,
-                            selectedCreatedRecap: $selectedCreatedRecap,
-                            initialDayIndexForRecap: $initialDayIndexForRecap,
-                            tripsViewModel: tripsViewModel,
-                            onDismissCover: { showSeeAll = false }
-                        )
-                        .environmentObject(createdRecapStore)
-                    }
+                .onChange(of: selectedCreatedRecap) { _, new in
+                    if new != nil { showPlacesVisited = false }
                 }
-                .navigationDestination(isPresented: $showPlacesVisited) {
-                    PlacesVisitedStandaloneView(
-                        selectedCreatedRecap: $selectedCreatedRecap,
-                        onDismiss: { showPlacesVisited = false }
+            }
+            .opacity(showSeeAll || showPlacesVisited || showTrips || showCameraFromHome || selectedCreatedRecap != nil ? 0 : 1)
+
+            // Camera overlay (fade in/out).
+            if showCameraFromHome {
+                NavigationStack {
+                    CameraCaptureView(
+                        tripsViewModel: tripsViewModel,
+                        postDismissToast: { msg in
+                            postCameraToastMessage = msg
+                        },
+                        onDismissOverlay: {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                showCameraFromHome = false
+                            }
+                        },
+                        onNavigateToBlog: { sourceTripId in
+                            if let blog = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == sourceTripId }) {
+                                selectedCreatedRecap = blog
+                            }
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                showCameraFromHome = false
+                            }
+                        }
                     )
                     .environmentObject(createdRecapStore)
-                    .onDisappear { showPlacesVisited = false }
-                    .onChange(of: selectedCreatedRecap) { _, new in
-                        if new != nil { showPlacesVisited = false }
-                    }
                 }
+                .transition(.opacity)
+                .zIndex(2)
+            }
+
+            // My Blogs overlay (fade in/out). preferredColorScheme on container avoids color flash during dismiss.
+            if showSeeAll {
+                NavigationStack {
+                    MyBlogsProfileView(
+                        createdRecapStore: createdRecapStore,
+                        selectedCreatedRecap: $selectedCreatedRecap,
+                        initialDayIndexForRecap: $initialDayIndexForRecap,
+                        tripsViewModel: tripsViewModel,
+                        onDismissCover: {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                showSeeAll = false
+                            }
+                        }
+                    )
+                    .environmentObject(createdRecapStore)
+                }
+                .preferredColorScheme(.dark)
+                .transition(.opacity)
+                .zIndex(3)
+            }
+
+            // Places Visited overlay (fade in/out).
+            if showPlacesVisited {
+                NavigationStack {
+                    PlacesVisitedStandaloneView(
+                        selectedCreatedRecap: $selectedCreatedRecap,
+                        onDismiss: {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                showPlacesVisited = false
+                            }
+                        }
+                    )
+                    .environmentObject(createdRecapStore)
+                }
+                .transition(.opacity)
+                .zIndex(4)
             }
 
             // Trips overlay — added when user taps "Tap to Blog"; opacity-only fade (no slide).
@@ -74,6 +125,7 @@ struct ContentView: View {
                     TripsView(
                         viewModel: tripsViewModel,
                         selectedCreatedRecap: $selectedCreatedRecap,
+                        initialDayIndexForRecap: $initialDayIndexForRecap,
                         onDismiss: {
                             withAnimation(.easeInOut(duration: 0.3)) {
                                 showTrips = false
@@ -95,7 +147,11 @@ struct ContentView: View {
                     RecapBlogPageView(
                         blogId: recap.sourceTripId,
                         initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId),
-                        onRequestDismiss: { selectedCreatedRecap = nil }
+                        initialDayIndex: initialDayIndexForRecap,
+                        onRequestDismiss: {
+                            initialDayIndexForRecap = nil
+                            selectedCreatedRecap = nil
+                        }
                     )
                     .environmentObject(createdRecapStore)
                 }
@@ -118,8 +174,12 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
+        .animation(.easeInOut(duration: 0.18), value: showCameraFromHome)
+        .animation(.easeInOut(duration: 0.25), value: showSeeAll)
+        .animation(.easeInOut(duration: 0.18), value: showPlacesVisited)
         .animation(.easeInOut(duration: 0.35), value: showTrips)
         .animation(.easeInOut(duration: 0.25), value: selectedCreatedRecap != nil)
+        .animation(.easeInOut(duration: 0.3), value: postCameraToastMessage != nil)
         .environmentObject(createdRecapStore)
         .environment(\.dismissToLanding, {
             dismissToLandingRequested = true

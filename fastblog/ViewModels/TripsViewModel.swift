@@ -203,14 +203,103 @@ final class TripsViewModel: ObservableObject {
 
     /// Presents the new-moments sheet after a brief delay so the view
     /// has finished transitioning from the scan loading state to the main content.
+    /// Only shown when new moments belong to an existing created blog (on-the-go); not for draft-only matches.
     private func presentNewMomentsSheetIfNeeded() {
-        guard !newlyScannedPhotos.isEmpty else { return }
+        guard !newlyScannedPhotos.isEmpty, newMomentsMatchedBlog != nil else { return }
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 600_000_000)
             await MainActor.run {
                 withAnimation(.easeInOut(duration: 0.3)) {
                     self?.showNewlyScannedSheet = true
                 }
+            }
+        }
+    }
+
+    /// Adds a trip draft created from the in-app camera (e.g. when user taps "Not Now"
+    /// on the Start Blog prompt). Inserts at the front so it appears as the newest trip.
+    /// Sets this flag so TripsView scrolls to it when the camera is dismissed.
+    @Published var pendingScrollToCameraTripID: UUID? = nil
+
+    func addCameraTripDraft(_ trip: TripDraft) {
+        tripDrafts.insert(trip, at: 0)
+        lastSelectedVisibleTripID = trip.id
+        pendingScrollToCameraTripID = trip.id
+        if var window = currentWindowTrips {
+            window.insert(trip, at: 0)
+            currentWindowTrips = window
+        }
+    }
+
+    /// Returns a camera-created trip draft (coverImageName == "camera.fill") that matches
+    /// the capture date — same day or within maxGapDaysToBridge after the draft's last day (same rule as trip scanner).
+    func cameraTripDraftMatching(captureDate: Date) -> TripDraft? {
+        let cal = Calendar.current
+        let captureDay = cal.startOfDay(for: captureDate)
+        let drafts = tripDrafts.filter { $0.coverImageName == "camera.fill" }
+        for draft in drafts {
+            guard let draftEnd = draft.latestDate else { continue }
+            let draftEndDay = cal.startOfDay(for: draftEnd)
+            let draftStartDay = cal.startOfDay(for: draft.earliestDate ?? draftEnd)
+            if captureDay >= draftStartDay && captureDay <= draftEndDay { return draft }
+            let dayDiff = cal.dateComponents([.day], from: draftEndDay, to: captureDay).day ?? Int.max
+            if dayDiff >= 1 && dayDiff <= ScanConfig.maxGapDaysToBridge { return draft }
+        }
+        return nil
+    }
+
+    /// Appends photos to an existing camera trip draft. Merges into existing days or adds new days.
+    func appendPhotosToCameraDraft(tripId: UUID, newPhotos: [MockPhoto]) {
+        guard let idx = tripDrafts.firstIndex(where: { $0.id == tripId }),
+              tripDrafts[idx].coverImageName == "camera.fill" else { return }
+        let cal = Calendar.current
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = Locale.current
+        dateFormatter.dateStyle = .medium
+        let byDay = Dictionary(grouping: newPhotos) { cal.startOfDay(for: $0.timestamp) }
+        let days: [TripDay] = byDay.sorted { $0.key < $1.key }.enumerated().map { index, pair in
+            let dayStart = pair.key
+            let dayPhotos = pair.value.sorted { $0.timestamp < $1.timestamp }
+            return TripDay(dayIndex: index, dateText: dateFormatter.string(from: dayStart), photos: dayPhotos)
+        }
+        let stubTrip = TripDraft(
+            title: "",
+            dateRangeText: "",
+            days: days,
+            coverImageName: "camera.fill",
+            isScannedFromDefaultRange: false
+        )
+        let (merged, didChange) = appendDaysFromTrip(stubTrip, into: tripDrafts[idx])
+        if didChange {
+            tripDrafts[idx] = merged
+            lastSelectedVisibleTripID = tripId
+            pendingScrollToCameraTripID = tripId
+            if var window = currentWindowTrips, let wi = window.firstIndex(where: { $0.id == tripId }) {
+                var w = window
+                w[wi] = merged
+                currentWindowTrips = w
+            }
+        }
+    }
+
+    /// Removes a photo by id from a camera trip draft (e.g. when user trashes it from Photos Captured modal).
+    func removePhotoFromCameraDraft(tripId: UUID, photoId: UUID) {
+        guard let idx = tripDrafts.firstIndex(where: { $0.id == tripId }),
+              tripDrafts[idx].coverImageName == "camera.fill" else { return }
+        var draft = tripDrafts[idx]
+        var changed = false
+        draft.days = draft.days.map { day in
+            let beforeCount = day.photos.count
+            let newPhotos = day.photos.filter { $0.id != photoId }
+            if newPhotos.count != beforeCount { changed = true }
+            return TripDay(id: day.id, dayIndex: day.dayIndex, dateText: day.dateText, photos: newPhotos, countryCode: day.countryCode, countryName: day.countryName, cityName: day.cityName)
+        }
+        if changed {
+            tripDrafts[idx] = draft
+            if var window = currentWindowTrips, let wi = window.firstIndex(where: { $0.id == tripId }) {
+                var w = window
+                w[wi] = draft
+                currentWindowTrips = w
             }
         }
     }
@@ -439,9 +528,18 @@ final class TripsViewModel: ObservableObject {
         let existingKeys = Set(tripDrafts.map { "\($0.title)|\($0.dateRangeText)" })
 
         let deduped = windowTrips.filter { trip in
-            !existingKeys.contains("\(trip.title)|\(trip.dateRangeText)")
-            && !createdRecapStore.hasCreatedBlog(sourceTripId: trip.id)
-            && !TripMatchingService.isTripSaved(draft: trip, against: saved)
+            guard !existingKeys.contains("\(trip.title)|\(trip.dateRangeText)")
+                && !createdRecapStore.hasCreatedBlog(sourceTripId: trip.id)
+                && !TripMatchingService.isTripSaved(draft: trip, against: saved)
+            else { return false }
+            // Avoid adding a scanned trip whose photos are already in an existing draft (e.g. camera capture).
+            let tripPhotoIds = Set(trip.days.flatMap(\.photos).compactMap(\.localIdentifier))
+            guard !tripPhotoIds.isEmpty else { return true }
+            let isPhotoDuplicateOfDraft = tripDrafts.contains { existing in
+                let existingIds = Set(existing.days.flatMap(\.photos).compactMap(\.localIdentifier))
+                return tripPhotoIds.isSubset(of: existingIds)
+            }
+            return !isPhotoDuplicateOfDraft
         }
 
         if !deduped.isEmpty {
@@ -878,11 +976,12 @@ final class TripsViewModel: ObservableObject {
     /// After a full scan, checks for new photos that belong to saved blogs.
     /// The main scan excluded these via `occupiedDateRanges`; this uses a
     /// micro-scan result run without that filter.
+    /// Only the single latest blog (by lastEditedAt ?? createdAt) is honored — one trip at a time.
     private func collectNewPhotosForSavedBlogs(from trips: [TripDraft]) {
         #if DEBUG
         debugPrint("[Scan] collectNewPhotosForSavedBlogs: checking \(trips.count) trip(s)")
         #endif
-        var blogPhotos: [MockPhoto] = []
+        var candidates: [(blog: CreatedRecapBlog, photos: [MockPhoto])] = []
         for trip in trips {
             guard let blog = findMatchingSavedBlog(for: trip) else { continue }
             let allPhotos = trip.days.flatMap(\.photos)
@@ -904,16 +1003,27 @@ final class TripsViewModel: ObservableObject {
             }
             #endif
             if !recentPhotos.isEmpty {
-                blogPhotos.append(contentsOf: recentPhotos)
-                if newMomentsMatchedBlog == nil { newMomentsMatchedBlog = blog }
+                candidates.append((blog, recentPhotos))
+            }
+        }
+        // Merge by blog (same blog can match multiple trips), then only honor the latest blog.
+        let byBlog = Dictionary(grouping: candidates, by: { $0.blog.id })
+        let blogsWithNewPhotos: [(CreatedRecapBlog, [MockPhoto])] = byBlog.compactMap { _, pairs in
+            guard let first = pairs.first else { return nil }
+            let blog = first.blog
+            let photos = pairs.flatMap(\.photos)
+            return photos.isEmpty ? nil : (blog, photos)
+        }
+        if let latest = latestBlog(blogsWithNewPhotos.map(\.0)) {
+            let photos = blogsWithNewPhotos.first(where: { $0.0.id == latest.id })?.1 ?? []
+            if !photos.isEmpty {
+                newMomentsMatchedBlog = latest
+                newlyScannedPhotos.append(contentsOf: photos)
             }
         }
         #if DEBUG
-        debugPrint("[Scan] collectNewPhotosForSavedBlogs: total new = \(blogPhotos.count), showSheet = \(!blogPhotos.isEmpty)")
+        debugPrint("[Scan] collectNewPhotosForSavedBlogs: candidates=\(candidates.count), latest only, new = \(newlyScannedPhotos.count)")
         #endif
-        if !blogPhotos.isEmpty {
-            newlyScannedPhotos.append(contentsOf: blogPhotos)
-        }
     }
 
     // MARK: - Incremental Scan Merging
@@ -937,6 +1047,7 @@ final class TripsViewModel: ObservableObject {
         var updatedExistingTrip: TripDraft? = nil
         var remainingNew: [TripDraft] = []
         var collectedNewPhotos: [MockPhoto] = []
+        var savedBlogNewPhotos: [(blog: CreatedRecapBlog, photos: [MockPhoto])] = []
 
         for newTrip in newTrips {
             // 1. Check saved blogs first — new photos may belong to an already-created blog.
@@ -953,8 +1064,7 @@ final class TripsViewModel: ObservableObject {
                 let photos = allPhotos.filter { p in
                     p.timestamp > cutoff && (p.localIdentifier.map { !existingIds.contains($0) } ?? true)
                 }
-                collectedNewPhotos.append(contentsOf: photos)
-                if !photos.isEmpty && newMomentsMatchedBlog == nil { newMomentsMatchedBlog = blog }
+                if !photos.isEmpty { savedBlogNewPhotos.append((blog, photos)) }
                 #if DEBUG
                 debugPrint("[Scan] mergeIncremental: matched saved blog \"\(blog.title)\" cutoff=\(scanDbg(cutoff)) totalPhotos=\(allPhotos.count) existingInBlog=\(existingIds.count) afterFilter=\(photos.count)")
                 for p in allPhotos {
@@ -983,14 +1093,46 @@ final class TripsViewModel: ObservableObject {
                 #if DEBUG
                 debugPrint("[Scan] mergeIncremental: merged into draft \"\(tripDrafts[idx].title)\" didChange=\(didChange) days=\(merged.days.count) photos=\(merged.totalPhotoCount)")
                 #endif
+            } else if let idx = existingDraftIndexContainingAllPhotos(of: newTrip) {
+                // 3a. Scanned trip is a photo-duplicate of an existing draft (e.g. same capture in camera draft).
+                // Merge into that draft so we never show two trips with the same photo(s).
+                let beforeIds = Set(tripDrafts[idx].days.flatMap(\.photos).compactMap(\.localIdentifier))
+                let (merged, didChange) = appendDaysFromTrip(newTrip, into: tripDrafts[idx])
+                tripDrafts[idx] = merged
+                if didChange {
+                    let freshPhotos = merged.days.flatMap(\.photos).filter { p in
+                        guard let lid = p.localIdentifier else { return false }
+                        return !beforeIds.contains(lid)
+                    }
+                    collectedNewPhotos.append(contentsOf: freshPhotos)
+                    if updatedExistingTrip == nil { updatedExistingTrip = merged }
+                }
+                #if DEBUG
+                debugPrint("[Scan] mergeIncremental: merged duplicate into existing draft \"\(tripDrafts[idx].title)\" (all photos already in draft) didChange=\(didChange)")
+                #endif
             } else {
-                // 3. Unrelated — new standalone trip. Only collect genuinely new photos.
+                // 3b. Unrelated — new standalone trip. Only collect genuinely new photos.
                 remainingNew.append(newTrip)
                 let newPhotos = newTrip.days.flatMap(\.photos).filter { $0.timestamp > lastScanned }
                 collectedNewPhotos.append(contentsOf: newPhotos)
                 #if DEBUG
                 debugPrint("[Scan] mergeIncremental: new standalone trip \"\(newTrip.title)\" days=\(newTrip.days.count) photos=\(newTrip.totalPhotoCount) genuinelyNew=\(newPhotos.count)")
                 #endif
+            }
+        }
+
+        // Only honor the single latest blog for new moments (one trip at a time).
+        let byBlog = Dictionary(grouping: savedBlogNewPhotos, by: { $0.blog.id })
+        let blogsWithNewPhotos: [(CreatedRecapBlog, [MockPhoto])] = byBlog.compactMap { _, pairs in
+            let blog = pairs[0].blog
+            let photos = pairs.flatMap(\.photos)
+            return photos.isEmpty ? nil : (blog, photos)
+        }
+        if let latest = latestBlog(blogsWithNewPhotos.map(\.0)) {
+            let photos = blogsWithNewPhotos.first(where: { $0.0.id == latest.id })?.1 ?? []
+            if !photos.isEmpty {
+                newMomentsMatchedBlog = latest
+                collectedNewPhotos.append(contentsOf: photos)
             }
         }
 
@@ -1029,6 +1171,17 @@ final class TripsViewModel: ObservableObject {
 
         AppAnalytics.shared.incrementCounter("trips_detected", by: remainingNew.count)
         detectNewMomentsForOnTheGoTrip(scannedDrafts: tripDrafts)
+    }
+
+    /// Picks the single "latest" blog (most likely current trip) by lastEditedAt ?? createdAt.
+    /// We only ever surface new moments for one blog; users can't be on multiple trips at once.
+    private func latestBlog(_ blogs: [CreatedRecapBlog]) -> CreatedRecapBlog? {
+        blogs.max(by: { ($0.lastEditedAt ?? $0.createdAt) < ($1.lastEditedAt ?? $1.createdAt) })
+    }
+
+    /// Returns true if `a` is strictly newer than `b` (by lastEditedAt ?? createdAt).
+    private func isBlogNewer(_ a: CreatedRecapBlog, than b: CreatedRecapBlog) -> Bool {
+        (a.lastEditedAt ?? a.createdAt) > (b.lastEditedAt ?? b.createdAt)
     }
 
     /// Returns a saved blog whose date range overlaps or continues from the given trip.
@@ -1107,6 +1260,17 @@ final class TripsViewModel: ObservableObject {
         return countriesMatch
     }
 
+    /// Returns the index of an existing draft that already contains every photo (by localIdentifier)
+    /// of `newTrip`. Used to avoid showing the same captured photo in two trips (camera draft + scanned).
+    private func existingDraftIndexContainingAllPhotos(of newTrip: TripDraft) -> Int? {
+        let newIds = Set(newTrip.days.flatMap(\.photos).compactMap(\.localIdentifier))
+        guard !newIds.isEmpty else { return nil }
+        return tripDrafts.firstIndex { existing in
+            let existingIds = Set(existing.days.flatMap(\.photos).compactMap(\.localIdentifier))
+            return newIds.isSubset(of: existingIds)
+        }
+    }
+
     /// Merges `newTrip` into `existing`: new photos are added to matching days,
     /// and entirely new days are appended. Returns `(merged, didChange)`.
     private func appendDaysFromTrip(_ newTrip: TripDraft, into existing: TripDraft) -> (TripDraft, Bool) {
@@ -1183,11 +1347,29 @@ final class TripsViewModel: ObservableObject {
         if !continuationDrafts.isEmpty {
             let lastDayIndex = max(0, activeBlog.tripDurationDays - 1)
             let continuationPhotos = continuationDrafts.flatMap { $0.days.flatMap(\.photos) }
-            newlyScannedPhotos.append(contentsOf: continuationPhotos)
-            newlyScannedPhotos = dedupePhotosByLocalId(newlyScannedPhotos)
-            if newMomentsMatchedBlog == nil { newMomentsMatchedBlog = activeBlog }
-            OnTheGoTripStore.signalNewMoments(dayIndex: lastDayIndex)
-            debugPrint("[detectNewMomentsForOnTheGoTrip] signaled new moments, lastDayIndex=\(lastDayIndex), continuationPhotos=\(continuationPhotos.count), newlyScannedPhotos.total=\(newlyScannedPhotos.count)")
+            // Only honor one blog (latest). If we already have a match, keep it only if it's the same or newer.
+            var didHonorThisBlog = false
+            if let existing = newMomentsMatchedBlog {
+                if existing.sourceTripId == activeBlog.sourceTripId {
+                    newlyScannedPhotos.append(contentsOf: continuationPhotos)
+                    newlyScannedPhotos = dedupePhotosByLocalId(newlyScannedPhotos)
+                    didHonorThisBlog = true
+                } else if isBlogNewer(activeBlog, than: existing) {
+                    newMomentsMatchedBlog = activeBlog
+                    newlyScannedPhotos = dedupePhotosByLocalId(continuationPhotos)
+                    didHonorThisBlog = true
+                }
+                // else existing is newer, don't add on-the-go
+            } else {
+                newMomentsMatchedBlog = activeBlog
+                newlyScannedPhotos.append(contentsOf: continuationPhotos)
+                newlyScannedPhotos = dedupePhotosByLocalId(newlyScannedPhotos)
+                didHonorThisBlog = true
+            }
+            if didHonorThisBlog {
+                OnTheGoTripStore.signalNewMoments(dayIndex: lastDayIndex)
+            }
+            debugPrint("[detectNewMomentsForOnTheGoTrip] signaled new moments, lastDayIndex=\(lastDayIndex), continuationPhotos=\(continuationPhotos.count), newlyScannedPhotos.total=\(newlyScannedPhotos.count), didHonorThisBlog=\(didHonorThisBlog)")
         }
     }
 

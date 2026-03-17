@@ -23,8 +23,21 @@ final class ImageLoader {
             return cached
         }
 
-        let assets = PHAsset.fetchAssets(withLocalIdentifiers: [assetIdentifier], options: nil)
-        guard let asset = assets.firstObject else { return nil }
+        // App-capture path
+        if assetIdentifier.hasPrefix(AppCapturePhotoService.prefix) {
+            let image = AppCapturePhotoService.shared.loadImage(identifier: assetIdentifier)
+            if let image { cache.setObject(image, forKey: key) }
+            return image
+        }
+
+        var asset: PHAsset?
+        for attempt in 0..<3 {
+            let assets = PHAsset.fetchAssets(withLocalIdentifiers: [assetIdentifier], options: nil)
+            asset = assets.firstObject
+            if asset != nil { break }
+            if attempt < 2 { try? await Task.sleep(nanoseconds: 250_000_000) }
+        }
+        guard let asset else { return nil }
 
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat
@@ -53,8 +66,21 @@ final class ImageLoader {
             return cached
         }
 
-        let assets = PHAsset.fetchAssets(withLocalIdentifiers: [assetIdentifier], options: nil)
-        guard let asset = assets.firstObject else { return nil }
+        // App-capture path
+        if assetIdentifier.hasPrefix(AppCapturePhotoService.prefix) {
+            let image = AppCapturePhotoService.shared.loadImage(identifier: assetIdentifier)
+            if let image { cache.setObject(image, forKey: key) }
+            return image
+        }
+
+        var asset: PHAsset?
+        for attempt in 0..<3 {
+            let assets = PHAsset.fetchAssets(withLocalIdentifiers: [assetIdentifier], options: nil)
+            asset = assets.firstObject
+            if asset != nil { break }
+            if attempt < 2 { try? await Task.sleep(nanoseconds: 250_000_000) }
+        }
+        guard let asset else { return nil }
 
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat

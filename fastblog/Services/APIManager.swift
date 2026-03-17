@@ -330,9 +330,17 @@ final class APIManager {
         return cloudURL
     }
 
-    /// Convenience: uploads a photo from the iOS Photos library by asset identifier.
-    /// Loads the image at up to 1920×1920, compresses, and uploads.
+    /// Convenience: uploads a photo by asset identifier (PHAsset or app-capture).
+    /// Loads the image at up to 2048×2048, compresses, and uploads.
     func uploadPhoto(assetIdentifier: String) async throws -> String {
+        if assetIdentifier.hasPrefix(AppCapturePhotoService.prefix) {
+            guard let image = AppCapturePhotoService.shared.loadImage(identifier: assetIdentifier) else {
+                throw APIError.serializationFailed
+            }
+            let shortId = assetIdentifier.dropFirst(AppCapturePhotoService.prefix.count).prefix(8)
+            let filename = "IMG_\(shortId).jpg"
+            return try await uploadPhoto(image: image, filename: filename)
+        }
         // Target dimension 2048px on longest edge as per new Free Tier rules
         let image = await ImageLoader.shared.loadImage(
             assetIdentifier: assetIdentifier,

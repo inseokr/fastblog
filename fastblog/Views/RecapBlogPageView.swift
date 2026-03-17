@@ -33,6 +33,8 @@ struct PlaceCaptionEditItem: Identifiable {
 struct RecapBlogPageView: View {
     let blogId: UUID
     let initialTrip: TripDraft?
+    /// When set (e.g. from new-moments "Add to blog"), open scrolled to this day (0-based).
+    var initialDayIndex: Int? = nil
     let forceEditMode: Bool
     /// When set (e.g. when presented as overlay), called instead of environment dismiss to close the blog.
     var onRequestDismiss: (() -> Void)? = nil
@@ -124,6 +126,12 @@ struct RecapBlogPageView: View {
     @State private var isCheckingNewMoments = false
     @State private var hasCheckedNewMoments = false
 
+    /// True if the user has saved this blog to the local device at least once (tap Save on recap page).
+    /// We only show "X moments found" for blogs that have been saved; camera-originated trips that are still just trips use the timeline only.
+    private var hasBlogBeenSavedToDevice: Bool {
+        createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt != nil
+    }
+
     /// Number of unique places in new moments (for "N moments found").
     private var newMomentsPlaceCount: Int {
         Set(newMomentPhotos.map { $0.locationName ?? "Moment" }).count
@@ -147,9 +155,10 @@ struct RecapBlogPageView: View {
         }
     }
 
-    init(blogId: UUID, initialTrip: TripDraft?, forceEditMode: Bool = false, onRequestDismiss: (() -> Void)? = nil) {
+    init(blogId: UUID, initialTrip: TripDraft?, initialDayIndex: Int? = nil, forceEditMode: Bool = false, onRequestDismiss: (() -> Void)? = nil) {
         self.blogId = blogId
         self.initialTrip = initialTrip
+        self.initialDayIndex = initialDayIndex
         self.forceEditMode = forceEditMode
         self.onRequestDismiss = onRequestDismiss
         _draft = State(initialValue: RecapBlogDetail(id: blogId, title: "", days: [], coverTheme: "default"))
@@ -565,18 +574,19 @@ struct RecapBlogPageView: View {
                 }
             }
             .modifier(coreContentAlertsAndLifecycleModifier())
-            .alert("Save or Exit?", isPresented: $showNewBlogExitConfirmation) {
-                Button("Continue Later") {
+            .alert("Save as Draft?", isPresented: $showNewBlogExitConfirmation) {
+                Button("Save as Draft") {
                     createdRecapStore.saveBlogDetail(draft, asDraft: true)
                     createdRecapStore.showDraftSavedToast = true
                     performDismiss()
                 }
                 Button("Exit", role: .destructive) {
+                    createdRecapStore.removeLocalCopy(sourceTripId: blogId)
                     performDismiss()
                 }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("\"Continue Later\" saves your blog as a draft. \"Exit\" discards unsaved changes but keeps your draft.")
+                Text("Would you like to save this blog as a draft and finish it later?")
             }
     }
 
@@ -626,8 +636,8 @@ struct RecapBlogPageView: View {
                                 .padding(.top, 8)
                                 .padding(.bottom, 12)
                         }
-                        // New moments card — shown when lightweight scan found new photos
-                        if newMomentsPlaceCount > 0 {
+                        // New moments card — only when blog has been saved and scan found new photos
+                        if hasBlogBeenSavedToDevice, newMomentsPlaceCount > 0 {
                             newMomentsCard
                                 .padding(.horizontal, 16)
                                 .padding(.top, 8)
@@ -697,9 +707,14 @@ struct RecapBlogPageView: View {
                     }
                 }
                 .onChange(of: hasFinishedInitialLoad) { _, finished in
-                    if finished && isEditMode {
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            proxy.scrollTo("page-top", anchor: .top)
+                    if finished {
+                        if let idx = initialDayIndex, draft.days.indices.contains(idx) {
+                            selectedDayIndex = idx
+                        }
+                        if isEditMode {
+                            withAnimation(.easeOut(duration: 0.3)) {
+                                proxy.scrollTo("page-top", anchor: .top)
+                            }
                         }
                     }
                 }
@@ -1530,8 +1545,11 @@ struct RecapBlogPageView: View {
             hasFinishedInitialLoad = true
             // Process any remaining days in background (rate-limited geocoding).
             Task { @MainActor in await createdRecapStore.continueGeocodingDays(blogId: blogId) }
-            // Check for new moments if this is a recent blog.
-            checkForNewMomentsIfRecent()
+            // Only check for new moments if the blog has been saved to local device.
+            // Camera-originated trips that are still just trips (never saved) get their photos in the timeline only, no "X moments found".
+            if hasBlogBeenSavedToDevice {
+                checkForNewMomentsIfRecent()
+            }
             return
         }
         guard let trip = initialTrip ?? createdRecapStore.tripDraft(for: blogId) else {
@@ -2314,9 +2332,11 @@ struct RecapBlogPageView: View {
     private var firstSaveBannerOverlay: some View {
         if showFirstSaveBanner {
             HStack(spacing: 12) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.title2)
+                Image("MyBlogsIcon")
+                    .resizable()
+                    .renderingMode(.template)
                     .foregroundColor(.green)
+                    .frame(width: 28, height: 28)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Draft has been saved")
                         .font(.subheadline)
@@ -2355,9 +2375,11 @@ struct RecapBlogPageView: View {
     private var uploadSuccessBannerOverlay: some View {
         if showUploadSuccessBanner {
             HStack(spacing: 12) {
-                Image(systemName: "checkmark.icloud.fill")
-                    .font(.title2)
+                Image("MyBlogsIcon")
+                    .resizable()
+                    .renderingMode(.template)
                     .foregroundColor(.green)
+                    .frame(width: 28, height: 28)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Uploaded to cloud")
                         .font(.subheadline)
@@ -3264,10 +3286,18 @@ private struct NewMomentsReviewSheet: View {
         }.sorted { $0.earliestTimestamp < $1.earliestTimestamp }
     }
 
+    /// Total photos in visible (non-hidden) place groups — used for disable state and onAdd payload.
     private var visibleCount: Int {
         placeGroups
             .filter { !hiddenPlaceKeys.contains($0.placeKey) }
             .flatMap(\.photos)
+            .count
+    }
+
+    /// Number of visible place groups (moments) — used for CTA label ("Add 1 Moment" / "Add N Moments").
+    private var visibleMomentCount: Int {
+        placeGroups
+            .filter { !hiddenPlaceKeys.contains($0.placeKey) }
             .count
     }
 
@@ -3317,7 +3347,7 @@ private struct NewMomentsReviewSheet: View {
                     Button {
                         onAdd(visiblePhotos)
                     } label: {
-                        Text(visibleCount == 0 ? "Add 0 Moments" : "Add \(visibleCount) Moment\(visibleCount == 1 ? "" : "s")")
+                        Text(visibleCount == 0 ? "Add 0 Moments" : "Add \(visibleMomentCount) Moment\(visibleMomentCount == 1 ? "" : "s")")
                             .font(.headline)
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)

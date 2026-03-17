@@ -11,7 +11,9 @@ struct LandingView: View {
     @Binding var showProfile: Bool
     @Binding var showSeeAll: Bool
     @Binding var showPlacesVisited: Bool
+    @Binding var showCameraFromHome: Bool
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
+    @Binding var postCameraToastMessage: String?
     /// Passed back to ContentView so RecapBlogPageView opens at the right day.
     @ObservedObject var tripsViewModel: TripsViewModel
     /// When provided, "Tap to Blog" calls this instead of setting showTrips; parent shows Trips when scan is ready.
@@ -27,10 +29,14 @@ struct LandingView: View {
 
     @State private var showSettings = false
     @State private var showAuth = false
-    /// True while we're waiting for a scan to finish before navigating to Trips.
+    @State private var showNotifications = false
 
     /// Fade-in opacity for the CTA label on first launch. Starts hidden, fades in after the button appears.
     @State private var ctaTextOpacity: Double = 0
+
+    /// Cycles between "Tap to Blog" and "Blog Your Trips in Seconds" every 7 seconds.
+    @State private var showAlternateText = false
+    private let textCycleTimer = Timer.publish(every: 7, on: .main, in: .common).autoconnect()
 
     // New-moments popup (on-the-go feature)
     @State private var showNewMomentsAlert = false
@@ -67,27 +73,21 @@ struct LandingView: View {
                         }
                     )
                     Spacer()
-                    // Text("Bloggo")
-                    //     .font(.system(size: 34))
-                    //     .fontWeight(.bold)
-                    //     .foregroundColor(.white)
-                    Spacer()
                     Button {
-                        showPlacesVisited = true
+                        withAnimation(.easeInOut(duration: 0.3)) { showNotifications = true }
                     } label: {
-                        Image("PlacesVisitedIcon")
-                            .resizable()
-                            .renderingMode(.template)
+                        Image(systemName: "bell.fill")
+                            .font(.title2)
                             .foregroundColor(.white)
-                            .frame(width: 28, height: 28)
                     }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
                 .padding(.bottom, 12)
                 Spacer()
-                
+
                 recentRecapsSection
+                bottomMenuBar
             }
 
             // Auth slide-in from the right
@@ -103,21 +103,74 @@ struct LandingView: View {
                 .zIndex(10)
             }
 
+            // Notifications slide-in from the right
+            if showNotifications {
+                NotificationsOverlayView(onDismiss: {
+                    withAnimation(.easeInOut(duration: 0.3)) { showNotifications = false }
+                })
+                .transition(.move(edge: .trailing))
+                .zIndex(10)
+            }
+
+            // Post-camera toast banner
+            if let toastMsg = postCameraToastMessage {
+                VStack {
+                    HStack(spacing: 12) {
+                        Group {
+                            if toastMsg.contains("added to") {
+                                Image("MyBlogsIcon")
+                                    .resizable()
+                                    .renderingMode(.template)
+                                    .foregroundColor(.green)
+                                    .frame(width: 28, height: 28)
+                            } else {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.green)
+                            }
+                        }
+                        Text(toastMsg)
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                        Spacer()
+                        Button {
+                            withAnimation { postCameraToastMessage = nil }
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.body)
+                                .foregroundColor(.white.opacity(0.8))
+                                .padding(8)
+                                .contentShape(Rectangle())
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                            )
+                    )
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
+                    .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
+                    Spacer()
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(15)
+            }
+
         }
         .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
         .preferredColorScheme(.dark)
         .gesture(
             DragGesture()
                 .onEnded { value in
-                    // Detect swipe left
-                    if value.translation.width < -50 && abs(value.translation.height) < 50 {
-                        if authService.isSignedIn {
-                            showProfile = true
-                        } else {
-                            showAuth = true
-                        }
-                    }
-                    // Detect swipe up (negative height translation)
+                    // Swipe left to open Profile/Auth is disabled.
+                    // Detect swipe up (negative height translation) to open My Blogs
                     if value.translation.height < -50 && abs(value.translation.height) > abs(value.translation.width) {
                         showSeeAll = true
                     }
@@ -158,6 +211,27 @@ struct LandingView: View {
             Text("Your trip has new content since you last looked. Tap View to go to the latest day.")
         }
         .animation(.easeInOut(duration: 0.3), value: showAuth)
+        .onReceive(textCycleTimer) { _ in
+            guard ctaTextOpacity >= 1 else { return }
+            withAnimation(.easeOut(duration: 0.25)) {
+                ctaTextOpacity = 0
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                showAlternateText.toggle()
+                withAnimation(.easeIn(duration: 0.25)) {
+                    ctaTextOpacity = 1
+                }
+            }
+        }
+        .onChange(of: postCameraToastMessage) { _, msg in
+            if msg != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        postCameraToastMessage = nil
+                    }
+                }
+            }
+        }
         .onAppear {
             AppAnalytics.shared.trackEvent(name: "app_opened")
             avatarImageData = authService.profileImageData
@@ -193,8 +267,9 @@ struct LandingView: View {
     /// Success notification card: icon, title, "Tap to view", optional dismiss. Auto-dismisses after 6s; tap opens latest blog.
     private var recapCreatedBanner: some View {
         HStack(spacing: 14) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.title2)
+            Image("MyBlogsIcon")
+                .resizable()
+                .renderingMode(.template)
                 .foregroundStyle(
                     LinearGradient(
                         colors: [Color(red: 0.2, green: 0.7, blue: 1), Color(red: 0.3, green: 0.5, blue: 1)],
@@ -202,6 +277,7 @@ struct LandingView: View {
                         endPoint: .bottomTrailing
                     )
                 )
+                .frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Your recap blog is ready!")
                     .font(.subheadline)
@@ -294,7 +370,7 @@ struct LandingView: View {
                     value: circlesScale
                 )
                 
-                Text("Tap to Blog")
+                Text(showAlternateText ? "Blog Your Trips in Seconds" : "Tap to Blog")
                     .font(.title2)
                     .fontWeight(.bold)
                     .foregroundColor(.white)
@@ -304,29 +380,20 @@ struct LandingView: View {
             }
         }
         .buttonStyle(.plain)
+        // Hide the landing scan button while a trip scan is actively running,
+        // so its animation doesn't show behind the Trips loading overlay.
+        .opacity(tripsViewModel.scanState == .idle ? 1 : 0)
+        .animation(.easeInOut(duration: 0.25), value: tripsViewModel.scanState == .idle)
     }
 
     @ViewBuilder
     private var recentRecapsSection: some View {
         if !createdRecapStore.displayRecents.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                Button {
-                    showSeeAll = true
-                } label: {
-                    HStack {
-                        Text("My Blogs")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                        Spacer()
-                        Text("See all")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.white.opacity(0.9))
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 20)
+                Text("Latest Edits")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
@@ -343,20 +410,65 @@ struct LandingView: View {
                 .frame(height: 128)
             }
             .padding(.top, 16)
-            .padding(.bottom, 28)
-            .background(Color.black.opacity(0.3))
-            // Use simultaneousGesture so it doesn't block the inner horizontal ScrollView
-            .simultaneousGesture(
-                DragGesture()
-                    .onEnded { value in
-                        // Detect a swipe up: negative height translation
-                        // Also check that it's mostly vertical to prevent accidental triggers while horizontal scrolling
-                        if value.translation.height < -40 && abs(value.translation.height) > abs(value.translation.width) {
-                            showSeeAll = true
-                        }
-                    }
-            )
+            .padding(.bottom, 8)
         }
+    }
+
+    private var bottomMenuBar: some View {
+        HStack {
+            Button {
+                showSeeAll = true
+            } label: {
+                VStack(spacing: 4) {
+                    Image("MyBlogsIcon")
+                        .resizable()
+                        .renderingMode(.template)
+                        .foregroundColor(.white)
+                        .frame(width: 24, height: 24)
+                    Text("My Blogs")
+                        .font(.caption2)
+                        .foregroundColor(.white)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                showCameraFromHome = true
+            } label: {
+                VStack(spacing: 4) {
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(.white)
+                        .frame(width: 24, height: 24)
+                    Text("Capture")
+                        .font(.caption2)
+                        .foregroundColor(.white)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                showPlacesVisited = true
+            } label: {
+                VStack(spacing: 4) {
+                    Image("MyPlacesIcon")
+                        .resizable()
+                        .renderingMode(.template)
+                        .foregroundColor(.white)
+                        .frame(width: 24, height: 24)
+                    Text("My Places")
+                        .font(.caption2)
+                        .foregroundColor(.white)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 16)
     }
 }
 
@@ -838,6 +950,44 @@ struct AllRecentsSheet: View {
     }
 }
 
+// MARK: - Notifications overlay (slides in from right on home)
+private struct NotificationsOverlayView: View {
+    var onDismiss: () -> Void
+    private let backgroundBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button {
+                    onDismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(.white)
+                }
+                Spacer()
+                Text("Notifications")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                Spacer()
+                Color.clear.frame(width: 24, height: 24)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
+
+            Spacer()
+            Text("No Notifications")
+                .font(.title3)
+                .foregroundColor(.white.opacity(0.8))
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(backgroundBlue.ignoresSafeArea())
+        .preferredColorScheme(.dark)
+    }
+}
+
 #Preview {
     NavigationStack {
         LandingView(
@@ -845,7 +995,9 @@ struct AllRecentsSheet: View {
             showProfile: .constant(false),
             showSeeAll: .constant(false),
             showPlacesVisited: .constant(false),
+            showCameraFromHome: .constant(false),
             selectedCreatedRecap: .constant(nil),
+            postCameraToastMessage: .constant(nil),
             tripsViewModel: TripsViewModel(createdRecapStore: CreatedRecapBlogStore.shared)
         )
         .environmentObject(CreatedRecapBlogStore.shared)

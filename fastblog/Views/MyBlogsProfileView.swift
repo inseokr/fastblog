@@ -69,7 +69,7 @@ struct MyBlogsProfileView: View {
         self.onDismissCover = onDismissCover
     }
 
-    private let backgroundBlue = Color(red: 0.05, green: 0.08, blue: 0.22)
+    private let backgroundBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
 
     /// If on-the-go new moments exist for a blog we have, show the alert.
     private func checkForNewMoments() {
@@ -109,29 +109,6 @@ struct MyBlogsProfileView: View {
             }
             .allowsHitTesting(true)
         }
-        .simultaneousGesture(
-            DragGesture().onEnded { value in
-                let isHorizontal = abs(value.translation.width) > abs(value.translation.height)
-                if currentPage == .blogs {
-                    // Swipe down to dismiss My Blogs when at top
-                    if !isHorizontal && scrollOffset >= -20 && value.translation.height > 60 {
-                        dismiss()
-                    }
-                } else {
-                    // On country (and any other sub-page): swipe down at top to dismiss entire My Blogs sheet
-                    if !isHorizontal && value.translation.height > 60 && countryScrollOffset >= -20 {
-                        dismiss()
-                        return
-                    }
-                    // Swipe right to go back to blogs page
-                    if isHorizontal && value.translation.width > 60 {
-                        if case .country = currentPage {
-                            withAnimation(.easeInOut(duration: 0.26)) { currentPage = .blogs }
-                        }
-                    }
-                }
-            }
-        )
         .navigationTitle(pageTitle)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
@@ -141,7 +118,11 @@ struct MyBlogsProfileView: View {
                 switch currentPage {
                 case .blogs:
                     Button {
-                        dismiss()
+                        isSearchFocused = false
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            onDismissCover?()
+                        }
                     } label: {
                         Image(systemName: "xmark")
                             .font(.body.weight(.semibold))

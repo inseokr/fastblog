@@ -722,7 +722,28 @@ class PDFExportService {
         }
         guard !idsToFetch.isEmpty else { return result }
 
-        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: Array(idsToFetch), options: nil)
+        // Split identifiers: app-captures load directly; PHAsset ids go through Photos.
+        let appCaptureIds = idsToFetch.filter { $0.hasPrefix(AppCapturePhotoService.prefix) }
+        let phAssetIds = idsToFetch.subtracting(appCaptureIds)
+
+        // Load app-capture images
+        for identifier in appCaptureIds {
+            let image = AppCapturePhotoService.shared.loadImage(identifier: identifier)
+            guard let image else { continue }
+            if identifier == coverID { result.coverImage = image }
+            for p in allIncluded where p.localIdentifier == identifier {
+                result.photos[p.id] = image
+            }
+        }
+
+        guard !phAssetIds.isEmpty else {
+            if result.coverImage == nil, let first = allIncluded.first {
+                result.coverImage = result.photos[first.id]
+            }
+            return result
+        }
+
+        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: Array(phAssetIds), options: nil)
         let manager = PHImageManager.default()
         let opts = PHImageRequestOptions()
         opts.isSynchronous = false

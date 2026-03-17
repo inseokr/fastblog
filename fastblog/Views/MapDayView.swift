@@ -61,8 +61,8 @@ struct MapDayView: View {
                 }
             }
             
-            // Mileage markers between points
-            ForEach(0..<markers.count - 1, id: \.self) { i in
+            // Mileage markers between points (guard: 0..<-1 would crash)
+            ForEach(0..<max(0, markers.count - 1), id: \.self) { i in
                 let start = markers[i]
                 let end = markers[i+1]
                 if let dist = distanceString(from: start.coordinate, to: end.coordinate) {
@@ -522,10 +522,10 @@ struct FullScreenMapView: View {
         Button(action: action) {
             Text(label)
                 .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                .foregroundColor(isSelected ? .black : .white)
+                .foregroundColor(.white)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(isSelected ? Color.white : Color(uiColor: .systemGray5).opacity(0.8))
+                .background(isSelected ? Color.blue : Color(uiColor: .systemGray5).opacity(0.8))
                 .clipShape(Capsule())
                 .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
         }

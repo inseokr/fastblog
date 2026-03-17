@@ -569,6 +569,13 @@ final class CreatedRecapBlogStore: ObservableObject {
         if changed { persistRecents() }
     }
 
+    /// Updates the cover photo of a blog identified by its source trip ID.
+    func updateCoverAsset(sourceTripId: UUID, localIdentifier: String) {
+        guard let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }) else { return }
+        recents[idx].coverAssetIdentifier = localIdentifier
+        persistRecents()
+    }
+
     /// Injects newly scanned photos into an existing blog's RecapBlogDetail.
     /// Each photo is matched to the appropriate RecapBlogDay by calendar date, and within
     /// that day to the closest PlaceStop by time gap (≤ gapHoursNewSegment). If no close
@@ -597,6 +604,8 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
 
         var modifiedDayIndices: Set<Int> = []
+        // Tracks (dayIndex, stopIndex) for newly created stops that have a location and need geocoding.
+        var newStopsToGeocode: [(dayIdx: Int, stopIdx: Int)] = []
 
         for (dayStart, dayPhotos) in byDay.sorted(by: { $0.key < $1.key }) {
             // Find or create the matching RecapBlogDay.
@@ -615,13 +624,16 @@ final class CreatedRecapBlogStore: ObservableObject {
             var unmatchedRecapPhotos: [RecapPhoto] = []
 
             for photo in dayPhotos.sorted(by: { $0.timestamp < $1.timestamp }) {
+                let isInAppCapture = photo.localIdentifier?.hasPrefix(AppCapturePhotoService.prefix) ?? false
                 let recapPhoto = RecapPhoto(
                     id: photo.id,
                     timestamp: photo.timestamp,
                     location: photo.location,
                     imageName: photo.imageName,
-                    isIncluded: false,
-                    localIdentifier: photo.localIdentifier
+                    isIncluded: isInAppCapture,
+                    localIdentifier: photo.localIdentifier,
+                    caption: photo.caption,
+                    captionIsManual: photo.caption != nil
                 )
 
                 // Find best matching stop by time proximity + optional location proximity.
@@ -635,6 +647,17 @@ final class CreatedRecapBlogStore: ObservableObject {
                     let gapAfter  = max(0, photo.timestamp.timeIntervalSince(latest))
                     let gap = min(gapBefore, gapAfter)
                     guard gap <= gapLimit else { continue }
+
+                    // Reject if another stop was visited in the gap between this stop and the new photo.
+                    // This prevents a return-visit photo from being merged into the earlier visit.
+                    if gapAfter > 0 {
+                        let hasInterveningStop = detail.days[di].placeStops.enumerated().contains { otherSi, other in
+                            guard otherSi != si else { return false }
+                            guard let otherEarliest = other.photos.map(\.timestamp).min() else { return false }
+                            return otherEarliest > latest && otherEarliest < photo.timestamp
+                        }
+                        if hasInterveningStop { continue }
+                    }
 
                     if let photoCoord = photo.location, let stopCoord = stop.representativeLocation {
                         let photoLoc = CLLocation(latitude: photoCoord.latitude, longitude: photoCoord.longitude)
@@ -667,18 +690,29 @@ final class CreatedRecapBlogStore: ObservableObject {
                 let groups = clusteringService.placeStops(from: inputs) { idx in
                     "Stop \(baseIndex + idx + 1)"
                 }
-                for (_, groupInputs) in groups {
+                for (orderIndex, groupInputs) in groups {
                     let groupPhotos = groupInputs.compactMap { input in
                         unmatchedRecapPhotos.first { $0.id == input.id }
                     }.sorted { $0.timestamp < $1.timestamp }
                     let repLoc = groupPhotos.compactMap(\.location).first
+                    // Use "Captured Moment" for camera-only photos (no location), "Stop N" otherwise
+                    let placeTitle: String
+                    if repLoc == nil {
+                        placeTitle = groups.count > 1 ? "Captured Moment \(orderIndex + 1)" : "Captured Moment"
+                    } else {
+                        placeTitle = "Stop \(detail.days[di].placeStops.count + 1)"
+                    }
+                    let newStopIdx = detail.days[di].placeStops.count
                     let newStop = PlaceStop(
-                        orderIndex: detail.days[di].placeStops.count,
-                        placeTitle: "Stop \(detail.days[di].placeStops.count + 1)",
+                        orderIndex: newStopIdx,
+                        placeTitle: placeTitle,
                         representativeLocation: repLoc,
                         photos: groupPhotos
                     )
                     detail.days[di].placeStops.append(newStop)
+                    if repLoc != nil {
+                        newStopsToGeocode.append((dayIdx: di, stopIdx: newStopIdx))
+                    }
                 }
                 modifiedDayIndices.insert(di)
             }
@@ -689,6 +723,22 @@ final class CreatedRecapBlogStore: ObservableObject {
         // Run same business logic as initial selection: score quality, then preselect only good-quality photos per stop.
         if !modifiedDayIndices.isEmpty {
             Task {
+                // Geocode any newly created stops that have location data.
+                if !newStopsToGeocode.isEmpty,
+                   var geocodedDetail = blogDetailsBySourceId[sourceTripId] {
+                    for entry in newStopsToGeocode {
+                        let di = entry.dayIdx
+                        let si = entry.stopIdx
+                        guard di < geocodedDetail.days.count,
+                              si < geocodedDetail.days[di].placeStops.count,
+                              let coord = geocodedDetail.days[di].placeStops[si].representativeLocation else { continue }
+                        let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+                        let place = await GeocodingService.shared.place(for: loc)
+                        geocodedDetail.days[di].placeStops[si].placeTitle = "Near \(place.areaName)"
+                        geocodedDetail.days[di].placeStops[si].placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+                    }
+                    saveBlogDetail(geocodedDetail, asDraft: true)
+                }
                 await applyPhotoQualitySelectionForBlog(sourceTripId: sourceTripId, dayIndices: Array(modifiedDayIndices))
             }
         }
@@ -712,6 +762,9 @@ final class CreatedRecapBlogStore: ObservableObject {
                 .flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
             recents[idx].totalPlaceVisitCount = detail.days.reduce(0) { $0 + $1.placeStops.count }
             recents[idx].tripDurationDays = detail.days.count
+            // Mark as edited so the blog appears in "My blogs" / Latest (e.g. "Edited Today").
+            recents[idx].lastEditedAt = Date()
+            recents[idx].syncStatus = .needsUpload
             persistRecents()
         }
     }
@@ -855,6 +908,38 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
     }
 
+    /// Syncs user-entered captions from the camera session into the blog detail.
+    /// Called when the camera is dismissed so captions typed after real-time injection are preserved.
+    func syncCaptions(_ captions: [(photoId: UUID, caption: String)]) {
+        guard !captions.isEmpty else { return }
+        var changed = false
+        for key in blogDetailsBySourceId.keys {
+            guard var detail = blogDetailsBySourceId[key] else { continue }
+            var detailChanged = false
+            for (photoId, caption) in captions {
+                for dayIdx in detail.days.indices {
+                    for stopIdx in detail.days[dayIdx].placeStops.indices {
+                        for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
+                            if detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].id == photoId {
+                                detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].caption = caption
+                                detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].captionIsManual = true
+                                detailChanged = true
+                            }
+                        }
+                    }
+                }
+            }
+            if detailChanged {
+                blogDetailsBySourceId[key] = detail
+                changed = true
+            }
+        }
+        if changed {
+            persistBlogDetails()
+            objectWillChange.send()
+        }
+    }
+
     /// Deletes a created blog locally and from the cloud if it was published.
     func deleteBlog(sourceTripId: UUID) {
         if let key = recents.first(where: { $0.sourceTripId == sourceTripId })?.blogKey {
@@ -879,6 +964,11 @@ final class CreatedRecapBlogStore: ObservableObject {
         needsRescan = true
         persistRecents()
         persistBlogDetails()
+        // If the user deleted the blog they were adding to from the in-app camera, clear
+        // the on-the-go state so the "Start Blog" prompt will show again next camera session.
+        if OnTheGoTripStore.activeBlogId == sourceTripId {
+            OnTheGoTripStore.markTripAsEnded()
+        }
     }
 
     // MARK: - Merge & Split
@@ -1578,7 +1668,7 @@ final class CreatedRecapBlogStore: ObservableObject {
             }
 
             // Build stops; isIncluded mirrors the user's photo selection.
-            let placeStops: [PlaceStop] = stopGroups.compactMap { orderIndex, inputs -> PlaceStop? in
+            var placeStops: [PlaceStop] = stopGroups.compactMap { orderIndex, inputs -> PlaceStop? in
                 let photos: [RecapPhoto] = inputs.map { input in
                     let photo = day.photos.first { $0.id == input.id }!
                     return RecapPhoto(
@@ -1590,7 +1680,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                         localIdentifier: photo.localIdentifier,
                         caption: nil
                     )
-                }
+                }.sorted { $0.timestamp < $1.timestamp }
                 guard photos.contains(where: \.isIncluded) else { return nil }
                 let repLoc = inputs.compactMap(\.location).first
                 return PlaceStop(
@@ -1602,10 +1692,18 @@ final class CreatedRecapBlogStore: ObservableObject {
                     noteText: nil
                 )
             }
+            // Re-sort stops by earliest photo timestamp and re-index after filtering.
+            placeStops.sort { ($0.photos.first?.timestamp ?? .distantFuture) < ($1.photos.first?.timestamp ?? .distantFuture) }
+            for i in placeStops.indices {
+                placeStops[i].orderIndex = i
+                placeStops[i].placeTitle = "Stop \(i + 1)"
+            }
 
             guard !placeStops.isEmpty else { continue }
+            // Use the earliest selected photo's calendar day so Day 2's date matches its photos (camera trips use 0-based dayIndex; we use 1-based for display).
             let dayDate = day.photos.filter(\.isSelected).map(\.timestamp).min().map { calendar.startOfDay(for: $0) } ?? Date()
-            days.append(RecapBlogDay(dayIndex: day.dayIndex, date: dayDate, placeStops: placeStops))
+            let oneBasedIndex = days.count + 1
+            days.append(RecapBlogDay(dayIndex: oneBasedIndex, date: dayDate, placeStops: placeStops))
         }
 
         // Default cover: first included photo's localIdentifier, fallback to trip's cover asset.
@@ -1663,14 +1761,14 @@ final class CreatedRecapBlogStore: ObservableObject {
             detail.countryName = primaryCountry
         }
 
-        // Compute visitedTimeDigitized for each stop using EXIF timezone from PHAssets.
-        // This ensures the displayed visit time reflects the local timezone where photos were taken,
-        // not the device's current timezone (which may differ when the user is home after travel).
+        // Compute visitedTimeDigitized for each stop using EXIF timezone from PHAssets,
+        // or metadata from AppCapturePhotoService for bloggo-capture: photos.
         let allIncludedPhotos = detail.days.flatMap(\.placeStops).flatMap { $0.photos.filter(\.isIncluded) }
-        let assetIds = allIncludedPhotos.compactMap(\.localIdentifier)
+        // Only fetch PHAssets for non-app-capture identifiers.
+        let phAssetIds = allIncludedPhotos.compactMap(\.localIdentifier).filter { !$0.hasPrefix(AppCapturePhotoService.prefix) }
         var assetMap: [String: PHAsset] = [:]
-        if !assetIds.isEmpty {
-            let result = PHAsset.fetchAssets(withLocalIdentifiers: assetIds, options: nil)
+        if !phAssetIds.isEmpty {
+            let result = PHAsset.fetchAssets(withLocalIdentifiers: phAssetIds, options: nil)
             result.enumerateObjects { asset, _, _ in assetMap[asset.localIdentifier] = asset }
         }
         var tzMap: [String: TimeZone] = [:]
@@ -1686,9 +1784,21 @@ final class CreatedRecapBlogStore: ObservableObject {
             for stopIdx in detail.days[dayIdx].placeStops.indices {
                 let stop = detail.days[dayIdx].placeStops[stopIdx]
                 let photos = stop.photos.filter(\.isIncluded)
-                guard let firstPhoto = photos.min(by: { $0.timestamp < $1.timestamp }),
-                      let asset = assetMap[firstPhoto.localIdentifier ?? ""] else {
-                    print("[buildBlogDetail] ⚠️ '\(stop.placeTitle)': skipped visitedTimeDigitized (no included photos or missing asset)")
+                guard let firstPhoto = photos.min(by: { $0.timestamp < $1.timestamp }) else {
+                    print("[buildBlogDetail] ⚠️ '\(stop.placeTitle)': skipped visitedTimeDigitized (no included photos)")
+                    continue
+                }
+
+                // App-capture: use stored digitizedTime directly.
+                if let firstId = firstPhoto.localIdentifier, firstId.hasPrefix(AppCapturePhotoService.prefix),
+                   let meta = AppCapturePhotoService.shared.metadata(identifier: firstId) {
+                    print("[buildBlogDetail] ✅ '\(stop.placeTitle)': visitedTimeDigitized=\(meta.digitizedTime) (app-capture)")
+                    detail.days[dayIdx].placeStops[stopIdx].visitedTimeDigitized = meta.digitizedTime
+                    continue
+                }
+
+                guard let asset = assetMap[firstPhoto.localIdentifier ?? ""] else {
+                    print("[buildBlogDetail] ⚠️ '\(stop.placeTitle)': skipped visitedTimeDigitized (missing PHAsset)")
                     continue
                 }
 
@@ -1703,8 +1813,10 @@ final class CreatedRecapBlogStore: ObservableObject {
 
                 let consensusOffset: Int
                 if stopOffsets.isEmpty {
-                    print("[buildBlogDetail] ⚠️ '\(stop.placeTitle)': no EXIF timezone for any photo — falling back to UTC")
-                    consensusOffset = 0
+                    // No EXIF timezone (e.g. in-app camera photos) — use device timezone instead of UTC.
+                    let deviceOffset = (TimeZone.current.secondsFromGMT() / 900) * 900
+                    print("[buildBlogDetail] ⚠️ '\(stop.placeTitle)': no EXIF timezone for any photo — falling back to device timezone (offset \(deviceOffset / 3600)h)")
+                    consensusOffset = deviceOffset
                 } else {
                     // Vote: pick the offset that appears most often.
                     var tally: [Int: Int] = [:]
@@ -1856,10 +1968,11 @@ final class CreatedRecapBlogStore: ObservableObject {
                 stop.photos.filter(\.isIncluded).map { (dayIdx, stopIdx, $0) }
             }
         }
-        let assetIds = photosToResolve.map(\.2).compactMap(\.localIdentifier)
+        // Only fetch PHAssets for non-app-capture identifiers.
+        let phAssetIds = photosToResolve.map(\.2).compactMap(\.localIdentifier).filter { !$0.hasPrefix(AppCapturePhotoService.prefix) }
         var assetMap: [String: PHAsset] = [:]
-        if !assetIds.isEmpty {
-            let fetch = PHAsset.fetchAssets(withLocalIdentifiers: assetIds, options: nil)
+        if !phAssetIds.isEmpty {
+            let fetch = PHAsset.fetchAssets(withLocalIdentifiers: phAssetIds, options: nil)
             fetch.enumerateObjects { asset, _, _ in assetMap[asset.localIdentifier] = asset }
         }
         var tzMap: [String: TimeZone] = [:]
@@ -1876,13 +1989,22 @@ final class CreatedRecapBlogStore: ObservableObject {
             guard dayIdx < result.days.count, stopIdx < result.days[dayIdx].placeStops.count else { continue }
             let stop = result.days[dayIdx].placeStops[stopIdx]
             let photos = stop.photos.filter(\.isIncluded)
-            guard let firstPhoto = photos.min(by: { $0.timestamp < $1.timestamp }),
-                  let _ = assetMap[firstPhoto.localIdentifier ?? ""] else { continue }
+            guard let firstPhoto = photos.min(by: { $0.timestamp < $1.timestamp }) else { continue }
+
+            // App-capture: use stored digitizedTime directly.
+            if let firstId = firstPhoto.localIdentifier, firstId.hasPrefix(AppCapturePhotoService.prefix),
+               let meta = AppCapturePhotoService.shared.metadata(identifier: firstId) {
+                result.days[dayIdx].placeStops[stopIdx].visitedTimeDigitized = meta.digitizedTime
+                continue
+            }
+
+            guard assetMap[firstPhoto.localIdentifier ?? ""] != nil else { continue }
             let stopOffsets: [Int] = photos.compactMap { photo -> Int? in
                 guard let id = photo.localIdentifier, let tz = tzMap[id] else { return nil }
                 return (tz.secondsFromGMT() / 900) * 900
             }
-            let consensusOffset = stopOffsets.isEmpty ? 0 : (stopOffsets.reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }.max(by: { $0.value < $1.value })?.key ?? 0)
+            let deviceOffset = (TimeZone.current.secondsFromGMT() / 900) * 900
+            let consensusOffset = stopOffsets.isEmpty ? deviceOffset : (stopOffsets.reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }.max(by: { $0.value < $1.value })?.key ?? deviceOffset)
             let tz = TimeZone(secondsFromGMT: consensusOffset) ?? TimeZone(identifier: "UTC")!
             let asset = assetMap[firstPhoto.localIdentifier ?? ""]!
             let date = asset.creationDate ?? firstPhoto.timestamp
@@ -1953,7 +2075,9 @@ final class CreatedRecapBlogStore: ObservableObject {
                 if !topIds.isEmpty {
                     for photoIdx in updated.days[dayIdx].placeStops[stopIdx].photos.indices {
                         let photo = updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
-                        updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = topIds.contains(photo.id)
+                        // Camera-captured photos are always included; smart picker only applies to scanned photos.
+                        let isCameraCapture = photo.imageName == "camera.fill"
+                        updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = isCameraCapture || topIds.contains(photo.id)
                     }
                 }
             }
