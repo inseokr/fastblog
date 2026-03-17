@@ -2015,7 +2015,9 @@ final class CreatedRecapBlogStore: ObservableObject {
                 if !topIds.isEmpty {
                     for photoIdx in updated.days[dayIdx].placeStops[stopIdx].photos.indices {
                         let photo = updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
-                        updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = topIds.contains(photo.id)
+                        // Camera-captured photos are always included; smart picker only applies to scanned photos.
+                        let isCameraCapture = photo.imageName == "camera.fill"
+                        updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = isCameraCapture || topIds.contains(photo.id)
                     }
                 }
             }
