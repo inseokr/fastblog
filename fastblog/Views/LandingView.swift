@@ -577,6 +577,62 @@ private struct SettingsView: View {
     @State private var cloudStorageLoading = false
     @State private var cloudStorageError: String?
 
+    private var travelStats: (countries: Int, cities: Int, places: Int) {
+        let store = CreatedRecapBlogStore.shared
+        let countries = store.countrySummaries.filter { $0.countryName != "Unknown" }.count
+        let cities = Set(store.visitedPlaces.compactMap { place -> String? in
+            let t = place.city.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }).count
+        let places = store.visitedPlaces.count
+        return (countries, cities, places)
+    }
+
+    private var travelStatsRow: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .center, spacing: 4) {
+                Text("\(travelStats.countries)")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                Text("Countries")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+
+            Divider()
+                .frame(height: 36)
+
+            VStack(alignment: .center, spacing: 4) {
+                Text("\(travelStats.cities)")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                Text("Cities")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+
+            Divider()
+                .frame(height: 36)
+
+            VStack(alignment: .center, spacing: 4) {
+                Text("\(travelStats.places)")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                Text("Places")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.vertical, 8)
+        .listRowSeparator(.hidden)
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -673,6 +729,13 @@ private struct SettingsView: View {
                     } else {
                         Text("Sign in to back up your recaps, access them on web, and restore Pro.")
                     }
+                }
+
+                // Travel Stats
+                Section {
+                    travelStatsRow
+                } header: {
+                    Text("Travel Stats")
                 }
 
                 // Permissions
