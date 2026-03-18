@@ -1846,6 +1846,10 @@ struct CameraCaptureView: View {
     @State private var lastCaptureWasVibe: Bool = false
     /// Drives the "Capturing Vibe" pill dot pulse animation.
     @State private var vibePulse: Bool = false
+    // Vibe first-time tooltip
+    @AppStorage("bloggo.hasSeenVibeTooltip") private var hasSeenVibeTooltip = false
+    @State private var showVibeTooltip = false
+    @State private var vibeTooltipPage = 0
 
     private static let nearHomeAlertSuppressedKey = "bloggo.nearHomeAlertSuppressed"
     private static let nearHomeSuppressedPreferKeepKey = "bloggo.nearHomeSuppressedPreferKeep"
@@ -2210,6 +2214,20 @@ struct CameraCaptureView: View {
         .onChange(of: showNearHomeConfirmation) { _, show in
             if show { nearHomeDoNotShowAgain = false }
         }
+        .onChange(of: vibeEnabled) { _, newValue in
+            if newValue && !hasSeenVibeTooltip {
+                showVibeTooltip = true
+            }
+        }
+        .sheet(isPresented: $showVibeTooltip, onDismiss: {
+            hasSeenVibeTooltip = true
+            vibeTooltipPage = 0
+        }) {
+            vibeTooltipContent
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .preferredColorScheme(.dark)
+        }
     }
 
     @ViewBuilder private var toastOverlay: some View {
@@ -2413,6 +2431,67 @@ struct CameraCaptureView: View {
                 animating = active
             }
         }
+    }
+
+    private var vibeTooltipContent: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 20) {
+                HStack {
+                    Text(vibeTooltipPage == 0 ? "1/2" : "2/2")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+
+                Image(systemName: "waveform")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 50, height: 50)
+                    .foregroundColor(.cyan)
+                    .padding(.top, 8)
+
+                VStack(spacing: 8) {
+                    Text(vibeTooltipPage == 0 ? "Capture the Vibe" : "How It Works")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.primary)
+
+                    Text(vibeTooltipPage == 0
+                         ? "Record the sounds and atmosphere around your moment. From ocean waves to busy city streets, Bloggo helps preserve the feeling of where you were."
+                         : "We're constantly listening when you open the camera, so start capturing the vibe today!")
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 24)
+            .transition(.opacity)
+            .animation(.easeInOut(duration: 0.25), value: vibeTooltipPage)
+
+            Spacer()
+
+            Button {
+                if vibeTooltipPage == 0 {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        vibeTooltipPage = 1
+                    }
+                } else {
+                    showVibeTooltip = false
+                }
+            } label: {
+                Text("Continue")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .cornerRadius(12)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+        .padding(.top, 24)
     }
 
     private var flashIconName: String {
