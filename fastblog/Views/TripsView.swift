@@ -2377,31 +2377,41 @@ struct CameraCaptureView: View {
         // Per-bar animation delays matching the prototype
         private let delays: [Double]   = [0.00, 0.07, 0.14, 0.21, 0.28, 0.35, 0.42, 0.35, 0.28, 0.21, 0.07, 0.00]
 
+        // Internal driver so repeatForever kicks off on appear even when isActive is
+        // already true (e.g. returning to camera with Vibe toggled on and persisted).
+        @State private var animating = false
+
         var body: some View {
             HStack(spacing: 1.5) {
                 ForEach(0..<heights.count, id: \.self) { i in
                     RoundedRectangle(cornerRadius: 1)
                         .fill(
                             LinearGradient(
-                                colors: isActive ? [.cyan, .green] : [Color.white.opacity(0.45), Color.white.opacity(0.45)],
+                                colors: animating ? [.cyan, .green] : [Color.white.opacity(0.45), Color.white.opacity(0.45)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
                         )
                         .frame(width: 2, height: heights[i])
-                        .scaleEffect(y: isActive ? 1 : 0.35, anchor: .center)
+                        .scaleEffect(y: animating ? 1 : 0.35, anchor: .center)
                         .animation(
-                            isActive
+                            animating
                                 ? .easeInOut(duration: 0.65 + Double(i % 4) * 0.12)
                                     .repeatForever(autoreverses: true)
                                     .delay(delays[i])
                                 : .easeInOut(duration: 0.2),
-                            value: isActive
+                            value: animating
                         )
                 }
             }
             .frame(width: 26, height: 26)
-            .shadow(color: isActive ? .cyan.opacity(0.5) : .clear, radius: 4)
+            .shadow(color: animating ? .cyan.opacity(0.5) : .clear, radius: 4)
+            .onAppear {
+                animating = isActive
+            }
+            .onChange(of: isActive) { _, active in
+                animating = active
+            }
         }
     }
 
