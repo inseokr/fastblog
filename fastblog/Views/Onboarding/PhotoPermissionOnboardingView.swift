@@ -33,14 +33,23 @@ struct PhotoPermissionOnboardingView: View {
 
             VStack(spacing: 0) {
                 if let onBack = onBack {
-                    HStack {
-                        Button(action: onBack) {
-                            Image(systemName: "chevron.left")
-                                .font(.title3.weight(.bold))
-                                .foregroundColor(.white)
-                                .padding(.leading, 8)
+                    ZStack {
+                        HStack {
+                            Button(action: onBack) {
+                                Image(systemName: "chevron.left")
+                                    .font(.title3.weight(.bold))
+                                    .foregroundColor(.white)
+                                    .padding(.leading, 8)
+                            }
+                            Spacer()
                         }
-                        Spacer()
+                        // Invisible placeholder matches the height of "Set Home" title in
+                        // NeighborhoodSelectionView so the chevron sits at the same vertical position.
+                        Text(" ")
+                            .font(.title)
+                            .fontWeight(.bold)
+                            .opacity(0)
+                            .frame(maxWidth: .infinity)
                     }
                     .padding(.horizontal, OnboardingConstants.Layout.horizontalPadding)
                     .padding(.top, OnboardingConstants.Layout.titleTopPadding)

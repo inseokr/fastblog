@@ -51,6 +51,8 @@ struct AppCaptureGalleryView: View {
                         .tint(.white)
                 } else if items.isEmpty {
                     emptyState
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .padding(.top, 24)
                 } else {
                     scrollGrid
                 }
