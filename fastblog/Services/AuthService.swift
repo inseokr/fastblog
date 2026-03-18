@@ -11,6 +11,10 @@ import Combine
 import CryptoKit
 import Foundation
 import SwiftUI
+import UIKit
+#if canImport(GoogleSignIn)
+import GoogleSignIn
+#endif
 
 // MARK: - Auth Error
 
@@ -142,6 +146,10 @@ final class AuthService: NSObject, ObservableObject {
         // Capture intro
         defaults.set(false, forKey: "blogify.captureIntroSeen.guest")
 
+        #if canImport(GoogleSignIn)
+        GoogleAuthManager.shared.signOut()
+        #endif
+
         Analytics.track(.authCancelled) // reuse existing or add dedicated event
     }
 
@@ -222,7 +230,13 @@ final class AuthService: NSObject, ObservableObject {
                 isLoading = false
                 return
             }
-            let name: String? = {
+            guard let tokenData = cred.identityToken,
+                  let idTokenString = String(data: tokenData, encoding: .utf8) else {
+                errorMessage = AuthError.appleSignInFailed("Missing identity token.").errorDescription
+                isLoading = false
+                return
+            }
+            let fullName: String? = {
                 guard let full = cred.fullName else { return nil }
                 return [full.givenName, full.familyName]
                     .compactMap { $0 }
@@ -230,17 +244,124 @@ final class AuthService: NSObject, ObservableObject {
                     .joined(separator: " ")
                     .nonEmpty
             }()
-            let user = AuthUser(
-                id: cred.user,
-                email: cred.email,
-                displayName: name,
-                username: nil,
-                provider: .apple,
-                storageUsedBytes: 0
-            )
-            finishSignIn(user: user)
+            Task { @MainActor in
+                await exchangeAppleToken(idToken: idTokenString, fullName: fullName)
+            }
         }
     }
+
+    /// Exchanges Apple identity token with backend and completes sign-in with JWT.
+    private func exchangeAppleToken(idToken: String, fullName: String?) async {
+        struct AppleAuthRequest: Encodable {
+            let id_token: String
+            let full_name: String?
+            let userType: String
+        }
+        defer { isLoading = false }
+        do {
+            let payload = AppleAuthRequest(
+                id_token: idToken,
+                full_name: fullName,
+                userType: "bloggo"
+            )
+            let response: LoginResponse = try await APIManager.shared.post(
+                endpoint: "/oauth/apple",
+                body: payload,
+                requiresAuth: false
+            )
+            guard response.message == "ok", let token = response.token else {
+                errorMessage = AuthError.networkError("Apple sign-in failed.").errorDescription
+                return
+            }
+            setJwtToken(token)
+            let actualId = response.user?._id ?? "apple-\(UUID().uuidString)"
+            let user = AuthUser(
+                id: actualId,
+                email: response.user?.email,
+                displayName: response.user?.name ?? response.user?.username,
+                username: response.user?.username,
+                provider: .apple,
+                storageUsedBytes: response.user?.storageUsedBytes ?? 0,
+                userLevel: UserLevel(rawValue: response.user?.userLevel ?? "normal") ?? .normal
+            )
+            if let username = response.user?.username {
+                UserDefaults.standard.set(username, forKey: "blogify.lastLoginUsername")
+            }
+            finishSignIn(user: user)
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            Analytics.track(.authFailed(reason: error.localizedDescription))
+        }
+    }
+
+    // MARK: - Google Sign In
+
+    /// Starts Google sign-in flow, then exchanges the ID token with the backend and completes sign-in with JWT.
+    func signInWithGoogle(presenting viewController: UIViewController?) {
+        isLoading = true
+        errorMessage = nil
+        Analytics.track(.authProviderSelected(provider: "google"))
+        #if canImport(GoogleSignIn)
+        GoogleAuthManager.shared.signIn(presenting: viewController) { [weak self] result in
+            Task { @MainActor in
+                await self?.handleGoogleSignInResult(result)
+            }
+        }
+        #else
+        isLoading = false
+        errorMessage = "Google Sign-In is not available."
+        #endif
+    }
+
+    #if canImport(GoogleSignIn)
+    private func handleGoogleSignInResult(_ result: Result<GIDGoogleUser, Error>) async {
+        defer { isLoading = false }
+        switch result {
+        case .failure(let error):
+            errorMessage = error.localizedDescription
+            Analytics.track(.authFailed(reason: error.localizedDescription))
+        case .success(let googleUser):
+            guard let idToken = googleUser.idToken?.tokenString else {
+                errorMessage = AuthError.networkError("Google Sign-In did not return an ID token.").errorDescription
+                return
+            }
+            do {
+                struct GoogleAuthRequest: Encodable {
+                    let idToken: String
+                    let userType: String
+                }
+                let payload = GoogleAuthRequest(idToken: idToken, userType: "bloggo")
+                let response: LoginResponse = try await APIManager.shared.post(
+                    endpoint: "/oauth/google",
+                    body: payload,
+                    requiresAuth: false
+                )
+                guard response.message == "ok", let token = response.token else {
+                    errorMessage = AuthError.networkError("Google sign-in failed.").errorDescription
+                    return
+                }
+                setJwtToken(token)
+                let actualId = response.user?._id ?? "google-\(UUID().uuidString)"
+                let user = AuthUser(
+                    id: actualId,
+                    email: response.user?.email,
+                    displayName: response.user?.name ?? response.user?.username,
+                    username: response.user?.username,
+                    provider: .google,
+                    storageUsedBytes: response.user?.storageUsedBytes ?? 0,
+                    userLevel: UserLevel(rawValue: response.user?.userLevel ?? "normal") ?? .normal
+                )
+                if let username = response.user?.username {
+                    UserDefaults.standard.set(username, forKey: "blogify.lastLoginUsername")
+                }
+                finishSignIn(user: user)
+            } catch {
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                Analytics.track(.authFailed(reason: error.localizedDescription))
+            }
+        }
+    }
+    #endif
 }
 
 // MARK: - Network Models

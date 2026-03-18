@@ -56,18 +56,31 @@ final class GoogleAuthManager: ObservableObject {
     }
 
     /// Start the Google sign-in flow. Pass the window's root view controller for presentation.
-    func signIn(presenting: UIViewController?) {
+    /// - Parameter completion: Called with the signed-in user on success, or an error on failure. Optional for backward compatibility.
+    func signIn(presenting: UIViewController?, completion: ((Result<GIDGoogleUser, Error>) -> Void)? = nil) {
         signInError = nil
         configureIfNeeded()
         let presentingVC = presenting ?? rootViewController()
         guard let presentingVC else {
-            signInError = NSError(domain: "GoogleAuthManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "No view controller to present from"])
+            let err = NSError(domain: "GoogleAuthManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "No view controller to present from"])
+            signInError = err
+            completion?(.failure(err))
             return
         }
         GIDSignIn.sharedInstance.signIn(withPresenting: presentingVC) { [weak self] result, error in
             Task { @MainActor in
-                self?.currentUser = result?.user
-                self?.signInError = error
+                if let error = error {
+                    self?.signInError = error
+                    completion?(.failure(error))
+                } else if let user = result?.user {
+                    self?.currentUser = user
+                    self?.signInError = nil
+                    completion?(.success(user))
+                } else {
+                    let err = NSError(domain: "GoogleAuthManager", code: -2, userInfo: [NSLocalizedDescriptionKey: "Sign-in completed with no user"])
+                    self?.signInError = err
+                    completion?(.failure(err))
+                }
             }
         }
     }
@@ -96,8 +109,10 @@ final class GoogleAuthManager: ObservableObject {
     }
     #else
     func restorePreviousSignIn() {}
-    func signIn(presenting: UIViewController?) {
-        signInError = NSError(domain: "GoogleAuthManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Add GoogleSignIn Swift package to enable sign-in"])
+    func signIn(presenting: UIViewController?, completion: ((Result<Any, Error>) -> Void)? = nil) {
+        let err = NSError(domain: "GoogleAuthManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Add GoogleSignIn Swift package to enable sign-in"])
+        signInError = err
+        completion?(.failure(err))
     }
     func signOut() {}
     static func handleURL(_ url: URL) -> Bool { false }

@@ -14,7 +14,6 @@ struct AuthView: View {
 
     @State private var showEmailSignUp = false
     @State private var showEmailLogin = false
-    @State private var showGoogleComingSoon = false
     /// When true, the main "Create account" content is visible. Fades to false when user goes to email sign-up/login so they don't see it again when the sheet dismisses.
     @State private var mainContentVisible = true
 
@@ -83,11 +82,6 @@ struct AuthView: View {
         } message: {
             Text(authService.errorMessage ?? "")
         }
-        .alert("Google Sign In", isPresented: $showGoogleComingSoon) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Google Sign In is coming soon. Please use Apple or Email for now.")
-        }
         .sheet(isPresented: $showEmailSignUp, onDismiss: {
             if authService.currentUser == nil {
                 withAnimation(.easeOut(duration: 0.06)) { mainContentVisible = true }
@@ -154,7 +148,6 @@ struct AuthView: View {
 
     private var buttonStack: some View {
         VStack(spacing: 14) {
-            /* Hide Apple and Google for first launch
             // Apple Sign In
             SignInWithAppleButton(.continue) { request in
                 request.requestedScopes = [.fullName, .email]
@@ -167,13 +160,11 @@ struct AuthView: View {
             .cornerRadius(14)
             .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
 
-            // Google Sign In (UI stub)
+            // Google Sign In
             Button {
-                showGoogleComingSoon = true
-                AuthService.Analytics.track(.authProviderSelected(provider: "google"))
+                authService.signInWithGoogle(presenting: nil)
             } label: {
                 HStack(spacing: 12) {
-                    // Google 'G' logo
                     GoogleGLogo()
                         .frame(width: 20, height: 20)
                     Text("Continue with Google")
@@ -198,7 +189,6 @@ struct AuthView: View {
                     .padding(.horizontal, 10)
                 authDivider
             }
-            */
 
             Text("Use the same sign in method on web to edit your blogs.")
                 .font(.caption)
