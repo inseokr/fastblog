@@ -2018,7 +2018,10 @@ struct CameraCaptureView: View {
                 Button {
                     vibeEnabled.toggle()
                     if vibeEnabled {
-                        vibeRecorder.start()
+                        // Defer mic permission + recording until after the first-time tooltip is dismissed.
+                        if hasSeenVibeTooltip {
+                            vibeRecorder.start()
+                        }
                     } else {
                         vibeRecorder.cancelAndDelete()
                     }
@@ -2222,6 +2225,8 @@ struct CameraCaptureView: View {
         .sheet(isPresented: $showVibeTooltip, onDismiss: {
             hasSeenVibeTooltip = true
             vibeTooltipPage = 0
+            // Now that the tooltip is done, request mic permission and begin recording.
+            if vibeEnabled { vibeRecorder.start() }
         }) {
             vibeTooltipContent
                 .presentationDetents([.medium])
@@ -2425,7 +2430,11 @@ struct CameraCaptureView: View {
             .frame(width: 26, height: 26)
             .shadow(color: animating ? .cyan.opacity(0.5) : .clear, radius: 4)
             .onAppear {
-                animating = isActive
+                // Defer past any active presentation/navigation animation transaction
+                // so the repeatForever animation isn't overridden by it.
+                Task { @MainActor in
+                    animating = isActive
+                }
             }
             .onChange(of: isActive) { _, active in
                 animating = active
@@ -3639,6 +3648,7 @@ private struct SessionGalleryView: View {
                                     Spacer(minLength: 8)
                                     Button {
                                         let moment = moments[index]
+                                        deleteFromStorage(moment)
                                         onRemoveAttachedMoment?(moment)
                                         moments.remove(at: index)
                                     } label: {
@@ -3714,6 +3724,7 @@ private struct SessionGalleryView: View {
                                     Spacer(minLength: 8)
                                     Button {
                                         let moment = moments[index]
+                                        deleteFromStorage(moment)
                                         onRemoveAttachedMoment?(moment)
                                         moments.remove(at: index)
                                     } label: {
@@ -3763,6 +3774,7 @@ private struct SessionGalleryView: View {
             .alert("Start fresh?", isPresented: $showClearConfirmation) {
                 Button("No", role: .cancel) { }
                 Button("Yes", role: .destructive) {
+                    for moment in moments { deleteFromStorage(moment) }
                     onClear?()
                     moments = []
                 }
@@ -3778,6 +3790,22 @@ private struct SessionGalleryView: View {
                 .environment(\.colorScheme, .dark)
         }
         .preferredColorScheme(.dark)
+    }
+
+    private func deleteFromStorage(_ moment: CapturedMoment) {
+        // Remove from AppCapturePhotoService (Bloggo Photos gallery)
+        if let localId = moment.localIdentifier,
+           let captureId = AppCapturePhotoService.uuid(from: localId) {
+            AppCapturePhotoService.shared.deleteCapture(captureId: captureId)
+        }
+        // Remove from InAppCameraPhotoStore (matched by timestamp)
+        let store = InAppCameraPhotoStore.shared
+        let matchingIds = Set(store.entries
+            .filter { abs($0.timestamp.timeIntervalSince(moment.timestamp)) < 1.0 }
+            .map { $0.id })
+        if !matchingIds.isEmpty {
+            store.removePhotos(ids: matchingIds)
+        }
     }
 }
 
