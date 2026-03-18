@@ -577,9 +577,57 @@ private struct SettingsView: View {
     @State private var cloudStorageLoading = false
     @State private var cloudStorageError: String?
 
+    private var travelStats: (countries: Int, cities: Int, places: Int) {
+        let store = CreatedRecapBlogStore.shared
+        let countries = store.countrySummaries.filter { $0.countryName != "Unknown" }.count
+        let allPlaces = store.visitedPlaces
+        let cities = Set(allPlaces.compactMap { place -> String? in
+            let t = place.city.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t.lowercased()
+        }).count
+        let places = allPlaces.count
+        return (countries, cities, places)
+    }
+
+    private var travelStatsRow: some View {
+        HStack(spacing: 0) {
+            StatColumn(value: travelStats.countries, label: "Countries")
+            Divider().frame(height: 36)
+            StatColumn(value: travelStats.cities, label: "Cities")
+            Divider().frame(height: 36)
+            StatColumn(value: travelStats.places, label: "Places")
+        }
+        .padding(.vertical, 8)
+        .listRowSeparator(.hidden)
+    }
+
+    private struct StatColumn: View {
+        let value: Int
+        let label: String
+        var body: some View {
+            VStack(alignment: .center, spacing: 4) {
+                Text("\(value)")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                Text(label)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
     var body: some View {
         NavigationStack {
             List {
+                // Travel Stats
+                Section {
+                    travelStatsRow
+                } header: {
+                    Text("Travel Stats")
+                }
+
                 // Account
                 Section {
                     if let user = authService.currentUser {
