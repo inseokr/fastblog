@@ -43,6 +43,7 @@ struct TripsMapView: View {
 }
 
 /// Selection-aware map marker with glow and pulse when selected.
+/// Unselected trips render as a compact dot to avoid overlap when many trips share a region.
 private struct TripDraftMapAnnotationView: View {
     let trip: TripDraft
     let isSelected: Bool
@@ -51,22 +52,44 @@ private struct TripDraftMapAnnotationView: View {
 
     private static let thumbSize: CGFloat = 64
     private static let titleMaxWidth: CGFloat = 100
+    private static let dotSize: CGFloat = 14
 
     var body: some View {
+        ZStack {
+            if isSelected {
+                selectedMarker
+            } else {
+                unselectedDot
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: isSelected)
+        .onChange(of: isSelected) { _, selected in
+            if selected {
+                isPulsing = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    isPulsing = true
+                }
+            } else {
+                isPulsing = false
+            }
+        }
+    }
+
+    // MARK: Selected — full thumbnail card with title and pulse ring
+
+    private var selectedMarker: some View {
         VStack(spacing: 5) {
             ZStack {
                 // Glow ring behind selected marker
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.white.opacity(0.15))
-                        .frame(width: Self.thumbSize + 12, height: Self.thumbSize + 12)
-                        .scaleEffect(isPulsing ? 1.15 : 1.0)
-                        .opacity(isPulsing ? 0.0 : 0.6)
-                        .animation(
-                            .easeInOut(duration: 1.6).repeatForever(autoreverses: false),
-                            value: isPulsing
-                        )
-                }
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.white.opacity(0.15))
+                    .frame(width: Self.thumbSize + 12, height: Self.thumbSize + 12)
+                    .scaleEffect(isPulsing ? 1.15 : 1.0)
+                    .opacity(isPulsing ? 0.0 : 0.6)
+                    .animation(
+                        .easeInOut(duration: 1.6).repeatForever(autoreverses: false),
+                        value: isPulsing
+                    )
 
                 TripCoverImage(
                     theme: trip.coverTheme,
@@ -77,17 +100,9 @@ private struct TripDraftMapAnnotationView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(
-                            Color.white.opacity(isSelected ? 1.0 : 0.4),
-                            lineWidth: isSelected ? 2.5 : 1
-                        )
+                        .stroke(Color.white, lineWidth: 2.5)
                 )
-                .shadow(
-                    color: isSelected ? Color.white.opacity(0.35) : Color.black.opacity(0.3),
-                    radius: isSelected ? 10 : 3,
-                    x: 0,
-                    y: isSelected ? 0 : 2
-                )
+                .shadow(color: Color.white.opacity(0.35), radius: 10)
             }
 
             Text(trip.defaultBlogTitle)
@@ -99,20 +114,18 @@ private struct TripDraftMapAnnotationView: View {
                 .frame(maxWidth: Self.titleMaxWidth)
                 .shadow(color: .black.opacity(0.6), radius: 2)
         }
-        .scaleEffect(isSelected ? 1.2 : 0.8)
-        .opacity(isSelected ? 1.0 : 0.5)
-        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: isSelected)
-        .onChange(of: isSelected) { _, selected in
-            if selected {
-                isPulsing = false
-                // Reset then start pulse
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    isPulsing = true
-                }
-            } else {
-                isPulsing = false
-            }
-        }
+        .transition(.scale.combined(with: .opacity))
+    }
+
+    // MARK: Unselected — small dot so nearby markers don't pile up
+
+    private var unselectedDot: some View {
+        Circle()
+            .fill(Color.white.opacity(0.9))
+            .frame(width: Self.dotSize, height: Self.dotSize)
+            .overlay(Circle().stroke(Color.black.opacity(0.25), lineWidth: 1))
+            .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+            .transition(.scale.combined(with: .opacity))
     }
 }
 

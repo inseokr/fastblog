@@ -937,30 +937,40 @@ struct TripsView: View {
 
     private var emptyState: some View {
         VStack(spacing: 16) {
-            VStack(spacing: 8) {
-                Text("No Trips Found")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                if photoAuth.status == .limited {
-                    Text("Limited photo access may be hiding some trips.")
+            if viewModel.isLoadingOlderTrips {
+                VStack(spacing: 10) {
+                    ProgressView()
+                        .tint(.white)
+                    Text("Finding older trips…")
                         .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.65))
-                        .multilineTextAlignment(.center)
-                } else {
-                    Text("Try scanning a different date range")
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.6))
+                        .foregroundColor(.white.opacity(0.7))
                 }
-            }
+            } else {
+                VStack(spacing: 8) {
+                    Text("No Trips Found")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                    if photoAuth.status == .limited {
+                        Text("Limited photo access may be hiding some trips.")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.65))
+                            .multilineTextAlignment(.center)
+                    } else {
+                        Text("Try scanning a different date range")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                }
 
-            // Swipe hint
-            HStack(spacing: 6) {
-                Image(systemName: "hand.draw")
-                    .font(.caption)
-                Text("Swipe to load more")
-                    .font(.caption)
+                // Swipe hint
+                HStack(spacing: 6) {
+                    Image(systemName: "hand.draw")
+                        .font(.caption)
+                    Text("Swipe to load more")
+                        .font(.caption)
+                }
+                .foregroundColor(.white.opacity(0.4))
             }
-            .foregroundColor(.white.opacity(0.4))
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 22)
@@ -968,6 +978,9 @@ struct TripsView: View {
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 24)
+        .onAppear {
+            viewModel.autoLoadOlderTripsIfNeeded()
+        }
         .simultaneousGesture(
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
@@ -3688,10 +3701,9 @@ struct TripCarouselCard: View {
     }
 
     var body: some View {
-        // Cover image as the base
+        // Cover image as the base — fill slot width so portrait covers don't shrink the card
         TripCoverImage(trip: trip)
-            .frame(height: 220)
-            .scaleEffect(1.05)
+            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 220, maxHeight: 220)
             .clipped()
             // Dark gradient at bottom for text contrast
             .overlay(alignment: .bottom) {
@@ -3810,6 +3822,7 @@ struct TripCoverImage: View {
             }
             optionalAssetOverlay
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func gradientForTheme(_ theme: String) -> some View {
