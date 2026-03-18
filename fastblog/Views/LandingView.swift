@@ -621,6 +621,13 @@ private struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                // Travel Stats
+                Section {
+                    travelStatsRow
+                } header: {
+                    Text("Travel Stats")
+                }
+
                 // Account
                 Section {
                     if let user = authService.currentUser {
@@ -714,13 +721,6 @@ private struct SettingsView: View {
                     } else {
                         Text("Sign in to back up your recaps, access them on web, and restore Pro.")
                     }
-                }
-
-                // Travel Stats
-                Section {
-                    travelStatsRow
-                } header: {
-                    Text("Travel Stats")
                 }
 
                 // Permissions
