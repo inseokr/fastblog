@@ -446,44 +446,6 @@ struct TripsView: View {
                 }
             }
         }
-        .onChange(of: viewModel.scanState) { oldState, newState in
-            // #region agent log
-            let _agentLog_payload_tv: [String: Any] = [
-                "sessionId": "f5599d",
-                "runId": "pre-fix",
-                "hypothesisId": "H3",
-                "location": "TripsView.swift:onChange(scanState)",
-                "message": "TripsView scanState changed",
-                "data": [
-                    "oldState": String(describing: oldState),
-                    "newState": String(describing: newState)
-                ],
-                "timestamp": Int(Date().timeIntervalSince1970 * 1000)
-            ]
-            if let _agentLog_data = try? JSONSerialization.data(withJSONObject: _agentLog_payload_tv) {
-                // Write to local debug log file (may be no-op on device)
-                let _agentLog_url = URL(fileURLWithPath: "/Users/justinseo/Desktop/fastblog/.cursor/debug-f5599d.log")
-                if !FileManager.default.fileExists(atPath: _agentLog_url.path) {
-                    FileManager.default.createFile(atPath: _agentLog_url.path, contents: nil, attributes: nil)
-                }
-                if let _agentLog_handle = try? FileHandle(forWritingTo: _agentLog_url) {
-                    _agentLog_handle.seekToEndOfFile()
-                    _agentLog_handle.write(_agentLog_data)
-                    _agentLog_handle.write(Data([0x0a]))
-                    try? _agentLog_handle.close()
-                }
-                // Also send to debug ingest endpoint so logs work from simulator/device
-                if let url = URL(string: "http://127.0.0.1:7413/ingest/74888078-3f6a-4639-8372-d416f6cdf04c") {
-                    var request = URLRequest(url: url)
-                    request.httpMethod = "POST"
-                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    request.setValue("f5599d", forHTTPHeaderField: "X-Debug-Session-Id")
-                    request.httpBody = _agentLog_data
-                    URLSession.shared.dataTask(with: request).resume()
-                }
-            }
-            // #endregion agent log
-        }
     }
 
     // MARK: - Main Content
@@ -645,7 +607,14 @@ struct TripsView: View {
                         withAnimation(.easeInOut(duration: 0.45)) { selectedTripID = target.id }
                         if let center = target.centerCoordinate {
                             let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
-                            mapPosition = .region(MKCoordinateRegion(center: center, span: span))
+                            // Suppress map camera animation on this first reveal to prevent the
+                            // diagonal fly-in artifact (map jumps from .automatic to trip region
+                            // at the same moment the Trips overlay fades in).
+                            var t = Transaction()
+                            t.disablesAnimations = true
+                            withTransaction(t) {
+                                mapPosition = .region(MKCoordinateRegion(center: center, span: span))
+                            }
                         }
                     }
                 }
@@ -747,7 +716,14 @@ struct TripsView: View {
                 selectedTripID = preferredTrip.id
                 if let center = preferredTrip.centerCoordinate {
                     let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
-                    mapPosition = .region(MKCoordinateRegion(center: center, span: span))
+                    // Suppress camera animation — trips may arrive while the overlay is
+                    // fading in (especially on the limited path with few photos), causing
+                    // the diagonal fly-in artifact if we let MapKit animate here.
+                    var t = Transaction()
+                    t.disablesAnimations = true
+                    withTransaction(t) {
+                        mapPosition = .region(MKCoordinateRegion(center: center, span: span))
+                    }
                 }
             }
             // If trips load in after the initial appearance, show the intro once.

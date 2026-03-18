@@ -13,6 +13,11 @@ struct ContentView: View {
     @State private var showTrips = false
     /// When true, show Trips overlay when scan reaches .idle (so it fades in when ready).
     @State private var pendingShowTripsWhenIdle = false
+    /// Keeps the TripsView (and its MapKit Metal layer) in the tree for ~0.5 s after dismissal
+    /// so the GPU can drain any in-flight command buffers before the CAMetalLayer is deallocated.
+    /// Without this, .transition(.identity) removes the view immediately and Metal fires
+    /// MTLDebugDevice notifyExternalReferencesNonZeroOnDealloc.
+    @State private var tripsViewKeepMounted = false
     @State private var showProfile = false
     @State private var showSeeAll = false
     @State private var showPlacesVisited = false
@@ -142,17 +147,15 @@ struct ContentView: View {
             }
 
             // Trips overlay — added when user taps "Tap to Blog"; opacity-only fade (no slide).
-            if showTrips || pendingShowTripsWhenIdle {
+            // tripsViewKeepMounted extends the lifetime after dismissal so MapKit's CAMetalLayer
+            // can finish in-flight GPU work before the view is torn down.
+            if showTrips || pendingShowTripsWhenIdle || tripsViewKeepMounted {
                 NavigationStack {
                     TripsView(
                         viewModel: tripsViewModel,
                         selectedCreatedRecap: $selectedCreatedRecap,
                         initialDayIndexForRecap: $initialDayIndexForRecap,
-                        onDismiss: {
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                showTrips = false
-                            }
-                        }
+                        onDismiss: dismissTripsOverlay
                     )
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -187,8 +190,8 @@ struct ContentView: View {
                     progress: tripsViewModel.defaultScanProgress > 0 ? tripsViewModel.defaultScanProgress : nil,
                     onCancel: {
                         tripsViewModel.cancelDefaultScan()
-                        showTrips = false
                         pendingShowTripsWhenIdle = false
+                        dismissTripsOverlay()
                     }
                 )
                 .transition(.opacity)
@@ -238,7 +241,7 @@ struct ContentView: View {
                         selectedCreatedRecap = latest
                     }
                 } else {
-                    showTrips = false
+                    dismissTripsOverlay()
                 }
             }
         }
@@ -260,6 +263,21 @@ struct ContentView: View {
                     showCaptureIntroSheet = true
                 }
             }
+        }
+    }
+
+    // MARK: - Trips overlay lifecycle
+
+    /// Fades out the Trips overlay and delays view removal so MapKit's Metal layer can drain
+    /// in-flight GPU command buffers before the CAMetalLayer drawable is deallocated.
+    private func dismissTripsOverlay() {
+        tripsViewKeepMounted = true
+        withAnimation(.easeInOut(duration: 0.3)) {
+            showTrips = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            guard !showTrips, !pendingShowTripsWhenIdle else { return }
+            tripsViewKeepMounted = false
         }
     }
 
