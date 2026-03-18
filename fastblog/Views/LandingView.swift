@@ -580,57 +580,42 @@ private struct SettingsView: View {
     private var travelStats: (countries: Int, cities: Int, places: Int) {
         let store = CreatedRecapBlogStore.shared
         let countries = store.countrySummaries.filter { $0.countryName != "Unknown" }.count
-        let cities = Set(store.visitedPlaces.compactMap { place -> String? in
+        let allPlaces = store.visitedPlaces
+        let cities = Set(allPlaces.compactMap { place -> String? in
             let t = place.city.trimmingCharacters(in: .whitespacesAndNewlines)
-            return t.isEmpty ? nil : t
+            return t.isEmpty ? nil : t.lowercased()
         }).count
-        let places = store.visitedPlaces.count
+        let places = allPlaces.count
         return (countries, cities, places)
     }
 
     private var travelStatsRow: some View {
         HStack(spacing: 0) {
+            StatColumn(value: travelStats.countries, label: "Countries")
+            Divider().frame(height: 36)
+            StatColumn(value: travelStats.cities, label: "Cities")
+            Divider().frame(height: 36)
+            StatColumn(value: travelStats.places, label: "Places")
+        }
+        .padding(.vertical, 8)
+        .listRowSeparator(.hidden)
+    }
+
+    private struct StatColumn: View {
+        let value: Int
+        let label: String
+        var body: some View {
             VStack(alignment: .center, spacing: 4) {
-                Text("\(travelStats.countries)")
+                Text("\(value)")
                     .font(.title2)
                     .fontWeight(.bold)
                     .foregroundColor(.primary)
-                Text("Countries")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity)
-
-            Divider()
-                .frame(height: 36)
-
-            VStack(alignment: .center, spacing: 4) {
-                Text("\(travelStats.cities)")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                Text("Cities")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity)
-
-            Divider()
-                .frame(height: 36)
-
-            VStack(alignment: .center, spacing: 4) {
-                Text("\(travelStats.places)")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                Text("Places")
+                Text(label)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
             .frame(maxWidth: .infinity)
         }
-        .padding(.vertical, 8)
-        .listRowSeparator(.hidden)
     }
 
     var body: some View {
