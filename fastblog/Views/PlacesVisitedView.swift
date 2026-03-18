@@ -77,10 +77,10 @@ struct PlacesVisitedView: View {
     private var availableCategories: [BloggoCategoryGroup] {
         let groups = createdRecapStore.visitedPlaces.compactMap { place -> BloggoCategoryGroup? in
             guard let raw = place.categoryRawValue, !raw.isEmpty else { return nil }
-            let group = BloggoCategoryMapper.displayGroup(forStoredValue: raw)
-            return group == .other ? nil : group
+            return BloggoCategoryMapper.displayGroup(forStoredValue: raw)
         }
-        return Array(Set(groups)).sorted { $0.displayName < $1.displayName }
+        let withoutOther = Array(Set(groups).subtracting([.other])).sorted { $0.displayName < $1.displayName }
+        return groups.contains(.other) ? withoutOther + [.other] : withoutOther
     }
 
     private var filteredPlaces: [VisitedPlaceSummary] {
@@ -631,10 +631,10 @@ private struct PlacesVisitedMapView: View {
     private var availableCategories: [BloggoCategoryGroup] {
         let groups = createdRecapStore.visitedPlaces.compactMap { place -> BloggoCategoryGroup? in
             guard let raw = place.categoryRawValue, !raw.isEmpty else { return nil }
-            let group = BloggoCategoryMapper.displayGroup(forStoredValue: raw)
-            return group == .other ? nil : group
+            return BloggoCategoryMapper.displayGroup(forStoredValue: raw)
         }
-        return Array(Set(groups)).sorted { $0.displayName < $1.displayName }
+        let withoutOther = Array(Set(groups).subtracting([.other])).sorted { $0.displayName < $1.displayName }
+        return groups.contains(.other) ? withoutOther + [.other] : withoutOther
     }
 
     private func coordinate(for place: VisitedPlaceSummary) -> CLLocationCoordinate2D? {

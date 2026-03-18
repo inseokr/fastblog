@@ -8,12 +8,15 @@ import Foundation
 enum BloggoCategoryGroup: String, CaseIterable, Codable, Sendable {
     case foodAndDrink       = "food_and_drink"
     case coffeeAndCasual    = "coffee_and_casual"
+    case dessertsAndSweets  = "desserts_and_sweets"
     case winery             = "winery"
     case nightlife          = "nightlife"
     case lodging            = "lodging"
+    case campingRV          = "camping_rv"
     case transportation     = "transportation"
     case parking            = "parking"
     case automotive         = "automotive"
+    case vehicleServices    = "vehicle_services"
     case shopping           = "shopping"
     case retailSpecialty    = "retail_specialty"
     case entertainment      = "entertainment"
@@ -37,12 +40,15 @@ enum BloggoCategoryGroup: String, CaseIterable, Codable, Sendable {
         switch self {
         case .foodAndDrink:      return "Food & Drink"
         case .coffeeAndCasual:   return "Coffee & Casual"
+        case .dessertsAndSweets: return "Desserts & Sweets"
         case .winery:            return "Wineries"
         case .nightlife:         return "Nightlife"
         case .lodging:           return "Lodging"
+        case .campingRV:         return "Camping & RV"
         case .transportation:    return "Transportation"
         case .parking:           return "Parking"
         case .automotive:        return "Automotive"
+        case .vehicleServices:   return "Vehicle Services"
         case .shopping:          return "Shopping"
         case .retailSpecialty:   return "Retail & Specialty"
         case .entertainment:     return "Entertainment"
@@ -68,12 +74,15 @@ enum BloggoCategoryGroup: String, CaseIterable, Codable, Sendable {
         switch self {
         case .foodAndDrink:      return "fork.knife"
         case .coffeeAndCasual:   return "cup.and.saucer.fill"
+        case .dessertsAndSweets: return "birthday.cake.fill"
         case .winery:            return "wineglass.fill"
         case .nightlife:         return "moon.stars.fill"
         case .lodging:           return "bed.double.fill"
+        case .campingRV:         return "tent.fill"
         case .transportation:    return "car.fill"
         case .parking:           return "parkingsign"
         case .automotive:        return "fuelpump.fill"
+        case .vehicleServices:   return "car.2.fill"
         case .shopping:          return "bag.fill"
         case .retailSpecialty:   return "tag.fill"
         case .entertainment:     return "theatermasks.fill"
@@ -101,7 +110,7 @@ enum BloggoCategoryMapper {
         // Food & Drink
         "MKPOICategoryRestaurant":       .foodAndDrink,
         "MKPOICategoryCafe":             .coffeeAndCasual,
-        "MKPOICategoryBakery":           .foodAndDrink,
+        "MKPOICategoryBakery":           .dessertsAndSweets,
         "MKPOICategoryWinery":           .winery,
         "MKPOICategoryBrewery":          .foodAndDrink,
         "MKPOICategoryDistillery":       .foodAndDrink,
@@ -118,7 +127,7 @@ enum BloggoCategoryMapper {
         "MKPOICategoryConventionCenter": .entertainment,
         // Lodging
         "MKPOICategoryHotel":            .lodging,
-        "MKPOICategoryCampground":       .lodging,
+        "MKPOICategoryCampground":       .campingRV,
         // Arts & Culture
         "MKPOICategoryMuseum":           .artsAndCulture,
         "MKPOICategoryReligiousSite":    .artsAndCulture,
@@ -134,13 +143,13 @@ enum BloggoCategoryMapper {
         // Transportation
         "MKPOICategoryAirport":          .transportation,
         "MKPOICategoryPublicTransport":  .transportation,
-        "MKPOICategoryCarRental":        .transportation,
+        "MKPOICategoryCarRental":        .vehicleServices,
         "MKPOICategoryParking":          .parking,
         "MKPOICategoryRestStop":         .transportation,
-        // Automotive
-        "MKPOICategoryGasStation":       .automotive,
-        "MKPOICategoryCarWash":          .automotive,
-        "MKPOICategoryEVCharger":        .automotive,
+        // Vehicle Services
+        "MKPOICategoryGasStation":       .vehicleServices,
+        "MKPOICategoryCarWash":          .vehicleServices,
+        "MKPOICategoryEVCharger":        .vehicleServices,
         // Health
         "MKPOICategoryHospital":         .health,
         "MKPOICategoryPharmacy":         .health,
@@ -306,6 +315,13 @@ enum BloggoCategoryMapper {
         "coffeehouse", "teahouse", "tearoom", "boba", "matcha",
     ]
 
+    /// Bakeries, ice cream, and sweet treat destinations.
+    private static let dessertsTokens: Set<String> = [
+        "bakery", "dessert", "gelato", "icecream", "patisserie",
+        "pastry", "confectionery", "candy", "donut", "cupcake",
+        "creamery", "sorbet", "macaron",
+    ]
+
     /// Food & drink venues Apple misses by name.
     private static let foodDrinkTokens: Set<String> = [
         "distillery", "cidery", "taproom", "pub", "tavern", "bistro", "eatery",
@@ -322,6 +338,11 @@ enum BloggoCategoryMapper {
         "spa", "hammam", "sauna", "bathhouse",
     ]
 
+    /// Campgrounds, RV parks, and glamping sites.
+    private static let campingRVTokens: Set<String> = [
+        "campground", "campsite", "camping", "rv", "caravan", "glamping",
+    ]
+
     /// Lodging types Apple misses by name.
     private static let lodgingTokens: Set<String> = [
         "hostel", "inn", "resort", "villa", "chalet",
@@ -331,6 +352,11 @@ enum BloggoCategoryMapper {
     /// Parking lots, garages, and structures.
     private static let parkingTokens: Set<String> = [
         "parking", "garage", "carpark", "park and ride",
+    ]
+
+    /// Gas stations, car rentals, EV chargers, and service stations.
+    private static let vehicleServicesTokens: Set<String> = [
+        "petrol", "fuel", "carwash", "gasstation", "charging",
     ]
 
     /// Entertainment venues Apple misses by name.
@@ -369,12 +395,15 @@ enum BloggoCategoryMapper {
         if !t.isDisjoint(with: artsCultureTokens)  { return .artsAndCulture }
         if !t.isDisjoint(with: attractionTokens)   { return .attractions }
         if !t.isDisjoint(with: coffeeTokens)       { return .coffeeAndCasual }
+        if !t.isDisjoint(with: dessertsTokens)     { return .dessertsAndSweets }
         if !t.isDisjoint(with: golfTokens)         { return .golf }
         if !t.isDisjoint(with: foodDrinkTokens)    { return .foodAndDrink }
         if !t.isDisjoint(with: shoppingTokens)     { return .shopping }
         if !t.isDisjoint(with: personalCareTokens) { return .personalCare }
+        if !t.isDisjoint(with: campingRVTokens)     { return .campingRV }
         if !t.isDisjoint(with: lodgingTokens)      { return .lodging }
         if !t.isDisjoint(with: parkingTokens)      { return .parking }
+        if !t.isDisjoint(with: vehicleServicesTokens) { return .vehicleServices }
         if !t.isDisjoint(with: entertainmentTokens){ return .entertainment }
         return nil
     }

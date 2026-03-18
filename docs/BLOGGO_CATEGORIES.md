@@ -8,14 +8,17 @@ Bloggo uses 26 universal category groups to classify places. These replace provi
 
 | Raw Value | Display Name | SF Symbol | How It's Assigned |
 |---|---|---|---|
-| `food_and_drink` | Food & Drink | `fork.knife` | Apple: Restaurant, Bakery, Brewery, Distillery / Name: pub, tavern, bistro, taproom, cidery |
+| `food_and_drink` | Food & Drink | `fork.knife` | Apple: Restaurant, Brewery, Distillery / Name: pub, tavern, bistro, taproom, cidery |
 | `coffee_and_casual` | Coffee & Casual | `cup.and.saucer.fill` | Apple: Cafe / Name: coffee, café, espresso, roaster, teahouse, boba, matcha |
+| `desserts_and_sweets` | Desserts & Sweets | `birthday.cake.fill` | Apple: Bakery / Name: bakery, dessert, gelato, patisserie, donut, macaron, creamery |
 | `winery` | Wineries | `wineglass.fill` | Apple: Winery / Name: winery, vineyard, wine, chateau, cellar, domaine, estate |
 | `nightlife` | Nightlife | `moon.stars.fill` | Apple: Nightlife / Name: bar, nightclub, club, lounge, disco, speakeasy, cocktail |
-| `lodging` | Lodging | `bed.double.fill` | Apple: Hotel, Campground / Name: hostel, inn, resort, villa, chalet, ryokan, motel, guesthouse |
-| `transportation` | Transportation | `car.fill` | Apple: Airport, Public Transport, Car Rental, Rest Stop |
+| `lodging` | Lodging | `bed.double.fill` | Apple: Hotel / Name: hostel, inn, resort, villa, chalet, ryokan, motel, guesthouse |
+| `camping_rv` | Camping & RV | `tent.fill` | Apple: Campground / Name: campground, campsite, rv, caravan, glamping |
+| `transportation` | Transportation | `car.fill` | Apple: Airport, Public Transport, Rest Stop |
 | `parking` | Parking | `parkingsign` | Apple: Parking / Name: parking, garage, carpark |
-| `automotive` | Automotive | `fuelpump.fill` | Apple: Gas Station, Car Wash, EV Charger |
+| `automotive` | Automotive | `fuelpump.fill` | _(legacy — superseded by Vehicle Services)_ |
+| `vehicle_services` | Vehicle Services | `car.2.fill` | Apple: Gas Station, Car Wash, EV Charger, Car Rental / Name: petrol, fuel, carwash |
 | `shopping` | Shopping | `bag.fill` | Apple: Food Market, Store / Name: market, bazaar, souk, mall, outlet, flea |
 | `retail_specialty` | Retail & Specialty | `tag.fill` | _(reserved)_ |
 | `entertainment` | Entertainment | `theatermasks.fill` | Apple: Movie Theater, Theater, Casino, Fairground, Convention Center / Name: amphitheater, concert, carnival |
@@ -65,13 +68,16 @@ When Apple returns no category (e.g. lakes, trails, viewpoints, hot springs), Bl
 8. Arts & Culture (`ruins`, `cathedral`, `historic`, `memorial`…)
 9. Attractions (`castle`, `lighthouse`, `bridge`, `harbor`…)
 10. Coffee & Casual (`coffee`, `café`, `espresso`…)
-11. Golf (`golf`, `links`, `clubhouse`)
-12. Food & Drink (`pub`, `tavern`, `distillery`…)
-13. Shopping (`market`, `bazaar`, `mall`…)
-14. Personal Care (`spa`, `hammam`, `sauna`…)
-15. Lodging (`hostel`, `inn`, `resort`…)
-16. Parking (`parking`, `garage`, `carpark`)
-17. Entertainment (`amphitheater`, `concert`, `carnival`…)
+11. Desserts & Sweets (`bakery`, `gelato`, `patisserie`, `donut`…)
+12. Golf (`golf`, `links`, `clubhouse`)
+13. Food & Drink (`pub`, `tavern`, `distillery`…)
+14. Shopping (`market`, `bazaar`, `mall`…)
+15. Personal Care (`spa`, `hammam`, `sauna`…)
+16. Camping & RV (`campground`, `campsite`, `rv`, `caravan`…)
+17. Lodging (`hostel`, `inn`, `resort`…)
+18. Parking (`parking`, `garage`, `carpark`)
+19. Vehicle Services (`petrol`, `fuel`, `carwash`…)
+20. Entertainment (`amphitheater`, `concert`, `carnival`…)
 
 Examples:
 - `"Lake Tahoe"` → **Nature** (word `"lake"`)

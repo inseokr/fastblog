@@ -310,10 +310,10 @@ struct FullScreenMapView: View {
     private var availableCategories: [BloggoCategoryGroup] {
         let groups = day.placeStops.compactMap { stop -> BloggoCategoryGroup? in
             guard let raw = stop.placeCategory, !raw.isEmpty else { return nil }
-            let group = BloggoCategoryMapper.displayGroup(forStoredValue: raw)
-            return group == .other ? nil : group
+            return BloggoCategoryMapper.displayGroup(forStoredValue: raw)
         }
-        return Array(Set(groups)).sorted { $0.displayName < $1.displayName }
+        let withoutOther = Array(Set(groups).subtracting([.other])).sorted { $0.displayName < $1.displayName }
+        return groups.contains(.other) ? withoutOther + [.other] : withoutOther
     }
 
     private var filteredStops: [PlaceStop] {
