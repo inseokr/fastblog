@@ -629,7 +629,7 @@ class PDFExportService {
             UIBezierPath(ovalIn: rect).addClip()
 
         case .rectangle:
-            break // no clip needed — sharp corners
+            UIBezierPath(rect: rect).addClip()
 
         case .arch:
             // Flat bottom + semicircle top (dome)
