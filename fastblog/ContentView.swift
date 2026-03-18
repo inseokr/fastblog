@@ -26,6 +26,7 @@ struct ContentView: View {
     @State private var selectedCreatedRecap: CreatedRecapBlog?
     @State private var initialDayIndexForRecap: Int?
     @State private var dismissToLandingRequested = false
+    @State private var showNoPhotosAlert = false
     @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
     @State private var showCaptureIntroSheet = false
     /// Day index to open when navigating to a blog via the new-moments popup.
@@ -205,6 +206,14 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.35), value: showTrips)
         .animation(.easeInOut(duration: 0.25), value: selectedCreatedRecap != nil)
         .animation(.easeInOut(duration: 0.3), value: postCameraToastMessage != nil)
+        .alert("No Photos Selected", isPresented: $showNoPhotosAlert) {
+            Button("Select Photos") {
+                presentLimitedLibraryPickerFromLanding()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Please select at least one photo to create a travel blog.")
+        }
         .environmentObject(createdRecapStore)
         .environment(\.dismissToLanding, {
             dismissToLandingRequested = true
@@ -350,6 +359,11 @@ struct ContentView: View {
             PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: topVC) { _ in
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                     photoAuth.refreshStatus()
+                    let fetchResult = PHAsset.fetchAssets(with: PHFetchOptions())
+                    guard fetchResult.count > 0 else {
+                        showNoPhotosAlert = true
+                        return
+                    }
                     // Trigger loading → Trips flow after the user confirms with the blue checkmark.
                     pendingShowTripsWhenIdle = true
                     tripsViewModel.startDefaultScan(forceFullScan: true)
