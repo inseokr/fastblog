@@ -509,43 +509,11 @@ struct PlaceStopRowView: View {
             .padding(.leading, 27)
     }
 
-    private func categoryInfo(for rawValue: String?) -> (symbol: String, label: String)? {
-        guard let raw = rawValue else { return nil }
-        let cat = MKPointOfInterestCategory(rawValue: raw)
-        switch cat {
-        case .restaurant:      return ("fork.knife", "Restaurant")
-        case .cafe:            return ("cup.and.saucer.fill", "Café")
-        case .bakery:          return ("birthday.cake.fill", "Bakery")
-        case .winery:          return ("wineglass.fill", "Winery")
-        case .brewery:         return ("mug.fill", "Brewery")
-        case .nightlife:       return ("moon.stars.fill", "Nightlife")
-        case .hotel:           return ("bed.double.fill", "Hotel")
-        case .campground:      return ("tent.fill", "Campground")
-        case .museum:          return ("building.columns.fill", "Museum")
-        case .movieTheater:    return ("film.fill", "Movie Theater")
-        case .theater:         return ("theatermasks.fill", "Theater")
-        case .amusementPark:   return ("ferriswheel", "Amusement Park")
-        case .zoo:             return ("pawprint.fill", "Zoo")
-        case .aquarium:        return ("fish.fill", "Aquarium")
-        case .park:            return ("leaf.fill", "Park")
-        case .beach:           return ("beach.umbrella.fill", "Beach")
-        case .nationalPark:    return ("tree.fill", "National Park")
-        case .airport:         return ("airplane", "Airport")
-        case .publicTransport: return ("tram.fill", "Transit")
-        case .gasStation:      return ("fuelpump.fill", "Gas Station")
-        case .hospital:        return ("cross.fill", "Hospital")
-        case .pharmacy:        return ("cross.case.fill", "Pharmacy")
-        case .fitnessCenter:   return ("dumbbell.fill", "Fitness")
-        case .store:           return ("bag.fill", "Store")
-        case .foodMarket:      return ("cart.fill", "Market")
-        case .library:         return ("books.vertical.fill", "Library")
-        case .school:          return ("graduationcap.fill", "School")
-        case .university:      return ("graduationcap.fill", "University")
-        case .marina:          return ("sailboat.fill", "Marina")
-        case .stadium:         return ("sportscourt.fill", "Stadium")
-        case .bank:            return ("banknote.fill", "Bank")
-        default:               return nil
-        }
+    private func categoryInfo(for storedValue: String?) -> (symbol: String, label: String)? {
+        guard let stored = storedValue, !stored.isEmpty else { return nil }
+        let group = BloggoCategoryMapper.displayGroup(forStoredValue: stored)
+        guard group != .other else { return nil }
+        return (group.icon, group.displayName)
     }
 }
 

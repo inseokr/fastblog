@@ -305,23 +305,21 @@ struct FullScreenMapView: View {
     /// Captions at the moment the modal was opened — used to diff on dismiss.
     @State private var photoModalCaptionsSnapshot: [UUID: String] = [:]
     
-    @State private var selectedCategory: String? = nil
+    @State private var selectedCategory: BloggoCategoryGroup? = nil
 
-    private var availableCategories: [String] {
-        let cats = day.placeStops
-            .compactMap {
-                let cat = $0.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                return cat.isEmpty ? "Others" : cat
-            }
-        return Array(Set(cats)).sorted()
+    private var availableCategories: [BloggoCategoryGroup] {
+        let groups = day.placeStops.compactMap { stop -> BloggoCategoryGroup? in
+            guard let raw = stop.placeCategory, !raw.isEmpty else { return nil }
+            let group = BloggoCategoryMapper.displayGroup(forStoredValue: raw)
+            return group == .other ? nil : group
+        }
+        return Array(Set(groups)).sorted { $0.displayName < $1.displayName }
     }
 
     private var filteredStops: [PlaceStop] {
-        guard let cat = selectedCategory else { return day.placeStops }
+        guard let selectedGroup = selectedCategory else { return day.placeStops }
         return day.placeStops.filter { stop in
-            let rawCat = (stop.placeCategory ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let actualCat = rawCat.isEmpty ? "Others" : rawCat
-            return actualCat.caseInsensitiveCompare(cat) == .orderedSame
+            BloggoCategoryMapper.displayGroup(forStoredValue: stop.placeCategory) == selectedGroup
         }
     }
 
@@ -410,9 +408,9 @@ struct FullScreenMapView: View {
                                 chip(label: "All", isSelected: selectedCategory == nil) {
                                     withAnimation { selectedCategory = nil; selectedPlaceIndex = 0 }
                                 }
-                                ForEach(availableCategories, id: \.self) { cat in
-                                    chip(label: categoryDisplayLabel(for: cat), isSelected: selectedCategory == cat) {
-                                        withAnimation { selectedCategory = (selectedCategory == cat) ? nil : cat; selectedPlaceIndex = 0 }
+                                ForEach(availableCategories, id: \.rawValue) { group in
+                                    chip(label: group.displayName, isSelected: selectedCategory == group) {
+                                        withAnimation { selectedCategory = (selectedCategory == group) ? nil : group; selectedPlaceIndex = 0 }
                                     }
                                 }
                             }
@@ -468,55 +466,6 @@ struct FullScreenMapView: View {
     }
 
     @State private var scrolledPlaceID: UUID?
-
-    private func categoryDisplayLabel(for rawValue: String) -> String {
-        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || trimmed == "Others" { return "Others" }
-
-        let cat = MKPointOfInterestCategory(rawValue: trimmed)
-        switch cat {
-        case .restaurant:      return "Restaurant"
-        case .cafe:            return "Café"
-        case .bakery:          return "Bakery"
-        case .winery:          return "Winery"
-        case .brewery:         return "Brewery"
-        case .nightlife:       return "Nightlife"
-        case .hotel:           return "Hotel"
-        case .campground:      return "Campground"
-        case .museum:          return "Museum"
-        case .movieTheater:    return "Movie Theater"
-        case .theater:         return "Theater"
-        case .amusementPark:   return "Amusement Park"
-        case .zoo:             return "Zoo"
-        case .aquarium:        return "Aquarium"
-        case .park:            return "Park"
-        case .beach:           return "Beach"
-        case .nationalPark:    return "National Park"
-        case .airport:         return "Airport"
-        case .publicTransport: return "Transit"
-        case .gasStation:      return "Gas Station"
-        case .hospital:        return "Hospital"
-        case .pharmacy:        return "Pharmacy"
-        case .fitnessCenter:   return "Fitness"
-        case .store:           return "Store"
-        case .foodMarket:      return "Market"
-        case .library:         return "Library"
-        case .school:          return "School"
-        case .university:      return "University"
-        case .marina:          return "Marina"
-        case .stadium:         return "Stadium"
-        case .bank:            return "Bank"
-        default: break
-        }
-
-        if trimmed.hasPrefix("MKPOICategory") {
-            let remainder = String(trimmed.dropFirst("MKPOICategory".count))
-            if remainder.isEmpty { return trimmed }
-            return remainder.replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression)
-        }
-        if trimmed.count <= 4 { return trimmed.uppercased() }
-        return trimmed
-    }
 
     private func chip(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {

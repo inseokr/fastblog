@@ -21,7 +21,7 @@ struct EditPlaceStopNameSheet: View {
     @State private var isResolvingPOI: Bool = false
     /// When user taps a POI on the map, we resolve the name and store the tapped coordinate to save as the place's location.
     @State private var selectedCoordinate: CLLocationCoordinate2D? = nil
-    /// When user taps a POI (or picks from autocomplete), we resolve and store category (MKPointOfInterestCategory raw value).
+    /// When user taps a POI (or picks from autocomplete), we resolve and store the Bloggo universal category group raw value.
     @State private var selectedCategory: String? = nil
     @State private var initialTitle: String = ""
     @State private var initialCoordinate: CLLocationCoordinate2D? = nil
@@ -261,7 +261,12 @@ struct EditPlaceStopNameSheet: View {
                 debugPrint("[POI] POI-at-tap result: name=\(poi.name), category=\(poi.category ?? "nil")")
                 editedTitle = poi.name
                 selectedCoordinate = coordinate
-                selectedCategory = poi.category
+                let mapped = poi.category.map { BloggoCategoryMapper.bloggoCategoryRawValue(forAppleRawValue: $0) }
+                if let mapped, mapped != BloggoCategoryGroup.other.rawValue {
+                    selectedCategory = mapped
+                } else {
+                    selectedCategory = BloggoCategoryMapper.inferGroup(fromName: poi.name).map(\.rawValue) ?? mapped
+                }
                 debugPrint("[POI] updated: editedTitle=\(editedTitle), selectedCoordinate=\(coordinate.latitude),\(coordinate.longitude)")
                 return
             }
@@ -275,10 +280,16 @@ struct EditPlaceStopNameSheet: View {
                 selectedCoordinate = coordinate
                 debugPrint("[POI] set name=\(name), fetching category...")
                 if let category = await searchViewModel.fetchCategory(at: coordinate, name: name) {
-                    selectedCategory = category
+                    let mapped = BloggoCategoryMapper.bloggoCategoryRawValue(forAppleRawValue: category)
+                    if mapped != BloggoCategoryGroup.other.rawValue {
+                        selectedCategory = mapped
+                    } else {
+                        selectedCategory = BloggoCategoryMapper.inferGroup(fromName: name).map(\.rawValue) ?? mapped
+                    }
                     debugPrint("[POI] category=\(category)")
                 } else {
-                    debugPrint("[POI] category=nil")
+                    selectedCategory = BloggoCategoryMapper.inferGroup(fromName: name).map(\.rawValue)
+                    debugPrint("[POI] category=nil, name inference=\(selectedCategory ?? "nil")")
                 }
                 debugPrint("[POI] updated: editedTitle=\(editedTitle), selectedCoordinate=\(coordinate.latitude),\(coordinate.longitude)")
             } else {
@@ -393,7 +404,16 @@ struct EditPlaceStopNameSheet: View {
                                 editedTitle = suggestion.title
                                 searchViewModel.suggestions = []
                                 Task {
-                                    selectedCategory = await searchViewModel.fetchCategory(for: suggestion)
+                                    if let appleCategory = await searchViewModel.fetchCategory(for: suggestion) {
+                                        let mapped = BloggoCategoryMapper.bloggoCategoryRawValue(forAppleRawValue: appleCategory)
+                                        if mapped != BloggoCategoryGroup.other.rawValue {
+                                            selectedCategory = mapped
+                                        } else {
+                                            selectedCategory = BloggoCategoryMapper.inferGroup(fromName: suggestion.title).map(\.rawValue) ?? mapped
+                                        }
+                                    } else {
+                                        selectedCategory = BloggoCategoryMapper.inferGroup(fromName: suggestion.title).map(\.rawValue)
+                                    }
                                 }
                             } label: {
                             VStack(alignment: .leading, spacing: 2) {

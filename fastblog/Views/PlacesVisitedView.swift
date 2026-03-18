@@ -49,7 +49,7 @@ struct PlacesVisitedView: View {
 
     @State private var selectedYear: Int? = nil
     @State private var selectedCountry: String? = nil
-    @State private var selectedCategory: String? = nil
+    @State private var selectedCategory: BloggoCategoryGroup? = nil
 
     @State private var selectedPlaceForModal: VisitedPlaceSummary?
     @FocusState private var isSearchFocused: Bool
@@ -74,67 +74,13 @@ struct PlacesVisitedView: View {
         Array(Set(createdRecapStore.visitedPlaces.map(\.country))).sorted()
     }
 
-    private var availableCategories: [String] {
-        let cats = createdRecapStore.visitedPlaces
-            .compactMap { $0.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        return Array(Set(cats)).sorted()
-    }
-
-    private func categoryDisplayLabel(for rawValue: String) -> String {
-        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "" }
-
-        let cat = MKPointOfInterestCategory(rawValue: trimmed)
-        switch cat {
-        case .restaurant:      return "Restaurant"
-        case .cafe:            return "Café"
-        case .bakery:          return "Bakery"
-        case .winery:          return "Winery"
-        case .brewery:         return "Brewery"
-        case .nightlife:       return "Nightlife"
-        case .hotel:           return "Hotel"
-        case .campground:      return "Campground"
-        case .museum:          return "Museum"
-        case .movieTheater:    return "Movie Theater"
-        case .theater:         return "Theater"
-        case .amusementPark:   return "Amusement Park"
-        case .zoo:             return "Zoo"
-        case .aquarium:        return "Aquarium"
-        case .park:            return "Park"
-        case .beach:           return "Beach"
-        case .nationalPark:    return "National Park"
-        case .airport:         return "Airport"
-        case .publicTransport: return "Transit"
-        case .gasStation:      return "Gas Station"
-        case .hospital:        return "Hospital"
-        case .pharmacy:        return "Pharmacy"
-        case .fitnessCenter:   return "Fitness"
-        case .store:           return "Store"
-        case .foodMarket:      return "Market"
-        case .library:         return "Library"
-        case .school:          return "School"
-        case .university:      return "University"
-        case .marina:          return "Marina"
-        case .stadium:         return "Stadium"
-        case .bank:            return "Bank"
-        default:
-            break
+    private var availableCategories: [BloggoCategoryGroup] {
+        let groups = createdRecapStore.visitedPlaces.compactMap { place -> BloggoCategoryGroup? in
+            guard let raw = place.categoryRawValue, !raw.isEmpty else { return nil }
+            let group = BloggoCategoryMapper.displayGroup(forStoredValue: raw)
+            return group == .other ? nil : group
         }
-
-        if trimmed.hasPrefix("MKPOICategory") {
-            let remainder = String(trimmed.dropFirst("MKPOICategory".count))
-            if remainder.isEmpty { return trimmed }
-            let spaced = remainder
-                .replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression)
-            return spaced
-        }
-
-        if trimmed.count <= 4 {
-            return trimmed.uppercased()
-        }
-
-        return trimmed
+        return Array(Set(groups)).sorted { $0.displayName < $1.displayName }
     }
 
     private var filteredPlaces: [VisitedPlaceSummary] {
@@ -146,10 +92,9 @@ struct PlacesVisitedView: View {
                     let rhs = c.trimmingCharacters(in: .whitespacesAndNewlines)
                     if lhs.caseInsensitiveCompare(rhs) != .orderedSame { return false }
                 }
-                if let cat = selectedCategory {
-                    let lhs = (place.categoryRawValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    let rhs = cat.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if lhs.caseInsensitiveCompare(rhs) != .orderedSame { return false }
+                if let selectedGroup = selectedCategory {
+                    let placeGroup = BloggoCategoryMapper.displayGroup(forStoredValue: place.categoryRawValue)
+                    if placeGroup != selectedGroup { return false }
                 }
 
                 let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -407,9 +352,9 @@ struct PlacesVisitedView: View {
                             chip(label: "All", isSelected: selectedCategory == nil) {
                                 selectedCategory = nil
                             }
-                            ForEach(availableCategories, id: \.self) { cat in
-                                chip(label: categoryDisplayLabel(for: cat), isSelected: selectedCategory == cat) {
-                                    selectedCategory = (selectedCategory == cat) ? nil : cat
+                            ForEach(availableCategories, id: \.rawValue) { group in
+                                chip(label: group.displayName, isSelected: selectedCategory == group) {
+                                    selectedCategory = (selectedCategory == group) ? nil : group
                                 }
                             }
                         }
@@ -661,7 +606,7 @@ private struct PlacesVisitedMapView: View {
 
     @Binding var selectedYear: Int?
     @Binding var selectedCountry: String?
-    @Binding var selectedCategory: String?
+    @Binding var selectedCategory: BloggoCategoryGroup?
     @Binding var searchText: String
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
 
@@ -683,67 +628,13 @@ private struct PlacesVisitedMapView: View {
         Array(Set(createdRecapStore.visitedPlaces.map(\.country))).sorted()
     }
 
-    private var availableCategories: [String] {
-        let cats = createdRecapStore.visitedPlaces
-            .compactMap { $0.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        return Array(Set(cats)).sorted()
-    }
-
-    private func categoryDisplayLabel(for rawValue: String) -> String {
-        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "" }
-
-        let cat = MKPointOfInterestCategory(rawValue: trimmed)
-        switch cat {
-        case .restaurant:      return "Restaurant"
-        case .cafe:            return "Café"
-        case .bakery:          return "Bakery"
-        case .winery:          return "Winery"
-        case .brewery:         return "Brewery"
-        case .nightlife:       return "Nightlife"
-        case .hotel:           return "Hotel"
-        case .campground:      return "Campground"
-        case .museum:          return "Museum"
-        case .movieTheater:    return "Movie Theater"
-        case .theater:         return "Theater"
-        case .amusementPark:   return "Amusement Park"
-        case .zoo:             return "Zoo"
-        case .aquarium:        return "Aquarium"
-        case .park:            return "Park"
-        case .beach:           return "Beach"
-        case .nationalPark:    return "National Park"
-        case .airport:         return "Airport"
-        case .publicTransport: return "Transit"
-        case .gasStation:      return "Gas Station"
-        case .hospital:        return "Hospital"
-        case .pharmacy:        return "Pharmacy"
-        case .fitnessCenter:   return "Fitness"
-        case .store:           return "Store"
-        case .foodMarket:      return "Market"
-        case .library:         return "Library"
-        case .school:          return "School"
-        case .university:      return "University"
-        case .marina:          return "Marina"
-        case .stadium:         return "Stadium"
-        case .bank:            return "Bank"
-        default:
-            break
+    private var availableCategories: [BloggoCategoryGroup] {
+        let groups = createdRecapStore.visitedPlaces.compactMap { place -> BloggoCategoryGroup? in
+            guard let raw = place.categoryRawValue, !raw.isEmpty else { return nil }
+            let group = BloggoCategoryMapper.displayGroup(forStoredValue: raw)
+            return group == .other ? nil : group
         }
-
-        if trimmed.hasPrefix("MKPOICategory") {
-            let remainder = String(trimmed.dropFirst("MKPOICategory".count))
-            if remainder.isEmpty { return trimmed }
-            let spaced = remainder
-                .replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression)
-            return spaced
-        }
-
-        if trimmed.count <= 4 {
-            return trimmed.uppercased()
-        }
-
-        return trimmed
+        return Array(Set(groups)).sorted { $0.displayName < $1.displayName }
     }
 
     private func coordinate(for place: VisitedPlaceSummary) -> CLLocationCoordinate2D? {
@@ -761,10 +652,9 @@ private struct PlacesVisitedMapView: View {
                     let rhs = c.trimmingCharacters(in: .whitespacesAndNewlines)
                     if lhs.caseInsensitiveCompare(rhs) != .orderedSame { return false }
                 }
-                if let cat = selectedCategory {
-                    let lhs = (place.categoryRawValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    let rhs = cat.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if lhs.caseInsensitiveCompare(rhs) != .orderedSame { return false }
+                if let selectedGroup = selectedCategory {
+                    let placeGroup = BloggoCategoryMapper.displayGroup(forStoredValue: place.categoryRawValue)
+                    if placeGroup != selectedGroup { return false }
                 }
                 let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !query.isEmpty {
@@ -895,9 +785,9 @@ private struct PlacesVisitedMapView: View {
                                 chip(label: "All", isSelected: selectedCategory == nil) {
                                     selectedCategory = nil
                                 }
-                                ForEach(availableCategories, id: \.self) { cat in
-                                    chip(label: categoryDisplayLabel(for: cat), isSelected: selectedCategory == cat) {
-                                        selectedCategory = (selectedCategory == cat) ? nil : cat
+                                ForEach(availableCategories, id: \.rawValue) { group in
+                                    chip(label: group.displayName, isSelected: selectedCategory == group) {
+                                        selectedCategory = (selectedCategory == group) ? nil : group
                                     }
                                 }
                             }

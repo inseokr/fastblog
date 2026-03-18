@@ -25,6 +25,7 @@
 		BB00010E /* DayCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00010D /* DayCluster.swift */; };
 		BB000110 /* MockPhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00010F /* MockPhoto.swift */; };
 		BB000112 /* PlaceCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000111 /* PlaceCluster.swift */; };
+		BB000401 /* PlaceCategoryMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000400 /* PlaceCategoryMapper.swift */; };
 		BB000114 /* RecapBlogDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000113 /* RecapBlogDetail.swift */; };
 		BB000116 /* RecapDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000115 /* RecapDraft.swift */; };
 		BB00011A /* ScanConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000119 /* ScanConfig.swift */; };
@@ -192,6 +193,7 @@
 		BB00010D /* DayCluster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayCluster.swift; sourceTree = "<group>"; };
 		BB00010F /* MockPhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockPhoto.swift; sourceTree = "<group>"; };
 		BB000111 /* PlaceCluster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceCluster.swift; sourceTree = "<group>"; };
+		BB000400 /* PlaceCategoryMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceCategoryMapper.swift; sourceTree = "<group>"; };
 		BB000113 /* RecapBlogDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapBlogDetail.swift; sourceTree = "<group>"; };
 		BB000115 /* RecapDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapDraft.swift; sourceTree = "<group>"; };
 		BB000119 /* ScanConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanConfig.swift; sourceTree = "<group>"; };
@@ -397,6 +399,7 @@
 				BB00010D /* DayCluster.swift */,
 				BB00010F /* MockPhoto.swift */,
 				BB000111 /* PlaceCluster.swift */,
+				BB000400 /* PlaceCategoryMapper.swift */,
 				BB000113 /* RecapBlogDetail.swift */,
 				BB000115 /* RecapDraft.swift */,
 				BB0001D1 /* RecallTrigger.swift */,
@@ -687,6 +690,7 @@
 				BB00010E /* DayCluster.swift in Sources */,
 				BB000110 /* MockPhoto.swift in Sources */,
 				BB000112 /* PlaceCluster.swift in Sources */,
+				BB000401 /* PlaceCategoryMapper.swift in Sources */,
 				BB000114 /* RecapBlogDetail.swift in Sources */,
 				BB000116 /* RecapDraft.swift in Sources */,
 				BB00011A /* ScanConfig.swift in Sources */,
