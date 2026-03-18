@@ -303,27 +303,29 @@ private struct GalleryCell: View {
                         .opacity(isSelectMode && isSelected ? 0.5 : 1)
                 }
 
-                // Caption / Vibe indicator dots (when not in select mode)
-                if !isSelectMode {
-                    HStack(spacing: 4) {
-                        if item.localVibeURL != nil {
-                            Image(systemName: "dot.radiowaves.left.and.right")
-                                .font(.system(size: 9))
-                                .foregroundColor(.white.opacity(0.85))
-                                .padding(5)
-                                .background(Color.black.opacity(0.45))
-                                .clipShape(Circle())
-                        }
-                        if let cap = item.caption, !cap.isEmpty {
-                            Image(systemName: "text.bubble.fill")
-                                .font(.system(size: 10))
-                                .foregroundColor(.white.opacity(0.85))
-                                .padding(5)
-                                .background(Color.black.opacity(0.45))
-                                .clipShape(Circle())
-                        }
-                    }
-                    .padding(5)
+                // Caption indicator (bottom-left, after vibe badge)
+                if !isSelectMode, let cap = item.caption, !cap.isEmpty {
+                    Image(systemName: "text.bubble.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.85))
+                        .padding(5)
+                        .background(Color.black.opacity(0.45))
+                        .clipShape(Circle())
+                        .padding(5)
+                }
+
+                // Vibe badge — static green waveform in a circle, bottom-left
+                if !isSelectMode, item.localVibeURL != nil {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(
+                            LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
+                        )
+                        .padding(6)
+                        .background(Color.black.opacity(0.55))
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(Color.green.opacity(0.5), lineWidth: 1))
+                        .padding(5)
                 }
 
                 // Select mode checkmark

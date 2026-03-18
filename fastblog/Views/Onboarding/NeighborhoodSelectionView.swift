@@ -66,6 +66,7 @@ struct NeighborhoodSelectionView: View {
                 hasPendingSelection = true
                 pendingCenter = region.center
                 pendingSpan = region.span
+                mapRegion = region
                 if let name = name {
                     searchHelper.query = name
                 }
@@ -131,35 +132,69 @@ struct NeighborhoodSelectionView: View {
 
     private var searchField: some View {
         VStack(spacing: 8) {
-            ZStack(alignment: .leading) {
-                if searchHelper.query.isEmpty {
-                    Text("Search for your city or neighborhood")
-                        .font(.body)
-                        .foregroundColor(Color(white: 0.45))
-                        .padding(.leading, 16)
-                }
-                TextField("", text: $searchHelper.query)
-                    .textFieldStyle(.plain)
-                    .foregroundColor(.black.opacity(0.85))
-                    .focused($isFocused)
-                    .padding(12)
-                    .onChange(of: isFocused) { _, focused in
-                        if !focused {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                if !isFocused { searchHelper.suggestions = [] }
+            HStack(spacing: 0) {
+                ZStack(alignment: .leading) {
+                    if searchHelper.query.isEmpty {
+                        Text("Search for your city or neighborhood")
+                            .font(.body)
+                            .foregroundColor(Color(white: 0.45))
+                            .padding(.leading, 16)
+                    }
+                    TextField("", text: $searchHelper.query)
+                        .textFieldStyle(.plain)
+                        .foregroundColor(.black.opacity(0.85))
+                        .focused($isFocused)
+                        .padding(12)
+                        .onChange(of: isFocused) { _, focused in
+                            if focused && hasPendingSelection {
+                                // User re-tapped the field after a confirmed selection —
+                                // clear pending so autocomplete can reappear as they type.
+                                hasPendingSelection = false
+                                pendingCenter = nil
+                                pendingSpan = nil
+                                resolvePlaceTask?.cancel()
+                                resolvePlaceTask = nil
+                                searchHelper.retriggerSuggestions()
+                            }
+                            if !focused {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                    if !isFocused { searchHelper.suggestions = [] }
+                                }
                             }
                         }
+                }
+
+                if !searchHelper.query.isEmpty {
+                    Button {
+                        clearSelection()
+                        isFocused = true
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(Color(white: 0.45))
+                            .padding(.trailing, 12)
                     }
+                    .buttonStyle(.plain)
+                }
             }
             .background(OnboardingConstants.Colors.searchBackground)
             .cornerRadius(OnboardingConstants.Layout.searchCornerRadius)
             .accessibilityLabel("Select area on map")
             .accessibilityHint("Type to see suggestions, or pan the map and tap Select to choose an area")
-            
+
             if searchHelper.query.isEmpty && !hasPendingSelection && !isMapRevealed {
                 useCurrentLocationButton
             }
         }
+    }
+
+    private func clearSelection() {
+        searchHelper.clearQuery()
+        hasPendingSelection = false
+        pendingCenter = nil
+        pendingSpan = nil
+        resolvePlaceTask?.cancel()
+        resolvePlaceTask = nil
+        isResolvingPlace = false
     }
 
     @ViewBuilder

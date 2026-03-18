@@ -294,7 +294,7 @@ private struct ThumbnailCellView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(
-                        isCurrent ? Color.white : (isIncluded ? Color.green.opacity(0.9) : Color.clear),
+                        isCurrent ? Color.white : Color.clear,
                         lineWidth: isCurrent ? 3 : 2
                     )
             )

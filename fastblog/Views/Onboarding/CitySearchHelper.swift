@@ -64,6 +64,13 @@ final class CitySearchHelper: NSObject, ObservableObject {
         query = ""
         suggestions = []
     }
+
+    /// Re-sends the current query to the completer immediately (bypasses debounce).
+    /// Use this when the field regains focus after a confirmed selection.
+    func retriggerSuggestions() {
+        guard !query.isEmpty else { return }
+        completer.queryFragment = query
+    }
 }
 
 extension CitySearchHelper: MKLocalSearchCompleterDelegate {

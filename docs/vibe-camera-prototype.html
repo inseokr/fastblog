@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vibe Camera – Bloggo Prototype</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* ── Keyframe animations ── */
+    @keyframes ripple1 {
+      0%   { transform: scale(1);    opacity: 0.45; }
+      100% { transform: scale(1.55); opacity: 0; }
+    }
+    @keyframes ripple2 {
+      0%   { transform: scale(1);    opacity: 0.28; }
+      100% { transform: scale(1.9);  opacity: 0; }
+    }
+    @keyframes ripple3 {
+      0%   { transform: scale(1);    opacity: 0.16; }
+      100% { transform: scale(2.25); opacity: 0; }
+    }
+    @keyframes waveBar {
+      0%   { transform: scaleY(0.3); }
+      100% { transform: scaleY(1);   }
+    }
+    @keyframes vibeGlow {
+      0%, 100% { filter: drop-shadow(0 0 3px rgba(34,211,238,0.55)); }
+      50%       { filter: drop-shadow(0 0 8px rgba(74,222,128,0.75));  }
+    }
+    @keyframes sparkleShimmer {
+      0%, 100% { opacity: 1;   transform: scale(1)    rotate(0deg);  }
+      25%       { opacity: 0.7; transform: scale(1.18) rotate(12deg); }
+      75%       { opacity: 0.9; transform: scale(0.93) rotate(-6deg); }
+    }
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 0.5; }
+      50%       { opacity: 1;   }
+    }
+    @keyframes focusBracket {
+      0%, 90%, 100% { opacity: 0.65; }
+      45%            { opacity: 1;    }
+    }
+    @keyframes auraEdge {
+      0%, 100% { opacity: 0.55; }
+      50%       { opacity: 1;    }
+    }
+
+    * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #050508;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      gap: 16px;
+    }
+    .hint {
+      color: rgba(255,255,255,0.25);
+      font-family: -apple-system, sans-serif;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<p class="hint">Tap Vibe · Flash · Shutter to interact</p>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Atmospheric Waveform SVG
+   12 vertical bars with staggered waveBar animation, cyan→green gradient + glow
+───────────────────────────────────────────────────────────────────────────── */
+function AtmosphericWaveform({ isActive, size = 22 }) {
+  /* heights define the visual "shape" of the waveform */
+  const bars = [
+    { h: 5,  d: 0.00 },
+    { h: 9,  d: 0.07 },
+    { h: 15, d: 0.14 },
+    { h: 20, d: 0.21 },
+    { h: 13, d: 0.28 },
+    { h: 22, d: 0.35 },
+    { h: 18, d: 0.42 },
+    { h: 22, d: 0.35 },
+    { h: 13, d: 0.28 },
+    { h: 20, d: 0.21 },
+    { h: 9,  d: 0.07 },
+    { h: 5,  d: 0.00 },
+  ];
+  const vH = 24; /* viewBox height */
+
+  return (
+    <svg
+      width={size} height={size}
+      viewBox={`0 0 24 ${vH}`}
+      fill="none"
+      style={{
+        animation: isActive ? 'vibeGlow 2.4s ease-in-out infinite' : 'none',
+        opacity: isActive ? 1 : 0.38,
+        transition: 'opacity 0.35s ease',
+      }}
+    >
+      <defs>
+        <linearGradient id="waveGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor="#22D3EE" />
+          <stop offset="100%" stopColor="#4ADE80" />
+        </linearGradient>
+      </defs>
+
+      {bars.map((bar, i) => {
+        const x = i * 1.9 + 0.5;
+        const cx = x + 0.65;
+        const y = (vH - bar.h) / 2;
+        return (
+          <rect
+            key={i}
+            x={x} y={y}
+            width={1.3} height={bar.h}
+            rx={0.65}
+            fill="url(#waveGrad)"
+            style={{
+              transformOrigin: `${cx}px ${vH / 2}px`,
+              animation: isActive
+                ? `waveBar ${0.65 + (i % 4) * 0.12}s ease-in-out ${bar.d}s infinite alternate`
+                : 'none',
+            }}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   4-pointed Sparkle Icon
+───────────────────────────────────────────────────────────────────────────── */
+function SparkleIcon({ size = 10 }) {
+  return (
+    <svg
+      width={size} height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      style={{ animation: 'sparkleShimmer 2.4s ease-in-out infinite' }}
+    >
+      {/* vertical diamond */}
+      <path d="M8 1C8 1 8.6 5.6 12 8C8.6 10.4 8 15 8 15C8 15 7.4 10.4 4 8C7.4 5.6 8 1 8 1Z" fill="white" />
+      {/* horizontal diamond */}
+      <path d="M1 8C1 8 5.6 8.6 8 12C10.4 8.6 15 8 15 8C15 8 10.4 7.4 8 4C5.6 7.4 1 8 1 8Z" fill="white" />
+    </svg>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Glassmorphism icon button
+───────────────────────────────────────────────────────────────────────────── */
+function GlassBtn({ children, onClick, active = false }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        width: 44, height: 44,
+        borderRadius: '50%',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: active
+          ? 'rgba(34,211,238,0.18)'
+          : 'rgba(255,255,255,0.10)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        border: active
+          ? '0.5px solid rgba(34,211,238,0.55)'
+          : '0.5px solid rgba(255,255,255,0.22)',
+        boxShadow: active
+          ? '0 0 16px rgba(34,211,238,0.22), inset 0 0.5px 0 rgba(255,255,255,0.12)'
+          : 'inset 0 0.5px 0 rgba(255,255,255,0.10)',
+        cursor: 'pointer',
+        outline: 'none',
+        transition: 'all 0.25s ease',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Flash icon (off / on / auto states)
+───────────────────────────────────────────────────────────────────────────── */
+function FlashIcon({ mode }) {
+  const color = mode !== 'off' ? '#FDE047' : 'rgba(255,255,255,0.55)';
+  if (mode === 'off') return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" stroke={color} strokeWidth="1.8" fill={color} fillOpacity="0.10" />
+      <line x1="3" y1="3" x2="21" y2="21" stroke="rgba(255,255,255,0.3)" strokeWidth="1.8" />
+    </svg>
+  );
+  if (mode === 'on') return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" stroke={color} strokeWidth="1.8" fill={color} fillOpacity="0.28" />
+    </svg>
+  );
+  /* auto */
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" stroke={color} strokeWidth="1.8" fill={color} fillOpacity="0.22" />
+      <text x="8.5" y="15.5" fontSize="6.5" fill={color} stroke="none" fontWeight="800" fontFamily="system-ui">A</text>
+    </svg>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Photo thumbnail with Vibe Aura frame + sparkle badge
+───────────────────────────────────────────────────────────────────────────── */
+function PhotoThumbnail({ hasVibe, count }) {
+  return (
+    <div style={{ position: 'relative', width: 54, height: 54 }}>
+
+      {/* Aura glow border */}
+      {hasVibe && (
+        <div style={{
+          position: 'absolute', inset: -2.5,
+          borderRadius: 14,
+          background: 'linear-gradient(135deg, rgba(34,211,238,0.55), rgba(74,222,128,0.55))',
+          animation: 'auraEdge 2.2s ease-in-out infinite',
+        }} />
+      )}
+
+      {/* Thumbnail */}
+      <div style={{
+        position: 'relative', width: 54, height: 54,
+        borderRadius: 11, overflow: 'hidden',
+        border: '1.5px solid rgba(255,255,255,0.22)',
+      }}>
+        <div style={{
+          width: '100%', height: '100%',
+          background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e3a5f 100%)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="1.4">
+            <rect x="3" y="3" width="18" height="18" rx="2.5" />
+            <circle cx="8.5" cy="8.5" r="1.5" fill="rgba(255,255,255,0.45)" stroke="none" />
+            <path d="M21 15l-5-5L5 21" />
+          </svg>
+        </div>
+      </div>
+
+      {/* Vibe sparkle badge */}
+      {hasVibe && (
+        <div style={{
+          position: 'absolute', top: -5, right: -5,
+          width: 19, height: 19, borderRadius: '50%',
+          background: 'linear-gradient(135deg, #22D3EE, #4ADE80)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 0 9px rgba(34,211,238,0.75), 0 0 3px rgba(0,0,0,0.5)',
+          border: '1px solid rgba(255,255,255,0.3)',
+        }}>
+          <SparkleIcon size={9} />
+        </div>
+      )}
+
+      {/* Photo count */}
+      {count > 0 && (
+        <div style={{
+          position: 'absolute', bottom: -7, right: -7,
+          minWidth: 19, height: 19, borderRadius: 10,
+          background: 'rgba(0,0,0,0.72)',
+          backdropFilter: 'blur(6px)',
+          border: '0.5px solid rgba(255,255,255,0.18)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '0 4px',
+        }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: 'white' }}>{count}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Main VibeCameraView
+───────────────────────────────────────────────────────────────────────────── */
+function VibeCameraView() {
+  const [flashMode, setFlashMode]   = useState('off');   /* off | on | auto */
+  const [vibeActive, setVibeActive] = useState(true);
+  const [capturing, setCapturing]   = useState(false);
+  const [photoCount, setPhotoCount] = useState(3);
+
+  const cycleFlash = () =>
+    setFlashMode(m => ({ off: 'on', on: 'auto', auto: 'off' }[m]));
+
+  const capture = () => {
+    setCapturing(true);
+    setPhotoCount(n => n + 1);
+    setTimeout(() => setCapturing(false), 200);
+  };
+
+  const phone = {
+    width: 390, height: 844,
+    position: 'relative', overflow: 'hidden',
+    borderRadius: 44,
+    fontFamily: "-apple-system, 'SF Pro Display', BlinkMacSystemFont, sans-serif",
+    boxShadow: '0 32px 90px rgba(0,0,0,0.7)',
+    userSelect: 'none',
+  };
+
+  return (
+    <div style={phone}>
+
+      {/* ── Viewfinder background ── */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'linear-gradient(165deg, #0c0e1a 0%, #111827 20%, #0e1f35 45%, #1a2744 65%, #0c0e1a 100%)',
+      }} />
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'radial-gradient(ellipse at 32% 42%, rgba(79,70,229,0.22) 0%, transparent 55%)',
+      }} />
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'radial-gradient(ellipse at 72% 58%, rgba(16,185,129,0.10) 0%, transparent 50%)',
+      }} />
+
+      {/* ── Shutter flash overlay ── */}
+      {capturing && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 100,
+          background: 'white', opacity: 0.88, borderRadius: 44,
+        }} />
+      )}
+
+      {/* ── iOS Status bar ── */}
+      <div style={{
+        position: 'absolute', top: 14, left: 0, right: 0,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '0 28px', zIndex: 20,
+      }}>
+        <span style={{ color: 'white', fontSize: 15, fontWeight: 600, letterSpacing: '-0.2px' }}>9:41</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <svg width="17" height="12" viewBox="0 0 17 12" fill="white">
+            <rect x="0"    y="8"   width="3" height="4"    rx="0.5" />
+            <rect x="4.5"  y="5"   width="3" height="7"    rx="0.5" />
+            <rect x="9"    y="2.5" width="3" height="9.5"  rx="0.5" />
+            <rect x="13.5" y="0"   width="3" height="12"   rx="0.5" />
+          </svg>
+          <svg width="16" height="11" viewBox="0 0 24 16" fill="white">
+            <path d="M12 3C8 3 4.5 4.8 2 7.5L3.5 9C5.7 6.7 8.7 5.3 12 5.3s6.3 1.4 8.5 3.7L22 7.5C19.5 4.8 16 3 12 3zM12 7.5c-2.5 0-4.7 1-6.3 2.7L7 11.5c1.3-1.3 3-2.2 5-2.2s3.7.9 5 2.2l1.3-1.3C16.7 8.5 14.5 7.5 12 7.5zm0 4c-1.3 0-2.4.5-3.2 1.3L12 16l3.2-3.2C14.4 12 13.3 11.5 12 11.5z" />
+          </svg>
+          <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
+            <rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke="white" strokeOpacity="0.35" />
+            <rect x="2" y="2" width="16" height="8" rx="2" fill="white" />
+            <path d="M23 4.5v3a1.5 1.5 0 0 0 0-3z" fill="white" fillOpacity="0.4" />
+          </svg>
+        </div>
+      </div>
+
+      {/* ── Top controls row ── */}
+      <div style={{
+        position: 'absolute', top: 58, left: 0, right: 0,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+        padding: '0 20px', zIndex: 20,
+      }}>
+
+        {/* Close */}
+        <GlassBtn>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </GlassBtn>
+
+        {/* ── Right vertical stack: Reverse → Flash → Vibe ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+
+          {/* Reverse camera */}
+          <GlassBtn>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M1 4v6h6" />
+              <path d="M23 20v-6h-6" />
+              <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15" />
+            </svg>
+          </GlassBtn>
+
+          {/* Flash */}
+          <GlassBtn onClick={cycleFlash} active={flashMode !== 'off'}>
+            <FlashIcon mode={flashMode} />
+          </GlassBtn>
+
+          {/* Vibe */}
+          <GlassBtn onClick={() => setVibeActive(v => !v)} active={vibeActive}>
+            <AtmosphericWaveform isActive={vibeActive} size={22} />
+          </GlassBtn>
+
+          {/* VIBE label */}
+          <span style={{
+            fontSize: 9, fontWeight: 600, letterSpacing: '0.07em',
+            color: vibeActive ? '#22D3EE' : 'rgba(255,255,255,0.30)',
+            textShadow: vibeActive ? '0 0 10px rgba(34,211,238,0.8)' : 'none',
+            transition: 'all 0.3s ease',
+            marginTop: -4,
+          }}>
+            VIBE
+          </span>
+        </div>
+      </div>
+
+      {/* ── "Capturing Vibe" pill ── */}
+      {vibeActive && (
+        <div style={{
+          position: 'absolute', top: 64, left: '50%',
+          transform: 'translateX(-50%)',
+          display: 'flex', alignItems: 'center', gap: 7,
+          padding: '6px 14px', borderRadius: 20,
+          background: 'rgba(0,0,0,0.38)',
+          backdropFilter: 'blur(14px)',
+          WebkitBackdropFilter: 'blur(14px)',
+          border: '0.5px solid rgba(34,211,238,0.32)',
+          boxShadow: '0 0 18px rgba(34,211,238,0.10)',
+          zIndex: 15, whiteSpace: 'nowrap',
+        }}>
+          <div style={{
+            width: 6, height: 6, borderRadius: '50%',
+            background: '#22D3EE',
+            boxShadow: '0 0 7px #22D3EE',
+            animation: 'pulseGlow 1.7s ease-in-out infinite',
+          }} />
+          <span style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.88)', fontWeight: 500, letterSpacing: '0.01em' }}>
+            Capturing Vibe
+          </span>
+        </div>
+      )}
+
+      {/* ── Center focus brackets ── */}
+      <div style={{
+        position: 'absolute', top: '38%', left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: 66, height: 66, zIndex: 10,
+      }}>
+        {[
+          { top: 0,    left: 0,    borderTop: '1.5px solid rgba(255,255,255,0.75)', borderLeft:   '1.5px solid rgba(255,255,255,0.75)', borderRadius: '2px 0 0 0' },
+          { top: 0,    right: 0,   borderTop: '1.5px solid rgba(255,255,255,0.75)', borderRight:  '1.5px solid rgba(255,255,255,0.75)', borderRadius: '0 2px 0 0' },
+          { bottom: 0, left: 0,    borderBottom: '1.5px solid rgba(255,255,255,0.75)', borderLeft:  '1.5px solid rgba(255,255,255,0.75)', borderRadius: '0 0 0 2px' },
+          { bottom: 0, right: 0,   borderBottom: '1.5px solid rgba(255,255,255,0.75)', borderRight: '1.5px solid rgba(255,255,255,0.75)', borderRadius: '0 0 2px 0' },
+        ].map((s, i) => (
+          <div key={i} style={{
+            position: 'absolute', width: 13, height: 13,
+            animation: 'focusBracket 4s ease-in-out infinite',
+            ...s,
+          }} />
+        ))}
+      </div>
+
+      {/* ── Bottom controls ── */}
+      <div style={{
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        padding: '22px 28px 50px',
+        background: 'linear-gradient(to top, rgba(0,0,0,0.68) 0%, rgba(0,0,0,0.18) 65%, transparent 100%)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        zIndex: 20,
+      }}>
+
+        {/* Gallery preview — Bloggo Photos link */}
+        <PhotoThumbnail hasVibe={vibeActive} count={photoCount} />
+
+        {/* Pulse shutter */}
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+
+          {/* Concentric ripple rings */}
+          {vibeActive && (
+            <>
+              <div style={{ position: 'absolute', width: 82, height: 82, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.38)', animation: 'ripple1 2.4s ease-out 0s    infinite' }} />
+              <div style={{ position: 'absolute', width: 82, height: 82, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.22)', animation: 'ripple2 2.4s ease-out 0.7s  infinite' }} />
+              <div style={{ position: 'absolute', width: 82, height: 82, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.12)', animation: 'ripple3 2.4s ease-out 1.4s  infinite' }} />
+            </>
+          )}
+
+          {/* Shutter button */}
+          <button
+            onClick={capture}
+            style={{
+              width: 82, height: 82, borderRadius: '50%',
+              background: 'white',
+              border: '3px solid rgba(255,255,255,0.35)',
+              boxShadow: vibeActive
+                ? '0 0 0 2.5px rgba(0,0,0,0.22), 0 0 26px rgba(34,211,238,0.18)'
+                : '0 0 0 2.5px rgba(0,0,0,0.22)',
+              cursor: 'pointer', outline: 'none',
+              transform: capturing ? 'scale(0.91)' : 'scale(1)',
+              transition: 'transform 0.14s ease, box-shadow 0.3s ease',
+              position: 'relative', overflow: 'hidden',
+            }}
+          >
+            {/* Subtle vibe tint inside button */}
+            {vibeActive && (
+              <div style={{
+                position: 'absolute', inset: 0, borderRadius: '50%',
+                background: 'radial-gradient(circle, rgba(34,211,238,0.13) 0%, transparent 65%)',
+                animation: 'pulseGlow 2.2s ease-in-out infinite',
+              }} />
+            )}
+          </button>
+        </div>
+
+        {/* Photo counter */}
+        <div style={{
+          width: 54, height: 54, borderRadius: 11,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(255,255,255,0.09)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          border: '0.5px solid rgba(255,255,255,0.14)',
+        }}>
+          <span style={{ fontSize: 22, fontWeight: 700, color: 'white', lineHeight: 1, letterSpacing: '-0.5px' }}>
+            {photoCount}
+          </span>
+          <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.42)', marginTop: 3, letterSpacing: '0.09em', fontWeight: 500 }}>
+            PHOTOS
+          </span>
+        </div>
+      </div>
+
+      {/* ── Home indicator ── */}
+      <div style={{
+        position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)',
+        width: 122, height: 5, borderRadius: 3,
+        background: 'rgba(255,255,255,0.28)', zIndex: 30,
+      }} />
+
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<VibeCameraView />);
+</script>
+</body>
+</html>

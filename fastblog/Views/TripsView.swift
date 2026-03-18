@@ -1491,6 +1491,8 @@ struct CapturedMoment: Identifiable {
     var injectedPhotoId: UUID?
     /// Capture location (for grouping by place when counting moments).
     var location: PhotoCoordinate?
+    /// Local file URL of the Vibe audio clip recorded with this moment, if any.
+    var vibeURL: URL?
 
     init(
         id: UUID = UUID(),
@@ -1499,7 +1501,8 @@ struct CapturedMoment: Identifiable {
         caption: String? = nil,
         previewImage: UIImage? = nil,
         injectedPhotoId: UUID? = nil,
-        location: PhotoCoordinate? = nil
+        location: PhotoCoordinate? = nil,
+        vibeURL: URL? = nil
     ) {
         self.id = id
         self.localIdentifier = localIdentifier
@@ -1508,6 +1511,7 @@ struct CapturedMoment: Identifiable {
         self.previewImage = previewImage
         self.injectedPhotoId = injectedPhotoId
         self.location = location
+        self.vibeURL = vibeURL
     }
 }
 
@@ -1845,6 +1849,14 @@ struct CameraCaptureView: View {
     @State private var zoomIndicatorTask: Task<Void, Never>? = nil
     // Vibe recording
     @StateObject private var vibeRecorder = VibeRecorder()
+    /// Whether the Vibe ambient audio capture feature is active.
+    /// Persisted so the user's last choice survives across camera sessions.
+    /// Defaults to false — only enabled once the user explicitly toggles it on.
+    @AppStorage("bloggo.camera.vibeEnabled") private var vibeEnabled: Bool = false
+    /// True when the most recently captured photo had a vibe audio clip attached.
+    @State private var lastCaptureWasVibe: Bool = false
+    /// Drives the "Capturing Vibe" pill dot pulse animation.
+    @State private var vibePulse: Bool = false
 
     private static let nearHomeAlertSuppressedKey = "bloggo.nearHomeAlertSuppressed"
     private static let nearHomeSuppressedPreferKeepKey = "bloggo.nearHomeSuppressedPreferKeep"
@@ -1922,6 +1934,120 @@ struct CameraCaptureView: View {
                 .padding(.top, 12)
                 .animation(.easeInOut(duration: 0.2), value: showZoomIndicator)
             }
+
+            // "Capturing Vibe" pill — top-center, below nav bar
+            if vibeEnabled {
+                VStack {
+                    HStack(spacing: 7) {
+                        // Pulsing dot
+                        ZStack {
+                            Circle()
+                                .fill(Color.cyan.opacity(vibePulse ? 0 : 0.45))
+                                .frame(width: 9, height: 9)
+                                .scaleEffect(vibePulse ? 1.5 : 1.0)
+                            Circle()
+                                .fill(Color.cyan)
+                                .frame(width: 6, height: 6)
+                        }
+                        Text("Capturing Vibe")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.white.opacity(0.9))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(.ultraThinMaterial)
+                    .background(Color.cyan.opacity(0.22))
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Color.cyan.opacity(0.5), lineWidth: 1))
+                    .shadow(color: .cyan.opacity(0.25), radius: 8)
+                    Spacer()
+                }
+                .padding(.top, 8)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+                .animation(.easeInOut(duration: 0.3), value: vibeEnabled)
+            }
+
+            // ── Top controls: X (top-left) + Reverse/Flash/Vibe (top-right) ──
+            // Nav bar is hidden so the ZStack fills from the safe-area top (below
+            // the status bar). A small .padding(.top) lets SwiftUI inject the
+            // correct safe-area inset so controls sit just below the status bar
+            // on every iPhone model.
+
+            // Close button — top-left
+            Button {
+                closeCamera()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Circle())
+            }
+            .accessibilityLabel("Close camera")
+            .padding(.top, 8)
+            .padding(.leading, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            // Right stack: Reverse → Flash → Vibe
+            VStack(spacing: 16) {
+                // Reverse camera
+                Button {
+                    cameraController.flipCamera()
+                } label: {
+                    Image(systemName: "camera.rotate")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
+                }
+                .accessibilityLabel("Flip camera")
+
+                // Flash
+                Button {
+                    cameraController.cycleFlashMode()
+                } label: {
+                    let flashOn = cameraController.flashMode != .off
+                    Image(systemName: flashIconName)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial)
+                        .background(flashOn ? Color.cyan.opacity(0.22) : Color.clear)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(flashOn ? Color.cyan.opacity(0.5) : Color.clear, lineWidth: 1))
+                }
+                .accessibilityLabel(flashAccessibilityLabel)
+                .disabled(cameraController.position == .front)
+
+                // Vibe toggle
+                Button {
+                    vibeEnabled.toggle()
+                    if vibeEnabled {
+                        vibeRecorder.start()
+                    } else {
+                        vibeRecorder.cancelAndDelete()
+                    }
+                } label: {
+                    AtmosphericWaveformView(isActive: vibeEnabled)
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial)
+                        .background(vibeEnabled ? Color.cyan.opacity(0.22) : Color.clear)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(vibeEnabled ? Color.cyan.opacity(0.5) : Color.clear, lineWidth: 1))
+                }
+                .accessibilityLabel(vibeEnabled ? "Vibe on, tap to disable" : "Vibe off, tap to enable")
+
+                // VIBE label
+                Text("VIBE")
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundColor(vibeEnabled ? .cyan : Color.white.opacity(0.35))
+            }
+            .padding(.top, 8)
+            .padding(.trailing, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
         .contentShape(Rectangle())
         .gesture(
@@ -1933,35 +2059,8 @@ struct CameraCaptureView: View {
                 }
         )
         .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    closeCamera()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.body.weight(.semibold))
-                }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 16) {
-                    Button {
-                        cameraController.cycleFlashMode()
-                    } label: {
-                        Image(systemName: flashIconName)
-                            .font(.body.weight(.semibold))
-                    }
-                    .accessibilityLabel(flashAccessibilityLabel)
-                    .disabled(cameraController.position == .front)
-                    Button {
-                        cameraController.flipCamera()
-                    } label: {
-                        Image(systemName: "camera.rotate")
-                            .font(.body.weight(.semibold))
-                    }
-                    .accessibilityLabel("Flip camera")
-                }
-            }
-        }
+        .toolbar(.hidden, for: .navigationBar)
+
         .preferredColorScheme(.dark)
         .background(Color.black.ignoresSafeArea())
         .overlay(
@@ -1979,17 +2078,24 @@ struct CameraCaptureView: View {
             attachedCountThisSession = 0
             sessionTripTitle = nil
             sessionSourceTripId = nil
-            vibeRecorder.start()
+            lastCaptureWasVibe = false
+            if vibeEnabled { vibeRecorder.start() }
             sessionDraftTripId = nil
             loadLatestGalleryThumbnail()
             if cameraController.isConfigured {
                 cameraController.startRunning()
             }
+            // Kick off the waveform icon pulse loop
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                    vibePulse = true
+                }
+            }
         }
         .onChange(of: cameraController.isConfigured) { _, configured in
             if configured {
                 cameraController.startRunning()
-                vibeRecorder.start()
+                if vibeEnabled { vibeRecorder.start() }
             }
         }
         .onDisappear {
@@ -2272,6 +2378,44 @@ struct CameraCaptureView: View {
         }
     }
 
+    // MARK: - Atmospheric Waveform Icon
+
+    /// Custom animated waveform bars with a cyan→green gradient, mirroring the prototype SVG.
+    private struct AtmosphericWaveformView: View {
+        var isActive: Bool
+        // Heights of the 12 bars (symmetric waveform shape)
+        private let heights: [CGFloat] = [5, 9, 15, 20, 13, 22, 18, 22, 13, 20, 9, 5]
+        // Per-bar animation delays matching the prototype
+        private let delays: [Double]   = [0.00, 0.07, 0.14, 0.21, 0.28, 0.35, 0.42, 0.35, 0.28, 0.21, 0.07, 0.00]
+
+        var body: some View {
+            HStack(spacing: 1.5) {
+                ForEach(0..<heights.count, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(
+                            LinearGradient(
+                                colors: isActive ? [.cyan, .green] : [Color.white.opacity(0.45), Color.white.opacity(0.45)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .frame(width: 2, height: heights[i])
+                        .scaleEffect(y: isActive ? 1 : 0.35, anchor: .center)
+                        .animation(
+                            isActive
+                                ? .easeInOut(duration: 0.65 + Double(i % 4) * 0.12)
+                                    .repeatForever(autoreverses: true)
+                                    .delay(delays[i])
+                                : .easeInOut(duration: 0.2),
+                            value: isActive
+                        )
+                }
+            }
+            .frame(width: 26, height: 26)
+            .shadow(color: isActive ? .cyan.opacity(0.5) : .clear, radius: 4)
+        }
+    }
+
     private var flashIconName: String {
         switch cameraController.flashMode {
         case .off: return "bolt.slash"
@@ -2308,16 +2452,21 @@ struct CameraCaptureView: View {
                     flashOpacity = 0
                 }
 
-                // Stop Vibe recording and start trimming (runs concurrently with photo capture)
-                let vibeTask = Task { await vibeRecorder.stopAndTrimLast10Seconds() }
+                // Capture vibe audio only when the feature is enabled; snapshot state at shutter press.
+                let capturedVibeEnabled = vibeEnabled
+                let vibeTask: Task<URL?, Never> = capturedVibeEnabled
+                    ? Task { await vibeRecorder.stopAndTrimLast10Seconds() }
+                    : Task { nil }
 
                 // Capture a real photo
                 cameraController.capturePhoto { image, _ in
                     let timestamp = Date()
                     Task { @MainActor in
                         let vibeURL = await vibeTask.value
-                        // Restart recording immediately so it's ready for the next shot
-                        vibeRecorder.start()
+                        // Restart recording immediately so it's ready for the next shot (only if vibe is on)
+                        if capturedVibeEnabled { vibeRecorder.start() }
+                        // Mark whether the captured photo has a vibe clip (drives the aura on the preview)
+                        lastCaptureWasVibe = capturedVibeEnabled && vibeURL != nil
                         // Lightweight near-home check: same threshold as trip exclusion (Set home region).
                         if let home = NeighborhoodStore.getNeighborhoodCenter(),
                            let location = cameraController.currentLocation,
@@ -2407,6 +2556,18 @@ struct CameraCaptureView: View {
                     .scaledToFill()
                     .frame(width: previewSize, height: previewSize)
                     .clipShape(Circle())
+                    // Vibe aura: glowing cyan→green ring on the latest photo when it has a vibe clip
+                    .overlay(
+                        Circle()
+                            .stroke(
+                                lastCaptureWasVibe
+                                    ? LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
+                                    : LinearGradient(colors: [.clear, .clear], startPoint: .top, endPoint: .bottom),
+                                lineWidth: 2.5
+                            )
+                            .shadow(color: lastCaptureWasVibe ? .cyan.opacity(0.55) : .clear, radius: 6)
+                            .animation(.easeInOut(duration: 0.4), value: lastCaptureWasVibe)
+                    )
             } else {
                 Circle()
                     .fill(Color.white.opacity(0.12))
@@ -2483,7 +2644,8 @@ extension CameraCaptureView {
             timestamp: timestamp,
             caption: nil,
             previewImage: image,
-            location: location
+            location: location,
+            vibeURL: vibeURL
         )
         if let activeSourceTripId = activeBlogIdIfCapturedImageHandled(image, at: timestamp) {
             sessionSourceTripId = activeSourceTripId
@@ -3324,16 +3486,31 @@ private struct SessionGalleryView: View {
                             .padding(.bottom, 2)
                         ForEach(moments.indices, id: \.self) { index in
                         let moment = moments[index]
-                        let rowHeight: CGFloat = 100
+                        let rowHeight: CGFloat = 110
                         HStack(alignment: .top, spacing: 12) {
                             // Photo preview — same height as timestamp + caption block
                             if let image = moment.previewImage {
-                                Image(uiImage: image)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 64, height: rowHeight)
-                                    .clipped()
-                                    .cornerRadius(8)
+                                ZStack(alignment: .bottomLeading) {
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 70, height: rowHeight)
+                                        .clipped()
+                                        .cornerRadius(8)
+                                    // Vibe badge — static green waveform, bottom-left
+                                    if moment.vibeURL != nil {
+                                        Image(systemName: "waveform")
+                                            .font(.system(size: 9, weight: .semibold))
+                                            .foregroundStyle(
+                                                LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
+                                            )
+                                            .padding(5)
+                                            .background(Color.black.opacity(0.55))
+                                            .clipShape(Circle())
+                                            .padding(4)
+                                    }
+                                }
+                                .frame(width: 70, height: rowHeight)
                             } else {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 8)
@@ -3341,7 +3518,7 @@ private struct SessionGalleryView: View {
                                     Image(systemName: "photo")
                                         .foregroundColor(.white.opacity(0.8))
                                 }
-                                .frame(width: 64, height: rowHeight)
+                                .frame(width: 70, height: rowHeight)
                             }
 
                             VStack(alignment: .leading, spacing: 8) {
@@ -3384,16 +3561,31 @@ private struct SessionGalleryView: View {
                 } else {
                     ForEach(moments.indices, id: \.self) { index in
                         let moment = moments[index]
-                        let rowHeight: CGFloat = 100
+                        let rowHeight: CGFloat = 110
                         HStack(alignment: .top, spacing: 12) {
                             // Photo preview — same height as timestamp + caption block
                             if let image = moment.previewImage {
-                                Image(uiImage: image)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 64, height: rowHeight)
-                                    .clipped()
-                                    .cornerRadius(8)
+                                ZStack(alignment: .bottomLeading) {
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 70, height: rowHeight)
+                                        .clipped()
+                                        .cornerRadius(8)
+                                    // Vibe badge — static green waveform, bottom-left
+                                    if moment.vibeURL != nil {
+                                        Image(systemName: "waveform")
+                                            .font(.system(size: 9, weight: .semibold))
+                                            .foregroundStyle(
+                                                LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
+                                            )
+                                            .padding(5)
+                                            .background(Color.black.opacity(0.55))
+                                            .clipShape(Circle())
+                                            .padding(4)
+                                    }
+                                }
+                                .frame(width: 70, height: rowHeight)
                             } else {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 8)
@@ -3401,7 +3593,7 @@ private struct SessionGalleryView: View {
                                     Image(systemName: "photo")
                                         .foregroundColor(.white.opacity(0.8))
                                 }
-                                .frame(width: 64, height: rowHeight)
+                                .frame(width: 70, height: rowHeight)
                             }
 
                             VStack(alignment: .leading, spacing: 8) {
