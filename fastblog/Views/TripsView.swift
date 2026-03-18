@@ -2433,41 +2433,71 @@ struct CameraCaptureView: View {
         }
     }
 
-    private var vibeTooltipContent: some View {
+    @ViewBuilder private var vibeTooltipContent: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 20) {
-                HStack {
-                    Text(vibeTooltipPage == 0 ? "1/2" : "2/2")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
+            if vibeTooltipPage == 0 {
+                VStack(spacing: 20) {
+                    HStack {
+                        Text("1/2")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+
+                    Image(systemName: "waveform")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 50, height: 50)
+                        .foregroundColor(.cyan)
+                        .padding(.top, 8)
+
+                    VStack(spacing: 8) {
+                        Text("Capture the Vibe")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.primary)
+
+                        Text("Record the sounds and atmosphere around your moment. From ocean waves to busy city streets, Bloggo helps preserve the feeling of where you were.")
+                            .font(.body)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.secondary)
+                    }
                 }
+                .padding(.horizontal, 24)
+                .transition(.opacity)
+            } else {
+                VStack(spacing: 20) {
+                    HStack {
+                        Text("2/2")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
 
-                Image(systemName: "waveform")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 50, height: 50)
-                    .foregroundColor(.cyan)
-                    .padding(.top, 8)
+                    Image(systemName: "waveform")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 50, height: 50)
+                        .foregroundColor(.cyan)
+                        .padding(.top, 8)
 
-                VStack(spacing: 8) {
-                    Text(vibeTooltipPage == 0 ? "Capture the Vibe" : "How It Works")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .multilineTextAlignment(.center)
-                        .foregroundColor(.primary)
+                    VStack(spacing: 8) {
+                        Text("How It Works")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.primary)
 
-                    Text(vibeTooltipPage == 0
-                         ? "Record the sounds and atmosphere around your moment. From ocean waves to busy city streets, Bloggo helps preserve the feeling of where you were."
-                         : "We're constantly listening when you open the camera, so start capturing the vibe today!")
-                        .font(.body)
-                        .multilineTextAlignment(.center)
-                        .foregroundColor(.secondary)
+                        Text("We're constantly listening when you open the camera, so start capturing the vibe today!")
+                            .font(.body)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.secondary)
+                    }
                 }
+                .padding(.horizontal, 24)
+                .transition(.opacity)
             }
-            .padding(.horizontal, 24)
-            .transition(.opacity)
-            .animation(.easeInOut(duration: 0.25), value: vibeTooltipPage)
 
             Spacer()
 
@@ -2477,6 +2507,7 @@ struct CameraCaptureView: View {
                         vibeTooltipPage = 1
                     }
                 } else {
+                    hasSeenVibeTooltip = true
                     showVibeTooltip = false
                 }
             } label: {
@@ -2486,7 +2517,7 @@ struct CameraCaptureView: View {
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(Color.blue)
-                    .cornerRadius(12)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
