@@ -47,18 +47,35 @@ GoogleSignInButton(viewModel: signInViewModel) {
 }
 ```
 
-## 4. Backend (optional)
+## 4. Backend verification
 
-If your backend must verify the user, create a **Web application** OAuth client in Cloud Console and add to Info.plist:
+The pocketverse API verifies the Google ID token on `POST /oauth/google`. The token’s **audience** (`aud`) must match one of the OAuth client IDs the server trusts.
 
-```xml
-<key>GIDServerClientID</key>
-<string>YOUR_WEB_CLIENT_ID.apps.googleusercontent.com</string>
+### One app (simplest)
+
+Set **`GOOGLE_CLIENT_ID`** on the server to the **same** value as **`GIDClientID`** in this app’s Info.plist (the iOS OAuth client ID).
+
+### Multiple apps / websites (shared backend)
+
+If the same backend serves fastblog (iOS), a web app, Android, etc., each client uses its **own** Google OAuth client ID. The ID token is always issued for **that** client’s ID as `aud`.
+
+On the server, list **every** client ID you accept, comma-separated, in **`GOOGLE_CLIENT_IDS`**:
+
+```text
+GOOGLE_CLIENT_IDS=ios-fastblog-xxx.apps.googleusercontent.com,web-linkedspaces-yyy.apps.googleusercontent.com,android-zzz.apps.googleusercontent.com
 ```
 
-Then use the ID token from `GIDGoogleUser` when calling your backend.
+The backend accepts a token if its `aud` is **any** of those IDs. Duplicates are ignored.
+
+You can still set **`GOOGLE_CLIENT_ID`** and/or **`GOOGLE_WEB_CLIENT_ID`**; they are merged into the same allowlist (see `getGoogleAudiences()` in pocketverse).
+
+**Google Cloud Console:** All of these OAuth clients should live in the **same Google Cloud project** as the backend’s credentials (so Google’s public keys verify the tokens).
+
+### Optional: single web audience from iOS
+
+If you prefer the iOS app to send tokens with **web** client as `aud`, add **`GIDServerClientID`** (web client) in Info.plist and add that web client ID to **`GOOGLE_CLIENT_IDS`** on the server. Otherwise keep **`GIDClientID`** only and include this app’s **iOS** client ID in **`GOOGLE_CLIENT_IDS`**.
 
 ## Notes
 
 - The app builds without the Google Sign-In package; sign-in will no-op until the package is added and Info.plist is configured.
-- Use an **iOS**-type OAuth client in Cloud Console for the app; use a **Web** client only if you need a server client ID.
+- Use an **iOS**-type OAuth client in Cloud Console for the app; use a **Web** client only if you need a server client ID or web sign-in.

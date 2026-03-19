@@ -1353,7 +1353,16 @@ final class TripsViewModel: ObservableObject {
 
         if !continuationDrafts.isEmpty {
             let lastDayIndex = max(0, activeBlog.tripDurationDays - 1)
+            // Apply the same cutoff filter used in collectNewPhotosForSavedBlogs so that
+            // already-notified photos are not re-surfaced on every scan while the trip
+            // is still considered "ongoing".
+            let cutoff = ScanSessionStore.lastBlogNotifiedDate(for: activeBlog.id) ?? blogEndDate
             let continuationPhotos = continuationDrafts.flatMap { $0.days.flatMap(\.photos) }
+                .filter { $0.timestamp > cutoff }
+            guard !continuationPhotos.isEmpty else {
+                debugPrint("[detectNewMomentsForOnTheGoTrip] no new continuation photos after cutoff (\(cutoff)); skipping")
+                return
+            }
             // Only honor one blog (latest). If we already have a match, keep it only if it's the same or newer.
             var didHonorThisBlog = false
             if let existing = newMomentsMatchedBlog {
