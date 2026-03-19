@@ -109,9 +109,11 @@ struct MapDayView: View {
 
     private var markers: [PlaceMapMarker] {
         placeStops.compactMap { stop in
+            let included = stop.includedPhotos
+            guard !included.isEmpty else { return nil }
             let coord = stop.representativeLocation?.clCoordinate
-                ?? stop.photos.first(where: { $0.location != nil })?.location?.clCoordinate
-            guard let coordinate = coord, let first = stop.photos.first else { return nil }
+                ?? included.first(where: { $0.location != nil })?.location?.clCoordinate
+            guard let coordinate = coord, let first = included.first else { return nil }
             return PlaceMapMarker(
                 id: stop.id,
                 coordinate: coordinate,
@@ -331,11 +333,12 @@ struct FullScreenMapView: View {
     }
 
     private func openPhotoModal(for stop: PlaceStop) {
-        guard !stop.photos.isEmpty else { return }
-        let captions = Dictionary(uniqueKeysWithValues: stop.photos.map { ($0.id, $0.caption ?? "") })
+        let included = stop.includedPhotos
+        guard !included.isEmpty else { return }
+        let captions = Dictionary(uniqueKeysWithValues: included.map { ($0.id, $0.caption ?? "") })
         photoModalCaptions = captions
         photoModalCaptionsSnapshot = captions
-        photoModalInitialPhotoId = stop.photos.first?.id
+        photoModalInitialPhotoId = included.first?.id
         photoModalStop = stop
     }
 
@@ -444,7 +447,7 @@ struct FullScreenMapView: View {
                 PlacePhotoModalView(
                     placeTitle: .constant(stop.placeTitle),
                     placeSubtitle: stop.placeSubtitle,
-                    photos: stop.photos,
+                    photos: stop.includedPhotos,
                     initialPhotoId: initialId,
                     blogIsEditMode: false,
                     photoCaption: { id in
@@ -609,7 +612,7 @@ struct FullScreenMapView: View {
                 ZStack(alignment: .topLeading) {
                     // Photo with coloured border
                     Group {
-                        if let photo = stop.photos.first {
+                        if let photo = stop.includedPhotos.first {
                             RecapPhotoThumbnail(photo: photo, cornerRadius: 12, showIcon: false, targetSize: CGSize(width: 200, height: 200))
                                 .frame(width: 96, height: 96)
                                 .clipped()
@@ -720,7 +723,7 @@ struct FullScreenMapView: View {
             if let note = stop.noteText, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return note
             }
-            if let photoCaption = stop.photos.first?.caption, !photoCaption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let photoCaption = stop.includedPhotos.first?.caption, !photoCaption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return photoCaption
             }
             if let subtitle = stop.placeSubtitle, !subtitle.isEmpty {

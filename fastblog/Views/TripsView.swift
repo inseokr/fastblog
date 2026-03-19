@@ -1846,6 +1846,10 @@ struct CameraCaptureView: View {
     @State private var lastCaptureWasVibe: Bool = false
     /// Drives the "Capturing Vibe" pill dot pulse animation.
     @State private var vibePulse: Bool = false
+    // Vibe first-time tooltip
+    @AppStorage("bloggo.hasSeenVibeTooltip") private var hasSeenVibeTooltip = false
+    @State private var showVibeTooltip = false
+    @State private var vibeTooltipPage = 0
 
     private static let nearHomeAlertSuppressedKey = "bloggo.nearHomeAlertSuppressed"
     private static let nearHomeSuppressedPreferKeepKey = "bloggo.nearHomeSuppressedPreferKeep"
@@ -2014,7 +2018,10 @@ struct CameraCaptureView: View {
                 Button {
                     vibeEnabled.toggle()
                     if vibeEnabled {
-                        vibeRecorder.start()
+                        // Defer mic permission + recording until after the first-time tooltip is dismissed.
+                        if hasSeenVibeTooltip {
+                            vibeRecorder.start()
+                        }
                     } else {
                         vibeRecorder.cancelAndDelete()
                     }
@@ -2210,6 +2217,22 @@ struct CameraCaptureView: View {
         .onChange(of: showNearHomeConfirmation) { _, show in
             if show { nearHomeDoNotShowAgain = false }
         }
+        .onChange(of: vibeEnabled) { _, newValue in
+            if newValue && !hasSeenVibeTooltip {
+                showVibeTooltip = true
+            }
+        }
+        .sheet(isPresented: $showVibeTooltip, onDismiss: {
+            hasSeenVibeTooltip = true
+            vibeTooltipPage = 0
+            // Now that the tooltip is done, request mic permission and begin recording.
+            if vibeEnabled { vibeRecorder.start() }
+        }) {
+            vibeTooltipContent
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .preferredColorScheme(.dark)
+        }
     }
 
     @ViewBuilder private var toastOverlay: some View {
@@ -2377,32 +2400,138 @@ struct CameraCaptureView: View {
         // Per-bar animation delays matching the prototype
         private let delays: [Double]   = [0.00, 0.07, 0.14, 0.21, 0.28, 0.35, 0.42, 0.35, 0.28, 0.21, 0.07, 0.00]
 
+        // Internal driver so repeatForever kicks off on appear even when isActive is
+        // already true (e.g. returning to camera with Vibe toggled on and persisted).
+        @State private var animating = false
+
         var body: some View {
             HStack(spacing: 1.5) {
                 ForEach(0..<heights.count, id: \.self) { i in
                     RoundedRectangle(cornerRadius: 1)
                         .fill(
                             LinearGradient(
-                                colors: isActive ? [.cyan, .green] : [Color.white.opacity(0.45), Color.white.opacity(0.45)],
+                                colors: animating ? [.cyan, .green] : [Color.white.opacity(0.45), Color.white.opacity(0.45)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
                         )
                         .frame(width: 2, height: heights[i])
-                        .scaleEffect(y: isActive ? 1 : 0.35, anchor: .center)
+                        .scaleEffect(y: animating ? 1 : 0.35, anchor: .center)
                         .animation(
-                            isActive
+                            animating
                                 ? .easeInOut(duration: 0.65 + Double(i % 4) * 0.12)
                                     .repeatForever(autoreverses: true)
                                     .delay(delays[i])
                                 : .easeInOut(duration: 0.2),
-                            value: isActive
+                            value: animating
                         )
                 }
             }
             .frame(width: 26, height: 26)
-            .shadow(color: isActive ? .cyan.opacity(0.5) : .clear, radius: 4)
+            .shadow(color: animating ? .cyan.opacity(0.5) : .clear, radius: 4)
+            .onAppear {
+                // Defer past any active presentation/navigation animation transaction
+                // so the repeatForever animation isn't overridden by it.
+                Task { @MainActor in
+                    animating = isActive
+                }
+            }
+            .onChange(of: isActive) { _, active in
+                animating = active
+            }
         }
+    }
+
+    @ViewBuilder private var vibeTooltipContent: some View {
+        VStack(spacing: 0) {
+            if vibeTooltipPage == 0 {
+                VStack(spacing: 20) {
+                    HStack {
+                        Text("1/2")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+
+                    Image(systemName: "waveform")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 50, height: 50)
+                        .foregroundColor(.cyan)
+                        .padding(.top, 8)
+
+                    VStack(spacing: 8) {
+                        Text("Capture the Vibe")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.primary)
+
+                        Text("Record the sounds and atmosphere around your moment. From ocean waves to busy city streets, Bloggo helps preserve the feeling of where you were.")
+                            .font(.body)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .transition(.opacity)
+            } else {
+                VStack(spacing: 20) {
+                    HStack {
+                        Text("2/2")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+
+                    Image(systemName: "waveform")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 50, height: 50)
+                        .foregroundColor(.cyan)
+                        .padding(.top, 8)
+
+                    VStack(spacing: 8) {
+                        Text("How It Works")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.primary)
+
+                        Text("We're constantly listening when you open the camera, so start capturing the vibe today!")
+                            .font(.body)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .transition(.opacity)
+            }
+
+            Spacer()
+
+            Button {
+                if vibeTooltipPage == 0 {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        vibeTooltipPage = 1
+                    }
+                } else {
+                    hasSeenVibeTooltip = true
+                    showVibeTooltip = false
+                }
+            } label: {
+                Text("Continue")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+        .padding(.top, 24)
     }
 
     private var flashIconName: String {
@@ -3555,6 +3684,7 @@ private struct SessionGalleryView: View {
                                     Spacer(minLength: 8)
                                     Button {
                                         let moment = moments[index]
+                                        deleteFromStorage(moment)
                                         onRemoveAttachedMoment?(moment)
                                         moments.remove(at: index)
                                     } label: {
@@ -3630,6 +3760,7 @@ private struct SessionGalleryView: View {
                                     Spacer(minLength: 8)
                                     Button {
                                         let moment = moments[index]
+                                        deleteFromStorage(moment)
                                         onRemoveAttachedMoment?(moment)
                                         moments.remove(at: index)
                                     } label: {
@@ -3679,6 +3810,7 @@ private struct SessionGalleryView: View {
             .alert("Start fresh?", isPresented: $showClearConfirmation) {
                 Button("No", role: .cancel) { }
                 Button("Yes", role: .destructive) {
+                    for moment in moments { deleteFromStorage(moment) }
                     onClear?()
                     moments = []
                 }
@@ -3694,6 +3826,22 @@ private struct SessionGalleryView: View {
                 .environment(\.colorScheme, .dark)
         }
         .preferredColorScheme(.dark)
+    }
+
+    private func deleteFromStorage(_ moment: CapturedMoment) {
+        // Remove from AppCapturePhotoService (Bloggo Photos gallery)
+        if let localId = moment.localIdentifier,
+           let captureId = AppCapturePhotoService.uuid(from: localId) {
+            AppCapturePhotoService.shared.deleteCapture(captureId: captureId)
+        }
+        // Remove from InAppCameraPhotoStore (matched by timestamp)
+        let store = InAppCameraPhotoStore.shared
+        let matchingIds = Set(store.entries
+            .filter { abs($0.timestamp.timeIntervalSince(moment.timestamp)) < 1.0 }
+            .map { $0.id })
+        if !matchingIds.isEmpty {
+            store.removePhotos(ids: matchingIds)
+        }
     }
 }
 

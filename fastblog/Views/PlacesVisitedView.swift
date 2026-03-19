@@ -495,7 +495,9 @@ private struct PlaceVisitedPhotoModalWrapper: View {
     @State private var livePlaceTitle: String = ""
 
     var body: some View {
-        let photos = place.photos
+        // Look up live photos from the store so we always reflect the current included-photo state,
+        // even if isIncluded flags changed after this sheet was first presented.
+        let photos = store.visitedPlaces.first { $0.placeId == place.placeId }?.photos ?? place.photos
         if let initialPhotoId = photos.first?.id {
             PlacePhotoModalView(
                 placeTitle: Binding(
