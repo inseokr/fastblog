@@ -56,6 +56,9 @@ struct PlaceStopRowView: View {
     @State private var isGeneratingOverallStory = false
     @State private var generatingPhotoId: UUID?
     @FocusState private var focusedPhotoId: UUID?
+    // Vibe playback for blog photo thumbnails
+    @StateObject private var vibePlayer = VibePlayer()
+    @State private var playingVibePhotoId: UUID? = nil
 
     /// 12-hour visit time from earliest photo timestamp. Formatter: "h:mm a" (e.g. 3:42 PM).
     private static let visitTimeFormatter: DateFormatter = {
@@ -97,6 +100,13 @@ struct PlaceStopRowView: View {
 
     /// Photo size in strip (doubled from prior 120 so one photo is prominent and next peeks on the right).
     private let thumbnailSize: CGFloat = 240
+
+    /// Returns the local vibe audio URL for a photo if it was captured with the in-app camera.
+    private func vibeURL(for photo: RecapPhoto) -> URL? {
+        guard let id = photo.localIdentifier,
+              let captureId = AppCapturePhotoService.uuid(from: id) else { return nil }
+        return AppCapturePhotoService.shared.vibeFileURL(for: captureId)
+    }
 
     /// True when the focused field (place note or photo caption) has text, so Clear should be red.
     private var clearButtonIsRed: Bool {
@@ -314,6 +324,60 @@ struct PlaceStopRowView: View {
                                         }
                                         .buttonStyle(.plain)
                                         .padding(6)
+                                    }
+                                }
+                                .overlay(alignment: .bottomLeading) {
+                                    if vibeURL(for: photo) != nil {
+                                        let isPlaying = playingVibePhotoId == photo.id && vibePlayer.isPlaying
+                                        HStack(spacing: 5) {
+                                            Button {
+                                                if isPlaying {
+                                                    vibePlayer.stop()
+                                                    playingVibePhotoId = nil
+                                                } else {
+                                                    if let url = vibeURL(for: photo) {
+                                                        playingVibePhotoId = photo.id
+                                                        vibePlayer.play(url: url)
+                                                    }
+                                                }
+                                            } label: {
+                                                Image(systemName: "waveform")
+                                                    .font(.system(size: isPlaying ? 15 : 11, weight: .semibold))
+                                                    .foregroundStyle(
+                                                        LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
+                                                    )
+                                                    .symbolEffect(.variableColor.iterative.reversing, isActive: isPlaying)
+                                                    .padding(isPlaying ? 8 : 6)
+                                                    .background(Color.black.opacity(0.55))
+                                                    .clipShape(Circle())
+                                                    .overlay(Circle().stroke(Color.green.opacity(isPlaying ? 0.85 : 0.5), lineWidth: isPlaying ? 1.5 : 1))
+                                                    .scaleEffect(isPlaying ? 1.25 : 1.0)
+                                                    .animation(.spring(response: 0.35, dampingFraction: 0.6), value: isPlaying)
+                                            }
+                                            .buttonStyle(.plain)
+
+                                            if !isPlaying {
+                                                Button {
+                                                    if let url = vibeURL(for: photo) {
+                                                        playingVibePhotoId = photo.id
+                                                        vibePlayer.play(url: url)
+                                                    }
+                                                } label: {
+                                                    Text("Play Vibe")
+                                                        .font(.system(size: 11, weight: .semibold))
+                                                        .foregroundColor(.white)
+                                                        .padding(.horizontal, 8)
+                                                        .padding(.vertical, 4)
+                                                        .background(Color.black.opacity(0.55))
+                                                        .clipShape(Capsule())
+                                                        .overlay(Capsule().stroke(Color.green.opacity(0.5), lineWidth: 1))
+                                                }
+                                                .buttonStyle(.plain)
+                                                .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                                            }
+                                        }
+                                        .padding(5)
+                                        .animation(.easeInOut(duration: 0.2), value: isPlaying)
                                     }
                                 }
                                 if isEditMode {
