@@ -433,6 +433,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
         recents.insert(blog, at: 0)
         pendingRecapCreated = true
+        AppAnalytics.shared.trackEvent(name: "blog_created")
         persistRecents()
         persistTripDrafts()
     }
@@ -813,6 +814,7 @@ final class CreatedRecapBlogStore: ObservableObject {
             ownerScope: old.ownerScope,
             ownerUserId: old.ownerUserId
         )
+        if !asDraft { AppAnalytics.shared.trackEvent(name: "blog_saved") }
         persistRecents()
         persistBlogDetails()
     }

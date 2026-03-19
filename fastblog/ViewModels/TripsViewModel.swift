@@ -1012,7 +1012,7 @@ final class TripsViewModel: ObservableObject {
         let blogsWithNewPhotos: [(CreatedRecapBlog, [MockPhoto])] = byBlog.compactMap { _, pairs in
             guard let first = pairs.first else { return nil }
             let blog = first.blog
-            let photos = pairs.flatMap(\.photos)
+            let photos = dedupePhotosByLocalId(pairs.flatMap(\.photos))
             return photos.isEmpty ? nil : (blog, photos)
         }
         if let latest = latestBlog(blogsWithNewPhotos.map(\.0)) {
@@ -1126,7 +1126,7 @@ final class TripsViewModel: ObservableObject {
         let byBlog = Dictionary(grouping: savedBlogNewPhotos, by: { $0.blog.id })
         let blogsWithNewPhotos: [(CreatedRecapBlog, [MockPhoto])] = byBlog.compactMap { _, pairs in
             let blog = pairs[0].blog
-            let photos = pairs.flatMap(\.photos)
+            let photos = dedupePhotosByLocalId(pairs.flatMap(\.photos))
             return photos.isEmpty ? nil : (blog, photos)
         }
         if let latest = latestBlog(blogsWithNewPhotos.map(\.0)) {
@@ -1174,15 +1174,21 @@ final class TripsViewModel: ObservableObject {
         detectNewMomentsForOnTheGoTrip(scannedDrafts: tripDrafts)
     }
 
-    /// Picks the single "latest" blog (most likely current trip) by lastEditedAt ?? createdAt.
+    /// Picks the single "latest" blog (most likely current trip) by tripEndDate.
     /// We only ever surface new moments for one blog; users can't be on multiple trips at once.
     private func latestBlog(_ blogs: [CreatedRecapBlog]) -> CreatedRecapBlog? {
-        blogs.max(by: { ($0.lastEditedAt ?? $0.createdAt) < ($1.lastEditedAt ?? $1.createdAt) })
+        blogs.max(by: {
+            let dateA = $0.tripEndDate ?? $0.lastEditedAt ?? $0.createdAt
+            let dateB = $1.tripEndDate ?? $1.lastEditedAt ?? $1.createdAt
+            return dateA < dateB
+        })
     }
 
-    /// Returns true if `a` is strictly newer than `b` (by lastEditedAt ?? createdAt).
+    /// Returns true if `a` is strictly newer than `b` (by tripEndDate).
     private func isBlogNewer(_ a: CreatedRecapBlog, than b: CreatedRecapBlog) -> Bool {
-        (a.lastEditedAt ?? a.createdAt) > (b.lastEditedAt ?? b.createdAt)
+        let dateA = a.tripEndDate ?? a.lastEditedAt ?? a.createdAt
+        let dateB = b.tripEndDate ?? b.lastEditedAt ?? b.createdAt
+        return dateA > dateB
     }
 
     /// Returns a saved blog whose date range overlaps or continues from the given trip.
