@@ -978,9 +978,6 @@ struct TripsView: View {
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal, 24)
-        .onAppear {
-            viewModel.autoLoadOlderTripsIfNeeded()
-        }
         .simultaneousGesture(
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
