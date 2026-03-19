@@ -21,9 +21,20 @@ final class VibePlayer: NSObject, ObservableObject {
         stop()
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default)
+
+            // Preflight: stop any previous recording/playback session cleanly.
+            try? session.setActive(false)
+
+            try session.setCategory(
+                .playback,
+                mode: .default,
+                options: [.mixWithOthers]
+            )
             try session.setActive(true)
-            let p = try AVAudioPlayer(contentsOf: url)
+
+            let p = try AVAudioPlayer(contentsOf: url, fileTypeHint: "m4a")
+            p.volume = 1.0
+            p.prepareToPlay()
             p.delegate = self
             p.play()
             player = p
@@ -37,6 +48,8 @@ final class VibePlayer: NSObject, ObservableObject {
         player?.stop()
         player = nil
         isPlaying = false
+        // Release the audio session to avoid conflicts with other audio (recording).
+        try? AVAudioSession.sharedInstance().setActive(false)
     }
 }
 

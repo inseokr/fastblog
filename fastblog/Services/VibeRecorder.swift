@@ -43,6 +43,8 @@ final class VibeRecorder: NSObject, ObservableObject {
         let duration = rec.currentTime
         rec.stop()
         recorder = nil
+        // Ensure the shared audio session is not left in record mode.
+        try? AVAudioSession.sharedInstance().setActive(false)
         return await trim(sourceURL: sourceURL, totalDuration: duration, maxSeconds: 10)
     }
 
@@ -52,6 +54,8 @@ final class VibeRecorder: NSObject, ObservableObject {
         let url = recorder?.url ?? sessionTempURL
         recorder?.stop()
         recorder = nil
+        // Ensure the shared audio session is not left in record mode.
+        try? AVAudioSession.sharedInstance().setActive(false)
         if let url {
             try? FileManager.default.removeItem(at: url)
         }
@@ -114,8 +118,12 @@ final class VibeRecorder: NSObject, ObservableObject {
         exporter.outputURL = outputURL
         exporter.outputFileType = .m4a
         exporter.timeRange = range
-
-        await exporter.export()
+        // Ensure the export fully completes before we return/copy the file.
+        await withCheckedContinuation { continuation in
+            exporter.exportAsynchronously {
+                continuation.resume()
+            }
+        }
 
         // Clean up source regardless of result
         try? FileManager.default.removeItem(at: sourceURL)

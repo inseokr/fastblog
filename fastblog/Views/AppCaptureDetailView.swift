@@ -115,65 +115,110 @@ struct AppCaptureDetailView: View {
 
     private var topBar: some View {
         VStack {
-            HStack {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 36, height: 36)
-                        .background(Color.black.opacity(0.5))
-                        .clipShape(Circle())
+            ZStack {
+                // Left: close button
+                HStack {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 36, height: 36)
+                            .background(Color.black.opacity(0.5))
+                            .clipShape(Circle())
+                    }
+
+                    Spacer()
+
+                    // Right: Vibe toggle (when available) + kebab/ellipsis menu
+                    HStack(spacing: 10) {
+                        if currentItem?.localVibeURL != nil {
+                            let isPlaying = isVibeEnabled && vibePlayer.isPlaying
+                            Button {
+                                isVibeEnabled.toggle()
+                                if isVibeEnabled, let url = currentItem?.localVibeURL {
+                                    vibePlayer.play(url: url)
+                                } else {
+                                    vibePlayer.stop()
+                                }
+                            } label: {
+                                ZStack {
+                                    Circle()
+                                        .fill(
+                                            isPlaying
+                                                ? LinearGradient(
+                                                    colors: [.cyan, .green],
+                                                    startPoint: .top,
+                                                    endPoint: .bottom
+                                                )
+                                                : LinearGradient(
+                                                    colors: [Color.white.opacity(0.08)],
+                                                    startPoint: .top,
+                                                    endPoint: .bottom
+                                                )
+                                        )
+                                    Image(systemName: "dot.radiowaves.left.and.right")
+                                        .font(.system(size: 17, weight: .semibold))
+                                        .foregroundColor(isPlaying ? .white : Color.white.opacity(0.35))
+                                }
+                                .frame(width: 36, height: 36)
+                                .overlay(
+                                    Circle()
+                                        .stroke(
+                                            isPlaying
+                                                ? LinearGradient(
+                                                    colors: [.cyan, .green],
+                                                    startPoint: .top,
+                                                    endPoint: .bottom
+                                                )
+                                                : LinearGradient(
+                                                    colors: [Color.white.opacity(0.15)],
+                                                    startPoint: .top,
+                                                    endPoint: .bottom
+                                                ),
+                                            lineWidth: isPlaying ? 2 : 1
+                                        )
+                                )
+                                .shadow(color: isPlaying ? .cyan.opacity(0.55) : .clear, radius: isPlaying ? 10 : 0)
+                            }
+                            .accessibilityLabel(
+                                isPlaying ? "Vibe playing" : (isVibeEnabled ? "Vibe enabled" : "Vibe disabled")
+                            )
+                            // Slight extra clarity: show a tiny badge when actually playing.
+                            .overlay(alignment: .bottomTrailing) {
+                                if isPlaying {
+                                    Circle()
+                                        .fill(Color.white)
+                                        .frame(width: 7, height: 7)
+                                        .overlay(Circle().stroke(Color.cyan.opacity(0.9), lineWidth: 1))
+                                        .offset(x: -2, y: -2)
+                                }
+                            }
+                        }
+
+                        Menu {
+                            Button(role: .destructive) {
+                                showDeleteConfirm = true
+                            } label: {
+                                Label("Delete Photo", systemImage: "trash")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(width: 36, height: 36)
+                                .background(Color.black.opacity(0.5))
+                                .clipShape(Circle())
+                        }
+                    }
                 }
 
-                Spacer()
-
-                // Page indicator
+                // Center: photo index (e.g. 1/2)
                 if items.count > 1 {
                     Text("\(currentIndex + 1) / \(items.count)")
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(.white)
-                }
-
-                Spacer()
-
-                // Vibe toggle (only shown when current photo has a Vibe)
-                if currentItem?.localVibeURL != nil {
-                    Button {
-                        isVibeEnabled.toggle()
-                        if isVibeEnabled, let url = currentItem?.localVibeURL {
-                            vibePlayer.play(url: url)
-                        } else {
-                            vibePlayer.stop()
-                        }
-                    } label: {
-                        Image(systemName: "dot.radiowaves.left.and.right")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 36, height: 36)
-                            .background(isVibeEnabled ? Color.white.opacity(0.25) : Color.black.opacity(0.5))
-                            .clipShape(Circle())
-                    }
-                    .accessibilityLabel(isVibeEnabled ? "Vibe on" : "Vibe off")
-                }
-
-                Spacer()
-
-                // Actions menu
-                Menu {
-                    Button(role: .destructive) {
-                        showDeleteConfirm = true
-                    } label: {
-                        Label("Delete Photo", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 36, height: 36)
-                        .background(Color.black.opacity(0.5))
-                        .clipShape(Circle())
                 }
             }
             .padding(.horizontal, 16)

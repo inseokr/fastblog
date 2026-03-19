@@ -255,7 +255,10 @@ struct fastblogApp: App {
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .active {
+            if newPhase == .background {
+                AppAnalytics.shared.flushOnBackground()
+            } else if newPhase == .active {
+                AppAnalytics.shared.flushOnBackground()
                 Task {
                     await EntitlementManager.shared.refreshEntitlements()
                     createdRecapStore.enforceArchiveRules()

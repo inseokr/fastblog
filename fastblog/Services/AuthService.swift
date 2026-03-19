@@ -95,6 +95,7 @@ final class AuthService: NSObject, ObservableObject {
         guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
               let user = try? JSONDecoder().decode(AuthUser.self, from: data) else { return }
         currentUser = user
+        AppAnalytics.shared.currentUserId = user.id
     }
 
     private func persist(_ user: AuthUser?) {
@@ -132,6 +133,7 @@ final class AuthService: NSObject, ObservableObject {
         let previousUserId = currentUser?.id
 
         currentUser = nil
+        AppAnalytics.shared.currentUserId = nil
         persist(nil)
         setJwtToken(nil)
         // Waitlist is tied to the account; clear device-local early access state so guest sees "Join Early Access" again.
@@ -617,6 +619,7 @@ extension AuthService {
     private func finishSignIn(user: AuthUser) {
         currentUser = user
         persist(user)
+        AppAnalytics.shared.currentUserId = user.id
         if let username = user.username {
             UserDefaults.standard.set(username, forKey: "blogify.lastLoginUsername")
         }

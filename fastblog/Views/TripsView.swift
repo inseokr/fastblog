@@ -2923,6 +2923,18 @@ extension CameraCaptureView {
                       let captureId = try? AppCapturePhotoService.shared.saveCapture(
                           image: image, timestamp: moment.timestamp, location: location
                       ) else { return nil }
+
+                // Persist the vibe clip alongside the saved photo.
+                if let vibeURL = moment.vibeURL {
+                    do {
+                        try AppCapturePhotoService.shared.saveVibe(captureId: captureId, from: vibeURL)
+                        // Remove the temporary trimmed file after copying into the capture folder.
+                        try FileManager.default.removeItem(at: vibeURL)
+                    } catch {
+                        // Ignore persistence failures; the vibe will simply be missing.
+                    }
+                }
+
                 let localId = AppCapturePhotoService.identifier(for: captureId)
                 return MockPhoto(
                     id: moment.id,
@@ -2968,6 +2980,18 @@ extension CameraCaptureView {
                       let captureId = try? AppCapturePhotoService.shared.saveCapture(
                           image: image, timestamp: moment.timestamp, location: location
                       ) else { return nil }
+
+                // Persist the vibe clip alongside the saved photo.
+                if let vibeURL = moment.vibeURL {
+                    do {
+                        try AppCapturePhotoService.shared.saveVibe(captureId: captureId, from: vibeURL)
+                        // Remove the temporary trimmed file after copying into the capture folder.
+                        try FileManager.default.removeItem(at: vibeURL)
+                    } catch {
+                        // Ignore persistence failures; the vibe will simply be missing.
+                    }
+                }
+
                 let localId = AppCapturePhotoService.identifier(for: captureId)
                 return MockPhoto(
                     id: moment.id,
@@ -3068,6 +3092,18 @@ extension CameraCaptureView {
                       let captureId = try? AppCapturePhotoService.shared.saveCapture(
                           image: image, timestamp: moment.timestamp, location: location
                       ) else { return nil }
+
+                // Persist the vibe clip alongside the saved photo.
+                if let vibeURL = moment.vibeURL {
+                    do {
+                        try AppCapturePhotoService.shared.saveVibe(captureId: captureId, from: vibeURL)
+                        // Remove the temporary trimmed file after copying into the capture folder.
+                        try FileManager.default.removeItem(at: vibeURL)
+                    } catch {
+                        // Ignore persistence failures; the vibe will simply be missing.
+                    }
+                }
+
                 let localId = AppCapturePhotoService.identifier(for: captureId)
                 return MockPhoto(
                     id: moment.id,

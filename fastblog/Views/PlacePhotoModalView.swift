@@ -168,7 +168,6 @@ struct PlacePhotoModalView: View {
         self.onSavePlaceName = onSavePlaceName
         self.onCaptionCommitted = onCaptionCommitted
         _currentPhotoId = State(initialValue: initialPhotoId)
-        debugPrint("[PlacePhotoModal] photos: \(photos)")
     }
 
     private var currentPhoto: RecapPhoto? {
@@ -200,7 +199,6 @@ struct PlacePhotoModalView: View {
                 // 1. Full screen media viewer — horizontal ScrollView with paging (not TabView) so the
                 // sheet’s drag-to-dismiss doesn’t steal horizontal swipes. Tap/double-tap to zoom (same flow as non-modal).
                 fullScreenPhotoView
-                    .onAppear { debugPrint("[PlacePhotoModal] fullScreenPhotoView appeared") }
                     .simultaneousGesture(
                         TapGesture(count: 1).onEnded {
                             if isCaptionFocused {
@@ -480,9 +478,6 @@ struct PlacePhotoModalView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
         .statusBar(hidden: false)
-        .onAppear {
-            debugPrint("[PlacePhotoModal] Modal is active (onAppear)")
-        }
         .onDisappear {
             vibePlayer.stop()
         }
@@ -869,7 +864,6 @@ struct PlacePhotoModalView: View {
                 )
                 .simultaneousGesture(
                     TapGesture(count: 2).onEnded {
-                        debugPrint("[PlacePhotoModal] Double-tap in zoom overlay → resetting zoom and exiting")
                         withAnimation(.easeInOut(duration: 0.2)) {
                             accumulatedZoomScale = 1.0
                             accumulatedDragOffset = .zero
