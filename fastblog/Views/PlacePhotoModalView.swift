@@ -368,68 +368,6 @@ struct PlacePhotoModalView: View {
                         if !isEditing && !blogIsEditMode {
                             // Kebab menu + action buttons stacked vertically in top right
                             VStack(spacing: 16) {
-                                // Vibe button — only shown when the current photo has a Vibe clip
-                                if currentVibeURL != nil {
-                                    let isPlaying = isVibeEnabled && vibePlayer.isPlaying
-                                    Button {
-                                        isVibeEnabled.toggle()
-                                        if isVibeEnabled, let url = currentVibeURL {
-                                            vibePlayer.play(url: url)
-                                        } else {
-                                            vibePlayer.stop()
-                                        }
-                                    } label: {
-                                        ZStack {
-                                            Circle()
-                                                .fill(
-                                                    isPlaying
-                                                        ? LinearGradient(
-                                                            colors: [.cyan, .green],
-                                                            startPoint: .top,
-                                                            endPoint: .bottom
-                                                        )
-                                                        : LinearGradient(
-                                                            colors: [Color.white.opacity(0.08)],
-                                                            startPoint: .top,
-                                                            endPoint: .bottom
-                                                        )
-                                                )
-                                            Image(systemName: "dot.radiowaves.left.and.right")
-                                                .font(.system(size: 17, weight: .semibold))
-                                                .foregroundColor(isPlaying ? .white : Color.white.opacity(0.35))
-                                        }
-                                        .frame(width: 36, height: 36)
-                                        .overlay(
-                                            Circle()
-                                                .stroke(
-                                                    isPlaying
-                                                        ? LinearGradient(
-                                                            colors: [.cyan, .green],
-                                                            startPoint: .top,
-                                                            endPoint: .bottom
-                                                        )
-                                                        : LinearGradient(
-                                                            colors: [Color.white.opacity(0.15)],
-                                                            startPoint: .top,
-                                                            endPoint: .bottom
-                                                        ),
-                                                    lineWidth: isPlaying ? 2 : 1
-                                                )
-                                        )
-                                        .shadow(color: isPlaying ? .cyan.opacity(0.55) : .clear, radius: isPlaying ? 10 : 0)
-                                    }
-                                    .accessibilityLabel(isPlaying ? "Vibe playing" : (isVibeEnabled ? "Vibe enabled" : "Vibe disabled"))
-                                    .overlay(alignment: .bottomTrailing) {
-                                        if isPlaying {
-                                            Circle()
-                                                .fill(Color.white)
-                                                .frame(width: 7, height: 7)
-                                                .overlay(Circle().stroke(Color.cyan.opacity(0.9), lineWidth: 1))
-                                                .offset(x: -2, y: -2)
-                                        }
-                                    }
-                                }
-
                                 Menu {
                                     Button {
                                         showRenameSheet = true
@@ -454,12 +392,39 @@ struct PlacePhotoModalView: View {
                                         Label("Remove photo", systemImage: "trash")
                                     }
                                 } label: {
-                                    Image(systemName: "ellipsis.circle")
-                                        .font(.system(size: 22, weight: .semibold))
+                                    Image(systemName: "ellipsis")
+                                        .font(.system(size: 22, weight: .bold))
                                         .foregroundColor(.white)
                                         .frame(width: 44, height: 44)
-                                        .background(Color.black.opacity(0.35))
-                                        .clipShape(Circle())
+                                        .shadow(color: .black.opacity(0.5), radius: 3)
+                                }
+
+                                // Vibe button — only shown when the current photo has a Vibe clip
+                                if currentVibeURL != nil {
+                                    let isPlaying = isVibeEnabled && vibePlayer.isPlaying
+                                    Button {
+                                        isVibeEnabled.toggle()
+                                        if isVibeEnabled, let url = currentVibeURL {
+                                            vibePlayer.play(url: url)
+                                        } else {
+                                            vibePlayer.stop()
+                                        }
+                                    } label: {
+                                        Image(systemName: "waveform")
+                                            .font(.system(size: 20, weight: .semibold))
+                                            .foregroundStyle(
+                                                LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
+                                            )
+                                            .symbolEffect(.variableColor.iterative.reversing, isActive: isPlaying)
+                                            .frame(width: 44, height: 44)
+                                            .background(Color.black.opacity(0.55))
+                                            .clipShape(Circle())
+                                            .overlay(Circle().stroke(Color.green.opacity(isPlaying ? 0.85 : 0.5), lineWidth: isPlaying ? 1.5 : 1))
+                                            .scaleEffect(isPlaying ? 1.15 : 1.0)
+                                            .animation(.spring(response: 0.35, dampingFraction: 0.6), value: isPlaying)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(isPlaying ? "Vibe playing" : "Play vibe")
                                 }
 
                                 RightActionStack(
