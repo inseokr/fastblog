@@ -39,11 +39,10 @@ enum StoryBookBuilder {
         var storyDays: [StoryDay] = []
         for (idx, day) in detail.days.enumerated() {
             let screenSize = await MainActor.run { UIScreen.main.bounds.size }
-            let mapSize = CGSize(width: screenSize.width, height: screenSize.height * 0.70)
             let snapshot = await withTimeout(seconds: 10) {
                 await MapSnapshotHelper.generateSnapshot(
                     for: day.placeStops,
-                    size: mapSize
+                    size: screenSize
                 )
             }
 

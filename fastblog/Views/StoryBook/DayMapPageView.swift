@@ -5,42 +5,45 @@ struct DayMapPageView: View {
     let day: StoryDay
 
     var body: some View {
-        GeometryReader { geo in
-            VStack(spacing: 0) {
-                // Map snapshot — top 70%
-                ZStack(alignment: .bottom) {
-                    if let snapshot = day.mapSnapshot {
-                        Image(uiImage: snapshot)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: geo.size.width, height: geo.size.height * 0.70)
-                            .clipped()
-                    } else {
-                        Color.gray.opacity(0.2)
-                            .frame(height: geo.size.height * 0.70)
-                    }
-
-                    // Subtle bottom-edge gradient bleeding into white strip
-                    LinearGradient(
-                        colors: [.clear, .black.opacity(0.3)],
-                        startPoint: .center,
-                        endPoint: .bottom
+        ZStack(alignment: .bottom) {
+            // Map fills the entire page
+            if let snapshot = day.mapSnapshot {
+                Image(uiImage: snapshot)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(
+                        width: UIScreen.main.bounds.width,
+                        height: UIScreen.main.bounds.height
                     )
-                    .frame(height: geo.size.height * 0.70 * 0.15)
-                }
-
-                // Day header strip — bottom 30%
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Day \(day.dayNumber)")
-                        .font(.system(size: 22, weight: .bold))
-                    Text(day.shortDateText)
-                        .font(.system(size: 15))
-                        .foregroundColor(.primary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: geo.size.height * 0.30, alignment: .leading)
-                .padding(.horizontal, 20)
-                .background(Color.white)
+                    .clipped()
+            } else {
+                Color.gray.opacity(0.15)
+                    .frame(
+                        width: UIScreen.main.bounds.width,
+                        height: UIScreen.main.bounds.height
+                    )
             }
+
+            // Day label overlay at the bottom
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Day \(day.dayNumber)")
+                    .font(.system(size: 26, weight: .bold))
+                    .foregroundColor(.white)
+                Text(day.shortDateText)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.white.opacity(0.9))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 24)
+            .padding(.bottom, 16)
+            .background(
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.55)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
         }
         .ignoresSafeArea()
     }
