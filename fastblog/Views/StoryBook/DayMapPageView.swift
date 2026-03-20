@@ -35,7 +35,7 @@ struct DayMapPageView: View {
                         .font(.system(size: 22, weight: .bold))
                     Text(day.shortDateText)
                         .font(.system(size: 15))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.primary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: geo.size.height * 0.30, alignment: .leading)
                 .padding(.horizontal, 20)

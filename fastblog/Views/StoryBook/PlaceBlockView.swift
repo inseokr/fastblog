@@ -32,20 +32,13 @@ struct PlaceBlockView: View {
                     .lineLimit(2)
             }
 
-            // Photos
+            // Photos — each card is fixed 150×200 (3:4 portrait)
             if !photos.isEmpty {
-                HStack(spacing: 8) {
+                HStack(alignment: .top, spacing: 8) {
                     ForEach(0..<photos.count, id: \.self) { i in
                         PhotoCardView(photo: photos[i])
                     }
                 }
-                .frame(
-                    maxWidth: photos.count == 1 ? UIScreen.main.bounds.width * 0.5 : .infinity,
-                    minHeight: 200,
-                    maxHeight: 200,
-                    alignment: .leading
-                )
-                .clipped()
             }
         }
         .padding(.vertical, 4)

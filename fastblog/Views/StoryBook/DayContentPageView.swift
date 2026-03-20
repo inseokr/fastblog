@@ -12,10 +12,10 @@ struct DayContentPageView: View {
                     Text("Day \(page.day.dayNumber)")
                         .font(.system(size: 18, weight: .bold))
                     Text("·")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.primary)
                     Text(page.shortDateText)
                         .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.primary)
                 }
                 .frame(height: 44, alignment: .center)
             }
