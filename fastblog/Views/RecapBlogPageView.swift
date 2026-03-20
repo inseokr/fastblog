@@ -110,6 +110,7 @@ struct RecapBlogPageView: View {
     @State private var pdfExportURL: URL?
     @State private var showPDFPreview = false
     @State private var showPDFExportOptions = false
+    @State private var showStoryMode = false
     @AppStorage("pdfExportOptions") private var pdfExportOptionsData: Data = (try? JSONEncoder().encode(PDFExportOptions())) ?? Data()
     @State private var showProfileManagement = false
     @State private var showRestorePlaces = false
@@ -215,6 +216,9 @@ struct RecapBlogPageView: View {
                             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                             Task { @MainActor in
                                 try? await Task.sleep(nanoseconds: 350_000_000)
+                                // Reset keyboard state before revealing the blog so the day filter
+                                // doesn't animate in from the bottom (distracting flash).
+                                isKeyboardVisible = false
                                 showAuth = false
                                 try? await Task.sleep(nanoseconds: 500_000_000)
                                 pendingExportAfterAuth = false
@@ -254,6 +258,10 @@ struct RecapBlogPageView: View {
                 )
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+            }
+            .fullScreenCover(isPresented: $showStoryMode) {
+                StoryBookView(detail: draft)
+                    .interactiveDismissDisabled(true)
             }
             .sheet(isPresented: $showProfileManagement, onDismiss: {
                 if let updatedDetail = createdRecapStore.getBlogDetail(blogId: blogId) {
@@ -987,6 +995,26 @@ struct RecapBlogPageView: View {
                                     Image(systemName: "doc.text")
                                         .font(.system(size: 14, weight: .medium))
                                     Text("Export")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(Color.white.opacity(0.15).background(.ultraThinMaterial))
+                                .clipShape(Capsule())
+                                .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.top, 4)
+
+                            Button {
+                                showStoryMode = true
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "book.pages")
+                                        .font(.system(size: 14, weight: .medium))
+                                    Text("Story Mode")
                                         .font(.subheadline)
                                         .fontWeight(.medium)
                                 }
