@@ -6,19 +6,23 @@ struct DayContentPageView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Day header — only on first page of the day
-            if page.isFirstPage {
-                HStack {
-                    Text("Day \(page.day.dayNumber)")
-                        .font(.system(size: 18, weight: .bold))
-                    Text("·")
-                        .foregroundColor(Color.black)
+            // Day header
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("Day \(page.day.dayNumber)")
+                    .font(.system(size: 22, weight: .bold))
+                if page.isFirstPage {
                     Text(page.shortDateText)
-                        .font(.system(size: 13))
-                        .foregroundColor(Color.black)
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("continued")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                        .italic()
                 }
-                .frame(height: 44, alignment: .center)
             }
+            .frame(height: 44, alignment: .center)
+            Divider()
 
             // Slots
             ForEach(0..<page.slots.count, id: \.self) { i in
@@ -73,7 +77,7 @@ struct DayContentPageView: View {
 private extension DayContentPage {
     var shortDateText: String {
         let f = DateFormatter()
-        f.dateFormat = "EEEE, MMM d"
+        f.dateFormat = "EEE, MMM d"   // "Wed, March 12"
         return f.string(from: day.date)
     }
 }

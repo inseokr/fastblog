@@ -3,51 +3,48 @@ import SwiftUI
 
 struct PhotoCardView: View {
     let photo: PhotoContent
+    /// Width driven by the caller (half-page for 2 photos, ~60% for 1 photo)
+    let width: CGFloat
 
-    // Fixed portrait dimensions (3:4)
-    static let photoWidth: CGFloat = 150
-    static let photoHeight: CGFloat = 200
+    private var height: CGFloat { width * (4 / 3) }   // 3:4 portrait
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            // Photo with optional long-caption overlay
             ZStack(alignment: .bottom) {
                 Image(uiImage: photo.image)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: Self.photoWidth, height: Self.photoHeight)
+                    .frame(width: width, height: height)
                     .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
 
                 if photo.captionIsLong, let caption = photo.caption {
                     ZStack(alignment: .bottom) {
                         LinearGradient(
-                            colors: [.clear, .black.opacity(0.7)],
+                            colors: [.clear, .black.opacity(0.75)],
                             startPoint: .center,
                             endPoint: .bottom
                         )
-                        .frame(height: Self.photoHeight * 0.4)
                         Text(caption)
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                             .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.top, 6)
-                            .padding(.bottom, 12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 8)
+                            .padding(.bottom, 10)
+                            .frame(maxWidth: .infinity, alignment: .center)
                     }
-                    .frame(width: Self.photoWidth, height: Self.photoHeight)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .frame(width: width, height: height * 0.45)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
             }
-            .frame(width: Self.photoWidth, height: Self.photoHeight)
+            .frame(width: width, height: height)
 
-            // Short caption sits below the photo, not clipped
             if !photo.captionIsLong, let caption = photo.caption {
                 Text(caption)
                     .font(.system(size: 10))
-                    .foregroundColor(Color.black)
+                    .foregroundColor(.secondary)
                     .lineLimit(2)
-                    .frame(width: Self.photoWidth, alignment: .leading)
+                    .frame(width: width)
             }
         }
     }
