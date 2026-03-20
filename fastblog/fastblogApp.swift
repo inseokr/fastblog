@@ -15,7 +15,22 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        Self.prewarmKeyboard()
         return true
+    }
+
+    /// Pre-warms the iOS keyboard so its first real appearance is instant.
+    /// Without this, the first keyboard show in a session takes ~200-300ms extra
+    /// while UIKit lazily loads the keyboard component.
+    private static func prewarmKeyboard() {
+        let field = UITextField()
+        field.isHidden = true
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.windows.first?.addSubview(field)
+        field.becomeFirstResponder()
+        field.resignFirstResponder()
+        field.removeFromSuperview()
     }
 
     func application(

@@ -6,6 +6,7 @@
 import SwiftUI
 import CoreLocation
 import Photos
+import UIKit
 
 /// Identifiable item for presenting the place photo modal (day + stop + initial photo).
 struct PlacePhotoModalItem: Identifiable {
@@ -72,6 +73,15 @@ struct PlacePhotoModalView: View {
     @State private var showRenameSheet = false
     /// PHAsset time metadata for the current photo (creationDate, modificationDate). Loaded when photo has localIdentifier.
     @State private var currentPhotoAssetMetadata: (creation: Date?, modification: Date?)?
+    /// Manual bottom inset so the sheet starts moving up with the keyboard (anticipatory + UIKit sync).
+    @State private var keyboardPushInset: CGFloat = 0
+
+    /// Typical docked keyboard overlap on iPhone portrait; used before `keyboardWillShow` for a synced “push” feel.
+    private static let estimatedKeyboardPushHeight: CGFloat = 310
+    /// Spring tuned close to system sheet presentation so lift and sheet feel like one motion.
+    private static var sheetMatchedSpring: Animation {
+        .spring(response: 0.38, dampingFraction: 0.92)
+    }
 
     /// Derives the UTC offset from the EXIF digitized local time vs photo timestamps.
     /// Digitized is the stop's earliest photo time in *local* time at capture; we compare to each photo's UTC timestamp to infer offset.
@@ -168,6 +178,11 @@ struct PlacePhotoModalView: View {
         self.onSavePlaceName = onSavePlaceName
         self.onCaptionCommitted = onCaptionCommitted
         _currentPhotoId = State(initialValue: initialPhotoId)
+        // Blog edit: show caption editor from the first frame (no onAppear flip). Caption tap adds autoFocus + keyboard inset immediately.
+        _isEditing = State(initialValue: blogIsEditMode)
+        _keyboardPushInset = State(
+            initialValue: (blogIsEditMode && autoFocusCaption) ? Self.estimatedKeyboardPushHeight : 0
+        )
     }
 
     private var currentPhoto: RecapPhoto? {
@@ -377,7 +392,8 @@ struct PlacePhotoModalView: View {
                                         editedCaptionText = currentCaption
                                         editedPlaceTitle = placeTitle
                                         isEditing = true
-                                        isCaptionFocused = true
+                                        beginAnticipatoryKeyboardPush()
+                                        focusCaptionFieldOnNextLayout()
                                     } label: {
                                         Label("Edit caption", systemImage: "pencil")
                                     }
@@ -479,6 +495,7 @@ struct PlacePhotoModalView: View {
         .statusBar(hidden: false)
         .onDisappear {
             vibePlayer.stop()
+            keyboardPushInset = 0
         }
         .sheet(isPresented: $showRenameSheet) {
             EditPlaceStopNameSheet(
@@ -735,6 +752,24 @@ struct PlacePhotoModalView: View {
                 }
             }
         }
+        .padding(.bottom, keyboardPushInset)
+        .ignoresSafeArea(.keyboard, edges: .bottom)
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
+            guard isEditing else { return }
+            let h = Self.keyboardOverlapHeight(from: notification)
+            // Hardware / undocked keyboard: overlap ~0 — clear anticipatory inset so we don’t leave a false gap.
+            applyKeyboardInsetFromNotification(notification, height: h > 1 ? h : 0)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { notification in
+            applyKeyboardInsetFromNotification(notification, height: 0)
+        }
+        .onChange(of: isEditing) { _, editing in
+            if !editing {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    keyboardPushInset = 0
+                }
+            }
+        }
         .interactiveDismissDisabled(isEditing && hasAnyChanges)
         .alert("Save changes?", isPresented: $showSaveConfirmationAlert) {
             Button("Save") {
@@ -755,15 +790,23 @@ struct PlacePhotoModalView: View {
             if blogIsEditMode {
                 captionWhenEditingStarted = currentCaption
                 titleWhenEditingStarted = placeTitle
-                isEditing = true
+                // `isEditing` is already true from init when `blogIsEditMode` (caption UI is on screen from frame 0).
                 if autoFocusCaption {
-                    isCaptionFocused = true
+                    // Caption row open: keyboard + inset are intended to be immediate, not a second-phase state change.
+                    var t = Transaction()
+                    t.animation = nil
+                    withTransaction(t) {
+                        isCaptionFocused = true
+                    }
+                } else {
+                    isCaptionFocused = false
                 }
             } else {
                 // In non-editing mode, ensure stale focus state doesn't intercept photo taps.
                 // Otherwise a tap may only dismiss focus instead of entering zoom.
                 isEditing = false
                 isCaptionFocused = false
+                keyboardPushInset = 0
             }
         }
         .onChange(of: currentPhotoId) { _, _ in
@@ -988,6 +1031,47 @@ struct PlacePhotoModalView: View {
         
         if let url = components?.url {
             UIApplication.shared.open(url)
+        }
+    }
+
+    /// After `isEditing` becomes true, the caption `TextField` only exists inside `safeAreaInset`.
+    /// Setting `FocusState` in the same update as `isEditing = true` often fails or defers first responder
+    /// until a later layout pass, so the keyboard lags behind the sheet. Yield once, then focus without
+    /// inheriting slow implicit animations so the keyboard can track the modal more closely.
+    private func focusCaptionFieldOnNextLayout() {
+        Task { @MainActor in
+            await Task.yield()
+            guard isEditing else { return }
+            var t = Transaction()
+            t.animation = nil
+            withTransaction(t) {
+                isCaptionFocused = true
+            }
+        }
+    }
+
+    /// Lifts the modal immediately (with sheet-like spring) so it feels like the keyboard is pushing from t=0.
+    private func beginAnticipatoryKeyboardPush() {
+        withAnimation(Self.sheetMatchedSpring) {
+            keyboardPushInset = Self.estimatedKeyboardPushHeight
+        }
+    }
+
+    private static func keyboardOverlapHeight(from notification: Notification) -> CGFloat {
+        guard let info = notification.userInfo,
+              let rect = info[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return 0 }
+        let screen = UIScreen.main.bounds
+        return max(0, screen.maxY - rect.minY)
+    }
+
+    private static func keyboardAnimationDuration(from notification: Notification) -> Double {
+        (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?.doubleValue ?? 0.25
+    }
+
+    private func applyKeyboardInsetFromNotification(_ notification: Notification, height: CGFloat) {
+        let duration = Self.keyboardAnimationDuration(from: notification)
+        withAnimation(.easeOut(duration: duration)) {
+            keyboardPushInset = height
         }
     }
 
