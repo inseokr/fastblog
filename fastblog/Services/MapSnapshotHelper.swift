@@ -10,7 +10,7 @@ class MapSnapshotHelper {
     /// Draws the polyline route and numbered markers onto the resulting image.
     /// Marker numbers match each stop's 1-based position in the original array
     /// so they line up with the numbered list in the PDF.
-    static func generateSnapshot(for placeStops: [PlaceStop], size: CGSize = CGSize(width: 600, height: 300)) async -> UIImage? {
+    static func generateSnapshot(for placeStops: [PlaceStop], size: CGSize = CGSize(width: 600, height: 300), regionPadding: Double = 0.01) async -> UIImage? {
         // Build (displayNumber, coordinate) pairs, preserving original ordering
         // so marker #2 on the map always matches place #2 in the blog.
         var indexedCoords: [(displayNumber: Int, coord: CLLocationCoordinate2D)] = []
@@ -22,7 +22,7 @@ class MapSnapshotHelper {
         guard !indexedCoords.isEmpty else { return nil }
 
         let coords = indexedCoords.map(\.coord)
-        let region = region(for: coords)
+        let region = region(for: coords, padding: regionPadding)
 
         let options = MKMapSnapshotter.Options()
         options.region = region
@@ -94,21 +94,20 @@ class MapSnapshotHelper {
     }
     
     /// Calculates the bounding region for a set of coordinates with padding.
-    private static func region(for coords: [CLLocationCoordinate2D]) -> MKCoordinateRegion {
+    private static func region(for coords: [CLLocationCoordinate2D], padding: Double = 0.01) -> MKCoordinateRegion {
         if coords.count == 1 {
             let coord = coords[0]
-            let span = MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+            let span = MKCoordinateSpan(latitudeDelta: max(0.05, padding * 2), longitudeDelta: max(0.05, padding * 2))
             return MKCoordinateRegion(center: coord, span: span)
         }
-        
+
         let lats = coords.map(\.latitude)
         let lons = coords.map(\.longitude)
         let minLat = lats.min()!
         let maxLat = lats.max()!
         let minLon = lons.min()!
         let maxLon = lons.max()!
-        
-        let padding = 0.01 // Adjust this for zoom level padding in the PDF
+
         let span = MKCoordinateSpan(
             latitudeDelta: max(0.01, (maxLat - minLat) + padding * 2),
             longitudeDelta: max(0.01, (maxLon - minLon) + padding * 2)

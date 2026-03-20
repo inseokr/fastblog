@@ -42,7 +42,8 @@ enum StoryBookBuilder {
             let snapshot = await withTimeout(seconds: 10) {
                 await MapSnapshotHelper.generateSnapshot(
                     for: day.placeStops,
-                    size: screenSize
+                    size: screenSize,
+                    regionPadding: 0.35
                 )
             }
 
