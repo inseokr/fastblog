@@ -241,63 +241,59 @@ struct PlacePhotoModalView: View {
                         guard currentPhotoId == photoId else { return }
                         currentPhotoAssetMetadata = result
                     }
+                    .overlay(alignment: .bottom) {
+                        VStack(spacing: 0) {
+                            if !isEditing {
+                                BottomInfoOverlay(
+                                    placeTitle: placeTitle,
+                                    dateTimeText: dateTimeTextForCurrentPhoto,
+                                    assetTimeMetadataLines: assetTimeMetadataLinesForCurrentPhoto,
+                                    showAssetTimeMetadata: showAssetTimeMetadata,
+                                    isEditing: $isEditing,
+                                    captionText: $editedCaptionText,
+                                    placeholder: "Leave a story for this photo...",
+                                    blogIsEditMode: blogIsEditMode,
+                                    onViewBlog: onViewBlog,
+                                    onTitleTap: { openGoogleSearch() },
+                                    onCommitCaption: { commitCaption() }
+                                )
+                            }
 
-                // 2. Bottom overlay
-            VStack {
-                Color.clear
-                    .frame(maxHeight: .infinity)
-                    .allowsHitTesting(false)
-                // In edit mode (both blog edit and read mode editing),
-                // the place title, timestamp and caption input are rendered in the safeAreaInset anchored above the keyboard.
-                if !isEditing {
-                    BottomInfoOverlay(
-                        placeTitle: placeTitle,
-                        dateTimeText: dateTimeTextForCurrentPhoto,
-                        assetTimeMetadataLines: assetTimeMetadataLinesForCurrentPhoto,
-                        showAssetTimeMetadata: showAssetTimeMetadata,
-                        isEditing: $isEditing,
-                        captionText: $editedCaptionText,
-                        placeholder: "Leave a story for this photo...",
-                        blogIsEditMode: blogIsEditMode,
-                        onViewBlog: onViewBlog,
-                        onTitleTap: { openGoogleSearch() },
-                        onCommitCaption: { commitCaption() }
-                    )
-                }
-                if !blogIsEditMode && !isEditing {
-                    // print photos
-                    if photos.count > 1 {
-                        PlacePhotoThumbnailStrip(
-                            photos: photos,
-                            currentPhotoId: currentPhotoId,
-                            onSelectPhoto: { currentPhotoId = $0 }
-                        )
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-                        .padding(.bottom, 24)
-                    } else if let single = photos.first {
-                        RecapPhotoThumbnail(photo: single, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 160, height: 160))
-                            .frame(width: 56, height: 56)
-                            .clipped()
-                            .cornerRadius(8)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.white.opacity(0.6), lineWidth: 1)
+                            if !blogIsEditMode && !isEditing {
+                                if photos.count > 1 {
+                                    PlacePhotoThumbnailStrip(
+                                        photos: photos,
+                                        currentPhotoId: currentPhotoId,
+                                        onSelectPhoto: { currentPhotoId = $0 }
+                                    )
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 0)
+                                    .padding(.bottom, 8)
+                                } else if let single = photos.first {
+                                    RecapPhotoThumbnail(photo: single, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 160, height: 160))
+                                        .frame(width: 56, height: 56)
+                                        .clipped()
+                                        .cornerRadius(8)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .stroke(Color.white.opacity(0.6), lineWidth: 1)
+                                        )
+                                        .padding(.bottom, 8)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            (isEditing || isZoomMode) ? nil :
+                            LinearGradient(
+                                colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
+                                startPoint: .bottom,
+                                endPoint: .top
                             )
-                            .padding(.bottom, 24)
+                        )
+                        .opacity(isZoomMode ? 0 : 1)
+                        .animation(.easeInOut(duration: 0.25), value: isZoomMode)
                     }
-                }
-            }
-            .background(
-                (isEditing || isZoomMode) ? nil :
-                LinearGradient(
-                    colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
-                    startPoint: .bottom,
-                    endPoint: .top
-                )
-            )
-            .opacity(isZoomMode ? 0 : 1)
-            .animation(.easeInOut(duration: 0.25), value: isZoomMode)
 
             // 4. Top bar + bottom-right action stack (drawn on top so never covered when modal is small).
             // Pass-through layer so taps in the center reach the photo view; only the bar content gets hits.
@@ -763,6 +759,11 @@ struct PlacePhotoModalView: View {
                 if autoFocusCaption {
                     isCaptionFocused = true
                 }
+            } else {
+                // In non-editing mode, ensure stale focus state doesn't intercept photo taps.
+                // Otherwise a tap may only dismiss focus instead of entering zoom.
+                isEditing = false
+                isCaptionFocused = false
             }
         }
         .onChange(of: currentPhotoId) { _, _ in
@@ -801,19 +802,26 @@ struct PlacePhotoModalView: View {
 
     /// Single tap or double tap enters zoom overlay (tap-to-zoom works the same in the modal as in the non-modal viewer).
     private func photoFullScreenImage(_ photo: RecapPhoto) -> some View {
-        HorizontalScrollablePhotoView(photo: photo)
+        let singleTap = TapGesture().onEnded {
+            guard !isZoomMode else { return }
+            if isCaptionFocused {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            } else {
+                enterZoomMode()
+            }
+        }
+
+        let doubleTap = TapGesture(count: 2).onEnded {
+            guard !isZoomMode else { return }
+            enterZoomMode()
+        }
+
+        // Prefer double-tap semantics over single-tap when the user taps quickly.
+        let tapGesture = doubleTap.exclusively(before: singleTap)
+
+        return HorizontalScrollablePhotoView(photo: photo)
             .contentShape(Rectangle())
-            .onTapGesture(count: 2) { enterZoomMode() }
-            .simultaneousGesture(
-                TapGesture(count: 1).onEnded {
-                    guard !isZoomMode else { return }
-                    if isCaptionFocused {
-                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                    } else {
-                        enterZoomMode()
-                    }
-                }
-            )
+            .highPriorityGesture(tapGesture)
     }
 
     private func enterZoomMode() {
@@ -1332,6 +1340,8 @@ private struct EditPlaceNameSheet: View {
 private struct HorizontalScrollablePhotoView: View {
     let photo: RecapPhoto
     @State private var loadedImage: UIImage?
+    @State private var panOffsetX: CGFloat = 0
+    @GestureState private var dragTranslationX: CGFloat = 0
 
     var body: some View {
         GeometryReader { geo in
@@ -1344,28 +1354,53 @@ private struct HorizontalScrollablePhotoView: View {
                 return max(screenW, screenH * ar)        // landscape: natural width at screen height
             }()
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                Group {
-                    if let img = loadedImage {
-                        Image(uiImage: img)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: displayW, height: screenH)
-                            .clipped()
-                    } else {
-                        RecapPhotoThumbnail(
-                            photo: photo, cornerRadius: 0, showIcon: false,
-                            targetSize: CGSize(width: 1200, height: 1200)
-                        )
-                        .frame(width: screenW, height: screenH)
+            let canPan = displayW > screenW + 0.5
+            let maxPan = max(0, (displayW - screenW) / 2)
+            let effectivePan = canPan ? (panOffsetX + dragTranslationX) : 0
+
+            ZStack {
+                if let img = loadedImage {
+                    Image(uiImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: displayW, height: screenH)
                         .clipped()
-                    }
+                        // Clamp pan to avoid empty space when the image is smaller.
+                        .offset(x: max(-maxPan, min(maxPan, effectivePan)))
+                } else {
+                    RecapPhotoThumbnail(
+                        photo: photo,
+                        cornerRadius: 0,
+                        showIcon: false,
+                        targetSize: CGSize(width: 1200, height: 1200)
+                    )
+                    .frame(width: screenW, height: screenH)
+                    .clipped()
                 }
-                .frame(width: displayW, height: screenH)
             }
             .frame(width: screenW, height: screenH)
-            .scrollBounceBehavior(.basedOnSize)
+            .clipped()
+            .gesture(
+                canPan
+                ? DragGesture(minimumDistance: 15)
+                    .updating($dragTranslationX) { value, state, _ in
+                        // Only treat the gesture as "pan" when the user is really dragging horizontally.
+                        // This reduces conflicts with vertical sheet dismissal.
+                        if abs(value.translation.width) >= abs(value.translation.height) {
+                            state = value.translation.width
+                        } else {
+                            state = 0
+                        }
+                    }
+                    .onEnded { value in
+                        guard abs(value.translation.width) >= abs(value.translation.height) else { return }
+                        let proposed = panOffsetX + value.translation.width
+                        panOffsetX = max(-maxPan, min(maxPan, proposed))
+                    }
+                : nil
+            )
         }
+        .onAppear { panOffsetX = 0 }
         .task(id: photo.localIdentifier ?? "") {
             guard let id = photo.localIdentifier, !id.isEmpty else { return }
             loadedImage = await ImageLoader.shared.loadThumbnail(
