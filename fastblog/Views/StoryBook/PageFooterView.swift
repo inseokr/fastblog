@@ -19,14 +19,14 @@ struct PageFooterView: View {
                 Text("The End")
                     .italic()
                     .font(.system(size: 12))
-                    .foregroundColor(.primary)
+                    .foregroundColor(Color.black)
             } else if isLastPageOfDay, let nextDay = nextDayName {
                 Text("\(nextDay) →")
                     .font(.system(size: 12, weight: .medium))
             } else {
                 Text("Next Page →")
                     .font(.system(size: 12))
-                    .foregroundColor(.primary)
+                    .foregroundColor(Color.black)
             }
         }
         .frame(height: 40)

@@ -14,7 +14,7 @@ struct StoryBookView: View {
                     ProgressView()
                     Text(detail.title)
                         .font(.system(size: 15))
-                        .foregroundColor(.primary)
+                        .foregroundColor(Color.black)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.white)
@@ -33,13 +33,13 @@ struct StoryBookView: View {
                 VStack(spacing: 20) {
                     Text("Could not load your trip.\nPlease try again.")
                         .multilineTextAlignment(.center)
-                        .foregroundColor(.primary)
+                        .foregroundColor(Color.black)
                     Button("Retry") {
                         viewModel.build(from: detail)
                     }
                     .buttonStyle(.borderedProminent)
                     Button("Close") { dismiss() }
-                        .foregroundColor(.primary)
+                        .foregroundColor(Color.black)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.white)

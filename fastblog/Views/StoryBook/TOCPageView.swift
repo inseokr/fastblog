@@ -16,7 +16,7 @@ struct TOCPageView: View {
                         .font(.system(size: 20, weight: .bold))
                     Text("\(overview.dateRange)  ·  \(overview.dayCount) days")
                         .font(.system(size: 13))
-                        .foregroundColor(.primary)
+                        .foregroundColor(Color.black)
                 }
                 .frame(height: 72, alignment: .center)
                 .padding(.horizontal, 16)
@@ -31,11 +31,11 @@ struct TOCPageView: View {
                             .frame(width: 50, alignment: .leading)
                         Text(entry.date)
                             .font(.system(size: 12))
-                            .foregroundColor(.primary)
+                            .foregroundColor(Color.black)
                         Spacer()
                         Text(entry.firstPlaceName)
                             .font(.system(size: 12))
-                            .foregroundColor(.primary)
+                            .foregroundColor(Color.black)
                             .lineLimit(1)
                     }
                     .frame(height: 36)
@@ -50,7 +50,7 @@ struct TOCPageView: View {
             if totalPages > 1 {
                 Text("\(pageIndex) / \(totalPages)")
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color.gray)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.bottom, 12)
             }

@@ -12,10 +12,10 @@ struct DayContentPageView: View {
                     Text("Day \(page.day.dayNumber)")
                         .font(.system(size: 18, weight: .bold))
                     Text("·")
-                        .foregroundColor(.primary)
+                        .foregroundColor(Color.black)
                     Text(page.shortDateText)
                         .font(.system(size: 13))
-                        .foregroundColor(.primary)
+                        .foregroundColor(Color.black)
                 }
                 .frame(height: 44, alignment: .center)
             }
@@ -46,7 +46,7 @@ struct DayContentPageView: View {
             Text(text)
                 .italic()
                 .font(.system(size: 14))
-                .foregroundColor(.primary)
+                .foregroundColor(Color.black)
                 .lineLimit(4)
 
         case .placeBlock(let place, let photoSlice):

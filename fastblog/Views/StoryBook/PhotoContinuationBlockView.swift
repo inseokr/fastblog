@@ -9,7 +9,7 @@ struct PhotoContinuationBlockView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("More from \(placeName)")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.primary)
+                .foregroundColor(Color.black)
             HStack(alignment: .top, spacing: 8) {
                 ForEach(0..<photos.count, id: \.self) { i in
                     PhotoCardView(photo: photos[i])

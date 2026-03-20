@@ -11,7 +11,7 @@ struct PlaceBlockView: View {
             HStack(alignment: .top, spacing: 4) {
                 Image(systemName: "mappin")
                     .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color.gray)
                     .padding(.top, 2)
                 Text(place.title)
                     .font(.system(size: 13, weight: .bold))
@@ -20,7 +20,7 @@ struct PlaceBlockView: View {
                 if let ts = place.timestamp {
                     Text(ts)
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color.gray)
                 }
             }
 
@@ -28,7 +28,7 @@ struct PlaceBlockView: View {
             if let caption = place.caption {
                 Text(caption)
                     .font(.system(size: 12))
-                    .foregroundColor(.primary)
+                    .foregroundColor(Color.black)
                     .lineLimit(2)
             }
 

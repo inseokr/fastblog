@@ -45,7 +45,7 @@ struct PhotoCardView: View {
             if !photo.captionIsLong, let caption = photo.caption {
                 Text(caption)
                     .font(.system(size: 10))
-                    .foregroundColor(.primary)
+                    .foregroundColor(Color.black)
                     .lineLimit(2)
                     .frame(width: Self.photoWidth, alignment: .leading)
             }
