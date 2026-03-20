@@ -16,6 +16,7 @@ struct PDFExportOptionsSheet: View {
     let onExport: (PDFExportOptions) -> Void
 
     @State private var pending: PDFExportOptions
+    private let showLayoutStyleSection = false
 
     init(options: Binding<PDFExportOptions>, onExport: @escaping (PDFExportOptions) -> Void) {
         self._options = options
@@ -27,7 +28,11 @@ struct PDFExportOptionsSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
+                    blogColorSection
                     fontThemeSection
+                    if showLayoutStyleSection {
+                        layoutStyleSection
+                    }
                     photoShapeSection
                     exportButton
                 }
@@ -50,6 +55,31 @@ struct PDFExportOptionsSheet: View {
         }
     }
 
+    // MARK: - Blog Color Section
+
+    private var blogColorSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Blog Color", icon: "paintpalette")
+
+            VStack(spacing: 0) {
+                ForEach(BlogColor.allCases, id: \.self) { color in
+                    optionRow(
+                        title: color.label,
+                        subtitle: color.subtitle,
+                        isSelected: pending.blogColor == color
+                    ) {
+                        pending.blogColor = color
+                    }
+                    if color != BlogColor.allCases.last {
+                        Divider().padding(.leading, 52)
+                    }
+                }
+            }
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .cornerRadius(12)
+        }
+    }
+
     // MARK: - Font Theme Section
 
     private var fontThemeSection: some View {
@@ -66,6 +96,31 @@ struct PDFExportOptionsSheet: View {
                         pending.fontTheme = theme
                     }
                     if theme != FontTheme.allCases.last {
+                        Divider().padding(.leading, 52)
+                    }
+                }
+            }
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .cornerRadius(12)
+        }
+    }
+
+    // MARK: - Layout Style Section
+
+    private var layoutStyleSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Layout Style", icon: "rectangle.split.2x1")
+
+            VStack(spacing: 0) {
+                ForEach(PDFLayoutMode.allCases, id: \.self) { mode in
+                    optionRow(
+                        title: mode.label,
+                        subtitle: mode.subtitle,
+                        isSelected: pending.layoutMode == mode
+                    ) {
+                        pending.layoutMode = mode
+                    }
+                    if mode != PDFLayoutMode.allCases.last {
                         Divider().padding(.leading, 52)
                     }
                 }
@@ -271,8 +326,8 @@ struct PDFExportOptionsSheet: View {
             .fontWeight(.semibold)
             .foregroundStyle(
                 LinearGradient(
-                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0),
-                             Color(red: 0.4, green: 0.7, blue: 1.0)],
+                    colors: [Color.cyan,
+                             Color.blue],
                     startPoint: .leading,
                     endPoint: .trailing
                 )

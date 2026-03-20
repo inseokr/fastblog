@@ -4,6 +4,19 @@ import Photos
 
 // MARK: - PDF Export Options
 
+enum BlogColor: String, CaseIterable, Codable {
+    case white = "White"
+    case black = "Black"
+
+    var label: String { rawValue }
+    var subtitle: String {
+        switch self {
+        case .white: return "Light background, dark text"
+        case .black: return "Dark background, light text"
+        }
+    }
+}
+
 enum FontTheme: String, CaseIterable, Codable {
     case classic  = "Classic"
     case serif    = "Serif"
@@ -47,6 +60,19 @@ enum PhotoShape: String, CaseIterable, Codable {
     }
 }
 
+enum PDFLayoutMode: String, CaseIterable, Codable {
+    case normal = "Normal"
+    case story  = "Story"
+
+    var label: String { rawValue }
+    var subtitle: String {
+        switch self {
+        case .normal: return "Caption above photos"
+        case .story:  return "Photos first, caption below"
+        }
+    }
+}
+
 /// Per-position photo shapes for the 2-column PDF grid.
 /// - `leftShape`   — left column in a paired row
 /// - `rightShape`  — right column in a paired row
@@ -58,8 +84,10 @@ struct PDFPhotoShapeOptions: Codable, Equatable {
 }
 
 struct PDFExportOptions: Codable, Equatable {
-    var fontTheme:        FontTheme          = .classic
+    var blogColor:         BlogColor            = .white
+    var fontTheme:         FontTheme            = .classic
     var photoShapeOptions: PDFPhotoShapeOptions = PDFPhotoShapeOptions()
+    var layoutMode:        PDFLayoutMode        = .normal
 }
 
 @MainActor
@@ -76,6 +104,9 @@ class PDFExportService {
             }
         }
     }
+
+    /// Base64-encoded link icon shown beside place titles in the PDF.
+    private static let linkIconBase64: String = "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"
 
     // MARK: - Page Constants (US Letter: 8.5 x 11 in @ 72 dpi)
 
@@ -132,9 +163,18 @@ class PDFExportService {
         // Preload the app logo once
         let appLogo = UIImage(named: "PDFLogo") ?? UIImage(named: "SplashIcon") ?? UIImage(named: "Blogo")
 
+        // Derive palette from blogColor
+        let isDark = options.blogColor == .black
+        let pageBg:       UIColor = isDark ? .black                              : .white
+        let cardBgColor:  UIColor = isDark ? UIColor(white: 0.15, alpha: 1.0)   : cardBg
+        let primaryText:  UIColor = isDark ? .white                              : .black
+        let secondaryText: UIColor = isDark ? UIColor(white: 0.65, alpha: 1.0)  : .darkGray
+        let brandingText: UIColor = isDark ? UIColor(white: 0.55, alpha: 1.0)   : .darkGray
+        let separatorColor: UIColor = isDark ? UIColor(white: 0.3, alpha: 1.0)  : UIColor(white: 0.85, alpha: 1.0)
+
         try renderer.writePDF(to: url) { pdfContext in
             var pen = Pen(ctx: pdfContext, margin: margin, pageW: pageW, pageH: pageH,
-                          logo: appLogo)
+                          logo: appLogo, pageBackground: pageBg)
 
             // ── Cover Page ──────────────────────────────────────────
             pen.newPage()
@@ -232,7 +272,7 @@ class PDFExportService {
                 let createdFont = Self.font(for: options.fontTheme, size: 13, weight: .medium)
                 let createdAttrs: [NSAttributedString.Key: Any] = [
                     .font: createdFont,
-                    .foregroundColor: UIColor.darkGray
+                    .foregroundColor: brandingText
                 ]
 
                 let iconRect = CGRect(x: margin, y: pen.y, width: iconSize, height: iconSize)
@@ -252,14 +292,84 @@ class PDFExportService {
                 pen.y += iconSize
             }
 
+            // ── Table of Contents Page ───────────────────────────────
+            pen.newPage()
+
+            let tocHeaderFont = Self.font(for: options.fontTheme, size: 28, weight: .bold)
+            let tocRowFont    = Self.font(for: options.fontTheme, size: 15, weight: .medium)
+            let tocSubFont    = Self.font(for: options.fontTheme, size: 13)
+
+            pen.drawLeft("CONTENTS", font: tocHeaderFont, color: primaryText)
+            pen.skip(10)
+
+            // Horizontal rule under "CONTENTS"
+            if let gc = UIGraphicsGetCurrentContext() {
+                gc.saveGState()
+                gc.setStrokeColor(separatorColor.cgColor)
+                gc.setLineWidth(1.0)
+                gc.move(to: CGPoint(x: margin, y: pen.y))
+                gc.addLine(to: CGPoint(x: margin + contentW, y: pen.y))
+                gc.strokePath()
+                gc.restoreGState()
+            }
+            pen.skip(20)
+
+            for (tocIndex, tocDay) in draft.days.enumerated() {
+                let dayLabel = "Day \(tocIndex + 1)"
+                let placesCount = tocDay.placeStops.count
+                let placesLabel = "\(placesCount) place\(placesCount == 1 ? "" : "s")"
+
+                let dayLabelAttrs: [NSAttributedString.Key: Any] = [
+                    .font: tocRowFont, .foregroundColor: primaryText
+                ]
+                let dateAttrs: [NSAttributedString.Key: Any] = [
+                    .font: tocRowFont, .foregroundColor: secondaryText
+                ]
+                let placesAttrs: [NSAttributedString.Key: Any] = [
+                    .font: tocSubFont, .foregroundColor: secondaryText
+                ]
+
+                // Keep each TOC entry on its own vertical "row" to prevent overlap.
+                pen.ensureRoom(StoryPageLayout.tocRowHeight)
+                let rowTopY = pen.y
+
+                dayLabel.draw(at: CGPoint(x: margin, y: rowTopY), withAttributes: dayLabelAttrs)
+                tocDay.shortDateText.draw(at: CGPoint(x: margin + 72, y: rowTopY), withAttributes: dateAttrs)
+
+                let placesSize = placesLabel.size(withAttributes: placesAttrs)
+                placesLabel.draw(
+                    at: CGPoint(x: margin + contentW - placesSize.width, y: rowTopY + 2),
+                    withAttributes: placesAttrs
+                )
+
+                // Divider between day rows (so the "CONTENT" page reads clearly).
+                if let gc = UIGraphicsGetCurrentContext() {
+                    gc.saveGState()
+                    gc.setStrokeColor(separatorColor.cgColor)
+                    gc.setLineWidth(0.5)
+                    let dividerY = rowTopY + StoryPageLayout.tocRowHeight - 6
+                    gc.move(to: CGPoint(x: margin, y: dividerY))
+                    gc.addLine(to: CGPoint(x: margin + contentW, y: dividerY))
+                    gc.strokePath()
+                    gc.restoreGState()
+                }
+
+                pen.skip(StoryPageLayout.tocRowHeight)
+            }
+
             // ── Day Sections — each day starts on a fresh page ─────────
-            for day in draft.days {
+            for (dayIndex, day) in draft.days.enumerated() {
                 // Always start a new page for each day
                 pen.newPage()
 
-                // Day header — at the top of the page
+                // "Day N" label — top-left of the day content page
+                pen.drawLeft("Day \(dayIndex + 1)",
+                             font: Self.font(for: options.fontTheme, size: 13, weight: .semibold), color: primaryText)
+                pen.skip(2)
+
+                // Day header date
                 pen.drawLeft(day.shortDateText,
-                             font: Self.font(for: options.fontTheme, size: 20, weight: .bold), color: .black)
+                             font: Self.font(for: options.fontTheme, size: 20, weight: .bold), color: primaryText)
 
                 // Day caption
                 if let caption = day.dayCaption,
@@ -267,7 +377,7 @@ class PDFExportService {
                     pen.skip(4)
                     pen.drawLeft(caption,
                                  font: Self.font(for: options.fontTheme, size: 15),
-                                 color: UIColor.darkGray)
+                                 color: primaryText)
                     pen.skip(8)
                 } else {
                     pen.skip(8)
@@ -292,7 +402,11 @@ class PDFExportService {
                         number: i + 1,
                         badgeColor: badgeColor,
                         photos: assets.photos,
-                        options: options
+                        options: options,
+                        cardBgColor: cardBgColor,
+                        primaryText: primaryText,
+                        secondaryText: secondaryText,
+                        separatorColor: separatorColor
                     )
                     pen.skip(24) // gap between cards
                 }
@@ -310,7 +424,11 @@ class PDFExportService {
         number: Int,
         badgeColor: UIColor,
         photos: [UUID: UIImage],
-        options: PDFExportOptions
+        options: PDFExportOptions,
+        cardBgColor: UIColor,
+        primaryText: UIColor,
+        secondaryText: UIColor,
+        separatorColor: UIColor
     ) {
         let includedPhotos = stop.photos.filter(\.isIncluded)
         let photosWithImages = includedPhotos.compactMap { p -> (RecapPhoto, UIImage)? in
@@ -318,144 +436,102 @@ class PDFExportService {
             return (p, img)
         }
 
-        let badgeSize: CGFloat = 28
-        let hasSubtitle = !(stop.placeSubtitle ?? "").isEmpty
-        let hasStory = !(stop.overallStory ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        switch options.layoutMode {
+        case .normal:
+            drawNormalStopCard(pen: &pen, stop: stop, number: number, badgeColor: badgeColor,
+                               photos: photosWithImages, options: options, cardBgColor: cardBgColor,
+                               primaryText: primaryText, secondaryText: secondaryText,
+                               separatorColor: separatorColor)
+        case .story:
+            drawStoryStopCard(pen: &pen, stop: stop, number: number, badgeColor: badgeColor,
+                              photos: photosWithImages, options: options, cardBgColor: cardBgColor,
+                              primaryText: primaryText, secondaryText: secondaryText,
+                              separatorColor: separatorColor)
+        }
+    }
 
+    // MARK: - Shared: Stop Header
+
+    /// Draws badge + title (with Google search link) + location subtitle.
+    /// Advances pen.y to the bottom of the location line.
+    private static func drawStopHeader(
+        pen: inout Pen,
+        stop: PlaceStop,
+        number: Int,
+        badgeColor: UIColor,
+        options: PDFExportOptions,
+        primaryText: UIColor,
+        secondaryText: UIColor
+    ) {
+        let badgeSize: CGFloat = 32
         let cardLeft = pen.margin + cardPadding
-        let cardContentW = cardInteriorW
-        let titleW = cardContentW - badgeSize - 12
+        let titleW = cardInteriorW - badgeSize - 10
+
         let titleFont = Self.font(for: options.fontTheme, size: 17, weight: .semibold)
-        let subFont12 = Self.font(for: options.fontTheme, size: 12)
-        let bodyFont15 = Self.font(for: options.fontTheme, size: 15)
-        let captionFont = Self.font(for: options.fontTheme, size: 12)
+        let subFont   = Self.font(for: options.fontTheme, size: 12)
 
-        // ── Pre-compute card height for background and cohesion ──
-        let estTitleH = max(badgeSize, estimateTextHeight(stop.placeTitle, font: titleFont, width: titleW))
-        var estContentH: CGFloat = estTitleH
-        if hasSubtitle, let sub = stop.placeSubtitle {
-            estContentH += 2 + estimateTextHeight(sub, font: subFont12, width: titleW)
-        }
-        if hasStory, let story = stop.overallStory {
-            estContentH += 8 + estimateTextHeight(story, font: bodyFont15, width: cardContentW)
-        }
-        if !photosWithImages.isEmpty {
-            estContentH += 8
-            let rowCount = (photosWithImages.count + 1) / 2
-            for ri in 0..<rowCount {
-                estContentH += photoSize + 10
-                let li = ri * 2
-                var capH: CGFloat = 0
-                if li < photosWithImages.count,
-                   let c = photosWithImages[li].0.caption,
-                   !c.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    capH = 6 + min(estimateTextHeight(c, font: captionFont, width: photoSize), 32)
-                }
-                if li + 1 < photosWithImages.count,
-                   let c = photosWithImages[li + 1].0.caption,
-                   !c.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    capH = max(capH, 3 + min(estimateTextHeight(c, font: captionFont, width: photoSize), 32))
-                }
-                estContentH += capH
-            }
-        }
-        let totalCardH = cardPadding + estContentH + cardPadding
-
-        // Cohesion: keep header + first photo row on the same page
-        let firstPhotoH: CGFloat = photosWithImages.isEmpty ? 0 : 8 + photoSize
-        let storySnippetH: CGFloat = hasStory
-            ? min(8 + estimateTextHeight(stop.overallStory ?? "", font: bodyFont15, width: cardContentW), 68)
-            : 0
-        let cohesionH = cardPadding + estTitleH
-            + (hasSubtitle ? 17 : 0)
-            + storySnippetH + firstPhotoH + cardPadding
-        let maxCohesion = (pen.pageH - pen.margin * 2) * 0.6
-        pen.ensureRoom(min(cohesionH, maxCohesion))
-
-        // ── Draw card background ──
-        let bgH = min(totalCardH, pen.maxY - pen.y)
-        if let gc = UIGraphicsGetCurrentContext() {
-            gc.saveGState()
-            let bgRect = CGRect(x: pen.margin, y: pen.y, width: contentW, height: bgH)
-            gc.setFillColor(cardBg.cgColor)
-            UIBezierPath(roundedRect: bgRect, cornerRadius: cardRadius).addClip()
-            gc.fill(bgRect)
-            gc.restoreGState()
-        }
-
-        pen.skip(cardPadding) // top padding inside card
-
-        // ── Badge + Title (app: HStack spacing 12) ──
+        // ── Badge ──
         pen.drawBadge(number: number, color: badgeColor, size: badgeSize)
 
-        var titleAttrs: [NSAttributedString.Key: Any] = [
+        // ── Title with link icon ──
+        let titleAttrs: [NSAttributedString.Key: Any] = [
             .font: titleFont,
-            .foregroundColor: UIColor.black
+            .foregroundColor: primaryText
         ]
-        
+
         var urlToOpen: URL?
         if let query = stop.placeTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
            let url = URL(string: "https://www.google.com/search?q=\(query)") {
             urlToOpen = url
         }
-        
+
         let attrTitle = NSMutableAttributedString(string: stop.placeTitle, attributes: titleAttrs)
-        
-        let linkIconBase64 = "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"
+
         var customIcon: UIImage? = nil
-        if let data = Data(base64Encoded: linkIconBase64) {
+        if let data = Data(base64Encoded: Self.linkIconBase64) {
             customIcon = UIImage(data: data)
         }
-        
+
         if let linkIcon = customIcon {
             let attachment = NSTextAttachment()
             attachment.image = linkIcon
             let iconSize: CGFloat = 13
             let yOffset = (titleFont.capHeight - iconSize) / 2
             attachment.bounds = CGRect(x: 0, y: yOffset, width: iconSize, height: iconSize)
-            
             let noUnderlineAttrs: [NSAttributedString.Key: Any] = [.underlineStyle: 0]
-            
             let spaceStr = NSAttributedString(string: " ", attributes: noUnderlineAttrs)
             let iconStr = NSMutableAttributedString(attachment: attachment)
             iconStr.addAttributes(noUnderlineAttrs, range: NSRange(location: 0, length: iconStr.length))
-            
             attrTitle.append(spaceStr)
             attrTitle.append(iconStr)
         }
 
         let titleRectBounds = attrTitle.boundingRect(
             with: CGSize(width: titleW, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin],
-            context: nil
+            options: [.usesLineFragmentOrigin], context: nil
         )
-        
-        let drawRect = CGRect(x: cardLeft + badgeSize + 12, y: pen.y + (badgeSize - titleRectBounds.height) / 2,
-                              width: titleW, height: titleRectBounds.height)
-                              
-        attrTitle.draw(
-            with: drawRect,
-            options: [.usesLineFragmentOrigin],
-            context: nil
+        let drawRect = CGRect(
+            x: cardLeft + badgeSize + 10,
+            y: pen.y + (badgeSize - titleRectBounds.height) / 2,
+            width: titleW, height: titleRectBounds.height
         )
-        
+        attrTitle.draw(with: drawRect, options: [.usesLineFragmentOrigin], context: nil)
+
         if let url = urlToOpen {
-            // PDF links (annotations) strictly use the unflipped PDF coordinate space (bottom-left origin).
-            let pdfRect = CGRect(x: drawRect.minX,
-                                 y: pen.pageH - drawRect.maxY,
-                                 width: drawRect.width,
-                                 height: drawRect.height)
+            let pdfRect = CGRect(x: drawRect.minX, y: pen.pageH - drawRect.maxY,
+                                 width: drawRect.width, height: drawRect.height)
             pen.ctx.setURL(url, for: pdfRect)
         }
 
         pen.y += max(badgeSize, titleRectBounds.height)
 
-        // ── Subtitle (app: .caption, .secondary) ──
+        // ── Location subtitle ──
+        let hasSubtitle = !(stop.placeSubtitle ?? "").isEmpty
         if hasSubtitle, let subtitle = stop.placeSubtitle {
             pen.skip(2)
             let subAttrs: [NSAttributedString.Key: Any] = [
-                .font: subFont12,
-                .foregroundColor: UIColor.darkGray
+                .font: subFont,
+                .foregroundColor: primaryText
             ]
             let subSize = subtitle.boundingRect(
                 with: CGSize(width: titleW, height: .greatestFiniteMagnitude),
@@ -463,152 +539,458 @@ class PDFExportService {
                 attributes: subAttrs, context: nil
             )
             subtitle.draw(
-                with: CGRect(x: cardLeft + badgeSize + 12, y: pen.y,
+                with: CGRect(x: cardLeft + badgeSize + 10, y: pen.y,
                              width: titleW, height: subSize.height),
                 options: [.usesLineFragmentOrigin],
                 attributes: subAttrs, context: nil
             )
             pen.y += subSize.height
         }
+    }
 
-        // ── Story (app: .subheadline, padding h:16 v:8) ──
-        if hasStory, let story = stop.overallStory {
-            pen.skip(8)
-            let storyAttrs: [NSAttributedString.Key: Any] = [
-                .font: bodyFont15,
-                .foregroundColor: UIColor.darkGray
+    // MARK: - Shared: Separator
+
+    private enum SeparatorStyle {
+        case thin   // 0.5pt line only
+        case story  // lines flanking centered "STORY" label
+    }
+
+    /// Draws a separator and advances pen.y by 17pt (8 top + 1 line + 8 bottom).
+    private static func drawSeparator(
+        pen: inout Pen,
+        style: SeparatorStyle,
+        color: UIColor,
+        cardLeft: CGFloat
+    ) {
+        let lineY = pen.y + 8
+        guard let gc = UIGraphicsGetCurrentContext() else { pen.y += 17; return }
+
+        switch style {
+        case .thin:
+            gc.saveGState()
+            gc.setStrokeColor(color.cgColor)
+            gc.setLineWidth(0.5)
+            gc.move(to: CGPoint(x: cardLeft, y: lineY))
+            gc.addLine(to: CGPoint(x: cardLeft + cardInteriorW, y: lineY))
+            gc.strokePath()
+            gc.restoreGState()
+
+        case .story:
+            let label = "STORY"
+            let labelFont = UIFont.systemFont(ofSize: 9, weight: .medium)
+            let labelAttrs: [NSAttributedString.Key: Any] = [
+                .font: labelFont,
+                .foregroundColor: color
             ]
-            let storySize = story.boundingRect(
-                with: CGSize(width: cardContentW, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin],
-                attributes: storyAttrs, context: nil
-            )
-            story.draw(
-                with: CGRect(x: cardLeft, y: pen.y,
-                             width: cardContentW, height: storySize.height),
-                options: [.usesLineFragmentOrigin],
-                attributes: storyAttrs, context: nil
-            )
-            pen.y += storySize.height
+            let labelSize = label.size(withAttributes: labelAttrs)
+            let labelX = cardLeft + (cardInteriorW - labelSize.width) / 2
+            label.draw(at: CGPoint(x: labelX, y: lineY - labelSize.height / 2), withAttributes: labelAttrs)
+
+            let lineEndX = labelX - 8
+            let lineStartX2 = labelX + labelSize.width + 8
+
+            gc.saveGState()
+            gc.setStrokeColor(color.cgColor)
+            gc.setLineWidth(0.5)
+            gc.move(to: CGPoint(x: cardLeft, y: lineY))
+            gc.addLine(to: CGPoint(x: lineEndX, y: lineY))
+            gc.move(to: CGPoint(x: lineStartX2, y: lineY))
+            gc.addLine(to: CGPoint(x: cardLeft + cardInteriorW, y: lineY))
+            gc.strokePath()
+            gc.restoreGState()
         }
 
-        // ── Photos — 2-column grid (app: 240x240 square, HStack spacing 10) ──
-        if !photosWithImages.isEmpty {
-            let pageBeforePhotos = pen.pageNumber
-            pen.skip(8) // app: photo strip top padding 8
-            // If skipping pushed us to a new page, fill continuation background
-            if pen.pageNumber != pageBeforePhotos {
-                let rowCount = (photosWithImages.count + 1) / 2
-                let estRemaining = CGFloat(rowCount) * (photoSize + 45) + cardPadding + 8
+        pen.y += 17
+    }
+
+    // MARK: - Shared: Photo Section Header
+
+    /// Draws a compact [badge] Place Name row directly above the photo grid.
+    /// Advances pen.y by the row height (24pt) + 4pt gap.
+    private static func drawPhotoSectionHeader(
+        pen: inout Pen,
+        stop: PlaceStop,
+        number: Int,
+        badgeColor: UIColor,
+        options: PDFExportOptions,
+        primaryText: UIColor,
+        cardLeft: CGFloat
+    ) {
+        let badgeSize: CGFloat = 18
+        let nameFont = Self.font(for: options.fontTheme, size: 12, weight: .medium)
+        let rowH: CGFloat = 24
+
+        pen.skip(8)
+
+        // Small filled circle badge with number
+        let badgeRect = CGRect(x: cardLeft, y: pen.y + (rowH - badgeSize) / 2,
+                               width: badgeSize, height: badgeSize)
+        if let gc = UIGraphicsGetCurrentContext() {
+            gc.saveGState()
+            gc.setFillColor(badgeColor.cgColor)
+            gc.fillEllipse(in: badgeRect)
+            let numText = "\(number)"
+            let numAttrs: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 10, weight: .bold),
+                .foregroundColor: UIColor.white
+            ]
+            let numSize = numText.size(withAttributes: numAttrs)
+            numText.draw(at: CGPoint(x: badgeRect.midX - numSize.width / 2,
+                                     y: badgeRect.midY - numSize.height / 2),
+                         withAttributes: numAttrs)
+            gc.restoreGState()
+        }
+
+        // Place name to the right of the badge
+        let nameX = cardLeft + badgeSize + 6
+        let nameAttrs: [NSAttributedString.Key: Any] = [.font: nameFont, .foregroundColor: primaryText]
+        let nameSize = stop.placeTitle.size(withAttributes: nameAttrs)
+        stop.placeTitle.draw(at: CGPoint(x: nameX, y: pen.y + (rowH - nameSize.height) / 2),
+                             withAttributes: nameAttrs)
+
+        pen.y += rowH
+        pen.skip(4)
+    }
+
+    // MARK: - Shared: Photo Grid
+
+    /// Draws the 2-column photo grid with per-photo captions.
+    /// - indent: offset from cardLeft. Per spec, photos are always full-width — pass 0 in both Normal and Story modes.
+    /// - cardLeft: pen.margin + cardPadding
+    private static func drawPhotoGrid(
+        pen: inout Pen,
+        photos: [(RecapPhoto, UIImage)],
+        indent: CGFloat,
+        cardLeft: CGFloat,
+        options: PDFExportOptions,
+        secondaryText: UIColor,
+        cardBgColor: UIColor
+    ) {
+        guard !photos.isEmpty else { return }
+        let captionFont = Self.font(for: options.fontTheme, size: 11)
+        let colW = photoSize
+        let colH = photoSize
+        let gridLeft = cardLeft + indent
+
+        let pageBeforePhotos = pen.pageNumber
+        pen.skip(8)
+        if pen.pageNumber != pageBeforePhotos {
+            let rowCount = (photos.count + 1) / 2
+            let estRemaining = CGFloat(rowCount) * (photoSize + 45) + cardPadding + 8
+            let contH = min(estRemaining, pen.maxY - pen.y)
+            if let gc = UIGraphicsGetCurrentContext(), contH > 0 {
+                gc.saveGState()
+                gc.setFillColor(cardBgColor.cgColor)
+                gc.fill(CGRect(x: pen.margin, y: pen.y, width: contentW, height: contH))
+                gc.restoreGState()
+            }
+        }
+
+        for row in stride(from: 0, to: photos.count, by: 2) {
+            let pageBeforeEnsure = pen.pageNumber
+            pen.ensureRoom(colH + 40)
+            if pen.pageNumber != pageBeforeEnsure {
+                let rowsLeft = (photos.count - row + 1) / 2
+                let estRemaining = CGFloat(rowsLeft) * (colH + 45) + cardPadding + 8
                 let contH = min(estRemaining, pen.maxY - pen.y)
                 if let gc = UIGraphicsGetCurrentContext(), contH > 0 {
                     gc.saveGState()
-                    gc.setFillColor(cardBg.cgColor)
+                    gc.setFillColor(cardBgColor.cgColor)
                     gc.fill(CGRect(x: pen.margin, y: pen.y, width: contentW, height: contH))
                     gc.restoreGState()
                 }
             }
-            let colW = photoSize
-            let colH = photoSize
 
-            for row in stride(from: 0, to: photosWithImages.count, by: 2) {
-                let pageBeforeEnsure = pen.pageNumber
-                // Ensure room for at least one photo row
-                pen.ensureRoom(colH + 40)
+            let (leftPhoto, leftImg) = photos[row]
+            let hasPair = row + 1 < photos.count
+            let leftShape = hasPair ? options.photoShapeOptions.leftShape : options.photoShapeOptions.singleShape
+            // Solo photo fills the full row width; paired photos each get half
+            let soloW = cardInteriorW - indent
+            let leftW = hasPair ? colW : soloW
+            let leftRect = CGRect(x: gridLeft, y: pen.y, width: leftW, height: colH)
+            drawPhoto(leftImg, in: leftRect, shape: leftShape)
 
-                // If a page break occurred inside the card, draw continuation background
-                if pen.pageNumber != pageBeforeEnsure {
-                    let rowsLeft = (photosWithImages.count - row + 1) / 2
-                    let estRemaining = CGFloat(rowsLeft) * (colH + 45) + cardPadding + 8
-                    let contH = min(estRemaining, pen.maxY - pen.y)
-                    if let gc = UIGraphicsGetCurrentContext(), contH > 0 {
-                        gc.saveGState()
-                        gc.setFillColor(cardBg.cgColor)
-                        gc.fill(CGRect(x: pen.margin, y: pen.y, width: contentW, height: contH))
-                        gc.restoreGState()
-                    }
-                }
+            if hasPair {
+                let (_, rightImg) = photos[row + 1]
+                let rightRect = CGRect(x: gridLeft + colW + photoGap, y: pen.y, width: colW, height: colH)
+                drawPhoto(rightImg, in: rightRect, shape: options.photoShapeOptions.rightShape)
+            }
+            pen.y += colH
 
-                let (leftPhoto, leftImg) = photosWithImages[row]
-                let leftRect = CGRect(x: cardLeft, y: pen.y, width: colW, height: colH)
-                let hasPair = row + 1 < photosWithImages.count
-                let leftShape = hasPair
-                    ? options.photoShapeOptions.leftShape
-                    : options.photoShapeOptions.singleShape
-                drawPhoto(leftImg, in: leftRect, shape: leftShape)
-
-                if hasPair {
-                    let (_, rightImg) = photosWithImages[row + 1]
-                    let rightRect = CGRect(x: cardLeft + colW + photoGap, y: pen.y,
-                                           width: colW, height: colH)
-                    drawPhoto(rightImg, in: rightRect, shape: options.photoShapeOptions.rightShape)
-                }
-                pen.y += colH
-
-                // Captions (app: .caption, 2 line limit)
-                let captionColor = UIColor.darkGray
-                var captionH: CGFloat = 0
-
-                if let cap = leftPhoto.caption,
-                   !cap.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    pen.skip(3)
-                    let capAttrs: [NSAttributedString.Key: Any] = [
-                        .font: captionFont, .foregroundColor: captionColor
-                    ]
+            // Per-photo captions
+            var captionH: CGFloat = 0
+            let leftCapW = hasPair ? colW : soloW
+            if let cap = leftPhoto.caption, !cap.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                pen.skip(3)
+                let capAttrs: [NSAttributedString.Key: Any] = [.font: captionFont, .foregroundColor: secondaryText]
+                let capSize = cap.boundingRect(
+                    with: CGSize(width: leftCapW, height: 28),
+                    options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                    attributes: capAttrs, context: nil
+                )
+                let h = min(capSize.height, 28)
+                cap.draw(with: CGRect(x: gridLeft, y: pen.y, width: leftCapW, height: h),
+                         options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                         attributes: capAttrs, context: nil)
+                captionH = max(captionH, h + 3)
+            }
+            if hasPair {
+                let (rightPhoto, _) = photos[row + 1]
+                if let cap = rightPhoto.caption, !cap.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    let capAttrs: [NSAttributedString.Key: Any] = [.font: captionFont, .foregroundColor: secondaryText]
                     let capSize = cap.boundingRect(
-                        with: CGSize(width: colW, height: 32),
+                        with: CGSize(width: colW, height: 28),
                         options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
                         attributes: capAttrs, context: nil
                     )
-                    let h = min(capSize.height, 32)
-                    cap.draw(
-                        with: CGRect(x: cardLeft, y: pen.y, width: colW, height: h),
-                        options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-                        attributes: capAttrs, context: nil
-                    )
+                    let h = min(capSize.height, 28)
+                    cap.draw(with: CGRect(x: gridLeft + colW + photoGap, y: pen.y, width: colW, height: h),
+                             options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                             attributes: capAttrs, context: nil)
                     captionH = max(captionH, h + 3)
                 }
-
-                if row + 1 < photosWithImages.count {
-                    let (rightPhoto, _) = photosWithImages[row + 1]
-                    if let cap = rightPhoto.caption,
-                       !cap.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        let capAttrs: [NSAttributedString.Key: Any] = [
-                            .font: captionFont, .foregroundColor: captionColor
-                        ]
-                        let capSize = cap.boundingRect(
-                            with: CGSize(width: colW, height: 32),
-                            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-                            attributes: capAttrs, context: nil
-                        )
-                        let h = min(capSize.height, 32)
-                        cap.draw(
-                            with: CGRect(x: cardLeft + colW + photoGap, y: pen.y,
-                                         width: colW, height: h),
-                            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-                            attributes: capAttrs, context: nil
-                        )
-                        captionH = max(captionH, h + 3)
-                    }
-                }
-
-                pen.y += captionH
-                pen.skip(10) // gap between photo rows
             }
+            pen.y += captionH
+            pen.skip(10)
         }
+    }
 
-        pen.skip(8)
+    // MARK: - Normal Stop Card
 
-        // Light separator line between place stops
+    private static func drawNormalStopCard(
+        pen: inout Pen,
+        stop: PlaceStop,
+        number: Int,
+        badgeColor: UIColor,
+        photos: [(RecapPhoto, UIImage)],
+        options: PDFExportOptions,
+        cardBgColor: UIColor,
+        primaryText: UIColor,
+        secondaryText: UIColor,
+        separatorColor: UIColor
+    ) {
+        let badgeSize: CGFloat = 32
+        let cardLeft = pen.margin + cardPadding
+        let textIndent: CGFloat = badgeSize + 10  // 42pt
+        let captionMaxW = cardInteriorW - textIndent  // 466pt
+
+        let titleFont    = Self.font(for: options.fontTheme, size: 17, weight: .semibold)
+        let subFont      = Self.font(for: options.fontTheme, size: 12)
+        let captionFont  = Self.font(for: options.fontTheme, size: 14)
+
+        let hasCaption = !(stop.overallStory ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasSubtitle = !(stop.placeSubtitle ?? "").isEmpty
+
+        // ── Pre-compute card height for background ──
+        let estTitleH = max(badgeSize, estimateTextHeight(stop.placeTitle, font: titleFont, width: cardInteriorW - textIndent))
+        var estContentH = estTitleH
+        if hasSubtitle, let sub = stop.placeSubtitle {
+            estContentH += 2 + estimateTextHeight(sub, font: subFont, width: cardInteriorW - textIndent)
+        }
+        if hasCaption, let caption = stop.overallStory {
+            estContentH += 8 + estimateTextHeight(caption, font: captionFont, width: captionMaxW)
+            estContentH += 17  // separator
+        } else {
+            estContentH += 8  // gap before photos
+        }
+        if !photos.isEmpty {
+            let rowCount = (photos.count + 1) / 2
+            estContentH += CGFloat(rowCount) * (photoSize + 10) + 8
+        }
+        let totalCardH = cardPadding + estContentH + cardPadding
+
+        // Cohesion: keep header + separator + first photo row together
+        let captionHForCohesion = hasCaption
+            ? min(estimateTextHeight(stop.overallStory ?? "", font: captionFont, width: captionMaxW), 68)
+            : 0
+        let subHForCohesion = hasSubtitle
+            ? 2 + estimateTextHeight(stop.placeSubtitle ?? "", font: subFont, width: cardInteriorW - textIndent)
+            : 0
+        let headerH = estTitleH + subHForCohesion + (hasCaption ? 8 + captionHForCohesion : 8)
+        let separatorH: CGFloat = hasCaption ? 17 : 0
+        let firstPhotoH: CGFloat = photos.isEmpty ? 0 : photoSize
+        let cohesionH = cardPadding + headerH + separatorH + firstPhotoH + cardPadding
+        pen.ensureRoom(min(cohesionH, (pen.pageH - pen.margin * 2) * 0.6))
+
+        // ── Card background ──
+        let bgH = min(totalCardH, pen.maxY - pen.y)
         if let gc = UIGraphicsGetCurrentContext() {
             gc.saveGState()
-            gc.setStrokeColor(UIColor(white: 0.85, alpha: 1.0).cgColor)
-            gc.setLineWidth(0.5)
-            gc.move(to: CGPoint(x: pen.margin + 16, y: pen.y))
-            gc.addLine(to: CGPoint(x: pen.margin + contentW - 16, y: pen.y))
-            gc.strokePath()
+            let bgRect = CGRect(x: pen.margin, y: pen.y, width: contentW, height: bgH)
+            gc.setFillColor(cardBgColor.cgColor)
+            UIBezierPath(roundedRect: bgRect, cornerRadius: cardRadius).addClip()
+            gc.fill(bgRect)
             gc.restoreGState()
         }
+        pen.skip(cardPadding)
+
+        // ── Header (badge + title + location) ──
+        drawStopHeader(pen: &pen, stop: stop, number: number, badgeColor: badgeColor,
+                       options: options, primaryText: primaryText, secondaryText: secondaryText)
+
+        // ── Caption ──
+        if hasCaption, let caption = stop.overallStory {
+            pen.skip(8)
+            let captionAttrs: [NSAttributedString.Key: Any] = [
+                .font: captionFont,
+                .foregroundColor: primaryText
+            ]
+            let captionSize = caption.boundingRect(
+                with: CGSize(width: captionMaxW, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin],
+                attributes: captionAttrs, context: nil
+            )
+            caption.draw(
+                with: CGRect(x: cardLeft + textIndent, y: pen.y,
+                             width: captionMaxW, height: captionSize.height),
+                options: [.usesLineFragmentOrigin],
+                attributes: captionAttrs, context: nil
+            )
+            pen.y += captionSize.height
+
+            // Thin separator between caption and photos
+            drawSeparator(pen: &pen, style: .thin, color: separatorColor, cardLeft: cardLeft)
+        } else {
+            pen.skip(8)
+        }
+
+        // ── Place name mini-header above photos ──
+        if !photos.isEmpty {
+            drawPhotoSectionHeader(pen: &pen, stop: stop, number: number, badgeColor: badgeColor,
+                                   options: options, primaryText: primaryText, cardLeft: cardLeft)
+        }
+
+        // ── Photo grid (full width, indent = 0) ──
+        drawPhotoGrid(pen: &pen, photos: photos, indent: 0, cardLeft: cardLeft,
+                      options: options, secondaryText: primaryText, cardBgColor: cardBgColor)
+
+        pen.skip(cardPadding)
+    }
+
+    // MARK: - Story Stop Card
+
+    private static func drawStoryStopCard(
+        pen: inout Pen,
+        stop: PlaceStop,
+        number: Int,
+        badgeColor: UIColor,
+        photos: [(RecapPhoto, UIImage)],
+        options: PDFExportOptions,
+        cardBgColor: UIColor,
+        primaryText: UIColor,
+        secondaryText: UIColor,
+        separatorColor: UIColor
+    ) {
+        let badgeSize: CGFloat = 32
+        let cardLeft = pen.margin + cardPadding
+
+        let titleFont   = Self.font(for: options.fontTheme, size: 17, weight: .semibold)
+        let subFont     = Self.font(for: options.fontTheme, size: 12)
+        let captionFont = Self.font(for: options.fontTheme, size: 14)
+
+        let hasPhotos  = !photos.isEmpty
+        let hasCaption = !(stop.overallStory ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasSubtitle = !(stop.placeSubtitle ?? "").isEmpty
+
+        // ── Pre-compute card height for background ──
+        let estTitleH = max(badgeSize, estimateTextHeight(stop.placeTitle, font: titleFont, width: cardInteriorW - badgeSize - 10))
+        var estContentH = estTitleH
+        if hasSubtitle, let sub = stop.placeSubtitle {
+            estContentH += 2 + estimateTextHeight(sub, font: subFont, width: cardInteriorW - badgeSize - 10)
+        }
+        if hasPhotos {
+            let rowCount = (photos.count + 1) / 2
+            estContentH += 8 + CGFloat(rowCount) * (photoSize + 10)
+            if hasCaption, let caption = stop.overallStory {
+                estContentH += 17  // STORY separator
+                estContentH += estimateTextHeight(caption, font: captionFont, width: cardInteriorW)
+            }
+        } else if hasCaption, let caption = stop.overallStory {
+            // No photos: fall through to Normal-style caption
+            estContentH += 8 + estimateTextHeight(caption, font: captionFont, width: cardInteriorW - badgeSize - 10)
+        }
+        let totalCardH = cardPadding + estContentH + cardPadding
+
+        // Cohesion: header + first photo row (or caption if no photos)
+        let subHForCohesion = hasSubtitle
+            ? 2 + estimateTextHeight(stop.placeSubtitle ?? "", font: subFont, width: cardInteriorW - badgeSize - 10)
+            : 0
+        let headerH = estTitleH + subHForCohesion
+        let firstRowH: CGFloat = hasPhotos ? (photoSize + 10) : 0
+        let cohesionH = cardPadding + headerH + 8 + firstRowH + cardPadding
+        pen.ensureRoom(min(cohesionH, (pen.pageH - pen.margin * 2) * 0.6))
+
+        // ── Card background ──
+        let bgH = min(totalCardH, pen.maxY - pen.y)
+        if let gc = UIGraphicsGetCurrentContext() {
+            gc.saveGState()
+            let bgRect = CGRect(x: pen.margin, y: pen.y, width: contentW, height: bgH)
+            gc.setFillColor(cardBgColor.cgColor)
+            UIBezierPath(roundedRect: bgRect, cornerRadius: cardRadius).addClip()
+            gc.fill(bgRect)
+            gc.restoreGState()
+        }
+        pen.skip(cardPadding)
+
+        // ── Header ──
+        drawStopHeader(pen: &pen, stop: stop, number: number, badgeColor: badgeColor,
+                       options: options, primaryText: primaryText, secondaryText: secondaryText)
+
+        if hasPhotos {
+            // ── Place name mini-header above photos ──
+            drawPhotoSectionHeader(pen: &pen, stop: stop, number: number, badgeColor: badgeColor,
+                                   options: options, primaryText: primaryText, cardLeft: cardLeft)
+
+            // ── Photos (full width) ──
+            drawPhotoGrid(pen: &pen, photos: photos, indent: 0, cardLeft: cardLeft,
+                          options: options, secondaryText: primaryText, cardBgColor: cardBgColor)
+
+            // ── STORY divider + caption (only if caption exists) ──
+            if hasCaption, let caption = stop.overallStory {
+                drawSeparator(pen: &pen, style: .story, color: separatorColor, cardLeft: cardLeft)
+
+                let captionAttrs: [NSAttributedString.Key: Any] = [
+                    .font: captionFont,
+                    .foregroundColor: primaryText
+                ]
+                let captionSize = caption.boundingRect(
+                    with: CGSize(width: cardInteriorW, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin],
+                    attributes: captionAttrs, context: nil
+                )
+                pen.ensureRoom(captionSize.height)
+                caption.draw(
+                    with: CGRect(x: cardLeft, y: pen.y,
+                                 width: cardInteriorW, height: captionSize.height),
+                    options: [.usesLineFragmentOrigin],
+                    attributes: captionAttrs, context: nil
+                )
+                pen.y += captionSize.height
+            }
+        } else if hasCaption, let caption = stop.overallStory {
+            // No photos: render caption like Normal mode (indented)
+            let textIndent: CGFloat = badgeSize + 10
+            let captionMaxW = cardInteriorW - textIndent
+            pen.skip(8)
+            let captionAttrs: [NSAttributedString.Key: Any] = [
+                .font: captionFont,
+                .foregroundColor: primaryText
+            ]
+            let captionSize = caption.boundingRect(
+                with: CGSize(width: captionMaxW, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin],
+                attributes: captionAttrs, context: nil
+            )
+            caption.draw(
+                with: CGRect(x: cardLeft + textIndent, y: pen.y,
+                             width: captionMaxW, height: captionSize.height),
+                options: [.usesLineFragmentOrigin],
+                attributes: captionAttrs, context: nil
+            )
+            pen.y += captionSize.height
+        }
+
+        pen.skip(cardPadding)
     }
 
     // MARK: - Photo Drawing
@@ -840,6 +1222,7 @@ private struct Pen {
     let pageW: CGFloat
     let pageH: CGFloat
     let logo: UIImage?
+    let pageBackground: UIColor
     var y: CGFloat = 0
     var pageNumber: Int = 0
 
@@ -850,6 +1233,15 @@ private struct Pen {
         ctx.beginPage()
         y = margin
         pageNumber += 1
+        // Fill page background (default PDF background is white; fill explicitly for dark mode).
+        if pageBackground != .white {
+            if let gc = UIGraphicsGetCurrentContext() {
+                gc.saveGState()
+                gc.setFillColor(pageBackground.cgColor)
+                gc.fill(CGRect(x: 0, y: 0, width: pageW, height: pageH))
+                gc.restoreGState()
+            }
+        }
     }
 
     mutating func ensureRoom(_ h: CGFloat) {

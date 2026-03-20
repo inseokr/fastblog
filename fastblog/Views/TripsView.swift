@@ -311,9 +311,9 @@ struct TripsView: View {
         .onAppear {
             viewModel.onAppear()
             // Show first-time Trips intro once, after trips are available.
-            if !tripsIntroSeenForCurrentIdentity, !allTrips.isEmpty, viewModel.scanState == .idle {
+            if !tripsIntroSeenForCurrentIdentity, !allTrips.isEmpty, viewModel.scanState == .idle, selectedCreatedRecap == nil {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    if !tripsIntroSeenForCurrentIdentity {
+                    if !tripsIntroSeenForCurrentIdentity, selectedCreatedRecap == nil {
                         showTripsIntroSheet = true
                     }
                 }
@@ -727,9 +727,9 @@ struct TripsView: View {
                 }
             }
             // If trips load in after the initial appearance, show the intro once.
-            if !tripsIntroSeenForCurrentIdentity, !newTrips.isEmpty, viewModel.scanState == .idle, !showTripsIntroSheet {
+            if !tripsIntroSeenForCurrentIdentity, !newTrips.isEmpty, viewModel.scanState == .idle, !showTripsIntroSheet, selectedCreatedRecap == nil {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    if !tripsIntroSeenForCurrentIdentity {
+                    if !tripsIntroSeenForCurrentIdentity, selectedCreatedRecap == nil {
                         showTripsIntroSheet = true
                     }
                 }

@@ -6,10 +6,21 @@
 import SwiftUI
 
 struct ExportingPDFView: View {
+    var title: String = "Exporting to PDF..."
+    /// When set, crossfades in after `secondaryTitleDelay` (first title fades out).
+    var secondaryTitle: String? = nil
+    var secondaryTitleDelay: TimeInterval = 3
+    /// When set, crossfades in after `tertiaryTitleDelay` (replaces secondaryTitle).
+    var tertiaryTitle: String? = nil
+    var tertiaryTitleDelay: TimeInterval = 7
+    var subtitle: String = "This may take a moment"
+
     @State private var ringTrim: CGFloat = 0
     @State private var ringRotation: Double = 0
     @State private var assembledStep: Int = 0
     @State private var pulseScale: CGFloat = 1
+    @State private var showSecondaryTitle: Bool = false
+    @State private var showTertiaryTitle: Bool = false
 
     private let navyBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
 
@@ -28,6 +39,20 @@ struct ExportingPDFView: View {
         .preferredColorScheme(.dark)
         .onAppear {
             startAnimations()
+            if secondaryTitle != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + secondaryTitleDelay) {
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        showSecondaryTitle = true
+                    }
+                }
+            }
+            if tertiaryTitle != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + tertiaryTitleDelay) {
+                    withAnimation(.easeInOut(duration: 0.5)) {
+                        showTertiaryTitle = true
+                    }
+                }
+            }
         }
     }
 
@@ -86,16 +111,43 @@ struct ExportingPDFView: View {
 
     private var messageSection: some View {
         VStack(spacing: 8) {
-            Text("Exporting to PDF...")
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundColor(.primary)
-                .multilineTextAlignment(.center)
+            ZStack {
+                Text(title)
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.center)
+                    .opacity(showSecondaryTitle || showTertiaryTitle ? 0 : 1)
+                    .accessibilityHidden(showSecondaryTitle || showTertiaryTitle)
 
-            Text("This may take a moment")
+                if let secondaryTitle {
+                    Text(secondaryTitle)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.center)
+                        .opacity(showSecondaryTitle && !showTertiaryTitle ? 1 : 0)
+                        .accessibilityHidden(!(showSecondaryTitle && !showTertiaryTitle))
+                }
+
+                if let tertiaryTitle {
+                    Text(tertiaryTitle)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.center)
+                        .opacity(showTertiaryTitle ? 1 : 0)
+                        .accessibilityHidden(!showTertiaryTitle)
+                }
+            }
+            .animation(.easeInOut(duration: 0.5), value: showSecondaryTitle)
+            .animation(.easeInOut(duration: 0.5), value: showTertiaryTitle)
+
+            Text(subtitle)
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
+                .lineLimit(3)
         }
         .padding(.horizontal, 24)
     }
