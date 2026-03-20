@@ -238,7 +238,7 @@ struct CountryBlogsView: View {
                 blogs: section.blogs
             )
             .environmentObject(createdRecapStore)
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.large])
             .presentationDragIndicator(.visible)
         }
         .navigationDestination(isPresented: $showMap) {
