@@ -245,7 +245,7 @@ struct RecapBlogPageView: View {
             }
             .sheet(isPresented: $showPDFPreview) {
                 if let url = pdfExportURL {
-                    PDFPreviewSheet(pdfURL: url, previewStyle: .recap)
+                    PDFPreviewSheet(pdfURL: url)
                 }
             }
             .sheet(isPresented: $showPDFExportOptions) {
@@ -2067,10 +2067,9 @@ struct RecapBlogPageView: View {
                     Text(trimmed.isEmpty ? "Describe your day in a sentence…" : trimmed)
                         .font(.subheadline)
                         .foregroundColor(trimmed.isEmpty ? .secondary.opacity(0.9) : .white)
-                        .lineLimit(nil)
+                        .lineLimit(3)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
                         .padding(12)
                         .background(Color(white: 0.1))
                         .cornerRadius(10)

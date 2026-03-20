@@ -1,7 +1,5 @@
 // fastblog/Models/StoryPage.swift
 
-import CoreGraphics
-
 enum StoryPage {
     case cover(CoverContent)
     case tableOfContents(entries: [TOCEntry], overview: BlogOverviewContent, pageIndex: Int, totalPages: Int)
@@ -21,19 +19,6 @@ struct DayContentPage {
 
 enum ContentSlot {
     case dayCaption(String)
-    case placeBlock(PlaceContent, photoSlice: ClosedRange<Int>, photoImageHeight: CGFloat, photoGridLayout: PhotoGridLayout)
-    case photoOverflowContinuation(
-        placeName: String,
-        PlaceContent,
-        photoSlice: ClosedRange<Int>,
-        photoImageHeight: CGFloat,
-        photoGridLayout: PhotoGridLayout,
-        showOverflowHeader: Bool
-    )
-}
-
-enum PhotoGridLayout {
-    case single
-    case twoColumn
-    case stackedSingles
+    case placeBlock(PlaceContent, photoSlice: ClosedRange<Int>)
+    case photoOverflowContinuation(placeName: String, PlaceContent, photoSlice: ClosedRange<Int>)
 }

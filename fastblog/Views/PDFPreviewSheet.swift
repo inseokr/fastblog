@@ -8,19 +8,6 @@ import PDFKit
 
 struct PDFPreviewSheet: View {
     let pdfURL: URL
-    let previewStyle: PreviewStyle
-    let shareURL: URL?
-
-    enum PreviewStyle {
-        case recap // existing behavior: continuous vertical scrolling
-        case storyBook // page-by-page horizontal
-    }
-
-    init(pdfURL: URL, previewStyle: PreviewStyle = .recap, shareURL: URL? = nil) {
-        self.pdfURL = pdfURL
-        self.previewStyle = previewStyle
-        self.shareURL = shareURL
-    }
 
     @Environment(\.dismiss) private var dismiss
     @State private var showShareSheet = false
@@ -30,7 +17,7 @@ struct PDFPreviewSheet: View {
             ZStack {
                 Color.black.ignoresSafeArea()
 
-                PDFKitPreview(url: pdfURL, previewStyle: previewStyle)
+                PDFKitPreview(url: pdfURL)
                     .background(Color.black)
             }
             .navigationTitle("PDF Preview")
@@ -51,7 +38,7 @@ struct PDFPreviewSheet: View {
                 }
             }
             .sheet(isPresented: $showShareSheet) {
-                ShareSheet(items: [shareURL ?? pdfURL])
+                ShareSheet(items: [pdfURL])
             }
         }
         .preferredColorScheme(.dark)
@@ -60,20 +47,12 @@ struct PDFPreviewSheet: View {
 
 struct PDFKitPreview: UIViewRepresentable {
     let url: URL
-    let previewStyle: PDFPreviewSheet.PreviewStyle
 
     func makeUIView(context: Context) -> PDFView {
         let pdfView = PDFView()
         pdfView.autoScales = true
-        switch previewStyle {
-        case .recap:
-            pdfView.displayMode = .singlePageContinuous
-            pdfView.displayDirection = .vertical
-        case .storyBook:
-            pdfView.displayMode = .singlePage
-            pdfView.displayDirection = .horizontal
-            pdfView.usePageViewController(true)
-        }
+        pdfView.displayMode = .singlePageContinuous
+        pdfView.displayDirection = .vertical
         pdfView.backgroundColor = .black
         pdfView.document = PDFDocument(url: url)
         return pdfView
