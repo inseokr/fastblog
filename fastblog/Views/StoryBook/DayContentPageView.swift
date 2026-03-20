@@ -46,7 +46,7 @@ struct DayContentPageView: View {
             Text(text)
                 .italic()
                 .font(.system(size: 14))
-                .foregroundColor(.secondary)
+                .foregroundColor(.primary)
                 .lineLimit(4)
 
         case .placeBlock(let place, let photoSlice):

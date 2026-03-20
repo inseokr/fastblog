@@ -28,7 +28,7 @@ struct PlaceBlockView: View {
             if let caption = place.caption {
                 Text(caption)
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.primary)
                     .lineLimit(2)
             }
 
@@ -41,8 +41,11 @@ struct PlaceBlockView: View {
                 }
                 .frame(
                     maxWidth: photos.count == 1 ? UIScreen.main.bounds.width * 0.5 : .infinity,
+                    minHeight: 200,
+                    maxHeight: 200,
                     alignment: .leading
                 )
+                .clipped()
             }
         }
         .padding(.vertical, 4)

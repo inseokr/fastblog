@@ -8,7 +8,7 @@ struct PhotoCardView: View {
         ZStack(alignment: .bottom) {
             Image(uiImage: photo.image)
                 .resizable()
-                .aspectRatio(3/4, contentMode: .fill)
+                .scaledToFill()
                 .clipped()
 
             if photo.captionIsLong, let caption = photo.caption {

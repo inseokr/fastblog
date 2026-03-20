@@ -15,6 +15,8 @@ struct PhotoContinuationBlockView: View {
                     PhotoCardView(photo: photos[i])
                 }
             }
+            .frame(height: 200)
+            .clipped()
         }
         .padding(.vertical, 4)
     }
