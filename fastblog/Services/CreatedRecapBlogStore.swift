@@ -1845,6 +1845,9 @@ final class CreatedRecapBlogStore: ObservableObject {
         // Score photos with iOS Vision AI and auto-select best per place stop.
         detail = await applyPhotoQualitySelection(to: detail)
         updateCoverPhotoFromQualityScores(&detail)
+
+        // Fetch weather for each day from Open-Meteo.
+        detail = await applyWeather(to: detail)
         return detail
     }
 
@@ -1896,6 +1899,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         if Task.isCancelled { return detail }
         detail = await applyPhotoQualitySelection(to: detail, dayIndices: [firstDayIdx])
         updateCoverPhotoFromQualityScores(&detail)
+        detail = await applyWeather(to: detail)
         return detail
     }
 
@@ -1954,6 +1958,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         result = await applyVisitedTimeDigitized(to: result, dayIndices: [dayIndex])
         if Task.isCancelled { return result }
         result = await applyPhotoQualitySelection(to: result, dayIndices: [dayIndex])
+        result = await applyWeather(to: result)
         return result
     }
 
@@ -2084,6 +2089,31 @@ final class CreatedRecapBlogStore: ObservableObject {
             }
         }
 
+        return updated
+    }
+
+    /// Fetches Open-Meteo weather for each day using the first available coordinate.
+    /// Days that already have weather or have no location data are skipped.
+    private func applyWeather(to detail: RecapBlogDetail) async -> RecapBlogDetail {
+        var updated = detail
+        for dayIdx in updated.days.indices {
+            if Task.isCancelled { return updated }
+            // Skip if already fetched.
+            if updated.days[dayIdx].weather != nil { continue }
+            // Use the first place stop with a known location as the coordinate for the day.
+            guard let coord = updated.days[dayIdx].placeStops.compactMap(\.representativeLocation).first else { continue }
+            let date = updated.days[dayIdx].date
+            if let weather = await WeatherService.shared.fetchWeather(
+                latitude: coord.latitude,
+                longitude: coord.longitude,
+                date: date
+            ) {
+                updated.days[dayIdx].weather = weather
+                print("[WeatherService] ✅ Day \(updated.days[dayIdx].dayIndex): \(weather.emoji) \(weather.description), \(String(format: "%.0f", weather.tempMaxC))°C / \(String(format: "%.0f", weather.tempMinC))°C")
+            } else {
+                print("[WeatherService] ⚠️ Day \(updated.days[dayIdx].dayIndex): no weather data")
+            }
+        }
         return updated
     }
 

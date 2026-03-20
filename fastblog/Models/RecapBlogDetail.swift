@@ -65,14 +65,17 @@ struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
     var dayCaption: String?
     /// True after reverse-geocoding and photo scoring have been applied for this day (used for day-by-day rate-limited processing).
     var isPlaceNamesResolved: Bool
+    /// Weather fetched from Open-Meteo for this day. Nil until weather has been resolved.
+    var weather: DayWeather?
 
-    init(id: UUID = UUID(), dayIndex: Int, date: Date, placeStops: [PlaceStop], dayCaption: String? = nil, isPlaceNamesResolved: Bool = false) {
+    init(id: UUID = UUID(), dayIndex: Int, date: Date, placeStops: [PlaceStop], dayCaption: String? = nil, isPlaceNamesResolved: Bool = false, weather: DayWeather? = nil) {
         self.id = id
         self.dayIndex = dayIndex
         self.date = date
         self.placeStops = placeStops
         self.dayCaption = dayCaption
         self.isPlaceNamesResolved = isPlaceNamesResolved
+        self.weather = weather
     }
 
     init(from decoder: Decoder) throws {
@@ -83,10 +86,11 @@ struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
         placeStops = try c.decode([PlaceStop].self, forKey: .placeStops)
         dayCaption = try c.decodeIfPresent(String.self, forKey: .dayCaption)
         isPlaceNamesResolved = try c.decodeIfPresent(Bool.self, forKey: .isPlaceNamesResolved) ?? false
+        weather = try c.decodeIfPresent(DayWeather.self, forKey: .weather)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, dayIndex, date, placeStops, dayCaption, isPlaceNamesResolved
+        case id, dayIndex, date, placeStops, dayCaption, isPlaceNamesResolved, weather
     }
 
     var dateText: String {

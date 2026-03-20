@@ -1334,6 +1334,21 @@ struct RecapBlogPageView: View {
                     ProgressView()
                         .scaleEffect(0.75)
                         .tint(.secondary)
+                } else if let weather = day.weather {
+                    HStack(spacing: 4) {
+                        Text(weather.emoji)
+                            .font(.body)
+                        Text("\(Int(weather.tempMaxC.rounded()))°")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.85))
+                        Text("/")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.5))
+                        Text("\(Int(weather.tempMinC.rounded()))°C")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.6))
+                    }
                 } else {
                     Image(systemName: "sun.max")
                         .foregroundColor(.secondary)
