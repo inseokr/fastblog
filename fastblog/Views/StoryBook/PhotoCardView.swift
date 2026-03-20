@@ -30,7 +30,9 @@ struct PhotoCardView: View {
                         Text(caption)
                             .font(.system(size: 10))
                             .foregroundColor(.white)
-                            .padding(6)
+                            .padding(.horizontal, 6)
+                            .padding(.top, 6)
+                            .padding(.bottom, 12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .frame(width: Self.photoWidth, height: Self.photoHeight)
