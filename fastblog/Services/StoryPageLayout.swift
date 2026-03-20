@@ -1,4 +1,5 @@
 // fastblog/Services/StoryPageLayout.swift
+import CoreGraphics
 
 enum StoryPageLayout {
 
