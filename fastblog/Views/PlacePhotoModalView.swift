@@ -914,7 +914,7 @@ struct PlacePhotoModalView: View {
         // actual metadata (e.g. after user manually changes date in Photos). This keeps the main
         // line consistent with the "Created:" line below.
         if let meta = currentPhotoAssetMetadata, let creation = meta.creation {
-            return "\(dateFmt.string(from: creation)) (\(tzAbbr))"
+            return dateFmt.string(from: creation)
         }
 
         // When showing the earliest photo and no asset metadata yet, build from digitized string
@@ -940,14 +940,14 @@ struct PlacePhotoModalView: View {
                         dateDisplay.dateFormat = "d MMM yyyy"
                         dateDisplay.timeZone = TimeZone(secondsFromGMT: 0)
                         dateDisplay.locale = Locale(identifier: "en_US_POSIX")
-                        return "\(dateDisplay.string(from: date)) at \(timeStr) (\(tzAbbr))"
+                        return "\(dateDisplay.string(from: date)) at \(timeStr)"
                     }
                 }
             }
         }
 
         // Fallback: use RecapPhoto.timestamp (e.g. from trip scan).
-        return "\(dateFmt.string(from: photo.timestamp)) (\(tzAbbr))"
+        return dateFmt.string(from: photo.timestamp)
     }
 
     /// Formatted PHAsset time metadata lines (creation, modification) with timezone, for display in the bottom overlay.
@@ -961,10 +961,10 @@ struct PlacePhotoModalView: View {
         let tzAbbr = Self.timeZoneDisplayLabel(for: tz)
         var lines: [String] = []
         if let creation = meta.creation {
-            lines.append("Created: \(dateFmt.string(from: creation)) (\(tzAbbr))")
+            lines.append("Created: \(dateFmt.string(from: creation))")
         }
         if let modification = meta.modification, meta.creation != modification {
-            lines.append("Modified: \(dateFmt.string(from: modification)) (\(tzAbbr))")
+            lines.append("Modified: \(dateFmt.string(from: modification))")
         }
         return lines
     }
