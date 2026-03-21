@@ -96,6 +96,7 @@ struct RecapBlogPageView: View {
     @State private var showUploadErrorAlert = false
     @State private var uploadErrorMessage = ""
     @State private var showRemoveFromCloudAlert = false
+    @State private var showCloudActionSheet = false
     @State private var showAuth = false
     @State private var pendingEarlyAccessAfterAuth = false
     @State private var pendingCloudUploadAfterAuth = false
@@ -2426,19 +2427,40 @@ struct RecapBlogPageView: View {
                 HStack(spacing: 16) {
                     Button {
                         if blogIsInCloud {
-                            showRemoveFromCloudAlert = true
+                            showCloudActionSheet = true
                         } else {
                             handleCloudUploadTap()
                         }
                     } label: {
-                        Image(systemName: blogIsInCloud ? "checkmark.icloud.fill" : "icloud.and.arrow.up")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 22, height: 22)
-                            .foregroundColor(blogIsInCloud ? .green : .white)
+                        if createdRecapStore.isSyncing {
+                            ProgressView()
+                                .tint(.white)
+                                .frame(width: 22, height: 22)
+                        } else {
+                            Image(systemName: blogIsInCloud ? "checkmark.icloud.fill" : "icloud.and.arrow.up")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 22, height: 22)
+                                .foregroundColor(blogIsInCloud ? .green : .white)
+                        }
                     }
                     .buttonStyle(.plain)
                     .padding(.leading, 12)
+                    .disabled(createdRecapStore.isSyncing)
+                    .confirmationDialog("Cloud", isPresented: $showCloudActionSheet) {
+                        Button("Sync") {
+                            Task {
+                                await createdRecapStore.syncFromCloud()
+                                if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
+                                    draft = updated
+                                }
+                            }
+                        }
+                        Button("Remove Blog", role: .destructive) {
+                            showRemoveFromCloudAlert = true
+                        }
+                        Button("Cancel", role: .cancel) { }
+                    }
 
                     Button {
                         showBlogSettings = true

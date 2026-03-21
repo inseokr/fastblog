@@ -1441,18 +1441,26 @@ final class CreatedRecapBlogStore: ObservableObject {
             for serverTrip in serverTrips {
                 if let localIdx = recents.firstIndex(where: { $0.blogKey == serverTrip.blogKey }) {
                     // ── Existing local blog ──────────────────────────────────────────────
-                    // Update metadata from server (server is source of truth for cloud state).
-                    if let title = serverTrip.title, !title.isEmpty {
-                        recents[localIdx].title = title
-                    }
-                    if let country = serverTrip.country, !country.isEmpty {
-                        recents[localIdx].countryName = country
-                    }
-                    recents[localIdx].cloudState = .uploadedActive
-
                     let blogId = recents[localIdx].sourceTripId
+
+                    // Update blogDetailsBySourceId BEFORE mutating recents so that when
+                    // @Published recents fires objectWillChange, views immediately read
+                    // the fresh detail (including updated captions/stories).
                     if var detail = blogDetailsBySourceId[blogId] {
                         detail.blogKey = serverTrip.blogKey
+
+                        // Day-level captions.
+                        // Server stores day stories by 0-based integer index (dateKey), so match by position.
+                        // The `date` field in ServerDayStory comes back empty — do not use it for matching.
+                        if let dayStories = serverTrip.dayStories {
+                            for dayIdx in detail.days.indices {
+                                guard dayIdx < dayStories.count else { break }
+                                if let story = dayStories[dayIdx].story, !story.isEmpty {
+                                    detail.days[dayIdx].dayCaption = story
+                                }
+                            }
+                        }
+
                         // Update cloud keys + content on matching stops.
                         for placeRef in serverTrip.placeList ?? [] {
                             guard let serverPlace = placeByIndex[placeRef.placeIndex] else { continue }
@@ -1477,19 +1485,27 @@ final class CreatedRecapBlogStore: ObservableObject {
                                     if let cat = serverPlace.categories?.first, !cat.isEmpty {
                                         detail.days[dayIdx].placeStops[stopIdx].placeCategory = cat
                                     }
-                                    // Place-level story → noteText
-                                    if let story = serverPlace.story {
-                                        detail.days[dayIdx].placeStops[stopIdx].noteText = story
+                                    // Place-level story → overallStory (primary display field).
+                                    // Mark as manual so AI doesn't overwrite a user-authored caption.
+                                    if let story = serverPlace.story, !story.isEmpty {
+                                        detail.days[dayIdx].placeStops[stopIdx].overallStory = story
+                                        detail.days[dayIdx].placeStops[stopIdx].overallStoryIsManual = true
                                     }
-                                    // Per-photo story → caption (matched by cloudURL == serverPhoto.uri)
+                                    // Per-photo sync: selection status + caption (matched by /public/... path key).
                                     for serverPhoto in serverPlace.photoList ?? [] {
-                                        guard let story = serverPhoto.story, !story.isEmpty,
-                                              let uri = serverPhoto.uri else { continue }
+                                        guard let uri = serverPhoto.uri else { continue }
+                                        let serverPathKey = Self.photoPathKey(uri)
                                         for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
-                                            if detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].cloudURL == uri {
-                                                detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].caption = story
-                                                break
+                                            let localPhoto = detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
+                                            let localPathKey = localPhoto.cloudURL.flatMap { Self.photoPathKey($0) }
+                                            guard localPathKey != nil && localPathKey == serverPathKey else { continue }
+                                            if let selected = serverPhoto.selected {
+                                                detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = selected
                                             }
+                                            if let story = serverPhoto.story, !story.isEmpty {
+                                                detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].caption = story
+                                            }
+                                            break
                                         }
                                     }
                                 }
@@ -1498,6 +1514,17 @@ final class CreatedRecapBlogStore: ObservableObject {
                         blogDetailsBySourceId[blogId] = detail
                         detailsChanged = true
                     }
+
+                    // Now mutate recents — this fires objectWillChange, at which point
+                    // blogDetailsBySourceId already has the updated captions above.
+                    // Update metadata from server (server is source of truth for cloud state).
+                    if let title = serverTrip.title, !title.isEmpty {
+                        recents[localIdx].title = title
+                    }
+                    if let country = serverTrip.country, !country.isEmpty {
+                        recents[localIdx].countryName = country
+                    }
+                    recents[localIdx].cloudState = .uploadedActive
 
                 } else {
                     // ── Cloud-only blog — create a local stub ────────────────────────────
@@ -1549,10 +1576,13 @@ final class CreatedRecapBlogStore: ObservableObject {
             }
 
             persistRecents()
-            if detailsChanged { persistBlogDetails() }
+            if detailsChanged {
+                persistBlogDetails()
+                // Emit one final objectWillChange after all blogDetailsBySourceId mutations
+                // so any open blog view re-reads the fully-updated detail.
+                objectWillChange.send()
+            }
             enforceArchiveRules()
-            print("✅ syncFromCloud: \(serverTrips.count) trips processed")
-
         } catch {
             print("🚨 syncFromCloud failed: \(error)")
         }
@@ -1560,6 +1590,25 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Reconstructs a RecapBlogDetail from server-side place records.
     /// Used for cloud-only trips that have no local counterpart.
+    /// Normalizes a cloud photo URL (absolute S3 or relative path) to its "/public/..." path key
+    /// so that server absolute URLs and locally-stored relative paths can be compared equally.
+    /// e.g. "https://s3.amazonaws.com/bucket/public/user_resources/x" → "/public/user_resources/x"
+    ///      "/public/user_resources/x"                                → "/public/user_resources/x"
+    private static func photoPathKey(_ urlString: String) -> String? {
+        let path: String
+        if urlString.hasPrefix("http") {
+            guard let url = URL(string: urlString) else { return nil }
+            path = url.path  // e.g. "/linkedspaces.fs/public/user_resources/x"
+        } else {
+            path = urlString  // already a relative path
+        }
+        // Both forms share the "/public/..." tail — use that as the canonical key.
+        if let range = path.range(of: "/public/") {
+            return String(path[range.lowerBound...])
+        }
+        return path
+    }
+
     private func buildDetailFromServerPlaces(
         _ places: [ServerPlaceRecord],
         blogId: UUID,

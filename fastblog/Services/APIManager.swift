@@ -1096,10 +1096,18 @@ struct ServerTrip: Decodable {
     let visitedPlaceName: [String]?
     let startTimeString: String?
     let endTimeString: String?
+    /// Day-level captions sent by the app as {"date":"yyyy-MM-dd","story":"..."}.
+    let dayStories: [ServerDayStory]?
 }
 
 struct ServerTripPlace: Decodable {
     let placeIndex: Int
+}
+
+struct ServerDayStory: Decodable {
+    /// "yyyy-MM-dd" formatted date string matching the day.
+    let date: String?
+    let story: String?
 }
 
 struct PlaceVisitHistoryResponse: Decodable {
