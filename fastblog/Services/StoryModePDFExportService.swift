@@ -35,7 +35,12 @@ enum StoryModePDFExportService {
             .replacingOccurrences(of: "/", with: "-")
         let url = URL.documentsDirectory.appendingPathComponent("\(safeTitle)_\(draft.id.uuidString)_Story.pdf")
 
-        let size = StoryRenderMetrics.clampedScreenSize
+        // Use the effective story viewport (screen minus safe-area insets) so the PDF
+        // page proportions match what the reader sees in Story Mode's TabView.
+        let size = CGSize(
+            width: StoryRenderMetrics.clampedScreenWidth,
+            height: StoryRenderMetrics.effectiveStoryViewportHeight
+        )
         let pageRect = CGRect(origin: .zero, size: size)
 
         var pageImages: [UIImage] = []

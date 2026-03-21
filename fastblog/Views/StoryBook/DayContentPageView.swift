@@ -46,27 +46,38 @@ struct DayContentPageView: View {
             ForEach(0..<page.slots.count, id: \.self) { i in
                 slotView(page.slots[i])
             }
-
-            Spacer()
-
-            PageFooterView(
-                isLastPageOfTrip: page.isLastPageOfTrip,
-                isLastPageOfDay: page.isLastPageOfDay,
-                nextDayName: page.nextDayName
-            )
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, StoryPageLayout.storyChromeBottomOverlayHeight)
-        .background(Color.white)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color.white.ignoresSafeArea())
+        .overlay(alignment: .bottom) {
+            // "The End" sits inside the chrome-reserve zone (above the Cancel/Share bar),
+            // so it doesn't consume any photo space on non-final pages.
+            if page.isLastPageOfTrip {
+                HStack {
+                    Spacer()
+                    Text("The End")
+                        .italic()
+                        .font(.system(size: 12))
+                        .foregroundColor(.black)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, StoryPageLayout.storyChromeBottomOverlayHeight - 12)
+            }
+        }
     }
 
     @ViewBuilder
     private func slotView(_ slot: ContentSlot) -> some View {
         switch slot {
         case .dayCaption(let text):
+            let pageContentWidth = StoryRenderMetrics.clampedScreenWidth - 32
+            let maxBoxH = StoryPageLayout.dayStoryCaptionBoxHeight(for: text, pageWidth: pageContentWidth, fontTheme: .classic)
             StoryDayCaptionCallout(text: text)
+                .frame(maxHeight: maxBoxH)
+                .clipped()
 
         case .placeBlock(let place, let photoSlice, let photoImageHeight, let photoGridLayout):
             let photos: [PhotoContent] = place.photos.isEmpty ? [] : {
@@ -122,20 +133,36 @@ private extension DayContentPage {
 private struct StoryDayCaptionCallout: View {
     let text: String
 
+    private let accentColor = Color(red: 1, green: 0.82, blue: 0.12)
+    private let fillColor = Color(red: 1, green: 0.97, blue: 0.88)
+
     var body: some View {
+        let r = StoryPageLayout.dayStoryBoxCornerRadius
         HStack(alignment: .top, spacing: 12) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(Color(red: 1, green: 0.82, blue: 0.12))
-                .frame(width: StoryPageLayout.dayStoryBoxDividerWidth)
+            UnevenRoundedRectangle(
+                cornerRadii: RectangleCornerRadii(
+                    topLeading: r,
+                    bottomLeading: r,
+                    bottomTrailing: 0,
+                    topTrailing: 0
+                ),
+                style: .continuous
+            )
+            .fill(accentColor)
+            .frame(width: StoryPageLayout.dayStoryBoxDividerWidth)
+            .frame(maxHeight: .infinity)
             Text(text)
                 .italic()
                 .font(Font(StoryFontHelper.uiItalicFont(for: .classic, size: StoryPageLayout.dayStoryCaptionFontSize)))
                 .foregroundColor(.black)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.leading, StoryPageLayout.dayStoryBoxDividerInsetFromLeft)
         .padding(.trailing, StoryPageLayout.dayStoryBoxTextPaddingRight)
         .padding(.top, StoryPageLayout.dayStoryBoxTextPaddingTop)
         .padding(.bottom, StoryPageLayout.dayStoryBoxTextPaddingBottom)
+        .background(
+            RoundedRectangle(cornerRadius: r, style: .continuous)
+                .fill(fillColor)
+        )
     }
 }

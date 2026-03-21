@@ -62,12 +62,13 @@ enum StoryPageLayout {
     // - VStack spacing (8) between Divider and first slot
     // So "day header block" effectively occupies 44 + 8 + 1 + 8 = 61pt.
     static let dayHeaderHeight: CGFloat = 61
-    // Matches the StoryBook renderer: TabView respects safe areas; subtract footer, top padding, and bottom chrome.
-    // (DayContentPageView uses `.padding(.top, 12)` and a fixed 40pt footer.)
+    // Matches the StoryBook renderer: TabView respects safe areas; subtract top padding and bottom chrome.
+    // The footer ("The End") is an overlay outside the VStack flow, so its height is NOT deducted here —
+    // that frees ~40pt of extra photo space on every page.
     static var pageContentHeight: CGFloat {
         max(
             0,
-            StoryRenderMetrics.effectiveStoryViewportHeight - footerHeight - 12 - storyChromeBottomOverlayHeight
+            StoryRenderMetrics.effectiveStoryViewportHeight - 12 - storyChromeBottomOverlayHeight
         )
     }
     static let dayCaptionShort: CGFloat = 56
@@ -79,9 +80,10 @@ enum StoryPageLayout {
     static let dayStoryCaptionMaxCharacters: Int = 215
 
     static let dayStoryCaptionFontSize: CGFloat = 14
-    static let dayStoryBoxCornerRadius: CGFloat = 12
+    static let dayStoryBoxCornerRadius: CGFloat = 10
     static let dayStoryBoxDividerWidth: CGFloat = 4
-    static let dayStoryBoxDividerInsetFromLeft: CGFloat = 10
+    /// Inset of the accent bar from the page content edge; 0 aligns with day header / place titles.
+    static let dayStoryBoxDividerInsetFromLeft: CGFloat = 0
     static let dayStoryBoxTextInsetFromLeft: CGFloat = dayStoryBoxDividerInsetFromLeft + dayStoryBoxDividerWidth + 12
     static let dayStoryBoxTextPaddingRight: CGFloat = 12
     static let dayStoryBoxTextPaddingTop: CGFloat = 10
@@ -435,14 +437,7 @@ enum StoryPageLayout {
         if let caption = day.dayCaption {
             let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
-                let maxLen = dayStoryCaptionMaxCharacters
-                let capped: String
-                if trimmed.count <= maxLen {
-                    capped = trimmed
-                } else {
-                    capped = String(trimmed.prefix(maxLen)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
-                }
-                allSlots.append(.dayCaption(capped))
+                allSlots.append(.dayCaption(trimmed))
             }
         }
 
@@ -726,6 +721,92 @@ enum StoryPageLayout {
         }
     }
 
+    /// When a day page shows **exactly two photos** total, prefer a vertical stack (full-width rows) over a
+    /// side-by-side pair — e.g. the first two photos of a 3+ stop are normally `twoColumn`, but if nothing
+    /// else shares the page they read as a standalone pair and should match the two-photo stop layout.
+    /// Skips conversion if the taller stacked layout would exceed `pageContentHeight` (same height sum as `packSlots`).
+    private static func applyTwoPhotoPageStackingIfNeeded(
+        _ pages: [DayContentPage],
+        metrics: Metrics,
+        fontTheme: FontTheme,
+        layoutMode: PDFLayoutMode
+    ) -> [DayContentPage] {
+        func photoCountInSlot(_ slot: ContentSlot) -> Int {
+            switch slot {
+            case .placeBlock(let place, let slice, _, _):
+                guard !place.photos.isEmpty else { return 0 }
+                let lo = slice.lowerBound
+                let hi = min(slice.upperBound, place.photos.count - 1)
+                guard lo <= hi else { return 0 }
+                return hi - lo + 1
+            case .photoOverflowContinuation(_, let place, let slice, _, _, _):
+                guard !place.photos.isEmpty else { return 0 }
+                let lo = slice.lowerBound
+                let hi = min(slice.upperBound, place.photos.count - 1)
+                guard lo <= hi else { return 0 }
+                return hi - lo + 1
+            case .dayCaption:
+                return 0
+            }
+        }
+
+        func totalPhotos(_ slots: [ContentSlot]) -> Int {
+            slots.reduce(0) { $0 + photoCountInSlot($1) }
+        }
+
+        func pageBaseUsedHeight(_ slots: [ContentSlot]) -> CGFloat {
+            dayHeaderHeight + slots.reduce(0) { $0 + slotHeight($1, metrics: metrics, fontTheme: fontTheme, layoutMode: layoutMode) }
+        }
+
+        func convertTwoColumnPairToStacked(_ slot: ContentSlot) -> ContentSlot {
+            switch slot {
+            case .placeBlock(let place, let slice, _, let layout):
+                guard layout == .twoColumn else { return slot }
+                let lo = slice.lowerBound
+                let hi = min(slice.upperBound, place.photos.count - 1)
+                guard lo <= hi, hi - lo + 1 == 2 else { return slot }
+                return .placeBlock(
+                    place,
+                    photoSlice: slice,
+                    photoImageHeight: metrics.minSinglePhotoImageHeight,
+                    photoGridLayout: .stackedSingles
+                )
+            case .photoOverflowContinuation(let name, let place, let slice, _, let layout, let show):
+                guard layout == .twoColumn else { return slot }
+                let lo = slice.lowerBound
+                let hi = min(slice.upperBound, place.photos.count - 1)
+                guard lo <= hi, hi - lo + 1 == 2 else { return slot }
+                return .photoOverflowContinuation(
+                    placeName: name,
+                    place,
+                    photoSlice: slice,
+                    photoImageHeight: metrics.minSinglePhotoImageHeight,
+                    photoGridLayout: .stackedSingles,
+                    showOverflowHeader: show
+                )
+            default:
+                return slot
+            }
+        }
+
+        return pages.map { page in
+            let slots = page.slots
+            guard totalPhotos(slots) == 2 else { return page }
+
+            let newSlots = slots.map { convertTwoColumnPairToStacked($0) }
+            guard pageBaseUsedHeight(newSlots) <= pageContentHeight else { return page }
+
+            return DayContentPage(
+                day: page.day,
+                isFirstPage: page.isFirstPage,
+                slots: newSlots,
+                isLastPageOfDay: page.isLastPageOfDay,
+                isLastPageOfTrip: page.isLastPageOfTrip,
+                nextDayName: page.nextDayName
+            )
+        }
+    }
+
     private static func packSlots(
         _ slots: [ContentSlot],
         day: StoryDay,
@@ -805,6 +886,13 @@ enum StoryPageLayout {
             isLastPageOfTrip: false,
             nextDayName: isLastDay ? nil : nextDayName
         ))
+
+        pages = applyTwoPhotoPageStackingIfNeeded(
+            pages,
+            metrics: metrics,
+            fontTheme: fontTheme,
+            layoutMode: layoutMode
+        )
 
         // After packing with minimum photo heights, fill leftover vertical space by stretching
         // photo row heights. Multiple photo blocks on a page split leftover evenly between blocks;

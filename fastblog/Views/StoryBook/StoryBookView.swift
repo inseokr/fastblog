@@ -77,13 +77,14 @@ struct StoryBookView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .ignoresSafeArea()
                     }
+                    .preferredColorScheme(.light)
 
                     storyDaysMenuOverlay(pages: pages)
+                        .preferredColorScheme(.dark)
                 }
                 .task(id: pages.count) {
                     selectedPageIndex = min(max(0, selectedPageIndex), max(0, pages.count - 1))
                 }
-                .preferredColorScheme(.light)
 
             case .failed:
                 VStack(spacing: 20) {
