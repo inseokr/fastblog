@@ -4,6 +4,32 @@ import Photos
 
 // MARK: - PDF Export Options
 
+enum BlogColor: String, CaseIterable, Codable {
+    case white = "White"
+    case black = "Black"
+
+    var label: String { rawValue }
+    var subtitle: String {
+        switch self {
+        case .white: return "Light background, dark text"
+        case .black: return "Dark background, light text"
+        }
+    }
+}
+
+enum PDFLayoutMode: String, CaseIterable, Codable {
+    case normal = "Normal"
+    case story  = "Story"
+
+    var label: String { rawValue }
+    var subtitle: String {
+        switch self {
+        case .normal: return "Caption above photos"
+        case .story:  return "Photos first, caption below"
+        }
+    }
+}
+
 enum FontTheme: String, CaseIterable, Codable {
     case classic  = "Classic"
     case serif    = "Serif"
@@ -124,7 +150,8 @@ class PDFExportService {
         let safeTitle = draft.title
             .replacingOccurrences(of: " ", with: "_")
             .replacingOccurrences(of: "/", with: "-")
-        let url = URL.documentsDirectory.appendingPathComponent("\(safeTitle)_Blog.pdf")
+        // Include blog id so two trips with the same title never overwrite each other (fixes wrong PDF when sharing).
+        let url = URL.documentsDirectory.appendingPathComponent("\(safeTitle)_\(draft.id.uuidString)_Blog.pdf")
 
         let pageRect = CGRect(x: 0, y: 0, width: pageW, height: pageH)
         let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
@@ -224,33 +251,6 @@ class PDFExportService {
             )
 
             pen.skip(12)
-
-            // App icon + "Created with Bloggo" — left-aligned under cover
-            if let appIcon = appLogo {
-                let iconSize: CGFloat = 22
-                let createdText = "Created with Bloggo"
-                let createdFont = Self.font(for: options.fontTheme, size: 13, weight: .medium)
-                let createdAttrs: [NSAttributedString.Key: Any] = [
-                    .font: createdFont,
-                    .foregroundColor: UIColor.darkGray
-                ]
-
-                let iconRect = CGRect(x: margin, y: pen.y, width: iconSize, height: iconSize)
-                if let gc = UIGraphicsGetCurrentContext() {
-                    gc.saveGState()
-                    UIBezierPath(roundedRect: iconRect, cornerRadius: 5).addClip()
-                    appIcon.draw(in: iconRect)
-                    gc.restoreGState()
-                }
-
-                let textSize = createdText.size(withAttributes: createdAttrs)
-                createdText.draw(
-                    at: CGPoint(x: margin + iconSize + 6,
-                                y: pen.y + (iconSize - textSize.height) / 2),
-                    withAttributes: createdAttrs
-                )
-                pen.y += iconSize
-            }
 
             // ── Day Sections — each day starts on a fresh page ─────────
             for day in draft.days {
@@ -393,11 +393,7 @@ class PDFExportService {
             .foregroundColor: UIColor.black
         ]
         
-        var urlToOpen: URL?
-        if let query = stop.placeTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-           let url = URL(string: "https://www.google.com/search?q=\(query)") {
-            urlToOpen = url
-        }
+        let urlToOpen = StoryPlaceGoogleSearch.url(placeName: stop.placeTitle, placeSubtitle: stop.placeSubtitle)
         
         let attrTitle = NSMutableAttributedString(string: stop.placeTitle, attributes: titleAttrs)
         
@@ -407,7 +403,7 @@ class PDFExportService {
             customIcon = UIImage(data: data)
         }
         
-        if let linkIcon = customIcon {
+        if urlToOpen != nil, let linkIcon = customIcon {
             let attachment = NSTextAttachment()
             attachment.image = linkIcon
             let iconSize: CGFloat = 13

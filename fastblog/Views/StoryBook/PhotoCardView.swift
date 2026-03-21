@@ -3,10 +3,10 @@ import SwiftUI
 
 struct PhotoCardView: View {
     let photo: PhotoContent
-    /// Width driven by the caller (half-page for 2 photos, ~60% for 1 photo)
+    /// Width driven by the caller (half-page for 2 photos, full width for 1).
     let width: CGFloat
-
-    private var height: CGFloat { width * (4 / 3) }   // 3:4 portrait
+    /// Must match `StoryPageLayout` packing (`photoImageHeight` on the slot).
+    let imageHeight: CGFloat
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -14,9 +14,9 @@ struct PhotoCardView: View {
                 Image(uiImage: photo.image)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: width, height: height)
+                    .frame(width: width, height: imageHeight)
                     .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
 
                 if photo.captionIsLong, let caption = photo.caption {
                     ZStack(alignment: .bottom) {
@@ -33,11 +33,11 @@ struct PhotoCardView: View {
                             .padding(.bottom, 10)
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
-                    .frame(width: width, height: height * 0.45)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .frame(width: width, height: imageHeight * 0.45)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
             }
-            .frame(width: width, height: height)
+            .frame(width: width, height: imageHeight)
 
             if !photo.captionIsLong, let caption = photo.caption {
                 Text(caption)

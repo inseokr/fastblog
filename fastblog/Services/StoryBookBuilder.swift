@@ -4,34 +4,40 @@ import Photos
 
 enum StoryBookBuilder {
 
+    /// Matches PDF export / recap blog hero: high-res cover decode (see `PDFExportService.preloadAssets`).
+    private static let coverImagePixelSize = CGSize(width: 1200, height: 1200)
+
     static func build(from detail: RecapBlogDetail) async throws -> StoryBookContent {
-        let cover = buildCover(detail)
-        let overview = buildOverview(detail)
+        let coverPhoto = await loadCoverPhoto(identifier: detail.selectedCoverPhotoIdentifier)
+        let dateRange = dateRangeString(from: detail.days)
+        let cover = CoverContent(title: detail.title, subtitle: dateRange, coverPhoto: coverPhoto)
+        let overview = buildOverview(detail: detail, dateRange: dateRange, coverPhoto: coverPhoto)
         let days = try await buildDays(detail)
         return StoryBookContent(cover: cover, overview: overview, days: days)
     }
 
-    // MARK: - Cover
-    private static func buildCover(_ detail: RecapBlogDetail) -> CoverContent {
-        let dateRange = dateRangeString(from: detail.days)
-        var coverImage: UIImage? = nil
-        if let identifier = detail.selectedCoverPhotoIdentifier {
-            coverImage = loadAndDownsample(localIdentifier: identifier)
-        }
-        return CoverContent(title: detail.title, subtitle: dateRange, coverPhoto: coverImage)
-    }
-
     // MARK: - Overview (TOC)
-    private static func buildOverview(_ detail: RecapBlogDetail) -> BlogOverviewContent {
-        let dateRange = dateRangeString(from: detail.days)
-        let entries: [TOCEntry] = detail.days.enumerated().map { idx, day in
-            TOCEntry(
+    private static func buildOverview(detail: RecapBlogDetail, dateRange: String, coverPhoto: UIImage?) -> BlogOverviewContent {
+        let entries: [TOCEntry] = detail.days.enumerated().map { (idx, day) in
+            let names = day.placeStops.map { $0.placeTitle }
+            let moments = day.placeStops.flatMap(\.photos).filter(\.isIncluded).count
+            return TOCEntry(
                 dayNumber: idx + 1,
                 date: day.shortDateText,
-                firstPlaceName: day.placeStops.first?.placeTitle ?? "Day \(idx + 1)"
+                firstPlaceName: names.first ?? "Day \(idx + 1)",
+                placeNames: names,
+                daySubtitle: day.dayCaption,
+                momentCount: moments,
+                dayStartPageNumber: 0   // computed later in StoryPageLayout.buildPages
             )
         }
-        return BlogOverviewContent(dateRange: dateRange, dayCount: detail.days.count, entries: entries)
+        return BlogOverviewContent(
+            tripTitle: detail.title,
+            dateRange: dateRange,
+            dayCount: detail.days.count,
+            coverPhoto: coverPhoto,
+            entries: entries
+        )
     }
 
     // MARK: - Days
@@ -43,7 +49,8 @@ enum StoryBookBuilder {
                 await MapSnapshotHelper.generateSnapshot(
                     for: day.placeStops,
                     size: screenSize,
-                    regionPadding: 0.35
+                    regionPadding: 0.05,
+                    showPlaceNames: true
                 )
             }
 
@@ -62,7 +69,7 @@ enum StoryBookBuilder {
 
     // MARK: - Places
     private static func buildPlaces(from stops: [PlaceStop]) -> [PlaceContent] {
-        stops.map { stop in
+        stops.enumerated().map { idx, stop in
             let caption = stop.overallStory ?? stop.noteText
             let captionIsLong = (caption?.count ?? 0) > 80
             let photos = stop.photos
@@ -77,8 +84,16 @@ enum StoryBookBuilder {
                         captionIsLong: (photoCaption?.count ?? 0) > 80
                     )
                 }
+            let markerType: PlaceMarkerType = {
+                if idx == 0 { return .start }
+                if idx == stops.count - 1 { return .end }
+                return .middle
+            }()
             return PlaceContent(
                 title: stop.placeTitle,
+                subtitle: stop.placeSubtitle,
+                markerNumber: idx + 1,
+                markerType: markerType,
                 timestamp: formattedTimestamp(stop.visitedTimeDigitized),
                 caption: caption,
                 captionIsLong: captionIsLong,
@@ -88,6 +103,35 @@ enum StoryBookBuilder {
     }
 
     // MARK: - Helpers
+    private static func loadCoverPhoto(identifier: String?) async -> UIImage? {
+        guard let identifier else { return nil }
+        if identifier.hasPrefix(AppCapturePhotoService.prefix) {
+            return AppCapturePhotoService.shared.loadImage(identifier: identifier)
+        }
+        return await Task.detached {
+            loadCoverPhotoFromPhotoLibrarySync(localIdentifier: identifier)
+        }.value
+    }
+
+    /// Synchronous Photos load on a background thread (matches `PDFExportService` cover fetch).
+    private static func loadCoverPhotoFromPhotoLibrarySync(localIdentifier: String) -> UIImage? {
+        let result = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
+        guard let asset = result.firstObject else { return nil }
+        let reqOptions = PHImageRequestOptions()
+        reqOptions.isSynchronous = true
+        reqOptions.deliveryMode = .highQualityFormat
+        reqOptions.resizeMode = .exact
+        reqOptions.isNetworkAccessAllowed = true
+        var image: UIImage?
+        PHImageManager.default().requestImage(
+            for: asset,
+            targetSize: coverImagePixelSize,
+            contentMode: .aspectFit,
+            options: reqOptions
+        ) { img, _ in image = img }
+        return image
+    }
+
     private static func loadAndDownsample(localIdentifier: String) -> UIImage? {
         let result = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
         guard let asset = result.firstObject else { return nil }
@@ -121,11 +165,8 @@ enum StoryBookBuilder {
 
     private static func dateRangeString(from days: [RecapBlogDay]) -> String {
         guard let first = days.first, let last = days.last else { return "" }
-        let fmt = DateFormatter()
-        fmt.dateFormat = "MMM d"
-        let yearFmt = DateFormatter()
-        yearFmt.dateFormat = ", yyyy"
-        return "\(fmt.string(from: first.date)) – \(fmt.string(from: last.date))\(yearFmt.string(from: last.date))"
+        // Use the same date source as TOC rows (`shortDateText` / EXIF), not `day.date` alone, so the range matches listed days.
+        return "\(first.monthDayStringForStoryBookRange()) – \(last.monthDayStringForStoryBookRange())\(last.yearSuffixForStoryBookRange())"
     }
 
     // MARK: - Timeout helper

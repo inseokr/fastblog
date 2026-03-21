@@ -1,11 +1,11 @@
 //
-//  ExportingPDFView.swift
+//  PreparingStoryBookView.swift
 //  fastblog
 //
 
 import SwiftUI
 
-struct ExportingPDFView: View {
+struct PreparingStoryBookView: View {
     @State private var ringTrim: CGFloat = 0
     @State private var ringRotation: Double = 0
     @State private var assembledStep: Int = 0
@@ -20,10 +20,12 @@ struct ExportingPDFView: View {
 
             VStack(spacing: 32) {
                 Spacer()
-                exportAnimation
+                preparingAnimation
                 messageSection
                 Spacer()
             }
+            // Reserve space for the shared story-mode bottom bar (Cancel / Share) in `StoryBookView`.
+            .padding(.bottom, 80)
         }
         .preferredColorScheme(.dark)
         .onAppear {
@@ -31,9 +33,8 @@ struct ExportingPDFView: View {
         }
     }
 
-    private var exportAnimation: some View {
+    private var preparingAnimation: some View {
         ZStack {
-            // Outer rotating dashed ring — runs forever
             Circle()
                 .trim(from: 0, to: 0.75)
                 .stroke(
@@ -44,7 +45,6 @@ struct ExportingPDFView: View {
                 .rotationEffect(.degrees(ringRotation))
                 .animation(.linear(duration: 2).repeatForever(autoreverses: false), value: ringRotation)
 
-            // Inner progress ring — fills and empties in a loop so it never stops moving
             Circle()
                 .trim(from: 0, to: ringTrim)
                 .stroke(Color.blue, lineWidth: 4)
@@ -52,12 +52,10 @@ struct ExportingPDFView: View {
                 .rotationEffect(.degrees(-90))
                 .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: ringTrim)
 
-            // Export-themed building block icons
             ForEach(0..<3, id: \.self) { index in
                 buildingNode(at: index)
             }
 
-            // Central app logo with subtle pulse — runs forever
             Image("ScanIcon")
                 .resizable()
                 .scaledToFit()
@@ -73,7 +71,7 @@ struct ExportingPDFView: View {
         let radius: CGFloat = 72
         let x = radius * cos(angle * .pi / 180)
         let y = radius * sin(angle * .pi / 180)
-        let iconName = ["doc.text", "photo.fill", "arrow.down.doc"][index]
+        let iconName = ["book.pages", "photo.fill", "text.book.closed"][index]
         let visible = assembledStep > index
 
         return Image(systemName: iconName)
@@ -86,31 +84,24 @@ struct ExportingPDFView: View {
 
     private var messageSection: some View {
         VStack(spacing: 8) {
-            Text("Opening Sharing Options...")
+            Text("Preparing storybook…")
                 .font(.title2)
                 .fontWeight(.bold)
-                .foregroundColor(.white)
+                .foregroundColor(.primary)
                 .multilineTextAlignment(.center)
 
             Text("This may take a moment")
                 .font(.subheadline)
-                .foregroundColor(.white.opacity(0.72))
+                .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
         }
         .padding(.horizontal, 24)
     }
 
     private func startAnimations() {
-        // Progress ring: loop 0 → 1 → 0 so it never stops (repeatForever on the view handles the cycle)
         ringTrim = 1
-
-        // Dashed ring rotation — continuous
         ringRotation = 360
-
-        // Gentle pulse on logo — continuous
         pulseScale = 1.08
-
-        // Assemble nodes one by one (quick, then they stay visible)
         for step in 1...3 {
             let delay = 0.4 + Double(step) * 0.35
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
@@ -121,5 +112,5 @@ struct ExportingPDFView: View {
 }
 
 #Preview {
-    ExportingPDFView()
+    PreparingStoryBookView()
 }

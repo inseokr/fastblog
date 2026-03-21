@@ -6,38 +6,40 @@ struct CoverPageView: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            // Full-screen photo or gradient fallback
-            if let photo = cover.coverPhoto {
-                Image(uiImage: photo)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(
-                        width: UIScreen.main.bounds.width,
-                        height: UIScreen.main.bounds.height
+            // Avoid white letterboxing when TabView lays out in the safe-area inset (fixed UIScreen frames no longer match).
+            Color.black
+                .ignoresSafeArea(edges: .all)
+
+            // Full-bleed photo or gradient — fill the tab’s bounds, then extend into safe areas.
+            Group {
+                if let photo = cover.coverPhoto {
+                    Image(uiImage: photo)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    LinearGradient(
+                        colors: [Color(hex: "#1a1a2e"), Color(hex: "#2d3561")],
+                        startPoint: .top,
+                        endPoint: .bottom
                     )
-                    .clipped()
-            } else {
+                }
+            }
+            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+            .clipped()
+            .ignoresSafeArea(edges: .all)
+
+            // Gradient scrim so text is readable over any photo (bottom ~half of screen, like before).
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
                 LinearGradient(
-                    colors: [Color(hex: "#1a1a2e"), Color(hex: "#2d3561")],
+                    colors: [.clear, .black.opacity(0.65)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .frame(
-                    width: UIScreen.main.bounds.width,
-                    height: UIScreen.main.bounds.height
-                )
+                .frame(maxWidth: .infinity)
+                .frame(height: max(280, UIScreen.main.bounds.height * 0.5))
             }
-
-            // Gradient scrim so text is readable over any photo
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.65)],
-                startPoint: .center,
-                endPoint: .bottom
-            )
-            .frame(
-                width: UIScreen.main.bounds.width,
-                height: UIScreen.main.bounds.height * 0.5
-            )
+            .ignoresSafeArea(edges: .vertical)
 
             // Trip name + duration — bottom left
             VStack(alignment: .leading, spacing: 6) {
@@ -53,7 +55,9 @@ struct CoverPageView: View {
             .padding(.horizontal, 24)
             .padding(.bottom, 56)
         }
-        .ignoresSafeArea()
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+        .background(Color.black)
+        .ignoresSafeArea(edges: .all)
     }
 }
 

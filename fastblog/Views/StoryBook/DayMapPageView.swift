@@ -6,23 +6,22 @@ struct DayMapPageView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            // Map fills the entire page
-            if let snapshot = day.mapSnapshot {
-                Image(uiImage: snapshot)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(
-                        width: UIScreen.main.bounds.width,
-                        height: UIScreen.main.bounds.height
-                    )
-                    .clipped()
-            } else {
-                Color.gray.opacity(0.15)
-                    .frame(
-                        width: UIScreen.main.bounds.width,
-                        height: UIScreen.main.bounds.height
-                    )
+            Color.black
+                .ignoresSafeArea(edges: .all)
+
+            // Map fills the tab edge-to-edge (avoid fixed UIScreen size vs TabView safe-area letterboxing).
+            Group {
+                if let snapshot = day.mapSnapshot {
+                    Image(uiImage: snapshot)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Color.gray.opacity(0.15)
+                }
             }
+            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+            .clipped()
+            .ignoresSafeArea(edges: .all)
 
             // Day label overlay at the bottom
             VStack(alignment: .leading, spacing: 4) {
@@ -45,7 +44,9 @@ struct DayMapPageView: View {
                 )
             )
         }
-        .ignoresSafeArea()
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+        .background(Color.black)
+        .ignoresSafeArea(edges: .all)
     }
 }
 
