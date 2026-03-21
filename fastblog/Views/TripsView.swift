@@ -63,6 +63,8 @@ struct TripsView: View {
     @State private var newTripIDsFromPhotoSelection: Set<UUID> = []
     /// Controls presentation of the first-time Trips intro pull-up.
     @State private var showTripsIntroSheet: Bool = false
+    /// When true, shows the "no photos available" alert after a scan that returned zero trips.
+    @State private var showNoPhotosAlert: Bool = false
 
     /// Per-identity flag for whether the Trips intro has been seen.
     private var tripsIntroSeenForCurrentIdentity: Bool {
@@ -147,6 +149,106 @@ struct TripsView: View {
     }
 
     var body: some View {
+        coreBody
+            .overlay {
+                if let trip = tripForPopup {
+                    blogCreationPopup(trip: trip)
+                }
+            }
+            .overlay {
+                if showLoadMorePopup && !viewModel.isLoadingOlderTrips {
+                    loadMoreTripsPopup
+                }
+            }
+            .overlay {
+                if showLoadNewerPopup && !viewModel.isLoadingNewerTrips {
+                    loadNewerTripsPopup
+                }
+            }
+            .overlay {
+                if viewModel.isLoadingOlderTrips {
+                    LoadingScanView(
+                        message: "Finding older trips…",
+                        isOverlay: true,
+                        progress: viewModel.loadOlderProgress,
+                        onCancel: {
+                            viewModel.cancelLoadOlderTrips()
+                            withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
+                        }
+                    )
+                    .transition(.opacity)
+                }
+            }
+            .overlay {
+                if viewModel.isLoadingNewerTrips {
+                    LoadingScanView(
+                        message: "Finding newer trips…",
+                        isOverlay: true,
+                        progress: viewModel.loadNewerProgress,
+                        onCancel: {
+                            viewModel.cancelLoadNewerTrips()
+                            withAnimation(.easeOut(duration: 0.3)) { showLoadNewerPopup = true }
+                        }
+                    )
+                    .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.4), value: viewModel.isLoadingOlderTrips)
+            .animation(.easeInOut(duration: 0.4), value: viewModel.isLoadingNewerTrips)
+            .navigationBarBackButtonHidden(true)
+            .onChange(of: viewModel.olderTripsResult) { _, result in
+                if case .success = result {
+                    withAnimation(.easeInOut(duration: 0.3)) { showLoadMorePopup = false }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        if let first = allTrips.first {
+                            withAnimation(.easeInOut(duration: 0.45)) { selectedTripID = first.id }
+                        }
+                    }
+                } else if case .empty = result {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        withAnimation(.easeInOut(duration: 0.3)) { showLoadMorePopup = false }
+                    }
+                }
+            }
+            .onChange(of: viewModel.newerTripsResult) { _, result in
+                if case .success = result {
+                    withAnimation(.easeInOut(duration: 0.3)) { showLoadNewerPopup = false }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        if let last = allTrips.last {
+                            withAnimation(.easeInOut(duration: 0.45)) { selectedTripID = last.id }
+                        }
+                    }
+                } else if case .empty = result {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        withAnimation(.easeInOut(duration: 0.3)) { showLoadNewerPopup = false }
+                    }
+                }
+            }
+            .onChange(of: viewModel.openCreateFlowForPendingTrip) { _, shouldOpen in
+                guard shouldOpen, let trip = viewModel.pendingTripForCreateFlow else { return }
+                createBlogFlowTrip = trip
+                viewModel.clearPendingCreateFlow()
+            }
+            .onChange(of: selectedTrip) { _, newTrip in
+                if newTrip == nil { tripInitialDayIndex = 0 }
+            }
+            .onChange(of: viewModel.findMoreScanResult) { _, result in
+                if case .success = result {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        if let newest = allTrips.first {
+                            withAnimation(.easeInOut(duration: 0.45)) { selectedTripID = newest.id }
+                            if let center = newest.centerCoordinate {
+                                let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
+                                mapPosition = .region(MKCoordinateRegion(center: center, span: span))
+                            }
+                        }
+                    }
+                }
+            }
+            .alert("No Photos Available", isPresented: $showNoPhotosAlert, actions: noPhotosAlertActions, message: noPhotosAlertMessage)
+    }
+
+    private var coreBody: some View {
         Group {
             if viewModel.scanState != .idle {
                 LoadingScanView(
@@ -343,108 +445,27 @@ struct TripsView: View {
                 }
             }
         }
-        .overlay {
-            if let trip = tripForPopup {
-                blogCreationPopup(trip: trip)
+    }
+
+    // MARK: - No Photos Alert
+
+    @ViewBuilder private func noPhotosAlertActions() -> some View {
+        let isLimited = photoAuth.status == .limited
+        Button(isLimited ? "Select Photos" : "Choose Date Range") {
+            if isLimited {
+                presentLimitedLibraryPicker()
+            } else {
+                viewModel.openFindMoreSheet()
             }
         }
-        .overlay {
-            if showLoadMorePopup && !viewModel.isLoadingOlderTrips {
-                loadMoreTripsPopup
-            }
-        }
-        .overlay {
-            if showLoadNewerPopup && !viewModel.isLoadingNewerTrips {
-                loadNewerTripsPopup
-            }
-        }
-        .overlay {
-            if viewModel.isLoadingOlderTrips {
-                LoadingScanView(
-                    message: "Finding older trips…",
-                    isOverlay: true,
-                    progress: viewModel.loadOlderProgress,
-                    onCancel: {
-                        viewModel.cancelLoadOlderTrips()
-                        withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
-                    }
-                )
-                .transition(.opacity)
-            }
-        }
-        .overlay {
-            if viewModel.isLoadingNewerTrips {
-                LoadingScanView(
-                    message: "Finding newer trips…",
-                    isOverlay: true,
-                    progress: viewModel.loadNewerProgress,
-                    onCancel: {
-                        viewModel.cancelLoadNewerTrips()
-                        withAnimation(.easeOut(duration: 0.3)) { showLoadNewerPopup = true }
-                    }
-                )
-                .transition(.opacity)
-            }
-        }
-        .animation(.easeInOut(duration: 0.4), value: viewModel.isLoadingOlderTrips)
-        .animation(.easeInOut(duration: 0.4), value: viewModel.isLoadingNewerTrips)
-        .navigationBarBackButtonHidden(true)
-        // Older trips window loaded — dismiss popup and jump to newest of the older batch.
-        .onChange(of: viewModel.olderTripsResult) { _, result in
-            if case .success = result {
-                withAnimation(.easeInOut(duration: 0.3)) { showLoadMorePopup = false }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    if let first = allTrips.first {
-                        withAnimation(.easeInOut(duration: 0.45)) { selectedTripID = first.id }
-                    }
-                }
-            } else if case .empty = result {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    withAnimation(.easeInOut(duration: 0.3)) { showLoadMorePopup = false }
-                }
-            }
-        }
-        // Newer trips window loaded — dismiss popup and jump to oldest (rightmost) of the newer batch,
-        // which is chronologically closest to the older window the user came from.
-        .onChange(of: viewModel.newerTripsResult) { _, result in
-            if case .success = result {
-                withAnimation(.easeInOut(duration: 0.3)) { showLoadNewerPopup = false }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    if let last = allTrips.last {
-                        withAnimation(.easeInOut(duration: 0.45)) { selectedTripID = last.id }
-                    }
-                }
-            } else if case .empty = result {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    withAnimation(.easeInOut(duration: 0.3)) { showLoadNewerPopup = false }
-                }
-            }
-        }
-        // When Create-blog check completes with no new photos (or user tapped "Later"), open the create flow.
-        .onChange(of: viewModel.openCreateFlowForPendingTrip) { _, shouldOpen in
-            guard shouldOpen, let trip = viewModel.pendingTripForCreateFlow else { return }
-            createBlogFlowTrip = trip
-            viewModel.clearPendingCreateFlow()
-        }
-        // Reset initial day index when trip detail view is dismissed normally.
-        .onChange(of: selectedTrip) { _, newTrip in
-            if newTrip == nil { tripInitialDayIndex = 0 }
-        }
-        // Find More scan completed — always land on the newest (latest-dated) trip.
-        // Without this, the old selectedTripID is no longer valid in the refreshed trip list
-        // and SwiftUI defaults the scroll position to the end of the carousel.
-        .onChange(of: viewModel.findMoreScanResult) { _, result in
-            if case .success = result {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    if let newest = allTrips.first {
-                        withAnimation(.easeInOut(duration: 0.45)) { selectedTripID = newest.id }
-                        if let center = newest.centerCoordinate {
-                            let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
-                            mapPosition = .region(MKCoordinateRegion(center: center, span: span))
-                        }
-                    }
-                }
-            }
+        Button("Not Now", role: .cancel) { }
+    }
+
+    @ViewBuilder private func noPhotosAlertMessage() -> some View {
+        if photoAuth.status == .limited {
+            Text("No trip photos were found. You've granted limited photo access — tap Select Photos to add more photos from your library.")
+        } else {
+            Text("No trip photos were found in the scanned time range. Try choosing a different date range to find your trips.")
         }
     }
 
@@ -616,6 +637,8 @@ struct TripsView: View {
                                 mapPosition = .region(MKCoordinateRegion(center: center, span: span))
                             }
                         }
+                    } else if trips.isEmpty && !afterPhotoSelection {
+                        showNoPhotosAlert = true
                     }
                 }
             }
