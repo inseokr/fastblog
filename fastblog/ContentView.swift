@@ -216,11 +216,15 @@ struct ContentView: View {
         } message: {
             Text("Please select at least one photo to create a travel blog.")
         }
-        .alert("No Photos Selected for Trip Scanning", isPresented: $showLimitedPickerDismissedWithoutChangeAlert) {
+        .alert("No additional photos selected for trip scanning", isPresented: $showLimitedPickerDismissedWithoutChangeAlert) {
             Button("Select More") {
                 presentLimitedLibraryPickerFromLanding()
             }
             Button("Cancel", role: .cancel) { }
+            Button("Proceed", role: .cancel) {
+                pendingShowTripsWhenIdle = true
+                tripsViewModel.startDefaultScan(forceFullScan: true)
+            }
         } message: {
             Text("Your shared photo selection didn't change. Choose photos that include location data so we can find trips, or cancel to stay on the home screen.")
         }

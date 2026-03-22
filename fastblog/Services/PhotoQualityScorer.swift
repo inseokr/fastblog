@@ -49,9 +49,18 @@ actor PhotoQualityScorer {
     /// Score multiple photos in parallel. Returns a dict keyed by localIdentifier.
     /// Missing or errored photos are omitted from the result.
     func scorePhotos(identifiers: [String]) async -> [String: PhotoScore] {
-        guard !identifiers.isEmpty else { return [:] }
+        guard !identifiers.isEmpty else {
+            print("[PQS] scorePhotos: called with 0 identifiers — skipping")
+            return [:]
+        }
+        print("[PQS] scorePhotos: start count=\(identifiers.count)")
+
         let assets = fetchAssets(identifiers: identifiers)
-        guard !assets.isEmpty else { return [:] }
+        print("[PQS] scorePhotos: fetchAssets returned \(assets.count)/\(identifiers.count)")
+        guard !assets.isEmpty else {
+            print("[PQS] scorePhotos: no assets fetched — returning empty")
+            return [:]
+        }
 
         var results: [String: PhotoScore] = [:]
         await withTaskGroup(of: (String, PhotoScore?).self) { group in
@@ -62,16 +71,27 @@ actor PhotoQualityScorer {
                 }
             }
             for await (identifier, score) in group {
-                if let score { results[identifier] = score }
+                if let score {
+                    results[identifier] = score
+                } else {
+                    print("[PQS] scorePhotos: scoreAsset returned nil for \(identifier.prefix(8))…")
+                }
             }
         }
+        print("[PQS] scorePhotos: done scored=\(results.count)/\(assets.count)")
         return results
     }
 
     // MARK: - Private helpers
 
     private func scoreAsset(_ asset: PHAsset) async -> PhotoScore? {
-        guard let cgImage = await loadThumbnail(asset: asset) else { return nil }
+        let shortId = String(asset.localIdentifier.prefix(8))
+        print("[PQS] scoreAsset: start id=\(shortId)… mediaType=\(asset.mediaType.rawValue) pixelSize=\(asset.pixelWidth)×\(asset.pixelHeight)")
+        guard let cgImage = await loadThumbnail(asset: asset) else {
+            print("[PQS] scoreAsset: loadThumbnail returned nil for \(shortId)… — skipping")
+            return nil
+        }
+        print("[PQS] scoreAsset: thumbnail loaded \(cgImage.width)×\(cgImage.height) for \(shortId)…")
 
         async let aesthetics = analyzeAesthetics(cgImage)
         async let sharpness  = analyzeSharpness(cgImage)
@@ -88,18 +108,31 @@ actor PhotoQualityScorer {
 
     /// Load a small thumbnail from the photo library. Returns nil on failure.
     private func loadThumbnail(asset: PHAsset) async -> CGImage? {
-        await withCheckedContinuation { continuation in
+        let shortId = String(asset.localIdentifier.prefix(8))
+        return await withCheckedContinuation { continuation in
             let options = PHImageRequestOptions()
-            options.deliveryMode = .fastFormat
+            // .fastFormat requires a pre-cached thumbnail and fails with 3303 when none exists.
+            // .opportunistic falls back to generating the image if no fast thumbnail is available.
+            options.deliveryMode = .opportunistic
             options.resizeMode   = .fast
             options.isSynchronous = false
+            options.isNetworkAccessAllowed = true
 
+            var resumed = false
             PHImageManager.default().requestImage(
                 for: asset,
                 targetSize: analysisSize,
                 contentMode: .aspectFit,
                 options: options
-            ) { image, _ in
+            ) { image, info in
+                let isDegraded   = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
+                let isCancelled  = (info?[PHImageCancelledKey] as? Bool) ?? false
+                let callbackError = info?[PHImageErrorKey] as? Error
+                print("[PQS] loadThumbnail cb id=\(shortId)… image=\(image != nil) degraded=\(isDegraded) cancelled=\(isCancelled) error=\(callbackError?.localizedDescription ?? "none") resumed=\(resumed)")
+                guard !resumed else { return }
+                // Skip degraded intermediate results — wait for the final delivery
+                if isDegraded { return }
+                resumed = true
                 continuation.resume(returning: image?.cgImage)
             }
         }
@@ -108,30 +141,54 @@ actor PhotoQualityScorer {
     // MARK: - Aesthetics
 
     /// Returns an aesthetics score 0–1.
-    /// Uses VNGenerateImageAestheticsScoresRequest on iOS 17+; falls back to saliency on older OS.
+    /// Uses VNCalculateImageAestheticsScoresRequest on iOS 18+; falls back to saliency on older OS.
     private func analyzeAesthetics(_ cgImage: CGImage) async -> Double {
         if #available(iOS 18.0, *) {
+            print("[PQS] analyzeAesthetics: using modern path (iOS 18+)")
             return await analyzeAestheticsModern(cgImage)
         } else {
+            print("[PQS] analyzeAesthetics: using saliency fallback (pre-iOS 18)")
             return await analyzeAestheticsFallback(cgImage)
         }
     }
 
     @available(iOS 18.0, *)
     private func analyzeAestheticsModern(_ cgImage: CGImage) async -> Double {
+        #if DEBUG
+        print(
+            "[PhotoQualityScorer] analyzeAestheticsModern enter size=\(cgImage.width)×\(cgImage.height)"
+        )
+        #endif
         let request = VNCalculateImageAestheticsScoresRequest()
         let handler = VNImageRequestHandler(cgImage: cgImage)
         do {
             try handler.perform([request])
         } catch {
+            #if DEBUG
+            print("[PhotoQualityScorer] analyzeAestheticsModern perform failed: \(error)")
+            #endif
             return 0.5
         }
         guard let obs = request.results?.first as? VNImageAestheticsScoresObservation else {
+            #if DEBUG
+            print("[PhotoQualityScorer] analyzeAestheticsModern no VNImageAestheticsScoresObservation (using 0.5)")
+            #endif
             return 0.5
         }
         // isUtility = receipt/screenshot/document → penalise heavily
-        if obs.isUtility { return 0.1 }
-        return Double(obs.overallScore)
+        if obs.isUtility {
+            #if DEBUG
+            print("[PhotoQualityScorer] analyzeAestheticsModern utility image → aesthetics=0.1")
+            #endif
+            return 0.1
+        }
+        let score = Double(obs.overallScore)
+        #if DEBUG
+        print(
+            "[PhotoQualityScorer] analyzeAestheticsModern ok overallScore=\(String(format: "%.4f", score)) isUtility=false"
+        )
+        #endif
+        return score
     }
 
     /// Saliency-based fallback: ideal salient area ~20–35% of frame.
