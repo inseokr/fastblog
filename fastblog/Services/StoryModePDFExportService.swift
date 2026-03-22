@@ -73,7 +73,7 @@ enum StoryModePDFExportService {
             .background(Color.white)
 
         let imageRenderer = ImageRenderer(content: root)
-        imageRenderer.scale = UIScreen.main.scale
+        imageRenderer.scale = 2.0  // Cap at 2× — 3× (device scale) triples pixel count with negligible visual gain in PDF
         imageRenderer.proposedSize = ProposedViewSize(width: size.width, height: size.height)
 
         guard let image = imageRenderer.uiImage else {
