@@ -22,6 +22,10 @@ struct CountryBlogsView: View {
     @Binding var searchText: String
     /// Reported to parent for swipe-down-to-dismiss when at top. Optional so callers can omit.
     @Binding var scrollOffset: CGFloat
+    /// True when the shared bottom search field is focused (parent updates from `@FocusState`).
+    var isBottomSearchFocused: Bool = false
+    /// Clear keyboard focus when the user taps Done (parent owns `@FocusState`).
+    var onDismissSearchKeyboard: (() -> Void)? = nil
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @State private var showManageSheet = false
 
@@ -60,6 +64,10 @@ struct CountryBlogsView: View {
             return Calendar.current.component(.year, from: date)
         }
         return Array(Set(years)).sorted(by: >)
+    }
+
+    private var isCountrySearchInteractionActive: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isBottomSearchFocused
     }
 
     private var filteredAndSortedBlogs: [CreatedRecapBlog] {
@@ -212,15 +220,10 @@ struct CountryBlogsView: View {
         .background(InteractivePopGestureDisabler())
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Button("Manage") {
-                        showManageSheet = true
-                    }
-                    .fontWeight(.medium)
-                } else {
+                if isCountrySearchInteractionActive {
                     Button("Done") {
-                        // Exit search mode by clearing text and dismissing keyboard
                         searchText = ""
+                        onDismissSearchKeyboard?()
                         UIApplication.shared.sendAction(
                             #selector(UIResponder.resignFirstResponder),
                             to: nil,
@@ -229,6 +232,11 @@ struct CountryBlogsView: View {
                         )
                     }
                     .fontWeight(.semibold)
+                } else {
+                    Button("Manage") {
+                        showManageSheet = true
+                    }
+                    .fontWeight(.medium)
                 }
             }
         }

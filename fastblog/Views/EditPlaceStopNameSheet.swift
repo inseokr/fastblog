@@ -298,8 +298,8 @@ struct EditPlaceStopNameSheet: View {
             map.delegate = context.coordinator
             map.region = MKCoordinateRegion(
                 center: center,
-                latitudinalMeters: 800,
-                longitudinalMeters: 800
+                latitudinalMeters: 350,
+                longitudinalMeters: 350
             )
             map.mapType = .standard
             map.showsUserLocation = false

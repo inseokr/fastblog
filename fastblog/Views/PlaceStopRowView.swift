@@ -57,6 +57,7 @@ struct PlaceStopRowView: View {
     @State private var isGeneratingOverallStory = false
     @State private var generatingPhotoId: UUID?
     @FocusState private var focusedPhotoId: UUID?
+    @State private var expandedCaptionPhotoId: UUID? = nil
     // Vibe playback for blog photo thumbnails
     @StateObject private var vibePlayer = VibePlayer()
     @State private var playingVibePhotoId: UUID? = nil
@@ -125,29 +126,22 @@ struct PlaceStopRowView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         if isEditMode {
-                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            HStack(alignment: .center, spacing: 10) {
                                 Button { onEditName?() } label: {
                                     Text(stop.placeTitle)
                                         .font(.headline)
                                         .foregroundColor(.white)
                                 }
                                 .buttonStyle(.plain)
-                                if let url = StoryPlaceGoogleSearch.url(placeName: stop.placeTitle, placeSubtitle: stop.placeSubtitle) {
-                                    Link(destination: url) {
-                                        StoryPlaceExternalLinkIcon(
-                                            titleFontSize: UIFont.preferredFont(forTextStyle: .headline).pointSize,
-                                            foregroundColor: .white.opacity(0.78)
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("Search place on the web")
-                                }
                                 Button { onEditName?() } label: {
-                                    Image(systemName: "pencil")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
+                                    Image(systemName: "square.and.pencil")
+                                        .font(.system(size: 18, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                        .padding(8)
+                                        .background(Circle().fill(Color.white.opacity(0.22)))
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel("Edit place name")
                             }
                         } else {
                             if let searchURL = StoryPlaceGoogleSearch.url(placeName: stop.placeTitle, placeSubtitle: stop.placeSubtitle) {
@@ -425,14 +419,18 @@ struct PlaceStopRowView: View {
                                     .frame(width: thumbnailSize)
                                     .buttonStyle(.plain)
                                 } else if !photoCaption(photo.id).wrappedValue.isEmpty {
+                                    let isExpanded = expandedCaptionPhotoId == photo.id
                                     Button {
-                                        onCaptionTapped?(photo.id)
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            expandedCaptionPhotoId = isExpanded ? nil : photo.id
+                                        }
                                     } label: {
                                         Text(photoCaption(photo.id).wrappedValue)
                                             .font(.caption)
                                             .foregroundColor(.white.opacity(0.9))
-                                            .lineLimit(2)
+                                            .lineLimit(isExpanded ? nil : 2)
                                             .frame(width: thumbnailSize, alignment: .leading)
+                                            .fixedSize(horizontal: false, vertical: isExpanded)
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -533,7 +531,6 @@ struct PlaceStopRowView: View {
                                 Text(trimmed.isEmpty ? placeStoryPlaceholder : trimmed)
                                     .font(.subheadline)
                                     .foregroundColor(trimmed.isEmpty ? .secondary.opacity(0.9) : .white)
-                                    .lineLimit(3)
                                     .multilineTextAlignment(.leading)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }

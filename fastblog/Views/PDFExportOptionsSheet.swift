@@ -28,13 +28,13 @@ struct PDFExportOptionsSheet: View {
             ScrollView {
                 VStack(spacing: 20) {
                     fontThemeSection
-                    photoShapeSection
+                    colorStyleSection
                     exportButton
                 }
                 .padding(20)
             }
             .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("PDF Options")
+            .navigationTitle("Book Options")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -75,7 +75,32 @@ struct PDFExportOptionsSheet: View {
         }
     }
 
-    // MARK: - Photo Shape Section
+    // MARK: - Color Style Section
+
+    private var colorStyleSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Color Style", icon: "circle.lefthalf.filled")
+
+            VStack(spacing: 0) {
+                ForEach(BlogColor.allCases, id: \.self) { style in
+                    optionRow(
+                        title: style.label,
+                        subtitle: style.subtitle,
+                        isSelected: pending.colorStyle == style
+                    ) {
+                        pending.colorStyle = style
+                    }
+                    if style != BlogColor.allCases.last {
+                        Divider().padding(.leading, 52)
+                    }
+                }
+            }
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .cornerRadius(12)
+        }
+    }
+
+    // MARK: - Photo Shape Section (hidden)
 
     private var photoShapeSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -120,7 +145,7 @@ struct PDFExportOptionsSheet: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.down.doc.fill")
-                Text("Export PDF")
+                Text("Open Book")
                     .fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity)

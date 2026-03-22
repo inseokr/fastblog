@@ -3,6 +3,11 @@ import SwiftUI
 
 struct DayContentPageView: View {
     let page: DayContentPage
+    @Environment(\.storyFontTheme) private var fontTheme
+    @Environment(\.storyBlogColor) private var blogColor
+
+    private var primaryColor: Color { blogColor == .black ? .white : .black }
+    private var bgColor: Color { blogColor == .black ? .black : .white }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -11,21 +16,21 @@ struct DayContentPageView: View {
                 // Center-align so date vs italic "Continue" share the same vertical slot (firstTextBaseline + italic mismatch).
                 HStack(alignment: .center, spacing: 8) {
                     Text("Day \(page.day.dayNumber)")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(.black)
+                        .font(Font(StoryFontHelper.uiFont(for: fontTheme, size: 22, weight: .bold)))
+                        .foregroundColor(primaryColor)
                         .monospacedDigit()
 
                     Group {
                         if page.isFirstPage {
                             Text(page.shortDateText)
-                                .foregroundColor(.black.opacity(0.55))
+                                .foregroundColor(primaryColor.opacity(0.55))
                         } else {
                             Text("Continue")
-                                .foregroundColor(.black)
+                                .foregroundColor(primaryColor)
                                 .italic()
                         }
                     }
-                    .font(.system(size: 14))
+                    .font(Font(StoryFontHelper.uiFont(for: fontTheme, size: 14)))
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
                     .frame(height: 22, alignment: .center)
@@ -33,11 +38,11 @@ struct DayContentPageView: View {
 
                 Spacer(minLength: 12)
 
-                Image("AppIconMark")
+                Image("PDFLogo")
                     .resizable()
                     .scaledToFit()
                     .frame(width: 28, height: 28)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             .frame(height: 44, alignment: .center)
             Divider()
@@ -51,7 +56,7 @@ struct DayContentPageView: View {
         .padding(.top, 12)
         .padding(.bottom, StoryPageLayout.storyChromeBottomOverlayHeight)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color.white.ignoresSafeArea())
+        .background(bgColor.ignoresSafeArea())
         .overlay(alignment: .bottom) {
             // "The End" sits inside the chrome-reserve zone (above the Cancel/Share bar),
             // so it doesn't consume any photo space on non-final pages.
@@ -60,8 +65,8 @@ struct DayContentPageView: View {
                     Spacer()
                     Text("The End")
                         .italic()
-                        .font(.system(size: 12))
-                        .foregroundColor(.black)
+                        .font(Font(StoryFontHelper.uiItalicFont(for: fontTheme, size: 12)))
+                        .foregroundColor(primaryColor)
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, StoryPageLayout.storyChromeBottomOverlayHeight - 12)
@@ -73,7 +78,7 @@ struct DayContentPageView: View {
     private func slotView(_ slot: ContentSlot) -> some View {
         switch slot {
         case .dayCaption(let text):
-            StoryDayCaptionCallout(text: text)
+            StoryDayCaptionCallout(text: text, fontTheme: fontTheme)
 
         case .placeBlock(let place, let photoSlice, let photoImageHeight, let photoGridLayout):
             let photos: [PhotoContent] = place.photos.isEmpty ? [] : {
@@ -88,8 +93,8 @@ struct DayContentPageView: View {
                 photoImageHeight: photoImageHeight,
                 photoGridLayout: photoGridLayout,
                 photoShapeOptions: PDFPhotoShapeOptions(),
-                blogColor: .white,
-                fontTheme: .classic,
+                blogColor: blogColor,
+                fontTheme: fontTheme,
                 layoutMode: .normal
             )
 
@@ -110,8 +115,8 @@ struct DayContentPageView: View {
                 photoGridLayout: photoGridLayout,
                 showOverflowHeader: showOverflowHeader,
                 photoShapeOptions: PDFPhotoShapeOptions(),
-                blogColor: .white,
-                fontTheme: .classic
+                blogColor: blogColor,
+                fontTheme: fontTheme
             )
         }
     }
@@ -128,6 +133,7 @@ private extension DayContentPage {
 /// Yellow callout for the day-level story caption (matches `StoryPageLayout` day caption metrics).
 private struct StoryDayCaptionCallout: View {
     let text: String
+    var fontTheme: FontTheme = .classic
 
     private let accentColor = Color(red: 1, green: 0.82, blue: 0.12)
     private let fillColor = Color(red: 1, green: 0.97, blue: 0.88)
@@ -140,7 +146,7 @@ private struct StoryDayCaptionCallout: View {
         // causing it to be compressed when place blocks were on the same page.
         Text(text)
             .italic()
-            .font(Font(StoryFontHelper.uiItalicFont(for: .classic, size: StoryPageLayout.dayStoryCaptionFontSize)))
+            .font(Font(StoryFontHelper.uiItalicFont(for: fontTheme, size: StoryPageLayout.dayStoryCaptionFontSize)))
             .foregroundColor(.black)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, StoryPageLayout.dayStoryBoxDividerInsetFromLeft + StoryPageLayout.dayStoryBoxDividerWidth + 12)

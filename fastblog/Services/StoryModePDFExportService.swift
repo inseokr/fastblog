@@ -52,7 +52,7 @@ enum StoryModePDFExportService {
                 await Task.yield()
             }
             let image = try autoreleasepool {
-                try renderPageToImage(page: page, size: size, pageIndex: idx)
+                try renderPageToImage(page: page, size: size, pageIndex: idx, options: options)
             }
             pageImages.append(image)
         }
@@ -148,11 +148,16 @@ enum StoryModePDFExportService {
     }
 
     @MainActor
-    private static func renderPageToImage(page: StoryPage, size: CGSize, pageIndex: Int) throws -> UIImage {
+    private static func renderPageToImage(page: StoryPage, size: CGSize, pageIndex: Int, options: PDFExportOptions) throws -> UIImage {
+        let bgColor: Color = options.colorStyle == .black ? .black : .white
+        let colorScheme: ColorScheme = options.colorStyle == .black ? .dark : .light
+
         let root = StoryPageView(page: page)
-            .environment(\.colorScheme, .light)
+            .environment(\.colorScheme, colorScheme)
+            .environment(\.storyFontTheme, options.fontTheme)
+            .environment(\.storyBlogColor, options.colorStyle)
             .frame(width: size.width, height: size.height)
-            .background(Color.white)
+            .background(bgColor)
 
         let imageRenderer = ImageRenderer(content: root)
         imageRenderer.scale = 2.0  // Cap at 2× — 3× (device scale) triples pixel count with negligible visual gain in PDF

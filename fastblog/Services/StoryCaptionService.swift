@@ -135,7 +135,7 @@ actor StoryCaptionService {
             placeSubtitle: stop.placeSubtitle,
             dateTimeText: dateTimeText,
             photoCount: included.count,
-            categoryID: PlaceCategoryID.from(mkCategory: stop.placeCategory),
+            categoryID: PlaceCategoryID.from(mkCategory: stop.placeCategory, placeName: stop.placeTitle),
             nameConfidence: PlaceNameConfidence.from(placeName: stop.placeTitle),
             timeOfDay: earliestDate.map { timeOfDayLabel(from: $0, in: tz) },
             isIndoor: isIndoor(from: tags)
@@ -176,7 +176,7 @@ actor StoryCaptionService {
             placeName: stop.placeTitle,
             placeSubtitle: stop.placeSubtitle,
             dateTimeText: dateTimeText,
-            categoryID: PlaceCategoryID.from(mkCategory: stop.placeCategory),
+            categoryID: PlaceCategoryID.from(mkCategory: stop.placeCategory, placeName: stop.placeTitle),
             nameConfidence: PlaceNameConfidence.from(placeName: stop.placeTitle)
         )
         return await generator.generateOverallPlaceStory(context: context)
@@ -239,7 +239,7 @@ actor StoryCaptionService {
             placeSubtitle: stop.placeSubtitle,
             dateTimeText: dateTimeText,
             photoCount: included.count,
-            categoryID: PlaceCategoryID.from(mkCategory: stop.placeCategory),
+            categoryID: PlaceCategoryID.from(mkCategory: stop.placeCategory, placeName: stop.placeTitle),
             nameConfidence: PlaceNameConfidence.from(placeName: stop.placeTitle),
             timeOfDay: earliestDate.map { timeOfDayLabel(from: $0, in: tz) },
             isIndoor: isIndoor(from: tagSet)
@@ -281,7 +281,7 @@ actor StoryCaptionService {
             placeName: stop.placeTitle,
             placeSubtitle: stop.placeSubtitle,
             dateTimeText: dateTimeText,
-            categoryID: PlaceCategoryID.from(mkCategory: stop.placeCategory),
+            categoryID: PlaceCategoryID.from(mkCategory: stop.placeCategory, placeName: stop.placeTitle),
             nameConfidence: PlaceNameConfidence.from(placeName: stop.placeTitle)
         )
         return await generator.enhanceOverallPlaceStory(context: context)

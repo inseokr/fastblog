@@ -110,6 +110,15 @@ struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
         return display.string(from: d)
     }
 
+    /// e.g. "Saturday, January 18" — weekday, month, and day for the day-story caption editor. Same timezone rules as `shortDateText`.
+    var dayStoryDateLine: String {
+        let (d, tz) = displayDateAndTimeZoneForStoryBook()
+        let display = DateFormatter()
+        display.dateFormat = "EEEE, MMMM d"
+        if let tz { display.timeZone = tz }
+        return display.string(from: d)
+    }
+
     /// Same calendar day as `shortDateText`, used for story-book TOC / cover date range so the header matches each row.
     private func displayDateAndTimeZoneForStoryBook() -> (Date, TimeZone?) {
         if let digitized = placeStops.first?.visitedTimeDigitized {

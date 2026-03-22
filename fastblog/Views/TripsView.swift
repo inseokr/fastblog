@@ -2615,13 +2615,13 @@ struct CameraCaptureView: View {
         .frame(width: size, height: size)
     }
 
-    /// Right: Current Photos icon + counter — opens session gallery (caption input modal).
+    /// Right: Session moment count — opens session gallery (caption input modal). Thumbnail or empty circle with centered count.
     private var shutterBarCurrentPhotosButton: some View {
         let previewSize: CGFloat = 56
         let effectiveList = sessionMoments.isEmpty ? sessionCapturesForDisplay : sessionMoments
         let latestSessionImage = effectiveList.last?.previewImage
         let count = momentCount(from: effectiveList)
-        return ZStack(alignment: .bottomTrailing) {
+        return ZStack {
             if let image = latestSessionImage {
                 Image(uiImage: image)
                     .resizable()
@@ -2644,19 +2644,15 @@ struct CameraCaptureView: View {
                 Circle()
                     .fill(Color.white.opacity(0.12))
                     .frame(width: previewSize, height: previewSize)
-                Image(systemName: "photo.on.rectangle.angled")
-                    .font(.system(size: 22, weight: .medium))
-                    .foregroundColor(.white)
             }
-            // Count badge
             Text("\(count)")
-                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .font(.system(size: 13, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
                 .background(Color.accentColor)
                 .clipShape(Capsule())
-                .offset(x: 4, y: 4)
+                .shadow(color: latestSessionImage != nil ? .black.opacity(0.35) : .clear, radius: 2, y: 1)
         }
         .frame(width: previewSize, height: previewSize)
     }

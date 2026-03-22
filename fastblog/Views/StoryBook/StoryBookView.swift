@@ -22,9 +22,14 @@ struct StoryBookView: View {
     @State private var isExportingPDF = false
     @State private var showExportErrorAlert = false
     @State private var exportErrorMessage: String?
-    /// Same key as `RecapBlogPageView` so Story Share matches Export → PDF Options.
+    @State private var showSavedToFilesBanner = false
+    /// Same key as `RecapBlogPageView` so Story Share matches Export → Book Options.
     @AppStorage("pdfExportOptions") private var pdfExportOptionsData: Data = (try? JSONEncoder().encode(PDFExportOptions())) ?? Data()
     @Environment(\.dismiss) private var dismiss
+
+    private var savedOptions: PDFExportOptions {
+        (try? JSONDecoder().decode(PDFExportOptions.self, from: pdfExportOptionsData)) ?? PDFExportOptions()
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -43,6 +48,8 @@ struct StoryBookView: View {
                                         selectedPageIndex = idx
                                     }
                                 })
+                                    .environment(\.storyFontTheme, savedOptions.fontTheme)
+                                    .environment(\.storyBlogColor, savedOptions.colorStyle)
                                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                                     .tag(i)
                             }
@@ -87,7 +94,7 @@ struct StoryBookView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .ignoresSafeArea()
                     }
-                    .preferredColorScheme(.light)
+                    .preferredColorScheme(savedOptions.colorStyle == .black ? .dark : .light)
 
                     storyDaysMenuBottomTrailingOverlay(pages: pages)
                         .preferredColorScheme(.dark)
@@ -133,14 +140,31 @@ struct StoryBookView: View {
                 ExportingPDFView()
                     .transition(.opacity)
             }
+
+            if showSavedToFilesBanner {
+                SavedToFilesBanner()
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 16)
+                    .ignoresSafeArea(edges: .bottom)
+                    .allowsHitTesting(false)
+            }
         }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showSavedToFilesBanner)
         .animation(.easeInOut(duration: 0.2), value: isContentReady)
         .task {
             viewModel.build(from: detail)
         }
         .sheet(isPresented: $showShareSheet) {
             if let url = pdfShareURL {
-                ShareSheet(items: [url])
+                ShareSheet(items: [url]) { completed in
+                    if completed {
+                        showSavedToFilesBanner = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            showSavedToFilesBanner = false
+                        }
+                    }
+                }
             }
         }
         .alert("Export Failed", isPresented: $showExportErrorAlert) {

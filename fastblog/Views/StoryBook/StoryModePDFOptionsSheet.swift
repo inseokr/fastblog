@@ -2,8 +2,7 @@
 //  StoryModePDFOptionsSheet.swift
 //  fastblog
 //
-//  PDF options sheet for Story Mode export. Font Style and Photo Style
-//  options are present in the UI but not yet wired up to the export pipeline.
+//  PDF options sheet for Story Mode export.
 //
 
 import SwiftUI
@@ -13,22 +12,21 @@ struct StoryModePDFOptionsSheet: View {
 
     let onExport: () -> Void
 
-    // Internal state — UI only, not yet connected to export
-    @State private var selectedFontTheme: FontTheme = .classic
-    @State private var photoShapes: PDFPhotoShapeOptions = PDFPhotoShapeOptions()
+    @AppStorage("pdfExportOptions") private var pdfExportOptionsData: Data = (try? JSONEncoder().encode(PDFExportOptions())) ?? Data()
+    @State private var pending: PDFExportOptions = PDFExportOptions()
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     fontThemeSection
-                    photoShapeSection
+                    colorStyleSection
                     exportButton
                 }
                 .padding(20)
             }
             .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("PDF Options")
+            .navigationTitle("Book Options")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -41,6 +39,9 @@ struct StoryModePDFOptionsSheet: View {
                 }
             }
             .preferredColorScheme(.dark)
+        }
+        .onAppear {
+            pending = (try? JSONDecoder().decode(PDFExportOptions.self, from: pdfExportOptionsData)) ?? PDFExportOptions()
         }
     }
 
@@ -55,9 +56,9 @@ struct StoryModePDFOptionsSheet: View {
                     optionRow(
                         title: theme.label,
                         subtitle: theme.subtitle,
-                        isSelected: selectedFontTheme == theme
+                        isSelected: pending.fontTheme == theme
                     ) {
-                        selectedFontTheme = theme
+                        pending.fontTheme = theme
                     }
                     if theme != FontTheme.allCases.last {
                         Divider().padding(.leading, 52)
@@ -69,38 +70,28 @@ struct StoryModePDFOptionsSheet: View {
         }
     }
 
-    // MARK: - Photo Shape Section
+    // MARK: - Color Style Section
 
-    private var photoShapeSection: some View {
+    private var colorStyleSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Photo Style", icon: "photo")
+            sectionHeader("Color Style", icon: "circle.lefthalf.filled")
 
-            // Row 1: left + right columns (paired photos)
-            HStack(spacing: 10) {
-                photoShapeCell(
-                    label: "Left",
-                    sublabel: "Paired row",
-                    shape: photoShapes.leftShape
-                ) { photoShapes.leftShape = photoShapes.leftShape.next() }
-
-                photoShapeCell(
-                    label: "Right",
-                    sublabel: "Paired row",
-                    shape: photoShapes.rightShape
-                ) { photoShapes.rightShape = photoShapes.rightShape.next() }
+            VStack(spacing: 0) {
+                ForEach(BlogColor.allCases, id: \.self) { style in
+                    optionRow(
+                        title: style.label,
+                        subtitle: style.subtitle,
+                        isSelected: pending.colorStyle == style
+                    ) {
+                        pending.colorStyle = style
+                    }
+                    if style != BlogColor.allCases.last {
+                        Divider().padding(.leading, 52)
+                    }
+                }
             }
-
-            // Row 2: solo photo (full-row single)
-            photoShapeCell(
-                label: "Solo",
-                sublabel: "Single or last photo",
-                shape: photoShapes.singleShape
-            ) { photoShapes.singleShape = photoShapes.singleShape.next() }
-
-            Text("Tap a cell to cycle: Rounded → Circle → Rectangle")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, alignment: .center)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .cornerRadius(12)
         }
     }
 
@@ -108,12 +99,15 @@ struct StoryModePDFOptionsSheet: View {
 
     private var exportButton: some View {
         Button {
+            if let data = try? JSONEncoder().encode(pending) {
+                pdfExportOptionsData = data
+            }
             dismiss()
             onExport()
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.down.doc.fill")
-                Text("Export PDF")
+                Text("Open Book")
                     .fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity)
@@ -123,135 +117,6 @@ struct StoryModePDFOptionsSheet: View {
             .cornerRadius(12)
         }
         .buttonStyle(.plain)
-    }
-
-    // MARK: - Photo Shape Cell
-
-    private func photoShapeCell(
-        label: String,
-        sublabel: String,
-        shape: PhotoShape,
-        onTap: @escaping () -> Void
-    ) -> some View {
-        Button(action: onTap) {
-            VStack(spacing: 10) {
-                shapePreview(shape)
-                    .frame(width: 52, height: 52)
-
-                VStack(spacing: 2) {
-                    Text(label)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                    Text(shape.label)
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundColor(.accentColor)
-                    Text(sublabel)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .cornerRadius(12)
-        }
-        .buttonStyle(.plain)
-        .animation(.easeInOut(duration: 0.2), value: shape)
-    }
-
-    // MARK: - Shape Preview
-
-    @ViewBuilder
-    private func shapePreview(_ shape: PhotoShape) -> some View {
-        let fill = Color.accentColor.opacity(0.18)
-        let stroke = Color.accentColor
-        switch shape {
-        case .rounded:
-            RoundedRectangle(cornerRadius: 5)
-                .fill(fill)
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(stroke, lineWidth: 1.5))
-
-        case .squircle:
-            RoundedRectangle(cornerRadius: 14)
-                .fill(fill)
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(stroke, lineWidth: 1.5))
-
-        case .circle:
-            Circle()
-                .fill(fill)
-                .overlay(Circle().stroke(stroke, lineWidth: 1.5))
-
-        case .rectangle:
-            Rectangle()
-                .fill(fill)
-                .overlay(Rectangle().stroke(stroke, lineWidth: 1.5))
-
-        case .arch:
-            GeometryReader { geo in
-                let w = geo.size.width, h = geo.size.height
-                let r = w / 2
-                archPath(width: w, height: h, radius: r)
-                    .fill(fill)
-                    .overlay(archPath(width: w, height: h, radius: r).stroke(stroke, lineWidth: 1.5))
-            }
-
-        case .diamond:
-            GeometryReader { geo in
-                let w = geo.size.width, h = geo.size.height
-                diamondPath(width: w, height: h)
-                    .fill(fill)
-                    .overlay(diamondPath(width: w, height: h).stroke(stroke, lineWidth: 1.5))
-            }
-
-        case .hexagon:
-            GeometryReader { geo in
-                let w = geo.size.width, h = geo.size.height
-                hexagonPath(width: w, height: h)
-                    .fill(fill)
-                    .overlay(hexagonPath(width: w, height: h).stroke(stroke, lineWidth: 1.5))
-            }
-        }
-    }
-
-    // MARK: - Custom Shape Paths
-
-    private func archPath(width: CGFloat, height: CGFloat, radius: CGFloat) -> Path {
-        Path { p in
-            p.move(to: CGPoint(x: 0, y: height))
-            p.addLine(to: CGPoint(x: 0, y: height / 2))
-            p.addArc(center: CGPoint(x: width / 2, y: height / 2),
-                     radius: radius,
-                     startAngle: .degrees(180), endAngle: .degrees(0),
-                     clockwise: true)
-            p.addLine(to: CGPoint(x: width, y: height))
-            p.closeSubpath()
-        }
-    }
-
-    private func diamondPath(width: CGFloat, height: CGFloat) -> Path {
-        Path { p in
-            p.move(to: CGPoint(x: width / 2, y: 0))
-            p.addLine(to: CGPoint(x: width, y: height / 2))
-            p.addLine(to: CGPoint(x: width / 2, y: height))
-            p.addLine(to: CGPoint(x: 0, y: height / 2))
-            p.closeSubpath()
-        }
-    }
-
-    private func hexagonPath(width: CGFloat, height: CGFloat) -> Path {
-        Path { p in
-            let cx = width / 2, cy = height / 2
-            let r = min(width, height) / 2
-            for i in 0..<6 {
-                let angle = CGFloat(-Double.pi / 2) + CGFloat(i) * CGFloat(Double.pi / 3)
-                let pt = CGPoint(x: cx + r * cos(angle), y: cy + r * sin(angle))
-                if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
-            }
-            p.closeSubpath()
-        }
     }
 
     // MARK: - Shared Helpers

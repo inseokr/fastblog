@@ -823,6 +823,7 @@ final class CreatedRecapBlogStore: ObservableObject {
     /// Called when the user edits a caption from the Places Visited photo modal.
     func updatePhotoCaption(photoId: UUID, newCaption: String) {
         var changed = false
+        var changedSourceIds: Set<UUID> = []
         for key in blogDetailsBySourceId.keys {
             guard var detail = blogDetailsBySourceId[key] else { continue }
             var detailChanged = false
@@ -840,14 +841,28 @@ final class CreatedRecapBlogStore: ObservableObject {
             if detailChanged {
                 blogDetailsBySourceId[key] = detail
                 changed = true
+                changedSourceIds.insert(key)
             }
         }
         if changed {
             persistBlogDetails()
+            for sourceId in changedSourceIds {
+                patchRecentsAfterDetailCaptionEdit(sourceTripId: sourceId)
+            }
+            persistRecents()
             // Notify SwiftUI observers so views reading `visitedPlaces` (a computed property
             // derived from `blogDetailsBySourceId`) re-render immediately with the new caption.
             objectWillChange.send()
         }
+    }
+
+    /// Keeps My Blogs / recents line in sync when a caption is edited outside RecapBlogPageView.
+    private func patchRecentsAfterDetailCaptionEdit(sourceTripId: UUID) {
+        guard let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }),
+              let detail = blogDetailsBySourceId[sourceTripId] else { return }
+        recents[idx].caption = primaryCaption(from: detail)
+        recents[idx].lastEditedAt = Date()
+        recents[idx].syncStatus = .needsUpload
     }
 
     /// Updates the place stop name for the stop that contains the given photo, across all stored blog details.

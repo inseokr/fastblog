@@ -17,6 +17,7 @@ enum PlaceCategoryID: String, Sendable {
     case cafe        = "CAFE"
     case beach       = "BEACH"
     case mountain    = "MOUNTAIN"
+    case trail       = "TRAIL"
     case park        = "PARK"
     case museum      = "MUSEUM"
     case hotel       = "HOTEL"
@@ -25,23 +26,38 @@ enum PlaceCategoryID: String, Sendable {
     case event       = "EVENT"
     case unknown     = "UNKNOWN"
 
-    /// Maps Apple MKPOICategory strings (e.g. "MKPOICategoryRestaurant") to a normalized ID.
-    static func from(mkCategory: String?) -> PlaceCategoryID {
-        guard let raw = mkCategory else { return .unknown }
-        let cat = raw.lowercased()
-        if cat.contains("restaurant") || cat.contains("fooddelivery") || cat.contains("dining") { return .restaurant }
-        if cat.contains("cafe") || cat.contains("coffee") || cat.contains("bakery") { return .cafe }
-        if cat.contains("nightlife") || cat.contains("brewery") || cat.contains("bar") { return .restaurant }
-        if cat.contains("beach") || cat.contains("marina") || cat.contains("surf") { return .beach }
-        if cat.contains("mountain") || cat.contains("ski") || cat.contains("hiking") { return .mountain }
-        if cat.contains("nationalpark") || cat.contains("nature") || cat.contains("forest") { return .park }
-        if cat.contains("park") || cat.contains("garden") { return .park }
-        if cat.contains("museum") || cat.contains("artgallery") || cat.contains("gallery") { return .museum }
-        if cat.contains("landmark") || cat.contains("monument") || cat.contains("historicsite") { return .landmark }
-        if cat.contains("theater") || cat.contains("concert") || cat.contains("stadium") || cat.contains("fairground") { return .event }
-        if cat.contains("hotel") || cat.contains("lodging") || cat.contains("campground") { return .hotel }
-        if cat.contains("viewpoint") || cat.contains("scenic") || cat.contains("overlook") { return .viewpoint }
-        if cat.contains("street") || cat.contains("transit") || cat.contains("airport") { return .street }
+    /// Maps Apple MKPOICategory strings and the user-visible place name to a normalized ID.
+    static func from(mkCategory: String?, placeName: String? = nil) -> PlaceCategoryID {
+        // Check MK category first
+        if let raw = mkCategory {
+            let cat = raw.lowercased()
+            if cat.contains("restaurant") || cat.contains("fooddelivery") || cat.contains("dining") { return .restaurant }
+            if cat.contains("cafe") || cat.contains("coffee") || cat.contains("bakery") { return .cafe }
+            if cat.contains("nightlife") || cat.contains("brewery") || cat.contains("bar") { return .restaurant }
+            if cat.contains("beach") || cat.contains("marina") || cat.contains("surf") { return .beach }
+            if cat.contains("trail") || cat.contains("trailhead") { return .trail }
+            if cat.contains("hiking") || cat.contains("mountain") || cat.contains("ski") { return .mountain }
+            if cat.contains("nationalpark") || cat.contains("nature") || cat.contains("forest") { return .park }
+            if cat.contains("park") || cat.contains("garden") { return .park }
+            if cat.contains("museum") || cat.contains("artgallery") || cat.contains("gallery") { return .museum }
+            if cat.contains("landmark") || cat.contains("monument") || cat.contains("historicsite") { return .landmark }
+            if cat.contains("theater") || cat.contains("concert") || cat.contains("stadium") || cat.contains("fairground") { return .event }
+            if cat.contains("hotel") || cat.contains("lodging") || cat.contains("campground") { return .hotel }
+            if cat.contains("viewpoint") || cat.contains("scenic") || cat.contains("overlook") { return .viewpoint }
+            if cat.contains("street") || cat.contains("transit") || cat.contains("airport") { return .street }
+        }
+        // Fall back to place name keywords
+        if let name = placeName {
+            let lower = name.lowercased()
+            if lower.contains("trail") || lower.contains("trails") || lower.contains("trek") { return .trail }
+            if lower.contains("hike") || lower.contains("hiking") { return .trail }
+            if lower.contains("mountain") || lower.contains("peak") || lower.contains("summit") { return .mountain }
+            if lower.contains("beach") || lower.contains("shore") || lower.contains("coast") { return .beach }
+            if lower.contains("park") || lower.contains("garden") || lower.contains("nature") { return .park }
+            if lower.contains("museum") || lower.contains("gallery") { return .museum }
+            if lower.contains("viewpoint") || lower.contains("overlook") || lower.contains("scenic") { return .viewpoint }
+            if lower.contains("cafe") || lower.contains("coffee") { return .cafe }
+        }
         return .unknown
     }
 }

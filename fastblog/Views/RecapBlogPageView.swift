@@ -18,10 +18,11 @@ private struct TitleMinYPreferenceKey: PreferenceKey {
 
 // MARK: - Caption Edit Sheet Item Types
 
-/// Carries the day identity + mutable caption for the pull-up day caption editor.
+/// Carries the day identity + header lines for the full-screen day caption editor overlay.
 struct DayCaptionEditItem: Identifiable {
     let dayId: UUID
-    let dayLabel: String
+    let dayNumber: Int
+    let dateLine: String
     var id: UUID { dayId }
 }
 
@@ -123,9 +124,9 @@ struct RecapBlogPageView: View {
     /// Tracks whether AI auto-fill is running so we don't show the blog as empty during generation.
     @State private var isAutoFillingCaptions = false
     /// The day ID currently having its caption AI-generated (nil when idle).
-    /// Day caption pull-up sheet trigger.
+    /// Day caption full-screen overlay trigger.
     @State private var dayCaptionEditItem: DayCaptionEditItem?
-    /// Place caption pull-up sheet trigger.
+    /// Place caption full-screen overlay trigger.
     @State private var placeCaptionEditItem: PlaceCaptionEditItem?
     /// Alert when user taps a day that is not yet processed (geocoding still in progress).
     @State private var showUnprocessedDayAlert = false
@@ -209,10 +210,24 @@ struct RecapBlogPageView: View {
                     .zIndex(130)
             }
 
+            if let item = dayCaptionEditItem {
+                dayCaptionEditLayer(item: item)
+                    .transition(.opacity)
+                    .zIndex(131)
+            }
+
+            if let item = placePhotoModalItem {
+                placePhotoModalOverlay(item: item)
+                    .transition(.opacity)
+                    .zIndex(128)
+            }
+
         }
         .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
         .animation(.easeIn(duration: 0.4), value: showStoryMode)
         .animation(.easeOut(duration: 0.22), value: placeCaptionEditItem?.id)
+        .animation(.easeOut(duration: 0.22), value: dayCaptionEditItem?.id)
+        .animation(.easeOut(duration: 0.22), value: placePhotoModalItem?.id)
     }
 
     private func bodyContent(screenHeight: CGFloat) -> some View {
@@ -388,8 +403,11 @@ struct RecapBlogPageView: View {
                 }
             }
             .onReceive(createdRecapStore.objectWillChange) {
-                if let updated = createdRecapStore.getBlogDetail(blogId: blogId),
-                   updated.days.count == draft.days.count, !updated.days.isEmpty {
+                // Keep read-only blog UI in sync when detail changes elsewhere (e.g. photo caption from Places Visited).
+                if !isEditMode,
+                   let updated = createdRecapStore.getBlogDetail(blogId: blogId),
+                   !updated.days.isEmpty,
+                   updated != draft {
                     draft = updated
                 }
                 if showUnprocessedDayAlert {
@@ -424,9 +442,10 @@ struct RecapBlogPageView: View {
             .navigationBarBackButtonHidden(true)
             .navigationTitle(navTitle)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(showStoryMode ? .hidden : (!isEditMode && showNavBarTitle ? .visible : .hidden), for: .navigationBar)
+            .toolbarBackground(recapNavigationBarBackgroundVisibility, for: .navigationBar)
+            .toolbarBackground(recapNavigationBarBackgroundFill, for: .navigationBar)
             .toolbar { toolbarContent }
-            .toolbar(placeCaptionEditItem != nil ? .hidden : .automatic, for: .navigationBar)
+            .toolbar((placeCaptionEditItem != nil || dayCaptionEditItem != nil || placePhotoModalItem != nil) ? .hidden : .automatic, for: .navigationBar)
             .sheet(isPresented: $showShareSheet) {
                 ShareSheet(items: shareItems)
             }
@@ -512,28 +531,6 @@ struct RecapBlogPageView: View {
                     }
                 )
             }
-            // Day caption pull-up modal
-            .sheet(item: $dayCaptionEditItem) { item in
-                DayCaptionEditSheet(
-                    dayLabel: item.dayLabel,
-                    caption: bindingForDayCaption(dayId: item.dayId),
-                    onSave: {
-                        dayCaptionEditItem = nil
-                        createdRecapStore.saveBlogDetail(draft)
-                        syncDayCaptionToCloudIfNeeded(dayId: item.dayId)
-                    },
-                    onCancel: {
-                        dayCaptionEditItem = nil
-                    },
-                    onEnhance: { userText in
-                        guard let day = draft.days.first(where: { $0.id == item.dayId }) else { return userText }
-                        return await StoryCaptionService.shared.enhanceDaySummary(day: day, userText: userText)
-                    },
-                    onEnhanceApplied: {
-                        createdRecapStore.saveBlogDetail(draft)
-                    }
-                )
-            }
             .sheet(item: $showManagePhotosForStop, onDismiss: {
                 // Capture dayId/stopId before syncPhotoChangesWithCloud clears managePhotosEditInfo.
                 let _ = managePhotosEditInfo
@@ -560,11 +557,6 @@ struct RecapBlogPageView: View {
                     createdRecapStore.saveBlogDetail(draft)
                     syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: false, photoId: photoId)
                 })
-            }
-            .sheet(item: $placePhotoModalItem, onDismiss: {
-                createdRecapStore.saveBlogDetail(draft)
-            }) { item in
-                placePhotoModalSheet(item: item)
             }
             .sheet(isPresented: $showRestorePlaces) {
                 RemovedPlacesSheet(draft: $draft, selectedDayIndex: $selectedDayIndex) {
@@ -840,15 +832,17 @@ struct RecapBlogPageView: View {
                 Button {
                     showTitleChange = true
                 } label: {
-                    HStack(alignment: .center, spacing: 6) {
+                    HStack(alignment: .center, spacing: 10) {
                         Text(draft.title)
                             .font(.system(size: 28, weight: .bold))
                             .foregroundColor(.white)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                         Image(systemName: "pencil")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.5))
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(8)
+                            .background(Circle().fill(Color.white.opacity(0.22)))
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 16)
@@ -913,15 +907,17 @@ struct RecapBlogPageView: View {
                 VStack(spacing: 12) {
                     if isEditMode {
                         Button { showTitleChange = true } label: {
-                            HStack(spacing: 6) {
+                            HStack(spacing: 10) {
                                 Text(draft.title)
                                     .font(.system(size: 26, weight: .bold))
                                     .foregroundColor(.white)
                                     .lineLimit(2)
                                     .multilineTextAlignment(.center)
                                 Image(systemName: "pencil")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.white.opacity(0.7))
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .padding(9)
+                                    .background(Circle().fill(Color.white.opacity(0.25)))
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
@@ -937,18 +933,14 @@ struct RecapBlogPageView: View {
                             coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
                             showCoverPhotoPicker = true
                         } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "photo")
-                                    .font(.subheadline)
-                                Text("Change Cover")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Capsule())
+                            Text("Change Cover")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Capsule())
                         }
                         .buttonStyle(.plain)
                         .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
@@ -1496,8 +1488,9 @@ struct RecapBlogPageView: View {
         .id("day-section-\(day.id)")
     }
 
+    /// Full-screen fade overlay (not a sheet) so the photo stays fixed and the caption bar can sit above the keyboard quickly.
     @ViewBuilder
-    private func placePhotoModalSheet(item: PlacePhotoModalItem) -> some View {
+    private func placePhotoModalOverlay(item: PlacePhotoModalItem) -> some View {
         Group {
             if let stop = placeStop(dayId: item.dayId, stopId: item.stopId) {
                 let includedPhotos = stop.photos.filter(\.isIncluded)
@@ -1511,8 +1504,12 @@ struct RecapBlogPageView: View {
                         blogIsEditMode: isEditMode,
                         showAssetTimeMetadata: isEditMode,
                         autoFocusCaption: item.autoFocusCaption,
+                        showsSheetDragHandle: false,
                         photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
-                        onDismiss: { placePhotoModalItem = nil },
+                        onDismiss: {
+                            createdRecapStore.saveBlogDetail(draft)
+                            placePhotoModalItem = nil
+                        },
                         onGenerateCaption: { photo, placeName, placeSubtitle, userText in
                             await StoryCaptionService.shared.enhanceCaption(photo: photo, userText: userText, placeName: placeName, placeSubtitle: placeSubtitle)
                         },
@@ -1531,18 +1528,22 @@ struct RecapBlogPageView: View {
                         }
                     )
                 } else {
-                    Color.white
-                        .onAppear { placePhotoModalItem = nil }
+                    Color.black
+                        .onAppear {
+                            createdRecapStore.saveBlogDetail(draft)
+                            placePhotoModalItem = nil
+                        }
                 }
             } else {
-                Color.white
-                    .onAppear { placePhotoModalItem = nil }
+                Color.black
+                    .onAppear {
+                        createdRecapStore.saveBlogDetail(draft)
+                        placePhotoModalItem = nil
+                    }
             }
         }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.hidden)
-        .presentationCornerRadius(24)
-        .presentationBackground(.black)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.ignoresSafeArea())
     }
 
     @ViewBuilder
@@ -2026,6 +2027,31 @@ struct RecapBlogPageView: View {
 
     /// Full-screen fade overlay (not a sheet) so the editor does not slide up from the bottom.
     @ViewBuilder
+    private func dayCaptionEditLayer(item: DayCaptionEditItem) -> some View {
+        DayCaptionEditSheet(
+            dayNumber: item.dayNumber,
+            dateLine: item.dateLine,
+            caption: bindingForDayCaption(dayId: item.dayId),
+            onSave: {
+                dayCaptionEditItem = nil
+                createdRecapStore.saveBlogDetail(draft)
+                syncDayCaptionToCloudIfNeeded(dayId: item.dayId)
+            },
+            onCancel: {
+                dayCaptionEditItem = nil
+            },
+            onEnhance: { userText in
+                guard let day = draft.days.first(where: { $0.id == item.dayId }) else { return userText }
+                return await StoryCaptionService.shared.enhanceDaySummary(day: day, userText: userText)
+            },
+            onEnhanceApplied: {
+                createdRecapStore.saveBlogDetail(draft)
+            }
+        )
+    }
+
+    /// Full-screen fade overlay (not a sheet) so the editor does not slide up from the bottom.
+    @ViewBuilder
     private func placeCaptionEditLayer(item: PlaceCaptionEditItem, stop: PlaceStop) -> some View {
         PlaceCaptionEditSheet(
             placeTitle: stop.placeTitle,
@@ -2051,7 +2077,6 @@ struct RecapBlogPageView: View {
                 markOverallStoryAI(dayId: item.dayId, stopId: item.stopId)
             }
         )
-        .ignoresSafeArea()
     }
 
     /// Place note is stored per Place in PlaceStop.noteText; persisted when user taps Save.
@@ -2115,7 +2140,8 @@ struct RecapBlogPageView: View {
                 Button {
                     dayCaptionEditItem = DayCaptionEditItem(
                         dayId: day.id,
-                        dayLabel: "Day \(day.dayIndex) · \(day.shortDateText)"
+                        dayNumber: day.dayIndex,
+                        dateLine: day.dayStoryDateLine
                     )
                 } label: {
                     let trimmed = captionBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2428,6 +2454,15 @@ struct RecapBlogPageView: View {
         }
     }
 
+    /// Read-only, edit, and story mode: hidden bar — no solid tint strip over the blog or story book.
+    private var recapNavigationBarBackgroundVisibility: Visibility {
+        .hidden
+    }
+
+    private var recapNavigationBarBackgroundFill: Color {
+        Color.clear
+    }
+
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
@@ -2516,8 +2551,6 @@ struct RecapBlogPageView: View {
                     .fixedSize()
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.blue)
-                    .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
             } else if !isExportingPDF && !showStoryMode {

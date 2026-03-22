@@ -11,15 +11,24 @@ struct PDFPreviewSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var showShareSheet = false
+    @State private var showSavedToFilesBanner = false
 
     var body: some View {
         NavigationStack {
-            ZStack {
+            ZStack(alignment: .top) {
                 Color.black.ignoresSafeArea()
 
                 PDFKitPreview(url: pdfURL)
                     .background(Color.black)
+
+                if showSavedToFilesBanner {
+                    SavedToFilesBanner()
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .padding(.top, 16)
+                        .allowsHitTesting(false)
+                }
             }
+            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showSavedToFilesBanner)
             .navigationTitle("PDF Preview")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -38,7 +47,14 @@ struct PDFPreviewSheet: View {
                 }
             }
             .sheet(isPresented: $showShareSheet) {
-                ShareSheet(items: [pdfURL])
+                ShareSheet(items: [pdfURL]) { completed in
+                    if completed {
+                        showSavedToFilesBanner = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            showSavedToFilesBanner = false
+                        }
+                    }
+                }
             }
         }
         .preferredColorScheme(.dark)

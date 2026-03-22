@@ -30,11 +30,7 @@ struct PlaceCaptionEditSheet: View {
     }
 
     var body: some View {
-        ZStack {
-            Color(uiColor: .systemBackground)
-                .ignoresSafeArea()
-
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
                 // Top chrome: only Cancel + Done (no NavigationStack — avoids duplicate back / parent toolbar bleed).
                 HStack(alignment: .center) {
                     Button("Cancel") {
@@ -42,6 +38,8 @@ struct PlaceCaptionEditSheet: View {
                     }
                     .font(.body)
                     .fontWeight(.semibold)
+                    .foregroundStyle(Color.primary)
+                    .buttonStyle(.plain)
 
                     Spacer()
 
@@ -51,9 +49,11 @@ struct PlaceCaptionEditSheet: View {
                     }
                     .font(.body)
                     .fontWeight(.bold)
+                    .foregroundStyle(Color(uiColor: .systemBlue))
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 8)
+                .padding(.top, 16)
                 .padding(.bottom, 16)
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -153,7 +153,7 @@ struct PlaceCaptionEditSheet: View {
                                             .font(.subheadline)
                                             .foregroundStyle(
                                                 LinearGradient(
-                                                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                                    colors: [Color(red: 0.82, green: 0.48, blue: 0.95), Color(red: 0.62, green: 0.32, blue: 0.78)],
                                                     startPoint: .topLeading,
                                                     endPoint: .bottomTrailing
                                                 )
@@ -161,6 +161,7 @@ struct PlaceCaptionEditSheet: View {
                                         Text("Enhance")
                                             .font(.subheadline)
                                             .fontWeight(.medium)
+                                            .foregroundStyle(Color.secondary)
                                     }
                                 }
                             }
@@ -192,8 +193,10 @@ struct PlaceCaptionEditSheet: View {
                     .padding(.vertical, 10)
                     .background(Color(uiColor: .systemBackground))
                 }
-            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(uiColor: .systemBackground).ignoresSafeArea())
+        .preferredColorScheme(.dark)
         .defaultFocus($isFocused, true)
         .onAppear {
             editedText = caption

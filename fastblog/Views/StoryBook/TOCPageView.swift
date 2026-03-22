@@ -9,6 +9,12 @@ struct TOCPageView: View {
     /// When set (e.g. story book), tapping a day row jumps to that day’s first page.
     var onDayTap: ((TOCEntry) -> Void)? = nil
 
+    @Environment(\.storyBlogColor) private var blogColor
+
+    private var primaryColor: Color { blogColor == .black ? .white : .black }
+    private var bgColor: Color { blogColor == .black ? .black : .white }
+    private var separatorColor: Color { blogColor == .black ? Color.white.opacity(0.2) : Color.gray.opacity(0.35) }
+
     /// Space above/below each inter-day hairline so text never crowds the rule.
     private static let separatorVerticalPadding: CGFloat = 14
     private static let horizontalInset: CGFloat = 16
@@ -40,12 +46,12 @@ struct TOCPageView: View {
             .padding(.bottom, StoryPageLayout.storyChromeBottomOverlayHeight)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .background(Color.white)
+        .background(bgColor.ignoresSafeArea())
     }
 
     // MARK: - Header
 
-    /// Layout height stays `tocCoverStripHeight`; the image draws into the top safe area (no white “guardrail”).
+    /// Layout height stays `tocCoverStripHeight`; the image draws into the top safe area (no white "guardrail").
     private func coverStrip(topSafeInset: CGFloat) -> some View {
         Color.clear
             .frame(height: StoryPageLayout.tocCoverStripHeight)
@@ -76,9 +82,9 @@ struct TOCPageView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("CONTENTS")
                     .font(.system(size: 28, weight: .heavy))
-                    .foregroundColor(.black)
+                    .foregroundColor(primaryColor)
                 Spacer(minLength: 8)
-                Image("AppIconMark")
+                Image("PDFLogo")
                     .resizable()
                     .scaledToFit()
                     .frame(width: 28, height: 28)
@@ -87,18 +93,18 @@ struct TOCPageView: View {
             .padding(.top, 8)
 
             Rectangle()
-                .fill(Color.gray.opacity(0.35))
+                .fill(separatorColor)
                 .frame(height: 1)
                 .padding(.top, 8)
 
             Text(overview.tripTitle)
                 .font(.system(size: 20, weight: .bold))
-                .foregroundColor(.black)
+                .foregroundColor(primaryColor)
                 .padding(.top, 12)
 
             Text(overview.dateRange)
                 .font(.system(size: 14))
-                .foregroundColor(.black.opacity(0.75))
+                .foregroundColor(primaryColor.opacity(0.75))
                 .padding(.top, 4)
 
             Spacer()
@@ -110,7 +116,7 @@ struct TOCPageView: View {
 
     private func tocDaySeparator() -> some View {
         Rectangle()
-            .fill(Color.gray.opacity(0.35))
+            .fill(separatorColor)
             .frame(height: 1)
             .padding(.vertical, Self.separatorVerticalPadding)
             .padding(.horizontal, Self.horizontalInset)
@@ -149,32 +155,33 @@ struct TOCPageView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Day \(entry.dayNumber)")
                     .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(primaryColor)
                 Spacer(minLength: 8)
                 if entry.dayStartPageNumber > 0 {
                     Text("\(entry.dayStartPageNumber)")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.black)
+                        .foregroundColor(primaryColor)
                 }
             }
 
             Text(tocDayTitle(for: entry))
                 .font(.system(size: 18, weight: .bold))
-                .foregroundColor(.black)
+                .foregroundColor(primaryColor)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(entry.date)
                 .font(.system(size: 12))
-                .foregroundColor(.black)
+                .foregroundColor(primaryColor)
 
             Text("\(entry.momentCount) moments")
                 .font(.system(size: 10))
                 .italic()
-                .foregroundColor(.black.opacity(0.75))
+                .foregroundColor(primaryColor.opacity(0.75))
 
             Text(entry.placeNames.map { $0 }.joined(separator: ", "))
                 .font(.system(size: 11))
-                .foregroundColor(.gray)
+                .foregroundColor(primaryColor.opacity(0.6))
                 .lineLimit(2)
                 .padding(.top, 2)
         }
