@@ -49,6 +49,8 @@ struct MyBlogsProfileView: View {
     @State private var scrollOffset: CGFloat = 0
     /// Scroll offset for country page — used for swipe-down-to-dismiss when at top.
     @State private var countryScrollOffset: CGFloat = 0
+    /// Mirrors search field focus while on a country page (Manage → Done in `CountryBlogsView`).
+    @State private var countrySearchBarFocused = false
 
     // On-the-go new-moments popup
     @State private var showNewMomentsAlert = false
@@ -277,6 +279,7 @@ struct MyBlogsProfileView: View {
             sharedSearchText = ""
             viewModel.searchText = ""
             isSearchActive = false
+            countrySearchBarFocused = false
             if case .country = newPage {
                 countryScrollOffset = 0
             }
@@ -311,7 +314,12 @@ struct MyBlogsProfileView: View {
                 selectedBlog: $selectedCreatedRecap,
                 showMap: $showCountryMap,
                 searchText: $sharedSearchText,
-                scrollOffset: $countryScrollOffset
+                scrollOffset: $countryScrollOffset,
+                isBottomSearchFocused: countrySearchBarFocused,
+                onDismissSearchKeyboard: {
+                    isSearchFocused = false
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
             )
             .environmentObject(createdRecapStore)
             .transition(.opacity)
@@ -374,9 +382,14 @@ struct MyBlogsProfileView: View {
                 .autocorrectionDisabled()
                 .focused($isSearchFocused)
                 .onChange(of: isSearchFocused) { _, focused in
-                    guard isOnBlogsPage else { return }
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isSearchActive = focused
+                    if isOnBlogsPage {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isSearchActive = focused
+                        }
+                    } else if case .country = currentPage {
+                        withAnimation(.easeOut(duration: 0.22)) {
+                            countrySearchBarFocused = focused
+                        }
                     }
                 }
             if isSearchActive {

@@ -172,9 +172,11 @@ struct LandingView: View {
             DragGesture()
                 .onEnded { value in
                     // Swipe left to open Profile/Auth is disabled.
-                    // Detect swipe up (negative height translation) to open My Blogs
+                    // Swipe up opens in-app Capture (same as the bottom "Capture" control).
                     if value.translation.height < -50 && abs(value.translation.height) > abs(value.translation.width) {
-                        showSeeAll = true
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            showCameraFromHome = true
+                        }
                     }
                 }
         )

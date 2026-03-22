@@ -1,0 +1,176 @@
+// fastblog/Views/StoryBook/DayContentPageView.swift
+import SwiftUI
+
+struct DayContentPageView: View {
+    let page: DayContentPage
+    @Environment(\.storyFontTheme) private var fontTheme
+    @Environment(\.storyBlogColor) private var blogColor
+
+    private var primaryColor: Color { blogColor == .black ? .white : .black }
+    private var bgColor: Color { blogColor == .black ? .black : .white }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Day header: "Day #" + date/Continue sit tight together; Spacer keeps the icon on the trailing edge.
+            HStack(alignment: .center, spacing: 0) {
+                // Center-align so date vs italic "Continue" share the same vertical slot (firstTextBaseline + italic mismatch).
+                HStack(alignment: .center, spacing: 8) {
+                    Text("Day \(page.day.dayNumber)")
+                        .font(Font(StoryFontHelper.uiFont(for: fontTheme, size: 22, weight: .bold)))
+                        .foregroundColor(primaryColor)
+                        .monospacedDigit()
+
+                    Group {
+                        if page.isFirstPage {
+                            Text(page.shortDateText)
+                                .foregroundColor(primaryColor.opacity(0.55))
+                        } else {
+                            Text("Continue")
+                                .foregroundColor(primaryColor)
+                                .italic()
+                        }
+                    }
+                    .font(Font(StoryFontHelper.uiFont(for: fontTheme, size: 14)))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                    .frame(height: 22, alignment: .center)
+                }
+
+                Spacer(minLength: 12)
+
+                Image("PDFLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 28, height: 28)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .frame(height: 44, alignment: .center)
+            Divider()
+
+            // Slots
+            ForEach(0..<page.slots.count, id: \.self) { i in
+                slotView(page.slots[i])
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, StoryPageLayout.storyChromeBottomOverlayHeight)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(bgColor.ignoresSafeArea())
+        .overlay(alignment: .bottom) {
+            // "The End" sits inside the chrome-reserve zone (above the Cancel/Share bar),
+            // so it doesn't consume any photo space on non-final pages.
+            if page.isLastPageOfTrip {
+                HStack {
+                    Spacer()
+                    Text("The End")
+                        .italic()
+                        .font(Font(StoryFontHelper.uiItalicFont(for: fontTheme, size: 12)))
+                        .foregroundColor(primaryColor)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, StoryPageLayout.storyChromeBottomOverlayHeight - 12)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func slotView(_ slot: ContentSlot) -> some View {
+        switch slot {
+        case .dayCaption(let text):
+            StoryDayCaptionCallout(text: text, fontTheme: fontTheme)
+
+        case .placeBlock(let place, let photoSlice, let photoImageHeight, let photoGridLayout):
+            let photos: [PhotoContent] = place.photos.isEmpty ? [] : {
+                let lo = photoSlice.lowerBound
+                let hi = min(photoSlice.upperBound, place.photos.count - 1)
+                guard lo <= hi else { return [] }
+                return Array(place.photos[lo...hi])
+            }()
+            PlaceBlockView(
+                place: place,
+                photos: photos,
+                photoImageHeight: photoImageHeight,
+                photoGridLayout: photoGridLayout,
+                photoShapeOptions: PDFPhotoShapeOptions(),
+                blogColor: blogColor,
+                fontTheme: fontTheme,
+                layoutMode: .normal
+            )
+
+        case .photoOverflowContinuation(let name, let place, let photoSlice, let photoImageHeight, let photoGridLayout, let showOverflowHeader):
+            let photos: [PhotoContent] = {
+                let lo = photoSlice.lowerBound
+                let hi = min(photoSlice.upperBound, place.photos.count - 1)
+                guard lo <= hi else { return [] }
+                return Array(place.photos[lo...hi])
+            }()
+            PhotoContinuationBlockView(
+                placeName: name,
+                placeSubtitle: place.subtitle,
+                placeMarkerNumber: place.markerNumber,
+                placeMarkerType: place.markerType,
+                photos: photos,
+                photoImageHeight: photoImageHeight,
+                photoGridLayout: photoGridLayout,
+                showOverflowHeader: showOverflowHeader,
+                photoShapeOptions: PDFPhotoShapeOptions(),
+                blogColor: blogColor,
+                fontTheme: fontTheme
+            )
+        }
+    }
+}
+
+private extension DayContentPage {
+    var shortDateText: String {
+        let f = DateFormatter()
+        f.dateFormat = "EEE, MMM d"   // "Wed, March 12"
+        return f.string(from: day.date)
+    }
+}
+
+/// Yellow callout for the day-level story caption (matches `StoryPageLayout` day caption metrics).
+private struct StoryDayCaptionCallout: View {
+    let text: String
+    var fontTheme: FontTheme = .classic
+
+    private let accentColor = Color(red: 1, green: 0.82, blue: 0.12)
+    private let fillColor = Color(red: 1, green: 0.97, blue: 0.88)
+
+    var body: some View {
+        let r = StoryPageLayout.dayStoryBoxCornerRadius
+        // The accent bar is an overlay so the callout sizes to its text content.
+        // Previously the bar used .frame(maxHeight: .infinity) inside an HStack,
+        // which made the callout a greedy height consumer in the page VStack,
+        // causing it to be compressed when place blocks were on the same page.
+        Text(text)
+            .italic()
+            .font(Font(StoryFontHelper.uiItalicFont(for: fontTheme, size: StoryPageLayout.dayStoryCaptionFontSize)))
+            .foregroundColor(.black)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, StoryPageLayout.dayStoryBoxDividerInsetFromLeft + StoryPageLayout.dayStoryBoxDividerWidth + 12)
+            .padding(.trailing, StoryPageLayout.dayStoryBoxTextPaddingRight)
+            .padding(.top, StoryPageLayout.dayStoryBoxTextPaddingTop)
+            .padding(.bottom, StoryPageLayout.dayStoryBoxTextPaddingBottom)
+            .background(
+                RoundedRectangle(cornerRadius: r, style: .continuous)
+                    .fill(fillColor)
+            )
+            .overlay(alignment: .leading) {
+                UnevenRoundedRectangle(
+                    cornerRadii: RectangleCornerRadii(
+                        topLeading: r,
+                        bottomLeading: r,
+                        bottomTrailing: 0,
+                        topTrailing: 0
+                    ),
+                    style: .continuous
+                )
+                .fill(accentColor)
+                .frame(width: StoryPageLayout.dayStoryBoxDividerWidth)
+                .frame(maxHeight: .infinity)
+                .padding(.leading, StoryPageLayout.dayStoryBoxDividerInsetFromLeft)
+            }
+    }
+}

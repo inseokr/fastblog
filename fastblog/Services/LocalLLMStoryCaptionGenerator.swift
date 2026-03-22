@@ -165,6 +165,12 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
                 Focus on the feeling of open space, greenery, calm, or playful energy.
                 Ground it in sensory details.
                 """
+        case .trail:
+            return """
+                This place is categorized as a trail or hiking path.
+                Focus on the journey, footsteps, terrain underfoot, the rhythm of walking, and what unfolds along the way.
+                Capture the effort, the quiet, and the reward of being out in nature on foot.
+                """
         case .mountain:
             return """
                 This place is categorized as a mountain or hiking area.

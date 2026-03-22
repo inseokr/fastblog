@@ -4,6 +4,37 @@ import Photos
 
 // MARK: - PDF Export Options
 
+enum BlogColor: String, CaseIterable, Codable {
+    case white = "White"
+    case black = "Black"
+
+    var label: String {
+        switch self {
+        case .white: return "Light Mode"
+        case .black: return "Dark Mode"
+        }
+    }
+    var subtitle: String {
+        switch self {
+        case .white: return "White background, dark text"
+        case .black: return "Black background, white text"
+        }
+    }
+}
+
+enum PDFLayoutMode: String, CaseIterable, Codable {
+    case normal = "Normal"
+    case story  = "Story"
+
+    var label: String { rawValue }
+    var subtitle: String {
+        switch self {
+        case .normal: return "Caption above photos"
+        case .story:  return "Photos first, caption below"
+        }
+    }
+}
+
 enum FontTheme: String, CaseIterable, Codable {
     case classic  = "Classic"
     case serif    = "Serif"
@@ -59,7 +90,23 @@ struct PDFPhotoShapeOptions: Codable, Equatable {
 
 struct PDFExportOptions: Codable, Equatable {
     var fontTheme:        FontTheme          = .classic
+    var colorStyle:       BlogColor          = .white
     var photoShapeOptions: PDFPhotoShapeOptions = PDFPhotoShapeOptions()
+}
+
+extension PDFExportOptions {
+    var primaryTextColor: UIColor {
+        colorStyle == .black ? .white : .black
+    }
+    var secondaryTextColor: UIColor {
+        colorStyle == .black ? UIColor(white: 0.72, alpha: 1) : .darkGray
+    }
+    var cardBackgroundColor: UIColor {
+        colorStyle == .black ? UIColor(white: 0.14, alpha: 1) : UIColor(white: 0.92, alpha: 1)
+    }
+    var pageBackgroundColor: UIColor {
+        colorStyle == .black ? .black : .white
+    }
 }
 
 @MainActor
@@ -124,7 +171,8 @@ class PDFExportService {
         let safeTitle = draft.title
             .replacingOccurrences(of: " ", with: "_")
             .replacingOccurrences(of: "/", with: "-")
-        let url = URL.documentsDirectory.appendingPathComponent("\(safeTitle)_Blog.pdf")
+        // Include blog id so two trips with the same title never overwrite each other (fixes wrong PDF when sharing).
+        let url = URL.documentsDirectory.appendingPathComponent("\(safeTitle)_\(draft.id.uuidString)_Blog.pdf")
 
         let pageRect = CGRect(x: 0, y: 0, width: pageW, height: pageH)
         let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
@@ -134,7 +182,7 @@ class PDFExportService {
 
         try renderer.writePDF(to: url) { pdfContext in
             var pen = Pen(ctx: pdfContext, margin: margin, pageW: pageW, pageH: pageH,
-                          logo: appLogo)
+                          logo: appLogo, backgroundColor: options.pageBackgroundColor)
 
             // ── Cover Page ──────────────────────────────────────────
             pen.newPage()
@@ -225,41 +273,15 @@ class PDFExportService {
 
             pen.skip(12)
 
-            // App icon + "Created with Bloggo" — left-aligned under cover
-            if let appIcon = appLogo {
-                let iconSize: CGFloat = 22
-                let createdText = "Created with Bloggo"
-                let createdFont = Self.font(for: options.fontTheme, size: 13, weight: .medium)
-                let createdAttrs: [NSAttributedString.Key: Any] = [
-                    .font: createdFont,
-                    .foregroundColor: UIColor.darkGray
-                ]
-
-                let iconRect = CGRect(x: margin, y: pen.y, width: iconSize, height: iconSize)
-                if let gc = UIGraphicsGetCurrentContext() {
-                    gc.saveGState()
-                    UIBezierPath(roundedRect: iconRect, cornerRadius: 5).addClip()
-                    appIcon.draw(in: iconRect)
-                    gc.restoreGState()
-                }
-
-                let textSize = createdText.size(withAttributes: createdAttrs)
-                createdText.draw(
-                    at: CGPoint(x: margin + iconSize + 6,
-                                y: pen.y + (iconSize - textSize.height) / 2),
-                    withAttributes: createdAttrs
-                )
-                pen.y += iconSize
-            }
-
             // ── Day Sections — each day starts on a fresh page ─────────
             for day in draft.days {
                 // Always start a new page for each day
                 pen.newPage()
+                pen.drawLogoTopRight(size: 24, cornerRadius: 6)
 
                 // Day header — at the top of the page
                 pen.drawLeft(day.shortDateText,
-                             font: Self.font(for: options.fontTheme, size: 20, weight: .bold), color: .black)
+                             font: Self.font(for: options.fontTheme, size: 20, weight: .bold), color: options.primaryTextColor)
 
                 // Day caption
                 if let caption = day.dayCaption,
@@ -267,7 +289,7 @@ class PDFExportService {
                     pen.skip(4)
                     pen.drawLeft(caption,
                                  font: Self.font(for: options.fontTheme, size: 15),
-                                 color: UIColor.darkGray)
+                                 color: options.secondaryTextColor)
                     pen.skip(8)
                 } else {
                     pen.skip(8)
@@ -377,7 +399,7 @@ class PDFExportService {
         if let gc = UIGraphicsGetCurrentContext() {
             gc.saveGState()
             let bgRect = CGRect(x: pen.margin, y: pen.y, width: contentW, height: bgH)
-            gc.setFillColor(cardBg.cgColor)
+            gc.setFillColor(options.cardBackgroundColor.cgColor)
             UIBezierPath(roundedRect: bgRect, cornerRadius: cardRadius).addClip()
             gc.fill(bgRect)
             gc.restoreGState()
@@ -390,14 +412,10 @@ class PDFExportService {
 
         var titleAttrs: [NSAttributedString.Key: Any] = [
             .font: titleFont,
-            .foregroundColor: UIColor.black
+            .foregroundColor: options.primaryTextColor
         ]
         
-        var urlToOpen: URL?
-        if let query = stop.placeTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-           let url = URL(string: "https://www.google.com/search?q=\(query)") {
-            urlToOpen = url
-        }
+        let urlToOpen = StoryPlaceGoogleSearch.url(placeName: stop.placeTitle, placeSubtitle: stop.placeSubtitle)
         
         let attrTitle = NSMutableAttributedString(string: stop.placeTitle, attributes: titleAttrs)
         
@@ -407,7 +425,7 @@ class PDFExportService {
             customIcon = UIImage(data: data)
         }
         
-        if let linkIcon = customIcon {
+        if urlToOpen != nil, let linkIcon = customIcon {
             let attachment = NSTextAttachment()
             attachment.image = linkIcon
             let iconSize: CGFloat = 13
@@ -455,7 +473,7 @@ class PDFExportService {
             pen.skip(2)
             let subAttrs: [NSAttributedString.Key: Any] = [
                 .font: subFont12,
-                .foregroundColor: UIColor.darkGray
+                .foregroundColor: options.secondaryTextColor
             ]
             let subSize = subtitle.boundingRect(
                 with: CGSize(width: titleW, height: .greatestFiniteMagnitude),
@@ -476,7 +494,7 @@ class PDFExportService {
             pen.skip(8)
             let storyAttrs: [NSAttributedString.Key: Any] = [
                 .font: bodyFont15,
-                .foregroundColor: UIColor.darkGray
+                .foregroundColor: options.secondaryTextColor
             ]
             let storySize = story.boundingRect(
                 with: CGSize(width: cardContentW, height: .greatestFiniteMagnitude),
@@ -503,7 +521,7 @@ class PDFExportService {
                 let contH = min(estRemaining, pen.maxY - pen.y)
                 if let gc = UIGraphicsGetCurrentContext(), contH > 0 {
                     gc.saveGState()
-                    gc.setFillColor(cardBg.cgColor)
+                    gc.setFillColor(options.cardBackgroundColor.cgColor)
                     gc.fill(CGRect(x: pen.margin, y: pen.y, width: contentW, height: contH))
                     gc.restoreGState()
                 }
@@ -523,7 +541,7 @@ class PDFExportService {
                     let contH = min(estRemaining, pen.maxY - pen.y)
                     if let gc = UIGraphicsGetCurrentContext(), contH > 0 {
                         gc.saveGState()
-                        gc.setFillColor(cardBg.cgColor)
+                        gc.setFillColor(options.cardBackgroundColor.cgColor)
                         gc.fill(CGRect(x: pen.margin, y: pen.y, width: contentW, height: contH))
                         gc.restoreGState()
                     }
@@ -546,7 +564,7 @@ class PDFExportService {
                 pen.y += colH
 
                 // Captions (app: .caption, 2 line limit)
-                let captionColor = UIColor.darkGray
+                let captionColor = options.secondaryTextColor
                 var captionH: CGFloat = 0
 
                 if let cap = leftPhoto.caption,
@@ -840,6 +858,7 @@ private struct Pen {
     let pageW: CGFloat
     let pageH: CGFloat
     let logo: UIImage?
+    var backgroundColor: UIColor = .white
     var y: CGFloat = 0
     var pageNumber: Int = 0
 
@@ -848,6 +867,14 @@ private struct Pen {
 
     mutating func newPage() {
         ctx.beginPage()
+        if backgroundColor != .white {
+            if let gc = UIGraphicsGetCurrentContext() {
+                gc.saveGState()
+                gc.setFillColor(backgroundColor.cgColor)
+                gc.fill(CGRect(x: 0, y: 0, width: pageW, height: pageH))
+                gc.restoreGState()
+            }
+        }
         y = margin
         pageNumber += 1
     }
@@ -944,6 +971,29 @@ private struct Pen {
         image.draw(in: drawRect)
         gc.restoreGState()
         y += height
+    }
+
+    // MARK: Logo
+
+    /// Draws `logo` (if set) at the top-right of the page with rounded corners, at the current top margin.
+    mutating func drawLogoTopRight(size: CGFloat = 24, cornerRadius: CGFloat = 6) {
+        guard let img = logo else { return }
+        guard let gc = UIGraphicsGetCurrentContext() else { return }
+        let x = pageW - margin - size
+        let rect = CGRect(x: x, y: margin, width: size, height: size)
+        gc.saveGState()
+        UIBezierPath(roundedRect: rect, cornerRadius: cornerRadius).addClip()
+        let aspect = img.size.width / img.size.height
+        let drawRect: CGRect
+        if aspect > 1 {
+            let h = size / aspect
+            drawRect = CGRect(x: rect.minX, y: rect.minY + (size - h) / 2, width: size, height: h)
+        } else {
+            let w = size * aspect
+            drawRect = CGRect(x: rect.minX + (size - w) / 2, y: rect.minY, width: w, height: size)
+        }
+        img.draw(in: drawRect)
+        gc.restoreGState()
     }
 
     // MARK: Badge
