@@ -25,7 +25,7 @@ struct DayCaptionEditItem: Identifiable {
     var id: UUID { dayId }
 }
 
-/// Carries the stop identity for the pull-up place caption editor.
+/// Carries the stop identity for the place caption editor (fade overlay).
 struct PlaceCaptionEditItem: Identifiable {
     let dayId: UUID
     let stopId: UUID
@@ -203,9 +203,16 @@ struct RecapBlogPageView: View {
                     .zIndex(200)
             }
 
+            if let item = placeCaptionEditItem, let stop = placeStop(dayId: item.dayId, stopId: item.stopId) {
+                placeCaptionEditLayer(item: item, stop: stop)
+                    .transition(.opacity)
+                    .zIndex(130)
+            }
+
         }
         .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
         .animation(.easeIn(duration: 0.4), value: showStoryMode)
+        .animation(.easeOut(duration: 0.22), value: placeCaptionEditItem?.id)
     }
 
     private func bodyContent(screenHeight: CGFloat) -> some View {
@@ -419,6 +426,7 @@ struct RecapBlogPageView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(showStoryMode ? .hidden : (!isEditMode && showNavBarTitle ? .visible : .hidden), for: .navigationBar)
             .toolbar { toolbarContent }
+            .toolbar(placeCaptionEditItem != nil ? .hidden : .automatic, for: .navigationBar)
             .sheet(isPresented: $showShareSheet) {
                 ShareSheet(items: shareItems)
             }
@@ -488,7 +496,7 @@ struct RecapBlogPageView: View {
                     onEditName: { showEditNameForStop = item.stop },
                     onManagePhotos: { openManagePhotos(dayId: item.dayId, stopId: item.stop.id) },
                     onEditMode: {
-                        // Treat this as "Edit Caption" — open the place caption edit pull-up.
+                        // Treat this as "Edit Caption" — open the full-screen place caption editor.
                         placeCaptionEditItem = PlaceCaptionEditItem(dayId: item.dayId, stopId: item.stop.id)
                     },
                     onRemoveFromBlog: { removePlaceStop(dayId: item.dayId, stopId: item.stop.id) }
@@ -525,35 +533,6 @@ struct RecapBlogPageView: View {
                         createdRecapStore.saveBlogDetail(draft)
                     }
                 )
-            }
-            // Place caption pull-up modal
-            .sheet(item: $placeCaptionEditItem) { item in
-                if let stop = placeStop(dayId: item.dayId, stopId: item.stopId) {
-                    PlaceCaptionEditSheet(
-                        placeTitle: stop.placeTitle,
-                        placeSubtitle: stop.placeSubtitle,
-                        photos: stop.includedPhotos,
-                        caption: bindingForOverallStory(dayId: item.dayId, stopId: item.stopId),
-                        onSave: {
-                            placeCaptionEditItem = nil
-                            markOverallStoryManual(dayId: item.dayId, stopId: item.stopId)
-                            createdRecapStore.saveBlogDetail(draft)
-                            syncOverallStoryToCloudIfNeeded(dayId: item.dayId, stopId: item.stopId)
-                        },
-                        onCancel: {
-                            placeCaptionEditItem = nil
-                        },
-                        onEnhance: { userText in
-                            guard let currentStop = placeStop(dayId: item.dayId, stopId: item.stopId),
-                                  let dayDate = draft.days.first(where: { $0.id == item.dayId })?.date else { return userText }
-                            let captions = currentStop.photos.filter(\.isIncluded).map { $0.caption ?? "" }
-                            return await StoryCaptionService.shared.enhanceOverallPlaceStory(stop: currentStop, userText: userText, dayDate: dayDate, photoCaptions: captions)
-                        },
-                        onEnhanceApplied: {
-                            markOverallStoryAI(dayId: item.dayId, stopId: item.stopId)
-                        }
-                    )
-                }
             }
             .sheet(item: $showManagePhotosForStop, onDismiss: {
                 // Capture dayId/stopId before syncPhotoChangesWithCloud clears managePhotosEditInfo.
@@ -2043,6 +2022,36 @@ struct RecapBlogPageView: View {
 
     private func placeStop(dayId: UUID, stopId: UUID) -> PlaceStop? {
         draft.days.first(where: { $0.id == dayId })?.placeStops.first(where: { $0.id == stopId })
+    }
+
+    /// Full-screen fade overlay (not a sheet) so the editor does not slide up from the bottom.
+    @ViewBuilder
+    private func placeCaptionEditLayer(item: PlaceCaptionEditItem, stop: PlaceStop) -> some View {
+        PlaceCaptionEditSheet(
+            placeTitle: stop.placeTitle,
+            placeSubtitle: stop.placeSubtitle,
+            photos: stop.includedPhotos,
+            caption: bindingForOverallStory(dayId: item.dayId, stopId: item.stopId),
+            onSave: {
+                placeCaptionEditItem = nil
+                markOverallStoryManual(dayId: item.dayId, stopId: item.stopId)
+                createdRecapStore.saveBlogDetail(draft)
+                syncOverallStoryToCloudIfNeeded(dayId: item.dayId, stopId: item.stopId)
+            },
+            onCancel: {
+                placeCaptionEditItem = nil
+            },
+            onEnhance: { userText in
+                guard let currentStop = placeStop(dayId: item.dayId, stopId: item.stopId),
+                      let dayDate = draft.days.first(where: { $0.id == item.dayId })?.date else { return userText }
+                let captions = currentStop.photos.filter(\.isIncluded).map { $0.caption ?? "" }
+                return await StoryCaptionService.shared.enhanceOverallPlaceStory(stop: currentStop, userText: userText, dayDate: dayDate, photoCaptions: captions)
+            },
+            onEnhanceApplied: {
+                markOverallStoryAI(dayId: item.dayId, stopId: item.stopId)
+            }
+        )
+        .ignoresSafeArea()
     }
 
     /// Place note is stored per Place in PlaceStop.noteText; persisted when user taps Save.
