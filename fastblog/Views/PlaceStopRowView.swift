@@ -5,6 +5,7 @@
 
 import MapKit
 import SwiftUI
+import UIKit
 
 
 
@@ -124,32 +125,58 @@ struct PlaceStopRowView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         if isEditMode {
-                            Button { onEditName?() } label: {
-                                HStack(spacing: 4) {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Button { onEditName?() } label: {
                                     Text(stop.placeTitle)
                                         .font(.headline)
                                         .foregroundColor(.white)
+                                }
+                                .buttonStyle(.plain)
+                                if let url = StoryPlaceGoogleSearch.url(placeName: stop.placeTitle, placeSubtitle: stop.placeSubtitle) {
+                                    Link(destination: url) {
+                                        StoryPlaceExternalLinkIcon(
+                                            titleFontSize: UIFont.preferredFont(forTextStyle: .headline).pointSize,
+                                            foregroundColor: .white.opacity(0.78)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("Search place on the web")
+                                }
+                                Button { onEditName?() } label: {
                                     Image(systemName: "pencil")
                                         .font(.caption2)
                                         .foregroundColor(.secondary)
                                 }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         } else {
-                            Button {
-                                onNavigate?()
-                            } label: {
-                                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                            if let searchURL = StoryPlaceGoogleSearch.url(placeName: stop.placeTitle, placeSubtitle: stop.placeSubtitle) {
+                                Link(destination: searchURL) {
+                                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                        Text(stop.placeTitle)
+                                            .font(.title3)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.white)
+                                        StoryPlaceExternalLinkIcon(
+                                            titleFontSize: UIFont.preferredFont(forTextStyle: .title3).pointSize,
+                                            foregroundColor: .white.opacity(0.78)
+                                        )
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Search \(stop.placeTitle) on Google")
+                            } else {
+                                Button {
+                                    onNavigate?()
+                                } label: {
                                     Text(stop.placeTitle)
                                         .font(.title3)
                                         .fontWeight(.semibold)
                                         .foregroundColor(.white)
-                                    Image(systemName: "arrow.up.right.square")
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundColor(.white.opacity(0.6))
                                 }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Open place in Maps")
                             }
-                            .buttonStyle(.plain)
                         }
                         Spacer()
                         if isEditMode {

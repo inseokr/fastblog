@@ -7,15 +7,25 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		01B2787FA0EA66741089467C /* CoverPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72929F115FE37110FB2BE7BF /* CoverPageView.swift */; };
 		0B1189F592CFDEDAF3305FAB /* PhotoPermissionOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */; };
 		0C30D67375CF715A0AE52995 /* MapSnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A586130A3384B2A62AC27350 /* MapSnapshotHelper.swift */; };
+		285D83E64056D6DBF8E9894F /* StoryPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E27CCA2B392AD6D7D60A651A /* StoryPage.swift */; };
 		315C7029393A82205980943C /* DayCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C198E17B0447F89CC98721F /* DayCaptionEditSheet.swift */; };
+		32D85DD5E6FD49691543F872 /* StoryBookBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3CF1895D23A7F11A1F1B7B0 /* StoryBookBuilder.swift */; };
+		33A0384A2DEF7075550C1327 /* PhotoContinuationBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF27B8BE17452A92005EEECF /* PhotoContinuationBlockView.swift */; };
+		37FBA08B0004D6825EFD3370 /* DayMapPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C820592BA8137D8FF7F05AA /* DayMapPageView.swift */; };
+		43EA38F00CD64247BB84651D /* StoryBookViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8B39A532FFD631E0B9D8312 /* StoryBookViewModel.swift */; };
+		5050088081A6CE14C59511C2 /* DayContentPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A01A8A2A53646AA22C132E3 /* DayContentPageView.swift */; };
 		719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */; };
-		BB0002A1 /* StoryWritingStyleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002A2; };
-		BB0003A1 /* PDFExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003A2; };
+		75A557C81671BBFA4382AAA5 /* PageFooterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3FBC69125D4B22AEC596A03 /* PageFooterView.swift */; };
 		7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000061 /* GoogleSignIn */; };
 		7D19D079975A2110DB757EE7 /* BlogPDFView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E304D9246790A5FC17716A85 /* BlogPDFView.swift */; };
+		7FBD2FEB65535E4150C1E521 /* TOCPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F6DDE63772EF1F878EC3686 /* TOCPageView.swift */; };
 		A31B7C85BABD6199A2A43BB7 /* PDFExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F5C55E3E5D4C283468EF581 /* PDFExportService.swift */; };
+		F3C02E5B4D9E5867C1F2A314 /* StoryModePDFExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2B91F4A3C8D4756B0E1F203 /* StoryModePDFExportService.swift */; };
+		AC413CC9DFEB2B2939B89DA5 /* StoryBookContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67D919F737961D65785318BA /* StoryBookContent.swift */; };
+		ACC2FF7BA930277126E43C96 /* StoryPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0733072C4EA957FE04A03752 /* StoryPageView.swift */; };
 		BB000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000101 /* ContentView.swift */; };
 		BB000104 /* fastblogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000103 /* fastblogApp.swift */; };
 		BB000106 /* MyBlogsProfileViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000105 /* MyBlogsProfileViewModel.swift */; };
@@ -158,33 +168,51 @@
 		BB000254 /* AppCaptureDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000255 /* AppCaptureDetailView.swift */; };
 		BB000260 /* VibeRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000261 /* VibeRecorder.swift */; };
 		BB000262 /* VibePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000263 /* VibePlayer.swift */; };
+		BB0002A1 /* StoryWritingStyleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002A2 /* StoryWritingStyleSheet.swift */; };
 		BB0002E1 /* OnTheGoTripStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002E0 /* OnTheGoTripStore.swift */; };
 		BB0002E3 /* InAppCameraPhotoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002E2 /* InAppCameraPhotoStore.swift */; };
 		BB0002F1 /* ScanSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F0 /* ScanSessionStore.swift */; };
 		BB0002F3 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F2 /* WeatherService.swift */; };
 		BB000301 /* AdminAnalyticsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000300 /* AdminAnalyticsDashboardView.swift */; };
 		BB000303 /* MyStatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000302 /* MyStatsView.swift */; };
+		BB0003A1 /* PDFExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003A2 /* PDFExportOptionsSheet.swift */; };
 		BB00A001 /* Analytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00A002 /* Analytics.swift */; };
 		BB00AI01 /* AnalyticsIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00AI02 /* AnalyticsIdentity.swift */; };
 		BB00F002 /* PlacesVisitedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F001 /* PlacesVisitedView.swift */; };
 		BB00F004 /* PlaceVisitedDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F003 /* PlaceVisitedDetailView.swift */; };
 		BB00M001 /* BackendDashboardAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00M002 /* BackendDashboardAnalytics.swift */; };
+		C7E087F6AACF99F475844343 /* StoryBookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ABC2F392F2EBDD1636DC399 /* StoryBookView.swift */; };
+		D2F8D3AF63FAE7358C61872A /* PhotoCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30C7F49D9E66B6763CCCD7B9 /* PhotoCardView.swift */; };
+		DCB9D1AF4FAB8889D866BC40 /* PlaceBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D31200382275E7A7520CD4F /* PlaceBlockView.swift */; };
 		EA00EA02 /* EarlyAccessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA00EA01 /* EarlyAccessManager.swift */; };
 		EX00EX02 /* ExportingPDFView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EX00EX01 /* ExportingPDFView.swift */; };
+		PS00PS02 /* PreparingStoryBookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PS00PS01 /* PreparingStoryBookView.swift */; };
+		SM00SM02 /* StoryModePDFOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM00SM01 /* StoryModePDFOptionsSheet.swift */; };
+		F2AB1FA0886785F982950F7A /* StoryPageLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EE07F9D5505A841A5CD7CAE /* StoryPageLayout.swift */; };
 		PD00PD02 /* PDFPreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = PD00PD01 /* PDFPreviewSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0354AFB52F6737A300C41BAA /* Bloggo.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Bloggo.entitlements; sourceTree = "<group>"; };
+		0733072C4EA957FE04A03752 /* StoryPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StoryPageView.swift; path = StoryBook/StoryPageView.swift; sourceTree = "<group>"; };
+		0D31200382275E7A7520CD4F /* PlaceBlockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaceBlockView.swift; path = StoryBook/PlaceBlockView.swift; sourceTree = "<group>"; };
 		2C198E17B0447F89CC98721F /* DayCaptionEditSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DayCaptionEditSheet.swift; sourceTree = "<group>"; };
+		2C820592BA8137D8FF7F05AA /* DayMapPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DayMapPageView.swift; path = StoryBook/DayMapPageView.swift; sourceTree = "<group>"; };
 		2F5C55E3E5D4C283468EF581 /* PDFExportService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PDFExportService.swift; sourceTree = "<group>"; };
+		E2B91F4A3C8D4756B0E1F203 /* StoryModePDFExportService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryModePDFExportService.swift; sourceTree = "<group>"; };
+		2F6DDE63772EF1F878EC3686 /* TOCPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TOCPageView.swift; path = StoryBook/TOCPageView.swift; sourceTree = "<group>"; };
+		30C7F49D9E66B6763CCCD7B9 /* PhotoCardView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PhotoCardView.swift; path = StoryBook/PhotoCardView.swift; sourceTree = "<group>"; };
 		3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhotoPermissionOnboardingView.swift; sourceTree = "<group>"; };
 		4E34776F396319FBEE2FCECD /* StoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryCaptionGenerator.swift; sourceTree = "<group>"; };
+		67D919F737961D65785318BA /* StoryBookContent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryBookContent.swift; sourceTree = "<group>"; };
+		6ABC2F392F2EBDD1636DC399 /* StoryBookView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StoryBookView.swift; path = StoryBook/StoryBookView.swift; sourceTree = "<group>"; };
+		72929F115FE37110FB2BE7BF /* CoverPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CoverPageView.swift; path = StoryBook/CoverPageView.swift; sourceTree = "<group>"; };
+		7A01A8A2A53646AA22C132E3 /* DayContentPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DayContentPageView.swift; path = StoryBook/DayContentPageView.swift; sourceTree = "<group>"; };
+		7EE07F9D5505A841A5CD7CAE /* StoryPageLayout.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryPageLayout.swift; sourceTree = "<group>"; };
 		A586130A3384B2A62AC27350 /* MapSnapshotHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MapSnapshotHelper.swift; sourceTree = "<group>"; };
+		A8B39A532FFD631E0B9D8312 /* StoryBookViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryBookViewModel.swift; sourceTree = "<group>"; };
 		AA000003 /* Bloggo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Bloggo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PlaceCaptionEditSheet.swift; sourceTree = "<group>"; };
-		BB0002A2 /* StoryWritingStyleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryWritingStyleSheet.swift; sourceTree = "<group>"; };
-		BB0003A2 /* PDFExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFExportOptionsSheet.swift; sourceTree = "<group>"; };
 		BB000101 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		BB000103 /* fastblogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = fastblogApp.swift; sourceTree = "<group>"; };
 		BB000105 /* MyBlogsProfileViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyBlogsProfileViewModel.swift; sourceTree = "<group>"; };
@@ -329,20 +357,28 @@
 		BB000255 /* AppCaptureDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCaptureDetailView.swift; sourceTree = "<group>"; };
 		BB000261 /* VibeRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VibeRecorder.swift; sourceTree = "<group>"; };
 		BB000263 /* VibePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VibePlayer.swift; sourceTree = "<group>"; };
+		BB0002A2 /* StoryWritingStyleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryWritingStyleSheet.swift; sourceTree = "<group>"; };
 		BB0002E0 /* OnTheGoTripStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnTheGoTripStore.swift; sourceTree = "<group>"; };
 		BB0002E2 /* InAppCameraPhotoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppCameraPhotoStore.swift; sourceTree = "<group>"; };
 		BB0002F0 /* ScanSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanSessionStore.swift; sourceTree = "<group>"; };
 		BB0002F2 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
 		BB000300 /* AdminAnalyticsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminAnalyticsDashboardView.swift; sourceTree = "<group>"; };
 		BB000302 /* MyStatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyStatsView.swift; sourceTree = "<group>"; };
+		BB0003A2 /* PDFExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFExportOptionsSheet.swift; sourceTree = "<group>"; };
 		BB00A002 /* Analytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Analytics.swift; sourceTree = "<group>"; };
 		BB00AI02 /* AnalyticsIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsIdentity.swift; sourceTree = "<group>"; };
 		BB00F001 /* PlacesVisitedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacesVisitedView.swift; sourceTree = "<group>"; };
 		BB00F003 /* PlaceVisitedDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceVisitedDetailView.swift; sourceTree = "<group>"; };
 		BB00M002 /* BackendDashboardAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendDashboardAnalytics.swift; sourceTree = "<group>"; };
+		BF27B8BE17452A92005EEECF /* PhotoContinuationBlockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PhotoContinuationBlockView.swift; path = StoryBook/PhotoContinuationBlockView.swift; sourceTree = "<group>"; };
+		D3CF1895D23A7F11A1F1B7B0 /* StoryBookBuilder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryBookBuilder.swift; sourceTree = "<group>"; };
+		D3FBC69125D4B22AEC596A03 /* PageFooterView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PageFooterView.swift; path = StoryBook/PageFooterView.swift; sourceTree = "<group>"; };
+		E27CCA2B392AD6D7D60A651A /* StoryPage.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryPage.swift; sourceTree = "<group>"; };
 		E304D9246790A5FC17716A85 /* BlogPDFView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BlogPDFView.swift; sourceTree = "<group>"; };
 		EA00EA01 /* EarlyAccessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EarlyAccessManager.swift; sourceTree = "<group>"; };
 		EX00EX01 /* ExportingPDFView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportingPDFView.swift; sourceTree = "<group>"; };
+		PS00PS01 /* PreparingStoryBookView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreparingStoryBookView.swift; sourceTree = "<group>"; };
+		SM00SM01 /* StoryModePDFOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = StoryModePDFOptionsSheet.swift; path = StoryBook/StoryModePDFOptionsSheet.swift; sourceTree = "<group>"; };
 		F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalLLMStoryCaptionGenerator.swift; sourceTree = "<group>"; };
 		PD00PD01 /* PDFPreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFPreviewSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -359,7 +395,25 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		BB0001AD /* main */ = {
+		80B209C887D886E7146C1DC1 /* StoryBook */ = {
+			isa = PBXGroup;
+			children = (
+				30C7F49D9E66B6763CCCD7B9 /* PhotoCardView.swift */,
+				D3FBC69125D4B22AEC596A03 /* PageFooterView.swift */,
+				0D31200382275E7A7520CD4F /* PlaceBlockView.swift */,
+				BF27B8BE17452A92005EEECF /* PhotoContinuationBlockView.swift */,
+				72929F115FE37110FB2BE7BF /* CoverPageView.swift */,
+				2F6DDE63772EF1F878EC3686 /* TOCPageView.swift */,
+				2C820592BA8137D8FF7F05AA /* DayMapPageView.swift */,
+				7A01A8A2A53646AA22C132E3 /* DayContentPageView.swift */,
+				0733072C4EA957FE04A03752 /* StoryPageView.swift */,
+				6ABC2F392F2EBDD1636DC399 /* StoryBookView.swift */,
+				SM00SM01 /* StoryModePDFOptionsSheet.swift */,
+			);
+			name = StoryBook;
+			sourceTree = "<group>";
+		};
+		BB0001AD = {
 			isa = PBXGroup;
 			children = (
 				0354AFB52F6737A300C41BAA /* Bloggo.entitlements */,
@@ -407,6 +461,8 @@
 				BB000119 /* ScanConfig.swift */,
 				BB00011B /* TripDay.swift */,
 				BB00011D /* TripDraft.swift */,
+				67D919F737961D65785318BA /* StoryBookContent.swift */,
+				E27CCA2B392AD6D7D60A651A /* StoryPage.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -420,6 +476,7 @@
 				BB000109 /* TripCreationViewModel.swift */,
 				BB00010B /* TripsViewModel.swift */,
 				BB0001D2 /* MemoryRecallViewModel.swift */,
+				A8B39A532FFD631E0B9D8312 /* StoryBookViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -500,6 +557,8 @@
 				E304D9246790A5FC17716A85 /* BlogPDFView.swift */,
 				PD00PD01 /* PDFPreviewSheet.swift */,
 				EX00EX01 /* ExportingPDFView.swift */,
+				PS00PS01 /* PreparingStoryBookView.swift */,
+				80B209C887D886E7146C1DC1 /* StoryBook */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -581,7 +640,10 @@
 				F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */,
 				4E34776F396319FBEE2FCECD /* StoryCaptionGenerator.swift */,
 				2F5C55E3E5D4C283468EF581 /* PDFExportService.swift */,
+				E2B91F4A3C8D4756B0E1F203 /* StoryModePDFExportService.swift */,
 				A586130A3384B2A62AC27350 /* MapSnapshotHelper.swift */,
+				7EE07F9D5505A841A5CD7CAE /* StoryPageLayout.swift */,
+				D3CF1895D23A7F11A1F1B7B0 /* StoryBookBuilder.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -649,7 +711,7 @@
 				en,
 				Base,
 			);
-			mainGroup = BB0001AD /* main */;
+			mainGroup = BB0001AD;
 			packageReferences = (
 				AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
@@ -837,10 +899,28 @@
 				BB0002A1 /* StoryWritingStyleSheet.swift in Sources */,
 				BB0003A1 /* PDFExportOptionsSheet.swift in Sources */,
 				A31B7C85BABD6199A2A43BB7 /* PDFExportService.swift in Sources */,
+				F3C02E5B4D9E5867C1F2A314 /* StoryModePDFExportService.swift in Sources */,
 				0C30D67375CF715A0AE52995 /* MapSnapshotHelper.swift in Sources */,
 				7D19D079975A2110DB757EE7 /* BlogPDFView.swift in Sources */,
 				PD00PD02 /* PDFPreviewSheet.swift in Sources */,
 				EX00EX02 /* ExportingPDFView.swift in Sources */,
+				PS00PS02 /* PreparingStoryBookView.swift in Sources */,
+				AC413CC9DFEB2B2939B89DA5 /* StoryBookContent.swift in Sources */,
+				285D83E64056D6DBF8E9894F /* StoryPage.swift in Sources */,
+				F2AB1FA0886785F982950F7A /* StoryPageLayout.swift in Sources */,
+				32D85DD5E6FD49691543F872 /* StoryBookBuilder.swift in Sources */,
+				43EA38F00CD64247BB84651D /* StoryBookViewModel.swift in Sources */,
+				D2F8D3AF63FAE7358C61872A /* PhotoCardView.swift in Sources */,
+				75A557C81671BBFA4382AAA5 /* PageFooterView.swift in Sources */,
+				DCB9D1AF4FAB8889D866BC40 /* PlaceBlockView.swift in Sources */,
+				33A0384A2DEF7075550C1327 /* PhotoContinuationBlockView.swift in Sources */,
+				01B2787FA0EA66741089467C /* CoverPageView.swift in Sources */,
+				7FBD2FEB65535E4150C1E521 /* TOCPageView.swift in Sources */,
+				37FBA08B0004D6825EFD3370 /* DayMapPageView.swift in Sources */,
+				5050088081A6CE14C59511C2 /* DayContentPageView.swift in Sources */,
+				ACC2FF7BA930277126E43C96 /* StoryPageView.swift in Sources */,
+				C7E087F6AACF99F475844343 /* StoryBookView.swift in Sources */,
+				SM00SM02 /* StoryModePDFOptionsSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

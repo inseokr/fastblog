@@ -103,7 +103,15 @@ struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
     /// Uses EXIF digitized time from the first place stop when available so the day
     /// reflects the local timezone of the capture location, not the device timezone.
     var shortDateText: String {
-        // Prefer EXIF local time — already correct for the timezone where photos were taken.
+        let (d, tz) = displayDateAndTimeZoneForStoryBook()
+        let display = DateFormatter()
+        display.dateFormat = "EEEE MMM-d"
+        if let tz { display.timeZone = tz }
+        return display.string(from: d)
+    }
+
+    /// Same calendar day as `shortDateText`, used for story-book TOC / cover date range so the header matches each row.
+    private func displayDateAndTimeZoneForStoryBook() -> (Date, TimeZone?) {
         if let digitized = placeStops.first?.visitedTimeDigitized {
             let components = digitized.split(separator: " ")
             if components.count == 2 {
@@ -111,17 +119,29 @@ struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
                 exifParser.dateFormat = "yyyy:MM:dd"
                 exifParser.timeZone = TimeZone(secondsFromGMT: 0)
                 if let exifDate = exifParser.date(from: String(components[0])) {
-                    let display = DateFormatter()
-                    display.dateFormat = "EEEE MMM-d"
-                    display.timeZone = TimeZone(secondsFromGMT: 0)
-                    return display.string(from: exifDate)
+                    return (exifDate, TimeZone(secondsFromGMT: 0))
                 }
             }
         }
-        // Fallback: stored date in device-local timezone.
-        let f = DateFormatter()
-        f.dateFormat = "EEEE MMM-d"
-        return f.string(from: date)
+        return (date, nil)
+    }
+
+    /// "MMM d" for the story-book date range line (aligned with `shortDateText`).
+    func monthDayStringForStoryBookRange() -> String {
+        let (d, tz) = displayDateAndTimeZoneForStoryBook()
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MMM d"
+        if let tz { fmt.timeZone = tz }
+        return fmt.string(from: d)
+    }
+
+    /// ", yyyy" suffix for the end of the story-book date range (aligned with `shortDateText`).
+    func yearSuffixForStoryBookRange() -> String {
+        let (d, tz) = displayDateAndTimeZoneForStoryBook()
+        let fmt = DateFormatter()
+        fmt.dateFormat = ", yyyy"
+        if let tz { fmt.timeZone = tz }
+        return fmt.string(from: d)
     }
 
     /// All photos in this day that have a location (for map pins).
