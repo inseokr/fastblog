@@ -134,11 +134,14 @@ struct PlaceStopRowView: View {
                                 }
                                 .buttonStyle(.plain)
                                 Button { onEditName?() } label: {
-                                    Image(systemName: "square.and.pencil")
-                                        .font(.system(size: 18, weight: .semibold))
-                                        .foregroundStyle(.white)
-                                        .padding(8)
-                                        .background(Circle().fill(Color.white.opacity(0.22)))
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color.white.opacity(0.22))
+                                        Image(systemName: "square.and.pencil")
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundStyle(.white)
+                                    }
+                                    .frame(width: 28, height: 28)
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("Edit place name")

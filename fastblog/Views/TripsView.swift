@@ -750,7 +750,7 @@ struct TripsView: View {
                         .fontWeight(.bold)
                         .multilineTextAlignment(.center)
 
-                    Text("We selected the best 3 photos from your trips. Just tap one to create your blog.")
+                    Text("We selected the best three photos for each moment. Tap a trip to create your blog.")
                         .font(.body)
                         .multilineTextAlignment(.center)
                         .foregroundColor(.secondary)

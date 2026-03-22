@@ -150,6 +150,12 @@ struct RecapBlogPageView: View {
         Set(newMomentPhotos.map { $0.locationName ?? "Moment" }).count
     }
 
+    /// Matches story book backdrop so the recap page never flashes the wrong color behind Story mode.
+    private var storyPresentationUnderlayColor: Color {
+        let opts = (try? JSONDecoder().decode(PDFExportOptions.self, from: pdfExportOptionsData)) ?? PDFExportOptions()
+        return opts.colorStyle == .black ? Color.black : Color.white
+    }
+
     // MARK: - Split Blog Properties
     @State private var showSplitActionSheet = false
     @State private var dayIndexToSplit: Int?
@@ -198,10 +204,14 @@ struct RecapBlogPageView: View {
             }
 
             if showStoryMode {
-                StoryBookView(detail: draft, onDismiss: { showStoryMode = false; storyContentReady = false; storyChromeVisible = true }, triggerShare: $storyShareTrigger, contentReady: $storyContentReady, showChrome: $storyChromeVisible)
-                    .ignoresSafeArea()
-                    .transition(.opacity)
-                    .zIndex(200)
+                // Opaque underlay + no fade-in on the whole stack so the blog never shows through during presentation.
+                ZStack {
+                    storyPresentationUnderlayColor
+                        .ignoresSafeArea()
+                    StoryBookView(detail: draft, onDismiss: { showStoryMode = false; storyContentReady = false; storyChromeVisible = true }, triggerShare: $storyShareTrigger, contentReady: $storyContentReady, showChrome: $storyChromeVisible)
+                        .ignoresSafeArea()
+                }
+                .zIndex(200)
             }
 
             if let item = placeCaptionEditItem, let stop = placeStop(dayId: item.dayId, stopId: item.stopId) {
@@ -224,7 +234,6 @@ struct RecapBlogPageView: View {
 
         }
         .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
-        .animation(.easeIn(duration: 0.4), value: showStoryMode)
         .animation(.easeOut(duration: 0.22), value: placeCaptionEditItem?.id)
         .animation(.easeOut(duration: 0.22), value: dayCaptionEditItem?.id)
         .animation(.easeOut(duration: 0.22), value: placePhotoModalItem?.id)

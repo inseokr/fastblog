@@ -31,8 +31,24 @@ struct StoryBookView: View {
         (try? JSONDecoder().decode(PDFExportOptions.self, from: pdfExportOptionsData)) ?? PDFExportOptions()
     }
 
+    /// Full-screen opaque fill so the recap blog never shows through TabView paging, safe-area gaps, or transitions.
+    private var storyModeBackdropColor: Color {
+        switch viewModel.state {
+        case .failed:
+            return .white
+        case .loading:
+            return .black
+        case .ready:
+            return savedOptions.colorStyle == .black ? .black : .white
+        }
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
+            Rectangle()
+                .fill(storyModeBackdropColor)
+                .ignoresSafeArea()
+
             switch viewModel.state {
             case .loading:
                 PreparingStoryBookView()
