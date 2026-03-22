@@ -471,6 +471,44 @@ extension AuthService {
         }
     }
 
+    /// Called after the email verification deep link is opened.
+    /// Stores the JWT from the link, fetches user info from /auth/me, then completes sign-in.
+    func loginWithVerificationToken(_ jwtToken: String) async {
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+
+        setJwtToken(jwtToken)
+
+        do {
+            let response: LoginResponse = try await APIManager.shared.get(
+                endpoint: "/auth/me",
+                requiresAuth: true
+            )
+            guard response.message == "ok", let user = response.user else {
+                errorMessage = AuthError.networkError("Could not load your account after verification.").errorDescription
+                setJwtToken(nil)
+                return
+            }
+            let authUser = AuthUser(
+                id: user._id ?? "verified-\(UUID().uuidString)",
+                email: user.email,
+                displayName: user.name ?? user.username,
+                username: user.username,
+                provider: .email,
+                storageUsedBytes: user.storageUsedBytes ?? 0,
+                userLevel: UserLevel(rawValue: user.userLevel ?? "normal") ?? .normal
+            )
+            if let username = user.username {
+                UserDefaults.standard.set(username, forKey: "blogify.lastLoginUsername")
+            }
+            finishSignIn(user: authUser)
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            setJwtToken(nil)
+        }
+    }
+
     func login(email: String, password: String) async throws {
         let isUsername = !email.contains("@")
         if !isUsername {

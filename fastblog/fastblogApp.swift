@@ -118,6 +118,8 @@ struct fastblogApp: App {
                 .onOpenURL { url in
                     if let token = Self.parseResetPasswordToken(from: url) {
                         DispatchQueue.main.async { pendingResetToken = token }
+                    } else if let jwt = Self.parseVerifyEmailToken(from: url) {
+                        Task { await authService.loginWithVerificationToken(jwt) }
                     } else {
                         _ = GoogleAuthManager.handleURL(url)
                     }
@@ -296,6 +298,21 @@ struct fastblogApp: App {
     private static func parseResetPasswordToken(from url: URL) -> String? {
         guard url.scheme?.lowercased() == "fastblog" else { return nil }
         guard url.host?.lowercased() == "reset-password" else { return nil }
+        guard
+            let token = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .first(where: { $0.name == "token" })?
+                .value?
+                .trimmingCharacters(in: .whitespaces),
+            !token.isEmpty
+        else { return nil }
+        return token
+    }
+
+    /// Parses fastblog://verify-email?token=<jwt> deep link. Returns the JWT if valid.
+    private static func parseVerifyEmailToken(from url: URL) -> String? {
+        guard url.scheme?.lowercased() == "fastblog" else { return nil }
+        guard url.host?.lowercased() == "verify-email" else { return nil }
         guard
             let token = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?
