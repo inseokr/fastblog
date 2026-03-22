@@ -412,12 +412,15 @@ struct RecapBlogPageView: View {
                 }
             }
             .onReceive(createdRecapStore.objectWillChange) {
-                // Keep read-only blog UI in sync when detail changes elsewhere (e.g. photo caption from Places Visited).
-                if !isEditMode,
-                   let updated = createdRecapStore.getBlogDetail(blogId: blogId),
-                   !updated.days.isEmpty,
-                   updated != draft {
-                    draft = updated
+                // Default `isEditMode` is true, so we must still merge background work (rate-limited geocoding per day)
+                // from the store; otherwise `draft` stays stale while `blogDetailsBySourceId` updates and days look stuck until reopen.
+                if let updated = createdRecapStore.getBlogDetail(blogId: blogId),
+                   !updated.days.isEmpty {
+                    if isEditMode {
+                        mergeResolvedBlogDaysFromStore(updated: updated, into: &draft)
+                    } else if updated != draft {
+                        draft = updated
+                    }
                 }
                 if showUnprocessedDayAlert {
                     let stillProcessing = createdRecapStore.processingDayIndexByBlogId[blogId] != nil
@@ -1675,6 +1678,18 @@ struct RecapBlogPageView: View {
         .presentationDetents([.fraction(0.50)])
         .presentationDragIndicator(.visible)
         .ignoresSafeArea(edges: .bottom)
+    }
+
+    /// Applies per-day geocoding / scoring / weather from the store while the user is in edit mode, without replacing the whole draft (preserves other in-progress edits).
+    private func mergeResolvedBlogDaysFromStore(updated: RecapBlogDetail, into draft: inout RecapBlogDetail) {
+        guard updated.id == draft.id, updated.days.count == draft.days.count else { return }
+        for i in draft.days.indices where !draft.days[i].isPlaceNamesResolved && updated.days[i].isPlaceNamesResolved {
+            var merged = updated.days[i]
+            if let caption = draft.days[i].dayCaption, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                merged.dayCaption = caption
+            }
+            draft.days[i] = merged
+        }
     }
 
     private func loadDraftIfNeeded() {

@@ -1970,8 +1970,9 @@ final class CreatedRecapBlogStore: ObservableObject {
     /// Process one more day (geocode, visitedTime, photo quality) and merge into stored detail. Call after recommended delay.
     /// Sets processingDayIndexByBlogId when starting and clears when done; notifies observers.
     func continueGeocodingDays(blogId: UUID) async {
-        guard var detail = blogDetailsBySourceId[blogId],
-              let trip = tripDraftsBySourceId[blogId] else { return }
+        // Only `blogDetailsBySourceId` is needed to geocode and persist; requiring a trip draft caused silent no-ops
+        // when detail existed without `tripDraftsBySourceId` (e.g. persistence edge cases).
+        guard var detail = blogDetailsBySourceId[blogId] else { return }
         let dayIndicesToProcess = detail.days.indices.filter { !detail.days[$0].isPlaceNamesResolved }
         guard let dayIdx = dayIndicesToProcess.first else { return }
 
