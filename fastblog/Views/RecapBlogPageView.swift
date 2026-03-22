@@ -577,18 +577,20 @@ struct RecapBlogPageView: View {
             }
             .fullScreenCover(isPresented: $showPanorama) {
                 // Build one group per PlaceStop so diptych never mixes places.
-                let groups: [[String]] = draft.days
+                let groups: [[PanoramaPhotoEntry]] = draft.days
                     .flatMap(\.placeStops)
-                    .compactMap { stop -> [String]? in
-                        let ids = stop.photos
+                    .compactMap { stop -> [PanoramaPhotoEntry]? in
+                        let entries = stop.photos
                             .filter(\.isIncluded)
-                            .compactMap(\.localIdentifier)
-                            .filter { !$0.isEmpty }
-                        return ids.isEmpty ? nil : ids
+                            .compactMap { photo -> PanoramaPhotoEntry? in
+                                guard let id = photo.localIdentifier, !id.isEmpty else { return nil }
+                                return PanoramaPhotoEntry(id: id, caption: photo.caption)
+                            }
+                        return entries.isEmpty ? nil : entries
                     }
                 // Fall back to cover photo when no included photos exist.
                 let photoGroups = groups.isEmpty
-                    ? draft.selectedCoverPhotoIdentifier.map { [[$0]] } ?? []
+                    ? draft.selectedCoverPhotoIdentifier.map { [[PanoramaPhotoEntry(id: $0, caption: nil)]] } ?? []
                     : groups
                 if !photoGroups.isEmpty {
                     PanoramaPlayerView(photoGroups: photoGroups, onDismiss: { showPanorama = false })

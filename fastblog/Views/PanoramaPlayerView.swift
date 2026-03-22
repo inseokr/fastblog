@@ -2,6 +2,13 @@ import MediaPlayer
 import Photos
 import SwiftUI
 
+// MARK: - Photo entry (asset ID + optional caption)
+
+struct PanoramaPhotoEntry: Equatable {
+    let id: String
+    let caption: String?
+}
+
 // MARK: - Layout variant (solo or top/bottom diptych only)
 
 private enum SlideLayout: Equatable {
@@ -24,7 +31,7 @@ private enum DiptychHalf {
 ///   Top photo exits upward / enters from below; bottom is the opposite.
 struct PanoramaPlayerView: View {
     /// Photos grouped by place (PlaceStop). Each inner array = one place.
-    let photoGroups: [[String]]
+    let photoGroups: [[PanoramaPhotoEntry]]
     var onDismiss: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -74,7 +81,7 @@ struct PanoramaPlayerView: View {
 
     // MARK: - Derived
 
-    private var currentGroup: [String] {
+    private var currentGroup: [PanoramaPhotoEntry] {
         guard currentGroupIndex < photoGroups.count else { return [] }
         return photoGroups[currentGroupIndex]
     }
@@ -82,7 +89,13 @@ struct PanoramaPlayerView: View {
     /// Asset ID of the top (or only) photo on the current slide.
     private var topPhotoId: String? {
         guard currentSlideOffset < currentGroup.count else { return nil }
-        return currentGroup[currentSlideOffset]
+        return currentGroup[currentSlideOffset].id
+    }
+
+    /// Caption of the top (or only) photo on the current slide.
+    private var topPhotoCaption: String? {
+        guard currentSlideOffset < currentGroup.count else { return nil }
+        return currentGroup[currentSlideOffset].caption
     }
 
     /// Asset ID of the bottom photo in diptych mode (same group, next slot).
@@ -90,7 +103,7 @@ struct PanoramaPlayerView: View {
         guard currentLayout == .diptych,
               currentSlideOffset + 1 < currentGroup.count
         else { return nil }
-        return currentGroup[currentSlideOffset + 1]
+        return currentGroup[currentSlideOffset + 1].id
     }
 
     private var totalPhotos: Int { photoGroups.reduce(0) { $0 + $1.count } }
@@ -152,6 +165,16 @@ struct PanoramaPlayerView: View {
                     .padding(.horizontal, 20)
                 Spacer()
                 VStack(spacing: 10) {
+                    if diptychExpandedHalf == nil, let caption = topPhotoCaption, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(caption)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.85))
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .padding(.horizontal, 24)
+                            .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 1)
+                            .transition(.opacity)
+                    }
                     progressBar
                         .padding(.horizontal, 24)
                     bottomControls
@@ -654,7 +677,7 @@ struct PanoramaPlayerView: View {
         while ids.count < 6, gIdx < photoGroups.count {
             let group = photoGroups[gIdx]
             while pIdx < group.count, ids.count < 6 {
-                ids.append(group[pIdx])
+                ids.append(group[pIdx].id)
                 pIdx += 1
             }
             gIdx += 1
