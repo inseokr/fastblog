@@ -27,6 +27,8 @@ struct ContentView: View {
     @State private var initialDayIndexForRecap: Int?
     @State private var dismissToLandingRequested = false
     @State private var showNoPhotosAlert = false
+    /// User dismissed the limited library picker without changing which photos are shared (e.g. tapped away).
+    @State private var showLimitedPickerDismissedWithoutChangeAlert = false
     @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
     @State private var showCaptureIntroSheet = false
     /// Day index to open when navigating to a blog via the new-moments popup.
@@ -214,6 +216,14 @@ struct ContentView: View {
         } message: {
             Text("Please select at least one photo to create a travel blog.")
         }
+        .alert("No Photos Selected for Trip Scanning", isPresented: $showLimitedPickerDismissedWithoutChangeAlert) {
+            Button("Select More") {
+                presentLimitedLibraryPickerFromLanding()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Your shared photo selection didn't change. Choose photos that include location data so we can find trips, or cancel to stay on the home screen.")
+        }
         .environmentObject(createdRecapStore)
         .environment(\.dismissToLanding, {
             dismissToLandingRequested = true
@@ -356,15 +366,20 @@ struct ContentView: View {
     private func presentLimitedLibraryPickerFromLanding() {
         DispatchQueue.main.async {
             guard let topVC = topViewControllerForPresentation() else { return }
+            let photoCountBeforePicker = photoAuth.selectedPhotoCount
             PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: topVC) { _ in
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                     photoAuth.refreshStatus()
-                    let fetchResult = PHAsset.fetchAssets(with: PHFetchOptions())
-                    guard fetchResult.count > 0 else {
+                    let countAfter = photoAuth.selectedPhotoCount
+                    guard countAfter > 0 else {
                         showNoPhotosAlert = true
                         return
                     }
-                    // Trigger loading → Trips flow after the user confirms with the blue checkmark.
+                    // Match TripsView: if the user closed the picker without changing selection, do not scan or open Trips.
+                    guard countAfter != photoCountBeforePicker else {
+                        showLimitedPickerDismissedWithoutChangeAlert = true
+                        return
+                    }
                     pendingShowTripsWhenIdle = true
                     tripsViewModel.startDefaultScan(forceFullScan: true)
                 }
