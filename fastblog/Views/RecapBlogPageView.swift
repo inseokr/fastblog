@@ -112,6 +112,9 @@ struct RecapBlogPageView: View {
     @State private var showPDFExportOptions = false
     @State private var showStoryMode = false
     @State private var showStoryModePDFOptions = false
+    @State private var storyShareTrigger = false
+    @State private var storyContentReady = false
+    @State private var storyChromeVisible = true
     @State private var pendingStoryOpen = false
     @AppStorage("pdfExportOptions") private var pdfExportOptionsData: Data = (try? JSONEncoder().encode(PDFExportOptions())) ?? Data()
     @State private var showProfileManagement = false
@@ -193,11 +196,12 @@ struct RecapBlogPageView: View {
             }
 
             if showStoryMode {
-                StoryBookView(detail: draft, onDismiss: { showStoryMode = false })
+                StoryBookView(detail: draft, onDismiss: { showStoryMode = false; storyContentReady = false; storyChromeVisible = true }, triggerShare: $storyShareTrigger, contentReady: $storyContentReady, showChrome: $storyChromeVisible)
                     .ignoresSafeArea()
                     .transition(.opacity)
                     .zIndex(200)
             }
+
         }
         .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
         .animation(.easeIn(duration: 0.4), value: showStoryMode)
@@ -278,7 +282,7 @@ struct RecapBlogPageView: View {
                 StoryModePDFOptionsSheet {
                     pendingStoryOpen = true
                 }
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showProfileManagement, onDismiss: {
@@ -412,7 +416,7 @@ struct RecapBlogPageView: View {
             .navigationBarBackButtonHidden(true)
             .navigationTitle(navTitle)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(!isEditMode && showNavBarTitle ? .visible : .hidden, for: .navigationBar)
+            .toolbarBackground(showStoryMode ? .hidden : (!isEditMode && showNavBarTitle ? .visible : .hidden), for: .navigationBar)
             .toolbar { toolbarContent }
             .sheet(isPresented: $showShareSheet) {
                 ShareSheet(items: shareItems)
@@ -1001,30 +1005,6 @@ struct RecapBlogPageView: View {
                                     .foregroundColor(.white.opacity(0.92))
                                     .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
                             }
-
-                            Button {
-                                if authService.isSignedIn {
-                                    showPDFExportOptions = true
-                                } else {
-                                    showExportSignInAlert = true
-                                }
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "doc.text")
-                                        .font(.system(size: 14, weight: .medium))
-                                    Text("Export")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                }
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .background(Color.white.opacity(0.15).background(.ultraThinMaterial))
-                                .clipShape(Capsule())
-                                .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.top, 4)
 
                             Button {
                                 showStoryModePDFOptions = true
@@ -2394,38 +2374,50 @@ struct RecapBlogPageView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            Button {
-                print("🔙 Back button tapped — isEditMode: \(isEditMode)")
-                if isEditMode {
-                    let isFirstCreation = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
-                    print("🔙 isFirstCreation: \(isFirstCreation)")
+            if showStoryMode {
+                Button {
+                    showStoryMode = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(.plain)
+            } else if !showStoryMode {
+                Button {
+                    print("🔙 Back button tapped — isEditMode: \(isEditMode)")
+                    if isEditMode {
+                        let isFirstCreation = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
+                        print("🔙 isFirstCreation: \(isFirstCreation)")
 
-                    if isFirstCreation {
-                        print("🔙 Setting showNewBlogExitConfirmation = true")
-                        showSaveTipAlert = false
-                        DispatchQueue.main.async {
-                            let stillUnsaved = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
-                            guard stillUnsaved else { return }
-                            showNewBlogExitConfirmation = true
+                        if isFirstCreation {
+                            print("🔙 Setting showNewBlogExitConfirmation = true")
+                            showSaveTipAlert = false
+                            DispatchQueue.main.async {
+                                let stillUnsaved = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
+                                guard stillUnsaved else { return }
+                                showNewBlogExitConfirmation = true
+                            }
+                        } else {
+                            if draftSnapshot != nil && draft == draftSnapshot {
+                                // No changes made, leave uninterrupted
+                                print("🔙 No changes, returning to read-only")
+                                isEditMode = false
+                            } else {
+                                // Changes were made
+                                print("🔙 Changes detected, showing unsaved alert")
+                                showUnsavedChangesAlert = true
+                            }
                         }
                     } else {
-                        if draftSnapshot != nil && draft == draftSnapshot {
-                            // No changes made, leave uninterrupted
-                            print("🔙 No changes, returning to read-only")
-                            isEditMode = false
-                        } else {
-                            // Changes were made
-                            print("🔙 Changes detected, showing unsaved alert")
-                            showUnsavedChangesAlert = true
-                        }
+                        print("🔙 View mode, dismissing")
+                        performDismiss()
                     }
-                } else {
-                    print("🔙 View mode, dismissing")
-                    performDismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.body.weight(.semibold))
                 }
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.body.weight(.semibold))
             }
         }
         ToolbarItem(placement: .principal) {
@@ -2453,7 +2445,25 @@ struct RecapBlogPageView: View {
                         .fixedSize()
                 }
                 .buttonStyle(.plain)
-            } else if !isExportingPDF {
+            } else if showStoryMode && storyContentReady {
+                Button {
+                    storyShareTrigger = true
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Share")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .foregroundColor(.white)
+                    .fixedSize()
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.blue)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            } else if !isExportingPDF && !showStoryMode {
                 HStack(spacing: 16) {
                     Button {
                         if blogIsInCloud {

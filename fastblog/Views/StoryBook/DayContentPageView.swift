@@ -73,11 +73,7 @@ struct DayContentPageView: View {
     private func slotView(_ slot: ContentSlot) -> some View {
         switch slot {
         case .dayCaption(let text):
-            let pageContentWidth = StoryRenderMetrics.clampedScreenWidth - 32
-            let maxBoxH = StoryPageLayout.dayStoryCaptionBoxHeight(for: text, pageWidth: pageContentWidth, fontTheme: .classic)
             StoryDayCaptionCallout(text: text)
-                .frame(maxHeight: maxBoxH)
-                .clipped()
 
         case .placeBlock(let place, let photoSlice, let photoImageHeight, let photoGridLayout):
             let photos: [PhotoContent] = place.photos.isEmpty ? [] : {
@@ -138,31 +134,37 @@ private struct StoryDayCaptionCallout: View {
 
     var body: some View {
         let r = StoryPageLayout.dayStoryBoxCornerRadius
-        HStack(alignment: .top, spacing: 12) {
-            UnevenRoundedRectangle(
-                cornerRadii: RectangleCornerRadii(
-                    topLeading: r,
-                    bottomLeading: r,
-                    bottomTrailing: 0,
-                    topTrailing: 0
-                ),
-                style: .continuous
+        // The accent bar is an overlay so the callout sizes to its text content.
+        // Previously the bar used .frame(maxHeight: .infinity) inside an HStack,
+        // which made the callout a greedy height consumer in the page VStack,
+        // causing it to be compressed when place blocks were on the same page.
+        Text(text)
+            .italic()
+            .font(Font(StoryFontHelper.uiItalicFont(for: .classic, size: StoryPageLayout.dayStoryCaptionFontSize)))
+            .foregroundColor(.black)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, StoryPageLayout.dayStoryBoxDividerInsetFromLeft + StoryPageLayout.dayStoryBoxDividerWidth + 12)
+            .padding(.trailing, StoryPageLayout.dayStoryBoxTextPaddingRight)
+            .padding(.top, StoryPageLayout.dayStoryBoxTextPaddingTop)
+            .padding(.bottom, StoryPageLayout.dayStoryBoxTextPaddingBottom)
+            .background(
+                RoundedRectangle(cornerRadius: r, style: .continuous)
+                    .fill(fillColor)
             )
-            .fill(accentColor)
-            .frame(width: StoryPageLayout.dayStoryBoxDividerWidth)
-            .frame(maxHeight: .infinity)
-            Text(text)
-                .italic()
-                .font(Font(StoryFontHelper.uiItalicFont(for: .classic, size: StoryPageLayout.dayStoryCaptionFontSize)))
-                .foregroundColor(.black)
-        }
-        .padding(.leading, StoryPageLayout.dayStoryBoxDividerInsetFromLeft)
-        .padding(.trailing, StoryPageLayout.dayStoryBoxTextPaddingRight)
-        .padding(.top, StoryPageLayout.dayStoryBoxTextPaddingTop)
-        .padding(.bottom, StoryPageLayout.dayStoryBoxTextPaddingBottom)
-        .background(
-            RoundedRectangle(cornerRadius: r, style: .continuous)
-                .fill(fillColor)
-        )
+            .overlay(alignment: .leading) {
+                UnevenRoundedRectangle(
+                    cornerRadii: RectangleCornerRadii(
+                        topLeading: r,
+                        bottomLeading: r,
+                        bottomTrailing: 0,
+                        topTrailing: 0
+                    ),
+                    style: .continuous
+                )
+                .fill(accentColor)
+                .frame(width: StoryPageLayout.dayStoryBoxDividerWidth)
+                .frame(maxHeight: .infinity)
+                .padding(.leading, StoryPageLayout.dayStoryBoxDividerInsetFromLeft)
+            }
     }
 }

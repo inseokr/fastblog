@@ -4,7 +4,18 @@ import SwiftUI
 struct StoryBookView: View {
     let detail: RecapBlogDetail
     var onDismiss: (() -> Void)? = nil
+    @Binding var triggerShare: Bool
+    @Binding var contentReady: Bool
+    @Binding var showChrome: Bool
     @StateObject private var viewModel = StoryBookViewModel()
+
+    init(detail: RecapBlogDetail, onDismiss: (() -> Void)? = nil, triggerShare: Binding<Bool> = .constant(false), contentReady: Binding<Bool> = .constant(false), showChrome: Binding<Bool> = .constant(true)) {
+        self.detail = detail
+        self.onDismiss = onDismiss
+        self._triggerShare = triggerShare
+        self._contentReady = contentReady
+        self._showChrome = showChrome
+    }
     @State private var selectedPageIndex: Int = 0
     @State private var showShareSheet = false
     @State private var pdfShareURL: URL?
@@ -13,8 +24,6 @@ struct StoryBookView: View {
     @State private var exportErrorMessage: String?
     /// Same key as `RecapBlogPageView` so Story Share matches Export → PDF Options.
     @AppStorage("pdfExportOptions") private var pdfExportOptionsData: Data = (try? JSONEncoder().encode(PDFExportOptions())) ?? Data()
-    /// When false, the bottom Cancel/Share buttons and Days menu are hidden; tap the story to toggle.
-    @State private var showStoryChrome = true
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -41,7 +50,7 @@ struct StoryBookView: View {
                         .tabViewStyle(.page(indexDisplayMode: .never))
                         .simultaneousGesture(
                             TapGesture().onEnded {
-                                showStoryChrome.toggle()
+                                showChrome.toggle()
                             }
                         )
 
@@ -80,7 +89,7 @@ struct StoryBookView: View {
                     }
                     .preferredColorScheme(.light)
 
-                    storyDaysMenuOverlay(pages: pages)
+                    storyDaysMenuBottomTrailingOverlay(pages: pages)
                         .preferredColorScheme(.dark)
                 }
                 .task(id: pages.count) {
@@ -102,6 +111,19 @@ struct StoryBookView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.white)
             }
+
+            // Soft top gradient for nav bar contrast — hides with chrome
+            LinearGradient(
+                colors: [Color.black.opacity(0.45), Color.clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 110)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .allowsHitTesting(false)
+            .ignoresSafeArea()
+            .opacity(showChrome ? 1 : 0)
+            .animation(.easeInOut(duration: 0.2), value: showChrome)
 
             if showsStoryModeBottomBar {
                 storyModeBottomBar
@@ -125,6 +147,14 @@ struct StoryBookView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(exportErrorMessage ?? "Unknown error")
+        }
+        .onChange(of: triggerShare) { newValue in
+            guard newValue else { return }
+            triggerShare = false
+            Task { await exportStoryModePDFAndShare() }
+        }
+        .onChange(of: isContentReady) { ready in
+            contentReady = ready
         }
     }
 
@@ -164,109 +194,19 @@ struct StoryBookView: View {
         }
     }
 
-    /// During loading the bar stays visible; when ready it follows `showStoryChrome` (tap story to toggle).
-    private var storyBottomBarChromeVisible: Bool {
-        switch viewModel.state {
-        case .loading: return true
-        case .ready: return showStoryChrome
-        case .failed: return false
-        }
-    }
-
     @ViewBuilder
     private var storyModeBottomBar: some View {
-        ZStack(alignment: .bottom) {
-            // Page number badge — always visible while content is ready
-            Group {
-                if case .ready(let pages) = viewModel.state {
-                    StoryBookPageNumberBadge(
-                        currentPage: selectedPageIndex + 1,
-                        totalPages: max(1, pages.count)
-                    )
-                }
+        // Page number badge — always visible while content is ready
+        Group {
+            if case .ready(let pages) = viewModel.state {
+                StoryBookPageNumberBadge(
+                    currentPage: selectedPageIndex + 1,
+                    totalPages: max(1, pages.count)
+                )
             }
-            .frame(maxWidth: .infinity)
-            .allowsHitTesting(false)
-            .padding(.bottom, 18)
-
-            // Cancel / Share buttons — hide when chrome is toggled off
-            HStack(alignment: .bottom, spacing: 0) {
-                Button {
-                    viewModel.cancel()
-                    if let od = onDismiss { od() } else { dismiss() }
-                } label: {
-                    Text("Cancel")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Color.black.opacity(0.68))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(Color.white.opacity(0.20), lineWidth: 1)
-                        )
-                        .shadow(color: .black.opacity(0.30), radius: 10, x: 0, y: 4)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Spacer()
-                    .frame(maxWidth: .infinity)
-
-            Button {
-                Task { await exportStoryModePDFAndShare() }
-            } label: {
-                if isExportingPDF {
-                    Text("Exporting…")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Color.blue)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(Color.white.opacity(0.25), lineWidth: 1)
-                        )
-                        .shadow(color: .black.opacity(0.22), radius: 10, x: 0, y: 4)
-                } else {
-                    HStack(spacing: 6) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.subheadline.weight(.semibold))
-                        Text("Share")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.blue)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(Color.white.opacity(0.25), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(0.22), radius: 10, x: 0, y: 4)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .accessibilityLabel("Share")
-            .disabled(isExportingPDF || !isContentReady)
         }
+        .allowsHitTesting(false)
         .padding(.bottom, 18)
-        .padding(.horizontal, 16)
-        .opacity(storyBottomBarChromeVisible ? 1 : 0)
-        .allowsHitTesting(storyBottomBarChromeVisible)
-        .animation(.easeInOut(duration: 0.2), value: storyBottomBarChromeVisible)
-        } // ZStack
     }
 
     /// Concatenates TOC slices from all table-of-contents pages (order matches the book).
@@ -303,21 +243,19 @@ struct StoryBookView: View {
     }
 
     @ViewBuilder
-    private func storyDaysMenuOverlay(pages: [StoryPage]) -> some View {
+    private func storyDaysMenuBottomTrailingOverlay(pages: [StoryPage]) -> some View {
         let entries = Self.tocEntries(from: pages)
-        if entries.isEmpty {
-            EmptyView()
-        } else {
-            GeometryReader { geo in
-                storyDaysMenu(entries: entries, pages: pages)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(.top, geo.safeAreaInsets.top + 6)
-                    .padding(.trailing, 16)
+        if !entries.isEmpty {
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    storyDaysMenu(entries: entries, pages: pages)
+                }
+                .padding(.bottom, 18)
+                .padding(.trailing, 16)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .opacity(showStoryChrome ? 1 : 0)
-            .allowsHitTesting(showStoryChrome)
-            .animation(.easeInOut(duration: 0.2), value: showStoryChrome)
         }
     }
 
@@ -334,10 +272,14 @@ struct StoryBookView: View {
                 }
             }
         } label: {
-            Text("Days")
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundStyle(.white)
+            HStack(spacing: 5) {
+                Image(systemName: "calendar")
+                    .font(.subheadline.weight(.semibold))
+                Text("Days")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+            }
+            .foregroundStyle(.white)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
                 .background(
@@ -355,7 +297,7 @@ struct StoryBookView: View {
     }
 }
 
-/// Bottom bar page indicator (1-based index / total pages), centered between Cancel and Share.
+/// Bottom bar page indicator (1-based index / total pages).
 private struct StoryBookPageNumberBadge: View {
     let currentPage: Int
     let totalPages: Int
