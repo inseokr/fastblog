@@ -20,6 +20,7 @@ struct BlogSettingsSheet: View {
     var onRestore: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @AppStorage(StoryWritingStyle.storageKey) private var writingStyle: String = ""
+    @AppStorage(WeatherTemperatureUnit.storageKey) private var weatherTemperatureUnitRaw: String = WeatherTemperatureUnit.fahrenheit.rawValue
 
     @State private var showTitleChange = false
     @State private var showCoverChange = false
@@ -61,6 +62,7 @@ struct BlogSettingsSheet: View {
             editAndRestoreSection
             titleAndCoverSection
             writingStyleSection
+            weatherSection
             cloudSection
         }
     }
@@ -123,6 +125,18 @@ struct BlogSettingsSheet: View {
         } footer: {
             Text(displayPrompt)
                 .lineLimit(3)
+        }
+    }
+
+    private var weatherSection: some View {
+        Section {
+            Picker("Day weather", selection: $weatherTemperatureUnitRaw) {
+                ForEach(WeatherTemperatureUnit.allCases, id: \.rawValue) { unit in
+                    Text(unit.displayName).tag(unit.rawValue)
+                }
+            }
+        } footer: {
+            Text("High and low temperatures shown on each day in the blog use this unit.")
         }
     }
 

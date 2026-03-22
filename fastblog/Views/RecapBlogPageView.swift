@@ -73,6 +73,7 @@ struct RecapBlogPageView: View {
     @State private var draftSnapshot: RecapBlogDetail?
     @AppStorage("blogify.showFirstTimeSaveTip") private var showFirstTimeSaveTip = true
     @AppStorage("hasUploadedFirstBlog") private var hasUploadedFirstBlog = false
+    @AppStorage(WeatherTemperatureUnit.storageKey) private var weatherTemperatureUnitRaw: String = WeatherTemperatureUnit.fahrenheit.rawValue
     @State private var showCloudOnboardingModal = false
     @State private var newlyUploadedBlogKey: Int? = nil
     @State private var showSaveTipAlert = false
@@ -1454,17 +1455,18 @@ struct RecapBlogPageView: View {
                         .scaleEffect(0.75)
                         .tint(.secondary)
                 } else if let weather = day.weather {
+                    let temps = weather.temperatureHighLow(for: WeatherTemperatureUnit(rawValue: weatherTemperatureUnitRaw) ?? .fahrenheit)
                     HStack(spacing: 4) {
                         Text(weather.emoji)
                             .font(.body)
-                        Text("\(Int(weather.tempMaxC.rounded()))°")
+                        Text("\(temps.high)\(temps.suffix)")
                             .font(.subheadline)
                             .fontWeight(.medium)
                             .foregroundColor(.white.opacity(0.85))
                         Text("/")
                             .font(.subheadline)
                             .foregroundColor(.white.opacity(0.5))
-                        Text("\(Int(weather.tempMinC.rounded()))°C")
+                        Text("\(temps.low)\(temps.suffix)")
                             .font(.subheadline)
                             .foregroundColor(.white.opacity(0.6))
                     }

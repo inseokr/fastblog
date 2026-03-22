@@ -57,6 +57,31 @@ struct DayWeather: Equatable, Codable, Sendable {
         default:            return "🌡️"
         }
     }
+
+    /// Daily high / low for display using the user’s preferred unit (`°F` or `°C`).
+    func temperatureHighLow(for unit: WeatherTemperatureUnit) -> (high: Int, low: Int, suffix: String) {
+        switch unit {
+        case .fahrenheit:
+            return (Int(tempMaxF.rounded()), Int(tempMinF.rounded()), "°F")
+        case .celsius:
+            return (Int(tempMaxC.rounded()), Int(tempMinC.rounded()), "°C")
+        }
+    }
+}
+
+/// User preference for how blog day weather temperatures are shown. Stored in `UserDefaults` via `@AppStorage`.
+enum WeatherTemperatureUnit: String, CaseIterable {
+    case fahrenheit
+    case celsius
+
+    static let storageKey = "fastblog.weatherTemperatureUnit"
+
+    var displayName: String {
+        switch self {
+        case .fahrenheit: return "Fahrenheit (°F)"
+        case .celsius: return "Celsius (°C)"
+        }
+    }
 }
 
 // MARK: - WeatherService
