@@ -111,6 +111,8 @@ struct RecapBlogPageView: View {
     @State private var showPDFPreview = false
     @State private var showPDFExportOptions = false
     @State private var showStoryMode = false
+    @State private var showStoryModePDFOptions = false
+    @State private var pendingStoryOpen = false
     @AppStorage("pdfExportOptions") private var pdfExportOptionsData: Data = (try? JSONEncoder().encode(PDFExportOptions())) ?? Data()
     @State private var showProfileManagement = false
     @State private var showRestorePlaces = false
@@ -189,8 +191,16 @@ struct RecapBlogPageView: View {
                     .transition(.opacity)
                     .zIndex(100)
             }
+
+            if showStoryMode {
+                StoryBookView(detail: draft, onDismiss: { showStoryMode = false })
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                    .zIndex(200)
+            }
         }
         .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
+        .animation(.easeIn(duration: 0.4), value: showStoryMode)
     }
 
     private func bodyContent(screenHeight: CGFloat) -> some View {
@@ -259,9 +269,17 @@ struct RecapBlogPageView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
-            .fullScreenCover(isPresented: $showStoryMode) {
-                StoryBookView(detail: draft)
-                    .interactiveDismissDisabled(true)
+            .sheet(isPresented: $showStoryModePDFOptions, onDismiss: {
+                if pendingStoryOpen {
+                    pendingStoryOpen = false
+                    showStoryMode = true
+                }
+            }) {
+                StoryModePDFOptionsSheet {
+                    pendingStoryOpen = true
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showProfileManagement, onDismiss: {
                 if let updatedDetail = createdRecapStore.getBlogDetail(blogId: blogId) {
@@ -1009,7 +1027,7 @@ struct RecapBlogPageView: View {
                             .padding(.top, 4)
 
                             Button {
-                                showStoryMode = true
+                                showStoryModePDFOptions = true
                             } label: {
                                 HStack(spacing: 6) {
                                     Image(systemName: "book.pages")

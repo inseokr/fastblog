@@ -3,6 +3,7 @@ import SwiftUI
 
 struct StoryBookView: View {
     let detail: RecapBlogDetail
+    var onDismiss: (() -> Void)? = nil
     @StateObject private var viewModel = StoryBookViewModel()
     @State private var selectedPageIndex: Int = 0
     @State private var showShareSheet = false
@@ -95,7 +96,7 @@ struct StoryBookView: View {
                         viewModel.build(from: detail)
                     }
                     .buttonStyle(.borderedProminent)
-                    Button("Close") { dismiss() }
+                    Button("Close") { if let od = onDismiss { od() } else { dismiss() } }
                         .foregroundColor(Color.black)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -174,29 +175,8 @@ struct StoryBookView: View {
 
     @ViewBuilder
     private var storyModeBottomBar: some View {
-        HStack(alignment: .bottom, spacing: 0) {
-            Button {
-                viewModel.cancel()
-                dismiss()
-            } label: {
-                Text("Cancel")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.black.opacity(0.68))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(Color.white.opacity(0.20), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(0.30), radius: 10, x: 0, y: 4)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
+        ZStack(alignment: .bottom) {
+            // Page number badge — always visible while content is ready
             Group {
                 if case .ready(let pages) = viewModel.state {
                     StoryBookPageNumberBadge(
@@ -207,11 +187,37 @@ struct StoryBookView: View {
             }
             .frame(maxWidth: .infinity)
             .allowsHitTesting(false)
+            .padding(.bottom, 18)
+
+            // Cancel / Share buttons — hide when chrome is toggled off
+            HStack(alignment: .bottom, spacing: 0) {
+                Button {
+                    viewModel.cancel()
+                    if let od = onDismiss { od() } else { dismiss() }
+                } label: {
+                    Text("Cancel")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.black.opacity(0.68))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.white.opacity(0.20), lineWidth: 1)
+                        )
+                        .shadow(color: .black.opacity(0.30), radius: 10, x: 0, y: 4)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Spacer()
+                    .frame(maxWidth: .infinity)
 
             Button {
-                Task {
-                    await exportStoryModePDFAndShare()
-                }
+                Task { await exportStoryModePDFAndShare() }
             } label: {
                 if isExportingPDF {
                     Text("Exporting…")
@@ -260,6 +266,7 @@ struct StoryBookView: View {
         .opacity(storyBottomBarChromeVisible ? 1 : 0)
         .allowsHitTesting(storyBottomBarChromeVisible)
         .animation(.easeInOut(duration: 0.2), value: storyBottomBarChromeVisible)
+        } // ZStack
     }
 
     /// Concatenates TOC slices from all table-of-contents pages (order matches the book).

@@ -33,9 +33,8 @@ enum StoryModePDFExportService {
         guard !pages.isEmpty else { throw ExportError.noPages }
 
         let safeTitle = draft.title
-            .replacingOccurrences(of: " ", with: "_")
             .replacingOccurrences(of: "/", with: "-")
-        let url = URL.documentsDirectory.appendingPathComponent("\(safeTitle)_\(draft.id.uuidString)_Story.pdf")
+        let url = URL.documentsDirectory.appendingPathComponent("\(safeTitle) | Storybook.pdf")
 
         // Use the effective story viewport (screen minus safe-area insets) so the PDF
         // page proportions match what the reader sees in Story Mode's TabView.
@@ -117,6 +116,30 @@ enum StoryModePDFExportService {
             }
 
             doc.insert(pdfPage, at: doc.pageCount)
+        }
+
+        // Internal TOC → day jumps need `PDFDestination`, which only works after target pages exist in the document.
+        for idx in 0..<n {
+            guard let pdfPage = doc.page(at: idx) else { continue }
+            let jumps = StoryPageLayout.storyModePDFTOCDayJumpRects(
+                storyPage: storyPages[idx],
+                pageSize: pageSize,
+                fontTheme: fontTheme
+            )
+            let pageH = pdfPage.bounds(for: .mediaBox).height
+            for (uiRect, destIndex) in jumps {
+                guard destIndex >= 0, destIndex < doc.pageCount, let targetPage = doc.page(at: destIndex) else { continue }
+                let pdfBounds = CGRect(
+                    x: uiRect.minX,
+                    y: pageH - uiRect.maxY,
+                    width: uiRect.width,
+                    height: uiRect.height
+                )
+                let ann = PDFAnnotation(bounds: pdfBounds, forType: .link, withProperties: nil)
+                let media = targetPage.bounds(for: .mediaBox)
+                ann.destination = PDFDestination(page: targetPage, at: CGPoint(x: 0, y: media.height))
+                pdfPage.addAnnotation(ann)
+            }
         }
 
         guard doc.write(to: outputURL) else {

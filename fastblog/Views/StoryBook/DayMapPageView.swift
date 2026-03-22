@@ -35,7 +35,7 @@ struct DayMapPageView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)
             .padding(.vertical, 24)
-            .padding(.bottom, 16)
+            .padding(.bottom, 72)
             .background(
                 LinearGradient(
                     colors: [.clear, .black.opacity(0.55)],

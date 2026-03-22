@@ -1023,6 +1023,76 @@ enum StoryPageLayout {
         return results
     }
 
+    /// Rects and 0-based PDF page indices for in-document jumps when the user taps a TOC day row (Day N through “N moments”, excluding the gray places line — those keep Google links from `storyModePDFTOCLinkRects`).
+    /// Matches `TOCPageView`’s `Button` wrapping `tocEntryRow` minus the places line overlap.
+    static func storyModePDFTOCDayJumpRects(
+        storyPage: StoryPage,
+        pageSize: CGSize,
+        fontTheme: FontTheme
+    ) -> [(CGRect, Int)] {
+        guard case .tableOfContents(let entries, _, let pageIndex, _) = storyPage else { return [] }
+        guard !entries.isEmpty else { return [] }
+
+        let horizontalInset: CGFloat = 16
+        let contentWidth = max(0, pageSize.width - horizontalInset * 2)
+
+        let dayFont = StoryFontHelper.uiFont(for: fontTheme, size: 13, weight: .bold)
+        let pageNumFont = StoryFontHelper.uiFont(for: fontTheme, size: 12, weight: .bold)
+        let titleFont = StoryFontHelper.uiFont(for: fontTheme, size: 18, weight: .bold)
+        let dateFont = StoryFontHelper.uiFont(for: fontTheme, size: 12)
+        let momentsFont = StoryFontHelper.uiItalicFont(for: fontTheme, size: 10)
+
+        var y: CGFloat
+        if pageIndex == 1 {
+            y = tocCoverStripHeight + tocHeaderHeight
+        } else {
+            y = tocTopPadding + tocContinuationHeaderHeight(fontTheme: fontTheme)
+        }
+
+        var results: [(CGRect, Int)] = []
+
+        for (rowIdx, entry) in entries.enumerated() {
+            if rowIdx > 0 {
+                y += 14 + 1 + 14
+            }
+
+            let rowTop = y
+            let titleText = tocDayTitleString(for: entry)
+            let titleH = min(
+                estimateTextHeight(titleText, font: titleFont, width: contentWidth),
+                titleFont.lineHeight * 2 + 1
+            )
+
+            let innerGap: CGFloat = 2
+            var placesLineTop = rowTop
+            placesLineTop += max(dayFont.lineHeight, pageNumFont.lineHeight)
+            placesLineTop += innerGap * 3
+            placesLineTop += titleH
+            placesLineTop += dateFont.lineHeight + innerGap + momentsFont.lineHeight
+            placesLineTop += 2
+
+            let dayRectHeight = placesLineTop - rowTop
+            if entry.dayStartPageNumber > 0, dayRectHeight > 0 {
+                let destIndex = entry.dayStartPageNumber - 1
+                results.append(
+                    (
+                        CGRect(x: horizontalInset, y: rowTop, width: contentWidth, height: dayRectHeight),
+                        destIndex
+                    )
+                )
+            }
+
+            y += estimatedTOCRowHeight(
+                entry: entry,
+                contentWidth: contentWidth,
+                fontTheme: fontTheme,
+                includeSeparatorAbove: false
+            )
+        }
+
+        return results
+    }
+
     /// Google link rects for each place name on the TOC gray “places” line (matches `TOCPageView` + `estimatedTOCRowHeight`).
     static func storyModePDFTOCLinkRects(
         storyPage: StoryPage,
