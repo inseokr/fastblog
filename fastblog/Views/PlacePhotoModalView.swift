@@ -328,7 +328,8 @@ struct PlacePhotoModalView: View {
                                 }
                             }) {
                                 Text("Cancel")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 6)
@@ -346,7 +347,8 @@ struct PlacePhotoModalView: View {
                                 }
                             }) {
                                 Text("Cancel")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 6)
@@ -450,21 +452,25 @@ struct PlacePhotoModalView: View {
                                     .background(Color.blue)
                                     .clipShape(Capsule())
                             }
-                        } else if blogIsEditMode {
-                            // Done — blue label only (no filled capsule) so it’s the sole blue accent in the bar.
+                        } else if blogIsEditMode, hasUnsavedChanges {
                             Button(action: {
                                 commitCaption()
                                 onDismiss()
                             }) {
                                 Text("Done")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(Color(uiColor: .systemBlue))
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color.black.opacity(0.35))
+                                    .clipShape(Capsule())
                             }
                             .buttonStyle(.plain)
+                            .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
                         }
                     }
+                    .animation(.easeInOut(duration: 0.2), value: hasUnsavedChanges)
                     .padding(.horizontal, 16)
                     .padding(.top, 20)
                 }
@@ -1017,6 +1023,11 @@ struct PlacePhotoModalView: View {
                 isCaptionFocused = true
             }
         }
+    }
+
+    private var hasUnsavedChanges: Bool {
+        editedCaptionText.trimmingCharacters(in: .whitespacesAndNewlines) != captionWhenEditingStarted.trimmingCharacters(in: .whitespacesAndNewlines)
+            || editedPlaceTitle.trimmingCharacters(in: .whitespacesAndNewlines) != titleWhenEditingStarted.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func commitCaption() {
