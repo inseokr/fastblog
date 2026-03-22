@@ -611,9 +611,7 @@ struct RecapBlogPageView: View {
                     Color.black.opacity(0.4)
                         .ignoresSafeArea()
                         .onTapGesture {
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                showNewMomentsReviewSheet = false
-                            }
+                            dismissNewMomentsReviewWithoutAdding()
                         }
                         .transition(.opacity)
                         .zIndex(9)
@@ -626,9 +624,7 @@ struct RecapBlogPageView: View {
                         blogTitle: draft.title,
                         onAdd: { selected in addNewMomentsToBlog(selected) },
                         onLater: {
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                showNewMomentsReviewSheet = false
-                            }
+                            dismissNewMomentsReviewWithoutAdding()
                         }
                     )
                     .transition(.move(edge: .bottom))
@@ -1726,6 +1722,37 @@ struct RecapBlogPageView: View {
             let photos = await createdRecapStore.scanForNewMoments(blogId: blogId)
             newMomentPhotos = photos
             isCheckingNewMoments = false
+            considerPresentingNewMomentsReviewSheetIfNeeded()
+        }
+    }
+
+    /// Presents the same bottom sheet as the “N moments found” card when new photos are detected, once per batch until dismissed (Later, swipe, or scrim).
+    private func considerPresentingNewMomentsReviewSheetIfNeeded() {
+        guard !showStoryMode, !isExportingPDF,
+              newMomentsPlaceCount > 0,
+              createdRecapStore.recents.contains(where: { $0.sourceTripId == blogId }) else { return }
+        let batchMax = newMomentPhotos.map(\.timestamp).max() ?? .distantPast
+        if let dismissed = NewMomentsPullUpPresentationStore.dismissedBatchMaxTimestamp(for: blogId),
+           batchMax <= dismissed {
+            return
+        }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard newMomentsPlaceCount > 0, !showStoryMode, !isExportingPDF else { return }
+            withAnimation(.easeInOut(duration: 0.3)) {
+                showNewMomentsReviewSheet = true
+            }
+        }
+    }
+
+    private func dismissNewMomentsReviewWithoutAdding() {
+        guard let maxDate = newMomentPhotos.map(\.timestamp).max() else {
+            withAnimation(.easeInOut(duration: 0.3)) { showNewMomentsReviewSheet = false }
+            return
+        }
+        NewMomentsPullUpPresentationStore.recordDismissal(for: blogId, batchMaxPhotoDate: maxDate)
+        withAnimation(.easeInOut(duration: 0.3)) {
+            showNewMomentsReviewSheet = false
         }
     }
 
@@ -1736,6 +1763,7 @@ struct RecapBlogPageView: View {
         if let maxDate = newMomentPhotos.map(\.timestamp).max() {
             ScanSessionStore.saveBlogNotifiedDate(maxDate, for: blogId)
         }
+        NewMomentsPullUpPresentationStore.clear(for: blogId)
         // Reload the draft with injected photos.
         if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
             draft = updated
@@ -1756,7 +1784,11 @@ struct RecapBlogPageView: View {
         if let maxDate = newMomentPhotos.map(\.timestamp).max() {
             ScanSessionStore.saveBlogNotifiedDate(maxDate, for: blogId)
         }
+        NewMomentsPullUpPresentationStore.clear(for: blogId)
         newMomentPhotos = []
+        withAnimation(.easeInOut(duration: 0.3)) {
+            showNewMomentsReviewSheet = false
+        }
     }
 
     /// All included photos across all days/stops, for cover photo selection.

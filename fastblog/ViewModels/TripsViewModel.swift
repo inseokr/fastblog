@@ -201,21 +201,8 @@ final class TripsViewModel: ObservableObject {
         openCreateFlowForPendingTrip = false
     }
 
-    /// Presents the new-moments sheet after a brief delay so the view
-    /// has finished transitioning from the scan loading state to the main content.
-    /// Shown when new moments belong to a saved blog OR to an existing draft trip.
-    private func presentNewMomentsSheetIfNeeded() {
-        guard !newlyScannedPhotos.isEmpty,
-              newMomentsMatchedBlog != nil || newMomentsInExistingTrip != nil else { return }
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            await MainActor.run {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    self?.showNewlyScannedSheet = true
-                }
-            }
-        }
-    }
+    /// New-moments pull-up is shown on `RecapBlogPageView` only, not on the Trips (tap-to-blog) flow.
+    private func presentNewMomentsSheetIfNeeded() {}
 
     /// Adds a trip draft created from the in-app camera (e.g. when user taps "Not Now"
     /// on the Start Blog prompt). Inserts at the front so it appears as the newest trip.
@@ -350,12 +337,11 @@ final class TripsViewModel: ObservableObject {
             }
 
             await MainActor.run {
-                if let blog = matchedBlog, !blogPhotos.isEmpty {
-                    self.newlyScannedPhotos = blogPhotos
-                    self.newMomentsMatchedBlog = blog
-                    self.newMomentsInExistingTrip = nil
-                    self.newMomentsLatestDayIndex = 0
-                    self.presentNewMomentsSheetIfNeeded()
+                if matchedBlog != nil, !blogPhotos.isEmpty {
+                    // Trips no longer shows the pull-up; open create flow. New moments surface on the blog.
+                    self.resetNewMomentsState()
+                    self.newMomentsSheetTriggeredByCreateButton = false
+                    self.openCreateFlowForPendingTrip = true
                 } else {
                     self.openCreateFlowForPendingTrip = true
                 }
