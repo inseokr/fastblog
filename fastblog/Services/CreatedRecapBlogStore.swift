@@ -1993,7 +1993,10 @@ final class CreatedRecapBlogStore: ObservableObject {
             return
         }
         updatedDetail.days[dayIdx].isPlaceNamesResolved = true
-        updateCoverPhotoFromQualityScores(&updatedDetail)
+        // Update cover only after all days are fully scored so we pick the globally best photo.
+        if updatedDetail.days.allSatisfy(\.isPlaceNamesResolved) {
+            updateCoverPhotoFromQualityScores(&updatedDetail)
+        }
         blogDetailsBySourceId[blogId] = updatedDetail
         persistBlogDetails()
         processingDayIndexByBlogId.removeValue(forKey: blogId)

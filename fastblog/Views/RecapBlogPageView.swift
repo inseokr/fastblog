@@ -67,6 +67,8 @@ struct RecapBlogPageView: View {
     @State private var showCoverPhotoPicker = false
     /// The cover photo asset identifier captured just before the cover picker opens, used to detect changes on dismiss.
     @State private var coverPhotoIdentifierBeforeEdit: String? = nil
+    /// Cycling photo shown while cover selection scoring is still in progress.
+    @State private var cyclingCoverPhotoId: String? = nil
     /// Snapshot of the draft when edit mode was entered; compared to detect changes.
     @State private var draftSnapshot: RecapBlogDetail?
     @AppStorage("blogify.showFirstTimeSaveTip") private var showFirstTimeSaveTip = true
@@ -886,18 +888,29 @@ struct RecapBlogPageView: View {
         }
     }
 
+    /// True while photo quality scoring is still running (cover not yet finalized).
+    private var isCoverPending: Bool {
+        !draft.days.allSatisfy(\.isPlaceNamesResolved)
+    }
+
     private func coverPhotoHero(screenHeight: CGFloat) -> some View {
-        GeometryReader { geo in
+        let displayCoverId = cyclingCoverPhotoId ?? draft.selectedCoverPhotoIdentifier
+        return GeometryReader { geo in
             ZStack {
-                // Cover photo — tap to change
-                if let coverId = draft.selectedCoverPhotoIdentifier {
+                // Cover photo — cycles through trip photos while scoring, shows best when done
+                if let coverId = displayCoverId {
                     AssetPhotoView(assetIdentifier: coverId, cornerRadius: 0, targetSize: CGSize(width: 1200, height: 1200))
                         .aspectRatio(contentMode: .fill)
                         .frame(width: geo.size.width, height: geo.size.height)
                         .clipped()
                         .brightness(-0.05)
+                        .blur(radius: isCoverPending ? 4 : 0)
+                        .animation(.easeInOut(duration: 0.6), value: isCoverPending)
+                        .id(coverId)
+                        .transition(.opacity)
                         .contentShape(Rectangle())
                         .onTapGesture {
+                            guard !isCoverPending else { return }
                             coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
                             showCoverPhotoPicker = true
                         }
@@ -1010,6 +1023,51 @@ struct RecapBlogPageView: View {
                 }
                 .padding(.horizontal, 24)
 
+                // Badge shown while cover selection is still in progress
+                if isCoverPending {
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .scaleEffect(0.75)
+                                .tint(.white)
+                            Text("Selecting best cover…")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Capsule())
+                        .padding(.bottom, 14)
+                        .padding(.trailing, 12)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                    .transition(.opacity)
+                }
+            }
+        }
+        .animation(.easeInOut(duration: 0.5), value: isCoverPending)
+        .task(id: isCoverPending) {
+            guard isCoverPending else {
+                // Scoring complete — fade out cycling and let the real cover show
+                withAnimation(.easeInOut(duration: 0.6)) { cyclingCoverPhotoId = nil }
+                return
+            }
+            // Collect all photo identifiers across all days for the slideshow
+            let ids = draft.days.flatMap(\.placeStops).flatMap(\.photos)
+                .compactMap(\.localIdentifier)
+                .shuffled()
+            guard !ids.isEmpty else { return }
+            var idx = 0
+            while !Task.isCancelled {
+                withAnimation(.easeInOut(duration: 0.6)) {
+                    cyclingCoverPhotoId = ids[idx % ids.count]
+                }
+                idx += 1
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
         .frame(height: screenHeight * 0.55)
@@ -1690,6 +1748,9 @@ struct RecapBlogPageView: View {
             }
             draft.days[i] = merged
         }
+        // Sync cover photo from store: quality-based selection updates selectedCoverPhotoIdentifier
+        // in the store as scoring completes, but the local draft never received that update.
+        draft.selectedCoverPhotoIdentifier = updated.selectedCoverPhotoIdentifier
     }
 
     private func loadDraftIfNeeded() {
