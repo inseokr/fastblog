@@ -1054,9 +1054,9 @@ struct RecapBlogPageView: View {
                                 showPanorama = true
                             } label: {
                                 HStack(spacing: 6) {
-                                    Image(systemName: "mountain.2.fill")
+                                    Image(systemName: "play.rectangle.fill")
                                         .font(.system(size: 13, weight: .medium))
-                                    Text("Panorama")
+                                    Text("Slide Show")
                                         .font(.caption)
                                         .fontWeight(.semibold)
                                 }
