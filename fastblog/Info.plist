@@ -37,6 +37,8 @@
 	<string>We save your in-app camera photos to your photo library so they can appear in your travel blogs.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>We add location to your captured photos so they appear correctly on the map and in your travel blogs.</string>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>fastblog uses Apple Music to play background audio during panorama playback.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

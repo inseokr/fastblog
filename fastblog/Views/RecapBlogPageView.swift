@@ -141,6 +141,9 @@ struct RecapBlogPageView: View {
     @State private var isCheckingNewMoments = false
     @State private var hasCheckedNewMoments = false
 
+    // MARK: - Panorama
+    @State private var showPanorama = false
+
     /// True if the user has saved this blog to the local device at least once (tap Save on recap page).
     /// We only show "X moments found" for blogs that have been saved; camera-originated trips that are still just trips use the timeline only.
     private var hasBlogBeenSavedToDevice: Bool {
@@ -571,6 +574,25 @@ struct RecapBlogPageView: View {
                     createdRecapStore.saveBlogDetail(draft)
                     syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: false, photoId: photoId)
                 })
+            }
+            .fullScreenCover(isPresented: $showPanorama) {
+                // Build one group per PlaceStop so diptych never mixes places.
+                let groups: [[String]] = draft.days
+                    .flatMap(\.placeStops)
+                    .compactMap { stop -> [String]? in
+                        let ids = stop.photos
+                            .filter(\.isIncluded)
+                            .compactMap(\.localIdentifier)
+                            .filter { !$0.isEmpty }
+                        return ids.isEmpty ? nil : ids
+                    }
+                // Fall back to cover photo when no included photos exist.
+                let photoGroups = groups.isEmpty
+                    ? draft.selectedCoverPhotoIdentifier.map { [[$0]] } ?? []
+                    : groups
+                if !photoGroups.isEmpty {
+                    PanoramaPlayerView(photoGroups: photoGroups, onDismiss: { showPanorama = false })
+                }
             }
             .sheet(isPresented: $showRestorePlaces) {
                 RemovedPlacesSheet(draft: $draft, selectedDayIndex: $selectedDayIndex) {
@@ -1022,6 +1044,37 @@ struct RecapBlogPageView: View {
                     }
                 }
                 .padding(.horizontal, 24)
+
+                // Panorama slow-pan button — bottom-leading, view mode only
+                if !isEditMode, displayCoverId != nil {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Button {
+                                showPanorama = true
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "mountain.2.fill")
+                                        .font(.system(size: 13, weight: .medium))
+                                    Text("Panorama")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Capsule())
+                                .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.bottom, 14)
+                            .padding(.leading, 12)
+                            Spacer()
+                        }
+                    }
+                    .transition(.opacity)
+                }
 
                 // Badge shown while cover selection is still in progress
                 if isCoverPending {
