@@ -1022,6 +1022,118 @@ enum StoryPageLayout {
 
         return results
     }
+
+    /// Google link rects for each place name on the TOC gray “places” line (matches `TOCPageView` + `estimatedTOCRowHeight`).
+    static func storyModePDFTOCLinkRects(
+        storyPage: StoryPage,
+        pageSize: CGSize,
+        fontTheme: FontTheme
+    ) -> [(CGRect, URL)] {
+        guard case .tableOfContents(let entries, _, let pageIndex, _) = storyPage else { return [] }
+        guard !entries.isEmpty else { return [] }
+
+        let horizontalInset: CGFloat = 16
+        let contentWidth = max(0, pageSize.width - horizontalInset * 2)
+
+        let dayFont = StoryFontHelper.uiFont(for: fontTheme, size: 13, weight: .bold)
+        let pageFont = StoryFontHelper.uiFont(for: fontTheme, size: 12, weight: .bold)
+        let titleFont = StoryFontHelper.uiFont(for: fontTheme, size: 18, weight: .bold)
+        let dateFont = StoryFontHelper.uiFont(for: fontTheme, size: 12)
+        let momentsFont = StoryFontHelper.uiItalicFont(for: fontTheme, size: 10)
+        let placesFont = StoryFontHelper.uiFont(for: fontTheme, size: 11)
+
+        var y: CGFloat
+        if pageIndex == 1 {
+            y = tocCoverStripHeight + tocHeaderHeight
+        } else {
+            y = tocTopPadding + tocContinuationHeaderHeight(fontTheme: fontTheme)
+        }
+
+        var results: [(CGRect, URL)] = []
+
+        for (rowIdx, entry) in entries.enumerated() {
+            if rowIdx > 0 {
+                y += 14 + 1 + 14
+            }
+
+            let rowTop = y
+            let titleText = tocDayTitleString(for: entry)
+            let titleH = min(
+                estimateTextHeight(titleText, font: titleFont, width: contentWidth),
+                titleFont.lineHeight * 2 + 1
+            )
+
+            let innerGap: CGFloat = 2
+            var placesLineTop = rowTop
+            placesLineTop += max(dayFont.lineHeight, pageFont.lineHeight)
+            placesLineTop += innerGap * 3
+            placesLineTop += titleH
+            placesLineTop += dateFont.lineHeight + innerGap + momentsFont.lineHeight
+            placesLineTop += 2
+
+            let localRects = tocPlaceLineCharacterRangeLinkRects(
+                placeNames: entry.placeNames,
+                containerWidth: contentWidth,
+                font: placesFont
+            )
+            for (r, url) in localRects {
+                results.append((r.offsetBy(dx: horizontalInset, dy: placesLineTop), url))
+            }
+
+            y += estimatedTOCRowHeight(
+                entry: entry,
+                contentWidth: contentWidth,
+                fontTheme: fontTheme,
+                includeSeparatorAbove: false
+            )
+        }
+
+        return results
+    }
+
+    /// Lays out the comma-separated places string with `NSLayoutManager` (2-line cap) and returns one rect per place name.
+    private static func tocPlaceLineCharacterRangeLinkRects(
+        placeNames: [String],
+        containerWidth: CGFloat,
+        font: UIFont
+    ) -> [(CGRect, URL)] {
+        var segments: [(NSRange, URL)] = []
+        var full = ""
+        var needsComma = false
+        for raw in placeNames {
+            let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !t.isEmpty, let u = StoryPlaceGoogleSearch.url(placeName: t, placeSubtitle: nil) else { continue }
+            if needsComma { full += ", " }
+            needsComma = true
+            let start = (full as NSString).length
+            full += t
+            let len = (t as NSString).length
+            segments.append((NSRange(location: start, length: len), u))
+        }
+        guard !full.isEmpty, !segments.isEmpty, containerWidth > 0 else { return [] }
+
+        let attr = NSAttributedString(string: full, attributes: [.font: font])
+        let storage = NSTextStorage(attributedString: attr)
+        let layoutManager = NSLayoutManager()
+        storage.addLayoutManager(layoutManager)
+        let container = NSTextContainer(size: CGSize(width: containerWidth, height: .greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        container.widthTracksTextView = true
+        container.maximumNumberOfLines = 2
+        container.lineBreakMode = .byWordWrapping
+        layoutManager.addTextContainer(container)
+        layoutManager.ensureLayout(for: container)
+
+        var out: [(CGRect, URL)] = []
+        for (range, url) in segments {
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            guard glyphRange.length > 0 else { continue }
+            let rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: container)
+            guard rect.width > 0, rect.height > 0 else { continue }
+            out.append((rect, url))
+        }
+        return out
+    }
 }
 
 /// Clamps screen size used by Story-mode SwiftUI rendering.
