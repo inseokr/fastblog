@@ -73,6 +73,8 @@ struct PlacePhotoModalView: View {
     @State private var resolvedTimeZoneByPhotoId: [UUID: TimeZone] = [:]
     @FocusState private var isCaptionFocused: Bool
     @State private var showRenameSheet = false
+    /// Read-only bottom overlay: multi-line captions start collapsed; user can expand.
+    @State private var isReadOnlyCaptionExpanded = false
     /// PHAsset time metadata for the current photo (creationDate, modificationDate). Loaded when photo has localIdentifier.
     @State private var currentPhotoAssetMetadata: (creation: Date?, modification: Date?)?
     /// Derives the UTC offset from the EXIF digitized local time vs photo timestamps.
@@ -257,6 +259,7 @@ struct PlacePhotoModalView: View {
                                     showAssetTimeMetadata: showAssetTimeMetadata,
                                     isEditing: $isEditing,
                                     captionText: $editedCaptionText,
+                                    isCaptionExpanded: $isReadOnlyCaptionExpanded,
                                     placeholder: "Leave a story for this photo...",
                                     blogIsEditMode: blogIsEditMode,
                                     onViewBlog: onViewBlog,
@@ -786,6 +789,7 @@ struct PlacePhotoModalView: View {
             }
         }
         .onChange(of: currentPhotoId) { _, _ in
+            isReadOnlyCaptionExpanded = false
             editedCaptionText = currentCaption
             if isEditing {
                 captionWhenEditingStarted = currentCaption
@@ -1132,6 +1136,8 @@ struct BottomInfoOverlay: View {
     var showAssetTimeMetadata: Bool = true
     @Binding var isEditing: Bool
     @Binding var captionText: String
+    /// When read-only caption is long / multi-line, user can expand; parent resets when the photo changes.
+    @Binding var isCaptionExpanded: Bool
     let placeholder: String
     var blogIsEditMode: Bool = false
     var onViewBlog: (() -> Void)?
@@ -1211,19 +1217,45 @@ struct BottomInfoOverlay: View {
                 .foregroundColor(.white)
             } else {
                 if !captionText.isEmpty {
-                    Text(captionText)
-                        .font(.body)
-                        .foregroundColor(.white)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .multilineTextAlignment(.leading)
-                        .padding(10)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(captionText)
+                            .font(.body)
+                            .foregroundColor(.white)
+                            .lineLimit(isCaptionExpanded ? nil : 2)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .multilineTextAlignment(.leading)
+                            .padding(10)
+
+                        if Self.captionMayNeedExpansion(captionText) || isCaptionExpanded {
+                            Button {
+                                isCaptionExpanded.toggle()
+                            } label: {
+                                Text(isCaptionExpanded ? "Show less" : "Show more")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.white.opacity(0.92))
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 10)
+                            .accessibilityHint(isCaptionExpanded ? "Collapses the photo caption" : "Shows the full photo caption")
+                        }
+                    }
                 }
             }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Heuristic: 2-line clamp likely truncates (extra paragraphs or a long single block that wraps).
+    private static func captionMayNeedExpansion(_ text: String) -> Bool {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return false }
+        let paragraphs = t.split(separator: "\n", omittingEmptySubsequences: false)
+        if paragraphs.count > 2 { return true }
+        return t.count > 110
     }
 }
 
