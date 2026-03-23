@@ -75,6 +75,11 @@ struct PlacePhotoModalView: View {
     @State private var showRenameSheet = false
     /// Read-only bottom overlay: multi-line captions start collapsed; user can expand.
     @State private var isReadOnlyCaptionExpanded = false
+    /// Vertical drag for swipe-down dismiss (blog overlay & sheets without a drag indicator).
+    @State private var interactiveDismissDragOffset: CGFloat = 0
+    @State private var isDismissExitAnimating = false
+    /// While non-nil, TabView paging is locked to this id so dismiss drags can’t swap photos or reload neighbors.
+    @State private var dismissFrozenPhotoId: UUID?
     /// PHAsset time metadata for the current photo (creationDate, modificationDate). Loaded when photo has localIdentifier.
     @State private var currentPhotoAssetMetadata: (creation: Date?, modification: Date?)?
     /// Derives the UTC offset from the EXIF digitized local time vs photo timestamps.
@@ -104,7 +109,26 @@ struct PlacePhotoModalView: View {
 
     /// Effective timezone for the current photo: per-photo cache first (so all photos get correct time), then derived from digitized, then device.
     private var effectiveTimeZone: TimeZone {
-        resolvedTimeZoneByPhotoId[currentPhotoId] ?? captureTimeZone ?? .current
+        resolvedTimeZoneByPhotoId[effectiveDisplayedPhotoId] ?? captureTimeZone ?? .current
+    }
+
+    /// Photo id driving on-screen metadata and TabView selection; frozen during dismiss drag / exit animation.
+    private var effectiveDisplayedPhotoId: UUID {
+        dismissFrozenPhotoId ?? currentPhotoId
+    }
+
+    private var isPhotoPagingLocked: Bool {
+        dismissFrozenPhotoId != nil
+    }
+
+    private var tabSelectionBinding: Binding<UUID> {
+        Binding(
+            get: { effectiveDisplayedPhotoId },
+            set: { newValue in
+                guard dismissFrozenPhotoId == nil else { return }
+                currentPhotoId = newValue
+            }
+        )
     }
 
     /// Timezone label for UI. Uses named abbreviation (e.g. PST) when available; for offset-only zones
@@ -179,7 +203,7 @@ struct PlacePhotoModalView: View {
     }
 
     private var currentPhoto: RecapPhoto? {
-        photos.first { $0.id == currentPhotoId } ?? photos.first
+        photos.first { $0.id == effectiveDisplayedPhotoId } ?? photos.first
     }
 
     /// Local vibe file URL for the current photo, if it was captured with the in-app camera and has a Vibe clip.
@@ -200,6 +224,100 @@ struct PlacePhotoModalView: View {
     private var hasAnyChanges: Bool {
         trim(editedCaptionText) != trim(captionWhenEditingStarted) ||
         trim(editedPlaceTitle) != trim(titleWhenEditingStarted)
+    }
+
+    /// Whether an interactive swipe-down should move / dismiss the modal (not while zoomed or a child sheet is up).
+    private var swipeToDismissEnabled: Bool {
+        !isZoomMode && !showRenameSheet && !isDismissExitAnimating
+    }
+
+    private var dismissDragOverlayOpacity: Double {
+        let y = Double(interactiveDismissDragOffset)
+        guard y > 0 else { return 1 }
+        let screenH = Double(UIScreen.main.bounds.height)
+        // Ease toward transparent as the sheet moves farther (finger or exit animation).
+        let t = min(1, y / max(320, screenH * 0.5))
+        let eased = 1 - t * t
+        return max(0, eased)
+    }
+
+    /// Close / Cancel / swipe-down share the same rules (including unsaved-changes alert).
+    private func handleUserRequestedDismiss() {
+        if !isEditing && !blogIsEditMode {
+            animateSwipeDismissCompletion { onDismiss() }
+            return
+        }
+        if hasAnyChanges {
+            showSaveConfirmationAlert = true
+        } else {
+            animateSwipeDismissCompletion {
+                revertChanges()
+                onDismiss()
+            }
+        }
+    }
+
+    /// Slides the modal the rest of the way off-screen, then runs `completion` (typically `onDismiss`).
+    private func animateSwipeDismissCompletion(_ completion: @escaping () -> Void) {
+        dismissFrozenPhotoId = currentPhotoId
+        isDismissExitAnimating = true
+        let h = UIScreen.main.bounds.height
+        let baseline = interactiveDismissDragOffset
+        let target = max(baseline + h * 0.42, h * 0.94)
+        withAnimation(.easeIn(duration: 0.42)) {
+            interactiveDismissDragOffset = target
+        }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 420_000_000)
+            completion()
+        }
+    }
+
+    private var photoModalSwipeDismissGesture: some Gesture {
+        DragGesture(minimumDistance: 28, coordinateSpace: .local)
+            .onChanged { value in
+                guard swipeToDismissEnabled else { return }
+                let dx = value.translation.width
+                let dy = value.translation.height
+                guard dy > 0, abs(dy) > abs(dx) * 1.12 else { return }
+                interactiveDismissDragOffset = dy
+                // Lock paging early so diagonal motion can’t swap to another photo (and trigger its image load).
+                if dy > 40, dismissFrozenPhotoId == nil {
+                    dismissFrozenPhotoId = currentPhotoId
+                }
+            }
+            .onEnded { value in
+                guard !isDismissExitAnimating else { return }
+                guard swipeToDismissEnabled || interactiveDismissDragOffset > 0 else {
+                    dismissFrozenPhotoId = nil
+                    withAnimation(.interactiveSpring(response: 0.52, dampingFraction: 0.78, blendDuration: 0.15)) {
+                        interactiveDismissDragOffset = 0
+                    }
+                    return
+                }
+                let dx = value.translation.width
+                let dy = value.translation.height
+                let mostlyVertical = dy > 0 && abs(dy) > abs(dx) * 1.12
+                let predicted = value.predictedEndTranslation.height
+                let shouldDismiss = mostlyVertical && (dy > 115 || predicted > 220)
+                if shouldDismiss {
+                    let needsSaveAlert = (isEditing || blogIsEditMode) && hasAnyChanges
+                    if needsSaveAlert {
+                        dismissFrozenPhotoId = nil
+                        withAnimation(.interactiveSpring(response: 0.52, dampingFraction: 0.78, blendDuration: 0.15)) {
+                            interactiveDismissDragOffset = 0
+                        }
+                        showSaveConfirmationAlert = true
+                    } else {
+                        handleUserRequestedDismiss()
+                    }
+                } else {
+                    dismissFrozenPhotoId = nil
+                    withAnimation(.interactiveSpring(response: 0.52, dampingFraction: 0.78, blendDuration: 0.15)) {
+                        interactiveDismissDragOffset = 0
+                    }
+                }
+            }
     }
 
     var body: some View {
@@ -272,9 +390,10 @@ struct PlacePhotoModalView: View {
                                 if photos.count > 1 {
                                     PlacePhotoThumbnailStrip(
                                         photos: photos,
-                                        currentPhotoId: currentPhotoId,
+                                        currentPhotoId: effectiveDisplayedPhotoId,
                                         onSelectPhoto: { currentPhotoId = $0 }
                                     )
+                                    .disabled(isPhotoPagingLocked)
                                     .padding(.horizontal, 16)
                                     .padding(.top, 0)
                                     .padding(.bottom, 8)
@@ -322,14 +441,7 @@ struct PlacePhotoModalView: View {
                     HStack(alignment: .top) {
                         if isEditing && !blogIsEditMode {
                             // Cancel button in top left when editing in read mode
-                            Button(action: {
-                                if hasAnyChanges {
-                                    showSaveConfirmationAlert = true
-                                } else {
-                                    revertChanges()
-                                    onDismiss()
-                                }
-                            }) {
+                            Button(action: handleUserRequestedDismiss) {
                                 Text("Cancel")
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
@@ -341,14 +453,7 @@ struct PlacePhotoModalView: View {
                             }
                         } else if blogIsEditMode {
                             // Cancel button in top left when in blog edit mode
-                            Button(action: {
-                                if hasAnyChanges {
-                                    showSaveConfirmationAlert = true
-                                } else {
-                                    revertChanges()
-                                    onDismiss()
-                                }
-                            }) {
+                            Button(action: handleUserRequestedDismiss) {
                                 Text("Cancel")
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
@@ -360,7 +465,7 @@ struct PlacePhotoModalView: View {
                             }
                         } else {
                             // Close button in top left when not editing
-                            Button(action: onDismiss) {
+                            Button(action: handleUserRequestedDismiss) {
                                 Text("Close")
                                     .font(.system(size: 14, weight: .semibold))
                                     .foregroundColor(.white)
@@ -750,6 +855,9 @@ struct PlacePhotoModalView: View {
                 }
             }
         }
+        .offset(y: interactiveDismissDragOffset)
+        .opacity(dismissDragOverlayOpacity)
+        .simultaneousGesture(photoModalSwipeDismissGesture)
         .interactiveDismissDisabled(isEditing && hasAnyChanges)
         .alert("Save changes?", isPresented: $showSaveConfirmationAlert) {
             Button("Save") {
@@ -765,6 +873,8 @@ struct PlacePhotoModalView: View {
             Text("You have unsaved changes to your photo caption. Would you like to save them before leaving?")
         }
         .onAppear {
+            dismissFrozenPhotoId = nil
+            isDismissExitAnimating = false
             editedCaptionText = currentCaption
             editedPlaceTitle = placeTitle
             if blogIsEditMode {
@@ -789,7 +899,9 @@ struct PlacePhotoModalView: View {
             }
         }
         .onChange(of: currentPhotoId) { _, _ in
+            guard !isDismissExitAnimating, dismissFrozenPhotoId == nil else { return }
             isReadOnlyCaptionExpanded = false
+            interactiveDismissDragOffset = 0
             editedCaptionText = currentCaption
             if isEditing {
                 captionWhenEditingStarted = currentCaption
@@ -813,13 +925,14 @@ struct PlacePhotoModalView: View {
     /// Full-width paging photo viewer. TabView with page style gives reliable horizontal swipe
     /// in a sheet context — ScrollView(.horizontal) conflicts with the sheet's pan-to-dismiss.
     private var fullScreenPhotoView: some View {
-        TabView(selection: $currentPhotoId) {
+        TabView(selection: tabSelectionBinding) {
             ForEach(photos) { photo in
                 photoFullScreenImage(photo)
                     .tag(photo.id)
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
+        .scrollDisabled(isPhotoPagingLocked)
         .ignoresSafeArea()
     }
 
@@ -1412,7 +1525,7 @@ private struct HorizontalScrollablePhotoView: View {
     let photo: RecapPhoto
     @State private var loadedImage: UIImage?
     @State private var panOffsetX: CGFloat = 0
-    @GestureState private var dragTranslationX: CGFloat = 0
+    @State private var liveDragX: CGFloat = 0
 
     var body: some View {
         GeometryReader { geo in
@@ -1421,13 +1534,13 @@ private struct HorizontalScrollablePhotoView: View {
             let displayW: CGFloat = {
                 guard let img = loadedImage, img.size.height > 0 else { return screenW }
                 let ar = img.size.width / img.size.height
-                guard ar > 1.0 else { return screenW }  // portrait: fill screen as before
-                return max(screenW, screenH * ar)        // landscape: natural width at screen height
+                guard ar > 1.0 else { return screenW }
+                return max(screenW, screenH * ar)
             }()
 
             let canPan = displayW > screenW + 0.5
             let maxPan = max(0, (displayW - screenW) / 2)
-            let effectivePan = canPan ? (panOffsetX + dragTranslationX) : 0
+            let effectivePan = canPan ? max(-maxPan, min(maxPan, panOffsetX + liveDragX)) : 0
 
             ZStack {
                 if let img = loadedImage {
@@ -1436,8 +1549,7 @@ private struct HorizontalScrollablePhotoView: View {
                         .aspectRatio(contentMode: .fill)
                         .frame(width: displayW, height: screenH)
                         .clipped()
-                        // Clamp pan to avoid empty space when the image is smaller.
-                        .offset(x: max(-maxPan, min(maxPan, effectivePan)))
+                        .offset(x: effectivePan)
                 } else {
                     RecapPhotoThumbnail(
                         photo: photo,
@@ -1451,23 +1563,16 @@ private struct HorizontalScrollablePhotoView: View {
             }
             .frame(width: screenW, height: screenH)
             .clipped()
-            .gesture(
+            .overlay(
                 canPan
-                ? DragGesture(minimumDistance: 15)
-                    .updating($dragTranslationX) { value, state, _ in
-                        // Only treat the gesture as "pan" when the user is really dragging horizontally.
-                        // This reduces conflicts with vertical sheet dismissal.
-                        if abs(value.translation.width) >= abs(value.translation.height) {
-                            state = value.translation.width
-                        } else {
-                            state = 0
-                        }
-                    }
-                    .onEnded { value in
-                        guard abs(value.translation.width) >= abs(value.translation.height) else { return }
-                        let proposed = panOffsetX + value.translation.width
-                        panOffsetX = max(-maxPan, min(maxPan, proposed))
-                    }
+                ? HorizontalPanOverlay(
+                    onChanged: { liveDragX = $0 },
+                    onEnded: { tx in
+                        panOffsetX = max(-maxPan, min(maxPan, panOffsetX + tx))
+                        liveDragX = 0
+                    },
+                    onCancelled: { liveDragX = 0 }
+                )
                 : nil
             )
         }
@@ -1478,6 +1583,79 @@ private struct HorizontalScrollablePhotoView: View {
                 assetIdentifier: id,
                 targetSize: CGSize(width: 1200, height: 1200)
             )
+        }
+    }
+}
+
+/// Transparent overlay that installs a UIKit pan recognizer which hard-fails when the
+/// initial movement is predominantly vertical. This prevents any horizontal offset from
+/// being applied while a sheet-dismiss or vertical scroll gesture is in progress.
+private struct HorizontalPanOverlay: UIViewRepresentable {
+    var onChanged: (CGFloat) -> Void
+    var onEnded: (CGFloat) -> Void
+    var onCancelled: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        let gr = HorizontalOnlyPanRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handle(_:))
+        )
+        gr.maximumNumberOfTouches = 1
+        view.addGestureRecognizer(gr)
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.onChanged = onChanged
+        context.coordinator.onEnded = onEnded
+        context.coordinator.onCancelled = onCancelled
+    }
+
+    final class Coordinator {
+        var onChanged: ((CGFloat) -> Void)?
+        var onEnded: ((CGFloat) -> Void)?
+        var onCancelled: (() -> Void)?
+
+        @objc func handle(_ gr: UIPanGestureRecognizer) {
+            let tx = gr.translation(in: gr.view).x
+            switch gr.state {
+            case .changed:
+                onChanged?(tx)
+            case .ended:
+                onEnded?(tx)
+            case .cancelled, .failed:
+                onCancelled?()
+            default:
+                break
+            }
+        }
+    }
+}
+
+/// A pan recognizer that fails itself as soon as it detects the gesture is moving
+/// more vertically than horizontally, giving vertical gestures (sheet dismiss, scroll)
+/// a clean win with no horizontal interference.
+private final class HorizontalOnlyPanRecognizer: UIPanGestureRecognizer {
+    private var axisLocked = false
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesBegan(touches, with: event)
+        axisLocked = false
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesMoved(touches, with: event)
+        guard !axisLocked else { return }
+        let t = translation(in: view)
+        let dx = abs(t.x), dy = abs(t.y)
+        guard dx > 5 || dy > 5 else { return }   // wait for enough travel
+        axisLocked = true
+        if dy > dx {
+            state = .failed   // vertical — give up immediately
         }
     }
 }

@@ -242,7 +242,7 @@ struct RecapBlogPageView: View {
         .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
         .animation(.easeOut(duration: 0.22), value: placeCaptionEditItem?.id)
         .animation(.easeOut(duration: 0.22), value: dayCaptionEditItem?.id)
-        .animation(.easeOut(duration: 0.22), value: placePhotoModalItem?.id)
+        .animation(.easeInOut(duration: 0.38), value: placePhotoModalItem?.id)
     }
 
     private func bodyContent(screenHeight: CGFloat) -> some View {
