@@ -89,8 +89,8 @@ struct PDFPhotoShapeOptions: Codable, Equatable {
 }
 
 struct PDFExportOptions: Codable, Equatable {
-    var fontTheme:        FontTheme          = .classic
-    var colorStyle:       BlogColor          = .white
+    var fontTheme: FontTheme = .classic
+    var colorStyle: BlogColor = .white
     var photoShapeOptions: PDFPhotoShapeOptions = PDFPhotoShapeOptions()
 }
 

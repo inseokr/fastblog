@@ -7,45 +7,31 @@ struct PhotoCardView: View {
     let width: CGFloat
     /// Must match `StoryPageLayout` packing (`photoImageHeight` on the slot).
     let imageHeight: CGFloat
+    var fontTheme: FontTheme = .classic
+    var blogColor: BlogColor = .white
+
+    private var captionColor: Color {
+        blogColor == .black ? Color.white.opacity(0.78) : Color.black.opacity(0.55)
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ZStack(alignment: .bottom) {
-                Image(uiImage: photo.image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: width, height: imageHeight)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+        VStack(alignment: .leading, spacing: StoryPageLayout.photoCaptionToImageSpacing) {
+            Image(uiImage: photo.image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: width, height: imageHeight)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 12))
 
-                if photo.captionIsLong, let caption = photo.caption {
-                    ZStack(alignment: .bottom) {
-                        LinearGradient(
-                            colors: [.clear, .black.opacity(0.75)],
-                            startPoint: .center,
-                            endPoint: .bottom
-                        )
-                        Text(caption)
-                            .font(.system(size: 11))
-                            .foregroundColor(.white)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 8)
-                            .padding(.bottom, 10)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                    }
-                    .frame(width: width, height: imageHeight * 0.45)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                }
-            }
-            .frame(width: width, height: imageHeight)
-
-            if !photo.captionIsLong, let caption = photo.caption {
+            if let caption = photo.caption?.trimmingCharacters(in: .whitespacesAndNewlines), !caption.isEmpty {
                 Text(caption)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
-                    .frame(width: width)
+                    .font(Font(StoryFontHelper.uiFont(for: fontTheme, size: StoryPageLayout.photoCaptionFontSize)))
+                    .foregroundColor(captionColor)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .frame(width: width, alignment: .leading)
     }
 }

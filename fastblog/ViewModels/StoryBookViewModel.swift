@@ -12,14 +12,14 @@ final class StoryBookViewModel: ObservableObject {
     @Published var state: State = .loading
     private var buildTask: Task<Void, Never>?
 
-    func build(from detail: RecapBlogDetail) {
+    func build(from detail: RecapBlogDetail, fontTheme: FontTheme) {
         buildTask?.cancel()
         state = .loading
         buildTask = Task {
             do {
                 let content = try await StoryBookBuilder.build(from: detail)
                 guard !Task.isCancelled else { return }
-                let pages = StoryPageLayout.buildPages(from: content)
+                let pages = StoryPageLayout.buildPages(from: content, fontTheme: fontTheme)
                 state = .ready(pages)
             } catch {
                 guard !Task.isCancelled else { return }

@@ -20,7 +20,14 @@ struct DayContentPage {
 
 enum ContentSlot {
     case dayCaption(String)
-    case placeBlock(PlaceContent, photoSlice: ClosedRange<Int>, photoImageHeight: CGFloat, photoGridLayout: PhotoGridLayout)
+    case placeBlock(
+        PlaceContent,
+        photoSlice: ClosedRange<Int>,
+        photoImageHeight: CGFloat,
+        photoGridLayout: PhotoGridLayout,
+        storyUsesTwoColumns: Bool,
+        showPlaceStory: Bool
+    )
     case photoOverflowContinuation(
         placeName: String,
         PlaceContent,
@@ -29,6 +36,10 @@ enum ContentSlot {
         photoGridLayout: PhotoGridLayout,
         showOverflowHeader: Bool
     )
+    /// Remaining lines of a photo caption that did not fit under the image on the previous page(s).
+    case photoCaptionContinuation(text: String)
+    /// Remaining place story text that did not fit above photos on the previous page(s).
+    case placeStoryContinuation(text: String)
 }
 
 enum PhotoGridLayout {

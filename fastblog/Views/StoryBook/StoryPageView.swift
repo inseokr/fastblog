@@ -11,6 +11,10 @@ private struct StoryBlogColorKey: EnvironmentKey {
     static let defaultValue: BlogColor = .white
 }
 
+private struct StoryRasterizesForExportKey: EnvironmentKey {
+    static let defaultValue: Bool = false
+}
+
 extension EnvironmentValues {
     var storyFontTheme: FontTheme {
         get { self[StoryFontThemeKey.self] }
@@ -19,6 +23,11 @@ extension EnvironmentValues {
     var storyBlogColor: BlogColor {
         get { self[StoryBlogColorKey.self] }
         set { self[StoryBlogColorKey.self] = newValue }
+    }
+    /// When true, place titles render without `Link` so `ImageRenderer` (storybook PDF) draws text reliably.
+    var storyRasterizesForExport: Bool {
+        get { self[StoryRasterizesForExportKey.self] }
+        set { self[StoryRasterizesForExportKey.self] = newValue }
     }
 }
 

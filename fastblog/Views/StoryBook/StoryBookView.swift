@@ -125,7 +125,7 @@ struct StoryBookView: View {
                         .multilineTextAlignment(.center)
                         .foregroundColor(Color.black)
                     Button("Retry") {
-                        viewModel.build(from: detail)
+                        viewModel.build(from: detail, fontTheme: savedOptions.fontTheme)
                     }
                     .buttonStyle(.borderedProminent)
                     Button("Close") { if let od = onDismiss { od() } else { dismiss() } }
@@ -168,8 +168,8 @@ struct StoryBookView: View {
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showSavedToFilesBanner)
         .animation(.easeInOut(duration: 0.2), value: isContentReady)
-        .task {
-            viewModel.build(from: detail)
+        .task(id: "\(detail.id.uuidString)-\(savedOptions.fontTheme.rawValue)-\(savedOptions.colorStyle.rawValue)") {
+            viewModel.build(from: detail, fontTheme: savedOptions.fontTheme)
         }
         .sheet(isPresented: $showShareSheet) {
             if let url = pdfShareURL {

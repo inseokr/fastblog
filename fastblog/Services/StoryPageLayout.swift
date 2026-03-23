@@ -89,8 +89,18 @@ enum StoryPageLayout {
     static let dayStoryBoxTextPaddingTop: CGFloat = 10
     static let dayStoryBoxTextPaddingBottom: CGFloat = 10
     static let placeTitleHeight: CGFloat = 32
-    static let placeCaptionShort: CGFloat = 40
-    static let placeCaptionLong: CGFloat = 64
+    static let placeCaptionShort: CGFloat = 48
+    static let placeCaptionLong: CGFloat = 72
+    /// Place story body above photos; keep layout estimates aligned with `PlaceBlockView`.
+    static let placeStoryBodyFontSize: CGFloat = 16
+    /// Font size for the per-photo caption drawn below each image; keep in sync with `PhotoCardView`.
+    static let photoCaptionFontSize: CGFloat = 13
+    /// Spacing between the photo image and its caption text; keep in sync with `PhotoCardView`.
+    static let photoCaptionToImageSpacing: CGFloat = 8
+    /// When a stop has two photos and the place story reaches this many wrapped lines, lay the story in two columns.
+    private static let placeStoryLineCountSplitTwoPhotosThreshold: Int = 4
+    /// When a stop has two photos and the place story reaches this many wrapped lines, use two single-photo slots instead of one stacked pair.
+    private static let placeStoryLineCountSinglePhotoThreshold: Int = 2
     static let overflowLabelHeight: CGFloat = 24
     /// SwiftUI `VStack` spacing between place title row, place caption, and photos (not the photo grid `photoGap`).
     static let placeBlockRowSpacing: CGFloat = 6
@@ -156,24 +166,145 @@ enum StoryPageLayout {
         )
     }
 
-    /// Estimated extra height added by the *short* photo caption below the image.
-    /// Long captions are drawn inside the image frame so they do not add extra vertical space.
-    private static func shortPhotoCaptionExtraHeight(
+    // MARK: - Feasible photo heights (never exceed one story page)
+
+    private static func splitBalancedForTwoColumns(_ text: String) -> (String, String) {
+        let words = text.split { $0.isWhitespace || $0.isNewline }.map(String.init).filter { !$0.isEmpty }
+        guard words.count >= 2 else { return (text, "") }
+        let mid = words.count / 2
+        let left = words[..<mid].joined(separator: " ")
+        let right = words[mid...].joined(separator: " ")
+        return (left, right)
+    }
+
+    private static func boundedPlaceCaptionBlockHeight(
+        place: PlaceContent,
+        metrics: Metrics,
+        fontTheme: FontTheme,
+        hasPhotosInSlot: Bool = true,
+        storyUsesTwoColumns: Bool = false,
+        showPlaceStory: Bool = true
+    ) -> CGFloat {
+        guard showPlaceStory else { return 0 }
+        guard let caption = place.caption?.trimmingCharacters(in: .whitespacesAndNewlines), !caption.isEmpty else { return 0 }
+        let gaps = placeCaptionGaps(layoutMode: .normal, hasPhotosInSlot: hasPhotosInSlot)
+        let minCaptionTextH = max(0, (place.captionIsLong ? placeCaptionLong : placeCaptionShort) - gaps.top - gaps.bottom)
+        let font = StoryFontHelper.uiFont(for: fontTheme, size: placeStoryBodyFontSize)
+        let raw: CGFloat
+        if storyUsesTwoColumns {
+            let colGap: CGFloat = 10
+            let colW = max(40, (metrics.pageWidth - colGap) / 2)
+            let (l, r) = splitBalancedForTwoColumns(caption)
+            let hl = estimateTextHeight(l, font: font, width: colW) + font.lineHeight * 0.35
+            let hr = r.isEmpty ? 0 : estimateTextHeight(r, font: font, width: colW) + font.lineHeight * 0.35
+            raw = max(hl, hr)
+        } else {
+            raw = estimateTextHeight(caption, font: font, width: metrics.pageWidth) + font.lineHeight * 0.35
+        }
+        let body = max(minCaptionTextH, raw)
+        let maxBody = max(40, pageContentHeight * 0.38)
+        return gaps.top + gaps.bottom + min(body, maxBody)
+    }
+
+    private static func feasibleSinglePhotoImageHeight(
+        metrics: Metrics,
+        place: PlaceContent,
+        fontTheme: FontTheme,
+        storyUsesTwoColumns: Bool = false,
+        showPlaceStory: Bool = true
+    ) -> CGFloat {
+        let placeBlk = boundedPlaceCaptionBlockHeight(
+            place: place,
+            metrics: metrics,
+            fontTheme: fontTheme,
+            storyUsesTwoColumns: storyUsesTwoColumns,
+            showPlaceStory: showPlaceStory
+        )
+        let f = StoryFontHelper.uiFont(for: fontTheme, size: photoCaptionFontSize)
+        let captionBelow = min(f.lineHeight * 40 + photoCaptionToImageSpacing, 340)
+        let fixed = dayHeaderHeight + placeTitleHeight + placeBlk + captionBelow + 8
+        return min(metrics.minSinglePhotoImageHeight, max(100, pageContentHeight - fixed))
+    }
+
+    private static func feasibleStackedRowImageHeight(
+        metrics: Metrics,
+        place: PlaceContent,
+        fontTheme: FontTheme,
+        storyUsesTwoColumns: Bool = false,
+        showPlaceStory: Bool = true
+    ) -> CGFloat {
+        let placeBlk = boundedPlaceCaptionBlockHeight(
+            place: place,
+            metrics: metrics,
+            fontTheme: fontTheme,
+            storyUsesTwoColumns: storyUsesTwoColumns,
+            showPlaceStory: showPlaceStory
+        )
+        let f = StoryFontHelper.uiFont(for: fontTheme, size: photoCaptionFontSize)
+        let rowCap = min(f.lineHeight * 10 + photoCaptionToImageSpacing, 150)
+        let fixed = dayHeaderHeight + placeTitleHeight + placeBlk + photoGap + rowCap * 2 + 8
+        let per = (pageContentHeight - fixed) / 2
+        return min(metrics.minSinglePhotoImageHeight, max(96, per))
+    }
+
+    private static func feasibleTwoColumnRowImageHeight(
+        metrics: Metrics,
+        place: PlaceContent,
+        fontTheme: FontTheme,
+        storyUsesTwoColumns: Bool = false,
+        showPlaceStory: Bool = true
+    ) -> CGFloat {
+        let placeBlk = boundedPlaceCaptionBlockHeight(
+            place: place,
+            metrics: metrics,
+            fontTheme: fontTheme,
+            storyUsesTwoColumns: storyUsesTwoColumns,
+            showPlaceStory: showPlaceStory
+        )
+        let f = StoryFontHelper.uiFont(for: fontTheme, size: photoCaptionFontSize)
+        let rowCap = min(f.lineHeight * 10 + photoCaptionToImageSpacing, 150)
+        let fixed = dayHeaderHeight + placeTitleHeight + placeBlk + rowCap + 8
+        return min(metrics.minTwoPhotoImageHeight, max(100, pageContentHeight - fixed))
+    }
+
+    private static func feasibleOverflowSingleImageHeight(metrics: Metrics, fontTheme: FontTheme, showHeader: Bool) -> CGFloat {
+        let hd = showHeader ? overflowLabelHeight : 0
+        let f = StoryFontHelper.uiFont(for: fontTheme, size: photoCaptionFontSize)
+        let capB = min(f.lineHeight * 12 + photoCaptionToImageSpacing, 200)
+        let fixed = dayHeaderHeight + hd + capB + 8
+        return min(metrics.minSinglePhotoImageHeight, max(96, pageContentHeight - fixed))
+    }
+
+    private static func feasibleOverflowStackedRowImageHeight(metrics: Metrics, fontTheme: FontTheme, showHeader: Bool) -> CGFloat {
+        let hd = showHeader ? overflowLabelHeight : 0
+        let f = StoryFontHelper.uiFont(for: fontTheme, size: photoCaptionFontSize)
+        let rowCap = min(f.lineHeight * 10 + photoCaptionToImageSpacing, 150)
+        let fixed = dayHeaderHeight + hd + photoGap + rowCap * 2 + 8
+        let per = (pageContentHeight - fixed) / 2
+        return min(metrics.minSinglePhotoImageHeight, max(96, per))
+    }
+
+    private static func feasibleOverflowTwoColumnRowImageHeight(metrics: Metrics, fontTheme: FontTheme, showHeader: Bool) -> CGFloat {
+        let hd = showHeader ? overflowLabelHeight : 0
+        let f = StoryFontHelper.uiFont(for: fontTheme, size: photoCaptionFontSize)
+        let rowCap = min(f.lineHeight * 10 + photoCaptionToImageSpacing, 150)
+        let fixed = dayHeaderHeight + hd + rowCap + 8
+        return min(metrics.minTwoPhotoImageHeight, max(96, pageContentHeight - fixed))
+    }
+
+    /// Extra height for photo caption text drawn **below** the image (`PhotoCardView`).
+    private static func photoCaptionBelowImageExtraHeight(
         _ photo: PhotoContent,
         photoWidth: CGFloat,
-        fontTheme: FontTheme
+        fontTheme: FontTheme,
+        maxLines: Int
     ) -> CGFloat {
-        guard let caption = photo.caption,
-              !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              photo.captionIsLong == false
-        else { return 0 }
+        let caption = photo.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !caption.isEmpty else { return 0 }
 
-        // PhotoCardView's internal stack spacing between image ZStack and caption Text.
-        let stackSpacing: CGFloat = 4
-
-        let font = StoryFontHelper.uiFont(for: fontTheme, size: 10)
-        let maxLines: CGFloat = 2
-        let maxCaptionHeight = font.lineHeight * maxLines
+        let stackSpacing = photoCaptionToImageSpacing
+        let font = StoryFontHelper.uiFont(for: fontTheme, size: photoCaptionFontSize)
+        let maxCaptionHeight = font.lineHeight * CGFloat(max(1, maxLines))
 
         let rect = caption.boundingRect(
             with: CGSize(width: photoWidth, height: .greatestFiniteMagnitude),
@@ -184,6 +315,568 @@ enum StoryPageLayout {
 
         let cappedTextHeight = min(rect.height, maxCaptionHeight)
         return stackSpacing + cappedTextHeight
+    }
+
+    // MARK: - Photo caption pagination (single-photo rows only)
+
+    private static func takePrefixFittingHeight(
+        _ text: String,
+        font: UIFont,
+        width: CGFloat,
+        maxHeight: CGFloat
+    ) -> (head: String, tail: String) {
+        let t = text
+        guard !t.isEmpty, width > 0, maxHeight > 0 else { return ("", t) }
+
+        var lo = 0
+        var hi = t.count
+        var best = 0
+        while lo <= hi {
+            let mid = (lo + hi) / 2
+            let idx = t.index(t.startIndex, offsetBy: mid)
+            let sub = String(t[..<idx])
+            let h = estimateTextHeight(sub, font: font, width: width)
+            if h <= maxHeight {
+                best = mid
+                lo = mid + 1
+            } else {
+                hi = mid - 1
+            }
+        }
+
+        if best == 0 {
+            let first = String(t.prefix(1))
+            return (first, String(t.dropFirst()))
+        }
+
+        var breakIdx = t.index(t.startIndex, offsetBy: best)
+        while breakIdx > t.startIndex {
+            let prev = t.index(before: breakIdx)
+            if t[prev].isWhitespace || t[prev].isNewline { break }
+            breakIdx = prev
+        }
+        if breakIdx == t.startIndex {
+            breakIdx = t.index(t.startIndex, offsetBy: best)
+        }
+
+        let head = String(t[..<breakIdx]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let tail = String(t[breakIdx...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (head, tail)
+    }
+
+    private static func splitCaptionIntoPaginatedChunks(
+        _ raw: String,
+        font: UIFont,
+        width: CGFloat,
+        firstChunkMaxHeight: CGFloat,
+        continuationMaxHeight: CGFloat
+    ) -> [String] {
+        var remaining = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !remaining.isEmpty else { return [] }
+
+        var chunks: [String] = []
+        var useFirstBudget = true
+
+        while !remaining.isEmpty {
+            let maxH = useFirstBudget ? firstChunkMaxHeight : continuationMaxHeight
+            useFirstBudget = false
+
+            if estimateTextHeight(remaining, font: font, width: width) <= maxH {
+                chunks.append(remaining)
+                break
+            }
+
+            var (head, tail) = takePrefixFittingHeight(remaining, font: font, width: width, maxHeight: maxH)
+            if head.isEmpty {
+                let ch = String(remaining.prefix(1))
+                chunks.append(ch)
+                remaining = String(remaining.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
+                continue
+            }
+            chunks.append(head)
+            remaining = tail.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return chunks
+    }
+
+    private static func placeContentReplacingPhotos(_ place: PlaceContent, photos: [PhotoContent]) -> PlaceContent {
+        PlaceContent(
+            title: place.title,
+            subtitle: place.subtitle,
+            markerNumber: place.markerNumber,
+            markerType: place.markerType,
+            timestamp: place.timestamp,
+            caption: place.caption,
+            captionIsLong: place.captionIsLong,
+            photos: photos
+        )
+    }
+
+    private static func placeContentReplacingCaption(_ place: PlaceContent, caption: String?) -> PlaceContent {
+        let trimmed = caption?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let final: String? = {
+            guard let t = trimmed, !t.isEmpty else { return nil }
+            return t
+        }()
+        let c = final ?? ""
+        return PlaceContent(
+            title: place.title,
+            subtitle: place.subtitle,
+            markerNumber: place.markerNumber,
+            markerType: place.markerType,
+            timestamp: place.timestamp,
+            caption: final,
+            captionIsLong: c.count > 80,
+            photos: place.photos
+        )
+    }
+
+    private static func estimatedStoryLineCount(caption: String, metrics: Metrics, fontTheme: FontTheme) -> Int {
+        let t = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return 0 }
+        let font = StoryFontHelper.uiFont(for: fontTheme, size: placeStoryBodyFontSize)
+        let h = estimateTextHeight(t, font: font, width: metrics.pageWidth) + font.lineHeight * 0.35
+        let lh = max(1, font.lineHeight)
+        return max(1, Int(ceil(h / lh)))
+    }
+
+    private static func shouldUseTwoColumnPlaceStory(caption: String, lineCount: Int) -> Bool {
+        let t = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return false }
+        let (l, r) = splitBalancedForTwoColumns(t)
+        guard !l.isEmpty, !r.isEmpty else { return false }
+        if lineCount >= placeStoryLineCountSplitTwoPhotosThreshold { return true }
+        if t.count >= 100 && lineCount >= 3 { return true }
+        return false
+    }
+
+    private static func twoPhotoPlaceSlots(place: PlaceContent, metrics: Metrics, fontTheme: FontTheme) -> [ContentSlot] {
+        let cap = place.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let lines = estimatedStoryLineCount(caption: cap, metrics: metrics, fontTheme: fontTheme)
+        let twoCol = shouldUseTwoColumnPlaceStory(caption: cap, lineCount: lines)
+        if lines >= placeStoryLineCountSinglePhotoThreshold {
+            let h0 = feasibleSinglePhotoImageHeight(
+                metrics: metrics,
+                place: place,
+                fontTheme: fontTheme,
+                storyUsesTwoColumns: twoCol,
+                showPlaceStory: true
+            )
+            let h1 = feasibleSinglePhotoImageHeight(
+                metrics: metrics,
+                place: place,
+                fontTheme: fontTheme,
+                storyUsesTwoColumns: false,
+                showPlaceStory: false
+            )
+            return [
+                .placeBlock(
+                    place,
+                    photoSlice: 0...0,
+                    photoImageHeight: h0,
+                    photoGridLayout: .single,
+                    storyUsesTwoColumns: twoCol,
+                    showPlaceStory: true
+                ),
+                .placeBlock(
+                    place,
+                    photoSlice: 1...1,
+                    photoImageHeight: h1,
+                    photoGridLayout: .single,
+                    storyUsesTwoColumns: false,
+                    showPlaceStory: false
+                )
+            ]
+        }
+        let h = feasibleStackedRowImageHeight(
+            metrics: metrics,
+            place: place,
+            fontTheme: fontTheme,
+            storyUsesTwoColumns: twoCol,
+            showPlaceStory: true
+        )
+        return [
+            .placeBlock(
+                place,
+                photoSlice: 0...1,
+                photoImageHeight: h,
+                photoGridLayout: .stackedSingles,
+                storyUsesTwoColumns: twoCol,
+                showPlaceStory: true
+            )
+        ]
+    }
+
+    private static func photosBlockHeightInPlaceSlot(
+        place: PlaceContent,
+        photoSlice: ClosedRange<Int>,
+        photoImageHeight: CGFloat,
+        photoGridLayout: PhotoGridLayout,
+        metrics: Metrics,
+        fontTheme: FontTheme
+    ) -> CGFloat {
+        guard !place.photos.isEmpty else { return 0 }
+        let lo = photoSlice.lowerBound
+        let hi = min(photoSlice.upperBound, place.photos.count - 1)
+        guard lo <= hi else { return 0 }
+        let photos = Array(place.photos[lo...hi])
+        switch photoGridLayout {
+        case .single:
+            let photoWidth = metrics.singlePhotoWidth
+            let extra = photos.map { photoCaptionBelowImageExtraHeight($0, photoWidth: photoWidth, fontTheme: fontTheme, maxLines: 48) }.max() ?? 0
+            return photoImageHeight + extra
+        case .twoColumn:
+            let photoWidth = metrics.twoPhotoWidth
+            let maxExtra = photos.map { photoCaptionBelowImageExtraHeight($0, photoWidth: photoWidth, fontTheme: fontTheme, maxLines: 10) }.max() ?? 0
+            return photoImageHeight + maxExtra
+        case .stackedSingles:
+            let photoWidth = metrics.singlePhotoWidth
+            let extras = photos.map { photoCaptionBelowImageExtraHeight($0, photoWidth: photoWidth, fontTheme: fontTheme, maxLines: 10) }
+            if extras.count >= 2 {
+                return photoImageHeight + extras[0] + photoGap + photoImageHeight + extras[1]
+            }
+            let maxExtra = extras.max() ?? 0
+            return photoImageHeight + maxExtra
+        }
+    }
+
+    private static func placeStoryBlockTextHeight(
+        caption: String,
+        pageWidth: CGFloat,
+        fontTheme: FontTheme,
+        storyUsesTwoColumns: Bool
+    ) -> CGFloat {
+        let font = StoryFontHelper.uiFont(for: fontTheme, size: placeStoryBodyFontSize)
+        if storyUsesTwoColumns {
+            let colGap: CGFloat = 10
+            let colW = max(40, (pageWidth - colGap) / 2)
+            let (l, r) = splitBalancedForTwoColumns(caption)
+            let hl = estimateTextHeight(l, font: font, width: colW) + font.lineHeight * 0.35
+            let hr = r.isEmpty ? 0 : estimateTextHeight(r, font: font, width: colW) + font.lineHeight * 0.35
+            return max(hl, hr)
+        }
+        return estimateTextHeight(caption, font: font, width: pageWidth) + font.lineHeight * 0.35
+    }
+
+    /// Splits long place stories into a first chunk above photos plus `.placeStoryContinuation` slots.
+    private static func expandPlaceStoryPagination(
+        _ slots: [ContentSlot],
+        metrics: Metrics,
+        fontTheme: FontTheme
+    ) -> [ContentSlot] {
+        let bodyFont = StoryFontHelper.uiFont(for: fontTheme, size: placeStoryBodyFontSize)
+        let lh = max(1, bodyFont.lineHeight)
+        let continuationTextMax = max(56, pageContentHeight - dayHeaderHeight - 56)
+
+        var out: [ContentSlot] = []
+        for slot in slots {
+            guard case let .placeBlock(place, slice, imgH, grid, storyTwoCols, showStory) = slot else {
+                out.append(slot)
+                continue
+            }
+            guard showStory,
+                  let capRaw = place.caption?.trimmingCharacters(in: .whitespacesAndNewlines), !capRaw.isEmpty else {
+                out.append(slot)
+                continue
+            }
+
+            let hasPhotosInSlot: Bool = {
+                guard !place.photos.isEmpty else { return false }
+                let lo = slice.lowerBound
+                let hi = min(slice.upperBound, place.photos.count - 1)
+                return lo <= hi
+            }()
+
+            let photosBlockH = photosBlockHeightInPlaceSlot(
+                place: place,
+                photoSlice: slice,
+                photoImageHeight: imgH,
+                photoGridLayout: grid,
+                metrics: metrics,
+                fontTheme: fontTheme
+            )
+            let captionHeadroom = max(0, pageContentHeight - dayHeaderHeight - placeTitleHeight - photosBlockH - 8)
+            let gaps = placeCaptionGaps(layoutMode: .normal, hasPhotosInSlot: hasPhotosInSlot)
+            let maxBody = max(40, pageContentHeight * 0.38)
+            let innerBudget = min(maxBody, max(0, captionHeadroom - gaps.top - gaps.bottom))
+
+            var fullH = placeStoryBlockTextHeight(
+                caption: capRaw,
+                pageWidth: metrics.pageWidth,
+                fontTheme: fontTheme,
+                storyUsesTwoColumns: storyTwoCols
+            )
+
+            if fullH <= innerBudget {
+                out.append(slot)
+                continue
+            }
+
+            if storyTwoCols {
+                let hSingle = placeStoryBlockTextHeight(
+                    caption: capRaw,
+                    pageWidth: metrics.pageWidth,
+                    fontTheme: fontTheme,
+                    storyUsesTwoColumns: false
+                )
+                if hSingle <= innerBudget {
+                    out.append(
+                        .placeBlock(
+                            place,
+                            photoSlice: slice,
+                            photoImageHeight: imgH,
+                            photoGridLayout: grid,
+                            storyUsesTwoColumns: false,
+                            showPlaceStory: true
+                        )
+                    )
+                    continue
+                }
+                fullH = hSingle
+            }
+
+            let chunks = splitCaptionIntoPaginatedChunks(
+                capRaw,
+                font: bodyFont,
+                width: metrics.pageWidth,
+                firstChunkMaxHeight: max(lh, innerBudget - lh * 0.35),
+                continuationMaxHeight: continuationTextMax
+            )
+            guard chunks.count > 1 else {
+                out.append(slot)
+                continue
+            }
+
+            let firstPlace = placeContentReplacingCaption(place, caption: chunks[0])
+            out.append(
+                .placeBlock(
+                    firstPlace,
+                    photoSlice: slice,
+                    photoImageHeight: imgH,
+                    photoGridLayout: grid,
+                    storyUsesTwoColumns: false,
+                    showPlaceStory: true
+                )
+            )
+            for i in 1..<chunks.count {
+                out.append(.placeStoryContinuation(text: chunks[i]))
+            }
+        }
+        return out
+    }
+
+    /// Splits long **single-photo** captions into a first chunk under the image plus `.photoCaptionContinuation` slots.
+    private static func expandPaginatedPhotoCaptions(
+        _ slots: [ContentSlot],
+        metrics: Metrics,
+        fontTheme: FontTheme
+    ) -> [ContentSlot] {
+        let captionFont = StoryFontHelper.uiFont(for: fontTheme, size: 11)
+        let w = metrics.singlePhotoWidth
+
+        // Leave room for the "Continued" label + padding in `PhotoCaptionContinuationView` / `slotHeight`.
+        let continuationTextMax = max(56, pageContentHeight - dayHeaderHeight - 56)
+        let photoPageOverhead = placeTitleHeight + placeCaptionLong + metrics.minSinglePhotoImageHeight + 96
+        let firstChunkMax = max(72, pageContentHeight - dayHeaderHeight - photoPageOverhead)
+
+        var out: [ContentSlot] = []
+
+        for slot in slots {
+            switch slot {
+            case .placeBlock(let place, let slice, let imgH, let grid, let storyTC, let showPS):
+                guard grid == .single else {
+                    out.append(slot)
+                    continue
+                }
+                let lo = slice.lowerBound
+                let hi = min(slice.upperBound, place.photos.count - 1)
+                guard lo == hi, lo < place.photos.count else {
+                    out.append(slot)
+                    continue
+                }
+                let photo = place.photos[lo]
+                let cap = photo.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard !cap.isEmpty else {
+                    out.append(slot)
+                    continue
+                }
+
+                let fullH = estimateTextHeight(cap, font: captionFont, width: w)
+                guard fullH > firstChunkMax else {
+                    out.append(slot)
+                    continue
+                }
+
+                let chunks = splitCaptionIntoPaginatedChunks(
+                    cap,
+                    font: captionFont,
+                    width: w,
+                    firstChunkMaxHeight: firstChunkMax,
+                    continuationMaxHeight: continuationTextMax
+                )
+                guard chunks.count > 1 else {
+                    out.append(slot)
+                    continue
+                }
+
+                var photos = place.photos
+                let c0 = chunks[0]
+                photos[lo] = PhotoContent(
+                    image: photo.image,
+                    caption: c0,
+                    captionIsLong: c0.count > 80
+                )
+                out.append(
+                    .placeBlock(
+                        placeContentReplacingPhotos(place, photos: photos),
+                        photoSlice: slice,
+                        photoImageHeight: imgH,
+                        photoGridLayout: grid,
+                        storyUsesTwoColumns: storyTC,
+                        showPlaceStory: showPS
+                    )
+                )
+                for i in 1..<chunks.count {
+                    out.append(.photoCaptionContinuation(text: chunks[i]))
+                }
+
+            case .photoOverflowContinuation(let name, let place, let slice, let imgH, let grid, let show):
+                guard grid == .single else {
+                    out.append(slot)
+                    continue
+                }
+                let lo = slice.lowerBound
+                let hi = min(slice.upperBound, place.photos.count - 1)
+                guard lo == hi, lo < place.photos.count else {
+                    out.append(slot)
+                    continue
+                }
+                let photo = place.photos[lo]
+                let cap = photo.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard !cap.isEmpty else {
+                    out.append(slot)
+                    continue
+                }
+
+                let fullH = estimateTextHeight(cap, font: captionFont, width: w)
+                guard fullH > firstChunkMax else {
+                    out.append(slot)
+                    continue
+                }
+
+                let chunks = splitCaptionIntoPaginatedChunks(
+                    cap,
+                    font: captionFont,
+                    width: w,
+                    firstChunkMaxHeight: firstChunkMax,
+                    continuationMaxHeight: continuationTextMax
+                )
+                guard chunks.count > 1 else {
+                    out.append(slot)
+                    continue
+                }
+
+                var photos = place.photos
+                let c0 = chunks[0]
+                photos[lo] = PhotoContent(
+                    image: photo.image,
+                    caption: c0,
+                    captionIsLong: c0.count > 80
+                )
+                let newPlace = placeContentReplacingPhotos(place, photos: photos)
+                out.append(
+                    .photoOverflowContinuation(
+                        placeName: name,
+                        newPlace,
+                        photoSlice: slice,
+                        photoImageHeight: imgH,
+                        photoGridLayout: grid,
+                        showOverflowHeader: show
+                    )
+                )
+                for i in 1..<chunks.count {
+                    out.append(.photoCaptionContinuation(text: chunks[i]))
+                }
+
+            default:
+                out.append(slot)
+            }
+        }
+
+        return out
+    }
+
+    /// Any `.photoCaptionContinuation` taller than one page is split again (defensive — e.g. font metrics drift).
+    private static func refineOversizedPhotoCaptionContinuations(
+        _ slots: [ContentSlot],
+        metrics: Metrics,
+        fontTheme: FontTheme
+    ) -> [ContentSlot] {
+        let font = StoryFontHelper.uiFont(for: fontTheme, size: 11)
+        let lh = max(1, font.lineHeight)
+        let chrome: CGFloat = 4 + 18 + 6 + 8
+        let maxTextH = max(32, pageContentHeight - dayHeaderHeight - chrome - lh * 0.35)
+
+        var out: [ContentSlot] = []
+        for slot in slots {
+            guard case .photoCaptionContinuation(let text) = slot else {
+                out.append(slot)
+                continue
+            }
+            let rawTextH = estimateTextHeight(text, font: font, width: metrics.pageWidth) + lh * 0.35
+            if rawTextH <= maxTextH {
+                out.append(slot)
+                continue
+            }
+            let sub = splitCaptionIntoPaginatedChunks(
+                text,
+                font: font,
+                width: metrics.pageWidth,
+                firstChunkMaxHeight: maxTextH,
+                continuationMaxHeight: maxTextH
+            )
+            for s in sub {
+                out.append(.photoCaptionContinuation(text: s))
+            }
+        }
+        return out
+    }
+
+    /// Any `.placeStoryContinuation` taller than one page is split again (defensive).
+    private static func refineOversizedPlaceStoryContinuations(
+        _ slots: [ContentSlot],
+        metrics: Metrics,
+        fontTheme: FontTheme
+    ) -> [ContentSlot] {
+        let font = StoryFontHelper.uiFont(for: fontTheme, size: placeStoryBodyFontSize)
+        let lh = max(1, font.lineHeight)
+        let chrome: CGFloat = 4 + 18 + 6 + 8
+        let maxTextH = max(32, pageContentHeight - dayHeaderHeight - chrome - lh * 0.35)
+
+        var out: [ContentSlot] = []
+        for slot in slots {
+            guard case .placeStoryContinuation(let text) = slot else {
+                out.append(slot)
+                continue
+            }
+            let rawTextH = estimateTextHeight(text, font: font, width: metrics.pageWidth) + lh * 0.35
+            if rawTextH <= maxTextH {
+                out.append(slot)
+                continue
+            }
+            let sub = splitCaptionIntoPaginatedChunks(
+                text,
+                font: font,
+                width: metrics.pageWidth,
+                firstChunkMaxHeight: maxTextH,
+                continuationMaxHeight: maxTextH
+            )
+            for s in sub {
+                out.append(.placeStoryContinuation(text: s))
+            }
+        }
+        return out
     }
 
     private static func estimateTextHeight(_ text: String, font: UIFont, width: CGFloat) -> CGFloat {
@@ -316,8 +1009,7 @@ enum StoryPageLayout {
     // MARK: - Entry point
     static func buildPages(
         from content: StoryBookContent,
-        fontTheme: FontTheme = .classic,
-        layoutMode: PDFLayoutMode = .normal
+        fontTheme: FontTheme = .classic
     ) -> [StoryPage] {
         var pages: [StoryPage] = []
         let metrics = makeMetrics()
@@ -357,8 +1049,7 @@ enum StoryPageLayout {
                 isLastDay: isLastDay,
                 nextDayName: nextDayName,
                 metrics: metrics,
-                fontTheme: fontTheme,
-                layoutMode: layoutMode
+                fontTheme: fontTheme
             )
             dayPages.append(contentsOf: contentPages.map { .dayContent($0) })
         }
@@ -427,8 +1118,7 @@ enum StoryPageLayout {
         isLastDay: Bool,
         nextDayName: String?,
         metrics: Metrics,
-        fontTheme: FontTheme,
-        layoutMode: PDFLayoutMode
+        fontTheme: FontTheme
     ) -> [DayContentPage] {
 
         var allSlots: [ContentSlot] = []
@@ -443,36 +1133,84 @@ enum StoryPageLayout {
 
         // Place slots
         for place in day.places {
-            allSlots.append(contentsOf: slotsForPlace(place, metrics: metrics))
+            allSlots.append(contentsOf: slotsForPlace(place, metrics: metrics, fontTheme: fontTheme))
         }
 
-        // Pack slots into pages
+        let storyPaginated = expandPlaceStoryPagination(allSlots, metrics: metrics, fontTheme: fontTheme)
+        let expandedSlots = expandPaginatedPhotoCaptions(storyPaginated, metrics: metrics, fontTheme: fontTheme)
+        let refinedPhoto = refineOversizedPhotoCaptionContinuations(expandedSlots, metrics: metrics, fontTheme: fontTheme)
+        let refinedSlots = refineOversizedPlaceStoryContinuations(refinedPhoto, metrics: metrics, fontTheme: fontTheme)
+
+        // Pack slots into pages (place story always above photos)
         return packSlots(
-            allSlots,
+            refinedSlots,
             day: day,
             isLastDay: isLastDay,
             nextDayName: nextDayName,
             metrics: metrics,
             fontTheme: fontTheme,
-            layoutMode: layoutMode
+            layoutMode: .normal
         )
     }
 
-    private static func slotsForPlace(_ place: PlaceContent, metrics: Metrics) -> [ContentSlot] {
+    private static func slotsForPlace(_ place: PlaceContent, metrics: Metrics, fontTheme: FontTheme) -> [ContentSlot] {
         let photoCount = place.photos.count
         if photoCount == 0 {
-            return [.placeBlock(place, photoSlice: 0...0, photoImageHeight: 0, photoGridLayout: .single)]
+            return [
+                .placeBlock(
+                    place,
+                    photoSlice: 0...0,
+                    photoImageHeight: 0,
+                    photoGridLayout: .single,
+                    storyUsesTwoColumns: false,
+                    showPlaceStory: true
+                )
+            ]
         } else if photoCount <= 2 {
             if photoCount == 1 {
-                return [.placeBlock(place, photoSlice: 0...0, photoImageHeight: metrics.minSinglePhotoImageHeight, photoGridLayout: .single)]
+                let cap = place.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let lines = estimatedStoryLineCount(caption: cap, metrics: metrics, fontTheme: fontTheme)
+                let twoCol = shouldUseTwoColumnPlaceStory(caption: cap, lineCount: lines)
+                let h = feasibleSinglePhotoImageHeight(
+                    metrics: metrics,
+                    place: place,
+                    fontTheme: fontTheme,
+                    storyUsesTwoColumns: twoCol,
+                    showPlaceStory: true
+                )
+                return [
+                    .placeBlock(
+                        place,
+                        photoSlice: 0...0,
+                        photoImageHeight: h,
+                        photoGridLayout: .single,
+                        storyUsesTwoColumns: twoCol,
+                        showPlaceStory: true
+                    )
+                ]
             } else {
-                // One place, two photos: stacked full-width rows (not side-by-side). Leftover vertical space
-                // is stretched per row in packSlots (half to each stacked photo).
-                return [.placeBlock(place, photoSlice: 0...1, photoImageHeight: metrics.minSinglePhotoImageHeight, photoGridLayout: .stackedSingles)]
+                return twoPhotoPlaceSlots(place: place, metrics: metrics, fontTheme: fontTheme)
             }
         } else {
+            let cap = place.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let lines = estimatedStoryLineCount(caption: cap, metrics: metrics, fontTheme: fontTheme)
+            let twoColLead = shouldUseTwoColumnPlaceStory(caption: cap, lineCount: lines)
+            let leadH = feasibleTwoColumnRowImageHeight(
+                metrics: metrics,
+                place: place,
+                fontTheme: fontTheme,
+                storyUsesTwoColumns: twoColLead,
+                showPlaceStory: true
+            )
             var result: [ContentSlot] = [
-                .placeBlock(place, photoSlice: 0...1, photoImageHeight: metrics.minTwoPhotoImageHeight, photoGridLayout: .twoColumn)
+                .placeBlock(
+                    place,
+                    photoSlice: 0...1,
+                    photoImageHeight: leadH,
+                    photoGridLayout: .twoColumn,
+                    storyUsesTwoColumns: twoColLead,
+                    showPlaceStory: true
+                )
             ]
             var idx = 2
             while idx < photoCount {
@@ -483,12 +1221,13 @@ enum StoryPageLayout {
                     // Rule: if the place’s 3rd photo (index 2) is the only one in this continuation,
                     // hide the "More Photos" header so it feels like it sits under the first 2.
                     let showHeader = !(idx == 2 && end == 2)
+                    let oh = feasibleOverflowSingleImageHeight(metrics: metrics, fontTheme: fontTheme, showHeader: showHeader)
                     result.append(
                         .photoOverflowContinuation(
                             placeName: place.title,
                             place,
                             photoSlice: slice,
-                            photoImageHeight: metrics.minSinglePhotoImageHeight,
+                            photoImageHeight: oh,
                             photoGridLayout: .single,
                             showOverflowHeader: showHeader
                         )
@@ -498,12 +1237,15 @@ enum StoryPageLayout {
                     // later pairs (5th+6th, …) stay side-by-side in two columns.
                     let isThirdAndFourthOnly = (idx == 2 && end == 3)
                     let showHeader = photoCount != 4
+                    let rowH = isThirdAndFourthOnly
+                        ? feasibleOverflowStackedRowImageHeight(metrics: metrics, fontTheme: fontTheme, showHeader: showHeader)
+                        : feasibleOverflowTwoColumnRowImageHeight(metrics: metrics, fontTheme: fontTheme, showHeader: showHeader)
                     result.append(
                         .photoOverflowContinuation(
                             placeName: place.title,
                             place,
                             photoSlice: slice,
-                            photoImageHeight: isThirdAndFourthOnly ? metrics.minSinglePhotoImageHeight : metrics.minTwoPhotoImageHeight,
+                            photoImageHeight: rowH,
                             photoGridLayout: isThirdAndFourthOnly ? .stackedSingles : .twoColumn,
                             showOverflowHeader: showHeader
                         )
@@ -525,7 +1267,7 @@ enum StoryPageLayout {
         case .dayCaption(let text):
             return dayStoryCaptionBoxHeight(for: text, pageWidth: metrics.pageWidth, fontTheme: fontTheme)
 
-        case .placeBlock(let place, let photoSlice, let photoImageHeight, let photoGridLayout):
+        case .placeBlock(let place, let photoSlice, let photoImageHeight, let photoGridLayout, let storyUsesTwoColumns, let showPlaceStory):
             var h: CGFloat = placeTitleHeight
             let hasPhotosInSlot: Bool = {
                 guard !place.photos.isEmpty else { return false }
@@ -535,13 +1277,24 @@ enum StoryPageLayout {
             }()
 
             var captionBlockH: CGFloat = 0
-            if let caption = place.caption?.trimmingCharacters(in: .whitespacesAndNewlines), !caption.isEmpty {
+            if showPlaceStory,
+               let caption = place.caption?.trimmingCharacters(in: .whitespacesAndNewlines), !caption.isEmpty {
                 let captionSlotH = place.captionIsLong ? placeCaptionLong : placeCaptionShort
                 let gaps = placeCaptionGaps(layoutMode: layoutMode, hasPhotosInSlot: hasPhotosInSlot)
                 let minCaptionTextH = max(0, captionSlotH - gaps.top - gaps.bottom)
 
-                let captionFont = StoryFontHelper.uiFont(for: fontTheme, size: 12)
-                let estimatedCaptionTextH = estimateTextHeight(caption, font: captionFont, width: metrics.pageWidth)
+                let captionFont = StoryFontHelper.uiFont(for: fontTheme, size: placeStoryBodyFontSize)
+                let estimatedCaptionTextH: CGFloat
+                if storyUsesTwoColumns {
+                    let colGap: CGFloat = 10
+                    let colW = max(40, (metrics.pageWidth - colGap) / 2)
+                    let (l, r) = splitBalancedForTwoColumns(caption)
+                    let hl = estimateTextHeight(l, font: captionFont, width: colW) + captionFont.lineHeight * 0.35
+                    let hr = r.isEmpty ? 0 : estimateTextHeight(r, font: captionFont, width: colW) + captionFont.lineHeight * 0.35
+                    estimatedCaptionTextH = max(hl, hr)
+                } else {
+                    estimatedCaptionTextH = estimateTextHeight(caption, font: captionFont, width: metrics.pageWidth) + captionFont.lineHeight * 0.35
+                }
                 let usedCaptionTextH = max(minCaptionTextH, estimatedCaptionTextH)
 
                 captionBlockH = gaps.top + gaps.bottom + usedCaptionTextH
@@ -556,17 +1309,17 @@ enum StoryPageLayout {
                     switch photoGridLayout {
                     case .single:
                         let photoWidth = metrics.singlePhotoWidth
-                        let extra = photos.map { shortPhotoCaptionExtraHeight($0, photoWidth: photoWidth, fontTheme: fontTheme) }.max() ?? 0
+                        let extra = photos.map { photoCaptionBelowImageExtraHeight($0, photoWidth: photoWidth, fontTheme: fontTheme, maxLines: 48) }.max() ?? 0
                         photosBlockH += photoImageHeight + extra
 
                     case .twoColumn:
                         let photoWidth = metrics.twoPhotoWidth
-                        let maxExtra = photos.map { shortPhotoCaptionExtraHeight($0, photoWidth: photoWidth, fontTheme: fontTheme) }.max() ?? 0
+                        let maxExtra = photos.map { photoCaptionBelowImageExtraHeight($0, photoWidth: photoWidth, fontTheme: fontTheme, maxLines: 10) }.max() ?? 0
                         photosBlockH += photoImageHeight + maxExtra
 
                     case .stackedSingles:
                         let photoWidth = metrics.singlePhotoWidth
-                        let extras = photos.map { shortPhotoCaptionExtraHeight($0, photoWidth: photoWidth, fontTheme: fontTheme) }
+                        let extras = photos.map { photoCaptionBelowImageExtraHeight($0, photoWidth: photoWidth, fontTheme: fontTheme, maxLines: 10) }
                         if extras.count >= 2 {
                             photosBlockH += photoImageHeight + extras[0]
                             photosBlockH += photoGap
@@ -579,15 +1332,32 @@ enum StoryPageLayout {
                 }
             }
 
-            switch layoutMode {
-            case .normal:
-                h += captionBlockH
-                h += photosBlockH
-            case .story:
-                h += photosBlockH
-                h += captionBlockH
+            let captionHeadroom = max(0, pageContentHeight - dayHeaderHeight - placeTitleHeight - photosBlockH - 8)
+            if captionBlockH > captionHeadroom {
+                captionBlockH = captionHeadroom
             }
+
+            h += captionBlockH
+            h += photosBlockH
             return h
+
+        case .photoCaptionContinuation(let text):
+            let font = StoryFontHelper.uiFont(for: fontTheme, size: 11)
+            let lh = max(1, font.lineHeight)
+            let labelBand: CGFloat = 18
+            let maxTextH = max(0, pageContentHeight - dayHeaderHeight - 4 - labelBand - 6 - 8)
+            let rawTextH = estimateTextHeight(text, font: font, width: metrics.pageWidth) + lh * 0.35
+            let textH = min(rawTextH, maxTextH)
+            return 4 + labelBand + textH + 6
+
+        case .placeStoryContinuation(let text):
+            let font = StoryFontHelper.uiFont(for: fontTheme, size: placeStoryBodyFontSize)
+            let lh = max(1, font.lineHeight)
+            let labelBand: CGFloat = 18
+            let maxTextH = max(0, pageContentHeight - dayHeaderHeight - 4 - labelBand - 6 - 8)
+            let rawTextH = estimateTextHeight(text, font: font, width: metrics.pageWidth) + lh * 0.35
+            let textH = min(rawTextH, maxTextH)
+            return 4 + labelBand + textH + 6
 
         case .photoOverflowContinuation(_, let place, let photoSlice, let photoImageHeight, let photoGridLayout, let showOverflowHeader):
             // photoSlice length corresponds to 1 or 2 photos for this block.
@@ -600,15 +1370,15 @@ enum StoryPageLayout {
             let photos = Array(place.photos[lo...hi])
             switch photoGridLayout {
             case .single:
-                let extra = photos.map { shortPhotoCaptionExtraHeight($0, photoWidth: metrics.singlePhotoWidth, fontTheme: fontTheme) }.max() ?? 0
+                let extra = photos.map { photoCaptionBelowImageExtraHeight($0, photoWidth: metrics.singlePhotoWidth, fontTheme: fontTheme, maxLines: 48) }.max() ?? 0
                 return headerH + photoImageHeight + extra
 
             case .twoColumn:
-                let maxExtra = photos.map { shortPhotoCaptionExtraHeight($0, photoWidth: metrics.twoPhotoWidth, fontTheme: fontTheme) }.max() ?? 0
+                let maxExtra = photos.map { photoCaptionBelowImageExtraHeight($0, photoWidth: metrics.twoPhotoWidth, fontTheme: fontTheme, maxLines: 10) }.max() ?? 0
                 return headerH + photoImageHeight + maxExtra
 
             case .stackedSingles:
-                let extras = photos.map { shortPhotoCaptionExtraHeight($0, photoWidth: metrics.singlePhotoWidth, fontTheme: fontTheme) }
+                let extras = photos.map { photoCaptionBelowImageExtraHeight($0, photoWidth: metrics.singlePhotoWidth, fontTheme: fontTheme, maxLines: 10) }
                 guard extras.count >= 2 else {
                     let maxExtra = extras.max() ?? 0
                     return headerH + photoImageHeight + maxExtra
@@ -669,14 +1439,63 @@ enum StoryPageLayout {
     ) -> [ContentSlot] {
         let photoCount = place.photos.count
 
-        let fullBorrowCandidate: [ContentSlot] = if photoCount == 0 {
-            [.placeBlock(place, photoSlice: 0...0, photoImageHeight: 0, photoGridLayout: .single)]
-        } else if photoCount == 1 {
-            [.placeBlock(place, photoSlice: 0...0, photoImageHeight: metrics.minSinglePhotoImageHeight, photoGridLayout: .single)]
-        } else if photoCount == 2 {
-            [.placeBlock(place, photoSlice: 0...1, photoImageHeight: metrics.minSinglePhotoImageHeight, photoGridLayout: .stackedSingles)]
-        } else {
-            [.placeBlock(place, photoSlice: 0...1, photoImageHeight: metrics.minTwoPhotoImageHeight, photoGridLayout: .twoColumn)]
+        let fullBorrowCandidate: [ContentSlot]
+        switch photoCount {
+        case 0:
+            fullBorrowCandidate = [
+                .placeBlock(
+                    place,
+                    photoSlice: 0...0,
+                    photoImageHeight: 0,
+                    photoGridLayout: .single,
+                    storyUsesTwoColumns: false,
+                    showPlaceStory: true
+                )
+            ]
+        case 1:
+            let cap = place.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let lines = estimatedStoryLineCount(caption: cap, metrics: metrics, fontTheme: fontTheme)
+            let twoCol = shouldUseTwoColumnPlaceStory(caption: cap, lineCount: lines)
+            let h = feasibleSinglePhotoImageHeight(
+                metrics: metrics,
+                place: place,
+                fontTheme: fontTheme,
+                storyUsesTwoColumns: twoCol,
+                showPlaceStory: true
+            )
+            fullBorrowCandidate = [
+                .placeBlock(
+                    place,
+                    photoSlice: 0...0,
+                    photoImageHeight: h,
+                    photoGridLayout: .single,
+                    storyUsesTwoColumns: twoCol,
+                    showPlaceStory: true
+                )
+            ]
+        case 2:
+            fullBorrowCandidate = twoPhotoPlaceSlots(place: place, metrics: metrics, fontTheme: fontTheme)
+        default:
+            let cap = place.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let lines = estimatedStoryLineCount(caption: cap, metrics: metrics, fontTheme: fontTheme)
+            let twoColLead = shouldUseTwoColumnPlaceStory(caption: cap, lineCount: lines)
+            let h = feasibleTwoColumnRowImageHeight(
+                metrics: metrics,
+                place: place,
+                fontTheme: fontTheme,
+                storyUsesTwoColumns: twoColLead,
+                showPlaceStory: true
+            )
+            fullBorrowCandidate = [
+                .placeBlock(
+                    place,
+                    photoSlice: 0...1,
+                    photoImageHeight: h,
+                    photoGridLayout: .twoColumn,
+                    storyUsesTwoColumns: twoColLead,
+                    showPlaceStory: true
+                )
+            ]
         }
 
         let fullBorrowCandidateHeight = fullBorrowCandidate.reduce(0) { $0 + slotHeight($1, metrics: metrics, fontTheme: fontTheme, layoutMode: layoutMode) }
@@ -689,7 +1508,7 @@ enum StoryPageLayout {
     /// Grows `photoImageHeight` for one photo slot by `slotShare` total vertical budget (stacked rows split `slotShare` across two rows).
     private static func applyPhotoSlotVerticalStretch(_ slot: ContentSlot, slotShare: CGFloat) -> ContentSlot {
         switch slot {
-        case .placeBlock(let place, let slice, let h, let layout):
+        case .placeBlock(let place, let slice, let h, let layout, let stc, let sps):
             let extraPerRow: CGFloat
             switch layout {
             case .stackedSingles:
@@ -697,7 +1516,14 @@ enum StoryPageLayout {
             case .single, .twoColumn:
                 extraPerRow = slotShare
             }
-            return .placeBlock(place, photoSlice: slice, photoImageHeight: h + extraPerRow, photoGridLayout: layout)
+            return .placeBlock(
+                place,
+                photoSlice: slice,
+                photoImageHeight: h + extraPerRow,
+                photoGridLayout: layout,
+                storyUsesTwoColumns: stc,
+                showPlaceStory: sps
+            )
 
         case .photoOverflowContinuation(let name, let place, let slice, let h, let layout, let show):
             let extraPerRow: CGFloat
@@ -716,7 +1542,7 @@ enum StoryPageLayout {
                 showOverflowHeader: show
             )
 
-        case .dayCaption:
+        case .dayCaption, .photoCaptionContinuation, .placeStoryContinuation:
             return slot
         }
     }
@@ -733,7 +1559,7 @@ enum StoryPageLayout {
     ) -> [DayContentPage] {
         func photoCountInSlot(_ slot: ContentSlot) -> Int {
             switch slot {
-            case .placeBlock(let place, let slice, _, _):
+            case .placeBlock(let place, let slice, _, _, _, _):
                 guard !place.photos.isEmpty else { return 0 }
                 let lo = slice.lowerBound
                 let hi = min(slice.upperBound, place.photos.count - 1)
@@ -745,7 +1571,7 @@ enum StoryPageLayout {
                 let hi = min(slice.upperBound, place.photos.count - 1)
                 guard lo <= hi else { return 0 }
                 return hi - lo + 1
-            case .dayCaption:
+            case .dayCaption, .photoCaptionContinuation, .placeStoryContinuation:
                 return 0
             }
         }
@@ -760,7 +1586,7 @@ enum StoryPageLayout {
 
         func convertTwoColumnPairToStacked(_ slot: ContentSlot) -> ContentSlot {
             switch slot {
-            case .placeBlock(let place, let slice, _, let layout):
+            case .placeBlock(let place, let slice, _, let layout, let stc, let sps):
                 guard layout == .twoColumn else { return slot }
                 let lo = slice.lowerBound
                 let hi = min(slice.upperBound, place.photos.count - 1)
@@ -769,7 +1595,9 @@ enum StoryPageLayout {
                     place,
                     photoSlice: slice,
                     photoImageHeight: metrics.minSinglePhotoImageHeight,
-                    photoGridLayout: .stackedSingles
+                    photoGridLayout: .stackedSingles,
+                    storyUsesTwoColumns: stc,
+                    showPlaceStory: sps
                 )
             case .photoOverflowContinuation(let name, let place, let slice, _, let layout, let show):
                 guard layout == .twoColumn else { return slot }
@@ -840,10 +1668,6 @@ enum StoryPageLayout {
                 currentSlots = []
                 usedHeight = dayHeaderHeight
                 isFirstPage = false
-            } else if usedHeight + h > pageContentHeight {
-                #if DEBUG
-                assertionFailure("StoryPageLayout: slot overflows fresh page")
-                #endif
             }
 
             currentSlots.append(slot)
@@ -852,9 +1676,9 @@ enum StoryPageLayout {
 
             // Peek-ahead borrow: after place 1's last slot on the first page, try to borrow place 2
             if isFirstPage && !didBorrowOnFirstPage,
-               case .placeBlock(let place1, _, _, _) = slot,
+               case .placeBlock(let place1, _, _, _, _, _) = slot,
                slotIdx < slots.count,
-               case .placeBlock(let place2, _, _, _) = slots[slotIdx] {
+               case .placeBlock(let place2, _, _, _, _, _) = slots[slotIdx] {
 
                 let p1PhotoCount = place1.photos.count
                 guard p1PhotoCount <= 2 else { continue }
@@ -871,7 +1695,21 @@ enum StoryPageLayout {
                         currentSlots.append(contentsOf: borrowed)
                         usedHeight += borrowedHeight
                         didBorrowOnFirstPage = true
-                        slotIdx += 1
+                        // `borrowed` can be multiple `.placeBlock`s (e.g. two-photo stop with a long story);
+                        // skip the same number of matching upcoming slots so place 2 is not laid out twice.
+                        var scan = slotIdx
+                        var matched = 0
+                        while scan < slots.count, matched < borrowed.count {
+                            if case .placeBlock(let p, _, _, _, _, _) = slots[scan],
+                               p.markerNumber == place2.markerNumber,
+                               p.title == place2.title {
+                                matched += 1
+                                scan += 1
+                            } else {
+                                break
+                            }
+                        }
+                        slotIdx = matched > 0 ? scan : slotIdx + 1
                     }
                 }
             }
@@ -907,7 +1745,7 @@ enum StoryPageLayout {
 
             func photoCount(in slot: ContentSlot) -> Int {
                 switch slot {
-                case .placeBlock(let place, let slice, _, _):
+                case .placeBlock(let place, let slice, _, _, _, _):
                     guard !place.photos.isEmpty else { return 0 }
                     let lo = slice.lowerBound
                     let hi = min(slice.upperBound, place.photos.count - 1)
@@ -919,7 +1757,7 @@ enum StoryPageLayout {
                     let hi = min(slice.upperBound, place.photos.count - 1)
                     guard lo <= hi else { return 0 }
                     return hi - lo + 1
-                case .dayCaption:
+                case .dayCaption, .photoCaptionContinuation, .placeStoryContinuation:
                     return 0
                 }
             }
@@ -939,12 +1777,19 @@ enum StoryPageLayout {
                 let i1 = photoSlotIndices[1]
                 if photoCount(in: slots[i0]) == 1,
                    photoCount(in: slots[i1]) == 2,
-                   case let .placeBlock(p0, s0, h0, layout0) = slots[i0],
-                   case let .placeBlock(p1, _, _, layout1) = slots[i1],
+                   case let .placeBlock(p0, s0, h0, layout0, stc0, sps0) = slots[i0],
+                   case let .placeBlock(p1, _, _, layout1, _, _) = slots[i1],
                    layout0 == .single,
                    (layout1 == .twoColumn || layout1 == .stackedSingles),
                    p0.markerNumber != p1.markerNumber {
-                    slots[i0] = .placeBlock(p0, photoSlice: s0, photoImageHeight: h0 + leftover, photoGridLayout: .single)
+                    slots[i0] = .placeBlock(
+                        p0,
+                        photoSlice: s0,
+                        photoImageHeight: h0 + leftover,
+                        photoGridLayout: .single,
+                        storyUsesTwoColumns: stc0,
+                        showPlaceStory: sps0
+                    )
                     leftover = 0
                 }
             }
@@ -995,9 +1840,9 @@ enum StoryPageLayout {
 
         for (idx, slot) in dayPage.slots.enumerated() {
             switch slot {
-            case .dayCaption:
+            case .dayCaption, .photoCaptionContinuation, .placeStoryContinuation:
                 break
-            case .placeBlock(let place, _, _, _):
+            case .placeBlock(let place, _, _, _, _, _):
                 if let url = StoryPlaceGoogleSearch.url(placeName: place.title, placeSubtitle: place.subtitle) {
                     let titleY = y + 4
                     results.append(

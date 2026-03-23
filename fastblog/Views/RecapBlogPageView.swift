@@ -216,6 +216,52 @@ struct RecapBlogPageView: View {
                         .ignoresSafeArea()
                     StoryBookView(detail: draft, onDismiss: { showStoryMode = false; storyContentReady = false; storyChromeVisible = true }, triggerShare: $storyShareTrigger, contentReady: $storyContentReady, showChrome: $storyChromeVisible)
                         .ignoresSafeArea()
+
+                    // Custom chrome: close + share, snapped below status bar, hidden in read mode.
+                    if storyChromeVisible {
+                        GeometryReader { geo in
+                            VStack(spacing: 0) {
+                                HStack {
+                                    Button {
+                                        showStoryMode = false
+                                        storyContentReady = false
+                                        storyChromeVisible = true
+                                    } label: {
+                                        Image(systemName: "xmark")
+                                            .font(.body.weight(.semibold))
+                                            .foregroundColor(.white)
+                                            .frame(width: 36, height: 36)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Spacer()
+
+                                    if storyContentReady {
+                                        Button {
+                                            storyShareTrigger = true
+                                        } label: {
+                                            HStack(spacing: 5) {
+                                                Image(systemName: "square.and.arrow.up")
+                                                    .font(.subheadline.weight(.semibold))
+                                                Text("Share")
+                                                    .font(.subheadline.weight(.semibold))
+                                            }
+                                            .foregroundColor(.white)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                                // safeArea + 12pt page top-padding + 44pt day header row
+                                .padding(.top, geo.safeAreaInsets.top + 56)
+                                Spacer()
+                            }
+                        }
+                        .ignoresSafeArea(edges: .top)
+                        .transition(.opacity)
+                        .animation(.easeInOut(duration: 0.2), value: storyChromeVisible)
+                    }
                 }
                 .zIndex(200)
             }
@@ -463,7 +509,7 @@ struct RecapBlogPageView: View {
             .toolbarBackground(recapNavigationBarBackgroundVisibility, for: .navigationBar)
             .toolbarBackground(recapNavigationBarBackgroundFill, for: .navigationBar)
             .toolbar { toolbarContent }
-            .toolbar((placeCaptionEditItem != nil || dayCaptionEditItem != nil || placePhotoModalItem != nil) ? .hidden : .automatic, for: .navigationBar)
+            .toolbar((showStoryMode || placeCaptionEditItem != nil || dayCaptionEditItem != nil || placePhotoModalItem != nil) ? .hidden : .automatic, for: .navigationBar)
             .sheet(isPresented: $showShareSheet) {
                 ShareSheet(items: shareItems)
             }
@@ -2608,50 +2654,38 @@ struct RecapBlogPageView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            if showStoryMode {
-                Button {
-                    showStoryMode = false
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.body.weight(.semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 30, height: 30)
-                }
-                .buttonStyle(.plain)
-            } else if !showStoryMode {
-                Button {
-                    print("🔙 Back button tapped — isEditMode: \(isEditMode)")
-                    if isEditMode {
-                        let isFirstCreation = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
-                        print("🔙 isFirstCreation: \(isFirstCreation)")
+            Button {
+                print("🔙 Back button tapped — isEditMode: \(isEditMode)")
+                if isEditMode {
+                    let isFirstCreation = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
+                    print("🔙 isFirstCreation: \(isFirstCreation)")
 
-                        if isFirstCreation {
-                            print("🔙 Setting showNewBlogExitConfirmation = true")
-                            showSaveTipAlert = false
-                            DispatchQueue.main.async {
-                                let stillUnsaved = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
-                                guard stillUnsaved else { return }
-                                showNewBlogExitConfirmation = true
-                            }
-                        } else {
-                            if draftSnapshot != nil && draft == draftSnapshot {
-                                // No changes made, leave uninterrupted
-                                print("🔙 No changes, returning to read-only")
-                                isEditMode = false
-                            } else {
-                                // Changes were made
-                                print("🔙 Changes detected, showing unsaved alert")
-                                showUnsavedChangesAlert = true
-                            }
+                    if isFirstCreation {
+                        print("🔙 Setting showNewBlogExitConfirmation = true")
+                        showSaveTipAlert = false
+                        DispatchQueue.main.async {
+                            let stillUnsaved = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
+                            guard stillUnsaved else { return }
+                            showNewBlogExitConfirmation = true
                         }
                     } else {
-                        print("🔙 View mode, dismissing")
-                        performDismiss()
+                        if draftSnapshot != nil && draft == draftSnapshot {
+                            // No changes made, leave uninterrupted
+                            print("🔙 No changes, returning to read-only")
+                            isEditMode = false
+                        } else {
+                            // Changes were made
+                            print("🔙 Changes detected, showing unsaved alert")
+                            showUnsavedChangesAlert = true
+                        }
                     }
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.body.weight(.semibold))
+                } else {
+                    print("🔙 View mode, dismissing")
+                    performDismiss()
                 }
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.body.weight(.semibold))
             }
         }
         ToolbarItem(placement: .principal) {
@@ -2677,22 +2711,6 @@ struct RecapBlogPageView: View {
                         .background(Color.blue)
                         .clipShape(Capsule())
                         .fixedSize()
-                }
-                .buttonStyle(.plain)
-            } else if showStoryMode && storyContentReady {
-                Button {
-                    storyShareTrigger = true
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.subheadline.weight(.semibold))
-                        Text("Share")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .foregroundColor(.white)
-                    .fixedSize()
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
                 }
                 .buttonStyle(.plain)
             } else if !isExportingPDF && !showStoryMode {

@@ -5,7 +5,6 @@ struct DayContentPageView: View {
     let page: DayContentPage
     @Environment(\.storyFontTheme) private var fontTheme
     @Environment(\.storyBlogColor) private var blogColor
-
     private var primaryColor: Color { blogColor == .black ? .white : .black }
     private var bgColor: Color { blogColor == .black ? .black : .white }
 
@@ -80,7 +79,7 @@ struct DayContentPageView: View {
         case .dayCaption(let text):
             StoryDayCaptionCallout(text: text, fontTheme: fontTheme)
 
-        case .placeBlock(let place, let photoSlice, let photoImageHeight, let photoGridLayout):
+        case .placeBlock(let place, let photoSlice, let photoImageHeight, let photoGridLayout, let storyUsesTwoColumns, let showPlaceStory):
             let photos: [PhotoContent] = place.photos.isEmpty ? [] : {
                 let lo = photoSlice.lowerBound
                 let hi = min(photoSlice.upperBound, place.photos.count - 1)
@@ -92,10 +91,11 @@ struct DayContentPageView: View {
                 photos: photos,
                 photoImageHeight: photoImageHeight,
                 photoGridLayout: photoGridLayout,
+                storyUsesTwoColumns: storyUsesTwoColumns,
+                showPlaceStory: showPlaceStory,
                 photoShapeOptions: PDFPhotoShapeOptions(),
                 blogColor: blogColor,
-                fontTheme: fontTheme,
-                layoutMode: .normal
+                fontTheme: fontTheme
             )
 
         case .photoOverflowContinuation(let name, let place, let photoSlice, let photoImageHeight, let photoGridLayout, let showOverflowHeader):
@@ -118,6 +118,12 @@ struct DayContentPageView: View {
                 blogColor: blogColor,
                 fontTheme: fontTheme
             )
+
+        case .photoCaptionContinuation(let text):
+            PhotoCaptionContinuationView(text: text, fontTheme: fontTheme, blogColor: blogColor)
+
+        case .placeStoryContinuation(let text):
+            PlaceStoryContinuationView(text: text, fontTheme: fontTheme, blogColor: blogColor)
         }
     }
 }
@@ -127,6 +133,68 @@ private extension DayContentPage {
         let f = DateFormatter()
         f.dateFormat = "EEE, MMM d"   // "Wed, March 12"
         return f.string(from: day.date)
+    }
+}
+
+/// Follow-up page(s) for place story text split by `StoryPageLayout.expandPlaceStoryPagination`.
+private struct PlaceStoryContinuationView: View {
+    let text: String
+    let fontTheme: FontTheme
+    let blogColor: BlogColor
+
+    private var secondary: Color {
+        blogColor == .black ? Color.white.opacity(0.55) : Color.black.opacity(0.45)
+    }
+
+    private var bodyColor: Color {
+        blogColor == .black ? Color.white.opacity(0.82) : Color.black.opacity(0.78)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Continued")
+                .font(Font(StoryFontHelper.uiItalicFont(for: fontTheme, size: 10)))
+                .foregroundColor(secondary)
+
+            Text(text)
+                .font(Font(StoryFontHelper.uiFont(for: fontTheme, size: StoryPageLayout.placeStoryBodyFontSize)))
+                .foregroundColor(bodyColor)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// Follow-up page(s) for a photo caption that was split by `StoryPageLayout.expandPaginatedPhotoCaptions`.
+private struct PhotoCaptionContinuationView: View {
+    let text: String
+    let fontTheme: FontTheme
+    let blogColor: BlogColor
+
+    private var secondary: Color {
+        blogColor == .black ? Color.white.opacity(0.55) : Color.black.opacity(0.45)
+    }
+
+    private var bodyColor: Color {
+        blogColor == .black ? Color.white.opacity(0.82) : Color.black.opacity(0.78)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Continued")
+                .font(Font(StoryFontHelper.uiItalicFont(for: fontTheme, size: 10)))
+                .foregroundColor(secondary)
+
+            Text(text)
+                .font(Font(StoryFontHelper.uiFont(for: fontTheme, size: 11)))
+                .foregroundColor(bodyColor)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 4)
     }
 }
 

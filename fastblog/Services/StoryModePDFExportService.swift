@@ -23,7 +23,7 @@ enum StoryModePDFExportService {
     /// - Parameters:
     ///   - pages: Same `[StoryPage]` array as `StoryBookView` / `StoryPageLayout.buildPages`.
     ///   - draft: Used for filename uniquing; must match the blog being read.
-    ///   - options: `fontTheme` affects TOC link layout math; photo shapes apply to recap PDF only.
+    ///   - options: `fontTheme` affects typography; photo shapes apply to recap PDF only.
     @MainActor
     static func exportStoryPDF(
         pages: [StoryPage],
@@ -156,6 +156,7 @@ enum StoryModePDFExportService {
             .environment(\.colorScheme, colorScheme)
             .environment(\.storyFontTheme, options.fontTheme)
             .environment(\.storyBlogColor, options.colorStyle)
+            .environment(\.storyRasterizesForExport, true)
             .frame(width: size.width, height: size.height)
             .background(bgColor)
 
