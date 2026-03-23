@@ -640,7 +640,7 @@ struct RecapBlogPageView: View {
                     ? draft.selectedCoverPhotoIdentifier.map { [[PanoramaPhotoEntry(id: $0, caption: nil)]] } ?? []
                     : groups
                 if !photoGroups.isEmpty {
-                    PanoramaPlayerView(photoGroups: photoGroups, onDismiss: { showPanorama = false })
+                    PanoramaPlayerView(photoGroups: photoGroups, blogId: blogId, onDismiss: { showPanorama = false })
                 }
             }
             .sheet(isPresented: $showRestorePlaces) {

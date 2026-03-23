@@ -8,6 +8,15 @@
 
 /* Begin PBXBuildFile section */
 		01B2787FA0EA66741089467C /* CoverPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72929F115FE37110FB2BE7BF /* CoverPageView.swift */; };
+		037E251F2F70FACD00C7E8B8 /* burtysounds-happy-124917.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E251E2F70FACD00C7E8B8 /* burtysounds-happy-124917.mp3 */; };
+		037E25282F70FD0600C7E8B8 /* nastelbom-travel-437814.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E25252F70FD0600C7E8B8 /* nastelbom-travel-437814.mp3 */; };
+		037E25292F70FD0600C7E8B8 /* burtysounds-uplifting-pop-181963.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E25222F70FD0600C7E8B8 /* burtysounds-uplifting-pop-181963.mp3 */; };
+		037E252A2F70FD0600C7E8B8 /* alexgrohl-travel-478797.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E25202F70FD0600C7E8B8 /* alexgrohl-travel-478797.mp3 */; };
+		037E252B2F70FD0600C7E8B8 /* burtysounds-happy-124917 2.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E25212F70FD0600C7E8B8 /* burtysounds-happy-124917 2.mp3 */; };
+		037E252C2F70FD0600C7E8B8 /* freemusicforvideo-vlogs-travel-youtube-462854.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E25242F70FD0600C7E8B8 /* freemusicforvideo-vlogs-travel-youtube-462854.mp3 */; };
+		037E252D2F70FD0600C7E8B8 /* paulyudin-travel-159836.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E25262F70FD0600C7E8B8 /* paulyudin-travel-159836.mp3 */; };
+		037E252E2F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf in Resources */ = {isa = PBXBuildFile; fileRef = 037E25272F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf */; };
+		037E252F2F70FD0600C7E8B8 /* delosound-trap-travel-378471.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E25232F70FD0600C7E8B8 /* delosound-trap-travel-378471.mp3 */; };
 		0B1189F592CFDEDAF3305FAB /* PhotoPermissionOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */; };
 		0C30D67375CF715A0AE52995 /* MapSnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A586130A3384B2A62AC27350 /* MapSnapshotHelper.swift */; };
 		285D83E64056D6DBF8E9894F /* StoryPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E27CCA2B392AD6D7D60A651A /* StoryPage.swift */; };
@@ -23,7 +32,6 @@
 		7D19D079975A2110DB757EE7 /* BlogPDFView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E304D9246790A5FC17716A85 /* BlogPDFView.swift */; };
 		7FBD2FEB65535E4150C1E521 /* TOCPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F6DDE63772EF1F878EC3686 /* TOCPageView.swift */; };
 		A31B7C85BABD6199A2A43BB7 /* PDFExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F5C55E3E5D4C283468EF581 /* PDFExportService.swift */; };
-		F3C02E5B4D9E5867C1F2A314 /* StoryModePDFExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2B91F4A3C8D4756B0E1F203 /* StoryModePDFExportService.swift */; };
 		AC413CC9DFEB2B2939B89DA5 /* StoryBookContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67D919F737961D65785318BA /* StoryBookContent.swift */; };
 		ACC2FF7BA930277126E43C96 /* StoryPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0733072C4EA957FE04A03752 /* StoryPageView.swift */; };
 		BB000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000101 /* ContentView.swift */; };
@@ -169,6 +177,9 @@
 		BB000260 /* VibeRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000261 /* VibeRecorder.swift */; };
 		BB000262 /* VibePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000263 /* VibePlayer.swift */; };
 		BB0002A1 /* StoryWritingStyleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002A2 /* StoryWritingStyleSheet.swift */; };
+		BB0002B1 /* SlideshowMusicPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B0 /* SlideshowMusicPreference.swift */; };
+		BB0002B3 /* SlideshowMusicPlaybackCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */; };
+		BB0002B5 /* SlideshowBundledMusic.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B4 /* SlideshowBundledMusic.swift */; };
 		BB0002E1 /* OnTheGoTripStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002E0 /* OnTheGoTripStore.swift */; };
 		BB0002E3 /* InAppCameraPhotoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002E2 /* InAppCameraPhotoStore.swift */; };
 		BB0002F1 /* ScanSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F0 /* ScanSessionStore.swift */; };
@@ -188,22 +199,30 @@
 		DCB9D1AF4FAB8889D866BC40 /* PlaceBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D31200382275E7A7520CD4F /* PlaceBlockView.swift */; };
 		EA00EA02 /* EarlyAccessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA00EA01 /* EarlyAccessManager.swift */; };
 		EX00EX02 /* ExportingPDFView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EX00EX01 /* ExportingPDFView.swift */; };
+		F2AB1FA0886785F982950F7A /* StoryPageLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EE07F9D5505A841A5CD7CAE /* StoryPageLayout.swift */; };
+		F3C02E5B4D9E5867C1F2A314 /* StoryModePDFExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2B91F4A3C8D4756B0E1F203 /* StoryModePDFExportService.swift */; };
+		PA00PA02 /* PanoramaPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PA00PA01 /* PanoramaPlayerView.swift */; };
+		PD00PD02 /* PDFPreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = PD00PD01 /* PDFPreviewSheet.swift */; };
 		PS00PS02 /* PreparingStoryBookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PS00PS01 /* PreparingStoryBookView.swift */; };
 		SM00SM02 /* StoryModePDFOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM00SM01 /* StoryModePDFOptionsSheet.swift */; };
-		F2AB1FA0886785F982950F7A /* StoryPageLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EE07F9D5505A841A5CD7CAE /* StoryPageLayout.swift */; };
-		PD00PD02 /* PDFPreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = PD00PD01 /* PDFPreviewSheet.swift */; };
-		PA00PA02 /* PanoramaPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PA00PA01 /* PanoramaPlayerView.swift */; };
-		MP00MP02 /* MusicPickerRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = MP00MP01 /* MusicPickerRepresentable.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0354AFB52F6737A300C41BAA /* Bloggo.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Bloggo.entitlements; sourceTree = "<group>"; };
+		037E251E2F70FACD00C7E8B8 /* burtysounds-happy-124917.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "burtysounds-happy-124917.mp3"; sourceTree = "<group>"; };
+		037E25202F70FD0600C7E8B8 /* alexgrohl-travel-478797.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "alexgrohl-travel-478797.mp3"; sourceTree = "<group>"; };
+		037E25212F70FD0600C7E8B8 /* burtysounds-happy-124917 2.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "burtysounds-happy-124917 2.mp3"; sourceTree = "<group>"; };
+		037E25222F70FD0600C7E8B8 /* burtysounds-uplifting-pop-181963.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "burtysounds-uplifting-pop-181963.mp3"; sourceTree = "<group>"; };
+		037E25232F70FD0600C7E8B8 /* delosound-trap-travel-378471.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "delosound-trap-travel-378471.mp3"; sourceTree = "<group>"; };
+		037E25242F70FD0600C7E8B8 /* freemusicforvideo-vlogs-travel-youtube-462854.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "freemusicforvideo-vlogs-travel-youtube-462854.mp3"; sourceTree = "<group>"; };
+		037E25252F70FD0600C7E8B8 /* nastelbom-travel-437814.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "nastelbom-travel-437814.mp3"; sourceTree = "<group>"; };
+		037E25262F70FD0600C7E8B8 /* paulyudin-travel-159836.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "paulyudin-travel-159836.mp3"; sourceTree = "<group>"; };
+		037E25272F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = "Trip To Daegu in Winter | Storybook.pdf"; sourceTree = "<group>"; };
 		0733072C4EA957FE04A03752 /* StoryPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StoryPageView.swift; path = StoryBook/StoryPageView.swift; sourceTree = "<group>"; };
 		0D31200382275E7A7520CD4F /* PlaceBlockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaceBlockView.swift; path = StoryBook/PlaceBlockView.swift; sourceTree = "<group>"; };
 		2C198E17B0447F89CC98721F /* DayCaptionEditSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DayCaptionEditSheet.swift; sourceTree = "<group>"; };
 		2C820592BA8137D8FF7F05AA /* DayMapPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DayMapPageView.swift; path = StoryBook/DayMapPageView.swift; sourceTree = "<group>"; };
 		2F5C55E3E5D4C283468EF581 /* PDFExportService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PDFExportService.swift; sourceTree = "<group>"; };
-		E2B91F4A3C8D4756B0E1F203 /* StoryModePDFExportService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryModePDFExportService.swift; sourceTree = "<group>"; };
 		2F6DDE63772EF1F878EC3686 /* TOCPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TOCPageView.swift; path = StoryBook/TOCPageView.swift; sourceTree = "<group>"; };
 		30C7F49D9E66B6763CCCD7B9 /* PhotoCardView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PhotoCardView.swift; path = StoryBook/PhotoCardView.swift; sourceTree = "<group>"; };
 		3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhotoPermissionOnboardingView.swift; sourceTree = "<group>"; };
@@ -362,6 +381,9 @@
 		BB000261 /* VibeRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VibeRecorder.swift; sourceTree = "<group>"; };
 		BB000263 /* VibePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VibePlayer.swift; sourceTree = "<group>"; };
 		BB0002A2 /* StoryWritingStyleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryWritingStyleSheet.swift; sourceTree = "<group>"; };
+		BB0002B0 /* SlideshowMusicPreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowMusicPreference.swift; sourceTree = "<group>"; };
+		BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowMusicPlaybackCoordinator.swift; sourceTree = "<group>"; };
+		BB0002B4 /* SlideshowBundledMusic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowBundledMusic.swift; sourceTree = "<group>"; };
 		BB0002E0 /* OnTheGoTripStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnTheGoTripStore.swift; sourceTree = "<group>"; };
 		BB0002E2 /* InAppCameraPhotoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppCameraPhotoStore.swift; sourceTree = "<group>"; };
 		BB0002F0 /* ScanSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanSessionStore.swift; sourceTree = "<group>"; };
@@ -380,15 +402,15 @@
 		D3CF1895D23A7F11A1F1B7B0 /* StoryBookBuilder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryBookBuilder.swift; sourceTree = "<group>"; };
 		D3FBC69125D4B22AEC596A03 /* PageFooterView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PageFooterView.swift; path = StoryBook/PageFooterView.swift; sourceTree = "<group>"; };
 		E27CCA2B392AD6D7D60A651A /* StoryPage.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryPage.swift; sourceTree = "<group>"; };
+		E2B91F4A3C8D4756B0E1F203 /* StoryModePDFExportService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryModePDFExportService.swift; sourceTree = "<group>"; };
 		E304D9246790A5FC17716A85 /* BlogPDFView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BlogPDFView.swift; sourceTree = "<group>"; };
 		EA00EA01 /* EarlyAccessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EarlyAccessManager.swift; sourceTree = "<group>"; };
 		EX00EX01 /* ExportingPDFView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportingPDFView.swift; sourceTree = "<group>"; };
+		F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalLLMStoryCaptionGenerator.swift; sourceTree = "<group>"; };
+		PA00PA01 /* PanoramaPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanoramaPlayerView.swift; sourceTree = "<group>"; };
+		PD00PD01 /* PDFPreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFPreviewSheet.swift; sourceTree = "<group>"; };
 		PS00PS01 /* PreparingStoryBookView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreparingStoryBookView.swift; sourceTree = "<group>"; };
 		SM00SM01 /* StoryModePDFOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = StoryModePDFOptionsSheet.swift; path = StoryBook/StoryModePDFOptionsSheet.swift; sourceTree = "<group>"; };
-		F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalLLMStoryCaptionGenerator.swift; sourceTree = "<group>"; };
-		PD00PD01 /* PDFPreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFPreviewSheet.swift; sourceTree = "<group>"; };
-		PA00PA01 /* PanoramaPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanoramaPlayerView.swift; sourceTree = "<group>"; };
-		MP00MP01 /* MusicPickerRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicPickerRepresentable.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -421,9 +443,18 @@
 			name = StoryBook;
 			sourceTree = "<group>";
 		};
-		BB0001AD = {
+		BB0001AD /* main */ = {
 			isa = PBXGroup;
 			children = (
+				037E25202F70FD0600C7E8B8 /* alexgrohl-travel-478797.mp3 */,
+				037E25212F70FD0600C7E8B8 /* burtysounds-happy-124917 2.mp3 */,
+				037E25222F70FD0600C7E8B8 /* burtysounds-uplifting-pop-181963.mp3 */,
+				037E25232F70FD0600C7E8B8 /* delosound-trap-travel-378471.mp3 */,
+				037E25242F70FD0600C7E8B8 /* freemusicforvideo-vlogs-travel-youtube-462854.mp3 */,
+				037E25252F70FD0600C7E8B8 /* nastelbom-travel-437814.mp3 */,
+				037E25262F70FD0600C7E8B8 /* paulyudin-travel-159836.mp3 */,
+				037E25272F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf */,
+				037E251E2F70FACD00C7E8B8 /* burtysounds-happy-124917.mp3 */,
 				0354AFB52F6737A300C41BAA /* Bloggo.entitlements */,
 				BB0001AE /* fastblog */,
 				BB0001AF /* Products */,
@@ -566,13 +597,12 @@
 				E304D9246790A5FC17716A85 /* BlogPDFView.swift */,
 				PD00PD01 /* PDFPreviewSheet.swift */,
 				EX00EX01 /* ExportingPDFView.swift */,
-			PS00PS01 /* PreparingStoryBookView.swift */,
-			80B209C887D886E7146C1DC1 /* StoryBook */,
-			PA00PA01 /* PanoramaPlayerView.swift */,
-			MP00MP01 /* MusicPickerRepresentable.swift */,
-		);
-		path = Views;
-		sourceTree = "<group>";
+				PS00PS01 /* PreparingStoryBookView.swift */,
+				80B209C887D886E7146C1DC1 /* StoryBook */,
+				PA00PA01 /* PanoramaPlayerView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
 		};
 		BB0001B3 /* Onboarding */ = {
 			isa = PBXGroup;
@@ -632,6 +662,9 @@
 				BB000193 /* PhotoAssetService.swift */,
 				BB000195 /* PhotoLibraryTripService.swift */,
 				BB0001EB /* PhotoQualityScorer.swift */,
+				BB0002B0 /* SlideshowMusicPreference.swift */,
+				BB0002B4 /* SlideshowBundledMusic.swift */,
+				BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */,
 				BB000221 /* PhotoTagService.swift */,
 				BB000197 /* PhotosAuthorizationManager.swift */,
 				BB000199 /* PlaceClusteringService.swift */,
@@ -723,7 +756,7 @@
 				en,
 				Base,
 			);
-			mainGroup = BB0001AD;
+			mainGroup = BB0001AD /* main */;
 			packageReferences = (
 				AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
@@ -741,6 +774,15 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				037E25282F70FD0600C7E8B8 /* nastelbom-travel-437814.mp3 in Resources */,
+				037E25292F70FD0600C7E8B8 /* burtysounds-uplifting-pop-181963.mp3 in Resources */,
+				037E252A2F70FD0600C7E8B8 /* alexgrohl-travel-478797.mp3 in Resources */,
+				037E252B2F70FD0600C7E8B8 /* burtysounds-happy-124917 2.mp3 in Resources */,
+				037E252C2F70FD0600C7E8B8 /* freemusicforvideo-vlogs-travel-youtube-462854.mp3 in Resources */,
+				037E252D2F70FD0600C7E8B8 /* paulyudin-travel-159836.mp3 in Resources */,
+				037E252E2F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf in Resources */,
+				037E252F2F70FD0600C7E8B8 /* delosound-trap-travel-378471.mp3 in Resources */,
+				037E251F2F70FACD00C7E8B8 /* burtysounds-happy-124917.mp3 in Resources */,
 				BB0001AC /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -858,6 +900,9 @@
 				BB0001A8 /* TripPhotoFilterTests.swift in Sources */,
 				BB0001AA /* TripPhotoSelectionService.swift in Sources */,
 				BB0001EC /* PhotoQualityScorer.swift in Sources */,
+				BB0002B1 /* SlideshowMusicPreference.swift in Sources */,
+				BB0002B5 /* SlideshowBundledMusic.swift in Sources */,
+				BB0002B3 /* SlideshowMusicPlaybackCoordinator.swift in Sources */,
 				BB000220 /* PhotoTagService.swift in Sources */,
 				BB000222 /* StoryCaptionGenerator.swift in Sources */,
 				BB000224 /* StoryCaptionService.swift in Sources */,
@@ -916,10 +961,9 @@
 				F3C02E5B4D9E5867C1F2A314 /* StoryModePDFExportService.swift in Sources */,
 				0C30D67375CF715A0AE52995 /* MapSnapshotHelper.swift in Sources */,
 				7D19D079975A2110DB757EE7 /* BlogPDFView.swift in Sources */,
-			PD00PD02 /* PDFPreviewSheet.swift in Sources */,
-			PA00PA02 /* PanoramaPlayerView.swift in Sources */,
-			MP00MP02 /* MusicPickerRepresentable.swift in Sources */,
-			EX00EX02 /* ExportingPDFView.swift in Sources */,
+				PD00PD02 /* PDFPreviewSheet.swift in Sources */,
+				PA00PA02 /* PanoramaPlayerView.swift in Sources */,
+				EX00EX02 /* ExportingPDFView.swift in Sources */,
 				PS00PS02 /* PreparingStoryBookView.swift in Sources */,
 				AC413CC9DFEB2B2939B89DA5 /* StoryBookContent.swift in Sources */,
 				285D83E64056D6DBF8E9894F /* StoryPage.swift in Sources */,

@@ -1,4 +1,3 @@
-import MediaPlayer
 import Photos
 import SwiftUI
 
@@ -32,6 +31,8 @@ private enum DiptychHalf {
 struct PanoramaPlayerView: View {
     /// Photos grouped by place (PlaceStop). Each inner array = one place.
     let photoGroups: [[PanoramaPhotoEntry]]
+    /// Used to persist the chosen slideshow track for this recap (`UserDefaults`, keyed by blog).
+    let blogId: UUID
     var onDismiss: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -68,11 +69,14 @@ struct PanoramaPlayerView: View {
 
     // MARK: - Music
     @State private var showMusicPicker: Bool = false
-    @State private var selectedTrackTitle: String?
-    private let musicPlayer = MPMusicPlayerController.applicationMusicPlayer
+    /// Bundled track filename when slideshow has background music; `nil` = none selected.
+    @State private var selectedSlideshowMusicFilename: String?
+    @State private var slideshowMusic = SlideshowMusicPlaybackCoordinator()
+    /// True when we paused slideshow music because the bundled-track sheet was open (resume on cancel only).
+    @State private var pausedSlideshowMusicForPicker = false
 
     // MARK: - Constants
-    private let soloDurationSeconds: Double = 6.0
+    private let soloDurationSeconds: Double = 4.0
     private let diptychDurationSeconds: Double = 4.0
     private let timerInterval: Double = 1.0 / 60.0
     private let zoomScale: CGFloat = 1.12   // how far to zoom in/out
@@ -120,6 +124,12 @@ struct PanoramaPlayerView: View {
     private var overallProgress: CGFloat {
         guard totalPhotos > 0 else { return 0 }
         return (CGFloat(currentFlatIndex) + soloProgress) / CGFloat(totalPhotos)
+    }
+
+    private var slideshowMusicAccessibilityLabel: String {
+        selectedSlideshowMusicFilename != nil
+            ? "Slideshow music, change track"
+            : "Slideshow music, none selected"
     }
 
     // MARK: - Body
@@ -188,17 +198,50 @@ struct PanoramaPlayerView: View {
             .animation(nil, value: currentLayout)
         }
         .sheet(isPresented: $showMusicPicker) {
-            MusicPickerRepresentable(
-                onPick: { item in
+            SlideshowBundledTrackPickerSheet(
+                tracks: SlideshowBundledMusicLibrary.tracksInAppBundle(),
+                selectedFilename: selectedSlideshowMusicFilename,
+                onPickTrack: { track in
+                    pausedSlideshowMusicForPicker = false
                     showMusicPicker = false
-                    selectedTrackTitle = item.title
-                    let collection = MPMediaItemCollection(items: [item])
-                    musicPlayer.setQueue(with: collection)
-                    if isPlaying { musicPlayer.play() }
+                    selectedSlideshowMusicFilename = track.filename
+                    SlideshowMusicPreference.save(
+                        blogId: blogId.uuidString,
+                        filename: track.filename,
+                        displayTitle: track.displayTitle
+                    )
+                    Task { @MainActor in
+                        await slideshowMusic.play(url: track.fileURL, startPlayback: true)
+                    }
+                },
+                onPickNone: {
+                    pausedSlideshowMusicForPicker = false
+                    showMusicPicker = false
+                    selectedSlideshowMusicFilename = nil
+                    SlideshowMusicPreference.clear(blogId: blogId.uuidString)
+                    Task { @MainActor in
+                        await slideshowMusic.stopAll()
+                    }
                 },
                 onCancel: { showMusicPicker = false }
             )
-            .ignoresSafeArea()
+        }
+        .onChange(of: showMusicPicker) { wasShowing, isShowing in
+            if isShowing, !wasShowing {
+                if isPlaying, selectedSlideshowMusicFilename != nil {
+                    pausedSlideshowMusicForPicker = true
+                    Task { await slideshowMusic.pause() }
+                } else {
+                    pausedSlideshowMusicForPicker = false
+                }
+            }
+            if wasShowing, !isShowing {
+                resumeSlideshowTimingIfPlaying()
+                if pausedSlideshowMusicForPicker {
+                    pausedSlideshowMusicForPicker = false
+                    Task { await slideshowMusic.resume() }
+                }
+            }
         }
         .gesture(
             DragGesture(minimumDistance: 40, coordinateSpace: .local)
@@ -221,10 +264,11 @@ struct PanoramaPlayerView: View {
         .task {
             await preloadAround(groupIndex: 0, offset: 0)
             currentLayout = chooseLayout(groupIndex: 0, offset: 0)
+            await restorePersistedSlideshowMusic()
         }
         .onDisappear {
             stopTimer()
-            musicPlayer.stop()
+            Task { await slideshowMusic.stopAll() }
         }
     }
 
@@ -336,7 +380,7 @@ struct PanoramaPlayerView: View {
         diptychExpandPinchBase = 1
         diptychExpandPinchGesture = 1
         diptychExpandedHalf = half
-        musicPlayer.pause()
+        Task { await slideshowMusic.pause() }
     }
 
     private func clearDiptychExpanded() {
@@ -418,9 +462,11 @@ struct PanoramaPlayerView: View {
             // Close
             Button {
                 stopTimer()
-                musicPlayer.stop()
-                dismiss()
-                onDismiss()
+                Task { @MainActor in
+                    await slideshowMusic.stopAll()
+                    dismiss()
+                    onDismiss()
+                }
             } label: {
                 ZStack {
                     Circle().fill(.black.opacity(0.6))
@@ -436,25 +482,21 @@ struct PanoramaPlayerView: View {
 
             Spacer()
 
-            // Music picker
+            // Music picker (muted when no background track is selected)
             Button { showMusicPicker = true } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: selectedTrackTitle != nil ? "music.note" : "music.note.list")
-                        .font(.system(size: 13, weight: .medium))
-                    if let title = selectedTrackTitle {
-                        Text(title)
-                            .font(.caption2)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .frame(maxWidth: 110)
-                    }
+                let active = selectedSlideshowMusicFilename != nil
+                ZStack {
+                    Circle().fill(.black.opacity(active ? 0.6 : 0.38))
+                    Circle().strokeBorder(.white.opacity(active ? 0.25 : 0.12), lineWidth: 0.5)
+                    Image(systemName: "music.note")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(.white.opacity(active ? 1 : 0.38))
                 }
-                .foregroundColor(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(.ultraThinMaterial, in: Capsule())
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(slideshowMusicAccessibilityLabel)
         }
     }
 
@@ -643,6 +685,31 @@ struct PanoramaPlayerView: View {
         timer = nil
     }
 
+    /// Restores bundled track from `UserDefaults` when the file is still in the app bundle.
+    private func restorePersistedSlideshowMusic() async {
+        let key = blogId.uuidString
+        guard let saved = SlideshowMusicPreference.load(blogId: key) else {
+            selectedSlideshowMusicFilename = nil
+            return
+        }
+        guard let url = SlideshowMusicPreference.bundleURL(forBundledFilename: saved.filename) else {
+            SlideshowMusicPreference.clear(blogId: key)
+            selectedSlideshowMusicFilename = nil
+            return
+        }
+        selectedSlideshowMusicFilename = saved.filename
+        await slideshowMusic.play(url: url, startPlayback: isPlaying)
+    }
+
+    /// Restarts solo/diptych advance timers after an interruption (e.g. music picker sheet).
+    private func resumeSlideshowTimingIfPlaying() {
+        guard isPlaying, diptychExpandedHalf == nil else { return }
+        switch currentLayout {
+        case .solo: startSoloTimer()
+        case .diptych: startDiptychTimer()
+        }
+    }
+
     private func togglePlayPause() {
         isPlaying.toggle()
         if isPlaying {
@@ -653,13 +720,13 @@ struct PanoramaPlayerView: View {
             case .solo:    startSoloTimer()
             case .diptych: startDiptychTimer()
             }
-            if selectedTrackTitle != nil { musicPlayer.play() }
+            Task { await slideshowMusic.resume() }
         } else {
             stopTimer()
             if currentLayout == .solo {
                 updateSoloKenBurnsScale()
             }
-            musicPlayer.pause()
+            Task { await slideshowMusic.pause() }
         }
     }
 
