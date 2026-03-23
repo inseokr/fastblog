@@ -119,8 +119,15 @@ struct DayContentPageView: View {
                 fontTheme: fontTheme
             )
 
-        case .photoCaptionContinuation(let text):
-            PhotoCaptionContinuationView(text: text, fontTheme: fontTheme, blogColor: blogColor)
+        case .photoCaptionContinuation(let text, let fullCaption, let availableCaptionHeight, let captionWidth):
+            PhotoCaptionContinuationView(
+                text: text,
+                fullCaption: fullCaption,
+                availableCaptionHeight: availableCaptionHeight,
+                captionWidth: captionWidth,
+                fontTheme: fontTheme,
+                blogColor: blogColor
+            )
 
         case .placeStoryContinuation(let text):
             PlaceStoryContinuationView(text: text, fontTheme: fontTheme, blogColor: blogColor)
@@ -168,10 +175,52 @@ private struct PlaceStoryContinuationView: View {
 }
 
 /// Follow-up page(s) for a photo caption that was split by `StoryPageLayout.expandPaginatedPhotoCaptions`.
+///
+/// Two-pass overflow check: the layout engine (pass 1) splits conservatively using size-11 estimates.
+/// In `init` (pass 2) we re-measure the full original caption at the actual render font (size 13) against
+/// the per-slot available height. If the full caption fits, the split was spurious and we suppress
+/// the "Continued" label so the reader isn't confused by an unnecessary continuation notice.
 private struct PhotoCaptionContinuationView: View {
     let text: String
+    let fullCaption: String
+    let availableCaptionHeight: CGFloat
+    let captionWidth: CGFloat
     let fontTheme: FontTheme
     let blogColor: BlogColor
+
+    /// True when the full caption would have fit on the photo page — the split was an estimation artefact.
+    private let isSplitSpurious: Bool
+
+    init(
+        text: String,
+        fullCaption: String,
+        availableCaptionHeight: CGFloat,
+        captionWidth: CGFloat,
+        fontTheme: FontTheme,
+        blogColor: BlogColor
+    ) {
+        self.text = text
+        self.fullCaption = fullCaption
+        self.availableCaptionHeight = availableCaptionHeight
+        self.captionWidth = captionWidth
+        self.fontTheme = fontTheme
+        self.blogColor = blogColor
+
+        // Pass 2: re-measure with photoCaptionFontSize (13pt) — the actual render font —
+        // against the geometrically accurate per-slot available height passed from the layout engine.
+        if captionWidth > 0, !fullCaption.isEmpty {
+            let font = StoryFontHelper.uiFont(for: fontTheme, size: StoryPageLayout.photoCaptionFontSize)
+            let measured = fullCaption.boundingRect(
+                with: CGSize(width: captionWidth, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [.font: font],
+                context: nil
+            )
+            isSplitSpurious = measured.height <= availableCaptionHeight
+        } else {
+            isSplitSpurious = false
+        }
+    }
 
     private var secondary: Color {
         blogColor == .black ? Color.white.opacity(0.55) : Color.black.opacity(0.45)
@@ -183,9 +232,11 @@ private struct PhotoCaptionContinuationView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Continued")
-                .font(Font(StoryFontHelper.uiItalicFont(for: fontTheme, size: 10)))
-                .foregroundColor(secondary)
+            if !isSplitSpurious {
+                Text("Continued")
+                    .font(Font(StoryFontHelper.uiItalicFont(for: fontTheme, size: 10)))
+                    .foregroundColor(secondary)
+            }
 
             Text(text)
                 .font(Font(StoryFontHelper.uiFont(for: fontTheme, size: 11)))

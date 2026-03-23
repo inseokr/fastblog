@@ -37,7 +37,14 @@ enum ContentSlot {
         showOverflowHeader: Bool
     )
     /// Remaining lines of a photo caption that did not fit under the image on the previous page(s).
-    case photoCaptionContinuation(text: String)
+    /// `fullCaption` is the original unsplit caption text; `availableCaptionHeight` and `captionWidth`
+    /// are the rendering geometry on the photo page, used by the view for a second-pass overflow check.
+    case photoCaptionContinuation(
+        text: String,
+        fullCaption: String,
+        availableCaptionHeight: CGFloat,
+        captionWidth: CGFloat
+    )
     /// Remaining place story text that did not fit above photos on the previous page(s).
     case placeStoryContinuation(text: String)
 }
