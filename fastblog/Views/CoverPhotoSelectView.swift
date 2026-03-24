@@ -92,6 +92,7 @@ struct CoverPhotoPickerView: View {
                 let topHeight = geo.size.height * 0.56
                 VStack(spacing: 0) {
                     // Cover preview — updates when user taps a photo in the grid
+                    let previewWidth = geo.size.width - 40
                     Group {
                         if let id = displayIdentifier {
                             AssetPhotoView(assetIdentifier: id, cornerRadius: 12, targetSize: CGSize(width: 800, height: 800))
@@ -102,8 +103,8 @@ struct CoverPhotoPickerView: View {
                         }
                     }
                     .id(displayIdentifier ?? "")
-                    .frame(maxWidth: .infinity)
-                    .frame(height: topHeight)
+                    .frame(width: previewWidth, height: topHeight)
+                    .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
@@ -210,6 +211,7 @@ struct BlogCoverPhotoPickerView: View {
             GeometryReader { geo in
                 let topHeight = geo.size.height * 0.56
                 VStack(spacing: 0) {
+                    let previewWidth = geo.size.width - 40
                     Group {
                         if let id = displayIdentifier {
                             AssetPhotoView(assetIdentifier: id, cornerRadius: 12, targetSize: CGSize(width: 800, height: 800))
@@ -220,8 +222,8 @@ struct BlogCoverPhotoPickerView: View {
                         }
                     }
                     .id(displayIdentifier ?? "")
-                    .frame(maxWidth: .infinity)
-                    .frame(height: topHeight)
+                    .frame(width: previewWidth, height: topHeight)
+                    .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .padding(.horizontal, 20)
                     .padding(.top, 20)

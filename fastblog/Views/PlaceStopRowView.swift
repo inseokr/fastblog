@@ -58,6 +58,7 @@ struct PlaceStopRowView: View {
     @State private var generatingPhotoId: UUID?
     @FocusState private var focusedPhotoId: UUID?
     @State private var expandedCaptionPhotoId: UUID? = nil
+    @State private var isOverallStoryExpanded = false
     // Vibe playback for blog photo thumbnails
     @StateObject private var vibePlayer = VibePlayer()
     @State private var playingVibePhotoId: UUID? = nil
@@ -431,7 +432,7 @@ struct PlaceStopRowView: View {
                                         Text(photoCaption(photo.id).wrappedValue)
                                             .font(.caption)
                                             .foregroundColor(.white.opacity(0.9))
-                                            .lineLimit(isExpanded ? nil : 2)
+                                            .lineLimit(isExpanded ? nil : 4)
                                             .frame(width: thumbnailSize, alignment: .leading)
                                             .fixedSize(horizontal: false, vertical: isExpanded)
                                     }
@@ -466,7 +467,7 @@ struct PlaceStopRowView: View {
                     .padding(.leading, 16)
                     .padding(.trailing, 32) // Extra space so Manage Photos card scrolls fully into view
                 }
-                .frame(height: isEditMode ? thumbnailSize + 56 : thumbnailSize + 28)
+                .frame(minHeight: isEditMode ? thumbnailSize + 56 : thumbnailSize + 28)
                 .padding(.top, 8) // Added top padding here
                 .padding(.bottom, isEditMode ? 20 : 12)
             }
@@ -559,13 +560,22 @@ struct PlaceStopRowView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
             } else if !overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(overallStory)
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.9))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 8)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isOverallStoryExpanded.toggle()
+                    }
+                } label: {
+                    Text(overallStory)
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.9))
+                        .lineLimit(isOverallStoryExpanded ? nil : 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: isOverallStoryExpanded)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 8)
             }
         }
     }
