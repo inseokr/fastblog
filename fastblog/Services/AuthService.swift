@@ -463,12 +463,12 @@ extension AuthService {
         print("📋 Signup response — result: \(resultValue)")
 
         let isSuccess = ["success", "ok", "created"].contains(resultValue.lowercased())
-        if isSuccess || response.result == nil && response.message == nil {
-            // Immediate Login (Hydration)
-            try await login(email: username, password: password)
-        } else {
+        guard isSuccess || (response.result == nil && response.message == nil) else {
             throw AuthError.networkError("Signup failed (server said: \(resultValue)).")
         }
+        // Account created — do NOT log in yet.
+        // Sign-in only completes after the user clicks the verification link in their email,
+        // which triggers loginWithVerificationToken(_:) via deep link.
     }
 
     /// Called after the email verification deep link is opened.

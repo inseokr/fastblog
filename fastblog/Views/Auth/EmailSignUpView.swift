@@ -32,6 +32,7 @@ struct EmailSignUpView: View {
     
     @State private var errorMessage: String?
     @State private var isLoading = false
+    @State private var showSpamAlert = false
     
     @FocusState private var usernameFocused: Bool
     @FocusState private var emailFocused: Bool
@@ -106,6 +107,11 @@ struct EmailSignUpView: View {
                 }
             }
             .preferredColorScheme(.dark)
+            .alert("Verify Your Email", isPresented: $showSpamAlert) {
+                Button("Got it") { dismiss() }
+            } message: {
+                Text("A verification link has been sent to \(email). Tap the link in that email to complete sign-up. Don't see it? Check your spam or junk folder.")
+            }
         }
     }
 
@@ -362,7 +368,7 @@ struct EmailSignUpView: View {
                     email: email.trimmingCharacters(in: .whitespaces),
                     password: password
                 )
-                onAuthenticated?()
+                showSpamAlert = true
             } catch {
                 errorMessage = error.localizedDescription
             }

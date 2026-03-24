@@ -866,7 +866,7 @@ private struct SettingsView: View {
     }
 
     private func loadCloudStorageIfNeeded() {
-        guard authService.isSignedIn else {
+        guard authService.isSignedIn, EntitlementManager.shared.isProActive else {
             cloudStorageUsage = nil
             cloudStorageError = nil
             return
