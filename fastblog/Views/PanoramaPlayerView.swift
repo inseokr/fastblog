@@ -15,7 +15,7 @@ private enum SlideLayout: Equatable {
     case diptych
 }
 
-/// Which half of a diptych slide was opened full screen.
+/// Top vs bottom pane in diptych layout (for paused full-screen inspect).
 private enum DiptychHalf {
     case top
     case bottom
@@ -58,7 +58,7 @@ struct PanoramaPlayerView: View {
     @State private var pinchBaseScale: CGFloat = 1.0
     @State private var pinchGestureScale: CGFloat = 1.0
 
-    /// Diptych: one pane tapped → full screen + pinch until play resumes.
+    /// Diptych only: full-screen one photo while **paused** (pinch + tap to dismiss).
     @State private var diptychExpandedHalf: DiptychHalf?
     @State private var diptychExpandPinchBase: CGFloat = 1.0
     @State private var diptychExpandPinchGesture: CGFloat = 1.0
@@ -168,6 +168,27 @@ struct PanoramaPlayerView: View {
             .ignoresSafeArea()
             .allowsHitTesting(false)
 
+            // Left/right tap zones for photo navigation. Pause/resume is only via the bottom control.
+            if !photoGroups.isEmpty, diptychExpandedHalf == nil {
+                GeometryReader { geo in
+                    HStack(spacing: 0) {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .frame(width: geo.size.width * 0.35)
+                            .onTapGesture { navigateToPreviousSlide() }
+                        Color.clear
+                            .frame(maxWidth: .infinity)
+                            .allowsHitTesting(false)
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .frame(width: geo.size.width * 0.35)
+                            .onTapGesture { navigateToNextSlide() }
+                    }
+                    .frame(maxHeight: .infinity)
+                }
+                .ignoresSafeArea()
+            }
+
             // Chrome — extend to physical bottom; explicit padding replaces implicit safe-area inset
             VStack(spacing: 0) {
                 topBar
@@ -175,7 +196,7 @@ struct PanoramaPlayerView: View {
                     .padding(.horizontal, 20)
                 Spacer()
                 VStack(spacing: 10) {
-                    if diptychExpandedHalf == nil, let caption = topPhotoCaption, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if let caption = topPhotoCaption, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text(caption)
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.85))
@@ -251,13 +272,9 @@ struct PanoramaPlayerView: View {
                     // Only handle horizontal swipes (horizontal > vertical)
                     guard abs(dx) > abs(dy) else { return }
                     if dx < 0 {
-                        // Swipe left → next slide
-                        stopTimer()
-                        advanceSlide()
+                        navigateToNextSlide()
                     } else {
-                        // Swipe right → previous slide
-                        stopTimer()
-                        retreatSlide()
+                        navigateToPreviousSlide()
                     }
                 }
         )
@@ -294,14 +311,14 @@ struct PanoramaPlayerView: View {
             let paneH = (H - 2) / 2
             VStack(spacing: 2) {
                 // Top: enters from below, exits upward
-                photoPane(id: topPhotoId, width: W, height: paneH, expandOnTap: .top)
+                photoPane(id: topPhotoId, width: W, height: paneH, diptychExpandHalf: .top)
                     .id("dtop-\(currentGroupIndex)-\(currentSlideOffset)")
                     .transition(.asymmetric(
                         insertion: .move(edge: .bottom).combined(with: .opacity),
                         removal:   .move(edge: .top).combined(with: .opacity)
                     ))
                 // Bottom: enters from above, exits downward
-                photoPane(id: bottomPhotoId, width: W, height: paneH, expandOnTap: .bottom)
+                photoPane(id: bottomPhotoId, width: W, height: paneH, diptychExpandHalf: .bottom)
                     .id("dbot-\(currentGroupIndex)-\(currentSlideOffset)")
                     .transition(.asymmetric(
                         insertion: .move(edge: .top).combined(with: .opacity),
@@ -369,18 +386,15 @@ struct PanoramaPlayerView: View {
         currentScale = start + (end - start) * t
     }
 
-    // MARK: - Diptych full-screen expand
+    // MARK: - Diptych full-screen (paused only)
 
     private func openDiptychExpanded(_ half: DiptychHalf) {
-        guard currentLayout == .diptych, diptychExpandedHalf == nil else { return }
+        guard currentLayout == .diptych, diptychExpandedHalf == nil, !isPlaying else { return }
         let id = (half == .top) ? topPhotoId : bottomPhotoId
         guard let id, loadedImages[id] != nil else { return }
-        stopTimer()
-        isPlaying = false
         diptychExpandPinchBase = 1
         diptychExpandPinchGesture = 1
         diptychExpandedHalf = half
-        Task { await slideshowMusic.pause() }
     }
 
     private func clearDiptychExpanded() {
@@ -393,8 +407,8 @@ struct PanoramaPlayerView: View {
     private func diptychExpandedOverlay(size: CGSize) -> some View {
         let id: String? = {
             switch diptychExpandedHalf {
-            case .top: return topPhotoId
-            case .bottom: return bottomPhotoId
+            case .some(.top): return topPhotoId
+            case .some(.bottom): return bottomPhotoId
             case .none: return nil
             }
         }()
@@ -413,7 +427,16 @@ struct PanoramaPlayerView: View {
             .contentShape(Rectangle())
             .animation(nil, value: diptychExpandPinchBase)
             .animation(nil, value: diptychExpandPinchGesture)
-            .gesture(diptychExpandedMagnificationGesture)
+            // highPriorityGesture ensures pinch is never blocked by the parent DragGesture.
+            .highPriorityGesture(diptychExpandedMagnificationGesture)
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    // Only dismiss when at (or near) normal scale — not while zoomed in.
+                    if diptychExpandPinchBase * diptychExpandPinchGesture < 1.1 {
+                        clearDiptychExpanded()
+                    }
+                }
+            )
         }
     }
 
@@ -429,19 +452,26 @@ struct PanoramaPlayerView: View {
 
     // MARK: - Photo pane
 
+    /// `diptychExpandHalf`: which diptych pane this is; tap opens full view only while slideshow is **paused**.
     @ViewBuilder
-    private func photoPane(id: String?, width: CGFloat, height: CGFloat, expandOnTap: DiptychHalf? = nil) -> some View {
+    private func photoPane(id: String?, width: CGFloat, height: CGFloat, diptychExpandHalf: DiptychHalf? = nil) -> some View {
         if let id, let img = loadedImages[id] {
-            Image(uiImage: img)
-                .resizable()
-                .scaledToFill()
-                .frame(width: width, height: height)
-                .clipped()
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    guard let expandOnTap else { return }
-                    openDiptychExpanded(expandOnTap)
-                }
+            if !isPlaying, let half = diptychExpandHalf {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: width, height: height)
+                    .clipped()
+                    .contentShape(Rectangle())
+                    .onTapGesture { openDiptychExpanded(half) }
+            } else {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: width, height: height)
+                    .clipped()
+                    .allowsHitTesting(false)
+            }
         } else {
             Color.gray.opacity(0.25)
                 .frame(width: width, height: height)
@@ -575,6 +605,26 @@ struct PanoramaPlayerView: View {
         if isPlaying {
             if next == .solo { /* onAppear of soloZoomView restarts the solo timer */ }
             else { startDiptychTimer() }
+        }
+    }
+
+    // MARK: - Manual navigation (tap / swipe; does not change `isPlaying`)
+
+    private func navigateToNextSlide() {
+        stopTimer()
+        advanceSlide()
+        if isPlaying {
+            soloElapsed = 0
+            resumeSlideshowTimingIfPlaying()
+        }
+    }
+
+    private func navigateToPreviousSlide() {
+        stopTimer()
+        retreatSlide()
+        if isPlaying {
+            soloElapsed = 0
+            resumeSlideshowTimingIfPlaying()
         }
     }
 
@@ -723,9 +773,13 @@ struct PanoramaPlayerView: View {
             Task { await slideshowMusic.resume() }
         } else {
             stopTimer()
-            if currentLayout == .solo {
-                updateSoloKenBurnsScale()
+            // Collapse diptych to solo when pausing — show one photo at a time while paused.
+            if currentLayout == .diptych {
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    currentLayout = .solo
+                }
             }
+            updateSoloKenBurnsScale()
             Task { await slideshowMusic.pause() }
         }
     }
