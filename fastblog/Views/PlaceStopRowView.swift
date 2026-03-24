@@ -101,8 +101,8 @@ struct PlaceStopRowView: View {
         return stop.photos.map(\.timestamp).min().map { Self.visitTimeFormatter.string(from: $0) }
     }
 
-    /// Photo size in strip (doubled from prior 120 so one photo is prominent and next peeks on the right).
-    private let thumbnailSize: CGFloat = 240
+    /// Photo size in strip — 80% of screen width so one photo is prominent and the next peeks on the right.
+    private var thumbnailSize: CGFloat { UIScreen.main.bounds.width * 0.8 }
 
     /// Returns the local vibe audio URL for a photo if it was captured with the in-app camera.
     private func vibeURL(for photo: RecapPhoto) -> URL? {
@@ -152,11 +152,11 @@ struct PlaceStopRowView: View {
                                 Link(destination: searchURL) {
                                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                                         Text(stop.placeTitle)
-                                            .font(.title3)
-                                            .fontWeight(.semibold)
+                                            .font(.title2)
+                                            .fontWeight(.bold)
                                             .foregroundColor(.white)
                                         StoryPlaceExternalLinkIcon(
-                                            titleFontSize: UIFont.preferredFont(forTextStyle: .title3).pointSize,
+                                            titleFontSize: UIFont.preferredFont(forTextStyle: .title2).pointSize,
                                             foregroundColor: .white.opacity(0.78)
                                         )
                                     }
@@ -168,8 +168,8 @@ struct PlaceStopRowView: View {
                                     onNavigate?()
                                 } label: {
                                     Text(stop.placeTitle)
-                                        .font(.title3)
-                                        .fontWeight(.semibold)
+                                        .font(.title2)
+                                        .fontWeight(.bold)
                                         .foregroundColor(.white)
                                 }
                                 .buttonStyle(.plain)
@@ -322,8 +322,140 @@ struct PlaceStopRowView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
                 .padding(.bottom, 12)
+            } else if includedPhotos.count == 1, let photo = includedPhotos.first {
+                // --- CASE 2a: Single photo — full-width hero layout ---
+                VStack(alignment: .leading, spacing: 0) {
+                    ZStack(alignment: .topTrailing) {
+                        RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 960, height: 640))
+                            .frame(maxWidth: .infinity, maxHeight: 260)
+                            .clipped()
+                            .cornerRadius(10)
+                            .contentShape(Rectangle())
+                            .onTapGesture { onPhotoTapped?(photo) }
+                        if isEditMode {
+                            Button {
+                                onRemovePhoto?(photo.id)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 30))
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(.white, Color.black.opacity(0.6))
+                            }
+                            .buttonStyle(.plain)
+                            .padding(8)
+                        }
+                    }
+                    .overlay(alignment: .bottomLeading) {
+                        if vibeURL(for: photo) != nil {
+                            let isPlaying = playingVibePhotoId == photo.id && vibePlayer.isPlaying
+                            HStack(spacing: 5) {
+                                Button {
+                                    if isPlaying {
+                                        vibePlayer.stop()
+                                        playingVibePhotoId = nil
+                                    } else {
+                                        if let url = vibeURL(for: photo) {
+                                            playingVibePhotoId = photo.id
+                                            vibePlayer.play(url: url)
+                                        }
+                                    }
+                                } label: {
+                                    Image(systemName: "waveform")
+                                        .font(.system(size: isPlaying ? 15 : 11, weight: .semibold))
+                                        .foregroundStyle(
+                                            LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
+                                        )
+                                        .symbolEffect(.variableColor.iterative.reversing, isActive: isPlaying)
+                                        .padding(isPlaying ? 8 : 6)
+                                        .background(Color.black.opacity(0.55))
+                                        .clipShape(Circle())
+                                        .overlay(Circle().stroke(Color.green.opacity(isPlaying ? 0.85 : 0.5), lineWidth: isPlaying ? 1.5 : 1))
+                                        .scaleEffect(isPlaying ? 1.25 : 1.0)
+                                        .animation(.spring(response: 0.35, dampingFraction: 0.6), value: isPlaying)
+                                }
+                                .buttonStyle(.plain)
+                                if !isPlaying {
+                                    Button {
+                                        if let url = vibeURL(for: photo) {
+                                            playingVibePhotoId = photo.id
+                                            vibePlayer.play(url: url)
+                                        }
+                                    } label: {
+                                        Text("Play Vibe")
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Color.black.opacity(0.55))
+                                            .clipShape(Capsule())
+                                            .overlay(Capsule().stroke(Color.green.opacity(0.5), lineWidth: 1))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                                }
+                            }
+                            .padding(8)
+                            .animation(.easeInOut(duration: 0.2), value: isPlaying)
+                        }
+                    }
+
+                    // Caption below the hero photo
+                    if isEditMode {
+                        Button {
+                            onCaptionTapped?(photo.id)
+                        } label: {
+                            let caption = photoCaption(photo.id).wrappedValue
+                            Text(caption.isEmpty ? "Leave a story for this photo" : caption)
+                                .font(.subheadline)
+                                .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : .white)
+                                .lineLimit(3)
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(10)
+                                .background(Color(white: 0.08))
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 8)
+                    } else if !photoCaption(photo.id).wrappedValue.isEmpty {
+                        let isExpanded = expandedCaptionPhotoId == photo.id
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                expandedCaptionPhotoId = isExpanded ? nil : photo.id
+                            }
+                        } label: {
+                            Text(photoCaption(photo.id).wrappedValue)
+                                .font(.subheadline)
+                                .lineSpacing(3)
+                                .foregroundColor(.white.opacity(0.85))
+                                .lineLimit(isExpanded ? nil : 4)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fixedSize(horizontal: false, vertical: isExpanded)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 8)
+                    }
+
+                    // Subtle "Manage Photos" link in edit mode
+                    if isEditMode && hasMultipleAvailable {
+                        Button(action: onManagePhotos) {
+                            Label("Manage Photos", systemImage: "photo.on.rectangle")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(Color(white: 0.08))
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 8)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, isEditMode ? 20 : 12)
             } else if !includedPhotos.isEmpty {
-                // --- CASE 2: 1+ included photos — always use horizontal scroll + outlined Manage Photos card ---
+                // --- CASE 2b: Multiple photos — horizontal scroll strip ---
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 10) {
                         ForEach(includedPhotos) { photo in
@@ -430,7 +562,8 @@ struct PlaceStopRowView: View {
                                         }
                                     } label: {
                                         Text(photoCaption(photo.id).wrappedValue)
-                                            .font(.caption)
+                                            .font(.subheadline)
+                                            .lineSpacing(3)
                                             .foregroundColor(.white.opacity(0.9))
                                             .lineLimit(isExpanded ? nil : 4)
                                             .frame(width: thumbnailSize, alignment: .leading)
@@ -475,7 +608,7 @@ struct PlaceStopRowView: View {
             // timelineLine removed per user request
         }
         .background(Color(white: 0.12))
-        .cornerRadius(12)
+        .cornerRadius(16)
         .toolbar {
             if focusedPlaceNote || focusedOverallStory || focusedPhotoId != nil {
                 ToolbarItemGroup(placement: .keyboard) {
@@ -533,7 +666,8 @@ struct PlaceStopRowView: View {
                             } else {
                                 let trimmed = overallStory.trimmingCharacters(in: .whitespacesAndNewlines)
                                 Text(trimmed.isEmpty ? placeStoryPlaceholder : trimmed)
-                                    .font(.subheadline)
+                                    .font(.body)
+                                    .lineSpacing(4)
                                     .foregroundColor(trimmed.isEmpty ? .secondary.opacity(0.9) : .white)
                                     .multilineTextAlignment(.leading)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -566,9 +700,10 @@ struct PlaceStopRowView: View {
                     }
                 } label: {
                     Text(overallStory)
-                        .font(.subheadline)
+                        .font(.body)
+                        .lineSpacing(5)
                         .foregroundColor(.white.opacity(0.9))
-                        .lineLimit(isOverallStoryExpanded ? nil : 4)
+                        .lineLimit(isOverallStoryExpanded ? nil : 5)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: isOverallStoryExpanded)
                 }

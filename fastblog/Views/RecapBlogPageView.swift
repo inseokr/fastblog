@@ -1364,7 +1364,7 @@ struct RecapBlogPageView: View {
                     .id("day-section-\(day.id)")
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 8)
         .padding(.bottom, 32)
     }
 
