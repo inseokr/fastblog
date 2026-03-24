@@ -979,12 +979,6 @@ struct RecapBlogPageView: View {
                         .animation(.easeInOut(duration: 0.6), value: isCoverPending)
                         .id(coverId)
                         .transition(.opacity)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            guard !isCoverPending else { return }
-                            coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
-                            showCoverPhotoPicker = true
-                        }
                 }
 
                 // Dimmed overlay — stronger in edit mode for readability
@@ -1094,36 +1088,6 @@ struct RecapBlogPageView: View {
                 }
                 .padding(.horizontal, 24)
 
-                // Panorama slow-pan button — bottom-leading, view mode only
-                if !isEditMode, displayCoverId != nil {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Button {
-                                showPanorama = true
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "play.rectangle.fill")
-                                        .font(.system(size: 13, weight: .medium))
-                                    Text("Slide Show")
-                                        .font(.caption)
-                                        .fontWeight(.semibold)
-                                }
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Capsule())
-                                .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.bottom, 14)
-                            .padding(.leading, 12)
-                            Spacer()
-                        }
-                    }
-                    .transition(.opacity)
-                }
 
                 // Badge shown while cover selection is still in progress
                 if isCoverPending {
@@ -1148,6 +1112,16 @@ struct RecapBlogPageView: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                     .transition(.opacity)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard !isCoverPending, displayCoverId != nil else { return }
+                if isEditMode {
+                    coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
+                    showCoverPhotoPicker = true
+                } else {
+                    showPanorama = true
                 }
             }
         }
