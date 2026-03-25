@@ -1501,10 +1501,15 @@ final class CreatedRecapBlogStore: ObservableObject {
                                         detail.days[dayIdx].placeStops[stopIdx].placeCategory = cat
                                     }
                                     // Place-level story → overallStory (primary display field).
-                                    // Mark as manual so AI doesn't overwrite a user-authored caption.
+                                    // IMPORTANT: Do not surface server-generated stories automatically.
+                                    // We only accept serverPlace.story when the user has already explicitly authored
+                                    // a place story locally (manual or wand), so that cross-device sync still works
+                                    // without turning "photo caption edit" into an implicit story generation trigger.
                                     if let story = serverPlace.story, !story.isEmpty {
-                                        detail.days[dayIdx].placeStops[stopIdx].overallStory = story
-                                        detail.days[dayIdx].placeStops[stopIdx].overallStoryIsManual = true
+                                        let localStory = stop.overallStory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                                        if stop.overallStoryIsManual || !localStory.isEmpty {
+                                            detail.days[dayIdx].placeStops[stopIdx].overallStory = story
+                                        }
                                     }
                                     // Per-photo sync: selection status + caption (matched by /public/... path key).
                                     for serverPhoto in serverPlace.photoList ?? [] {

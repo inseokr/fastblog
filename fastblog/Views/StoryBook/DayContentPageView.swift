@@ -91,7 +91,7 @@ struct DayContentPageView: View {
                 photos: photos,
                 photoImageHeight: photoImageHeight,
                 photoGridLayout: photoGridLayout,
-                storyUsesTwoColumns: storyUsesTwoColumns,
+                storyUsesTwoColumns: false,
                 showPlaceStory: showPlaceStory,
                 photoShapeOptions: PDFPhotoShapeOptions(),
                 blogColor: blogColor,

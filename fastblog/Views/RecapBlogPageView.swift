@@ -161,6 +161,8 @@ struct RecapBlogPageView: View {
         let opts = (try? JSONDecoder().decode(PDFExportOptions.self, from: pdfExportOptionsData)) ?? PDFExportOptions()
         return opts.colorStyle == .black ? Color.black : Color.white
     }
+    /// Extra top offset for Story Mode close/share chrome relative to safe area.
+    private let storyChromeTopOffset: CGFloat = 40
 
     // MARK: - Split Blog Properties
     @State private var showSplitActionSheet = false
@@ -253,8 +255,7 @@ struct RecapBlogPageView: View {
                                     }
                                 }
                                 .padding(.horizontal, 16)
-                                // safeArea + 12pt page top-padding + 44pt day header row
-                                .padding(.top, geo.safeAreaInsets.top + 56)
+                                .padding(.top, geo.safeAreaInsets.top + storyChromeTopOffset)
                                 Spacer()
                             }
                         }
@@ -1601,7 +1602,6 @@ struct RecapBlogPageView: View {
                     },
                     onAICaptionApplied: { photoId in
                         markPhotoCaptionAI(dayId: day.id, stopId: stop.id, photoId: photoId)
-                        Task { await cascadeOverallStory(dayId: day.id, stopId: stop.id) }
                     },
                     onAIOverallStoryApplied: {
                         markOverallStoryAI(dayId: day.id, stopId: stop.id)
@@ -1662,7 +1662,6 @@ struct RecapBlogPageView: View {
                         },
                         onAICaptionApplied: { photoId in
                             markPhotoCaptionAI(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
-                            Task { await cascadeOverallStory(dayId: item.dayId, stopId: item.stopId) }
                         },
                         onPhotoCaptionManuallyEdited: { photoId in
                             markPhotoCaptionManual(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
@@ -2380,6 +2379,15 @@ struct RecapBlogPageView: View {
                 let storyText = photo.caption ?? ""
                 print("🔵 [syncStory] photo caption → updateStory placeKey:\(placeKey) photoIndex:\(filteredIndex) text:\"\(storyText)\"")
                 try? await APIManager.shared.updateStory(placeKey: placeKey, storyText: storyText, photoIndex: filteredIndex, photoIndexType: "filtered")
+
+                // Prevent backend auto-generating a place story as a side effect of photo caption updates.
+                // Requirement: if a place story already exists in the backend, we should sync it (so do NOT clear it).
+                // Only enforce "keep empty" when the place has no story locally and the user hasn't authored one.
+                let localOverall = (stop.overallStory ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !stop.overallStoryIsManual, localOverall.isEmpty {
+                    print("🟣 [syncStory] clearing place story to keep it empty — placeKey:\(placeKey)")
+                    try? await APIManager.shared.updateStory(placeKey: placeKey, storyText: "", photoIndex: nil)
+                }
             }
         }
     }
@@ -2506,7 +2514,6 @@ struct RecapBlogPageView: View {
         guard draft.days.indices.contains(dayIdx),
               draft.days[dayIdx].placeStops.indices.contains(stopIdx) else { return }
 
-        var captionsGenerated = false
         let stop = draft.days[dayIdx].placeStops[stopIdx]
 
         for photoIdx in stop.photos.indices {
@@ -2526,25 +2533,7 @@ struct RecapBlogPageView: View {
                   draft.days[dayIdx].placeStops[stopIdx].photos.indices.contains(photoIdx) else { continue }
             draft.days[dayIdx].placeStops[stopIdx].photos[photoIdx].caption = caption
             draft.days[dayIdx].placeStops[stopIdx].photos[photoIdx].captionIsManual = false
-            captionsGenerated = true
         }
-
-        // After generating photo captions, cascade to overall story (if not manually edited).
-        guard draft.days.indices.contains(dayIdx),
-              draft.days[dayIdx].placeStops.indices.contains(stopIdx),
-              captionsGenerated || draft.days[dayIdx].placeStops[stopIdx].overallStory?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false,
-              !draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual else { return }
-
-        let updatedStop = draft.days[dayIdx].placeStops[stopIdx]
-        let dayDate = draft.days[dayIdx].date
-        let captions = updatedStop.photos.filter(\.isIncluded).compactMap(\.caption).filter { !$0.isEmpty }
-        let story = await StoryCaptionService.shared.generateOverallPlaceStory(
-            stop: updatedStop, dayDate: dayDate, photoCaptions: captions)
-
-        guard draft.days.indices.contains(dayIdx),
-              draft.days[dayIdx].placeStops.indices.contains(stopIdx),
-              !draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual else { return }
-        draft.days[dayIdx].placeStops[stopIdx].overallStory = story
     }
 
     /// Generates overall stories for any stops that have none and haven't been manually edited.

@@ -432,6 +432,17 @@ enum StoryPageLayout {
         )
     }
 
+    /// Prefer vertical stacking when both photos are portrait-oriented; side-by-side looks cramped.
+    private static func shouldStackLongPhotoPair(_ photos: [PhotoContent]) -> Bool {
+        guard photos.count == 2 else { return false }
+        func isPortraitLong(_ photo: PhotoContent) -> Bool {
+            let size = photo.image.size
+            guard size.width > 0, size.height > 0 else { return false }
+            return (size.height / size.width) >= 1.15
+        }
+        return photos.allSatisfy(isPortraitLong)
+    }
+
     private static func estimatedStoryLineCount(caption: String, metrics: Metrics, fontTheme: FontTheme) -> Int {
         let t = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return 0 }
@@ -1371,7 +1382,7 @@ enum StoryPageLayout {
             let cap = place.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let lines = estimatedStoryLineCount(caption: cap, metrics: metrics, fontTheme: fontTheme)
             let twoColLead = shouldUseTwoColumnPlaceStory(caption: cap, lineCount: lines)
-            let leadH = feasibleTwoColumnRowImageHeight(
+            let leadH = feasibleStackedRowImageHeight(
                 metrics: metrics,
                 place: place,
                 fontTheme: fontTheme,
@@ -1383,7 +1394,7 @@ enum StoryPageLayout {
                     place,
                     photoSlice: 0...1,
                     photoImageHeight: leadH,
-                    photoGridLayout: .twoColumn,
+                    photoGridLayout: .stackedSingles,
                     storyUsesTwoColumns: twoColLead,
                     showPlaceStory: true
                 )
@@ -1409,20 +1420,16 @@ enum StoryPageLayout {
                         )
                     )
                 } else {
-                    // Two photos in continuation: only the 3rd + 4th (indices 2…3) use stacked full-width rows;
-                    // later pairs (5th+6th, …) stay side-by-side in two columns.
-                    let isThirdAndFourthOnly = (idx == 2 && end == 3)
+                    // Two-photo continuations always use stacked full-width rows in Story mode.
                     let showHeader = photoCount != 4
-                    let rowH = isThirdAndFourthOnly
-                        ? feasibleOverflowStackedRowImageHeight(metrics: metrics, fontTheme: fontTheme, showHeader: showHeader)
-                        : feasibleOverflowTwoColumnRowImageHeight(metrics: metrics, fontTheme: fontTheme, showHeader: showHeader)
+                    let rowH = feasibleOverflowStackedRowImageHeight(metrics: metrics, fontTheme: fontTheme, showHeader: showHeader)
                     result.append(
                         .photoOverflowContinuation(
                             placeName: place.title,
                             place,
                             photoSlice: slice,
                             photoImageHeight: rowH,
-                            photoGridLayout: isThirdAndFourthOnly ? .stackedSingles : .twoColumn,
+                            photoGridLayout: .stackedSingles,
                             showOverflowHeader: showHeader
                         )
                     )
@@ -1655,7 +1662,7 @@ enum StoryPageLayout {
             let cap = place.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let lines = estimatedStoryLineCount(caption: cap, metrics: metrics, fontTheme: fontTheme)
             let twoColLead = shouldUseTwoColumnPlaceStory(caption: cap, lineCount: lines)
-            let h = feasibleTwoColumnRowImageHeight(
+            let h = feasibleStackedRowImageHeight(
                 metrics: metrics,
                 place: place,
                 fontTheme: fontTheme,
@@ -1667,7 +1674,7 @@ enum StoryPageLayout {
                     place,
                     photoSlice: 0...1,
                     photoImageHeight: h,
-                    photoGridLayout: .twoColumn,
+                    photoGridLayout: .stackedSingles,
                     storyUsesTwoColumns: twoColLead,
                     showPlaceStory: true
                 )
