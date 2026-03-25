@@ -385,6 +385,27 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     // MARK: - Public API
 
+    /// Materializes a trip received via nearby share (new identities + bloggo-capture assets) and adds it like a new blog draft.
+    func importNearbySharedTrip(manifest: TripShareManifestV1, images: [Data]) throws {
+        let trip = try TripShareImporter.makeTripDraft(manifest: manifest, images: images)
+        addCreatedBlog(trip: trip)
+    }
+
+    /// Materializes a recap blog received via nearby share (preserves captions and stories) and adds it like a new blog.
+    /// - Note: We create the `CreatedRecapBlog` entry using a derived `TripDraft`, then overwrite the stored `RecapBlogDetail`
+    ///   so the imported detail (captions/stories/place notes) is preserved exactly.
+    func importNearbySharedRecapBlog(manifest: TripShareRecapManifestV1, images: [Data]) throws -> [String] {
+        let importedDetail = try TripShareRecapImporter.makeRecapBlogDetail(manifest: manifest, images: images)
+        guard let trip = TripShareBlogDraftBuilder.tripDraft(from: importedDetail) else {
+            // Should not happen: importer always sets local identifiers for exported photos.
+            throw TripShareRecapExportError.noExportableIncludedPhotos
+        }
+        addCreatedBlog(trip: trip)
+        saveBlogDetail(importedDetail, asDraft: false)
+        let captureIds = importedDetail.allIncludedPhotos.compactMap(\.localIdentifier)
+        return Array(captureIds.prefix(manifest.photos.count))
+    }
+
     /// Call when user completes the Create Blog sequence (before showing RecapSavedView).
     func addCreatedBlog(trip: TripDraft) {
         let startDate = trip.earliestDate
@@ -733,8 +754,10 @@ final class CreatedRecapBlogStore: ObservableObject {
                               let coord = geocodedDetail.days[di].placeStops[si].representativeLocation else { continue }
                         let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
                         let place = await GeocodingService.shared.place(for: loc)
-                        geocodedDetail.days[di].placeStops[si].placeTitle = "Near \(place.areaName)"
-                        geocodedDetail.days[di].placeStops[si].placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+                            if !geocodedDetail.days[di].placeStops[si].placeTitleIsManual {
+                                geocodedDetail.days[di].placeStops[si].placeTitle = "Near \(place.areaName)"
+                                geocodedDetail.days[di].placeStops[si].placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+                            }
                     }
                     saveBlogDetail(geocodedDetail, asDraft: true)
                 }
@@ -1801,8 +1824,10 @@ final class CreatedRecapBlogStore: ObservableObject {
                     order += 1
                     var updated = detail.days[dayIdx]
                     var stopCopy = updated.placeStops[stopIdx]
-                    stopCopy.placeTitle = "Near \(place.areaName)"
-                    stopCopy.placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+                    if !stopCopy.placeTitleIsManual {
+                        stopCopy.placeTitle = "Near \(place.areaName)"
+                        stopCopy.placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+                    }
                     updated.placeStops[stopIdx] = stopCopy
                     detail.days[dayIdx] = updated
                 }
@@ -1943,8 +1968,10 @@ final class CreatedRecapBlogStore: ObservableObject {
                 order += 1
                 var dayCopy = detail.days[firstDayIdx]
                 var stopCopy = dayCopy.placeStops[stopIdx]
-                stopCopy.placeTitle = "Near \(place.areaName)"
-                stopCopy.placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+                if !stopCopy.placeTitleIsManual {
+                    stopCopy.placeTitle = "Near \(place.areaName)"
+                    stopCopy.placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+                }
                 dayCopy.placeStops[stopIdx] = stopCopy
                 detail.days[firstDayIdx] = dayCopy
             }
@@ -2023,8 +2050,10 @@ final class CreatedRecapBlogStore: ObservableObject {
             if let coord = stop.representativeLocation {
                 let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
                 let place = await GeocodingService.shared.place(for: loc)
-                result.days[dayIndex].placeStops[stopIdx].placeTitle = "Near \(place.areaName)"
-                result.days[dayIndex].placeStops[stopIdx].placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+                if !result.days[dayIndex].placeStops[stopIdx].placeTitleIsManual {
+                    result.days[dayIndex].placeStops[stopIdx].placeTitle = "Near \(place.areaName)"
+                    result.days[dayIndex].placeStops[stopIdx].placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+                }
             }
         }
 

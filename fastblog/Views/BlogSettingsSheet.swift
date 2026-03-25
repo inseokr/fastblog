@@ -18,6 +18,8 @@ struct BlogSettingsSheet: View {
     var onRemoveFromCloud: (() -> Void)? = nil
     /// Called after the user restores a removed place so the parent can persist the draft.
     var onRestore: (() -> Void)? = nil
+    /// When non-nil, shows “Share trip nearby” (saved blog only; parent builds trip and presents host sheet).
+    var onShareNearby: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @AppStorage(StoryWritingStyle.storageKey) private var writingStyle: String = ""
     @AppStorage(WeatherTemperatureUnit.storageKey) private var weatherTemperatureUnitRaw: String = WeatherTemperatureUnit.fahrenheit.rawValue
@@ -60,6 +62,17 @@ struct BlogSettingsSheet: View {
     private var settingsList: some View {
         List {
             editAndRestoreSection
+            if onShareNearby != nil {
+                Section {
+                    Button {
+                        onShareNearby?()
+                    } label: {
+                        Label("Share trip nearby", systemImage: "dot.radiowaves.left.and.right")
+                    }
+                } header: {
+                    Text("Sharing")
+                }
+            }
             titleAndCoverSection
             writingStyleSection
             weatherSection

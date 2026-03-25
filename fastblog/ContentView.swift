@@ -9,6 +9,7 @@ import UIKit
 
 struct ContentView: View {
     @StateObject private var createdRecapStore = CreatedRecapBlogStore.shared
+    @EnvironmentObject private var nearbyShare: TripNearbyShareSessionController
     @StateObject private var tripsViewModel: TripsViewModel
     @State private var showTrips = false
     /// When true, show Trips overlay when scan reaches .idle (so it fades in when ready).
@@ -229,6 +230,14 @@ struct ContentView: View {
             Text("Your shared photo selection didn't change. Choose photos that include location data so we can find trips, or cancel to stay on the home screen.")
         }
         .environmentObject(createdRecapStore)
+        .sheet(isPresented: Binding(
+            get: { nearbyShare.presentReceiveFromDeepLink },
+            set: { new in
+                if !new { nearbyShare.dismissReceiveDeepLinkPresentation() }
+            }
+        )) {
+            TripNearbyShareReceiveSheet(controller: nearbyShare)
+        }
         .environment(\.dismissToLanding, {
             dismissToLandingRequested = true
         })
@@ -405,4 +414,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
+        .environmentObject(TripNearbyShareSessionController.shared)
 }

@@ -23,6 +23,8 @@ struct EditPlaceStopNameSheet: View {
     @State private var selectedCoordinate: CLLocationCoordinate2D? = nil
     /// When user taps a POI (or picks from autocomplete), we resolve and store category (MKPointOfInterestCategory raw value).
     @State private var selectedCategory: String? = nil
+    /// True only when the map tap resolved via `MKLocalPointsOfInterestRequest` (a POI), not reverse-geocode fallback.
+    @State private var mapTapResolvedAsPOI: Bool = false
     @State private var initialTitle: String = ""
     @State private var initialCoordinate: CLLocationCoordinate2D? = nil
     @State private var initialCategory: String? = nil
@@ -136,11 +138,12 @@ struct EditPlaceStopNameSheet: View {
                 initialCoordinate = nil
                 selectedCategory = nil
                 initialCategory = nil
+                mapTapResolvedAsPOI = false
                 searchViewModel.setBiasLocation(location)
             }
             .overlay(alignment: .bottom) {
                 if location != nil, !isResolvingPOI {
-                    if let selected = selectedCoordinate {
+                    if let selected = selectedCoordinate, mapTapResolvedAsPOI {
                         Button {
                             let query = editedTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
                             let urlString = "https://www.google.com/maps/search/?api=1&query=\(query)"
@@ -163,7 +166,7 @@ struct EditPlaceStopNameSheet: View {
                             .shadow(color: .black.opacity(0.2), radius: 5, x: 0, y: 2)
                         }
                         .padding(.bottom, 16)
-                    } else {
+                    } else if selectedCoordinate == nil {
                         Text("Tap a place on the map to use its name")
                             .font(.caption)
                             .foregroundColor(.white)
@@ -262,6 +265,7 @@ struct EditPlaceStopNameSheet: View {
                 editedTitle = poi.name
                 selectedCoordinate = coordinate
                 selectedCategory = poi.category
+                mapTapResolvedAsPOI = true
                 debugPrint("[POI] updated: editedTitle=\(editedTitle), selectedCoordinate=\(coordinate.latitude),\(coordinate.longitude)")
                 return
             }
@@ -273,6 +277,7 @@ struct EditPlaceStopNameSheet: View {
             if !name.isEmpty, name != "Unknown Place" {
                 editedTitle = name
                 selectedCoordinate = coordinate
+                mapTapResolvedAsPOI = false
                 debugPrint("[POI] set name=\(name), fetching category...")
                 if let category = await searchViewModel.fetchCategory(at: coordinate, name: name) {
                     selectedCategory = category

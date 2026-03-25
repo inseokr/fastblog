@@ -109,6 +109,48 @@ final class AppCapturePhotoService {
         return uuid
     }
 
+    /// Same as `saveCapture` but persists an optional caption (e.g. nearby trip import).
+    @discardableResult
+    func saveSharedImport(
+        image: UIImage,
+        timestamp: Date,
+        location: CLLocation?,
+        caption: String?
+    ) throws -> UUID {
+        let uuid = UUID()
+        let folder = try captureURL(for: uuid)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        var mutableFolder = folder
+        try mutableFolder.setResourceValues(resourceValues)
+
+        guard let jpegData = image.jpegData(compressionQuality: 0.92) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        let imageURL = folder.appendingPathComponent("image.jpg")
+        try jpegData.write(to: imageURL)
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        formatter.timeZone = TimeZone.current
+        let digitizedTime = formatter.string(from: timestamp)
+
+        let meta = CaptureMetadata(
+            createdAt: timestamp.timeIntervalSince1970,
+            latitude: location?.coordinate.latitude,
+            longitude: location?.coordinate.longitude,
+            digitizedTime: digitizedTime,
+            caption: caption?.isEmpty == true ? nil : caption
+        )
+        let metaData = try JSONEncoder().encode(meta)
+        let metaURL = folder.appendingPathComponent("meta.json")
+        try metaData.write(to: metaURL)
+
+        return uuid
+    }
+
     // MARK: - Load image
 
     func loadImage(captureId: UUID) -> UIImage? {

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1B2C3D52F9E1000010002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D52F9E1000010001 /* PrivacyInfo.xcprivacy */; };
 		01B2787FA0EA66741089467C /* CoverPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72929F115FE37110FB2BE7BF /* CoverPageView.swift */; };
 		037E251F2F70FACD00C7E8B8 /* burtysounds-happy-124917.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E251E2F70FACD00C7E8B8 /* burtysounds-happy-124917.mp3 */; };
 		037E25282F70FD0600C7E8B8 /* nastelbom-travel-437814.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E25252F70FD0600C7E8B8 /* nastelbom-travel-437814.mp3 */; };
@@ -87,6 +88,10 @@
 		BB000168 /* TripDayPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000167 /* TripDayPickerView.swift */; };
 		BB00016A /* TripsMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000169 /* TripsMapView.swift */; };
 		BB00016C /* TripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00016B /* TripsView.swift */; };
+		TS00B01 /* TripShareNearbyConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R01 /* TripShareNearbyConfig.swift */; };
+		TS00B02 /* TripSharePackage.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R02 /* TripSharePackage.swift */; };
+		TS00B03 /* TripNearbyShareSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R03 /* TripNearbyShareSessionController.swift */; };
+		TS00B04 /* TripNearbyShareViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R04 /* TripNearbyShareViews.swift */; };
 		BB00016E /* CitySearchHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00016D /* CitySearchHelper.swift */; };
 		BB000170 /* LocationManagerForOnboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00016F /* LocationManagerForOnboarding.swift */; };
 		BB000172 /* MapWithCenterSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000171 /* MapWithCenterSelector.swift */; };
@@ -289,6 +294,10 @@
 		BB000167 /* TripDayPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDayPickerView.swift; sourceTree = "<group>"; };
 		BB000169 /* TripsMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsMapView.swift; sourceTree = "<group>"; };
 		BB00016B /* TripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsView.swift; sourceTree = "<group>"; };
+		TS00R01 /* TripShareNearbyConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripShareNearbyConfig.swift; sourceTree = "<group>"; };
+		TS00R02 /* TripSharePackage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripSharePackage.swift; sourceTree = "<group>"; };
+		TS00R03 /* TripNearbyShareSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareSessionController.swift; sourceTree = "<group>"; };
+		TS00R04 /* TripNearbyShareViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareViews.swift; sourceTree = "<group>"; };
 		BB00016D /* CitySearchHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitySearchHelper.swift; sourceTree = "<group>"; };
 		BB00016F /* LocationManagerForOnboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManagerForOnboarding.swift; sourceTree = "<group>"; };
 		BB000171 /* MapWithCenterSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapWithCenterSelector.swift; sourceTree = "<group>"; };
@@ -343,6 +352,7 @@
 		BB0001EB /* PhotoQualityScorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoQualityScorer.swift; sourceTree = "<group>"; };
 		BB0001ED /* GoogleAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleAuthManager.swift; sourceTree = "<group>"; };
 		BB0001EF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A1B2C3D52F9E1000010001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		BB0001F0 /* AuthUser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthUser.swift; sourceTree = "<group>"; };
 		BB0001F2 /* APIManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIManager.swift; sourceTree = "<group>"; };
 		BB0001F4 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
@@ -469,6 +479,7 @@
 				BB000103 /* fastblogApp.swift */,
 				BB00022D /* SplashStateManager.swift */,
 				BB0001EF /* Info.plist */,
+				A1B2C3D52F9E1000010001 /* PrivacyInfo.xcprivacy */,
 				BB000219 /* Secrets.xcconfig */,
 				BB0001B0 /* Models */,
 				BB0001B1 /* ViewModels */,
@@ -582,6 +593,7 @@
 				BB000167 /* TripDayPickerView.swift */,
 				BB000169 /* TripsMapView.swift */,
 				BB00016B /* TripsView.swift */,
+				TS00R04 /* TripNearbyShareViews.swift */,
 				BB0002F6 /* NewMomentsPullUpViews.swift */,
 				BB0001C3 /* UndoOverlayView.swift */,
 				BB00020D /* UnsavedTripCard.swift */,
@@ -681,6 +693,9 @@
 				BB0001A5 /* TripPhotoFilter.swift */,
 				BB0001A7 /* TripPhotoFilterTests.swift */,
 				BB0001A9 /* TripPhotoSelectionService.swift */,
+				TS00R01 /* TripShareNearbyConfig.swift */,
+				TS00R02 /* TripSharePackage.swift */,
+				TS00R03 /* TripNearbyShareSessionController.swift */,
 				BB000218 /* SecureShareToken.swift */,
 				F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */,
 				4E34776F396319FBEE2FCECD /* StoryCaptionGenerator.swift */,
@@ -783,6 +798,7 @@
 				037E252E2F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf in Resources */,
 				037E252F2F70FD0600C7E8B8 /* delosound-trap-travel-378471.mp3 in Resources */,
 				037E251F2F70FACD00C7E8B8 /* burtysounds-happy-124917.mp3 in Resources */,
+				A1B2C3D52F9E1000010002 /* PrivacyInfo.xcprivacy in Resources */,
 				BB0001AC /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -863,6 +879,10 @@
 				BB000168 /* TripDayPickerView.swift in Sources */,
 				BB00016A /* TripsMapView.swift in Sources */,
 				BB00016C /* TripsView.swift in Sources */,
+				TS00B01 /* TripShareNearbyConfig.swift in Sources */,
+				TS00B02 /* TripSharePackage.swift in Sources */,
+				TS00B03 /* TripNearbyShareSessionController.swift in Sources */,
+				TS00B04 /* TripNearbyShareViews.swift in Sources */,
 				BB00016E /* CitySearchHelper.swift in Sources */,
 				BB000170 /* LocationManagerForOnboarding.swift in Sources */,
 				BB000172 /* MapWithCenterSelector.swift in Sources */,

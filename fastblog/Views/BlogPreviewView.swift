@@ -45,6 +45,7 @@ struct BlogPreviewView: View {
         }
         .navigationDestination(isPresented: $showRecapBlogPage) {
             RecapBlogPageView(blogId: trip.id, initialTrip: trip)
+                .environmentObject(TripNearbyShareSessionController.shared)
         }
         .safeAreaInset(edge: .bottom) {
             Button {

@@ -115,11 +115,15 @@ struct fastblogApp: App {
                 .environmentObject(authStateManager)
                 .environmentObject(createdRecapStore)
                 .environmentObject(splashManager)
+                .environmentObject(TripNearbyShareSessionController.shared)
                 .onOpenURL { url in
                     if let token = Self.parseResetPasswordToken(from: url) {
                         DispatchQueue.main.async { pendingResetToken = token }
                     } else if let jwt = Self.parseVerifyEmailToken(from: url) {
                         Task { await authService.loginWithVerificationToken(jwt) }
+                    } else if Self.isReceiveTripURL(url) {
+                        let code = Self.parseReceiveTripCode(from: url)
+                        TripNearbyShareSessionController.shared.handleReceiveTripDeepLink(code: code)
                     } else {
                         _ = GoogleAuthManager.handleURL(url)
                     }
@@ -322,5 +326,24 @@ struct fastblogApp: App {
             !token.isEmpty
         else { return nil }
         return token
+    }
+
+    private static func isReceiveTripURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "fastblog" else { return false }
+        return url.host?.lowercased() == "receive-trip"
+    }
+
+    /// Parses `fastblog://receive-trip?code=ABCDEF` (code optional). Returns nil if absent.
+    private static func parseReceiveTripCode(from url: URL) -> String? {
+        guard isReceiveTripURL(url) else { return nil }
+        guard
+            let raw = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .first(where: { $0.name == "code" })?
+                .value?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !raw.isEmpty
+        else { return nil }
+        return raw
     }
 }

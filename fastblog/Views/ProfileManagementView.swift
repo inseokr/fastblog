@@ -247,6 +247,7 @@ struct ProfileManagementView: View {
                     blogId: blog.sourceTripId,
                     initialTrip: createdRecapStore.tripDraft(for: blog.sourceTripId)
                 )
+                .environmentObject(TripNearbyShareSessionController.shared)
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

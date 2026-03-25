@@ -164,6 +164,9 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
     var orderIndex: Int
     var placeTitle: String
     var placeSubtitle: String?
+    /// When true, prevents reverse-geocoding from overwriting `placeTitle/placeSubtitle`.
+    /// Used so nearby-share imports can preserve the sender's edited place names.
+    var placeTitleIsManual: Bool
     var representativeLocation: PhotoCoordinate?
     var photos: [RecapPhoto]
     var noteText: String?
@@ -185,6 +188,7 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         orderIndex: Int,
         placeTitle: String,
         placeSubtitle: String? = nil,
+        placeTitleIsManual: Bool = false,
         representativeLocation: PhotoCoordinate? = nil,
         photos: [RecapPhoto],
         noteText: String? = nil,
@@ -198,6 +202,7 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         self.orderIndex = orderIndex
         self.placeTitle = placeTitle
         self.placeSubtitle = placeSubtitle
+        self.placeTitleIsManual = placeTitleIsManual
         self.representativeLocation = representativeLocation
         self.photos = photos
         self.noteText = noteText

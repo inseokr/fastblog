@@ -1,0 +1,348 @@
+//
+//  TripNearbyShareViews.swift
+//  fastblog
+//
+//  UI for QR + Multipeer nearby trip sharing (host sheet, receive sheet, QR image).
+//
+
+import CoreImage
+import CoreImage.CIFilterBuiltins
+import SwiftUI
+
+// MARK: - QR
+
+enum TripShareQRCodeGenerator {
+    static func image(from string: String, scale: CGFloat = 8) -> UIImage? {
+        let data = Data(string.utf8)
+        let filter = CIFilter.qrCodeGenerator()
+        filter.setValue(data, forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let output = filter.outputImage else { return nil }
+        let scaled = output.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let ctx = CIContext()
+        guard let cg = ctx.createCGImage(scaled, from: scaled.extent) else { return nil }
+        return UIImage(cgImage: cg)
+    }
+}
+
+struct TripShareQRCodeView: View {
+    let payload: String
+
+    var body: some View {
+        Group {
+            if let ui = TripShareQRCodeGenerator.image(from: payload) {
+                Image(uiImage: ui)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 200, maxHeight: 200)
+                    .padding(12)
+                    .background(Color.white)
+                    .cornerRadius(12)
+            } else {
+                Text("Could not build QR")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+// MARK: - Host
+
+struct TripNearbyShareHostSheet: View {
+    let recap: RecapBlogDetail
+    @ObservedObject var controller: TripNearbyShareSessionController
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Nearby share")
+                        .font(.title2)
+                        .fontWeight(.bold)
+
+                    Text(
+                        "Have your friend open Bloggo, scan this QR (or enter the code), then accept on both phones. Photos and trip details transfer over an encrypted device-to-device link on Wi‑Fi or Bluetooth."
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                    if let url = controller.receiveURLForQR {
+                        VStack(spacing: 12) {
+                            TripShareQRCodeView(payload: url.absoluteString)
+                                .frame(maxWidth: .infinity)
+                            Text("Code: \(controller.sessionCode)")
+                                .font(.title)
+                                .fontWeight(.semibold)
+                                .monospaced()
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+
+                    switch controller.phase {
+                    case .hostingPreparing:
+                        ProgressView("Preparing trip…")
+                            .frame(maxWidth: .infinity)
+                    case .hostingAdvertising:
+                        Label("Waiting for a nearby device…", systemImage: "antenna.radiowaves.left.and.right")
+                            .foregroundStyle(.secondary)
+                    case .hostingConnected(let name):
+                        Label("Connected to \(name)", systemImage: "link")
+                            .foregroundStyle(.blue)
+                    case .transferring(let cur, let total):
+                        ProgressView(value: Double(cur), total: Double(total)) {
+                            Text("Sending photos \(cur) of \(total)")
+                        }
+                    case .succeeded:
+                        Label("Trip sent successfully", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    case .failed(let msg):
+                        Text(msg)
+                            .foregroundStyle(.red)
+                    default:
+                        EmptyView()
+                    }
+                }
+                .padding()
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        controller.cancel()
+                        dismiss()
+                    }
+                }
+            }
+            .overlay {
+                if let invite = controller.hostInvitation {
+                    hostInviteOverlay(peerName: invite.peerName, decide: invite.decide)
+                }
+            }
+        }
+        .onAppear {
+            controller.startHosting(recapDetail: recap)
+        }
+        .onDisappear {
+            controller.cancel()
+        }
+    }
+
+    private func hostInviteOverlay(peerName: String, decide: @escaping (Bool) -> Void) -> some View {
+        ZStack {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+            VStack(spacing: 16) {
+                Text("Allow connection?")
+                    .font(.headline)
+                Text("\(peerName) wants to receive “\(recap.title)”.")
+                    .font(.subheadline)
+                    .multilineTextAlignment(.center)
+                HStack(spacing: 12) {
+                    Button("Decline", role: .cancel) {
+                        decide(false)
+                    }
+                    .buttonStyle(.bordered)
+                    Button("Accept") {
+                        decide(true)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(24)
+            .background(.ultraThinMaterial)
+            .cornerRadius(16)
+            .padding(32)
+        }
+    }
+}
+
+// MARK: - Receive
+
+struct TripNearbyShareReceiveSheet: View {
+    @ObservedObject var controller: TripNearbyShareSessionController
+    @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
+    @Environment(\.dismiss) private var dismiss
+    @State private var codeInput: String = ""
+    /// User chose to skip copying imports to the Camera Roll for this completed transfer.
+    @State private var skippedCameraRollOffer = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("6-character code", text: $codeInput)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .font(.title3.monospaced())
+                } header: {
+                    Text("From the sender’s QR")
+                }
+
+                Section {
+                    Button("Look for nearby device") {
+                        controller.startReceiving(filterCode: codeInput)
+                    }
+                    .disabled(codeInput.trimmingCharacters(in: .whitespacesAndNewlines).count != 6)
+
+                    if case let .failed(msg) = controller.phase {
+                        Text(msg)
+                            .foregroundStyle(.red)
+                    }
+
+                    switch controller.phase {
+                    case .receivingBrowsing:
+                        HStack {
+                            ProgressView()
+                            Text("Searching…")
+                        }
+                    case .receivingConnected(let name):
+                        Text("Connected to \(name)")
+                    case .transferring(let cur, let total):
+                        ProgressView(value: Double(cur), total: Double(total)) {
+                            Text("Receiving photos \(cur) of \(total)")
+                        }
+                    case .succeeded:
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Trip added to your blogs.")
+                                .foregroundStyle(.green)
+
+                            if !controller.recentlyImportedCaptureIds.isEmpty, !skippedCameraRollOffer {
+                                switch controller.gallerySaveStatus {
+                                case .idle:
+                                    Text(
+                                        "Optional: copy \(controller.recentlyImportedCaptureIds.count) imported photo\(controller.recentlyImportedCaptureIds.count == 1 ? "" : "s") to your Camera Roll. They stay in Bloggo either way."
+                                    )
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+
+                                    Button {
+                                        Task {
+                                            if !photoAuth.isAuthorized {
+                                                await photoAuth.requestAccess()
+                                            }
+                                            controller.saveRecentlyImportedToPhotoLibrary()
+                                        }
+                                    } label: {
+                                        Text("Save to Camera Roll")
+                                            .frame(maxWidth: .infinity)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .disabled(controller.gallerySaveStatus == .saving)
+
+                                    Button("Not now") {
+                                        skippedCameraRollOffer = true
+                                    }
+                                    .foregroundStyle(.secondary)
+                                case .saving:
+                                    HStack {
+                                        ProgressView()
+                                        Text("Saving to Camera Roll…")
+                                    }
+                                    .foregroundStyle(.secondary)
+                                case .succeeded(let count):
+                                    Label(
+                                        "Saved \(count) photo\(count == 1 ? "" : "s") to Camera Roll",
+                                        systemImage: "checkmark.circle.fill"
+                                    )
+                                    .foregroundStyle(.green)
+                                case .failed(let msg):
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text(msg)
+                                            .foregroundStyle(.red)
+                                        Button("Try again") {
+                                            Task {
+                                                if !photoAuth.isAuthorized {
+                                                    await photoAuth.requestAccess()
+                                                }
+                                                controller.saveRecentlyImportedToPhotoLibrary()
+                                            }
+                                        }
+                                        .buttonStyle(.bordered)
+                                        Button("Not now") {
+                                            skippedCameraRollOffer = true
+                                        }
+                                        .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    default:
+                        EmptyView()
+                    }
+                }
+            }
+            .navigationTitle("Receive trip")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        controller.cancel()
+                        controller.dismissReceiveDeepLinkPresentation()
+                        dismiss()
+                    }
+                }
+            }
+            .overlay {
+                if let consent = controller.guestManifestConsent {
+                    guestConsentOverlay(
+                        manifest: consent.0,
+                        sender: consent.1,
+                        decide: consent.2
+                    )
+                }
+            }
+        }
+        .onAppear {
+            if !controller.deepLinkPrefillCode.isEmpty {
+                codeInput = controller.deepLinkPrefillCode
+            }
+        }
+        .onChange(of: controller.phase) { _, newPhase in
+            switch newPhase {
+            case .idle, .receivingBrowsing:
+                skippedCameraRollOffer = false
+            default:
+                break
+            }
+        }
+    }
+
+    private func guestConsentOverlay(
+        manifest: TripShareRecapManifestV1,
+        sender: String,
+        decide: @escaping (Bool) -> Void
+    ) -> some View {
+        ZStack {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+            VStack(spacing: 14) {
+                Text("Import trip?")
+                    .font(.headline)
+                Text("“\(manifest.tripTitle)” — \(manifest.photos.count) photos from \(sender).")
+                    .font(.subheadline)
+                    .multilineTextAlignment(.center)
+                Text("Only accept if you trust this person. Data is sent directly between phones.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                HStack(spacing: 12) {
+                    Button("Decline", role: .cancel) {
+                        decide(false)
+                    }
+                    .buttonStyle(.bordered)
+                    Button("Import") {
+                        decide(true)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(24)
+            .background(.ultraThinMaterial)
+            .cornerRadius(16)
+            .padding(28)
+        }
+    }
+}

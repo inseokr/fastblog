@@ -22,6 +22,9 @@ struct TripsView: View {
     @State private var selectedTrip: TripDraft?
     @State private var createBlogFlowTrip: TripDraft?
     @State private var mapPosition: MapCameraPosition = .automatic
+    /// Gates map visibility — map is hidden until its initial position is explicitly set,
+    /// preventing the MapKit auto-fit animation from the default .automatic position.
+    @State private var mapInitialPositionReady = false
     @State private var tripForPopup: TripDraft?
     @State private var selectedTripID: UUID?
     /// When true, skip the map-animate-to-trip in onChange (to avoid loop when map pan drives selection).
@@ -405,9 +408,22 @@ struct TripsView: View {
 
     // MARK: - Main Content
 
+    private static let emptyStateBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
+
     private var mainContentStack: some View {
         ZStack(alignment: .bottom) {
-            mapViewLayer
+            // Skip the map entirely when there are no trips — MapKit animates from a default
+            // region (top-left corner expanding to bottom-right) when mapPosition is .automatic
+            // with no annotations, which creates a jarring transition after scanning.
+            if allTrips.isEmpty {
+                Self.emptyStateBackground.ignoresSafeArea()
+            } else {
+                // Hide the map until its initial position is explicitly set — prevents the
+                // MapKit .automatic camera flying in from a default region before onAppear fires.
+                Self.emptyStateBackground.ignoresSafeArea()
+                mapViewLayer
+                    .opacity(mapInitialPositionReady ? 1 : 0)
+            }
             VStack(spacing: 0) {
                 // When limited, reserve fixed top space so hiding the banner doesn’t cause header jump
                 if photoAuth.status == .limited {
@@ -427,6 +443,7 @@ struct TripsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
+        .animation(.easeInOut(duration: 0.4), value: allTrips.isEmpty)
     }
 
     private var mainContent: some View {
@@ -655,17 +672,27 @@ struct TripsView: View {
         .ignoresSafeArea()
         .onAppear {
             // Only set initial selection once — skip on re-appear (e.g. after fullScreenCover dismiss)
-            guard selectedTripID == nil else { return }
+            guard selectedTripID == nil else {
+                mapInitialPositionReady = true
+                return
+            }
             let trips = allTrips
             if let preferredTrip = preferredTrip(from: trips) {
                 selectedTripID = preferredTrip.id
 
-                // Restore the last visible trip when possible; otherwise use the newest trip.
+                // Use disablesAnimations so the camera jumps instantly to the trip region
+                // instead of flying in from the .automatic default position.
                 if let center = preferredTrip.centerCoordinate {
                     let span = MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
-                    mapPosition = .region(MKCoordinateRegion(center: center, span: span))
+                    var t = Transaction()
+                    t.disablesAnimations = true
+                    withTransaction(t) {
+                        mapPosition = .region(MKCoordinateRegion(center: center, span: span))
+                    }
                 }
             }
+            // Reveal the map now that its position is set (prevents fly-in from .automatic).
+            mapInitialPositionReady = true
         }
         // Handle the case where trips arrive after onAppear (scan data published after scanState flips to idle)
         .onChange(of: viewModel.visibleDraftTripsNewestFirst) { _, newTrips in
@@ -682,6 +709,8 @@ struct TripsView: View {
                         mapPosition = .region(MKCoordinateRegion(center: center, span: span))
                     }
                 }
+                // Trips arrived after onAppear — reveal the map now that position is set.
+                mapInitialPositionReady = true
             }
             // If trips load in after the initial appearance, show the intro once.
             if !tripsIntroSeenForCurrentIdentity, !newTrips.isEmpty, viewModel.scanState == .idle, !showTripsIntroSheet {

@@ -45,6 +45,7 @@ struct RecapBlogPageView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @EnvironmentObject private var authService: AuthService
     @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
+    @EnvironmentObject private var nearbyShare: TripNearbyShareSessionController
     @Environment(\.dismiss) private var dismiss
 
     @State private var draft: RecapBlogDetail
@@ -58,6 +59,8 @@ struct RecapBlogPageView: View {
     @State private var managePhotosEditInfo: ManagePhotosEditInfo?
     @State private var isEditMode = true
     @State private var showBlogSettings = false
+    @State private var recapForNearbyHostShare: RecapBlogDetail?
+    @State private var showNearbyShareUnavailableAlert = false
     @State private var showShareSheet = false
     @State private var showEditPhotoFlow = false
     @State private var fullScreenMapDay: RecapBlogDay?
@@ -377,6 +380,7 @@ struct RecapBlogPageView: View {
             }) {
                 ProfileManagementView()
                     .environmentObject(createdRecapStore)
+                    .environmentObject(nearbyShare)
             }
     }
 
@@ -428,6 +432,11 @@ struct RecapBlogPageView: View {
                 }
             } message: {
                 Text("Create an account or sign in to export your blog as PDF.")
+            }
+            .alert("Can’t share this trip", isPresented: $showNearbyShareUnavailableAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Nearby sharing needs at least one included photo that is still on this device (or saved in Bloggo). Photos that exist only in the cloud aren’t sent peer-to-peer.")
             }
             .overlay {
                 if showUnprocessedDayAlert {
@@ -545,8 +554,26 @@ struct RecapBlogPageView: View {
                         // Persist after a place is restored from the Restore Places sheet
                         createdRecapStore.saveBlogDetail(draft)
                         syncWithCloudIfNeeded()
-                    }
+                    },
+                    onShareNearby: blogHasBeenSaved
+                        ? {
+                            let hasAnyExportableIncludedPhoto = draft.days
+                                .flatMap(\.placeStops)
+                                .flatMap(\.photos)
+                                .contains { $0.isIncluded && !(($0.localIdentifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+                            guard hasAnyExportableIncludedPhoto else {
+                                showBlogSettings = false
+                                showNearbyShareUnavailableAlert = true
+                                return
+                            }
+                            showBlogSettings = false
+                            recapForNearbyHostShare = draft
+                        }
+                        : nil
                 )
+            }
+            .sheet(item: $recapForNearbyHostShare) { recap in
+                TripNearbyShareHostSheet(recap: recap, controller: nearbyShare)
             }
             .sheet(isPresented: $showTitleChange, onDismiss: {
                 createdRecapStore.saveBlogDetail(draft)
@@ -2117,6 +2144,7 @@ struct RecapBlogPageView: View {
                 var day = draft.days[i]
                 var stop = day.placeStops[j]
                 stop.placeTitle = title
+                stop.placeTitleIsManual = true
                 if let category { stop.placeCategory = category }
                 if let coordinate {
                     stop.representativeLocation = PhotoCoordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
@@ -2152,6 +2180,7 @@ struct RecapBlogPageView: View {
                         var day = draft.days[i]
                         var stop = day.placeStops[j]
                         stop.placeTitle = newValue
+                        stop.placeTitleIsManual = true
                         day.placeStops[j] = stop
                         draft.days[i] = day
                         return
@@ -3205,6 +3234,11 @@ struct RecapBlogPageView: View {
         return blog.cloudState == .localOnly
     }
 
+    /// Nearby share is only offered after the user has saved the blog at least once.
+    private var blogHasBeenSaved: Bool {
+        createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt != nil
+    }
+
     private var currentBlogKey: Int? {
         createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.blogKey
     }
@@ -3936,5 +3970,6 @@ private struct NewMomentsReviewSheet: View {
     NavigationStack {
         RecapBlogPageView(blogId: UUID(), initialTrip: nil)
             .environmentObject(CreatedRecapBlogStore.shared)
+            .environmentObject(TripNearbyShareSessionController.shared)
     }
 }
