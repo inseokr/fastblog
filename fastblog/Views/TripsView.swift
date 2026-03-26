@@ -111,6 +111,12 @@ struct TripsView: View {
         viewModel.visibleDraftTripsNewestFirst
     }
 
+    /// When false, `TripsMapView` must not be in the hierarchy: MapKit still animates
+    /// `.automatic` with zero annotations (corner “growing” artifact) even if `allTrips` is non-empty.
+    private var hasTripsPlottableOnMap: Bool {
+        allTrips.contains { $0.centerCoordinate != nil }
+    }
+
     /// True when the newest trip’s latest date is in the current month — used to hide "Load newer trips" when already in current month.
     private var latestTripIsInCurrentMonth: Bool {
         guard let first = allTrips.first, let latest = first.latestDate else { return false }
@@ -284,7 +290,9 @@ struct TripsView: View {
                 .transition(.opacity.animation(.easeInOut(duration: 0.4)))
             } else {
                 mainContent
-                    .transition(.opacity.animation(.easeInOut(duration: 0.4)))
+                    // Instant handoff when the scan finds zero trips — avoids opacity lerp + MapKit
+                    // layering glitches; keep a short fade when the map-backed scene appears.
+                    .transition(allTrips.isEmpty ? .identity : .opacity.animation(.easeInOut(duration: 0.4)))
             }
         }
         .navigationDestination(item: $selectedTrip) { trip in
@@ -408,14 +416,34 @@ struct TripsView: View {
 
     // MARK: - Main Content
 
-    private static let emptyStateBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
+    fileprivate static let emptyStateBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
 
-    private var mainContentStack: some View {
+    /// Shared top banner slot + bottom carousel / empty CTA (used with and without the map).
+    private var tripsForegroundChrome: some View {
+        VStack(spacing: 0) {
+            // When limited, reserve fixed top space so hiding the banner doesn’t cause header jump
+            if photoAuth.status == .limited {
+                ZStack {
+                    if showLimitedBannerAfterWeakScan {
+                        limitedAccessHelper
+                            .transition(.opacity)
+                    }
+                }
+                .frame(minHeight: 76)
+                .animation(.easeInOut(duration: 0.25), value: showLimitedBannerAfterWeakScan)
+                .padding(.top, 60)
+            }
+            Spacer()
+            bottomOverlay
+        }
+    }
+
+    /// Trips list non-empty: map (when plottable) + chrome. Never used when `allTrips` is empty.
+    private var populatedTripsMainStack: some View {
         ZStack(alignment: .bottom) {
-            // Skip the map entirely when there are no trips — MapKit animates from a default
-            // region (top-left corner expanding to bottom-right) when mapPosition is .automatic
-            // with no annotations, which creates a jarring transition after scanning.
-            if allTrips.isEmpty {
+            // Skip the map when nothing can be annotated — same MapKit .automatic artifact as
+            // an empty trip list if we mount the map with zero annotations.
+            if !hasTripsPlottableOnMap {
                 Self.emptyStateBackground.ignoresSafeArea()
             } else {
                 // Hide the map until its initial position is explicitly set — prevents the
@@ -424,30 +452,62 @@ struct TripsView: View {
                 mapViewLayer
                     .opacity(mapInitialPositionReady ? 1 : 0)
             }
-            VStack(spacing: 0) {
-                // When limited, reserve fixed top space so hiding the banner doesn’t cause header jump
-                if photoAuth.status == .limited {
-                    ZStack {
-                        if showLimitedBannerAfterWeakScan {
-                            limitedAccessHelper
-                                .transition(.opacity)
-                        }
-                    }
-                    .frame(minHeight: 76)
-                    .animation(.easeInOut(duration: 0.25), value: showLimitedBannerAfterWeakScan)
-                    .padding(.top, 60)
-                }
-                Spacer()
-                bottomOverlay
-            }
+            tripsForegroundChrome
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
-        .animation(.easeInOut(duration: 0.4), value: allTrips.isEmpty)
+        .onChange(of: hasTripsPlottableOnMap) { _, plottable in
+            if !plottable {
+                mapInitialPositionReady = false
+            }
+        }
     }
 
     private var mainContent: some View {
-        mainContentStack
+        Group {
+            if allTrips.isEmpty {
+                TripsNoTripsScene(
+                    photoAuth: photoAuth,
+                    showLimitedBannerAfterWeakScan: showLimitedBannerAfterWeakScan,
+                    limitedBanner: { limitedAccessHelper },
+                    bottomChrome: { bottomOverlay }
+                )
+            } else {
+                populatedTripsMainStack
+                    // Bi-directional sync: carousel scroll → map camera (map exists only on this branch).
+                    .onChange(of: selectedTripID) { _, newID in
+                        if newID != nil {
+                            viewModel.lastSelectedVisibleTripID = newID
+                        }
+                        // Skip popup on the initial programmatic selection that happens in onAppear.
+                        // Only real user carousel swipes (not map-pan or initial load) should trigger it.
+                        guard didCompleteInitialSelection else {
+                            didCompleteInitialSelection = true
+                            return
+                        }
+                        guard !suppressMapAnimation else {
+                            suppressMapAnimation = false
+                            return
+                        }
+                        guard let trip = allTrips.first(where: { $0.id == newID }),
+                              let coord = trip.centerCoordinate else { return }
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        // Lock out map-region callbacks while we animate to prevent the intermediate
+                        // camera positions from bouncing the carousel back mid-swipe.
+                        isAnimatingMapFromCarousel = true
+                        withAnimation(.easeInOut(duration: 0.5)) {
+                            mapPosition = .region(MKCoordinateRegion(
+                                center: coord,
+                                span: MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
+                            ))
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+                            isAnimatingMapFromCarousel = false
+                        }
+                    }
+            }
+        }
+        .id(allTrips.isEmpty ? "trips_scene_empty" : "trips_scene_populated")
         .navigationTitle("Trips")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -601,37 +661,6 @@ struct TripsView: View {
             } else if newState != .idle {
                 // Hide banner while a new scan is running
                 showLimitedBannerAfterWeakScan = false
-            }
-        }
-        // Bi-directional sync: carousel scroll → map camera
-        .onChange(of: selectedTripID) { _, newID in
-            if newID != nil {
-                viewModel.lastSelectedVisibleTripID = newID
-            }
-            // Skip popup on the initial programmatic selection that happens in onAppear.
-            // Only real user carousel swipes (not map-pan or initial load) should trigger it.
-            guard didCompleteInitialSelection else {
-                didCompleteInitialSelection = true
-                return
-            }
-            guard !suppressMapAnimation else {
-                suppressMapAnimation = false
-                return
-            }
-            guard let trip = allTrips.first(where: { $0.id == newID }),
-                  let coord = trip.centerCoordinate else { return }
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            // Lock out map-region callbacks while we animate to prevent the intermediate
-            // camera positions from bouncing the carousel back mid-swipe.
-            isAnimatingMapFromCarousel = true
-            withAnimation(.easeInOut(duration: 0.5)) {
-                mapPosition = .region(MKCoordinateRegion(
-                    center: coord,
-                    span: MKCoordinateSpan(latitudeDelta: 0.15, longitudeDelta: 0.15)
-                ))
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
-                isAnimatingMapFromCarousel = false
             }
         }
     }
@@ -3821,6 +3850,41 @@ private struct SessionGalleryView: View {
         if !matchingIds.isEmpty {
             store.removePhotos(ids: matchingIds)
         }
+    }
+}
+
+// MARK: - No trips (map-free scene)
+
+/// Separate type so SwiftUI never hosts `TripsMapView` / MapKit when the carousel has zero trips.
+private struct TripsNoTripsScene<Banner: View, Bottom: View>: View {
+    @ObservedObject var photoAuth: PhotosAuthorizationManager
+    let showLimitedBannerAfterWeakScan: Bool
+    @ViewBuilder let limitedBanner: () -> Banner
+    @ViewBuilder let bottomChrome: () -> Bottom
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            TripsView.emptyStateBackground
+                .ignoresSafeArea()
+            VStack(spacing: 0) {
+                if photoAuth.status == .limited {
+                    ZStack {
+                        if showLimitedBannerAfterWeakScan {
+                            limitedBanner()
+                                .transition(.opacity)
+                        }
+                    }
+                    .frame(minHeight: 76)
+                    .animation(.easeInOut(duration: 0.25), value: showLimitedBannerAfterWeakScan)
+                    .padding(.top, 60)
+                }
+                Spacer()
+                bottomChrome()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
+        .transaction { $0.disablesAnimations = true }
     }
 }
 

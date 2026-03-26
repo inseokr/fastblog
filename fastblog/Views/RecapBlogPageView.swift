@@ -2230,13 +2230,13 @@ struct RecapBlogPageView: View {
             onCancel: {
                 dayCaptionEditItem = nil
             },
-            onEnhance: { userText in
+            onEnhance: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
                 guard let day = draft.days.first(where: { $0.id == item.dayId }) else { return userText }
                 return await StoryCaptionService.shared.enhanceDaySummary(day: day, userText: userText)
-            },
-            onEnhanceApplied: {
+            } : nil,
+            onEnhanceApplied: LocalLLMStoryCaptionGenerator.isCapable ? {
                 createdRecapStore.saveBlogDetail(draft)
-            }
+            } : nil
         )
     }
 
@@ -2257,15 +2257,15 @@ struct RecapBlogPageView: View {
             onCancel: {
                 placeCaptionEditItem = nil
             },
-            onEnhance: { userText in
+            onEnhance: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
                 guard let currentStop = placeStop(dayId: item.dayId, stopId: item.stopId),
                       let dayDate = draft.days.first(where: { $0.id == item.dayId })?.date else { return userText }
                 let captions = currentStop.photos.filter(\.isIncluded).map { $0.caption ?? "" }
                 return await StoryCaptionService.shared.enhanceOverallPlaceStory(stop: currentStop, userText: userText, dayDate: dayDate, photoCaptions: captions)
-            },
-            onEnhanceApplied: {
+            } : nil,
+            onEnhanceApplied: LocalLLMStoryCaptionGenerator.isCapable ? {
                 markOverallStoryAI(dayId: item.dayId, stopId: item.stopId)
-            }
+            } : nil
         )
     }
 

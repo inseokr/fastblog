@@ -22,10 +22,12 @@ import FoundationModels
 final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unchecked Sendable {
     static let shared = LocalLLMStoryCaptionGenerator()
 
-    /// Returns true when the on-device LLM (Apple Intelligence, iOS 26+) is available on this device.
+    /// Returns true when the on-device LLM (Apple Intelligence, iOS 26+) is available and enabled on this device.
     static var isCapable: Bool {
 #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) { return true }
+        if #available(iOS 26.0, *) {
+            if case .available = SystemLanguageModel.default.availability { return true }
+        }
 #endif
         return false
     }
