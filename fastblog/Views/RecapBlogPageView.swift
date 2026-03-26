@@ -120,6 +120,14 @@ struct RecapBlogPageView: View {
     @State private var showPDFExportOptions = false
     @State private var showStoryMode = false
     @State private var showStoryModePDFOptions = false
+    @State private var showShareYourBlogSheet = false
+    @State private var showShareCreateAccountAlert = false
+    @State private var showCloudSharingComingSoonAlert = false
+    @State private var pendingWebLinkAfterAuth = false
+    @State private var pendingWebLinkShareAfterUpload = false
+    @State private var showBloggoQRSheet = false
+    @State private var qrSaveStatusMessage = ""
+    @State private var showQRSaveStatusAlert = false
     @State private var storyShareTrigger = false
     @State private var storyContentReady = false
     @State private var storyChromeVisible = true
@@ -223,49 +231,45 @@ struct RecapBlogPageView: View {
                         .ignoresSafeArea()
 
                     // Custom chrome: close + share, snapped below status bar, hidden in read mode.
-                    if storyChromeVisible {
-                        GeometryReader { geo in
-                            VStack(spacing: 0) {
-                                HStack {
+                    GeometryReader { geo in
+                        VStack(spacing: 0) {
+                            HStack {
+                                Button {
+                                    showStoryMode = false
+                                    storyContentReady = false
+                                    storyChromeVisible = true
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.body.weight(.semibold))
+                                        .foregroundColor(.white)
+                                        .frame(width: 36, height: 36)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+
+                                Spacer()
+
+                                if storyContentReady {
                                     Button {
-                                        showStoryMode = false
-                                        storyContentReady = false
-                                        storyChromeVisible = true
+                                        storyShareTrigger = true
                                     } label: {
-                                        Image(systemName: "xmark")
-                                            .font(.body.weight(.semibold))
-                                            .foregroundColor(.white)
-                                            .frame(width: 36, height: 36)
-                                            .contentShape(Rectangle())
+                                        HStack(spacing: 5) {
+                                            Image(systemName: "arrow.up.doc")
+                                                .font(.subheadline.weight(.semibold))
+                                            Text("Export")
+                                                .font(.subheadline.weight(.semibold))
+                                        }
+                                        .foregroundColor(.white)
                                     }
                                     .buttonStyle(.plain)
-
-                                    Spacer()
-
-                                    if storyContentReady {
-                                        Button {
-                                            storyShareTrigger = true
-                                        } label: {
-                                            HStack(spacing: 5) {
-                                                Image(systemName: "square.and.arrow.up")
-                                                    .font(.subheadline.weight(.semibold))
-                                                Text("Share")
-                                                    .font(.subheadline.weight(.semibold))
-                                            }
-                                            .foregroundColor(.white)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
                                 }
-                                .padding(.horizontal, 16)
-                                .padding(.top, geo.safeAreaInsets.top + storyChromeTopOffset)
-                                Spacer()
                             }
+                            .padding(.horizontal, 16)
+                            .padding(.top, geo.safeAreaInsets.top + storyChromeTopOffset)
+                            Spacer()
                         }
-                        .ignoresSafeArea(edges: .top)
-                        .transition(.opacity)
-                        .animation(.easeInOut(duration: 0.2), value: storyChromeVisible)
                     }
+                    .ignoresSafeArea(edges: .top)
                 }
                 .zIndex(200)
             }
@@ -314,6 +318,10 @@ struct RecapBlogPageView: View {
                             pendingCloudUploadAfterAuth = false
                             showAuth = false
                             handleCloudUploadTap()
+                        } else if pendingWebLinkAfterAuth {
+                            pendingWebLinkAfterAuth = false
+                            showAuth = false
+                            handleShareWebLinkTap()
                         } else if pendingExportAfterAuth {
                             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                             Task { @MainActor in
@@ -334,6 +342,7 @@ struct RecapBlogPageView: View {
                         if pendingEarlyAccessAfterAuth {
                             earlyAccessSheetPresented = false
                         }
+                        pendingWebLinkAfterAuth = false
                         showAuth = false
                     },
                     hostControlsDismiss: true
@@ -361,6 +370,11 @@ struct RecapBlogPageView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
+            .sheet(isPresented: $showShareYourBlogSheet) {
+                shareYourBlogSheetContent()
+                    .presentationDetents([.height(360)])
+                    .presentationDragIndicator(.visible)
+            }
             .sheet(isPresented: $showStoryModePDFOptions, onDismiss: {
                 if pendingStoryOpen {
                     pendingStoryOpen = false
@@ -381,6 +395,11 @@ struct RecapBlogPageView: View {
                 ProfileManagementView()
                     .environmentObject(createdRecapStore)
                     .environmentObject(nearbyShare)
+            }
+            .sheet(isPresented: $showBloggoQRSheet) {
+                shareWithBloggoQRCodeSheet()
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
             }
     }
 
@@ -432,6 +451,39 @@ struct RecapBlogPageView: View {
                 }
             } message: {
                 Text("Create an account or sign in to export your blog as PDF.")
+            }
+            .alert("Create an account to share", isPresented: $showShareCreateAccountAlert) {
+                Button("Create Account") {
+                    showShareCreateAccountAlert = false
+                    pendingWebLinkAfterAuth = true
+                    showAuth = true
+                }
+                Button("Cancel", role: .cancel) {
+                    showShareCreateAccountAlert = false
+                }
+            } message: {
+                Text("Web link sharing requires a Bloggo account and early cloud access.")
+            }
+            .alert("Cloud sharing coming soon", isPresented: $showCloudSharingComingSoonAlert) {
+                Button("Join Early Access") {
+                    showCloudSharingComingSoonAlert = false
+                    Task {
+                        await EarlyAccessManager.shared.registerWaitlist()
+                        await MainActor.run {
+                            hasJoinedEarlyAccess = true
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    showCloudSharingComingSoonAlert = false
+                }
+            } message: {
+                Text("We’re gradually releasing web sharing to early users.")
+            }
+            .alert("QR Saved", isPresented: $showQRSaveStatusAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(qrSaveStatusMessage)
             }
             .alert("Can’t share this trip", isPresented: $showNearbyShareUnavailableAlert) {
                 Button("OK", role: .cancel) {}
@@ -1093,12 +1145,12 @@ struct RecapBlogPageView: View {
                             }
 
                             Button {
-                                showStoryModePDFOptions = true
+                                showShareYourBlogSheet = true
                             } label: {
                                 HStack(spacing: 6) {
                                     Image(systemName: "book.pages")
                                         .font(.system(size: 14, weight: .medium))
-                                    Text("Story Mode")
+                                    Text("Share Your Blog")
                                         .font(.subheadline)
                                         .fontWeight(.medium)
                                 }
@@ -1984,6 +2036,244 @@ struct RecapBlogPageView: View {
             }
         }
         return [shareText]
+    }
+
+    private var hasEarlyCloudAccess: Bool {
+        hasJoinedEarlyAccess || EarlyAccessManager.shared.hasRegistered
+    }
+
+    @ViewBuilder
+    private func shareYourBlogSheetContent() -> some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 6) {
+                Text("Share Your Blog")
+                    .font(.title3.weight(.semibold))
+                    .foregroundColor(.primary)
+                Text("Choose how you want to share")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.top, 12)
+            .padding(.bottom, 18)
+
+            VStack(spacing: 0) {
+                shareOptionRow(
+                    title: "Export as PDF",
+                    subtitle: "Create a printable storybook",
+                    icon: "doc.richtext"
+                ) {
+                    showShareYourBlogSheet = false
+                    showStoryModePDFOptions = true
+                }
+                Divider().padding(.leading, 52)
+                shareOptionRow(
+                    title: "Share Web Link",
+                    subtitle: "Publish and share online",
+                    icon: "link"
+                ) {
+                    showShareYourBlogSheet = false
+                    handleShareWebLinkTap()
+                }
+                Divider().padding(.leading, 52)
+                shareOptionRow(
+                    title: "Share with Bloggo",
+                    subtitle: "Open instantly in the app",
+                    icon: "qrcode"
+                ) {
+                    showShareYourBlogSheet = false
+                    showBloggoQRSheet = true
+                }
+            }
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .cornerRadius(14)
+            .padding(.horizontal, 20)
+
+            Spacer(minLength: 18)
+        }
+        .padding(.top, 8)
+        .preferredColorScheme(.dark)
+    }
+
+    private func shareOptionRow(
+        title: String,
+        subtitle: String,
+        icon: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 28)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func handleShareWebLinkTap() {
+        guard authService.isSignedIn else {
+            showShareCreateAccountAlert = true
+            return
+        }
+        guard hasEarlyCloudAccess else {
+            showCloudSharingComingSoonAlert = true
+            return
+        }
+        startWebLinkShareFlow()
+    }
+
+    private func startWebLinkShareFlow() {
+        guard !isUploading else { return }
+        if blogIsInCloud {
+            presentWebLinkShareSheetIfPossible()
+        } else {
+            uploadBlogPhotos(openShareAfterSuccess: true)
+        }
+    }
+
+    private func presentWebLinkShareSheetIfPossible() {
+        if blogIsInCloud,
+           let blog = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }),
+           blog.blogKey != nil {
+            showShareSheet = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                showShareSheet = true
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func shareWithBloggoQRCodeSheet() -> some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                HStack(spacing: 12) {
+                    Image("Blogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 28, height: 28)
+                    Image("SplashIcon")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 28, height: 28)
+                    Image("Blogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 28, height: 28)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 2)
+
+                Text("Sharing Between Bloggo Users")
+                    .font(.title3.weight(.semibold))
+                    .foregroundColor(.primary)
+
+                Text("Share your blog with friends who use Bloggo.\n\nThey can scan the QR code to open the blog instantly in the app.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+
+                Group {
+                    if let url = nearbyShare.receiveURLForQR {
+                        if let image = TripShareQRCodeGenerator.image(from: url.absoluteString, scale: 12) {
+                            Image(uiImage: image)
+                                .interpolation(.none)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 180, height: 180)
+                                .padding(16)
+                                .background(Color.white)
+                                .cornerRadius(14)
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            Text("Could not build QR")
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 24)
+                        }
+                    } else {
+                        ProgressView("Preparing QR…")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 24)
+                    }
+                }
+                .padding(.top, 6)
+
+                HStack(spacing: 12) {
+                    Button {
+                        showBloggoQRSheet = false
+                    } label: {
+                        Text("Close")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color(uiColor: .secondarySystemBackground))
+                            .cornerRadius(12)
+                    }
+
+                    Button {
+                        Task { await saveBloggoQRToPhotos() }
+                    } label: {
+                        Text("Save QR")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.blue)
+                            .cornerRadius(12)
+                    }
+                    .disabled(nearbyShare.receiveURLForQR == nil)
+                }
+                .padding(.top, 8)
+
+                Spacer(minLength: 4)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .onAppear {
+                nearbyShare.startHosting(recapDetail: draft)
+            }
+            .onDisappear {
+                nearbyShare.cancel()
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func saveBloggoQRToPhotos() async {
+        guard let url = nearbyShare.receiveURLForQR,
+              let image = TripShareQRCodeGenerator.image(from: url.absoluteString, scale: 12) else {
+            qrSaveStatusMessage = "Could not generate QR image."
+            showQRSaveStatusAlert = true
+            return
+        }
+
+        if !photoAuth.isAuthorized {
+            await photoAuth.requestAccess()
+        }
+        guard photoAuth.isAuthorized else {
+            qrSaveStatusMessage = "Photos permission is required to save the QR."
+            showQRSaveStatusAlert = true
+            return
+        }
+
+        UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+        qrSaveStatusMessage = "QR code saved to your Photos."
+        showQRSaveStatusAlert = true
     }
 
     private func saveDraft() {
@@ -3323,9 +3613,10 @@ struct RecapBlogPageView: View {
         }
     }
 
-    private func uploadBlogPhotos() {
+    private func uploadBlogPhotos(openShareAfterSuccess: Bool = false) {
         guard !isUploading else { return }
         guard authService.isSignedIn else { return }
+        pendingWebLinkShareAfterUpload = openShareAfterSuccess
 
         // 🚨 Free Tier Guardrails
         if EntitlementManager.shared.isFreeTier {
@@ -3366,6 +3657,10 @@ struct RecapBlogPageView: View {
         if photosToUpload.isEmpty {
             // Already fully uploaded
             withAnimation { showUploadSuccessBanner = true }
+            if pendingWebLinkShareAfterUpload {
+                pendingWebLinkShareAfterUpload = false
+                presentWebLinkShareSheetIfPossible()
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
                 withAnimation { showUploadSuccessBanner = false }
             }
@@ -3407,10 +3702,15 @@ struct RecapBlogPageView: View {
                 let snapshot = draft
                 let currentBlogId = blogId
                 let isFirstBlog = !hasUploadedFirstBlog
+                let shouldOpenWebShare = pendingWebLinkShareAfterUpload
                 Task {
                     if let blogKey = await APIManager.shared.publishBlog(detail: snapshot) {
                         await MainActor.run {
                             createdRecapStore.setBlogKey(blogId: currentBlogId, blogKey: blogKey)
+                            if shouldOpenWebShare {
+                                pendingWebLinkShareAfterUpload = false
+                                presentWebLinkShareSheetIfPossible()
+                            }
                         }
                         if isFirstBlog {
                             // Wait for the fullScreenCover dismiss animation to finish
@@ -3435,6 +3735,7 @@ struct RecapBlogPageView: View {
             if failCount > 0 {
                 uploadErrorMessage = "\(failCount) photo\(failCount == 1 ? "" : "s") failed to upload. Tap the cloud button to retry."
                 showUploadErrorAlert = true
+                pendingWebLinkShareAfterUpload = false
             } else {
                 withAnimation { showUploadSuccessBanner = true }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 4) {

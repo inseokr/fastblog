@@ -24,6 +24,12 @@ struct LoadingScanView: View {
     @State private var pulseScale: CGFloat = 1
     @State private var stepLabelIndex: Int = 0
     @State private var nodeFade: [Bool] = [false, false, false]
+    @State private var showSlowScanHint = false
+    @State private var slowScanHintTask: Task<Void, Never>? = nil
+
+    /// Shows the secondary "taking longer" hint only after the user experience delay threshold.
+    /// Derived from ~15% over a typical ~4s scan duration (tunable).
+    private let slowScanHintDelay: TimeInterval = 4.0 * 1.15
 
     private let timerStepLabels = [
         "Organizing…",
@@ -106,7 +112,8 @@ struct LoadingScanView: View {
                         }
                     }
                 }
-                .offset(y: 220)
+                // Keep the text block below the scan animation so it doesn't overlap.
+                .offset(y: 240)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -143,6 +150,12 @@ struct LoadingScanView: View {
         .preferredColorScheme(.dark)
         .onAppear {
             startAnimations()
+            scheduleSlowScanHint()
+        }
+        .onDisappear {
+            slowScanHintTask?.cancel()
+            slowScanHintTask = nil
+            showSlowScanHint = false
         }
     }
 
@@ -235,6 +248,16 @@ struct LoadingScanView: View {
                     .foregroundColor(.white.opacity(0.35))
                     .padding(.top, 4)
             }
+
+            if showSlowScanHint {
+                Text("Taking a little longer than expected. Please wait…")
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.55))
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 6)
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.25), value: showSlowScanHint)
+            }
         }
         .padding(.horizontal, 32)
     }
@@ -264,6 +287,25 @@ struct LoadingScanView: View {
                     withAnimation(.easeInOut(duration: 0.3)) {
                         stepLabelIndex = idx
                     }
+                }
+            }
+        }
+    }
+
+    private func scheduleSlowScanHint() {
+        slowScanHintTask?.cancel()
+        showSlowScanHint = false
+
+        slowScanHintTask = Task { [slowScanHintDelay] in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(slowScanHintDelay * 1_000_000_000))
+            } catch {
+                return
+            }
+
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    showSlowScanHint = true
                 }
             }
         }

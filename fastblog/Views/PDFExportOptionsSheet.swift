@@ -146,7 +146,7 @@ struct PDFExportOptionsSheet: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.down.doc.fill")
-                Text("Open Book")
+                Text("Preview")
                     .fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity)
