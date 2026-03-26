@@ -138,7 +138,7 @@ struct AuthView: View {
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
 
-            Text("Export as PDFs · Secure cloud backup · Edit on desktop · Access from any device")
+            Text("Sign up for early access to secure cloud uploads · Edit on desktop · Access from any device")
                 .font(.subheadline)
                 .foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)

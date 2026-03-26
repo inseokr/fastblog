@@ -51,6 +51,29 @@ struct LandingView: View {
 
     private let landingBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
 
+    /// Used to keep the "Blog Your Trips in Seconds" alternate CTA off smaller iPhones.
+    /// iPhone Pro Max models have wider point bounds than non-Max models.
+    private var isIPhoneMax: Bool {
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return false }
+        return UIScreen.main.bounds.width >= 420
+    }
+
+    private var showAlternateSecondsCTA: Bool {
+        showAlternateText && isIPhoneMax
+    }
+
+    /// Used to keep the centered "Tap to Blog" circle from feeling cramped
+    /// against the "Latest Edits" section on smaller (6.1") iPhone heights.
+    private var isCompactIPhone61: Bool {
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return false }
+        // 6.1" models are non-Max and have shorter point heights than Pro Max (and larger).
+        return UIScreen.main.bounds.width < 420 && UIScreen.main.bounds.height < 900
+    }
+
+    private var scanCTAOffsetY: CGFloat {
+        isCompactIPhone61 ? -18 : 0
+    }
+
     var body: some View {
         ZStack {
             landingBackground
@@ -58,6 +81,7 @@ struct LandingView: View {
 
             // EXACT CENTER CONTENT
             scanCTA
+                .offset(y: scanCTAOffsetY)
 
             // Top bar and Footer
             VStack {
@@ -359,7 +383,7 @@ struct LandingView: View {
                 )
                 
                 if photoAuth.status == .limited {
-                    Text(showAlternateText ? "Blog Your Trips in Seconds" : "Select Photos to Blog")
+                    Text(showAlternateSecondsCTA ? "Blog Your Trips in Seconds" : "Select Photos to Blog")
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
@@ -367,7 +391,7 @@ struct LandingView: View {
                         .frame(maxWidth: .infinity)
                         .offset(y: -156)
                 } else {
-                    Text(showAlternateText ? "Blog Your Trips in Seconds" : "Tap to Blog")
+                    Text(showAlternateSecondsCTA ? "Blog Your Trips in Seconds" : "Tap to Blog")
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
@@ -466,7 +490,7 @@ struct LandingView: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
-        .padding(.bottom, 16)
+        .safeAreaPadding(.bottom, 16)
     }
 }
 
@@ -561,7 +585,7 @@ struct CreatedRecapCard: View {
 private struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var authService: AuthService
-    @State private var showNeighborhoodSheet = false
+    @State private var showNeighborhoodFlow = false
     @State private var showAuth = false
     @State private var showDeleteAccountAlert = false
     @State private var showAdminDashboard = false
@@ -733,9 +757,12 @@ private struct SettingsView: View {
                 }
 
                 Section {
-                    Button {
-                        showNeighborhoodSheet = true
-                    } label: {
+                    NavigationLink(
+                        destination: NeighborhoodIntroView(onDismiss: {
+                            showNeighborhoodFlow = false
+                        }),
+                        isActive: $showNeighborhoodFlow
+                    ) {
                         HStack {
                             VStack(alignment: .leading, spacing: 8) {
                                 Label("Neighborhood", systemImage: "mappin.circle.fill")
@@ -746,9 +773,6 @@ private struct SettingsView: View {
                                 }
                             }
                             Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
                         }
                     }
                 } header: {
@@ -842,11 +866,6 @@ private struct SettingsView: View {
                 }
             }
             .preferredColorScheme(.dark)
-            .sheet(isPresented: $showNeighborhoodSheet) {
-                NeighborhoodIntroView(onDismiss: {
-                    showNeighborhoodSheet = false
-                })
-            }
             .sheet(isPresented: $showAuth) {
                 AuthView(onAuthenticated: {
                     showAuth = false

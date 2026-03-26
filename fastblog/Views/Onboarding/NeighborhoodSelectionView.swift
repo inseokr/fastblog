@@ -4,6 +4,7 @@
 //
 
 import CoreLocation
+import UIKit
 import MapKit
 import SwiftUI
 
@@ -23,6 +24,19 @@ struct NeighborhoodSelectionView: View {
     @State private var resolvePlaceTask: Task<Void, Never>?
     @FocusState private var isFocused: Bool
     @State private var isMapRevealed = false
+    private var settingsBackground: Color {
+        Color(uiColor: .systemGroupedBackground)
+    }
+    private var titleTopPadding: CGFloat {
+        // When embedded in the Settings navigation stack, a navigation bar back button exists
+        // already, so we need less vertical padding to keep the search UI higher.
+        onBack == nil ? 0 : OnboardingConstants.Layout.titleTopPadding
+    }
+    
+    private var titleToSearchSpacing: CGFloat {
+        // Pull Search + "Use Current Location" upward when we rely on the nav bar.
+        onBack == nil ? 12 : OnboardingConstants.Layout.spacingBetweenTitleAndSearch
+    }
 
     init(onSelect: @escaping () -> Void, onBack: (() -> Void)? = nil) {
         self.onSelect = onSelect
@@ -56,7 +70,7 @@ struct NeighborhoodSelectionView: View {
                 doneButtonAtBottom
             }
         }
-        .background(OnboardingConstants.Colors.background)
+        .background(settingsBackground)
         .preferredColorScheme(.dark)
         .onAppear {
             locationManager.requestLocation()
@@ -97,7 +111,7 @@ struct NeighborhoodSelectionView: View {
     }
 
     private var topSection: some View {
-        VStack(spacing: OnboardingConstants.Layout.spacingBetweenTitleAndSearch) {
+        VStack(spacing: titleToSearchSpacing) {
             ZStack {
                 if let onBack = onBack {
                     HStack {
@@ -117,7 +131,7 @@ struct NeighborhoodSelectionView: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
             }
-            .padding(.top, OnboardingConstants.Layout.titleTopPadding)
+            .padding(.top, titleTopPadding)
 
             searchField
             if isResolvingPlace {
@@ -127,7 +141,7 @@ struct NeighborhoodSelectionView: View {
             }
         }
         .padding(.horizontal, OnboardingConstants.Layout.horizontalPadding)
-        .padding(.bottom, 24)
+        .padding(.bottom, onBack == nil ? 14 : 24)
     }
 
     private var searchField: some View {

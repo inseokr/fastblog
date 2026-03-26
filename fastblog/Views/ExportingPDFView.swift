@@ -86,7 +86,7 @@ struct ExportingPDFView: View {
 
     private var messageSection: some View {
         VStack(spacing: 8) {
-            Text("Opening Sharing Options...")
+            Text("Opening Exporting Options...")
                 .font(.title2)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
