@@ -2678,6 +2678,7 @@ struct RecapBlogPageView: View {
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.body.weight(.semibold))
+                    .foregroundColor(.white)
             }
         }
         ToolbarItem(placement: .principal) {

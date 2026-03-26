@@ -271,8 +271,10 @@ private struct FreeTierDetailSheet: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
+                        .foregroundColor(.white)
                 }
             }
+            .preferredColorScheme(.dark)
         }
     }
 

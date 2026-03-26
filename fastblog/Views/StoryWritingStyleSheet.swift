@@ -173,6 +173,7 @@ struct StoryWritingStyleSheet: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 14))
+                        .foregroundColor(.white)
                 }
             }
         }

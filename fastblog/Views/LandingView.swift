@@ -838,8 +838,10 @@ private struct SettingsView: View {
                     Button("Done") {
                         dismiss()
                     }
+                    .foregroundColor(.white)
                 }
             }
+            .preferredColorScheme(.dark)
             .sheet(isPresented: $showNeighborhoodSheet) {
                 NeighborhoodIntroView(onDismiss: {
                     showNeighborhoodSheet = false
