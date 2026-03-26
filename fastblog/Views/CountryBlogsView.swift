@@ -52,6 +52,8 @@ struct CountryBlogsView: View {
     // Year filter support
     @State private var selectedYear: Int? = nil
 
+    private let darkNavy = Color(red: 5/255, green: 10/255, blue: 48/255)
+
     // Search filter (driven by parent's shared search bar)
     // searchText is a @Binding — no local @State needed
 
@@ -123,7 +125,7 @@ struct CountryBlogsView: View {
                         .padding(.horizontal)
                         .padding(.vertical, 12)
                     }
-                    .background(Color(uiColor: .systemBackground))
+                    .background(darkNavy)
 
                     Divider()
                 }
@@ -217,6 +219,7 @@ struct CountryBlogsView: View {
         }
         } // end ZStack
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showUndoBanner)
+        .background(darkNavy)
         .background(InteractivePopGestureDisabler())
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
