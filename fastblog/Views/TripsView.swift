@@ -175,6 +175,17 @@ struct TripsView: View {
                 }
             }
             .overlay {
+                if viewModel.isVisitedCityScanning {
+                    LoadingScanView(
+                        message: "Finding your trip…",
+                        isOverlay: true,
+                        progress: viewModel.visitedCityScanProgress,
+                        onCancel: { viewModel.cancelVisitedCityScan() }
+                    )
+                    .transition(.opacity)
+                }
+            }
+            .overlay {
                 if viewModel.isLoadingOlderTrips {
                     LoadingScanView(
                         message: "Finding older trips…",
@@ -344,8 +355,16 @@ struct TripsView: View {
                 nextTripIDAfterCreation = nil
             }
         }
+        .sheet(isPresented: $viewModel.showVisitedCitiesSheet) {
+            VisitedCitiesSheet(viewModel: viewModel)
+        }
         .sheet(isPresented: $viewModel.showFindMoreSheet) {
             FindMoreTripsSheet(viewModel: viewModel)
+        }
+        .onChange(of: viewModel.pendingVisitedCitiesCreateTrip) { _, newTrip in
+            guard let trip = newTrip else { return }
+            createBlogFlowTrip = trip
+            viewModel.clearPendingVisitedCitiesCreateTrip()
         }
         .sheet(isPresented: $showTripsIntroSheet, onDismiss: {
             // Treat any dismissal path (swipe down, tap outside, Continue button) as "seen"
@@ -528,18 +547,20 @@ struct TripsView: View {
                 .opacity((showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips) ? 0 : 1)
                 .disabled(showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips)
             }
-            if photoAuth.status != .limited {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    if photoAuth.status == .limited {
+                        presentLimitedLibraryPicker()
+                    } else {
                         viewModel.openFindMoreSheet()
-                    } label: {
-                        Image(systemName: "sparkle.magnifyingglass")
-                            .font(.body)
-                            .foregroundColor(.white)
                     }
-                    .opacity((showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips) ? 0 : 1)
-                    .disabled(showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips)
+                } label: {
+                    Image(systemName: photoAuth.status == .limited ? "photo.badge.plus" : "sparkle.magnifyingglass")
+                        .font(.headline)
+                        .foregroundColor(.white)
                 }
+                .opacity((showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips) ? 0 : 1)
+                .disabled(showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips)
             }
             // Scan Debug ladybug — hidden for now; set to DEBUG to show.
             #if false
@@ -865,7 +886,7 @@ struct TripsView: View {
                 }
                 tripCarousel
             }
-            findMoreTripsButton
+            visitedCitiesButton
         }
         .padding(.bottom, 8)
         .background(
@@ -1004,20 +1025,20 @@ struct TripsView: View {
         )
     }
 
-    // MARK: - Find More Trips CTA
+    // MARK: - Visited Cities CTA
 
-    private var findMoreTripsButton: some View {
+    private var visitedCitiesButton: some View {
         Button {
             if photoAuth.status == .limited {
                 presentLimitedLibraryPicker()
             } else {
-                viewModel.openFindMoreSheet()
+                viewModel.openVisitedCitiesSheet()
             }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: photoAuth.status == .limited ? "photo.badge.plus" : "sparkle")
-                    .font(.system(size: 14, weight: .semibold))
-                Text(photoAuth.status == .limited ? "Select More Photos" : "Find More New Blogs")
+                Image(systemName: photoAuth.status == .limited ? "photo.badge.plus" : "sparkle.magnifyingglass")
+                    .font(.system(size: 18, weight: .semibold))
+                Text(photoAuth.status == .limited ? "Select More Photos" : "More Memories")
                     .font(.subheadline)
                     .fontWeight(.semibold)
             }

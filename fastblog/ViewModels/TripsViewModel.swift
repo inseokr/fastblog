@@ -184,6 +184,23 @@ final class TripsViewModel: ObservableObject {
     /// True when the new-moments sheet was shown from the Create blog tap (so "Later" should open the pending create flow).
     @Published var newMomentsSheetTriggeredByCreateButton: Bool = false
 
+    // MARK: - Visited Cities
+
+    /// Controls presentation of the Visited Cities sheet.
+    @Published var showVisitedCitiesSheet: Bool = false
+    /// City/trip candidates built from the lightweight N-year scan.
+    @Published var visitedCityTrips: [VisitedCityTrip] = []
+    /// Current build state of the visited-cities scan.
+    @Published var visitedCitiesBuildState: VisitedCitiesBuildState = .idle
+    /// The calendar year currently loaded in the visited-cities sheet (e.g. 2025).
+    @Published var visitedCitiesYear: Int = Calendar.current.component(.year, from: Date())
+    /// True while a full trip scan (triggered by tapping a city row) is in progress.
+    @Published var isVisitedCityScanning: Bool = false
+    /// Progress (0–1) of the active visited-city trip scan.
+    @Published var visitedCityScanProgress: Double = 0
+    /// Draft trip built from selected place cards in Places Visited.
+    @Published var pendingVisitedCitiesCreateTrip: TripDraft? = nil
+
     /// Clears the new-moments signal after the user has ACTED on it (Go to Blog / Go to Trip).
     /// Persists the blog notification cutoff so the same photos are not surfaced again.
     func clearNewMomentsSignal() {
@@ -471,6 +488,10 @@ final class TripsViewModel: ObservableObject {
 
     /// Tracks the running Find More scan task so it can be cancelled.
     private var findMoreScanTask: Task<Void, Never>?
+    /// Tracks the running visited-cities build task so it can be cancelled.
+    private var visitedCitiesBuildTask: Task<Void, Never>?
+    /// Tracks the running visited-city trip-scan task so it can be cancelled.
+    private var visitedCityScanTask: Task<Void, Never>?
     /// Tracks the running load-older scan task so it can be cancelled.
     private var loadOlderScanTask: Task<Void, Never>?
     /// Tracks the running load-newer scan task so it can be cancelled.
@@ -738,7 +759,7 @@ final class TripsViewModel: ObservableObject {
         }
         showSelectPhotosIntroAfterScan = true
         scanState = .scanningDefault
-        loadingMessage = "Loading your trips…"
+        loadingMessage = "Loading your recent trips…"
         defaultScanProgress = 0
         newlyScannedPhotos = []
         newMomentsMatchedBlog = nil
@@ -1564,6 +1585,228 @@ final class TripsViewModel: ObservableObject {
     func dismissFindMoreSheet() {
         showFindMoreSheet = false
         findMoreScanResult = .none
+    }
+
+    // MARK: - Visited Cities
+
+    /// Opens the sheet and starts building the city list if not already done.
+    func openVisitedCitiesSheet() {
+        showVisitedCitiesSheet = true
+    }
+
+    /// Loads visited cities for `year`. Returns immediately if cached;
+    /// otherwise starts a background scan. Clears previous trips before scanning.
+    func loadVisitedCities(year: Int) {
+        visitedCitiesBuildTask?.cancel()
+        visitedCitiesBuildTask = nil
+        visitedCitiesYear = year
+
+        if let cached = VisitedCitiesService.shared.loadCached(userId: currentUserId, year: year) {
+            visitedCityTrips = cached
+            visitedCitiesBuildState = .done
+            return
+        }
+
+        visitedCityTrips = []
+        visitedCitiesBuildState = .building(0)
+        visitedCitiesBuildTask = Task {
+            let trips = await VisitedCitiesService.shared.buildVisitedCities(year: year) { [weak self] p in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if case .building = self.visitedCitiesBuildState {
+                        self.visitedCitiesBuildState = .building(p)
+                    }
+                }
+            }
+            guard !Task.isCancelled else { return }
+            VisitedCitiesService.shared.saveCache(trips, userId: currentUserId, year: year)
+            visitedCityTrips = trips
+            visitedCitiesBuildState = .done
+        }
+    }
+
+    /// Clears cache for the current year and re-runs the scan.
+    func refreshVisitedCities() {
+        VisitedCitiesService.shared.clearCache(userId: currentUserId, year: visitedCitiesYear)
+        loadVisitedCities(year: visitedCitiesYear)
+    }
+
+    /// Walks `visitedCityTrips` outward from `cityTrip` and merges all neighbors
+    /// that are part of the same continuous travel block.
+    ///
+    /// "Continuous" is measured by counting uncovered calendar days between consecutive
+    /// trips — days that no detected trip spans. This day-by-day count is more reliable
+    /// than a raw date-diff because some days silently disappear from detection when
+    /// photos lack valid GPS metadata. A threshold of 5 uncovered days tolerates those
+    /// gaps without merging unrelated trips.
+    private func continuousDateRange(for cityTrip: VisitedCityTrip) -> (start: Date, end: Date) {
+        let maxUncoveredDays = 5
+        let cal = Calendar.current
+        let sorted = visitedCityTrips.sorted { $0.startDate < $1.startDate }
+        guard let idx = sorted.firstIndex(where: { $0.id == cityTrip.id }) else {
+            return (cityTrip.startDate, cityTrip.endDate)
+        }
+
+        // Build a set of every calendar day that is covered by at least one detected trip.
+        var coveredDays = Set<Date>()
+        for trip in sorted {
+            var day = cal.startOfDay(for: trip.startDate)
+            let end = cal.startOfDay(for: trip.endDate)
+            while day <= end {
+                coveredDays.insert(day)
+                day = cal.date(byAdding: .day, value: 1, to: day)!
+            }
+        }
+
+        /// Counts calendar days in the open interval (from, to) that are NOT in coveredDays.
+        func uncoveredDays(from: Date, to: Date) -> Int {
+            var count = 0
+            var day = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: from))!
+            let limit = cal.startOfDay(for: to)
+            while day < limit {
+                if !coveredDays.contains(day) { count += 1 }
+                day = cal.date(byAdding: .day, value: 1, to: day)!
+            }
+            return count
+        }
+
+        var lo = idx
+        var hi = idx
+
+        while lo > 0 {
+            let gap = uncoveredDays(from: sorted[lo - 1].endDate, to: sorted[lo].startDate)
+            if gap <= maxUncoveredDays { lo -= 1 } else { break }
+        }
+        while hi < sorted.count - 1 {
+            let gap = uncoveredDays(from: sorted[hi].endDate, to: sorted[hi + 1].startDate)
+            if gap <= maxUncoveredDays { hi += 1 } else { break }
+        }
+        return (sorted[lo].startDate, sorted[hi].endDate)
+    }
+
+    /// Runs a full trip scan over the continuous block of visited-city trips that
+    /// surrounds the tapped entry (neighboring places with ≤ 2-day gaps are included).
+    func scanVisitedCityTrip(_ cityTrip: VisitedCityTrip) {
+        guard !isVisitedCityScanning else { return }
+        isVisitedCityScanning = true
+        visitedCityScanProgress = 0
+
+        let cal = Calendar.current
+        let (expandedStart, expandedEnd) = continuousDateRange(for: cityTrip)
+        // 1 day before the earliest continuous trip so transit photos are captured
+        let startDate = cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: expandedStart)) ?? expandedStart
+        // 1 day after the latest continuous trip's end
+        let endDate = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: expandedEnd)) ?? expandedEnd
+        let occupiedRanges = createdRecapStore.occupiedDateRanges()
+
+        let dbgFmt = ISO8601DateFormatter()
+        dbgFmt.formatOptions = [.withFullDate]
+        print("[VisitedCity] Tapped: \(cityTrip.displayTitle)")
+        print("[VisitedCity]   cityTrip.startDate  : \(dbgFmt.string(from: cityTrip.startDate))")
+        print("[VisitedCity]   cityTrip.endDate    : \(dbgFmt.string(from: cityTrip.endDate))")
+        print("[VisitedCity]   expandedStart       : \(dbgFmt.string(from: expandedStart))")
+        print("[VisitedCity]   expandedEnd         : \(dbgFmt.string(from: expandedEnd))")
+        print("[VisitedCity]   scan startDate      : \(dbgFmt.string(from: startDate))")
+        print("[VisitedCity]   scan endDate        : \(dbgFmt.string(from: endDate))")
+
+        visitedCityScanTask = Task {
+            let newTrips = await photoLibraryService.scanInDateRange(
+                startDate: startDate,
+                endDate: endDate,
+                occupiedDateRanges: occupiedRanges,
+                progress: { [weak self] p in
+                    Task { @MainActor [weak self] in self?.visitedCityScanProgress = p }
+                }
+            )
+            guard !Task.isCancelled else {
+                isVisitedCityScanning = false
+                return
+            }
+
+            let myDraftIds = TripDraftStore.draftTripIds()
+            let draftOnlyTrips = tripDrafts.filter { myDraftIds.contains($0.id) }
+            let existingKeys = Set(draftOnlyTrips.map { "\($0.title)|\($0.dateRangeText)" })
+            let saved = createdRecapStore.visibleRecents
+            let deduped = newTrips.filter { trip in
+                !existingKeys.contains("\(trip.title)|\(trip.dateRangeText)")
+                    && !TripMatchingService.isTripSaved(draft: trip, against: saved)
+            }
+
+            withAnimation {
+                if !deduped.isEmpty {
+                    tripDrafts = draftOnlyTrips + deduped
+                }
+                currentWindowTrips = nil
+            }
+            isVisitedCityScanning = false
+        }
+    }
+
+    /// Cancels an in-progress visited-city trip scan.
+    func cancelVisitedCityScan() {
+        visitedCityScanTask?.cancel()
+        isVisitedCityScanning = false
+        visitedCityScanProgress = 0
+    }
+
+    /// Builds a single trip from selected place cards and exposes it via
+    /// `pendingVisitedCitiesCreateTrip` for the create-blog flow.
+    /// Returns false when no photos/trips could be built in the selected range.
+    func createTripFromVisitedCitiesSelection(_ selected: [VisitedCityTrip]) async -> Bool {
+        guard !selected.isEmpty else { return false }
+        let cal = Calendar.current
+        let selectedStart = selected.map(\.startDate).min() ?? Date()
+        let selectedEnd = selected.map(\.endDate).max() ?? selectedStart
+
+        // Pad both edges to avoid clipping transit/arrival/departure moments.
+        let fetchStart = cal.date(byAdding: .day, value: -2, to: cal.startOfDay(for: selectedStart)) ?? selectedStart
+        let endOfSelectedDay = cal.date(bySettingHour: 23, minute: 59, second: 59, of: selectedEnd) ?? selectedEnd
+        let fetchEnd = cal.date(byAdding: .day, value: 2, to: endOfSelectedDay) ?? endOfSelectedDay
+
+        let scanned = await photoLibraryService.scanInDateRange(
+            startDate: fetchStart,
+            endDate: fetchEnd,
+            occupiedDateRanges: []
+        )
+
+        guard !scanned.isEmpty else { return false }
+
+        // Keep trips that overlap the selected span, then merge them into one draft.
+        let overlapping = scanned.filter { trip in
+            guard let start = trip.earliestDate else { return false }
+            let end = trip.latestDate ?? start
+            return end >= selectedStart && start <= endOfSelectedDay
+        }
+
+        guard !overlapping.isEmpty else { return false }
+        guard var merged = overlapping.first else { return false }
+        if overlapping.count > 1 {
+            for trip in overlapping.dropFirst() {
+                let (combined, _) = appendDaysFromTrip(trip, into: merged)
+                merged = combined
+            }
+        }
+
+        // Select all photos for immediate blog creation path.
+        for dayIdx in merged.days.indices {
+            for photoIdx in merged.days[dayIdx].photos.indices {
+                merged.days[dayIdx].photos[photoIdx].isSelected = true
+            }
+        }
+
+        let titleCity = selected.first?.cityName ?? merged.cityWithMostPhotosDisplayName
+        let titleCountry = selected.first?.countryName ?? (merged.primaryCountryDisplayName ?? "Trip")
+        merged.title = titleCity.isEmpty ? titleCountry : "\(titleCity), \(titleCountry)"
+        merged.coverAssetIdentifier = selected.first?.coverAssetIdentifier ?? merged.coverAssetIdentifier
+        merged.coverImageName = "photo"
+        merged.isScannedFromDefaultRange = false
+
+        pendingVisitedCitiesCreateTrip = merged
+        return true
+    }
+
+    func clearPendingVisitedCitiesCreateTrip() {
+        pendingVisitedCitiesCreateTrip = nil
     }
 
     // MARK: - Load Older Trips

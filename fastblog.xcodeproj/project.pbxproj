@@ -194,6 +194,8 @@
 		BB000301 /* AdminAnalyticsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000300 /* AdminAnalyticsDashboardView.swift */; };
 		BB000303 /* MyStatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000302 /* MyStatsView.swift */; };
 		BB0003A1 /* PDFExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003A2 /* PDFExportOptionsSheet.swift */; };
+		BB0003B1 /* VisitedCitiesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B0 /* VisitedCitiesService.swift */; };
+		BB0003B3 /* VisitedCitiesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B2 /* VisitedCitiesSheet.swift */; };
 		BB00A001 /* Analytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00A002 /* Analytics.swift */; };
 		BB00AI01 /* AnalyticsIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00AI02 /* AnalyticsIdentity.swift */; };
 		BB00F002 /* PlacesVisitedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F001 /* PlacesVisitedView.swift */; };
@@ -403,6 +405,8 @@
 		BB000300 /* AdminAnalyticsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminAnalyticsDashboardView.swift; sourceTree = "<group>"; };
 		BB000302 /* MyStatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyStatsView.swift; sourceTree = "<group>"; };
 		BB0003A2 /* PDFExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFExportOptionsSheet.swift; sourceTree = "<group>"; };
+		BB0003B0 /* VisitedCitiesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesService.swift; sourceTree = "<group>"; };
+		BB0003B2 /* VisitedCitiesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesSheet.swift; sourceTree = "<group>"; };
 		BB00A002 /* Analytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Analytics.swift; sourceTree = "<group>"; };
 		BB00AI02 /* AnalyticsIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsIdentity.swift; sourceTree = "<group>"; };
 		BB00F001 /* PlacesVisitedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacesVisitedView.swift; sourceTree = "<group>"; };
@@ -555,6 +559,7 @@
 				BB00012F /* DayChipsView.swift */,
 				BB000131 /* EditPlaceStopNameSheet.swift */,
 				BB000133 /* FindMoreTripsSheet.swift */,
+				BB0003B2 /* VisitedCitiesSheet.swift */,
 				BB000205 /* ImportDraftsModalView.swift */,
 				BB000135 /* LandingView.swift */,
 				BB000137 /* LoadingScanView.swift */,
@@ -673,6 +678,7 @@
 				BB000191 /* OnboardingStore.swift */,
 				BB000193 /* PhotoAssetService.swift */,
 				BB000195 /* PhotoLibraryTripService.swift */,
+				BB0003B0 /* VisitedCitiesService.swift */,
 				BB0001EB /* PhotoQualityScorer.swift */,
 				BB0002B0 /* SlideshowMusicPreference.swift */,
 				BB0002B4 /* SlideshowBundledMusic.swift */,
@@ -977,6 +983,8 @@
 				719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */,
 				BB0002A1 /* StoryWritingStyleSheet.swift in Sources */,
 				BB0003A1 /* PDFExportOptionsSheet.swift in Sources */,
+				BB0003B1 /* VisitedCitiesService.swift in Sources */,
+				BB0003B3 /* VisitedCitiesSheet.swift in Sources */,
 				A31B7C85BABD6199A2A43BB7 /* PDFExportService.swift in Sources */,
 				F3C02E5B4D9E5867C1F2A314 /* StoryModePDFExportService.swift in Sources */,
 				0C30D67375CF715A0AE52995 /* MapSnapshotHelper.swift in Sources */,

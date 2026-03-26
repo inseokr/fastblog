@@ -82,7 +82,6 @@ struct FindMoreTripsSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 titleSection
-                chatSection
                 limitedWarningSection  // Trigger 2: shown only when status is .limited
                 dateRangeSection
                 emptyResultSection
@@ -92,13 +91,10 @@ struct FindMoreTripsSheet: View {
 
     private var titleSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Find your blogs!")
+            Text("Find your trips!")
                 .font(.title)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
-            Text("Where would you like to go?")
-                .font(.subheadline)
-                .foregroundColor(.white.opacity(0.9))
         }
     }
 
@@ -338,7 +334,7 @@ struct FindMoreTripsSheet: View {
             Button {
                 viewModel.scanFindMoreTripsInRange()
             } label: {
-                Text("Find New Blogs")
+                Text("Find Trips")
                     .font(.headline)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
