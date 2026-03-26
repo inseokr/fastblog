@@ -8,23 +8,20 @@
 
 import SwiftUI
 
-/// The AppStorage key and default value for the user's writing style prompt.
-enum StoryWritingStyle {
-    static let storageKey = "bloggo.storyWritingStyle"
-    static let defaultPrompt = "Write like I'm sharing memories with close friends and family — casual, warm, honest, and short."
-}
-
 /// Sheet for editing the personal AI writing style prompt.
 struct StoryWritingStyleSheet: View {
     @AppStorage(StoryWritingStyle.storageKey) private var writingStyle: String = ""
+    @AppStorage(StoryWritingStyle.presetStorageKey) private var presetId: String = StoryWritingStyle.presets.first?.id ?? ""
     @Environment(\.dismiss) private var dismiss
     @FocusState private var isFocused: Bool
 
-    /// Local working copy — only committed to AppStorage when user taps Done.
+    /// Local working copy - only committed to AppStorage when user taps Done.
     @State private var tempStyle: String = ""
+    @State private var selectedPresetId: String = StoryWritingStyle.presets.first?.id ?? ""
+    @State private var useCustomPrompt = false
 
     private var hasUnsavedChanges: Bool {
-        tempStyle != writingStyle
+        tempStyle != writingStyle || selectedPresetId != normalizedStoredPresetId
     }
 
     var body: some View {
@@ -32,10 +29,8 @@ struct StoryWritingStyleSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     descriptionCard
+                    presetCard
                     editorCard
-                    if !isFocused {
-                        defaultCard
-                    }
                 }
                 .padding(20)
                 // Tap anywhere outside the TextEditor to dismiss keyboard
@@ -47,7 +42,7 @@ struct StoryWritingStyleSheet: View {
             .navigationTitle("Writing Style")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
-            .onAppear { tempStyle = writingStyle }
+            .onAppear(perform: hydrateDraft)
             .preferredColorScheme(.dark)
         }
     }
@@ -77,17 +72,65 @@ struct StoryWritingStyleSheet: View {
         .cornerRadius(12)
     }
 
-    private var editorCard: some View {
+    private var presetCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Your Prompt")
+            Text("Popular styles")
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundColor(.secondary)
                 .textCase(.uppercase)
 
+            ForEach(StoryWritingStyle.presets) { preset in
+                Button {
+                    selectedPresetId = preset.id
+                    tempStyle = preset.prompt
+                    useCustomPrompt = false
+                    isFocused = false
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(preset.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.primary)
+                            Text(preset.prompt)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(2)
+                        }
+                        Spacer()
+                        Image(systemName: selectedPresetId == preset.id && !useCustomPrompt ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(selectedPresetId == preset.id && !useCustomPrompt ? .blue : .secondary)
+                    }
+                    .padding(12)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+                    .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var editorCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Custom guideline")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+                    .textCase(.uppercase)
+                Spacer()
+                Button(useCustomPrompt ? "Using Custom" : "Use Custom") {
+                    useCustomPrompt = true
+                    if !StoryWritingStyle.presets.contains(where: { $0.prompt == tempStyle }) {
+                        selectedPresetId = StoryWritingStyle.customPresetId
+                    }
+                }
+                .font(.caption)
+            }
+
             ZStack(alignment: .topLeading) {
                 // Placeholder when empty
-                if tempStyle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if useCustomPrompt && tempStyle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text(StoryWritingStyle.defaultPrompt)
                         .font(.body)
                         .foregroundColor(.secondary.opacity(0.6))
@@ -96,18 +139,22 @@ struct StoryWritingStyleSheet: View {
                         .allowsHitTesting(false)
                 }
                 TextEditor(text: $tempStyle)
+                    .disabled(!useCustomPrompt)
                     .focused($isFocused)
                     .font(.body)
-                    .foregroundColor(.white)
+                    .foregroundColor(useCustomPrompt ? .white : .secondary)
                     .frame(minHeight: 100)
                     .scrollContentBackground(.hidden)
             }
             .padding(12)
             .background(Color(uiColor: .tertiarySystemGroupedBackground))
             .cornerRadius(10)
-            .onTapGesture { isFocused = true }
+            .onTapGesture {
+                guard useCustomPrompt else { return }
+                isFocused = true
+            }
 
-            if !tempStyle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if useCustomPrompt && !tempStyle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Button(role: .destructive) {
                     tempStyle = ""
                     isFocused = false
@@ -120,41 +167,6 @@ struct StoryWritingStyleSheet: View {
         }
     }
 
-    private var defaultCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Example prompts")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.secondary)
-                .textCase(.uppercase)
-
-            ForEach(examplePrompts, id: \.self) { example in
-                Button {
-                    tempStyle = example
-                } label: {
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "text.quote")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .padding(.top, 2)
-                        Text(example)
-                            .font(.subheadline)
-                            .foregroundColor(.primary)
-                            .multilineTextAlignment(.leading)
-                        Spacer()
-                        Image(systemName: "arrow.up.left")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(12)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground))
-                    .cornerRadius(10)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
     // MARK: - Toolbar
 
     @ToolbarContentBuilder
@@ -162,7 +174,7 @@ struct StoryWritingStyleSheet: View {
         ToolbarItem(placement: .cancellationAction) {
             if hasUnsavedChanges {
                 Button("Cancel") {
-                    tempStyle = writingStyle   // discard changes
+                    hydrateDraft()
                     isFocused = false
                     dismiss()
                 }
@@ -179,7 +191,7 @@ struct StoryWritingStyleSheet: View {
         }
         ToolbarItem(placement: .confirmationAction) {
             Button("Done") {
-                writingStyle = tempStyle       // commit changes
+                commitSelection()
                 isFocused = false
                 dismiss()
             }
@@ -187,12 +199,44 @@ struct StoryWritingStyleSheet: View {
         }
     }
 
-    // MARK: - Examples
+    private var normalizedStoredPresetId: String {
+        if !presetId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return presetId
+        }
+        if let matched = StoryWritingStyle.preset(matching: writingStyle) {
+            return matched.id
+        }
+        return StoryWritingStyle.customPresetId
+    }
 
-    private let examplePrompts: [String] = [
-        "Write like I'm sharing memories with close friends and family — casual, warm, honest, and short.",
-        "Keep it poetic and vivid — paint the atmosphere in a few words, like a travel journal entry.",
-        "Write like a funny story I'd tell at dinner — light, relatable, with a hint of humor.",
-        "Simple and heartfelt. No fancy words, just honest feelings about the moment.",
-    ]
+    private func hydrateDraft() {
+        if let preset = StoryWritingStyle.preset(for: normalizedStoredPresetId), normalizedStoredPresetId != StoryWritingStyle.customPresetId {
+            selectedPresetId = preset.id
+            tempStyle = preset.prompt
+            useCustomPrompt = false
+            return
+        }
+
+        if let matched = StoryWritingStyle.preset(matching: writingStyle) {
+            selectedPresetId = matched.id
+            tempStyle = matched.prompt
+            useCustomPrompt = false
+        } else {
+            selectedPresetId = StoryWritingStyle.customPresetId
+            tempStyle = writingStyle
+            useCustomPrompt = true
+        }
+    }
+
+    private func commitSelection() {
+        if useCustomPrompt {
+            let trimmed = tempStyle.trimmingCharacters(in: .whitespacesAndNewlines)
+            writingStyle = trimmed
+            presetId = StoryWritingStyle.customPresetId
+            return
+        }
+        let resolved = StoryWritingStyle.preset(for: selectedPresetId) ?? StoryWritingStyle.presets[0]
+        writingStyle = resolved.prompt
+        presetId = resolved.id
+    }
 }

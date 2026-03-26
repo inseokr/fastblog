@@ -8,6 +8,65 @@
 
 import Foundation
 
+// MARK: - Writing Style
+
+struct StoryWritingStylePreset: Identifiable, Equatable, Sendable {
+    let id: String
+    let title: String
+    let prompt: String
+}
+
+enum StoryWritingStyle {
+    static let storageKey = "bloggo.storyWritingStyle"
+    static let presetStorageKey = "bloggo.storyWritingStylePresetId"
+    static let customPresetId = "custom"
+
+    static let defaultPrompt = "Write like I'm sharing memories with close friends and family - casual, warm, honest, and short."
+
+    static let presets: [StoryWritingStylePreset] = [
+        StoryWritingStylePreset(
+            id: "friendly",
+            title: "Friendly",
+            prompt: "Write like I'm sharing memories with close friends and family - casual, warm, honest, and short."
+        ),
+        StoryWritingStylePreset(
+            id: "concise",
+            title: "Concise",
+            prompt: "Keep it concise and clear. Focus on the highlight of the moment in one short sentence."
+        ),
+        StoryWritingStylePreset(
+            id: "storytelling",
+            title: "Storytelling",
+            prompt: "Write like a mini travel journal - vivid details, emotional tone, and a memorable ending."
+        ),
+        StoryWritingStylePreset(
+            id: "professional",
+            title: "Professional",
+            prompt: "Use polished, confident language with clean structure while staying warm and readable."
+        ),
+        StoryWritingStylePreset(
+            id: "social",
+            title: "Social",
+            prompt: "Keep it catchy and energetic, like a short social post, while still sounding natural."
+        )
+    ]
+
+    static func preset(matching prompt: String) -> StoryWritingStylePreset? {
+        let normalized = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return nil }
+        return presets.first { $0.prompt == normalized }
+    }
+
+    static func preset(for id: String) -> StoryWritingStylePreset? {
+        presets.first { $0.id == id }
+    }
+
+    static func resolvedPrompt(storedPrompt: String) -> String {
+        let trimmed = storedPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? defaultPrompt : trimmed
+    }
+}
+
 // MARK: - Place Category
 
 /// Normalized place category used to select the right prompt modifier.
@@ -134,6 +193,7 @@ struct EnhancePhotoCaptionContext {
     /// The user's raw draft text to complete/enrich.
     let userText: String
     let tags: [String]
+    var translateOutputToEnglish: Bool = false
 }
 
 /// Input for enhancing a user-written place story.
@@ -149,6 +209,7 @@ struct EnhancePlaceStoryContext {
     let nameConfidence: PlaceNameConfidence
     let timeOfDay: String?
     let isIndoor: Bool?
+    var translateOutputToEnglish: Bool = false
 }
 
 /// Input for enhancing a user-written day story.
@@ -158,6 +219,7 @@ struct EnhanceDayStoryContext {
     let dayDateText: String
     /// Each place's overallStory or placeTitle as fallback, in visit order.
     let placeStories: [String]
+    var translateOutputToEnglish: Bool = false
 }
 
 /// Input for enhancing a user-written overall place story.
@@ -171,6 +233,7 @@ struct EnhanceOverallPlaceStoryContext {
     let dateTimeText: String
     let categoryID: PlaceCategoryID
     let nameConfidence: PlaceNameConfidence
+    var translateOutputToEnglish: Bool = false
 }
 
 // MARK: - Protocol
@@ -194,6 +257,11 @@ protocol StoryCaptionGeneratorProtocol: Sendable {
     func enhanceOverallPlaceStory(context: EnhanceOverallPlaceStoryContext) async -> String
     /// Completes and enriches the user's day story draft.
     func enhanceDaySummary(context: EnhanceDayStoryContext) async -> String
+
+    // MARK: Translate (pure translation — no enrichment or story generation)
+
+    /// Translates the user's text to English, preserving meaning and tone exactly.
+    func translateText(userText: String) async -> String
 }
 
 // MARK: - Template Fallback
@@ -291,5 +359,9 @@ final class TemplateStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 
     func enhanceDaySummary(context: EnhanceDayStoryContext) async -> String {
         context.userText
+    }
+
+    func translateText(userText: String) async -> String {
+        userText
     }
 }

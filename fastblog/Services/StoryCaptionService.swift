@@ -189,7 +189,8 @@ actor StoryCaptionService {
         photo: RecapPhoto,
         userText: String,
         placeName: String,
-        placeSubtitle: String?
+        placeSubtitle: String?,
+        translateOutputToEnglish: Bool = false
     ) async -> String {
         let tags: [String]
         if let lid = photo.localIdentifier {
@@ -197,7 +198,11 @@ actor StoryCaptionService {
         } else {
             tags = []
         }
-        let context = EnhancePhotoCaptionContext(userText: userText, tags: tags)
+        let context = EnhancePhotoCaptionContext(
+            userText: userText,
+            tags: tags,
+            translateOutputToEnglish: translateOutputToEnglish
+        )
         return await generator.enhanceCaption(context: context)
     }
 
@@ -205,7 +210,8 @@ actor StoryCaptionService {
     func enhancePlaceStory(
         stop: PlaceStop,
         userText: String,
-        dayDate: Date?
+        dayDate: Date?,
+        translateOutputToEnglish: Bool = false
     ) async -> String {
         let included = stop.photos.filter(\.isIncluded)
         var tagSet: [String] = []
@@ -242,7 +248,8 @@ actor StoryCaptionService {
             categoryID: PlaceCategoryID.from(mkCategory: stop.placeCategory, placeName: stop.placeTitle),
             nameConfidence: PlaceNameConfidence.from(placeName: stop.placeTitle),
             timeOfDay: earliestDate.map { timeOfDayLabel(from: $0, in: tz) },
-            isIndoor: isIndoor(from: tagSet)
+            isIndoor: isIndoor(from: tagSet),
+            translateOutputToEnglish: translateOutputToEnglish
         )
         return await generator.enhancePlaceStory(context: context)
     }
@@ -252,7 +259,8 @@ actor StoryCaptionService {
         stop: PlaceStop,
         userText: String,
         dayDate: Date?,
-        photoCaptions: [String]
+        photoCaptions: [String],
+        translateOutputToEnglish: Bool = false
     ) async -> String {
         let included = stop.photos.filter(\.isIncluded)
         var tagSet: [String] = []
@@ -282,13 +290,19 @@ actor StoryCaptionService {
             placeSubtitle: stop.placeSubtitle,
             dateTimeText: dateTimeText,
             categoryID: PlaceCategoryID.from(mkCategory: stop.placeCategory, placeName: stop.placeTitle),
-            nameConfidence: PlaceNameConfidence.from(placeName: stop.placeTitle)
+            nameConfidence: PlaceNameConfidence.from(placeName: stop.placeTitle),
+            translateOutputToEnglish: translateOutputToEnglish
         )
         return await generator.enhanceOverallPlaceStory(context: context)
     }
 
+    /// Translates the user's text to English without any enhancement or story generation.
+    func translateText(userText: String) async -> String {
+        await generator.translateText(userText: userText)
+    }
+
     /// Completes and enriches the user's day story draft using place stories as context.
-    func enhanceDaySummary(day: RecapBlogDay, userText: String) async -> String {
+    func enhanceDaySummary(day: RecapBlogDay, userText: String, translateOutputToEnglish: Bool = false) async -> String {
         let placeStories = day.placeStops.map { stop -> String in
             let story = stop.overallStory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return story.isEmpty ? stop.placeTitle : story
@@ -296,7 +310,8 @@ actor StoryCaptionService {
         let context = EnhanceDayStoryContext(
             userText: userText,
             dayDateText: day.shortDateText,
-            placeStories: placeStories
+            placeStories: placeStories,
+            translateOutputToEnglish: translateOutputToEnglish
         )
         return await generator.enhanceDaySummary(context: context)
     }

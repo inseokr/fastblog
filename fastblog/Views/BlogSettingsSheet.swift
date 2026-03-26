@@ -22,6 +22,7 @@ struct BlogSettingsSheet: View {
     var onShareNearby: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @AppStorage(StoryWritingStyle.storageKey) private var writingStyle: String = ""
+    @AppStorage(StoryWritingStyle.presetStorageKey) private var writingStylePresetId: String = ""
     @AppStorage(WeatherTemperatureUnit.storageKey) private var weatherTemperatureUnitRaw: String = WeatherTemperatureUnit.fahrenheit.rawValue
 
     @State private var showTitleChange = false
@@ -130,12 +131,21 @@ struct BlogSettingsSheet: View {
 
     private var writingStyleSection: some View {
         let activeStyle = writingStyle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let displayPrompt = activeStyle.isEmpty ? StoryWritingStyle.defaultPrompt : activeStyle
+        let displayPrompt = StoryWritingStyle.resolvedPrompt(storedPrompt: activeStyle)
+        let styleName = StoryWritingStyle.preset(for: writingStylePresetId)?.title
+            ?? StoryWritingStyle.preset(matching: activeStyle)?.title
+            ?? "Custom"
         return Section {
             Button {
                 showWritingStyle = true
             } label: {
-                Label("Writing Style", systemImage: "wand.and.stars")
+                HStack {
+                    Label("Writing Style", systemImage: "wand.and.stars")
+                    Spacer()
+                    Text(styleName)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
         } footer: {
             Text(displayPrompt)

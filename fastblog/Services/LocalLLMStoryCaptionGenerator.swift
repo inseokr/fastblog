@@ -124,6 +124,17 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         return await templateFallback.enhanceDaySummary(context: context)
     }
 
+    func translateText(userText: String) async -> String {
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if let result = await translateTextWithLLM(userText: userText) {
+                return result
+            }
+        }
+#endif
+        return await templateFallback.translateText(userText: userText)
+    }
+
 #if canImport(FoundationModels)
 
     // MARK: - Prompt Modifiers
@@ -476,6 +487,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         let langLine = languageInstruction(for: context.userText)
         let langInstruction = langLine.isEmpty ? "" : "\n\(langLine)"
 
+        // Only surface the place name when it is a reliable proper noun.
         let placePart: String
         switch context.nameConfidence {
         case .official, .semi:
@@ -502,10 +514,13 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         ].joined(separator: "\n\n")
 
         let prompt = """
-            The user wrote: "\(context.userText)"\(placePart)\(captionsBlock)\(langInstruction)
-            \(userWritingStyleInstruction)
+            The user wrote: "\(context.userText)"\(buildEnhanceInstructionBlock(
+                userWritingStyleInstruction: userWritingStyleInstruction,
+                languageInstruction: langLine,
+                extraContext: [placePart, captionsBlock].joined()
+            ))
 
-            Complete and enrich this into a short travel blog summary. Output only the story text.
+            Finish this travel summary. Output only the text.
             """
 
         return await runSession(instructions: instructions, prompt: prompt)
@@ -514,22 +529,27 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
     @available(iOS 26.0, *)
     private func enhanceDaySummaryWithLLM(context: EnhanceDayStoryContext) async -> String? {
         let stories = context.placeStories.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        let placesPart = stories.isEmpty ? "" : "\nPlaces visited: " + stories.prefix(5).joined(separator: ", ") + "."
-        let datePart = context.dayDateText.isEmpty ? "" : "\nDate: \(context.dayDateText)."
+        let placesPart = stories.isEmpty ? "" : "Places visited: " + stories.prefix(5).joined(separator: ", ") + "."
+        let datePart = context.dayDateText.isEmpty ? "" : "Date: \(context.dayDateText)."
         let langLine = languageInstruction(for: context.userText)
-        let langInstruction = langLine.isEmpty ? "" : "\n\(langLine)"
 
         let instructions = """
             You help people write their travel blog. \
-            A user has written a rough note about their travel day. \
-            Complete and enrich it — keep their voice, 1 short sentence only. \
-            Simple, warm, casual — like telling a friend what the day was like. \
-            No hashtags or emoji. No first person (no "I", "we", "my"). No date in the output. \
-            Output only the day story. No preamble — just the text.
+            The user has started a one-sentence summary of their travel day. Your job is to complete and enrich it. \
+            Rules (follow all strictly):
+            • Preserve every specific detail the user already wrote.
+            • Never introduce places, activities, or details that the user did NOT mention.
+            • No sentence repetition — the output must be a single, non-repetitive sentence.
+            • No date in the output. Casual, warm, like telling a friend.
+            • No hashtags. No emoji. No first person (no "I", "we", "my").
+            • Output only the finished sentence. No preamble.
             """
         let prompt = """
-            The user wrote: "\(context.userText)"\(datePart)\(placesPart)\(langInstruction)
-            \(userWritingStyleInstruction)
+            The user wrote: "\(context.userText)"\(buildEnhanceInstructionBlock(
+                userWritingStyleInstruction: userWritingStyleInstruction,
+                languageInstruction: langLine,
+                extraContext: [datePart, placesPart].filter { !$0.isEmpty }.joined(separator: "\n")
+            ))
 
             Complete this into one short day story. Output only the text.
             """
@@ -540,15 +560,46 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
     // MARK: - Session Runner
 
     @available(iOS 26.0, *)
+    private func buildEnhanceInstructionBlock(
+        userWritingStyleInstruction: String,
+        languageInstruction: String,
+        extraContext: String
+    ) -> String {
+        let context = extraContext.trimmingCharacters(in: .whitespacesAndNewlines)
+        let language = languageInstruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        var lines: [String] = []
+        if !context.isEmpty { lines.append(context) }
+        lines.append(userWritingStyleInstruction)
+        if !language.isEmpty { lines.append(language) }
+        return lines.isEmpty ? "" : "\n" + lines.joined(separator: "\n")
+    }
+
+    // MARK: - Translate
+
+    @available(iOS 26.0, *)
+    private func translateTextWithLLM(userText: String) async -> String? {
+        let instructions = """
+            You are a translator. Translate the given text to English. \
+            Output only the translated text. Preserve the original meaning and tone exactly. \
+            Do not add, remove, or change any content. No preamble — just the translation.
+            """
+        let prompt = "Translate this to English:\n\n\(userText)"
+        return await runSession(instructions: instructions, prompt: prompt)
+    }
+
+    @available(iOS 26.0, *)
     private func runSession(instructions: String, prompt: String) async -> String? {
+        print("[LLM] runSession — prompt prefix: \(prompt.prefix(120))")
         do {
             let session = LanguageModelSession(instructions: instructions)
             let response = try await session.respond(to: prompt)
             let text = response.content
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            print("[LLM] runSession — result: \(text.prefix(120))")
             return text.isEmpty ? nil : text
         } catch {
+            print("[LLM] runSession — error: \(error)")
             return nil
         }
     }

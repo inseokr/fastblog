@@ -15,13 +15,20 @@ struct DayCaptionEditSheet: View {
     @Binding var caption: String
     var onSave: () -> Void
     var onCancel: () -> Void
-    /// When provided, the Enhance button is shown. Receives current draft; returns AI-enriched text.
+    /// When provided, the Enhance button is shown.
+    /// Receives the draft; returns AI-enriched text.
     var onEnhance: ((String) async -> String)? = nil
     /// Called after AI successfully applies a result.
     var onEnhanceApplied: (() -> Void)? = nil
+    /// Pure translation — no AI story generation.
+    var onTranslate: ((String) async -> String)? = nil
 
     @State private var editedText: String = ""
     @State private var isEnhancing = false
+    @State private var isTranslating = false
+    @State private var showEnhanceStylePicker = false
+    @State private var showWritingStyleSheet = false
+    @AppStorage(StoryWritingStyle.presetStorageKey) private var stylePresetId: String = ""
     /// Captures the user's own text before the first AI run, enabling "Revert to original".
     @State private var originalDraft: String? = nil
     @FocusState private var isFocused: Bool
@@ -120,25 +127,36 @@ struct DayCaptionEditSheet: View {
                                 originalDraft = nil
                             }
                         } label: {
-                            Label("Revert", systemImage: "arrow.uturn.backward")
+                            Label("", systemImage: "arrow.uturn.backward")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
                     }
 
                     if let enhance = onEnhance {
-                        Button {
-                            if originalDraft == nil { originalDraft = editedText }
-                            let textToEnhance = editedText
-                            isEnhancing = true
-                            Task {
-                                let result = await enhance(textToEnhance)
-                                await MainActor.run {
-                                    editedText = result
-                                    isEnhancing = false
-                                    onEnhanceApplied?()
+                        Menu {
+                            ForEach(StoryWritingStyle.presets) { preset in
+                                Button {
+                                    stylePresetId = preset.id
+                                    UserDefaults.standard.set(preset.prompt, forKey: StoryWritingStyle.storageKey)
+                                } label: {
+                                    if stylePresetId == preset.id {
+                                        Label(preset.title, systemImage: "checkmark")
+                                    } else {
+                                        Text(preset.title)
+                                    }
                                 }
                             }
+                            Button("Custom...") {
+                                showWritingStyleSheet = true
+                            }
+                        } label: {
+                            Label(currentStyleTitle, systemImage: "text.quote")
+                                .font(.subheadline)
+                        }
+
+                        Button {
+                            showEnhanceStylePicker = true
                         } label: {
                             if isEnhancing {
                                 HStack(spacing: 4) {
@@ -160,14 +178,34 @@ struct DayCaptionEditSheet: View {
                                                 endPoint: .bottomTrailing
                                             )
                                         )
-                                    Text("Enhance")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                        .foregroundStyle(Color.secondary)
                                 }
                             }
                         }
-                        .disabled(isEnhancing)
+                        .disabled(isEnhancing || isTranslating)
+                    }
+
+                    if let translate = onTranslate, !trimmedEditedText.isEmpty {
+                        Button {
+                            runTranslate(translate)
+                        } label: {
+                            if isTranslating {
+                                HStack(spacing: 4) {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle())
+                                        .scaleEffect(0.75)
+                                    Text("Translating…")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                            } else {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "translate")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .disabled(isEnhancing || isTranslating)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -183,6 +221,60 @@ struct DayCaptionEditSheet: View {
             editedText = caption
             DispatchQueue.main.async {
                 isFocused = true
+            }
+        }
+        .sheet(isPresented: $showWritingStyleSheet) {
+            StoryWritingStyleSheet()
+        }
+        .confirmationDialog("Choose writing style", isPresented: $showEnhanceStylePicker, titleVisibility: .visible) {
+            Button("Use \(currentStyleTitle)") {
+                if let enhance = onEnhance { runEnhance(enhance, preset: nil) }
+            }
+            ForEach(StoryWritingStyle.presets) { preset in
+                Button(preset.title) {
+                    if let enhance = onEnhance { runEnhance(enhance, preset: preset) }
+                }
+            }
+            Button("Custom guideline...") {
+                showWritingStyleSheet = true
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private var currentStyleTitle: String {
+        StoryWritingStyle.preset(for: stylePresetId)?.title
+            ?? StoryWritingStyle.preset(matching: UserDefaults.standard.string(forKey: StoryWritingStyle.storageKey) ?? "")?.title
+            ?? "Custom"
+    }
+
+    private func runEnhance(_ enhance: @escaping (String) async -> String, preset: StoryWritingStylePreset?) {
+        if let preset {
+            stylePresetId = preset.id
+            UserDefaults.standard.set(preset.prompt, forKey: StoryWritingStyle.storageKey)
+        }
+        if originalDraft == nil { originalDraft = editedText }
+        let textToEnhance = editedText
+        isEnhancing = true
+        Task {
+            let result = await enhance(textToEnhance)
+            await MainActor.run {
+                editedText = result
+                isEnhancing = false
+                onEnhanceApplied?()
+            }
+        }
+    }
+
+    private func runTranslate(_ translate: @escaping (String) async -> String) {
+        if originalDraft == nil { originalDraft = editedText }
+        let textToTranslate = editedText
+        isTranslating = true
+        Task {
+            let result = await translate(textToTranslate)
+            await MainActor.run {
+                editedText = result
+                isTranslating = false
             }
         }
     }

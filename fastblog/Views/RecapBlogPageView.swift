@@ -1737,8 +1737,16 @@ struct RecapBlogPageView: View {
                             placePhotoModalItem = nil
                         },
                         onGenerateCaption: { photo, placeName, placeSubtitle, userText in
-                            await StoryCaptionService.shared.enhanceCaption(photo: photo, userText: userText, placeName: placeName, placeSubtitle: placeSubtitle)
+                            await StoryCaptionService.shared.enhanceCaption(
+                                photo: photo,
+                                userText: userText,
+                                placeName: placeName,
+                                placeSubtitle: placeSubtitle
+                            )
                         },
+                        onTranslateCaption: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
+                            await StoryCaptionService.shared.translateText(userText: userText)
+                        } : nil,
                         onAICaptionApplied: { photoId in
                             markPhotoCaptionAI(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
                         },
@@ -2522,10 +2530,16 @@ struct RecapBlogPageView: View {
             },
             onEnhance: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
                 guard let day = draft.days.first(where: { $0.id == item.dayId }) else { return userText }
-                return await StoryCaptionService.shared.enhanceDaySummary(day: day, userText: userText)
+                return await StoryCaptionService.shared.enhanceDaySummary(
+                    day: day,
+                    userText: userText
+                )
             } : nil,
             onEnhanceApplied: LocalLLMStoryCaptionGenerator.isCapable ? {
                 createdRecapStore.saveBlogDetail(draft)
+            } : nil,
+            onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
+                await StoryCaptionService.shared.translateText(userText: userText)
             } : nil
         )
     }
@@ -2551,10 +2565,18 @@ struct RecapBlogPageView: View {
                 guard let currentStop = placeStop(dayId: item.dayId, stopId: item.stopId),
                       let dayDate = draft.days.first(where: { $0.id == item.dayId })?.date else { return userText }
                 let captions = currentStop.photos.filter(\.isIncluded).map { $0.caption ?? "" }
-                return await StoryCaptionService.shared.enhanceOverallPlaceStory(stop: currentStop, userText: userText, dayDate: dayDate, photoCaptions: captions)
+                return await StoryCaptionService.shared.enhanceOverallPlaceStory(
+                    stop: currentStop,
+                    userText: userText,
+                    dayDate: dayDate,
+                    photoCaptions: captions
+                )
             } : nil,
             onEnhanceApplied: LocalLLMStoryCaptionGenerator.isCapable ? {
                 markOverallStoryAI(dayId: item.dayId, stopId: item.stopId)
+            } : nil,
+            onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
+                await StoryCaptionService.shared.translateText(userText: userText)
             } : nil
         )
     }

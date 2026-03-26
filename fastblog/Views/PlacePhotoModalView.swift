@@ -38,6 +38,8 @@ struct PlacePhotoModalView: View {
     /// When provided, a magic wand button is shown in the caption editing panel (only when user has written text).
     /// Called with (photo, placeName, placeSubtitle, userText); returns enriched caption.
     var onGenerateCaption: ((RecapPhoto, String, String?, String) async -> String)?
+    /// When provided, a translate button is shown. Pure translation — no AI story generation.
+    var onTranslateCaption: ((String) async -> String)? = nil
     /// Called after the AI wand applies a caption. Used to mark captionIsManual = false and cascade overall story.
     var onAICaptionApplied: ((UUID) -> Void)?
     /// Called when the user manually edits a photo caption in the modal. Used to mark captionIsManual = true.
@@ -52,6 +54,10 @@ struct PlacePhotoModalView: View {
 
     @State private var currentPhotoId: UUID
     @State private var isGeneratingCaption = false
+    @State private var isTranslatingCaption = false
+    @State private var showEnhanceStylePicker = false
+    @State private var showWritingStyleSheet = false
+    @AppStorage(StoryWritingStyle.presetStorageKey) private var stylePresetId: String = ""
     // Vibe
     @StateObject private var vibePlayer = VibePlayer()
     @State private var isVibeEnabled: Bool = false
@@ -173,6 +179,7 @@ struct PlacePhotoModalView: View {
         onDismiss: @escaping () -> Void,
         onViewBlog: (() -> Void)? = nil,
         onGenerateCaption: ((RecapPhoto, String, String?, String) async -> String)? = nil,
+        onTranslateCaption: ((String) async -> String)? = nil,
         onAICaptionApplied: ((UUID) -> Void)? = nil,
         onPhotoCaptionManuallyEdited: ((UUID) -> Void)? = nil,
         onRemovePhoto: ((UUID) -> Void)? = nil,
@@ -192,6 +199,7 @@ struct PlacePhotoModalView: View {
         self.onDismiss = onDismiss
         self.onViewBlog = onViewBlog
         self.onGenerateCaption = onGenerateCaption
+        self.onTranslateCaption = onTranslateCaption
         self.onAICaptionApplied = onAICaptionApplied
         self.onPhotoCaptionManuallyEdited = onPhotoCaptionManuallyEdited
         self.onRemovePhoto = onRemovePhoto
@@ -611,6 +619,23 @@ struct PlacePhotoModalView: View {
                 }
             )
         }
+        .sheet(isPresented: $showWritingStyleSheet) {
+            StoryWritingStyleSheet()
+        }
+        .confirmationDialog("Choose writing style", isPresented: $showEnhanceStylePicker, titleVisibility: .visible) {
+            Button("Use \(currentStyleTitle)") {
+                runEnhanceForCurrentPhoto(preset: nil)
+            }
+            ForEach(StoryWritingStyle.presets) { preset in
+                Button(preset.title) {
+                    runEnhanceForCurrentPhoto(preset: preset)
+                }
+            }
+            Button("Custom guideline...") {
+                showWritingStyleSheet = true
+            }
+            Button("Cancel", role: .cancel) {}
+        }
         // Editing panel anchors just above the keyboard via safeAreaInset
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if isEditing {
@@ -664,58 +689,70 @@ struct PlacePhotoModalView: View {
                                             captionOriginalDraftByPhotoId.removeValue(forKey: currentPhotoId)
                                         }
                                     } label: {
-                                        Label("Revert", systemImage: "arrow.uturn.backward")
+                                        Label("", systemImage: "arrow.uturn.backward")
                                             .font(.subheadline)
                                             .foregroundColor(.white.opacity(0.75))
                                     }
                                 }
 
-                                if let generate = onGenerateCaption, let photo = currentPhoto {
-                                    Button {
-                                        let photoId = currentPhotoId
-                                        if captionOriginalDraftByPhotoId[photoId] == nil {
-                                            captionOriginalDraftByPhotoId[photoId] = editedCaptionText
+                                let canEnhance = onGenerateCaption != nil && currentPhoto != nil
+                                let canTranslate = onTranslateCaption != nil
+                                if canEnhance || canTranslate {
+                                    VStack(alignment: .trailing, spacing: 8) {
+                                        if onGenerateCaption != nil, currentPhoto != nil {
+                                            Button {
+                                                showEnhanceStylePicker = true
+                                            } label: {
+                                                if isGeneratingCaption {
+                                                    HStack(spacing: 4) {
+                                                        ProgressView()
+                                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                                            .scaleEffect(0.75)
+                                                        Text("Enhancing…")
+                                                            .font(.subheadline)
+                                                            .foregroundColor(.white.opacity(0.75))
+                                                    }
+                                                } else {
+                                                    HStack(spacing: 4) {
+                                                        Image(systemName: "wand.and.stars")
+                                                            .font(.subheadline)
+                                                            .foregroundStyle(
+                                                                LinearGradient(
+                                                                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                                                    startPoint: .topLeading,
+                                                                    endPoint: .bottomTrailing
+                                                                )
+                                                            )
+                                                    }
+                                                }
+                                            }
+                                            .disabled(isGeneratingCaption || isTranslatingCaption)
                                         }
-                                        isGeneratingCaption = true
-                                        let userText = editedCaptionText
-                                        Task {
-                                            let text = await generate(photo, editedPlaceTitle, placeSubtitle, userText)
-                                            await MainActor.run {
-                                                editedCaptionText = text
-                                                photoCaption(photoId).wrappedValue = text
-                                                isGeneratingCaption = false
-                                                onAICaptionApplied?(photoId)
+
+                                        if let translate = onTranslateCaption {
+                                            Button {
+                                                runTranslateForCurrentPhoto(translate)
+                                            } label: {
+                                                if isTranslatingCaption {
+                                                    HStack(spacing: 4) {
+                                                        ProgressView()
+                                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                                            .scaleEffect(0.75)
+                                                        Text("Translating…")
+                                                            .font(.subheadline)
+                                                            .foregroundColor(.white.opacity(0.75))
+                                                    }
+                                                } else {
+                                                    HStack(spacing: 4) {
+                                                        Image(systemName: "translate")
+                                                            .font(.subheadline)
+                                                            .foregroundColor(.white.opacity(0.75))
+                                                    }
+                                                }
                                             }
-                                        }
-                                    } label: {
-                                        if isGeneratingCaption {
-                                            HStack(spacing: 4) {
-                                                ProgressView()
-                                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                                    .scaleEffect(0.75)
-                                                Text("Enhancing…")
-                                                    .font(.subheadline)
-                                                    .foregroundColor(.white.opacity(0.75))
-                                            }
-                                        } else {
-                                            HStack(spacing: 4) {
-                                                Image(systemName: "wand.and.stars")
-                                                    .font(.subheadline)
-                                                    .foregroundStyle(
-                                                        LinearGradient(
-                                                            colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                                            startPoint: .topLeading,
-                                                            endPoint: .bottomTrailing
-                                                        )
-                                                    )
-                                                Text("Enhance")
-                                                    .font(.subheadline)
-                                                    .fontWeight(.medium)
-                                                    .foregroundColor(.white)
-                                            }
+                                            .disabled(isGeneratingCaption || isTranslatingCaption)
                                         }
                                     }
-                                    .disabled(isGeneratingCaption)
                                 }
                             }
                             .padding(.horizontal, 12)
@@ -783,58 +820,70 @@ struct PlacePhotoModalView: View {
                                             captionOriginalDraftByPhotoId.removeValue(forKey: currentPhotoId)
                                         }
                                     } label: {
-                                        Label("Revert", systemImage: "arrow.uturn.backward")
+                                        Label("", systemImage: "arrow.uturn.backward")
                                             .font(.subheadline)
                                             .foregroundColor(.white.opacity(0.75))
                                     }
                                 }
 
-                                if let generate = onGenerateCaption, let photo = currentPhoto {
-                                    Button {
-                                        let photoId = currentPhotoId
-                                        if captionOriginalDraftByPhotoId[photoId] == nil {
-                                            captionOriginalDraftByPhotoId[photoId] = editedCaptionText
+                                let canEnhance = onGenerateCaption != nil && currentPhoto != nil
+                                let canTranslate = onTranslateCaption != nil
+                                if canEnhance || canTranslate {
+                                    VStack(alignment: .trailing, spacing: 8) {
+                                        if onGenerateCaption != nil, currentPhoto != nil {
+                                            Button {
+                                                showEnhanceStylePicker = true
+                                            } label: {
+                                                if isGeneratingCaption {
+                                                    HStack(spacing: 4) {
+                                                        ProgressView()
+                                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                                            .scaleEffect(0.75)
+                                                        Text("Enhancing…")
+                                                            .font(.subheadline)
+                                                            .foregroundColor(.white.opacity(0.75))
+                                                    }
+                                                } else {
+                                                    HStack(spacing: 4) {
+                                                        Image(systemName: "wand.and.stars")
+                                                            .font(.subheadline)
+                                                            .foregroundStyle(
+                                                                LinearGradient(
+                                                                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                                                    startPoint: .topLeading,
+                                                                    endPoint: .bottomTrailing
+                                                                )
+                                                            )
+                                                    }
+                                                }
+                                            }
+                                            .disabled(isGeneratingCaption || isTranslatingCaption)
                                         }
-                                        isGeneratingCaption = true
-                                        let userText = editedCaptionText
-                                        Task {
-                                            let text = await generate(photo, editedPlaceTitle, placeSubtitle, userText)
-                                            await MainActor.run {
-                                                editedCaptionText = text
-                                                photoCaption(photoId).wrappedValue = text
-                                                isGeneratingCaption = false
-                                                onAICaptionApplied?(photoId)
+
+                                        if let translate = onTranslateCaption {
+                                            Button {
+                                                runTranslateForCurrentPhoto(translate)
+                                            } label: {
+                                                if isTranslatingCaption {
+                                                    HStack(spacing: 4) {
+                                                        ProgressView()
+                                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                                            .scaleEffect(0.75)
+                                                        Text("Translating…")
+                                                            .font(.subheadline)
+                                                            .foregroundColor(.white.opacity(0.75))
+                                                    }
+                                                } else {
+                                                    HStack(spacing: 4) {
+                                                        Image(systemName: "translate")
+                                                            .font(.subheadline)
+                                                            .foregroundColor(.white.opacity(0.75))
+                                                    }
+                                                }
                                             }
-                                        }
-                                    } label: {
-                                        if isGeneratingCaption {
-                                            HStack(spacing: 4) {
-                                                ProgressView()
-                                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                                    .scaleEffect(0.75)
-                                                Text("Enhancing…")
-                                                    .font(.subheadline)
-                                                    .foregroundColor(.white.opacity(0.75))
-                                            }
-                                        } else {
-                                            HStack(spacing: 4) {
-                                                Image(systemName: "wand.and.stars")
-                                                    .font(.subheadline)
-                                                    .foregroundStyle(
-                                                        LinearGradient(
-                                                            colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                                            startPoint: .topLeading,
-                                                            endPoint: .bottomTrailing
-                                                        )
-                                                    )
-                                                Text("Enhance")
-                                                    .font(.subheadline)
-                                                    .fontWeight(.medium)
-                                                    .foregroundColor(.white)
-                                            }
+                                            .disabled(isGeneratingCaption || isTranslatingCaption)
                                         }
                                     }
-                                    .disabled(isGeneratingCaption)
                                 }
                             }
                             .padding(.horizontal, 12)
@@ -1145,6 +1194,52 @@ struct PlacePhotoModalView: View {
     private var hasUnsavedChanges: Bool {
         editedCaptionText.trimmingCharacters(in: .whitespacesAndNewlines) != captionWhenEditingStarted.trimmingCharacters(in: .whitespacesAndNewlines)
             || editedPlaceTitle.trimmingCharacters(in: .whitespacesAndNewlines) != titleWhenEditingStarted.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var currentStyleTitle: String {
+        StoryWritingStyle.preset(for: stylePresetId)?.title
+            ?? StoryWritingStyle.preset(matching: UserDefaults.standard.string(forKey: StoryWritingStyle.storageKey) ?? "")?.title
+            ?? "Custom"
+    }
+
+    private func runEnhanceForCurrentPhoto(preset: StoryWritingStylePreset?) {
+        guard let generate = onGenerateCaption, let photo = currentPhoto else { return }
+        if let preset {
+            stylePresetId = preset.id
+            UserDefaults.standard.set(preset.prompt, forKey: StoryWritingStyle.storageKey)
+        }
+        let photoId = currentPhotoId
+        if captionOriginalDraftByPhotoId[photoId] == nil {
+            captionOriginalDraftByPhotoId[photoId] = editedCaptionText
+        }
+        isGeneratingCaption = true
+        let userText = editedCaptionText
+        Task {
+            let text = await generate(photo, editedPlaceTitle, placeSubtitle, userText)
+            await MainActor.run {
+                editedCaptionText = text
+                photoCaption(photoId).wrappedValue = text
+                isGeneratingCaption = false
+                onAICaptionApplied?(photoId)
+            }
+        }
+    }
+
+    private func runTranslateForCurrentPhoto(_ translate: @escaping (String) async -> String) {
+        let photoId = currentPhotoId
+        if captionOriginalDraftByPhotoId[photoId] == nil {
+            captionOriginalDraftByPhotoId[photoId] = editedCaptionText
+        }
+        isTranslatingCaption = true
+        let userText = editedCaptionText
+        Task {
+            let text = await translate(userText)
+            await MainActor.run {
+                editedCaptionText = text
+                photoCaption(photoId).wrappedValue = text
+                isTranslatingCaption = false
+            }
+        }
     }
 
     private func commitCaption() {
