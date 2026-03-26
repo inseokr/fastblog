@@ -75,7 +75,12 @@ struct PlacesVisitedView: View {
     }
 
     private var availableCategories: [String] {
-        let cats = createdRecapStore.visitedPlaces
+        let placesForYear = createdRecapStore.visitedPlaces.filter { place in
+            guard let y = selectedYear else { return true }
+            return place.year == y
+        }
+
+        let cats = placesForYear
             .compactMap { $0.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         return Array(Set(cats)).sorted()
@@ -336,6 +341,13 @@ struct PlacesVisitedView: View {
                         selectedCategory = nil
                     }
                 }
+            }
+        }
+        .onChange(of: selectedYear) { _, _ in
+            // If the user switches years, drop any category that doesn't exist for the new year.
+            if let selectedCategory,
+               !availableCategories.contains(where: { $0.caseInsensitiveCompare(selectedCategory) == .orderedSame }) {
+                self.selectedCategory = nil
             }
         }
     }
@@ -686,7 +698,12 @@ private struct PlacesVisitedMapView: View {
     }
 
     private var availableCategories: [String] {
-        let cats = createdRecapStore.visitedPlaces
+        let placesForYear = createdRecapStore.visitedPlaces.filter { place in
+            guard let y = selectedYear else { return true }
+            return place.year == y
+        }
+
+        let cats = placesForYear
             .compactMap { $0.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         return Array(Set(cats)).sorted()
@@ -856,6 +873,11 @@ private struct PlacesVisitedMapView: View {
                 recenterToLatestPlace()
             }
             .onChange(of: selectedYear) { _, _ in
+                // If the user switches years, drop any category that doesn't exist for the new year.
+                if let selectedCategory,
+                   !availableCategories.contains(where: { $0.caseInsensitiveCompare(selectedCategory) == .orderedSame }) {
+                    self.selectedCategory = nil
+                }
                 recenterToLatestPlace()
             }
             .onChange(of: selectedCountry) { _, _ in
