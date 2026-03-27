@@ -111,8 +111,6 @@ struct RecapBlogPageView: View {
     @State private var managePhotosEditInfo: ManagePhotosEditInfo?
     @State private var isEditMode = true
     @State private var showBlogSettings = false
-    @State private var recapForNearbyHostShare: RecapBlogDetail?
-    @State private var showNearbyShareUnavailableAlert = false
     @State private var showShareSheet = false
     @State private var showEditPhotoFlow = false
     @State private var fullScreenMapDay: RecapBlogDay?
@@ -460,11 +458,6 @@ struct RecapBlogPageView: View {
                     .environmentObject(createdRecapStore)
                     .environmentObject(nearbyShare)
             }
-            .sheet(isPresented: $showBloggoQRSheet) {
-                shareWithBloggoQRCodeSheet()
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-            }
     }
 
     private func bodyContentBase(screenHeight: CGFloat) -> some View {
@@ -544,11 +537,6 @@ struct RecapBlogPageView: View {
             } message: {
                 Text("We’re gradually releasing web sharing to early users.")
             }
-            .alert("Can’t share this trip", isPresented: $showNearbyShareUnavailableAlert) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text("Nearby sharing needs at least one included photo that is still on this device (or saved in Bloggo). Photos that exist only in the cloud aren’t sent peer-to-peer.")
-            }
             .overlay {
                 if showUnprocessedDayAlert {
                     ProcessingDayPopup {
@@ -582,6 +570,12 @@ struct RecapBlogPageView: View {
                     )
                     .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     .zIndex(998)
+                }
+                if showBloggoQRSheet {
+                    bloggoQRSharePopup()
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showBloggoQRSheet)
+                        .zIndex(1000)
                 }
             }
             .onReceive(createdRecapStore.objectWillChange) {
@@ -665,25 +659,9 @@ struct RecapBlogPageView: View {
                         createdRecapStore.saveBlogDetail(draft)
                         syncWithCloudIfNeeded()
                     },
-                    onShareNearby: blogHasBeenSaved
-                        ? {
-                            let hasAnyExportableIncludedPhoto = draft.days
-                                .flatMap(\.placeStops)
-                                .flatMap(\.photos)
-                                .contains { $0.isIncluded && !(($0.localIdentifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
-                            guard hasAnyExportableIncludedPhoto else {
-                                showBlogSettings = false
-                                showNearbyShareUnavailableAlert = true
-                                return
-                            }
-                            showBlogSettings = false
-                            recapForNearbyHostShare = draft
-                        }
-                        : nil
+                    canShareNearby: blogHasBeenSaved
                 )
-            }
-            .sheet(item: $recapForNearbyHostShare) { recap in
-                TripNearbyShareHostSheet(recap: recap, controller: nearbyShare)
+                .environmentObject(nearbyShare)
             }
             .sheet(isPresented: $showTitleChange, onDismiss: {
                 createdRecapStore.saveBlogDetail(draft)
@@ -2294,181 +2272,215 @@ struct RecapBlogPageView: View {
         }
     }
 
+    /// Center-screen popup for “Sharing Between Bloggo Users” (not a bottom sheet).
     @ViewBuilder
-    private func shareWithBloggoQRCodeSheet() -> some View {
-        NavigationStack {
-            VStack(spacing: 16) {
-                HStack(spacing: 12) {
-                    Image("Blogo")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 28, height: 28)
-                    Image("SplashIcon")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 28, height: 28)
-                    Image("Blogo")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 28, height: 28)
+    private func bloggoQRSharePopup() -> some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    if nearbyShare.hostInvitation == nil {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            showBloggoQRSheet = false
+                        }
+                    }
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.top, 2)
 
-                Text("Sharing Between Bloggo Users")
-                    .font(.title3.weight(.semibold))
-                    .foregroundColor(.primary)
+            ScrollView {
+                VStack(spacing: 16) {
+                    HStack(spacing: 12) {
+                        Image("Blogo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 28, height: 28)
+                        Image("SplashIcon")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 28, height: 28)
+                        Image("Blogo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 28, height: 28)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 2)
 
-                Text("Share your blog with friends who use Bloggo.\n\nThey can scan the QR code to open the blog instantly in the app.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
+                    Text("Sharing Between Bloggo Users")
+                        .font(.title3.weight(.semibold))
+                        .foregroundColor(.white)
 
-                Group {
-                    if let url = nearbyShare.receiveURLForQR {
-                        if let image = TripShareQRCodeGenerator.image(from: url.absoluteString, scale: 12) {
-                            Image(uiImage: image)
-                                .interpolation(.none)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 180, height: 180)
-                                .padding(16)
-                                .background(Color.white)
-                                .cornerRadius(14)
-                                .frame(maxWidth: .infinity)
+                    Text("Share your blog with friends who use Bloggo.\n\nThey can scan the QR code to open the blog instantly in the app.")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.75))
+                        .multilineTextAlignment(.center)
+
+                    Group {
+                        if let url = nearbyShare.receiveURLForQR {
+                            if let image = TripShareQRCodeGenerator.image(from: url.absoluteString, scale: 12) {
+                                Image(uiImage: image)
+                                    .interpolation(.none)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 180, height: 180)
+                                    .padding(16)
+                                    .background(Color.white)
+                                    .cornerRadius(14)
+                                    .frame(maxWidth: .infinity)
+                            } else {
+                                Text("Could not build QR")
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 24)
+                            }
                         } else {
-                            Text("Could not build QR")
-                                .foregroundStyle(.secondary)
+                            ProgressView("Preparing QR…")
+                                .tint(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 24)
                         }
-                    } else {
-                        ProgressView("Preparing QR…")
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 24)
                     }
-                }
-                .padding(.top, 6)
+                    .padding(.top, 6)
 
-                Group {
-                    switch nearbyShare.phase {
-                    case .hostingPreparing:
-                        ProgressView("Preparing trip…")
-                            .frame(maxWidth: .infinity)
-                    case .hostingAdvertising:
-                        Label("Waiting for a nearby device…", systemImage: "antenna.radiowaves.left.and.right")
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                    case .hostingConnected(let name):
-                        Label("Connected to \(name)", systemImage: "link")
-                            .foregroundStyle(.blue)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                    case .transferring(let cur, let total):
-                        ProgressView(value: Double(cur), total: Double(total)) {
-                            Text("Sending photos \(cur) of \(total)")
+                    Group {
+                        switch nearbyShare.phase {
+                        case .hostingPreparing:
+                            ProgressView("Preparing trip…")
+                                .tint(.white)
+                                .frame(maxWidth: .infinity)
+                        case .hostingAdvertising:
+                            Label("Waiting for a nearby device…", systemImage: "antenna.radiowaves.left.and.right")
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        case .hostingConnected(let name):
+                            Label("Connected to \(name)", systemImage: "link")
+                                .foregroundStyle(.blue)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        case .transferring(let cur, let total):
+                            ProgressView(value: Double(cur), total: Double(total)) {
+                                Text("Sending photos \(cur) of \(total)")
+                            }
+                            .tint(.white)
+                        case .succeeded:
+                            Label("Trip sent successfully", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        case .failed(let msg):
+                            Text(msg)
+                                .foregroundStyle(.red)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: .infinity)
+                        default:
+                            EmptyView()
                         }
-                    case .succeeded:
-                        Label("Trip sent successfully", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                    case .failed(let msg):
-                        Text(msg)
-                            .foregroundStyle(.red)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: .infinity)
-                    default:
-                        EmptyView()
                     }
-                }
-                .padding(.top, 8)
+                    .padding(.top, 8)
 
-                Button {
-                    showBloggoQRSheet = false
-                } label: {
-                    Text("Close")
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color(uiColor: .secondarySystemBackground))
-                        .cornerRadius(12)
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            showBloggoQRSheet = false
+                        }
+                    } label: {
+                        Text("Close")
+                            .font(.body.weight(.semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                    }
+                    .buttonStyle(.plain)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.white.opacity(0.12))
+                    )
+                    .padding(.top, 8)
                 }
-                .padding(.top, 8)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 20)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .onAppear {
-                animateNearbySharePulse = true
-                nearbyShare.startHosting(recapDetail: draft)
-            }
-            .onDisappear {
-                animateNearbySharePulse = false
-                nearbyShare.cancel()
-            }
-            .onChange(of: nearbyShare.phase) { oldPhase, newPhase in
-                triggerNearbyShareHaptic(oldPhase: oldPhase, newPhase: newPhase)
-            }
-            .onChange(of: nearbyShare.hostInvitation != nil) { _, hasInvite in
-                if hasInvite {
-                    UINotificationFeedbackGenerator().notificationOccurred(.warning)
-                    vibrateFallback()
-                }
-            }
+            .frame(maxWidth: 400)
+            .frame(maxHeight: 620)
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: .black.opacity(0.45), radius: 30, y: 10)
+            .padding(.horizontal, 24)
             .overlay {
-                ZStack {
-                    if isNearbySharePulseActive {
-                        ZStack {
-                            ForEach(0..<3, id: \.self) { idx in
-                                RoundedRectangle(cornerRadius: 24)
-                                    .stroke(Color.cyan.opacity(0.95), lineWidth: 2.6)
-                                    .scaleEffect(animateNearbySharePulse ? 1.18 : 0.98)
-                                    .opacity(animateNearbySharePulse ? 0.0 : 0.75)
-                                    .padding(2)
-                                    .animation(
-                                        .easeOut(duration: 1.35)
-                                            .delay(Double(idx) * 0.28)
-                                            .repeatForever(autoreverses: false),
-                                        value: animateNearbySharePulse
-                                    )
-                            }
-
-                            RoundedRectangle(cornerRadius: 22)
-                                .stroke(Color.blue.opacity(0.95), lineWidth: 3.4)
-                                .shadow(color: Color.cyan.opacity(animateNearbySharePulse ? 0.95 : 0.45), radius: animateNearbySharePulse ? 30 : 12)
-                                .padding(4)
-                                .animation(.easeInOut(duration: 0.95).repeatForever(autoreverses: true), value: animateNearbySharePulse)
+                if isNearbySharePulseActive {
+                    ZStack {
+                        ForEach(0..<3, id: \.self) { idx in
+                            RoundedRectangle(cornerRadius: 24)
+                                .stroke(Color.cyan.opacity(0.95), lineWidth: 2.6)
+                                .scaleEffect(animateNearbySharePulse ? 1.18 : 0.98)
+                                .opacity(animateNearbySharePulse ? 0.0 : 0.75)
+                                .padding(2)
+                                .animation(
+                                    .easeOut(duration: 1.35)
+                                        .delay(Double(idx) * 0.28)
+                                        .repeatForever(autoreverses: false),
+                                    value: animateNearbySharePulse
+                                )
                         }
-                        .allowsHitTesting(false)
-                    }
 
-                    if let invite = nearbyShare.hostInvitation {
-                        ZStack {
-                            Color.black.opacity(0.45)
-                                .ignoresSafeArea()
-                            VStack(spacing: 16) {
-                                Text("Allow connection?")
-                                    .font(.headline)
-                                Text("\(invite.peerName) wants to receive “\(draft.title)”.")
-                                    .font(.subheadline)
-                                    .multilineTextAlignment(.center)
-                                HStack(spacing: 12) {
-                                    Button("Decline", role: .cancel) {
-                                        invite.decide(false)
-                                    }
-                                    .buttonStyle(.bordered)
-                                    Button("Accept") {
-                                        invite.decide(true)
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                }
-                            }
-                            .padding(24)
-                            .background(.ultraThinMaterial)
-                            .cornerRadius(16)
-                            .padding(32)
-                        }
+                        RoundedRectangle(cornerRadius: 22)
+                            .stroke(Color.blue.opacity(0.95), lineWidth: 3.4)
+                            .shadow(color: Color.cyan.opacity(animateNearbySharePulse ? 0.95 : 0.45), radius: animateNearbySharePulse ? 30 : 12)
+                            .padding(4)
+                            .animation(.easeInOut(duration: 0.95).repeatForever(autoreverses: true), value: animateNearbySharePulse)
                     }
+                    .allowsHitTesting(false)
                 }
+            }
+
+            if let invite = nearbyShare.hostInvitation {
+                ZStack {
+                    Color.black.opacity(0.45)
+                        .ignoresSafeArea()
+                    VStack(spacing: 16) {
+                        Text("Allow connection?")
+                            .font(.headline)
+                        Text("\(invite.peerName) wants to receive “\(draft.title)”.")
+                            .font(.subheadline)
+                            .multilineTextAlignment(.center)
+                        HStack(spacing: 12) {
+                            Button("Decline", role: .cancel) {
+                                invite.decide(false)
+                            }
+                            .buttonStyle(.bordered)
+                            Button("Accept") {
+                                invite.decide(true)
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
+                    .padding(24)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(16)
+                    .padding(32)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .onAppear {
+            animateNearbySharePulse = true
+            nearbyShare.startHosting(recapDetail: draft)
+        }
+        .onDisappear {
+            animateNearbySharePulse = false
+            nearbyShare.cancel()
+        }
+        .onChange(of: nearbyShare.phase) { oldPhase, newPhase in
+            triggerNearbyShareHaptic(oldPhase: oldPhase, newPhase: newPhase)
+        }
+        .onChange(of: nearbyShare.hostInvitation != nil) { _, hasInvite in
+            if hasInvite {
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                vibrateFallback()
             }
         }
     }

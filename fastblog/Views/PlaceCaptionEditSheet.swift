@@ -37,152 +37,153 @@ struct PlaceCaptionEditSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-                // Top chrome: only Cancel + Done (no NavigationStack — avoids duplicate back / parent toolbar bleed).
-                HStack(alignment: .center) {
-                    Button("Cancel") {
-                        onCancel()
-                    }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(placeTitle)
+                    .font(.title3.weight(.semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(2)
+                if let placeSubtitle, !placeSubtitle.isEmpty {
+                    Text(placeSubtitle)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
+
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $editedText)
+                    .focused($isFocused)
                     .font(.body)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(Color.primary)
-                    .buttonStyle(.plain)
+                    .foregroundColor(.primary)
+                    .scrollContentBackground(.hidden)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .frame(minHeight: 180)
+                    .background(Color(uiColor: .secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .padding(.horizontal, 20)
+
+                if editedText.isEmpty {
+                    Text("Write a caption for this place…")
+                        .font(.body)
+                        .foregroundColor(Color(uiColor: .placeholderText))
+                        .padding(.leading, 40)
+                        .padding(.top, 22)
+                        .allowsHitTesting(false)
+                }
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+
+            if !trimmedEditedText.isEmpty {
+                HStack(spacing: 16) {
+                    Button(role: .destructive) {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            editedText = ""
+                            originalDraft = nil
+                        }
+                    } label: {
+                        Label("Clear", systemImage: "trash")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
 
                     Spacer()
 
-                    Button("Done") {
-                        caption = editedText
-                        onSave()
-                    }
-                    .font(.body)
-                    .fontWeight(.bold)
-                    .foregroundStyle(Color(uiColor: .systemBlue))
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                .padding(.bottom, 16)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(placeTitle)
-                        .font(.title3.weight(.semibold))
-                        .foregroundColor(.primary)
-                        .lineLimit(2)
-                    if let placeSubtitle, !placeSubtitle.isEmpty {
-                        Text(placeSubtitle)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 16)
-
-                ZStack(alignment: .topLeading) {
-                    TextEditor(text: $editedText)
-                        .focused($isFocused)
-                        .font(.body)
-                        .foregroundColor(.primary)
-                        .scrollContentBackground(.hidden)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
-                        .frame(minHeight: 180)
-                        .background(Color(uiColor: .secondarySystemBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .padding(.horizontal, 20)
-
-                    if editedText.isEmpty {
-                        Text("Write a caption for this place…")
-                            .font(.body)
-                            .foregroundColor(Color(uiColor: .placeholderText))
-                            .padding(.leading, 40)
-                            .padding(.top, 22)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .frame(maxHeight: .infinity, alignment: .top)
-
-                if !trimmedEditedText.isEmpty {
-                    HStack(spacing: 16) {
-                        Button(role: .destructive) {
+                    if let draft = originalDraft {
+                        Button {
                             withAnimation(.easeInOut(duration: 0.18)) {
-                                editedText = ""
+                                editedText = draft
                                 originalDraft = nil
                             }
                         } label: {
-                            Label("Clear", systemImage: "trash")
+                            Label("", systemImage: "arrow.uturn.backward")
                                 .font(.subheadline)
-                                .fontWeight(.medium)
+                                .foregroundColor(.secondary)
                         }
+                    }
 
-                        Spacer()
-
-                        if let draft = originalDraft {
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.18)) {
-                                    editedText = draft
-                                    originalDraft = nil
+                    if let translate = onTranslate {
+                        Button {
+                            runTranslate(translate)
+                        } label: {
+                            if isTranslating {
+                                HStack(spacing: 4) {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle())
+                                        .scaleEffect(0.75)
+                                    Text("Translating…")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
                                 }
-                            } label: {
-                                Label("", systemImage: "arrow.uturn.backward")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-
-                        if let translate = onTranslate {
-                            Button {
-                                runTranslate(translate)
-                            } label: {
-                                if isTranslating {
-                                    HStack(spacing: 4) {
-                                        ProgressView()
-                                            .progressViewStyle(CircularProgressViewStyle())
-                                            .scaleEffect(0.75)
-                                        Text("Translating…")
-                                            .font(.subheadline)
-                                            .foregroundColor(.secondary)
-                                    }
-                                } else {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "translate")
-                                            .font(.subheadline)
-                                            .foregroundColor(.secondary)
-                                    }
+                            } else {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "translate")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
                                 }
                             }
-                            .disabled(isEnhancing || isTranslating)
+                        }
+                        .disabled(isEnhancing || isTranslating)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
+            if !photos.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(photos.prefix(3)) { photo in
+                            RecapPhotoThumbnail(
+                                photo: photo,
+                                cornerRadius: 10,
+                                showIcon: false,
+                                targetSize: CGSize(width: 200, height: 200)
+                            )
+                            .frame(width: 60, height: 60)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
                     }
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
-
-                if !photos.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(photos.prefix(3)) { photo in
-                                RecapPhotoThumbnail(
-                                    photo: photo,
-                                    cornerRadius: 10,
-                                    showIcon: false,
-                                    targetSize: CGSize(width: 200, height: 200)
-                                )
-                                .frame(width: 60, height: 60)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                    }
-                    .frame(height: 60)
-                    .padding(.vertical, 10)
-                    .background(Color(uiColor: .systemBackground))
-                }
+                .frame(height: 60)
+                .padding(.vertical, 10)
+                .background(Color(uiColor: .systemBackground))
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(uiColor: .systemBackground).ignoresSafeArea())
+        .safeAreaInset(edge: .top, spacing: 0) {
+            HStack(alignment: .center) {
+                Button("Cancel") {
+                    isFocused = false
+                    onCancel()
+                }
+                .font(.body)
+                .fontWeight(.semibold)
+                .foregroundStyle(Color.primary)
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button("Done") {
+                    caption = editedText
+                    isFocused = false
+                    onSave()
+                }
+                .font(.body)
+                .fontWeight(.bold)
+                .foregroundStyle(Color(uiColor: .systemBlue))
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(Color(uiColor: .systemBackground))
+        }
         .preferredColorScheme(.dark)
-        .defaultFocus($isFocused, true)
         .onAppear {
             editedText = caption
             DispatchQueue.main.async {

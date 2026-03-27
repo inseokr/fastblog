@@ -251,6 +251,7 @@ struct PlacePhotoModalView: View {
 
     /// Close / Cancel / swipe-down share the same rules (including unsaved-changes alert).
     private func handleUserRequestedDismiss() {
+        isCaptionFocused = false
         if !isEditing && !blogIsEditMode {
             animateSwipeDismissCompletion { onDismiss() }
             return
@@ -568,9 +569,12 @@ struct PlacePhotoModalView: View {
                                     .background(Color.blue)
                                     .clipShape(Capsule())
                             }
-                        } else if blogIsEditMode, hasUnsavedChanges {
+                        } else if blogIsEditMode {
+                            // Always show Done in blog edit mode so the user can finish the flow even when nothing changed.
                             Button(action: {
-                                commitCaption()
+                                if hasUnsavedChanges {
+                                    commitCaption()
+                                }
                                 onDismiss()
                             }) {
                                 Text("Done")

@@ -18,9 +18,10 @@ struct BlogSettingsSheet: View {
     var onRemoveFromCloud: (() -> Void)? = nil
     /// Called after the user restores a removed place so the parent can persist the draft.
     var onRestore: (() -> Void)? = nil
-    /// When non-nil, shows “Share trip nearby” (saved blog only; parent builds trip and presents host sheet).
-    var onShareNearby: (() -> Void)? = nil
+    /// When true, shows “Share trip nearby” for saved blogs (inline overlay; uses ``TripNearbyShareSessionController`` from the environment).
+    var canShareNearby: Bool = false
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var nearbyShare: TripNearbyShareSessionController
     @AppStorage(StoryWritingStyle.storageKey) private var writingStyle: String = ""
     @AppStorage(StoryWritingStyle.presetStorageKey) private var writingStylePresetId: String = ""
     @AppStorage(WeatherTemperatureUnit.storageKey) private var weatherTemperatureUnitRaw: String = WeatherTemperatureUnit.fahrenheit.rawValue
@@ -34,6 +35,8 @@ struct BlogSettingsSheet: View {
     @State private var showCustomDeletePopup = false
     @State private var showWritingStyle = false
     @State private var isGeneratingTripNarrative = false
+    @State private var showNearbyShareHost = false
+    @State private var showNearbyShareUnavailableAlert = false
 
     private var hasCloudPhotos: Bool {
         draft.hasCloudPhotos
@@ -58,16 +61,40 @@ struct BlogSettingsSheet: View {
                 .alert("Remove from Cloud?", isPresented: $showRemoveFromCloudConfirmation) { removeCloudAlertButtons } message: { removeCloudAlertMessage }
                 .preferredColorScheme(.dark)
             }
+
+            if showNearbyShareHost {
+                TripNearbyShareHostBlogSettingsOverlay(recap: draft, controller: nearbyShare) {
+                    showNearbyShareHost = false
+                }
+                .transition(.opacity)
+                .zIndex(20)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: showNearbyShareHost)
+        .alert("Can’t share this trip", isPresented: $showNearbyShareUnavailableAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Nearby sharing needs at least one included photo that is still on this device (or saved in Bloggo). Photos that exist only in the cloud aren’t sent peer-to-peer.")
         }
     }
 
     private var settingsList: some View {
         List {
             editAndRestoreSection
-            if onShareNearby != nil {
+            if canShareNearby {
                 Section {
                     Button {
-                        onShareNearby?()
+                        let hasAnyExportableIncludedPhoto = draft.days
+                            .flatMap(\.placeStops)
+                            .flatMap(\.photos)
+                            .contains { $0.isIncluded && !(($0.localIdentifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+                        guard hasAnyExportableIncludedPhoto else {
+                            showNearbyShareUnavailableAlert = true
+                            return
+                        }
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showNearbyShareHost = true
+                        }
                     } label: {
                         Label("Share trip nearby", systemImage: "dot.radiowaves.left.and.right")
                     }
@@ -76,6 +103,7 @@ struct BlogSettingsSheet: View {
                 }
             }
             titleAndCoverSection
+            aiStorytellingSection
             weatherSection
             cloudSection
         }
