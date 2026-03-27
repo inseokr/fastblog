@@ -133,36 +133,6 @@ struct DayCaptionEditSheet: View {
                         }
                     }
 
-                    if let enhance = onEnhance {
-                        Button {
-                            showEnhanceStylePicker = true
-                        } label: {
-                            if isEnhancing {
-                                HStack(spacing: 4) {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle())
-                                        .scaleEffect(0.75)
-                                    Text("Enhancing…")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                }
-                            } else {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "wand.and.stars")
-                                        .font(.subheadline)
-                                        .foregroundStyle(
-                                            LinearGradient(
-                                                colors: [Color(red: 0.82, green: 0.48, blue: 0.95), Color(red: 0.62, green: 0.32, blue: 0.78)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
-                                }
-                            }
-                        }
-                        .disabled(isEnhancing || isTranslating)
-                    }
-
                     if let translate = onTranslate, !trimmedEditedText.isEmpty {
                         Button {
                             runTranslate(translate)
@@ -201,23 +171,6 @@ struct DayCaptionEditSheet: View {
             DispatchQueue.main.async {
                 isFocused = true
             }
-        }
-        .sheet(isPresented: $showWritingStyleSheet) {
-            StoryWritingStyleSheet()
-        }
-        .confirmationDialog("Choose writing style", isPresented: $showEnhanceStylePicker, titleVisibility: .visible) {
-            Button("Use \(currentStyleTitle)") {
-                if let enhance = onEnhance { runEnhance(enhance, preset: nil) }
-            }
-            ForEach(StoryWritingStyle.presets) { preset in
-                Button(preset.title) {
-                    if let enhance = onEnhance { runEnhance(enhance, preset: preset) }
-                }
-            }
-            Button("Custom guideline...") {
-                showWritingStyleSheet = true
-            }
-            Button("Cancel", role: .cancel) {}
         }
     }
 

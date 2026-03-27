@@ -75,9 +75,6 @@ struct BlogSettingsSheet: View {
                 }
             }
             titleAndCoverSection
-            if LocalLLMStoryCaptionGenerator.isCapable {
-                writingStyleSection
-            }
             weatherSection
             cloudSection
         }
