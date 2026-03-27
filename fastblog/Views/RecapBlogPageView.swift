@@ -34,6 +34,14 @@ struct PlaceCaptionEditItem: Identifiable {
     var id: UUID { stopId }
 }
 
+/// Carries the stop + photo identity for the photo caption editor (fade overlay).
+struct PhotoCaptionEditItem: Identifiable {
+    let dayId: UUID
+    let stopId: UUID
+    let photoId: UUID
+    var id: UUID { photoId }
+}
+
 struct RecapBlogPageView: View {
     let blogId: UUID
     let initialTrip: TripDraft?
@@ -142,6 +150,8 @@ struct RecapBlogPageView: View {
     @State private var dayCaptionEditItem: DayCaptionEditItem?
     /// Place caption full-screen overlay trigger.
     @State private var placeCaptionEditItem: PlaceCaptionEditItem?
+    /// Photo caption full-screen overlay trigger.
+    @State private var photoCaptionEditItem: PhotoCaptionEditItem?
     /// Alert when user taps a day that is not yet processed (geocoding still in progress).
     @State private var showUnprocessedDayAlert = false
     /// Limited-access users: controls the \"Photo Library Access\" prompt sheet.
@@ -292,11 +302,20 @@ struct RecapBlogPageView: View {
                     .zIndex(128)
             }
 
+            if let item = photoCaptionEditItem,
+               let stop = placeStop(dayId: item.dayId, stopId: item.stopId),
+               let photo = stop.photos.first(where: { $0.id == item.photoId }) {
+                photoCaptionEditLayer(item: item, photo: photo, stop: stop)
+                    .transition(.opacity)
+                    .zIndex(132)
+            }
+
         }
         .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
         .animation(.easeOut(duration: 0.22), value: placeCaptionEditItem?.id)
         .animation(.easeOut(duration: 0.22), value: dayCaptionEditItem?.id)
         .animation(.easeInOut(duration: 0.38), value: placePhotoModalItem?.id)
+        .animation(.easeOut(duration: 0.22), value: photoCaptionEditItem?.id)
     }
 
     private func bodyContent(screenHeight: CGFloat) -> some View {
@@ -566,7 +585,7 @@ struct RecapBlogPageView: View {
             .toolbarBackground(recapNavigationBarBackgroundVisibility, for: .navigationBar)
             .toolbarBackground(recapNavigationBarBackgroundFill, for: .navigationBar)
             .toolbar { toolbarContent }
-            .toolbar((showStoryMode || placeCaptionEditItem != nil || dayCaptionEditItem != nil || placePhotoModalItem != nil) ? .hidden : .automatic, for: .navigationBar)
+            .toolbar((showStoryMode || placeCaptionEditItem != nil || dayCaptionEditItem != nil || placePhotoModalItem != nil || photoCaptionEditItem != nil) ? .hidden : .automatic, for: .navigationBar)
             .sheet(isPresented: $showShareSheet) {
                 ShareSheet(items: shareItems)
             }
@@ -1671,7 +1690,7 @@ struct RecapBlogPageView: View {
                         markPhotoCaptionManual(dayId: day.id, stopId: stop.id, photoId: photoId)
                     },
                     onCaptionTapped: { photoId in
-                        placePhotoModalItem = PlacePhotoModalItem(dayId: day.id, stopId: stop.id, initialPhotoId: photoId, autoFocusCaption: true)
+                        photoCaptionEditItem = PhotoCaptionEditItem(dayId: day.id, stopId: stop.id, photoId: photoId)
                     },
                     onOverallStoryUserEdited: {
                         markOverallStoryManual(dayId: day.id, stopId: stop.id)
@@ -2677,6 +2696,38 @@ struct RecapBlogPageView: View {
             } : nil,
             onEnhanceApplied: LocalLLMStoryCaptionGenerator.isCapable ? {
                 markOverallStoryAI(dayId: item.dayId, stopId: item.stopId)
+            } : nil,
+            onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
+                await StoryCaptionService.shared.translateText(userText: userText)
+            } : nil
+        )
+    }
+
+    private func photoCaptionEditLayer(item: PhotoCaptionEditItem, photo: RecapPhoto, stop: PlaceStop) -> some View {
+        PhotoCaptionEditSheet(
+            photo: photo,
+            placeTitle: stop.placeTitle,
+            placeSubtitle: stop.placeSubtitle,
+            caption: bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: item.photoId),
+            onSave: {
+                photoCaptionEditItem = nil
+                markPhotoCaptionManual(dayId: item.dayId, stopId: item.stopId, photoId: item.photoId)
+                createdRecapStore.saveBlogDetail(draft)
+                syncStoryToCloudIfNeeded(stopId: item.stopId, isPlaceNote: false, photoId: item.photoId)
+            },
+            onCancel: {
+                photoCaptionEditItem = nil
+            },
+            onEnhance: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
+                await StoryCaptionService.shared.enhanceCaption(
+                    photo: photo,
+                    userText: userText,
+                    placeName: stop.placeTitle,
+                    placeSubtitle: stop.placeSubtitle
+                )
+            } : nil,
+            onEnhanceApplied: LocalLLMStoryCaptionGenerator.isCapable ? {
+                markPhotoCaptionAI(dayId: item.dayId, stopId: item.stopId, photoId: item.photoId)
             } : nil,
             onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
                 await StoryCaptionService.shared.translateText(userText: userText)

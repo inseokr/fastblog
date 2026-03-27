@@ -22,6 +22,7 @@
 		0C30D67375CF715A0AE52995 /* MapSnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A586130A3384B2A62AC27350 /* MapSnapshotHelper.swift */; };
 		285D83E64056D6DBF8E9894F /* StoryPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E27CCA2B392AD6D7D60A651A /* StoryPage.swift */; };
 		315C7029393A82205980943C /* DayCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C198E17B0447F89CC98721F /* DayCaptionEditSheet.swift */; };
+		3A9F2B1C4D8E5F7A2B0C6E91 /* PhotoCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C7D8E2F1A3B5C6D9E0F2A4B /* PhotoCaptionEditSheet.swift */; };
 		32D85DD5E6FD49691543F872 /* StoryBookBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3CF1895D23A7F11A1F1B7B0 /* StoryBookBuilder.swift */; };
 		33A0384A2DEF7075550C1327 /* PhotoContinuationBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF27B8BE17452A92005EEECF /* PhotoContinuationBlockView.swift */; };
 		37FBA08B0004D6825EFD3370 /* DayMapPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C820592BA8137D8FF7F05AA /* DayMapPageView.swift */; };
@@ -228,6 +229,7 @@
 		0733072C4EA957FE04A03752 /* StoryPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StoryPageView.swift; path = StoryBook/StoryPageView.swift; sourceTree = "<group>"; };
 		0D31200382275E7A7520CD4F /* PlaceBlockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaceBlockView.swift; path = StoryBook/PlaceBlockView.swift; sourceTree = "<group>"; };
 		2C198E17B0447F89CC98721F /* DayCaptionEditSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DayCaptionEditSheet.swift; sourceTree = "<group>"; };
+		4C7D8E2F1A3B5C6D9E0F2A4B /* PhotoCaptionEditSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhotoCaptionEditSheet.swift; sourceTree = "<group>"; };
 		2C820592BA8137D8FF7F05AA /* DayMapPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DayMapPageView.swift; path = StoryBook/DayMapPageView.swift; sourceTree = "<group>"; };
 		2F5C55E3E5D4C283468EF581 /* PDFExportService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PDFExportService.swift; sourceTree = "<group>"; };
 		2F6DDE63772EF1F878EC3686 /* TOCPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TOCPageView.swift; path = StoryBook/TOCPageView.swift; sourceTree = "<group>"; };
@@ -609,6 +611,7 @@
 				BB0001CB /* Components */,
 				2C198E17B0447F89CC98721F /* DayCaptionEditSheet.swift */,
 				B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */,
+				4C7D8E2F1A3B5C6D9E0F2A4B /* PhotoCaptionEditSheet.swift */,
 				BB0002A2 /* StoryWritingStyleSheet.swift */,
 				BB0003A2 /* PDFExportOptionsSheet.swift */,
 				E304D9246790A5FC17716A85 /* BlogPDFView.swift */,
@@ -981,6 +984,7 @@
 				0B1189F592CFDEDAF3305FAB /* PhotoPermissionOnboardingView.swift in Sources */,
 				315C7029393A82205980943C /* DayCaptionEditSheet.swift in Sources */,
 				719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */,
+				3A9F2B1C4D8E5F7A2B0C6E91 /* PhotoCaptionEditSheet.swift in Sources */,
 				BB0002A1 /* StoryWritingStyleSheet.swift in Sources */,
 				BB0003A1 /* PDFExportOptionsSheet.swift in Sources */,
 				BB0003B1 /* VisitedCitiesService.swift in Sources */,
