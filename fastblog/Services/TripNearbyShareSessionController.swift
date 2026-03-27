@@ -8,6 +8,7 @@
 
 import Foundation
 import MultipeerConnectivity
+import os
 import Photos
 import UIKit
 
@@ -16,6 +17,7 @@ import UIKit
 final class TripNearbyShareSessionController: NSObject, ObservableObject {
 
     static let shared = TripNearbyShareSessionController()
+    private static let logger = Logger(subsystem: "com.fastblog.app", category: "TripNearbyShare")
 
     enum Phase: Equatable {
         case idle
@@ -51,6 +53,7 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
     /// Set by `fastblog://receive-trip` so `ContentView` can present the receive sheet.
     @Published var presentReceiveFromDeepLink: Bool = false
     @Published var deepLinkPrefillCode: String = ""
+    @Published private(set) var debugEvents: [String] = []
 
     private var session: MCSession!
     private var myPeerID: MCPeerID!
@@ -82,6 +85,8 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
         myPeerID = MCPeerID(displayName: Self.deviceDisplayName())
         session = MCSession(peer: myPeerID, securityIdentity: nil, encryptionPreference: .required)
         session.delegate = self
+        logDebug("Session initialized as peer '\(myPeerID.displayName)' with service '\(TripShareNearbyConfig.multipeerServiceType)'.")
+        logNearbyConfigurationWarningsIfAny()
     }
 
     /// Called from app delegate / `onOpenURL` for `fastblog://receive-trip?code=…`.
@@ -98,11 +103,19 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
     // MARK: - Host
 
     func startHosting(recapDetail: RecapBlogDetail) {
+        let includedPhotoCount = recapDetail.days
+            .flatMap(\.placeStops)
+            .flatMap(\.photos)
+            .filter(\.isIncluded)
+            .count
+        logDebug("Host start requested for trip '\(recapDetail.title)' (\(includedPhotoCount) included photos).")
         resetForNewSession()
         activeRole = .host
         phase = .hostingPreparing
         sessionCode = Self.makeSessionCode()
         receiveURLForQR = Self.receiveTripURL(code: sessionCode)
+        logDebug("Host prepared session code \(sessionCode).")
+        guard verifyRuntimeNearbyConfiguration() else { return }
 
         Task {
             do {
@@ -111,10 +124,12 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
                 let (root, urls) = try Self.writeJPEGsToTemp(images: images)
                 await MainActor.run {
                     self.hostExport = (manifestJSON: json, photoURLs: urls, tempRoot: root)
+                    self.logDebug("Host payload prepared: \(manifest.photos.count) manifest photos, \(urls.count) JPEG files.")
                     self.beginAdvertising()
                 }
             } catch {
                 await MainActor.run {
+                    self.logDebug("Host payload preparation failed: \(error.localizedDescription)")
                     self.phase = .failed(error.localizedDescription)
                     self.teardown(resetRole: true)
                 }
@@ -126,32 +141,37 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
         guard activeRole == .host, hostExport != nil else { return }
         advertiser?.stopAdvertisingPeer()
         browser?.stopBrowsingForPeers()
+        let info = [
+            TripShareNearbyConfig.discoverySessionCodeKey: sessionCode,
+            TripShareNearbyConfig.discoveryRoleKey: TripShareNearbyConfig.discoveryRoleHost
+        ]
         advertiser = MCNearbyServiceAdvertiser(
             peer: myPeerID,
-            discoveryInfo: [
-                TripShareNearbyConfig.discoverySessionCodeKey: sessionCode,
-                TripShareNearbyConfig.discoveryRoleKey: TripShareNearbyConfig.discoveryRoleHost
-            ],
+            discoveryInfo: info,
             serviceType: TripShareNearbyConfig.multipeerServiceType
         )
         advertiser?.delegate = self
         advertiser?.startAdvertisingPeer()
         phase = .hostingAdvertising
+        logDebug("Advertising started with discovery info \(info).")
     }
 
     // MARK: - Guest
 
     func startReceiving(filterCode: String) {
+        logDebug("Guest browse requested with raw code '\(filterCode)'.")
         phase = .idle
         resetForNewSession()
         activeRole = .guest
         codeFilter = filterCode.uppercased().trimmingCharacters(in: .whitespacesAndNewlines)
         let allowed = "0123456789ABCDEF"
         guard codeFilter.count == 6, codeFilter.allSatisfy({ allowed.contains($0) }) else {
+            logDebug("Guest code validation failed for '\(codeFilter)'.")
             phase = .failed("Enter the 6-character code from the sender’s QR.")
             activeRole = .none
             return
         }
+        guard verifyRuntimeNearbyConfiguration() else { return }
         sessionCode = codeFilter
         guestManifestDecoded = nil
         guestReceivedByOrder = [:]
@@ -163,10 +183,12 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
         browser?.delegate = self
         browser?.startBrowsingForPeers()
         phase = .receivingBrowsing
+        logDebug("Guest browsing started with filter code \(codeFilter).")
     }
 
     /// Cancels advertising/browsing and tears down the session.
     func cancel() {
+        logDebug("Cancel requested by UI.")
         teardown(resetRole: true)
         phase = .idle
     }
@@ -174,6 +196,7 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
     // MARK: - Internals
 
     private func resetForNewSession() {
+        logDebug("Resetting state for new nearby session.")
         hostInvitation = nil
         guestManifestConsent = nil
         hostExport = nil
@@ -191,6 +214,7 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
     }
 
     private func teardown(resetRole: Bool) {
+        logDebug("Tearing down session. resetRole=\(resetRole)")
         advertiser?.stopAdvertisingPeer()
         advertiser = nil
         browser?.stopBrowsingForPeers()
@@ -242,11 +266,13 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
 
     private func sendManifestToGuest(_ peer: MCPeerID) {
         guard let json = hostExport?.manifestJSON else { return }
+        logDebug("Sending manifest (\(json.count) bytes) to \(peer.displayName).")
         var payload = Data([0x01])
         payload.append(json)
         do {
             try session.send(payload, toPeers: [peer], with: .reliable)
         } catch {
+            logDebug("Manifest send failed: \(error.localizedDescription)")
             phase = .failed("Could not send trip info.")
             teardown(resetRole: true)
         }
@@ -255,6 +281,7 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
     private func sendNextPhotoResource(to peer: MCPeerID) {
         guard let exp = hostExport else { return }
         guard hostSendingIndex < exp.photoURLs.count else {
+            logDebug("All resources sent to \(peer.displayName).")
             phase = .succeeded
             teardown(resetRole: false)
             activeRole = .none
@@ -263,10 +290,12 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
         let url = exp.photoURLs[hostSendingIndex]
         let name = "bloggo-photo-\(hostSendingIndex).jpg"
         phase = .transferring(current: hostSendingIndex + 1, total: exp.photoURLs.count)
+        logDebug("Sending resource \(name) to \(peer.displayName).")
         session.sendResource(at: url, withName: name, toPeer: peer) { [weak self] err in
             Task { @MainActor in
                 guard let self else { return }
                 if let err {
+                    self.logDebug("Resource send failed (\(name)): \(err.localizedDescription)")
                     self.phase = .failed(err.localizedDescription)
                     self.teardown(resetRole: true)
                     return
@@ -280,6 +309,7 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
     private func finalizeGuestImport() {
         guard let manifest = guestManifestDecoded else { return }
         guard guestReceivedByOrder.count == manifest.photos.count else {
+            logDebug("Finalize failed: received \(guestReceivedByOrder.count) of \(manifest.photos.count).")
             phase = .failed("Incomplete transfer.")
             teardown(resetRole: true)
             return
@@ -299,9 +329,11 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
             }
             guestReceivedByOrder = [:]
             phase = .succeeded
+            logDebug("Guest import succeeded for trip '\(manifest.tripTitle)'.")
             teardown(resetRole: false)
             activeRole = .none
         } catch {
+            logDebug("Guest import failed: \(error.localizedDescription)")
             phase = .failed(error.localizedDescription)
             teardown(resetRole: true)
         }
@@ -369,6 +401,42 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
         let d = JSONDecoder()
         return d
     }
+
+    private func verifyRuntimeNearbyConfiguration() -> Bool {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let warnings = TripShareNearbyConfig.runtimeConfigWarnings(infoDictionary: info)
+        guard warnings.isEmpty else {
+            let combined = warnings.joined(separator: " | ")
+            logDebug("Nearby runtime config warnings: \(combined)")
+            phase = .failed("Nearby share configuration issue: \(combined)")
+            activeRole = .none
+            return false
+        }
+        return true
+    }
+
+    private func logNearbyConfigurationWarningsIfAny() {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let warnings = TripShareNearbyConfig.runtimeConfigWarnings(infoDictionary: info)
+        for warning in warnings {
+            logDebug("Config warning at launch: \(warning)")
+        }
+    }
+
+    private func logDebug(_ message: String) {
+        Self.logger.debug("\(message, privacy: .public)")
+        let stamp = Self.debugDateFormatter.string(from: Date())
+        debugEvents.append("[\(stamp)] \(message)")
+        if debugEvents.count > 60 {
+            debugEvents.removeFirst(debugEvents.count - 60)
+        }
+    }
+
+    private static let debugDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSS"
+        return f
+    }()
 }
 
 // MARK: - MCSessionDelegate
@@ -376,6 +444,7 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
 extension TripNearbyShareSessionController: MCSessionDelegate {
     nonisolated func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
         Task { @MainActor in
+            self.logDebug("Session state with \(peerID.displayName): \(Self.describe(state: state)).")
             switch state {
             case .connected:
                 if self.activeRole == .host {
@@ -404,6 +473,7 @@ extension TripNearbyShareSessionController: MCSessionDelegate {
         Task { @MainActor in
             guard !data.isEmpty else { return }
             let kind = data[0]
+            self.logDebug("Received control packet kind=0x\(String(format: "%02X", kind)) size=\(data.count) from \(peerID.displayName).")
             if kind == 0x01, data.count > 1, self.activeRole == .guest {
                 let jsonData = data.dropFirst()
                 do {
@@ -414,6 +484,7 @@ extension TripNearbyShareSessionController: MCSessionDelegate {
                         peerID.displayName,
                         { [weak self] accept in
                             guard let self else { return }
+                            self.logDebug("Guest manifest consent decision for \(peerID.displayName): \(accept ? "accept" : "decline").")
                             self.guestManifestConsent = nil
                             self.guestAcceptedManifest = accept
                             let reply = Data([0x02, accept ? 0x01 : 0x00])
@@ -425,6 +496,7 @@ extension TripNearbyShareSessionController: MCSessionDelegate {
                         }
                     )
                 } catch {
+                    self.logDebug("Manifest decode failed: \(error.localizedDescription)")
                     self.phase = .failed("Invalid trip data.")
                     self.teardown(resetRole: true)
                 }
@@ -434,9 +506,11 @@ extension TripNearbyShareSessionController: MCSessionDelegate {
                 let accept = data[1] == 0x01
                 self.hostGuestAcceptedManifest = accept
                 if accept, let peer = self.hostRemotePeer {
+                    self.logDebug("Host received manifest acceptance from \(peer.displayName).")
                     self.hostSendingIndex = 0
                     self.sendNextPhotoResource(to: peer)
                 } else {
+                    self.logDebug("Host received manifest decline from \(peerID.displayName).")
                     self.phase = .idle
                     self.teardown(resetRole: true)
                 }
@@ -453,6 +527,7 @@ extension TripNearbyShareSessionController: MCSessionDelegate {
         Task { @MainActor in
             guard self.activeRole == .guest, self.guestAcceptedManifest else { return }
             if let error {
+                self.logDebug("Resource receive failed (\(resourceName)): \(error.localizedDescription)")
                 self.phase = .failed(error.localizedDescription)
                 self.teardown(resetRole: true)
                 return
@@ -467,6 +542,7 @@ extension TripNearbyShareSessionController: MCSessionDelegate {
                 }
                 try FileManager.default.copyItem(at: localURL, to: dest)
                 self.guestReceivedByOrder[order] = dest
+                self.logDebug("Received resource \(resourceName) (\(self.guestReceivedByOrder.count) total).")
                 if let m = self.guestManifestDecoded {
                     let n = self.guestReceivedByOrder.count
                     self.phase = .transferring(current: n, total: m.photos.count)
@@ -475,6 +551,7 @@ extension TripNearbyShareSessionController: MCSessionDelegate {
                     }
                 }
             } catch {
+                self.logDebug("Failed to persist received resource \(resourceName): \(error.localizedDescription)")
                 self.phase = .failed("Could not save a received photo.")
                 self.teardown(resetRole: true)
             }
@@ -487,9 +564,11 @@ extension TripNearbyShareSessionController: MCSessionDelegate {
 extension TripNearbyShareSessionController: MCNearbyServiceAdvertiserDelegate {
     nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didReceiveInvitationFromPeer peerID: MCPeerID, withContext context: Data?, invitationHandler: @escaping (Bool, MCSession?) -> Void) {
         Task { @MainActor in
+            self.logDebug("Host received invitation from \(peerID.displayName). Prompting for approval.")
             self.hostInvitation = (
                 peerID.displayName,
                 { accept in
+                    self.logDebug("Host invitation decision for \(peerID.displayName): \(accept ? "accept" : "decline").")
                     self.hostInvitation = nil
                     invitationHandler(accept, accept ? self.session : nil)
                 }
@@ -499,6 +578,7 @@ extension TripNearbyShareSessionController: MCNearbyServiceAdvertiserDelegate {
 
     nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {
         Task { @MainActor in
+            self.logDebug("Advertising failed to start: \(error.localizedDescription)")
             self.phase = .failed("Could not advertise nearby: \(error.localizedDescription)")
             self.teardown(resetRole: true)
         }
@@ -511,14 +591,25 @@ extension TripNearbyShareSessionController: MCNearbyServiceBrowserDelegate {
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, foundPeer peerID: MCPeerID, withDiscoveryInfo info: [String: String]?) {
         Task { @MainActor in
             guard self.activeRole == .guest else { return }
-            guard info?[TripShareNearbyConfig.discoveryRoleKey] == TripShareNearbyConfig.discoveryRoleHost else { return }
+            self.logDebug("Guest found peer \(peerID.displayName) with discovery info \(info ?? [:]).")
+            guard info?[TripShareNearbyConfig.discoveryRoleKey] == TripShareNearbyConfig.discoveryRoleHost else {
+                self.logDebug("Ignoring peer \(peerID.displayName): role is not host.")
+                return
+            }
             if !self.codeFilter.isEmpty {
                 let theirs = info?[TripShareNearbyConfig.discoverySessionCodeKey] ?? ""
-                guard theirs.uppercased() == self.codeFilter else { return }
+                guard theirs.uppercased() == self.codeFilter else {
+                    self.logDebug("Ignoring peer \(peerID.displayName): code mismatch ours=\(self.codeFilter) theirs=\(theirs).")
+                    return
+                }
             }
             let oid = ObjectIdentifier(peerID)
-            guard !self.guestInvitedPeers.contains(oid) else { return }
+            guard !self.guestInvitedPeers.contains(oid) else {
+                self.logDebug("Skipping duplicate invitation to \(peerID.displayName).")
+                return
+            }
             self.guestInvitedPeers.insert(oid)
+            self.logDebug("Inviting peer \(peerID.displayName).")
             browser.invitePeer(peerID, to: self.session, withContext: nil, timeout: 25)
         }
     }
@@ -527,8 +618,20 @@ extension TripNearbyShareSessionController: MCNearbyServiceBrowserDelegate {
 
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: Error) {
         Task { @MainActor in
+            self.logDebug("Browsing failed to start: \(error.localizedDescription)")
             self.phase = .failed("Could not look for nearby devices: \(error.localizedDescription)")
             self.teardown(resetRole: true)
+        }
+    }
+}
+
+private extension TripNearbyShareSessionController {
+    static func describe(state: MCSessionState) -> String {
+        switch state {
+        case .notConnected: return "notConnected"
+        case .connecting: return "connecting"
+        case .connected: return "connected"
+        @unknown default: return "unknown"
         }
     }
 }

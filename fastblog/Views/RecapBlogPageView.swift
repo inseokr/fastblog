@@ -8,6 +8,7 @@ import MapKit
 import Combine
 import UIKit
 import Photos
+import AudioToolbox
 
 private struct TitleMinYPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = .greatestFiniteMagnitude
@@ -126,8 +127,7 @@ struct RecapBlogPageView: View {
     @State private var pendingWebLinkAfterAuth = false
     @State private var pendingWebLinkShareAfterUpload = false
     @State private var showBloggoQRSheet = false
-    @State private var qrSaveStatusMessage = ""
-    @State private var showQRSaveStatusAlert = false
+    @State private var animateNearbySharePulse = false
     @State private var storyShareTrigger = false
     @State private var storyContentReady = false
     @State private var storyChromeVisible = true
@@ -398,7 +398,7 @@ struct RecapBlogPageView: View {
             }
             .sheet(isPresented: $showBloggoQRSheet) {
                 shareWithBloggoQRCodeSheet()
-                    .presentationDetents([.medium])
+                    .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
     }
@@ -479,11 +479,6 @@ struct RecapBlogPageView: View {
                 }
             } message: {
                 Text("We’re gradually releasing web sharing to early users.")
-            }
-            .alert("QR Saved", isPresented: $showQRSaveStatusAlert) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(qrSaveStatusMessage)
             }
             .alert("Can’t share this trip", isPresented: $showNearbyShareUnavailableAlert) {
                 Button("OK", role: .cancel) {}
@@ -2220,68 +2215,174 @@ struct RecapBlogPageView: View {
                 }
                 .padding(.top, 6)
 
-                HStack(spacing: 12) {
-                    Button {
-                        showBloggoQRSheet = false
-                    } label: {
-                        Text("Close")
-                            .font(.headline)
-                            .foregroundColor(.primary)
+                Group {
+                    switch nearbyShare.phase {
+                    case .hostingPreparing:
+                        ProgressView("Preparing trip…")
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color(uiColor: .secondarySystemBackground))
-                            .cornerRadius(12)
-                    }
-
-                    Button {
-                        Task { await saveBloggoQRToPhotos() }
-                    } label: {
-                        Text("Save QR")
-                            .font(.headline)
-                            .foregroundColor(.white)
+                    case .hostingAdvertising:
+                        Label("Waiting for a nearby device…", systemImage: "antenna.radiowaves.left.and.right")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    case .hostingConnected(let name):
+                        Label("Connected to \(name)", systemImage: "link")
+                            .foregroundStyle(.blue)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    case .transferring(let cur, let total):
+                        ProgressView(value: Double(cur), total: Double(total)) {
+                            Text("Sending photos \(cur) of \(total)")
+                        }
+                    case .succeeded:
+                        Label("Trip sent successfully", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    case .failed(let msg):
+                        Text(msg)
+                            .foregroundStyle(.red)
+                            .multilineTextAlignment(.center)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color.blue)
-                            .cornerRadius(12)
+                    default:
+                        EmptyView()
                     }
-                    .disabled(nearbyShare.receiveURLForQR == nil)
                 }
                 .padding(.top, 8)
 
-                Spacer(minLength: 4)
+                Button {
+                    showBloggoQRSheet = false
+                } label: {
+                    Text("Close")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color(uiColor: .secondarySystemBackground))
+                        .cornerRadius(12)
+                }
+                .padding(.top, 8)
             }
             .padding(.horizontal, 20)
             .padding(.top, 16)
             .onAppear {
+                animateNearbySharePulse = true
                 nearbyShare.startHosting(recapDetail: draft)
             }
             .onDisappear {
+                animateNearbySharePulse = false
                 nearbyShare.cancel()
+            }
+            .onChange(of: nearbyShare.phase) { oldPhase, newPhase in
+                triggerNearbyShareHaptic(oldPhase: oldPhase, newPhase: newPhase)
+            }
+            .onChange(of: nearbyShare.hostInvitation != nil) { _, hasInvite in
+                if hasInvite {
+                    UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                    vibrateFallback()
+                }
+            }
+            .overlay {
+                ZStack {
+                    if isNearbySharePulseActive {
+                        ZStack {
+                            ForEach(0..<3, id: \.self) { idx in
+                                RoundedRectangle(cornerRadius: 24)
+                                    .stroke(Color.cyan.opacity(0.95), lineWidth: 2.6)
+                                    .scaleEffect(animateNearbySharePulse ? 1.18 : 0.98)
+                                    .opacity(animateNearbySharePulse ? 0.0 : 0.75)
+                                    .padding(2)
+                                    .animation(
+                                        .easeOut(duration: 1.35)
+                                            .delay(Double(idx) * 0.28)
+                                            .repeatForever(autoreverses: false),
+                                        value: animateNearbySharePulse
+                                    )
+                            }
+
+                            RoundedRectangle(cornerRadius: 22)
+                                .stroke(Color.blue.opacity(0.95), lineWidth: 3.4)
+                                .shadow(color: Color.cyan.opacity(animateNearbySharePulse ? 0.95 : 0.45), radius: animateNearbySharePulse ? 30 : 12)
+                                .padding(4)
+                                .animation(.easeInOut(duration: 0.95).repeatForever(autoreverses: true), value: animateNearbySharePulse)
+                        }
+                        .allowsHitTesting(false)
+                    }
+
+                    if let invite = nearbyShare.hostInvitation {
+                        ZStack {
+                            Color.black.opacity(0.45)
+                                .ignoresSafeArea()
+                            VStack(spacing: 16) {
+                                Text("Allow connection?")
+                                    .font(.headline)
+                                Text("\(invite.peerName) wants to receive “\(draft.title)”.")
+                                    .font(.subheadline)
+                                    .multilineTextAlignment(.center)
+                                HStack(spacing: 12) {
+                                    Button("Decline", role: .cancel) {
+                                        invite.decide(false)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    Button("Accept") {
+                                        invite.decide(true)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                }
+                            }
+                            .padding(24)
+                            .background(.ultraThinMaterial)
+                            .cornerRadius(16)
+                            .padding(32)
+                        }
+                    }
+                }
             }
         }
         .preferredColorScheme(.dark)
     }
 
-    private func saveBloggoQRToPhotos() async {
-        guard let url = nearbyShare.receiveURLForQR,
-              let image = TripShareQRCodeGenerator.image(from: url.absoluteString, scale: 12) else {
-            qrSaveStatusMessage = "Could not generate QR image."
-            showQRSaveStatusAlert = true
+    private var isNearbySharePulseActive: Bool {
+        switch nearbyShare.phase {
+        case .hostingAdvertising, .hostingConnected, .transferring:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func triggerNearbyShareHaptic(
+        oldPhase: TripNearbyShareSessionController.Phase,
+        newPhase: TripNearbyShareSessionController.Phase
+    ) {
+        if oldPhase == newPhase { return }
+        if case .transferring = oldPhase, case .transferring = newPhase {
             return
         }
 
-        if !photoAuth.isAuthorized {
-            await photoAuth.requestAccess()
+        switch newPhase {
+        case .hostingPreparing:
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            vibrateFallback()
+        case .hostingAdvertising:
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            vibrateFallback()
+        case .hostingConnected:
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            vibrateFallback()
+        case .transferring:
+            UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 0.9)
+            vibrateFallback()
+        case .succeeded:
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            vibrateFallback()
+        case .failed:
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+            vibrateFallback()
+        default:
+            break
         }
-        guard photoAuth.isAuthorized else {
-            qrSaveStatusMessage = "Photos permission is required to save the QR."
-            showQRSaveStatusAlert = true
-            return
-        }
+    }
 
-        UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
-        qrSaveStatusMessage = "QR code saved to your Photos."
-        showQRSaveStatusAlert = true
+    private func vibrateFallback() {
+        AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
     }
 
     private func saveDraft() {

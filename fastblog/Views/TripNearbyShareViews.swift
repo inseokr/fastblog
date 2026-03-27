@@ -8,6 +8,7 @@
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import SwiftUI
+import UIKit
 
 // MARK: - QR
 
@@ -53,6 +54,15 @@ struct TripNearbyShareHostSheet: View {
     let recap: RecapBlogDetail
     @ObservedObject var controller: TripNearbyShareSessionController
     @Environment(\.dismiss) private var dismiss
+
+    private var isRadiating: Bool {
+        switch controller.phase {
+        case .hostingAdvertising, .hostingConnected, .transferring:
+            return true
+        default:
+            return false
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -103,9 +113,11 @@ struct TripNearbyShareHostSheet: View {
                     default:
                         EmptyView()
                     }
+
                 }
                 .padding()
             }
+            .modifier(TripNearbyRadiatingBorderModifier(isActive: isRadiating))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -126,6 +138,14 @@ struct TripNearbyShareHostSheet: View {
         }
         .onDisappear {
             controller.cancel()
+        }
+        .onChange(of: controller.phase) { oldPhase, newPhase in
+            triggerHostHaptic(oldPhase: oldPhase, newPhase: newPhase)
+        }
+        .onChange(of: controller.hostInvitation != nil) { _, hasInvite in
+            if hasInvite {
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            }
         }
     }
 
@@ -156,6 +176,24 @@ struct TripNearbyShareHostSheet: View {
             .padding(32)
         }
     }
+
+    private func triggerHostHaptic(oldPhase: TripNearbyShareSessionController.Phase, newPhase: TripNearbyShareSessionController.Phase) {
+        if oldPhase == newPhase { return }
+        switch newPhase {
+        case .hostingAdvertising:
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        case .hostingConnected:
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        case .transferring:
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.7)
+        case .succeeded:
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        case .failed:
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+        default:
+            break
+        }
+    }
 }
 
 // MARK: - Receive
@@ -167,6 +205,15 @@ struct TripNearbyShareReceiveSheet: View {
     @State private var codeInput: String = ""
     /// User chose to skip copying imports to the Camera Roll for this completed transfer.
     @State private var skippedCameraRollOffer = false
+
+    private var isRadiating: Bool {
+        switch controller.phase {
+        case .receivingBrowsing, .receivingConnected, .transferring:
+            return true
+        default:
+            return false
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -273,7 +320,9 @@ struct TripNearbyShareReceiveSheet: View {
                         EmptyView()
                     }
                 }
+
             }
+            .modifier(TripNearbyRadiatingBorderModifier(isActive: isRadiating))
             .navigationTitle("Receive trip")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -306,6 +355,14 @@ struct TripNearbyShareReceiveSheet: View {
                 skippedCameraRollOffer = false
             default:
                 break
+            }
+        }
+        .onChange(of: controller.phase) { oldPhase, newPhase in
+            triggerReceiveHaptic(oldPhase: oldPhase, newPhase: newPhase)
+        }
+        .onChange(of: controller.guestManifestConsent != nil) { _, hasConsentPrompt in
+            if hasConsentPrompt {
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
             }
         }
     }
@@ -344,5 +401,52 @@ struct TripNearbyShareReceiveSheet: View {
             .cornerRadius(16)
             .padding(28)
         }
+    }
+
+    private func triggerReceiveHaptic(oldPhase: TripNearbyShareSessionController.Phase, newPhase: TripNearbyShareSessionController.Phase) {
+        if oldPhase == newPhase { return }
+        switch newPhase {
+        case .receivingBrowsing:
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        case .receivingConnected:
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        case .transferring:
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.7)
+        case .succeeded:
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        case .failed:
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+        default:
+            break
+        }
+    }
+}
+
+private struct TripNearbyRadiatingBorderModifier: ViewModifier {
+    let isActive: Bool
+    @State private var animatePulse = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.blue.opacity(isActive ? 0.85 : 0),
+                                Color.cyan.opacity(isActive ? 0.6 : 0),
+                                Color.blue.opacity(isActive ? 0.85 : 0)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: isActive ? 2.5 : 0
+                    )
+                    .shadow(color: Color.blue.opacity(isActive ? (animatePulse ? 0.75 : 0.25) : 0), radius: animatePulse ? 22 : 8)
+                    .padding(4)
+                    .allowsHitTesting(false)
+                    .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: animatePulse)
+                    .onAppear { animatePulse = true }
+            }
     }
 }

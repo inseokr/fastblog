@@ -29,4 +29,30 @@ enum TripShareNearbyConfig {
     static let discoverySessionCodeKey = "code"
     static let discoveryRoleKey = "role"
     static let discoveryRoleHost = "host"
+    /// Bonjour service type entry expected in `NSBonjourServices`.
+    static let bonjourServiceEntry = "_\(multipeerServiceType)._tcp"
+
+    /// Returns configuration warnings that can make nearby share silently fail at runtime.
+    static func runtimeConfigWarnings(infoDictionary: [String: Any]) -> [String] {
+        var warnings: [String] = []
+
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789-")
+        let hasOnlyAllowed = multipeerServiceType.unicodeScalars.allSatisfy(allowed.contains)
+        if multipeerServiceType.count > 15 || multipeerServiceType.count < 1 || !hasOnlyAllowed {
+            warnings.append("Invalid service type '\(multipeerServiceType)'. Must be 1-15 chars: lowercase letters, digits, hyphen.")
+        }
+
+        let localUsage = (infoDictionary["NSLocalNetworkUsageDescription"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if localUsage.isEmpty {
+            warnings.append("Missing NSLocalNetworkUsageDescription in Info.plist.")
+        }
+
+        let bonjour = infoDictionary["NSBonjourServices"] as? [String] ?? []
+        if !bonjour.contains(bonjourServiceEntry) {
+            warnings.append("NSBonjourServices missing \(bonjourServiceEntry).")
+        }
+
+        return warnings
+    }
 }
