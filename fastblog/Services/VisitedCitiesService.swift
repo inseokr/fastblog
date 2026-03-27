@@ -17,6 +17,8 @@ struct VisitedCityTrip: Identifiable, Codable {
     let endDate: Date
     let dayCount: Int
     let coverAssetIdentifier: String?
+    /// IANA id from reverse-geocode at the place cell; used so date labels match capture-timezone wall times (e.g. preview digitized line).
+    let displayTimeZoneIdentifier: String?
 
     var displayTitle: String {
         cityName.isEmpty ? (countryName.isEmpty ? "Trip" : countryName) : cityName
@@ -29,10 +31,26 @@ struct VisitedCityTrip: Identifiable, Codable {
         return parts.joined(separator: " · ")
     }
 
+    /// Uses `displayTimeZoneIdentifier` when set (capture region); else device zone. Single calendar day → one string (not "Jan 5 – Jan 5").
     var dateRangeText: String {
+        let tz = displayTimeZoneIdentifier.flatMap { TimeZone(identifier: $0) } ?? TimeZone.current
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = tz
+        cal.locale = Locale.current
+        if cal.isDate(startDate, inSameDayAs: endDate) {
+            let f = DateFormatter()
+            f.dateStyle = .medium
+            f.timeStyle = .none
+            f.timeZone = tz
+            f.locale = Locale.current
+            f.calendar = cal
+            return f.string(from: startDate)
+        }
         let f = DateIntervalFormatter()
         f.dateStyle = .medium
         f.timeStyle = .none
+        f.timeZone = tz
+        f.locale = Locale.current
         return f.string(from: startDate, to: endDate)
     }
 }
@@ -62,7 +80,7 @@ final class VisitedCitiesService {
 
     // MARK: - Cache
 
-    private static let cacheKeyPrefix = "visitedCities.v3"
+    private static let cacheKeyPrefix = "visitedCities.v5"
     private static let cacheMaxAge: TimeInterval = 3 * 24 * 3600 // 3 days
 
     private struct Cache: Codable {
@@ -147,16 +165,47 @@ final class VisitedCitiesService {
         progress(0.10)
         guard !filtered.isEmpty else { return [] }
 
-        // ── Phase 3: Collect ALL assets per calendar day ──
+        // ── Phase 2.5: Capture timezone per asset (EXIF offset, then geocoded location; deduped) ──
+        // Buckets yyyy-MM-dd in that zone so "which day" matches APIManager.captureTimeZone / preview digitized line.
+        var tzByAssetId: [String: TimeZone] = [:]
+        await withTaskGroup(of: (String, TimeZone?).self) { group in
+            for asset in filtered {
+                group.addTask {
+                    (asset.localIdentifier, await APIManager.getLocalTimeZone(for: asset))
+                }
+            }
+            for await (id, tz) in group {
+                if let tz { tzByAssetId[id] = tz }
+            }
+        }
+        var tzByGeoKey: [String: TimeZone] = [:]
+        for asset in filtered where tzByAssetId[asset.localIdentifier] == nil {
+            guard let loc = asset.location else { continue }
+            let cl = CLLocation(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude)
+            let key = geocodeCacheKey(for: cl)
+            if let cached = tzByGeoKey[key] {
+                tzByAssetId[asset.localIdentifier] = cached
+                continue
+            }
+            if let tz = await GeocodingService.shared.timeZone(for: cl) {
+                tzByGeoKey[key] = tz
+                tzByAssetId[asset.localIdentifier] = tz
+            }
+        }
+        progress(0.13)
+
+        // ── Phase 3: Collect ALL assets per calendar day (local day in capture timezone) ──
         // Keeping every asset lets Phase 4a fall back through photos when
         // the first one has bad or missing GPS metadata.
-        let dayFmt = DateFormatter()
-        dayFmt.locale = Locale(identifier: "en_US_POSIX")
-        dayFmt.dateFormat = "yyyy-MM-dd"
-
         var dayMap: [String: [PHAsset]] = [:]
         for asset in filtered {
             guard let date = asset.creationDate else { continue }
+            let tz = tzByAssetId[asset.localIdentifier] ?? TimeZone.current
+            let dayFmt = DateFormatter()
+            dayFmt.locale = Locale(identifier: "en_US_POSIX")
+            dayFmt.calendar = Calendar(identifier: .gregorian)
+            dayFmt.timeZone = tz
+            dayFmt.dateFormat = "yyyy-MM-dd"
             dayMap[dayFmt.string(from: date), default: []].append(asset)
         }
         let sortedDays = dayMap.keys.sorted()
@@ -196,7 +245,7 @@ final class VisitedCitiesService {
         // ── Phase 4b: Geocode each unique cell ONCE ──
         // Typical trip has ≤ 20 unique locations regardless of duration,
         // so this replaces hundreds of day-level calls with a handful.
-        var cellResult: [GridCell: (city: String, country: String)] = [:]
+        var cellResult: [GridCell: (city: String, country: String, timeZone: TimeZone?)] = [:]
         let geocoder = CLGeocoder()
         let cellTotal = Double(uniqueCells.count)
 
@@ -222,7 +271,7 @@ final class VisitedCitiesService {
                 let p    = placemarks.first
                 let city = p?.locality ?? p?.subLocality ?? p?.administrativeArea ?? ""
                 let ctry = p?.country ?? ""
-                cellResult[cell] = (city: city, country: ctry)
+                cellResult[cell] = (city: city, country: ctry, timeZone: p?.timeZone)
                 print("[VisitedCities] cell(\(cell.latBucket),\(cell.lonBucket)) → \(city), \(ctry)")
             } catch {
                 // Leave cell out of results; don't poison future lookups
@@ -241,19 +290,20 @@ final class VisitedCitiesService {
         if Task.isCancelled { return [] }
 
         // ── Phase 4c: Build dayEntries by mapping each day to its cell's result ──
-        var dayEntries: [(dateKey: String, city: String, country: String, assetId: String)] = []
+        var dayEntries: [(dateKey: String, city: String, country: String, assetId: String, timeZoneIdentifier: String?)] = []
         for dateKey in sortedDays {
             guard
                 let info   = dayCell[dateKey],
                 let result = cellResult[info.cell],
                 !result.city.isEmpty || !result.country.isEmpty
             else { continue }
-            dayEntries.append((dateKey: dateKey, city: result.city, country: result.country, assetId: info.assetId))
+            let tzId = result.timeZone?.identifier ?? tzByAssetId[info.assetId]?.identifier
+            dayEntries.append((dateKey: dateKey, city: result.city, country: result.country, assetId: info.assetId, timeZoneIdentifier: tzId))
             print("[VisitedCities] day \(dateKey) → \(result.city), \(result.country)")
         }
 
         // ── Phase 5: Group consecutive same-city days into trip segments ──
-        let trips = groupIntoTrips(dayEntries: dayEntries, dayFmt: dayFmt)
+        let trips = groupIntoTrips(dayEntries: dayEntries)
         print("[VisitedCities] \(year): grouped into \(trips.count) trip(s)")
         for t in trips {
             print("[VisitedCities]   \(t.cityName), \(t.countryName)  \(t.startDate) → \(t.endDate)  (\(t.dayCount) days)")
@@ -265,8 +315,7 @@ final class VisitedCitiesService {
     // MARK: - Grouping
 
     private func groupIntoTrips(
-        dayEntries: [(dateKey: String, city: String, country: String, assetId: String)],
-        dayFmt: DateFormatter
+        dayEntries: [(dateKey: String, city: String, country: String, assetId: String, timeZoneIdentifier: String?)]
     ) -> [VisitedCityTrip] {
         guard !dayEntries.isEmpty else { return [] }
 
@@ -278,17 +327,20 @@ final class VisitedCitiesService {
         var curCity    = dayEntries[0].city
         var curCtry    = dayEntries[0].country
         var coverAsset = dayEntries[0].assetId
+        var curTzId    = dayEntries[0].timeZoneIdentifier
         var dayCount   = 1
 
         func flush() {
+            let tz = (curTzId.flatMap { TimeZone(identifier: $0) }) ?? TimeZone.current
             guard
-                let start = dayFmt.date(from: startKey),
-                let end   = dayFmt.date(from: endKey)
+                let start = Self.startOfCalendarDay(dateKey: startKey, timeZone: tz),
+                let end = Self.startOfCalendarDay(dateKey: endKey, timeZone: tz)
             else { return }
             trips.append(VisitedCityTrip(
                 cityName: curCity, countryName: curCtry,
                 startDate: start, endDate: end,
-                dayCount: dayCount, coverAssetIdentifier: coverAsset
+                dayCount: dayCount, coverAssetIdentifier: coverAsset,
+                displayTimeZoneIdentifier: curTzId
             ))
         }
 
@@ -296,13 +348,7 @@ final class VisitedCitiesService {
             let prev = dayEntries[i - 1]
             let cur  = dayEntries[i]
 
-            let gap: Int
-            if let d1 = dayFmt.date(from: prev.dateKey),
-               let d2 = dayFmt.date(from: cur.dateKey) {
-                gap = calendar.dateComponents([.day], from: d1, to: d2).day ?? 999
-            } else {
-                gap = 999
-            }
+            let gap = Self.gregorianCalendarDaysBetween(prev.dateKey, cur.dateKey) ?? 999
 
             let samePlace = cur.city == curCity && cur.country == curCtry
 
@@ -316,11 +362,32 @@ final class VisitedCitiesService {
                 curCity    = cur.city
                 curCtry    = cur.country
                 coverAsset = cur.assetId
+                curTzId    = cur.timeZoneIdentifier
                 dayCount   = 1
             }
         }
         flush()
 
         return trips.reversed() // newest first
+    }
+
+    /// Pure Gregorian day difference for yyyy-MM-dd keys (labels are timezone-agnostic calendar dates).
+    private static func gregorianCalendarDaysBetween(_ a: String, _ b: String) -> Int? {
+        let pa = a.split(separator: "-").compactMap { Int($0) }
+        let pb = b.split(separator: "-").compactMap { Int($0) }
+        guard pa.count == 3, pb.count == 3 else { return nil }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
+        guard let d1 = cal.date(from: DateComponents(year: pa[0], month: pa[1], day: pa[2])),
+              let d2 = cal.date(from: DateComponents(year: pb[0], month: pb[1], day: pb[2])) else { return nil }
+        return cal.dateComponents([.day], from: d1, to: d2).day
+    }
+
+    private static func startOfCalendarDay(dateKey: String, timeZone: TimeZone) -> Date? {
+        let parts = dateKey.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        return cal.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
     }
 }

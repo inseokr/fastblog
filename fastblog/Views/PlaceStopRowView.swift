@@ -7,7 +7,12 @@ import MapKit
 import SwiftUI
 import UIKit
 
-
+private struct OverallStoryTruncationKey: PreferenceKey {
+    static var defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
 
 struct PlaceStopRowView: View {
     let day: RecapBlogDay
@@ -59,6 +64,7 @@ struct PlaceStopRowView: View {
     @FocusState private var focusedPhotoId: UUID?
     @State private var expandedCaptionPhotoId: UUID? = nil
     @State private var isOverallStoryExpanded = false
+    @State private var isOverallStoryTruncated = false
     // Vibe playback for blog photo thumbnails
     @StateObject private var vibePlayer = VibePlayer()
     @State private var playingVibePhotoId: UUID? = nil
@@ -694,11 +700,7 @@ struct PlaceStopRowView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
             } else if !overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isOverallStoryExpanded.toggle()
-                    }
-                } label: {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(overallStory)
                         .font(.body)
                         .lineSpacing(5)
@@ -706,8 +708,40 @@ struct PlaceStopRowView: View {
                         .lineLimit(isOverallStoryExpanded ? nil : 5)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: isOverallStoryExpanded)
+                        .background(
+                            GeometryReader { constrainedGeo in
+                                Text(overallStory)
+                                    .font(.body)
+                                    .lineSpacing(5)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(width: constrainedGeo.size.width)
+                                    .background(GeometryReader { fullGeo in
+                                        Color.clear.preference(
+                                            key: OverallStoryTruncationKey.self,
+                                            value: fullGeo.size.height > constrainedGeo.size.height + 1
+                                        )
+                                    })
+                                    .hidden()
+                            }
+                        )
+                        .onPreferenceChange(OverallStoryTruncationKey.self) { value in
+                            isOverallStoryTruncated = value
+                        }
+
+                    if isOverallStoryTruncated || isOverallStoryExpanded {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isOverallStoryExpanded.toggle()
+                            }
+                        } label: {
+                            Text(isOverallStoryExpanded ? "Show less" : "Show more")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(.white.opacity(0.5))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .buttonStyle(.plain)
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
                 .padding(.bottom, 8)

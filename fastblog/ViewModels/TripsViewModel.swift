@@ -1326,6 +1326,42 @@ final class TripsViewModel: ObservableObject {
         return (merged, didChange)
     }
 
+    /// Drops photos outside `[rangeStart, rangeEnd]` (inclusive), removes empty days, reindexes days,
+    /// and refreshes `dateRangeText` / `daysSeasonText`. Used when the user picks a place card span
+    /// but the library scan merged a longer multi-day trip that only overlaps that span.
+    private func trimTripDraftToPhotoTimestamps(_ trip: TripDraft, rangeStart: Date, rangeEnd: Date) -> TripDraft {
+        var result = trip
+        var newDays: [TripDay] = []
+        for day in trip.days {
+            let kept = day.photos.filter { $0.timestamp >= rangeStart && $0.timestamp <= rangeEnd }
+            guard !kept.isEmpty else { continue }
+            var d = day
+            d.photos = kept.sorted { $0.timestamp < $1.timestamp }
+            newDays.append(d)
+        }
+        newDays = newDays.enumerated().map { idx, day in
+            var d = day
+            d.dayIndex = idx
+            return d
+        }
+        result.days = newDays
+        if let first = newDays.first, let last = newDays.last {
+            result.dateRangeText = first.dateText == last.dateText
+                ? first.dateText
+                : "\(first.dateText) – \(last.dateText)"
+            let monthYearFormatter = DateFormatter()
+            monthYearFormatter.dateFormat = "MMM yyyy"
+            let parseFmt = DateFormatter()
+            parseFmt.locale = Locale.current
+            parseFmt.dateStyle = .medium
+            if let firstDate = parseFmt.date(from: first.dateText) {
+                let suffix = monthYearFormatter.string(from: firstDate)
+                result.daysSeasonText = "\(newDays.count) day\(newDays.count == 1 ? "" : "s") • \(suffix)"
+            }
+        }
+        return result
+    }
+
     /// After a default scan, check whether any scanned drafts are temporal continuations
     /// of the user's currently active on-the-go blog.  When they are, signal new moments
     /// so the next "Tap to Blog" tap shows the update popup.
@@ -1757,6 +1793,11 @@ final class TripsViewModel: ObservableObject {
         let cal = Calendar.current
         let selectedStart = selected.map(\.startDate).min() ?? Date()
         let selectedEnd = selected.map(\.endDate).max() ?? selectedStart
+        let selectionDayStart = cal.startOfDay(for: selectedStart)
+        let selectionDayEnd = cal.startOfDay(for: selectedEnd)
+        let selectionSpanDays = (cal.dateComponents([.day], from: selectionDayStart, to: selectionDayEnd).day ?? 0) + 1
+        // Multi-place selections are capped at 7 calendar days in the UI; single-place rows can exceed 7 days with a warning.
+        if selectionSpanDays > 7, selected.count > 1 { return false }
 
         // Pad both edges to avoid clipping transit/arrival/departure moments.
         let fetchStart = cal.date(byAdding: .day, value: -2, to: cal.startOfDay(for: selectedStart)) ?? selectedStart
@@ -1786,6 +1827,9 @@ final class TripsViewModel: ObservableObject {
                 merged = combined
             }
         }
+
+        merged = trimTripDraftToPhotoTimestamps(merged, rangeStart: selectionDayStart, rangeEnd: endOfSelectedDay)
+        guard merged.days.contains(where: { !$0.photos.isEmpty }) else { return false }
 
         // Select all photos for immediate blog creation path.
         for dayIdx in merged.days.indices {

@@ -3,8 +3,11 @@
 //  fastblog
 //
 
+import CoreLocation
+import MapKit
 import Photos
 import SwiftUI
+import UIKit
 
 // MARK: - Sheet
 
@@ -18,8 +21,14 @@ struct VisitedCitiesSheet: View {
     @State private var isCreatingBlog: Bool = false
     @State private var unavailableAlertMessage: String = ""
     @State private var showUnavailableAlert: Bool = false
-    @State private var previewImage: UIImage?
-    @State private var showImagePreview: Bool = false
+    @State private var selectionAlertTitle: String = "Unavailable for Selection"
+    @State private var showLongSingleStayWarning: Bool = false
+    @State private var pendingLongStayTrips: [VisitedCityTrip] = []
+    @State private var showCoverPreviewSheet: Bool = false
+    @State private var coverPreviewTrip: VisitedCityTrip?
+    @State private var coverPreviewMainImage: UIImage?
+    @State private var coverPreviewExtraAssetIds: [String] = []
+    @State private var coverPreviewCoordinate: CLLocationCoordinate2D?
     @State private var tripsListResetToken: UUID = UUID()
 
     private let currentYear = Calendar.current.component(.year, from: Date())
@@ -53,12 +62,23 @@ struct VisitedCitiesSheet: View {
             guard selectedTripIds.contains($0.id), seen.insert($0.id).inserted else { return false }
             return true
         }
-        guard let start = trips.map(\.startDate).min(),
-              let end = trips.map(\.endDate).max() else { return "" }
+        guard !trips.isEmpty,
+              let start = trips.map(\.startDate).min(),
+              let end = trips.map(\.endDate).max() else { return "No selection" }
         let f = DateIntervalFormatter()
         f.dateStyle = .medium
         f.timeStyle = .none
         return f.string(from: start, to: end)
+    }
+
+    /// Places not already in a blog, oldest → newest (used for continuous selection).
+    private var availableTripsChronological: [VisitedCityTrip] {
+        filteredTrips.filter { !isUnavailableForSelection($0) }.sorted { $0.startDate < $1.startDate }
+    }
+
+    private func pruneSelectionToVisibleTrips() {
+        let visible = Set(filteredTrips.map(\.id))
+        selectedTripIds = selectedTripIds.filter { visible.contains($0) }
     }
 
     private var groupedFilteredTrips: [(monthStart: Date, title: String, trips: [VisitedCityTrip])] {
@@ -119,6 +139,7 @@ struct VisitedCitiesSheet: View {
                 yearTripsCache[viewModel.visitedCitiesYear] = trips
             }
             .onChange(of: searchText) { _, newValue in
+                pruneSelectionToVisibleTrips()
                 if !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     warmAllYearsForSearch()
                 }
@@ -135,36 +156,45 @@ struct VisitedCitiesSheet: View {
                     }
                 }
             }
-            .overlay(alignment: .bottom) {
-                if !selectedTripIds.isEmpty {
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if case .done = viewModel.visitedCitiesBuildState,
+                   !filteredTrips.isEmpty,
+                   !selectedTripIds.isEmpty {
                     selectionBottomOverlay
                         .padding(.horizontal, 12)
                         .padding(.bottom, 10)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
         }
-        .alert("Unavailable for Selection", isPresented: $showUnavailableAlert) {
+        .alert(selectionAlertTitle, isPresented: $showUnavailableAlert) {
             Button("OK", role: .cancel) { }
         } message: {
             Text(unavailableAlertMessage)
         }
-        .sheet(isPresented: $showImagePreview, onDismiss: {
-            previewImage = nil
-        }) {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                if let image = previewImage {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.top, 24)
-                        .padding(.bottom, 28)
-                }
+        .alert("Long stay", isPresented: $showLongSingleStayWarning) {
+            Button("Cancel", role: .cancel) { pendingLongStayTrips = [] }
+            Button("Continue") {
+                let trips = pendingLongStayTrips
+                pendingLongStayTrips = []
+                startCreateBlogTask(with: trips)
             }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
+        } message: {
+            Text("This place spans more than 7 days. Building the blog may take longer. Continue?")
+        }
+        .sheet(isPresented: $showCoverPreviewSheet, onDismiss: {
+            resetCoverPreviewState()
+        }) {
+            if let trip = coverPreviewTrip, let main = coverPreviewMainImage {
+                VisitedCityMomentPreviewSheet(
+                    trip: trip,
+                    mainImage: main,
+                    coverAssetId: trip.coverAssetIdentifier,
+                    extraAssetIds: coverPreviewExtraAssetIds,
+                    fallbackCoordinate: coverPreviewCoordinate
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
         }
     }
 
@@ -181,6 +211,7 @@ struct VisitedCitiesSheet: View {
             }
             .pickerStyle(.segmented)
             .onChange(of: viewModel.visitedCitiesYear) { _, newYear in
+                selectedTripIds.removeAll()
                 viewModel.loadVisitedCities(year: newYear)
                 tripsListResetToken = UUID()
             }
@@ -200,14 +231,27 @@ struct VisitedCitiesSheet: View {
                 Spacer()
                 Button("Clear") { selectedTripIds.removeAll() }
                     .font(.subheadline)
+                    .disabled(selectedTripIds.isEmpty)
             }
-            HStack {
-                Label(selectedDateRangeText, systemImage: "calendar")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Text(selectedTripIds.isEmpty
+                 ? "Tap places to select a continuous range. Up to 7 days when you pick more than one place."
+                 : "Selection is one continuous stretch of places. Tap the first or last selected place to remove it, or Clear.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .firstTextBaseline) {
+                HStack(spacing: 8) {
+                    Image(systemName: "calendar")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(selectedTripIds.isEmpty ? Color.secondary : Color.accentColor)
+                    Text(selectedDateRangeText)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(selectedTripIds.isEmpty ? Color.secondary : Color.primary)
+                }
                 Spacer()
                 Button {
-                    createBlogFromSelection()
+                    beginCreateBlogFromSelection()
                 } label: {
                     if isCreatingBlog {
                         ProgressView()
@@ -297,8 +341,9 @@ struct VisitedCitiesSheet: View {
                                         trip: trip,
                                         isSelected: selectedTripIds.contains(trip.id),
                                         isUnavailable: isUnavailableForSelection(trip),
+                                        interactionLabel: interactionLabel(for: trip),
                                         onToggleSelection: { handleToggle(trip) },
-                                        onTapCover: { assetId in openCoverPreview(assetId: assetId) }
+                                        onTapCover: { openCoverPreview(for: trip) }
                                     )
                                     if index < group.trips.count - 1 {
                                         Divider().padding(.leading, 82)
@@ -411,26 +456,105 @@ struct VisitedCitiesSheet: View {
         }
     }
 
+    private func interactionLabel(for trip: VisitedCityTrip) -> String {
+        if isUnavailableForSelection(trip) { return "" }
+        guard selectedTripIds.contains(trip.id) else { return "Tap to select" }
+        let sel = availableTripsChronological.filter { selectedTripIds.contains($0.id) }
+        if sel.count <= 1 { return "Selected" }
+        if trip.id == sel.first?.id || trip.id == sel.last?.id { return "Selected" }
+        return "Tap start or end to narrow"
+    }
+
+    /// Fills every available place between the earliest and latest selected (chronological).
+    private func expandSelectionToContinuousRange() {
+        let avail = availableTripsChronological
+        let indices = avail.indices.filter { selectedTripIds.contains(avail[$0].id) }
+        guard let minI = indices.min(), let maxI = indices.max() else { return }
+        selectedTripIds = Set(avail[minI...maxI].map(\.id))
+    }
+
     private func handleToggle(_ trip: VisitedCityTrip) {
         if isUnavailableForSelection(trip) {
-            unavailableAlertMessage = "\"\(trip.displayTitle)\" is already part of a created/saved blog, so it cannot be selected."
+            selectionAlertTitle = "Unavailable for Selection"
+            unavailableAlertMessage = "\"\(trip.displayTitle)\" is already part of a created/saved blog. Remove overlapping blogs or pick other places."
             showUnavailableAlert = true
             return
         }
         if selectedTripIds.contains(trip.id) {
+            let selInOrder = availableTripsChronological.filter { selectedTripIds.contains($0.id) }
+            if selInOrder.count <= 1 {
+                selectedTripIds.remove(trip.id)
+                return
+            }
+            if trip.id != selInOrder.first?.id && trip.id != selInOrder.last?.id {
+                selectionAlertTitle = "Unavailable for Selection"
+                unavailableAlertMessage = "To narrow your selection, remove a place at the start or end of the range, or tap Clear."
+                showUnavailableAlert = true
+                return
+            }
             selectedTripIds.remove(trip.id)
         } else {
+            let before = selectedTripIds
             selectedTripIds.insert(trip.id)
+            expandSelectionToContinuousRange()
+            let built = selectedTripsForBuild()
+            let span = calendarSpanDays(of: built)
+            if span > 7, built.count >= 2 {
+                selectedTripIds = before
+                selectionAlertTitle = "Too many days"
+                unavailableAlertMessage = "You can select up to 7 days across multiple places. Remove places from the start or end of the range, or choose a shorter stretch."
+                showUnavailableAlert = true
+            }
         }
     }
 
-    private func createBlogFromSelection() {
+    private func selectedTripsForBuild() -> [VisitedCityTrip] {
         var seen = Set<UUID>()
-        let trips = (allLoadedTrips + selectedYearTrips).filter {
+        return (allLoadedTrips + selectedYearTrips).filter {
             guard selectedTripIds.contains($0.id), seen.insert($0.id).inserted else { return false }
             return true
         }
-        guard !trips.isEmpty else { return }
+    }
+
+    private func calendarSpanDays(of trips: [VisitedCityTrip]) -> Int {
+        guard let start = trips.map(\.startDate).min(),
+              let end = trips.map(\.endDate).max() else { return 0 }
+        let cal = Calendar.current
+        let d0 = cal.startOfDay(for: start)
+        let d1 = cal.startOfDay(for: end)
+        return (cal.dateComponents([.day], from: d0, to: d1).day ?? 0) + 1
+    }
+
+    private func beginCreateBlogFromSelection() {
+        let trips = selectedTripsForBuild()
+        guard !trips.isEmpty else {
+            selectionAlertTitle = "Nothing selected"
+            unavailableAlertMessage = "Select at least one place to create a blog."
+            showUnavailableAlert = true
+            return
+        }
+        for trip in trips where isUnavailableForSelection(trip) {
+            selectionAlertTitle = "Unavailable for Selection"
+            unavailableAlertMessage = "Your selection includes \"\(trip.displayTitle)\", which overlaps a blog you already created. Adjust your selection."
+            showUnavailableAlert = true
+            return
+        }
+        let span = calendarSpanDays(of: trips)
+        if span > 7 {
+            if trips.count == 1 {
+                pendingLongStayTrips = trips
+                showLongSingleStayWarning = true
+                return
+            }
+            selectionAlertTitle = "Too many days"
+            unavailableAlertMessage = "You can select up to 7 days across multiple places. Narrow your selection with Clear or by removing places from the start or end of the range."
+            showUnavailableAlert = true
+            return
+        }
+        startCreateBlogTask(with: trips)
+    }
+
+    private func startCreateBlogTask(with trips: [VisitedCityTrip]) {
         isCreatingBlog = true
         Task {
             let success = await viewModel.createTripFromVisitedCitiesSelection(trips)
@@ -439,6 +563,7 @@ struct VisitedCitiesSheet: View {
                 if success {
                     dismiss()
                 } else {
+                    selectionAlertTitle = "Unavailable for Selection"
                     unavailableAlertMessage = "Could not build a trip from the selected places. Try selecting a wider date span."
                     showUnavailableAlert = true
                 }
@@ -448,8 +573,63 @@ struct VisitedCitiesSheet: View {
 
     // MARK: - Cover preview
 
-    private func openCoverPreview(assetId: String?) {
-        guard let assetId else { return }
+    private func resetCoverPreviewState() {
+        coverPreviewTrip = nil
+        coverPreviewMainImage = nil
+        coverPreviewExtraAssetIds = []
+        coverPreviewCoordinate = nil
+    }
+
+    /// Up to three other located photos from the same trip date span (cover excluded).
+    private func fetchAdditionalAssetLocalIdentifiers(for trip: VisitedCityTrip, excluding coverId: String?) -> [String] {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: trip.startDate)
+        guard let end = cal.date(bySettingHour: 23, minute: 59, second: 59, of: trip.endDate) else { return [] }
+        let options = PHFetchOptions()
+        options.predicate = NSPredicate(
+            format: "creationDate >= %@ AND creationDate <= %@ AND mediaType == %d",
+            start as NSDate, end as NSDate, PHAssetMediaType.image.rawValue
+        )
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        let result = PHAsset.fetchAssets(with: .image, options: options)
+        var ids: [String] = []
+        result.enumerateObjects { asset, _, stop in
+            guard !asset.mediaSubtypes.contains(.photoScreenshot), asset.location != nil else { return }
+            if asset.localIdentifier == coverId { return }
+            ids.append(asset.localIdentifier)
+            if ids.count >= 3 { stop.pointee = true }
+        }
+        return ids
+    }
+
+    /// Cover may lack `location` while other trip-day assets have GPS; fall back to any located asset in the trip window.
+    private func resolveCoordinateForPreview(trip: VisitedCityTrip, coverAssetId: String?) -> CLLocationCoordinate2D? {
+        if let coverId = coverAssetId,
+           let asset = PHAsset.fetchAssets(withLocalIdentifiers: [coverId], options: nil).firstObject,
+           let loc = asset.location {
+            return loc.coordinate
+        }
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: trip.startDate)
+        guard let end = cal.date(bySettingHour: 23, minute: 59, second: 59, of: trip.endDate) else { return nil }
+        let options = PHFetchOptions()
+        options.predicate = NSPredicate(
+            format: "creationDate >= %@ AND creationDate <= %@ AND mediaType == %d",
+            start as NSDate, end as NSDate, PHAssetMediaType.image.rawValue
+        )
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        let result = PHAsset.fetchAssets(with: .image, options: options)
+        var found: CLLocationCoordinate2D?
+        result.enumerateObjects { asset, _, stop in
+            guard !asset.mediaSubtypes.contains(.photoScreenshot), let loc = asset.location else { return }
+            found = loc.coordinate
+            stop.pointee = true
+        }
+        return found
+    }
+
+    private func openCoverPreview(for trip: VisitedCityTrip) {
+        guard let assetId = trip.coverAssetIdentifier else { return }
         let result = PHAsset.fetchAssets(withLocalIdentifiers: [assetId], options: nil)
         guard let asset = result.firstObject else { return }
         let opts = PHImageRequestOptions()
@@ -463,8 +643,11 @@ struct VisitedCitiesSheet: View {
             options: opts
         ) { image, _ in
             guard let image else { return }
-            previewImage = image
-            showImagePreview = true
+            coverPreviewTrip = trip
+            coverPreviewMainImage = image
+            coverPreviewExtraAssetIds = fetchAdditionalAssetLocalIdentifiers(for: trip, excluding: assetId)
+            coverPreviewCoordinate = resolveCoordinateForPreview(trip: trip, coverAssetId: assetId)
+            showCoverPreviewSheet = true
         }
     }
 
@@ -491,21 +674,334 @@ struct VisitedCitiesSheet: View {
     }
 }
 
+// MARK: - Full-screen cover / moment preview
+
+private struct VisitedCityMomentPreviewSheet: View {
+    let trip: VisitedCityTrip
+    let mainImage: UIImage
+    let coverAssetId: String?
+    let extraAssetIds: [String]
+    let fallbackCoordinate: CLLocationCoordinate2D?
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var photos: [UIImage]
+    /// Parallel to `photos`; empty string means no asset id for that slot.
+    @State private var photoAssetIds: [String]
+    @State private var selectedIndex: Int = 0
+    @State private var isLoadingMorePhotos = false
+    @State private var mapPosition: MapCameraPosition
+    @State private var digitizedTimeDisplay: String?
+
+    init(
+        trip: VisitedCityTrip,
+        mainImage: UIImage,
+        coverAssetId: String?,
+        extraAssetIds: [String],
+        fallbackCoordinate: CLLocationCoordinate2D?
+    ) {
+        self.trip = trip
+        self.mainImage = mainImage
+        self.coverAssetId = coverAssetId
+        self.extraAssetIds = extraAssetIds
+        self.fallbackCoordinate = fallbackCoordinate
+        _photos = State(initialValue: [mainImage])
+        if let c = coverAssetId {
+            _photoAssetIds = State(initialValue: [c])
+        } else {
+            _photoAssetIds = State(initialValue: [""])
+        }
+        if let c = fallbackCoordinate {
+            _mapPosition = State(
+                initialValue: .region(
+                    MKCoordinateRegion(
+                        center: c,
+                        span: MKCoordinateSpan(latitudeDelta: 0.04, longitudeDelta: 0.04)
+                    )
+                )
+            )
+        } else {
+            _mapPosition = State(initialValue: .automatic)
+        }
+    }
+
+    private var headingLine: String {
+        if trip.cityName.isEmpty {
+            return trip.countryName.isEmpty ? trip.displayTitle : trip.countryName
+        }
+        if trip.countryName.isEmpty || trip.cityName == trip.countryName {
+            return trip.cityName
+        }
+        return "\(trip.cityName), \(trip.countryName)"
+    }
+
+    private var mapCoordinateForSelection: CLLocationCoordinate2D? {
+        guard photos.indices.contains(selectedIndex),
+              photoAssetIds.indices.contains(selectedIndex) else { return fallbackCoordinate }
+        let id = photoAssetIds[selectedIndex]
+        if !id.isEmpty,
+           let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject,
+           let loc = asset.location {
+            return loc.coordinate
+        }
+        return fallbackCoordinate
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        photoHeroWithThumbnailStrip
+
+                        if mapCoordinateForSelection != nil {
+                            mapSection
+                        }
+                    }
+                    .padding(.bottom, 24)
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.black, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 2) {
+                        Text(headingLine)
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(trip.displaySubtitle)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: 220)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .onChange(of: selectedIndex) { _, _ in
+            syncMapToSelection()
+        }
+        .onAppear {
+            syncMapToSelection()
+        }
+        .task {
+            await loadAdditionalPhotosIfNeeded()
+        }
+        .task(id: "\(selectedIndex)-\(photoAssetIds.count)") {
+            await refreshDigitizedTime()
+        }
+    }
+
+    /// e.g. "2025 Mar 5, 02:03 AM PST" — wall clock and zone label from capture timezone (EXIF or photo GPS), not device.
+    private func refreshDigitizedTime() async {
+        guard photoAssetIds.indices.contains(selectedIndex) else {
+            await MainActor.run { digitizedTimeDisplay = nil }
+            return
+        }
+        let id = photoAssetIds[selectedIndex]
+        guard !id.isEmpty,
+              let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject,
+              let date = asset.creationDate else {
+            await MainActor.run { digitizedTimeDisplay = nil }
+            return
+        }
+        let resolved = await APIManager.captureTimeZone(for: asset) ?? TimeZone(identifier: "UTC")!
+        let str = Self.formattedCaptureDate(creationDate: date, timeZone: resolved)
+        await MainActor.run { digitizedTimeDisplay = str }
+    }
+
+    private static func formattedCaptureDate(creationDate: Date, timeZone: TimeZone) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = Calendar(identifier: .gregorian)
+        f.timeZone = timeZone
+        f.dateFormat = "yyyy MMM d, hh:mm a"
+        let formatted = f.string(from: creationDate)
+        let zoneLabel =
+            timeZone.abbreviation(for: creationDate)
+            ?? timeZone.localizedName(for: .shortStandard, locale: Locale(identifier: "en_US_POSIX"))
+            ?? timeZone.identifier
+        return "\(formatted) \(zoneLabel)"
+    }
+
+    private var photoHeroWithThumbnailStrip: some View {
+        ZStack(alignment: .bottom) {
+            Image(uiImage: photos[selectedIndex])
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+
+            VStack {
+                Spacer(minLength: 0)
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.82)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 120)
+                .allowsHitTesting(false)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+
+            VStack(alignment: .leading, spacing: 10) {
+                if isLoadingMorePhotos {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .tint(.white)
+                        Text("Loading more photos…")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
+                    .padding(.horizontal, 12)
+                }
+
+                if let digitized = digitizedTimeDisplay {
+                    Text(digitized)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(photos.indices, id: \.self) { i in
+                            Button {
+                                selectedIndex = i
+                            } label: {
+                                Image(uiImage: photos[i])
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 58, height: 58)
+                                    .clipped()
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(selectedIndex == i ? Color.white : Color.white.opacity(0.25), lineWidth: selectedIndex == i ? 3 : 1)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                }
+            }
+            .padding(.bottom, 12)
+        }
+        .frame(height: UIScreen.main.bounds.height * 0.8)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 8)
+    }
+
+    private var mapSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Scroll for map", systemImage: "map")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+
+            if let c = mapCoordinateForSelection {
+                Map(position: $mapPosition) {
+                    Annotation("Photo", coordinate: c) {
+                        Image(systemName: "mappin.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.red)
+                            .shadow(radius: 2)
+                    }
+                }
+                .mapStyle(.standard(elevation: .realistic))
+                .frame(height: 260)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .colorScheme(.light)
+                .id("\(c.latitude)-\(c.longitude)-\(selectedIndex)")
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private func syncMapToSelection() {
+        guard let c = mapCoordinateForSelection else { return }
+        mapPosition = .region(
+            MKCoordinateRegion(
+                center: c,
+                span: MKCoordinateSpan(latitudeDelta: 0.04, longitudeDelta: 0.04)
+            )
+        )
+    }
+
+    private func loadAdditionalPhotosIfNeeded() async {
+        guard !extraAssetIds.isEmpty else { return }
+        await MainActor.run { isLoadingMorePhotos = true }
+        var loaded: [UIImage] = []
+        for id in extraAssetIds {
+            guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { continue }
+            if let img = await Self.requestImage(for: asset) {
+                loaded.append(img)
+            }
+        }
+        await MainActor.run {
+            isLoadingMorePhotos = false
+            guard !loaded.isEmpty else { return }
+            photos = [mainImage] + loaded
+            var ids: [String] = []
+            if let c = coverAssetId {
+                ids.append(c)
+            } else {
+                ids.append("")
+            }
+            ids.append(contentsOf: extraAssetIds.prefix(loaded.count))
+            photoAssetIds = ids
+        }
+    }
+
+    private static func requestImage(for asset: PHAsset) async -> UIImage? {
+        await withCheckedContinuation { cont in
+            let opts = PHImageRequestOptions()
+            opts.deliveryMode = .highQualityFormat
+            opts.isNetworkAccessAllowed = true
+            opts.resizeMode = .fast
+            var didResume = false
+            PHImageManager.default().requestImage(
+                for: asset,
+                targetSize: PHImageManagerMaximumSize,
+                contentMode: .aspectFit,
+                options: opts
+            ) { image, _ in
+                guard !didResume else { return }
+                didResume = true
+                cont.resume(returning: image)
+            }
+        }
+    }
+}
+
 // MARK: - Row
 
 private struct CityTripRow: View {
     let trip: VisitedCityTrip
     let isSelected: Bool
     let isUnavailable: Bool
+    let interactionLabel: String
     let onToggleSelection: () -> Void
-    let onTapCover: (String?) -> Void
+    let onTapCover: () -> Void
 
     @State private var coverImage: UIImage?
 
     var body: some View {
         HStack(spacing: 14) {
             Button {
-                onTapCover(trip.coverAssetIdentifier)
+                onTapCover()
             } label: {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8)
@@ -556,7 +1052,7 @@ private struct CityTripRow: View {
                                 .fontWeight(.semibold)
                                 .foregroundStyle(.red)
                         } else {
-                            Text(isSelected ? "Selected" : "Tap to select")
+                            Text(interactionLabel)
                                 .font(.caption2)
                                 .fontWeight(.semibold)
                                 .foregroundColor(isSelected ? .blue : .secondary)

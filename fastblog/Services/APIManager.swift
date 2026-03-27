@@ -451,7 +451,7 @@ final class APIManager {
         return TimeZone(secondsFromGMT: secondsFromGMT)
     }
 
-    /// Reads EXIF OffsetTimeOriginal from the asset's image data to get the capture timezone (no geocoding). Falls back to nil so caller can use UTC.
+    /// Reads EXIF `OffsetTimeOriginal`, then `OffsetTimeDigitized`, from image data (capture offset, not device). Falls back to nil.
     static func getLocalTimeZone(for asset: PHAsset) async -> TimeZone? {
         let options = PHImageRequestOptions()
         options.isSynchronous = false
@@ -463,13 +463,32 @@ final class APIManager {
                 guard let data = data,
                       let source = CGImageSourceCreateWithData(data as CFData, nil),
                       let metadata = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
-                      let exif = metadata[kCGImagePropertyExifDictionary as String] as? [String: Any],
-                      let offsetString = exif[kCGImagePropertyExifOffsetTimeOriginal as String] as? String,
-                      let tz = Self.timeZone(fromEXIFOffset: offsetString) else {
+                      let exif = metadata[kCGImagePropertyExifDictionary as String] as? [String: Any] else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                let raw = (exif[kCGImagePropertyExifOffsetTimeOriginal as String] as? String)
+                    ?? (exif[kCGImagePropertyExifOffsetTimeDigitized as String] as? String)
+                let offsetString = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard !offsetString.isEmpty, let tz = Self.timeZone(fromEXIFOffset: offsetString) else {
                     continuation.resume(returning: nil)
                     return
                 }
                 continuation.resume(returning: tz)
+            }
+        }
+    }
+
+    /// Timezone **when the photo was taken**: EXIF offset first, else `CLPlacemark.timeZone` at the asset’s GPS (capture location). Not `TimeZone.current`.
+    static func captureTimeZone(for asset: PHAsset) async -> TimeZone? {
+        if let tz = await getLocalTimeZone(for: asset) {
+            return tz
+        }
+        guard let location = asset.location else { return nil }
+        return await withCheckedContinuation { continuation in
+            let geocoder = CLGeocoder()
+            geocoder.reverseGeocodeLocation(location) { placemarks, _ in
+                continuation.resume(returning: placemarks?.first?.timeZone)
             }
         }
     }
