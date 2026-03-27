@@ -2404,29 +2404,8 @@ struct RecapBlogPageView: View {
             .shadow(color: .black.opacity(0.45), radius: 30, y: 10)
             .padding(.horizontal, 24)
             .overlay {
-                if isNearbySharePulseActive {
-                    ZStack {
-                        ForEach(0..<3, id: \.self) { idx in
-                            RoundedRectangle(cornerRadius: 24)
-                                .stroke(Color.cyan.opacity(0.95), lineWidth: 2.6)
-                                .scaleEffect(animateNearbySharePulse ? 1.18 : 0.98)
-                                .opacity(animateNearbySharePulse ? 0.0 : 0.75)
-                                .padding(2)
-                                .animation(
-                                    .easeOut(duration: 1.35)
-                                        .delay(Double(idx) * 0.28)
-                                        .repeatForever(autoreverses: false),
-                                    value: animateNearbySharePulse
-                                )
-                        }
-
-                        RoundedRectangle(cornerRadius: 22)
-                            .stroke(Color.blue.opacity(0.95), lineWidth: 3.4)
-                            .shadow(color: Color.cyan.opacity(animateNearbySharePulse ? 0.95 : 0.45), radius: animateNearbySharePulse ? 30 : 12)
-                            .padding(4)
-                            .animation(.easeInOut(duration: 0.95).repeatForever(autoreverses: true), value: animateNearbySharePulse)
-                    }
-                    .allowsHitTesting(false)
+                if let glow = nearbyShareGlowStyle {
+                    bloggoQRShareGlowOverlay(style: glow)
                 }
             }
 
@@ -2478,13 +2457,60 @@ struct RecapBlogPageView: View {
         }
     }
 
-    private var isNearbySharePulseActive: Bool {
+    /// Border animation while the host is discoverable vs after a peer has paired (stronger “radiation”).
+    private enum NearbyShareGlowStyle {
+        case searching
+        case paired
+    }
+
+    private var nearbyShareGlowStyle: NearbyShareGlowStyle? {
         switch nearbyShare.phase {
-        case .hostingAdvertising, .hostingConnected, .transferring:
-            return true
+        case .hostingAdvertising:
+            return .searching
+        case .hostingConnected, .transferring:
+            return .paired
         default:
-            return false
+            return nil
         }
+    }
+
+    @ViewBuilder
+    private func bloggoQRShareGlowOverlay(style: NearbyShareGlowStyle) -> some View {
+        let isPaired = style == .paired
+        let ringCount = isPaired ? 4 : 2
+        let ringColor = isPaired ? Color.cyan : Color.white
+        let ringPeakOpacity = isPaired ? 0.9 : 0.42
+        let ringDuration = isPaired ? 1.05 : 1.65
+        let ringDelayStep = isPaired ? 0.22 : 0.38
+        let outerScaleEnd: CGFloat = isPaired ? 1.22 : 1.1
+        let coreStroke = isPaired ? Color.mint.opacity(0.95) : Color.cyan.opacity(0.55)
+        let coreWidth: CGFloat = isPaired ? 3.6 : 2.2
+        let glowRadius: CGFloat = isPaired ? (animateNearbySharePulse ? 38 : 18) : (animateNearbySharePulse ? 14 : 8)
+        let secondaryGlow = isPaired ? Color.green.opacity(animateNearbySharePulse ? 0.55 : 0.22) : Color.clear
+
+        ZStack {
+            ForEach(0..<ringCount, id: \.self) { idx in
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(ringColor.opacity(0.85), lineWidth: isPaired ? 2.4 : 1.6)
+                    .scaleEffect(animateNearbySharePulse ? outerScaleEnd : 0.98)
+                    .opacity(animateNearbySharePulse ? 0.0 : ringPeakOpacity)
+                    .padding(2)
+                    .animation(
+                        .easeOut(duration: ringDuration)
+                            .delay(Double(idx) * ringDelayStep)
+                            .repeatForever(autoreverses: false),
+                        value: animateNearbySharePulse
+                    )
+            }
+
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(coreStroke, lineWidth: coreWidth)
+                .shadow(color: Color.cyan.opacity(animateNearbySharePulse ? 0.9 : 0.4), radius: glowRadius)
+                .shadow(color: secondaryGlow, radius: isPaired ? glowRadius * 0.85 : 0)
+                .padding(4)
+                .animation(.easeInOut(duration: isPaired ? 0.75 : 1.1).repeatForever(autoreverses: true), value: animateNearbySharePulse)
+        }
+        .allowsHitTesting(false)
     }
 
     private func triggerNearbyShareHaptic(

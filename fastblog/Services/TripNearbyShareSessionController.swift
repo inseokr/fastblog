@@ -73,6 +73,9 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
     private var hostSendingIndex: Int = 0
     private var hostRemotePeer: MCPeerID?
     private var hostGuestAcceptedManifest: Bool = false
+    /// Pre-built manifest payload (0x01 prefix + JSON). Stored nonisolated-unsafe so the
+    /// MCSession delegate can send it directly on the MC thread without a main-actor hop.
+    private nonisolated(unsafe) var _hostManifestPayload: Data?
 
     private var guestManifestDecoded: TripShareRecapManifestV1?
     /// Photo index from resource name → copied temp file (order matches manifest `photos`).
@@ -138,9 +141,14 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
     }
 
     private func beginAdvertising() {
-        guard activeRole == .host, hostExport != nil else { return }
+        guard activeRole == .host, let export = hostExport else { return }
         advertiser?.stopAdvertisingPeer()
         browser?.stopBrowsingForPeers()
+        // Pre-build the manifest payload so it can be sent immediately on the MC thread
+        // upon connection, without waiting for a main-actor hop.
+        var payload = Data([0x01])
+        payload.append(export.manifestJSON)
+        _hostManifestPayload = payload
         let info = [
             TripShareNearbyConfig.discoverySessionCodeKey: sessionCode,
             TripShareNearbyConfig.discoveryRoleKey: TripShareNearbyConfig.discoveryRoleHost
@@ -200,6 +208,7 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
         hostInvitation = nil
         guestManifestConsent = nil
         hostExport = nil
+        _hostManifestPayload = nil
         hostSendingIndex = 0
         hostRemotePeer = nil
         hostGuestAcceptedManifest = false
@@ -223,6 +232,7 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
             try? FileManager.default.removeItem(at: exp.tempRoot)
         }
         hostExport = nil
+        _hostManifestPayload = nil
         session.disconnect()
         if resetRole {
             activeRole = .none
@@ -443,6 +453,11 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
 
 extension TripNearbyShareSessionController: MCSessionDelegate {
     nonisolated func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
+        // Send manifest immediately on the MC thread when connected — avoids a full
+        // main-actor round-trip before the guest can receive it.
+        if state == .connected, let payload = _hostManifestPayload {
+            try? session.send(payload, toPeers: [peerID], with: .reliable)
+        }
         Task { @MainActor in
             self.logDebug("Session state with \(peerID.displayName): \(Self.describe(state: state)).")
             switch state {
@@ -450,7 +465,6 @@ extension TripNearbyShareSessionController: MCSessionDelegate {
                 if self.activeRole == .host {
                     self.phase = .hostingConnected(peerName: peerID.displayName)
                     self.hostRemotePeer = peerID
-                    self.sendManifestToGuest(peerID)
                 } else if self.activeRole == .guest {
                     self.phase = .receivingConnected(peerName: peerID.displayName)
                 }
@@ -470,38 +484,46 @@ extension TripNearbyShareSessionController: MCSessionDelegate {
     }
 
     nonisolated func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
-        Task { @MainActor in
-            guard !data.isEmpty else { return }
-            let kind = data[0]
-            self.logDebug("Received control packet kind=0x\(String(format: "%02X", kind)) size=\(data.count) from \(peerID.displayName).")
-            if kind == 0x01, data.count > 1, self.activeRole == .guest {
-                let jsonData = data.dropFirst()
-                do {
-                    let manifest = try Self.jsonDecoder().decode(TripShareRecapManifestV1.self, from: Data(jsonData))
-                    self.guestManifestDecoded = manifest
-                    self.guestManifestConsent = (
-                        manifest,
-                        peerID.displayName,
-                        { [weak self] accept in
-                            guard let self else { return }
-                            self.logDebug("Guest manifest consent decision for \(peerID.displayName): \(accept ? "accept" : "decline").")
-                            self.guestManifestConsent = nil
-                            self.guestAcceptedManifest = accept
-                            let reply = Data([0x02, accept ? 0x01 : 0x00])
-                            try? session.send(reply, toPeers: [peerID], with: .reliable)
-                            if !accept {
-                                self.phase = .idle
-                                self.teardown(resetRole: true)
-                            }
-                        }
-                    )
-                } catch {
-                    self.logDebug("Manifest decode failed: \(error.localizedDescription)")
+        guard !data.isEmpty else { return }
+        let kind = data[0]
+
+        // Decode the manifest on the MC thread immediately — don't wait for the main actor.
+        // Only the thin UI update (setting guestManifestConsent) goes to main actor.
+        if kind == 0x01, data.count > 1 {
+            let jsonData = Data(data.dropFirst())
+            let decoded = try? Self.jsonDecoder().decode(TripShareRecapManifestV1.self, from: jsonData)
+            Task { @MainActor in
+                guard self.activeRole == .guest else { return }
+                self.logDebug("Received manifest (\(data.count) bytes) from \(peerID.displayName).")
+                guard let manifest = decoded else {
+                    self.logDebug("Manifest decode failed.")
                     self.phase = .failed("Invalid trip data.")
                     self.teardown(resetRole: true)
+                    return
                 }
-                return
+                self.guestManifestDecoded = manifest
+                self.guestManifestConsent = (
+                    manifest,
+                    peerID.displayName,
+                    { [weak self] accept in
+                        guard let self else { return }
+                        self.logDebug("Guest manifest consent decision for \(peerID.displayName): \(accept ? "accept" : "decline").")
+                        self.guestManifestConsent = nil
+                        self.guestAcceptedManifest = accept
+                        let reply = Data([0x02, accept ? 0x01 : 0x00])
+                        try? session.send(reply, toPeers: [peerID], with: .reliable)
+                        if !accept {
+                            self.phase = .idle
+                            self.teardown(resetRole: true)
+                        }
+                    }
+                )
             }
+            return
+        }
+
+        Task { @MainActor in
+            self.logDebug("Received control packet kind=0x\(String(format: "%02X", kind)) size=\(data.count) from \(peerID.displayName).")
             if kind == 0x02, data.count >= 2, self.activeRole == .host {
                 let accept = data[1] == 0x01
                 self.hostGuestAcceptedManifest = accept
@@ -514,7 +536,6 @@ extension TripNearbyShareSessionController: MCSessionDelegate {
                     self.phase = .idle
                     self.teardown(resetRole: true)
                 }
-                return
             }
         }
     }

@@ -53,6 +53,7 @@ struct TripShareQRCodeView: View {
 /// Scroll content shared by the standalone host sheet and the blog-settings inline overlay.
 struct TripNearbyShareHostScrollContent: View {
     @ObservedObject var controller: TripNearbyShareSessionController
+    @State private var preparingTooSlow = false
 
     private var isRadiating: Bool {
         switch controller.phase {
@@ -90,8 +91,16 @@ struct TripNearbyShareHostScrollContent: View {
 
                 switch controller.phase {
                 case .hostingPreparing:
-                    ProgressView("Preparing trip…")
-                        .frame(maxWidth: .infinity)
+                    VStack(spacing: 6) {
+                        ProgressView("Preparing trip…")
+                        if preparingTooSlow {
+                            Text("This is taking a moment for larger photo collections…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
                 case .hostingAdvertising:
                     Label("Waiting for a nearby device…", systemImage: "antenna.radiowaves.left.and.right")
                         .foregroundStyle(.secondary)
@@ -115,6 +124,17 @@ struct TripNearbyShareHostScrollContent: View {
             .padding()
         }
         .modifier(TripNearbyRadiatingBorderModifier(isActive: isRadiating))
+        .task(id: controller.phase) {
+            guard case .hostingPreparing = controller.phase else {
+                preparingTooSlow = false
+                return
+            }
+            preparingTooSlow = false
+            try? await Task.sleep(for: .seconds(5))
+            if case .hostingPreparing = controller.phase {
+                withAnimation { preparingTooSlow = true }
+            }
+        }
     }
 }
 
@@ -280,6 +300,7 @@ struct TripNearbyShareHostSheet: View {
                     }
                 }
         }
+        .preferredColorScheme(.dark)
         .onAppear {
             controller.startHosting(recapDetail: recap)
         }
@@ -318,110 +339,24 @@ struct TripNearbyShareReceiveSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Enter the 6-character code shown on the sender’s screen — pairing starts automatically.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
                     TextField("6-character code", text: $codeInput)
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
-                        .font(.title3.monospaced())
-                } header: {
-                    Text("From the sender’s QR")
+                        .font(.title2.monospaced())
+                        .multilineTextAlignment(.center)
+                        .padding(14)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .cornerRadius(12)
+
+                    receiveStatusView
                 }
-
-                Section {
-                    Button("Look for nearby device") {
-                        controller.startReceiving(filterCode: codeInput)
-                    }
-                    .disabled(codeInput.trimmingCharacters(in: .whitespacesAndNewlines).count != 6)
-
-                    if case let .failed(msg) = controller.phase {
-                        Text(msg)
-                            .foregroundStyle(.red)
-                    }
-
-                    switch controller.phase {
-                    case .receivingBrowsing:
-                        HStack {
-                            ProgressView()
-                            Text("Searching…")
-                        }
-                    case .receivingConnected(let name):
-                        Text("Connected to \(name)")
-                    case .transferring(let cur, let total):
-                        ProgressView(value: Double(cur), total: Double(total)) {
-                            Text("Receiving photos \(cur) of \(total)")
-                        }
-                    case .succeeded:
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Trip added to your blogs.")
-                                .foregroundStyle(.green)
-
-                            if !controller.recentlyImportedCaptureIds.isEmpty, !skippedCameraRollOffer {
-                                switch controller.gallerySaveStatus {
-                                case .idle:
-                                    Text(
-                                        "Optional: copy \(controller.recentlyImportedCaptureIds.count) imported photo\(controller.recentlyImportedCaptureIds.count == 1 ? "" : "s") to your Camera Roll. They stay in Bloggo either way."
-                                    )
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-
-                                    Button {
-                                        Task {
-                                            if !photoAuth.isAuthorized {
-                                                await photoAuth.requestAccess()
-                                            }
-                                            controller.saveRecentlyImportedToPhotoLibrary()
-                                        }
-                                    } label: {
-                                        Text("Save to Camera Roll")
-                                            .frame(maxWidth: .infinity)
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                    .disabled(controller.gallerySaveStatus == .saving)
-
-                                    Button("Not now") {
-                                        skippedCameraRollOffer = true
-                                    }
-                                    .foregroundStyle(.secondary)
-                                case .saving:
-                                    HStack {
-                                        ProgressView()
-                                        Text("Saving to Camera Roll…")
-                                    }
-                                    .foregroundStyle(.secondary)
-                                case .succeeded(let count):
-                                    Label(
-                                        "Saved \(count) photo\(count == 1 ? "" : "s") to Camera Roll",
-                                        systemImage: "checkmark.circle.fill"
-                                    )
-                                    .foregroundStyle(.green)
-                                case .failed(let msg):
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        Text(msg)
-                                            .foregroundStyle(.red)
-                                        Button("Try again") {
-                                            Task {
-                                                if !photoAuth.isAuthorized {
-                                                    await photoAuth.requestAccess()
-                                                }
-                                                controller.saveRecentlyImportedToPhotoLibrary()
-                                            }
-                                        }
-                                        .buttonStyle(.bordered)
-                                        Button("Not now") {
-                                            skippedCameraRollOffer = true
-                                        }
-                                        .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                    default:
-                        EmptyView()
-                    }
-                }
-
+                .padding()
             }
             .modifier(TripNearbyRadiatingBorderModifier(isActive: isRadiating))
             .navigationTitle("Receive trip")
@@ -445,9 +380,22 @@ struct TripNearbyShareReceiveSheet: View {
                 }
             }
         }
+        .preferredColorScheme(.dark)
         .onAppear {
             if !controller.deepLinkPrefillCode.isEmpty {
                 codeInput = controller.deepLinkPrefillCode
+                controller.startReceiving(filterCode: controller.deepLinkPrefillCode)
+            }
+        }
+        .onChange(of: codeInput) { _, newValue in
+            let trimmed = newValue.uppercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed != newValue { codeInput = trimmed }
+            guard trimmed.count == 6 else { return }
+            switch controller.phase {
+            case .idle, .failed:
+                controller.startReceiving(filterCode: trimmed)
+            default:
+                break
             }
         }
         .onChange(of: controller.phase) { _, newPhase in
@@ -465,6 +413,98 @@ struct TripNearbyShareReceiveSheet: View {
             if hasConsentPrompt {
                 UINotificationFeedbackGenerator().notificationOccurred(.warning)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var receiveStatusView: some View {
+        switch controller.phase {
+        case .idle:
+            EmptyView()
+        case .receivingBrowsing:
+            HStack(spacing: 10) {
+                ProgressView()
+                Text("Searching for nearby device…")
+                    .foregroundStyle(.secondary)
+            }
+        case .receivingConnected(let name):
+            Label("Connected to \(name)", systemImage: "link")
+                .foregroundStyle(.blue)
+        case .transferring(let cur, let total):
+            ProgressView(value: Double(cur), total: Double(total)) {
+                Text("Receiving photos \(cur) of \(total)")
+            }
+        case .succeeded:
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Trip added to your blogs.", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+
+                if !controller.recentlyImportedCaptureIds.isEmpty, !skippedCameraRollOffer {
+                    switch controller.gallerySaveStatus {
+                    case .idle:
+                        Text(
+                            "Optional: copy \(controller.recentlyImportedCaptureIds.count) imported photo\(controller.recentlyImportedCaptureIds.count == 1 ? "" : "s") to your Camera Roll. They stay in Bloggo either way."
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                        Button {
+                            Task {
+                                if !photoAuth.isAuthorized {
+                                    await photoAuth.requestAccess()
+                                }
+                                controller.saveRecentlyImportedToPhotoLibrary()
+                            }
+                        } label: {
+                            Text("Save to Camera Roll")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(controller.gallerySaveStatus == .saving)
+
+                        Button("Not now") {
+                            skippedCameraRollOffer = true
+                        }
+                        .foregroundStyle(.secondary)
+                    case .saving:
+                        HStack {
+                            ProgressView()
+                            Text("Saving to Camera Roll…")
+                        }
+                        .foregroundStyle(.secondary)
+                    case .succeeded(let count):
+                        Label(
+                            "Saved \(count) photo\(count == 1 ? "" : "s") to Camera Roll",
+                            systemImage: "checkmark.circle.fill"
+                        )
+                        .foregroundStyle(.green)
+                    case .failed(let msg):
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(msg)
+                                .foregroundStyle(.red)
+                            Button("Try again") {
+                                Task {
+                                    if !photoAuth.isAuthorized {
+                                        await photoAuth.requestAccess()
+                                    }
+                                    controller.saveRecentlyImportedToPhotoLibrary()
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            Button("Not now") {
+                                skippedCameraRollOffer = true
+                            }
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        case .failed(let msg):
+            Text(msg)
+                .foregroundStyle(.red)
+        default:
+            EmptyView()
         }
     }
 
