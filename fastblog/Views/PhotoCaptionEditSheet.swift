@@ -36,6 +36,8 @@ struct PhotoCaptionEditSheet: View {
     }
 
     var body: some View {
+        // No nested NavigationStack: RecapBlogPageView already lives in NavigationStack and hides the nav bar
+        // while this overlay is up — inner `.toolbar` items can fail to show or receive taps.
         VStack(spacing: 0) {
             // Photo thumbnail
             RecapPhotoThumbnail(
@@ -155,32 +157,31 @@ struct PhotoCaptionEditSheet: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             HStack(alignment: .center) {
                 Button("Cancel") {
+                    isFocused = false
                     onCancel()
                 }
                 .font(.body)
                 .fontWeight(.semibold)
                 .foregroundStyle(Color.primary)
                 .buttonStyle(.plain)
-                .contentShape(Rectangle())
 
                 Spacer()
 
                 Button("Done") {
                     caption = editedText
+                    isFocused = false
                     onSave()
                 }
                 .font(.body)
                 .fontWeight(.bold)
                 .foregroundStyle(Color(uiColor: .systemBlue))
                 .buttonStyle(.plain)
-                .contentShape(Rectangle())
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 14)
-            .background(Color(uiColor: .systemBackground).ignoresSafeArea(edges: .top))
+            .padding(.vertical, 12)
+            .background(Color(uiColor: .systemBackground))
         }
         .preferredColorScheme(.dark)
-        .defaultFocus($isFocused, true)
         .onAppear {
             editedText = caption
             DispatchQueue.main.async {

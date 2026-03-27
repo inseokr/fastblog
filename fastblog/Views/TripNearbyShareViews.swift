@@ -50,10 +50,9 @@ struct TripShareQRCodeView: View {
 
 // MARK: - Host
 
-struct TripNearbyShareHostSheet: View {
-    let recap: RecapBlogDetail
+/// Scroll content shared by the standalone host sheet and the blog-settings inline overlay.
+struct TripNearbyShareHostScrollContent: View {
     @ObservedObject var controller: TripNearbyShareSessionController
-    @Environment(\.dismiss) private var dismiss
 
     private var isRadiating: Bool {
         switch controller.phase {
@@ -65,74 +64,126 @@ struct TripNearbyShareHostSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    Text("Nearby share")
-                        .font(.title2)
-                        .fontWeight(.bold)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Nearby share")
+                    .font(.title2)
+                    .fontWeight(.bold)
 
-                    Text(
-                        "Have your friend open Bloggo, scan this QR (or enter the code), then accept on both phones. Photos and trip details transfer over an encrypted device-to-device link on Wi‑Fi or Bluetooth."
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Have your friend open Bloggo, scan this QR (or enter the code), then accept on both phones. Photos and trip details transfer over an encrypted device-to-device link on Wi‑Fi or Bluetooth."
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
 
-                    if let url = controller.receiveURLForQR {
-                        VStack(spacing: 12) {
-                            TripShareQRCodeView(payload: url.absoluteString)
-                                .frame(maxWidth: .infinity)
-                            Text("Code: \(controller.sessionCode)")
-                                .font(.title)
-                                .fontWeight(.semibold)
-                                .monospaced()
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
-
-                    switch controller.phase {
-                    case .hostingPreparing:
-                        ProgressView("Preparing trip…")
+                if let url = controller.receiveURLForQR {
+                    VStack(spacing: 12) {
+                        TripShareQRCodeView(payload: url.absoluteString)
                             .frame(maxWidth: .infinity)
-                    case .hostingAdvertising:
-                        Label("Waiting for a nearby device…", systemImage: "antenna.radiowaves.left.and.right")
-                            .foregroundStyle(.secondary)
-                    case .hostingConnected(let name):
-                        Label("Connected to \(name)", systemImage: "link")
-                            .foregroundStyle(.blue)
-                    case .transferring(let cur, let total):
-                        ProgressView(value: Double(cur), total: Double(total)) {
-                            Text("Sending photos \(cur) of \(total)")
-                        }
-                    case .succeeded:
-                        Label("Trip sent successfully", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    case .failed(let msg):
-                        Text(msg)
-                            .foregroundStyle(.red)
-                    default:
-                        EmptyView()
+                        Text("Code: \(controller.sessionCode)")
+                            .font(.title)
+                            .fontWeight(.semibold)
+                            .monospaced()
+                            .frame(maxWidth: .infinity)
                     }
+                }
 
+                switch controller.phase {
+                case .hostingPreparing:
+                    ProgressView("Preparing trip…")
+                        .frame(maxWidth: .infinity)
+                case .hostingAdvertising:
+                    Label("Waiting for a nearby device…", systemImage: "antenna.radiowaves.left.and.right")
+                        .foregroundStyle(.secondary)
+                case .hostingConnected(let name):
+                    Label("Connected to \(name)", systemImage: "link")
+                        .foregroundStyle(.blue)
+                case .transferring(let cur, let total):
+                    ProgressView(value: Double(cur), total: Double(total)) {
+                        Text("Sending photos \(cur) of \(total)")
+                    }
+                case .succeeded:
+                    Label("Trip sent successfully", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                case .failed(let msg):
+                    Text(msg)
+                        .foregroundStyle(.red)
+                default:
+                    EmptyView()
                 }
-                .padding()
             }
-            .modifier(TripNearbyRadiatingBorderModifier(isActive: isRadiating))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") {
-                        controller.cancel()
-                        dismiss()
+            .padding()
+        }
+        .modifier(TripNearbyRadiatingBorderModifier(isActive: isRadiating))
+    }
+}
+
+/// Full-screen blur + centered card + back chevron, for use inside ``BlogSettingsSheet``.
+struct TripNearbyShareHostBlogSettingsOverlay: View {
+    let recap: RecapBlogDetail
+    @ObservedObject var controller: TripNearbyShareSessionController
+    var onBack: () -> Void
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    if controller.hostInvitation == nil {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            onBack()
+                        }
                     }
                 }
-            }
-            .overlay {
-                if let invite = controller.hostInvitation {
-                    hostInviteOverlay(peerName: invite.peerName, decide: invite.decide)
+
+            VStack(spacing: 0) {
+                HStack {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            onBack()
+                        }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.primary)
+                    }
+                    .accessibilityLabel("Back")
+                    Spacer()
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 12)
+
+                Spacer(minLength: 0)
+
+                TripNearbyShareHostScrollContent(controller: controller)
+                    .frame(maxWidth: 400)
+                    .frame(maxHeight: 620)
+                    .background(
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                            )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .shadow(color: .black.opacity(0.45), radius: 30, y: 10)
+                    .padding(.horizontal, 24)
+
+                Spacer(minLength: 0)
+            }
+
+            if let invite = controller.hostInvitation {
+                TripNearbyHostInvitationOverlay(
+                    recapTitle: recap.title,
+                    peerName: invite.peerName,
+                    decide: invite.decide
+                )
             }
         }
+        .preferredColorScheme(.dark)
         .onAppear {
             controller.startHosting(recapDetail: recap)
         }
@@ -148,15 +199,21 @@ struct TripNearbyShareHostSheet: View {
             }
         }
     }
+}
 
-    private func hostInviteOverlay(peerName: String, decide: @escaping (Bool) -> Void) -> some View {
+private struct TripNearbyHostInvitationOverlay: View {
+    let recapTitle: String
+    let peerName: String
+    let decide: (Bool) -> Void
+
+    var body: some View {
         ZStack {
             Color.black.opacity(0.45)
                 .ignoresSafeArea()
             VStack(spacing: 16) {
                 Text("Allow connection?")
                     .font(.headline)
-                Text("\(peerName) wants to receive “\(recap.title)”.")
+                Text("\(peerName) wants to receive “\(recapTitle)”.")
                     .font(.subheadline)
                     .multilineTextAlignment(.center)
                 HStack(spacing: 12) {
@@ -176,22 +233,66 @@ struct TripNearbyShareHostSheet: View {
             .padding(32)
         }
     }
+}
 
-    private func triggerHostHaptic(oldPhase: TripNearbyShareSessionController.Phase, newPhase: TripNearbyShareSessionController.Phase) {
-        if oldPhase == newPhase { return }
-        switch newPhase {
-        case .hostingAdvertising:
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        case .hostingConnected:
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-        case .transferring:
-            UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.7)
-        case .succeeded:
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-        case .failed:
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
-        default:
-            break
+private func triggerHostHaptic(oldPhase: TripNearbyShareSessionController.Phase, newPhase: TripNearbyShareSessionController.Phase) {
+    if oldPhase == newPhase { return }
+    switch newPhase {
+    case .hostingAdvertising:
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    case .hostingConnected:
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    case .transferring:
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.7)
+    case .succeeded:
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    case .failed:
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+    default:
+        break
+    }
+}
+
+struct TripNearbyShareHostSheet: View {
+    let recap: RecapBlogDetail
+    @ObservedObject var controller: TripNearbyShareSessionController
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            TripNearbyShareHostScrollContent(controller: controller)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") {
+                            controller.cancel()
+                            dismiss()
+                        }
+                    }
+                }
+                .overlay {
+                    if let invite = controller.hostInvitation {
+                        TripNearbyHostInvitationOverlay(
+                            recapTitle: recap.title,
+                            peerName: invite.peerName,
+                            decide: invite.decide
+                        )
+                    }
+                }
+        }
+        .onAppear {
+            controller.startHosting(recapDetail: recap)
+        }
+        .onDisappear {
+            controller.cancel()
+        }
+        .onChange(of: controller.phase) { oldPhase, newPhase in
+            triggerHostHaptic(oldPhase: oldPhase, newPhase: newPhase)
+        }
+        .onChange(of: controller.hostInvitation != nil) { _, hasInvite in
+            if hasInvite {
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            }
         }
     }
 }
