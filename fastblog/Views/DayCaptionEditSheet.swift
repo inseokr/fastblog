@@ -134,27 +134,6 @@ struct DayCaptionEditSheet: View {
                     }
 
                     if let enhance = onEnhance {
-                        Menu {
-                            ForEach(StoryWritingStyle.presets) { preset in
-                                Button {
-                                    stylePresetId = preset.id
-                                    UserDefaults.standard.set(preset.prompt, forKey: StoryWritingStyle.storageKey)
-                                } label: {
-                                    if stylePresetId == preset.id {
-                                        Label(preset.title, systemImage: "checkmark")
-                                    } else {
-                                        Text(preset.title)
-                                    }
-                                }
-                            }
-                            Button("Custom...") {
-                                showWritingStyleSheet = true
-                            }
-                        } label: {
-                            Label(currentStyleTitle, systemImage: "text.quote")
-                                .font(.subheadline)
-                        }
-
                         Button {
                             showEnhanceStylePicker = true
                         } label: {

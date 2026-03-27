@@ -128,7 +128,7 @@ struct VisitedCitiesSheet: View {
                     }
                 }
             }
-            .navigationTitle("Your memories")
+            .navigationTitle("Your Memories")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 viewModel.loadVisitedCities(year: viewModel.visitedCitiesYear)

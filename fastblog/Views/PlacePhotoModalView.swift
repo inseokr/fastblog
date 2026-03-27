@@ -695,64 +695,60 @@ struct PlacePhotoModalView: View {
                                     }
                                 }
 
-                                let canEnhance = onGenerateCaption != nil && currentPhoto != nil
-                                let canTranslate = onTranslateCaption != nil
-                                if canEnhance || canTranslate {
-                                    VStack(alignment: .trailing, spacing: 8) {
-                                        if onGenerateCaption != nil, currentPhoto != nil {
-                                            Button {
-                                                showEnhanceStylePicker = true
-                                            } label: {
-                                                if isGeneratingCaption {
-                                                    HStack(spacing: 4) {
-                                                        ProgressView()
-                                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                                            .scaleEffect(0.75)
-                                                        Text("Enhancing…")
-                                                            .font(.subheadline)
-                                                            .foregroundColor(.white.opacity(0.75))
-                                                    }
-                                                } else {
-                                                    HStack(spacing: 4) {
-                                                        Image(systemName: "wand.and.stars")
-                                                            .font(.subheadline)
-                                                            .foregroundStyle(
-                                                                LinearGradient(
-                                                                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                                                    startPoint: .topLeading,
-                                                                    endPoint: .bottomTrailing
-                                                                )
-                                                            )
-                                                    }
-                                                }
+                                if onGenerateCaption != nil, currentPhoto != nil {
+                                    Button {
+                                        showEnhanceStylePicker = true
+                                    } label: {
+                                        if isGeneratingCaption {
+                                            HStack(spacing: 4) {
+                                                ProgressView()
+                                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                                    .scaleEffect(0.75)
+                                                Text("Enhancing…")
+                                                    .font(.subheadline)
+                                                    .foregroundColor(.white.opacity(0.75))
+                                                    .lineLimit(1)
                                             }
-                                            .disabled(isGeneratingCaption || isTranslatingCaption)
-                                        }
-
-                                        if let translate = onTranslateCaption {
-                                            Button {
-                                                runTranslateForCurrentPhoto(translate)
-                                            } label: {
-                                                if isTranslatingCaption {
-                                                    HStack(spacing: 4) {
-                                                        ProgressView()
-                                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                                            .scaleEffect(0.75)
-                                                        Text("Translating…")
-                                                            .font(.subheadline)
-                                                            .foregroundColor(.white.opacity(0.75))
-                                                    }
-                                                } else {
-                                                    HStack(spacing: 4) {
-                                                        Image(systemName: "translate")
-                                                            .font(.subheadline)
-                                                            .foregroundColor(.white.opacity(0.75))
-                                                    }
-                                                }
+                                        } else {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "wand.and.stars")
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(
+                                                        LinearGradient(
+                                                            colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                                            startPoint: .topLeading,
+                                                            endPoint: .bottomTrailing
+                                                        )
+                                                    )
                                             }
-                                            .disabled(isGeneratingCaption || isTranslatingCaption)
                                         }
                                     }
+                                    .disabled(isGeneratingCaption || isTranslatingCaption)
+                                }
+
+                                if let translate = onTranslateCaption {
+                                    Button {
+                                        runTranslateForCurrentPhoto(translate)
+                                    } label: {
+                                        if isTranslatingCaption {
+                                            HStack(spacing: 4) {
+                                                ProgressView()
+                                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                                    .scaleEffect(0.75)
+                                                Text("Translating…")
+                                                    .font(.subheadline)
+                                                    .foregroundColor(.white.opacity(0.75))
+                                                    .lineLimit(1)
+                                            }
+                                        } else {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "translate")
+                                                    .font(.subheadline)
+                                                    .foregroundColor(.white.opacity(0.75))
+                                            }
+                                        }
+                                    }
+                                    .disabled(isGeneratingCaption || isTranslatingCaption)
                                 }
                             }
                             .padding(.horizontal, 12)
@@ -826,64 +822,60 @@ struct PlacePhotoModalView: View {
                                     }
                                 }
 
-                                let canEnhance = onGenerateCaption != nil && currentPhoto != nil
-                                let canTranslate = onTranslateCaption != nil
-                                if canEnhance || canTranslate {
-                                    VStack(alignment: .trailing, spacing: 8) {
-                                        if onGenerateCaption != nil, currentPhoto != nil {
-                                            Button {
-                                                showEnhanceStylePicker = true
-                                            } label: {
-                                                if isGeneratingCaption {
-                                                    HStack(spacing: 4) {
-                                                        ProgressView()
-                                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                                            .scaleEffect(0.75)
-                                                        Text("Enhancing…")
-                                                            .font(.subheadline)
-                                                            .foregroundColor(.white.opacity(0.75))
-                                                    }
-                                                } else {
-                                                    HStack(spacing: 4) {
-                                                        Image(systemName: "wand.and.stars")
-                                                            .font(.subheadline)
-                                                            .foregroundStyle(
-                                                                LinearGradient(
-                                                                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                                                    startPoint: .topLeading,
-                                                                    endPoint: .bottomTrailing
-                                                                )
-                                                            )
-                                                    }
-                                                }
+                                if onGenerateCaption != nil, currentPhoto != nil {
+                                    Button {
+                                        showEnhanceStylePicker = true
+                                    } label: {
+                                        if isGeneratingCaption {
+                                            HStack(spacing: 4) {
+                                                ProgressView()
+                                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                                    .scaleEffect(0.75)
+                                                Text("Enhancing…")
+                                                    .font(.subheadline)
+                                                    .foregroundColor(.white.opacity(0.75))
+                                                    .lineLimit(1)
                                             }
-                                            .disabled(isGeneratingCaption || isTranslatingCaption)
-                                        }
-
-                                        if let translate = onTranslateCaption {
-                                            Button {
-                                                runTranslateForCurrentPhoto(translate)
-                                            } label: {
-                                                if isTranslatingCaption {
-                                                    HStack(spacing: 4) {
-                                                        ProgressView()
-                                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                                            .scaleEffect(0.75)
-                                                        Text("Translating…")
-                                                            .font(.subheadline)
-                                                            .foregroundColor(.white.opacity(0.75))
-                                                    }
-                                                } else {
-                                                    HStack(spacing: 4) {
-                                                        Image(systemName: "translate")
-                                                            .font(.subheadline)
-                                                            .foregroundColor(.white.opacity(0.75))
-                                                    }
-                                                }
+                                        } else {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "wand.and.stars")
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(
+                                                        LinearGradient(
+                                                            colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                                            startPoint: .topLeading,
+                                                            endPoint: .bottomTrailing
+                                                        )
+                                                    )
                                             }
-                                            .disabled(isGeneratingCaption || isTranslatingCaption)
                                         }
                                     }
+                                    .disabled(isGeneratingCaption || isTranslatingCaption)
+                                }
+
+                                if let translate = onTranslateCaption {
+                                    Button {
+                                        runTranslateForCurrentPhoto(translate)
+                                    } label: {
+                                        if isTranslatingCaption {
+                                            HStack(spacing: 4) {
+                                                ProgressView()
+                                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                                    .scaleEffect(0.75)
+                                                Text("Translating…")
+                                                    .font(.subheadline)
+                                                    .foregroundColor(.white.opacity(0.75))
+                                                    .lineLimit(1)
+                                            }
+                                        } else {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "translate")
+                                                    .font(.subheadline)
+                                                    .foregroundColor(.white.opacity(0.75))
+                                            }
+                                        }
+                                    }
+                                    .disabled(isGeneratingCaption || isTranslatingCaption)
                                 }
                             }
                             .padding(.horizontal, 12)
