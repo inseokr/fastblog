@@ -61,13 +61,13 @@ struct BlogPDFView: View {
             // Overlaid title
             VStack(alignment: .leading, spacing: 6) {
                 Text(draft.title)
-                    .font(.system(size: 44, weight: .heavy))
+                    .font(Font.custom("Georgia-Bold", size: 44))
                     .foregroundColor(.white)
                     .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(tripDurationText)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(Font.custom("Georgia", size: 15))
                     .foregroundColor(.white.opacity(0.8))
             }
             .frame(width: pageWidth, alignment: .leading)
@@ -102,7 +102,7 @@ struct BlogPDFView: View {
                         .tracking(2.5)
 
                     Text(day.shortDateText)
-                        .font(.system(size: 26, weight: .bold))
+                        .font(Font.custom("Georgia-Bold", size: 26))
                         .foregroundColor(.black)
                 }
             }
@@ -110,10 +110,9 @@ struct BlogPDFView: View {
 
             if let caption = day.dayCaption, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(caption)
-                    .font(.system(size: 15))
-                    .italic()
+                    .font(Font.custom("Georgia-Italic", size: 15))
                     .foregroundColor(.black.opacity(0.75))
-                    .lineSpacing(4)
+                    .lineSpacing(7)
             }
 
             // Map Snapshot
@@ -154,7 +153,7 @@ struct BlogPDFView: View {
                     )
 
                 Text(stop.placeTitle)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(Font.custom("Georgia-Bold", size: 17))
                     .foregroundColor(.black)
 
                 Spacer()
@@ -181,8 +180,7 @@ struct BlogPDFView: View {
                         if let caption = includedPhotos[0].caption,
                            !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             Text(caption)
-                                .font(.system(size: 10))
-                                .italic()
+                                .font(Font.custom("Georgia-Italic", size: 10))
                                 .foregroundColor(.gray)
                                 .frame(width: photoWidth)
                         }
@@ -190,9 +188,9 @@ struct BlogPDFView: View {
 
                     if hasStory {
                         Text(story)
-                            .font(.system(size: 15))
+                            .font(Font.custom("Georgia", size: 15))
                             .foregroundColor(.black.opacity(0.88))
-                            .lineSpacing(4)
+                            .lineSpacing(7)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -204,9 +202,9 @@ struct BlogPDFView: View {
                 // Multiple photos: story first, then each photo with matching background
                 if hasStory {
                     Text(story)
-                        .font(.system(size: 15))
+                        .font(Font.custom("Georgia", size: 15))
                         .foregroundColor(.black.opacity(0.88))
-                        .lineSpacing(4)
+                        .lineSpacing(7)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, cardPadding)
                         .padding(.bottom, 10)
@@ -226,8 +224,7 @@ struct BlogPDFView: View {
                         if let caption = photo.caption,
                            !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             Text(caption)
-                                .font(.system(size: 11))
-                                .italic()
+                                .font(Font.custom("Georgia-Italic", size: 11))
                                 .foregroundColor(.gray)
                         }
                     }

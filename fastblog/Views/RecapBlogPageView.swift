@@ -58,12 +58,6 @@ struct RecapBlogPageView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
 
-    @AppStorage(BlogTripsAppearance.storageKey) private var blogTripsAppearanceRaw = BlogTripsAppearance.system.rawValue
-
-    private var blogTripsPreferredColorScheme: ColorScheme? {
-        BlogTripsAppearance.preferredColorScheme(fromStorage: blogTripsAppearanceRaw)
-    }
-
     private var recapScreenBackground: Color {
         colorScheme == .dark ? .black : Color(uiColor: .systemGroupedBackground)
     }
@@ -355,7 +349,7 @@ struct RecapBlogPageView: View {
             }
 
         }
-        .preferredColorScheme(blogTripsPreferredColorScheme)
+        .preferredColorScheme(nil)
         .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
         .animation(.easeOut(duration: 0.22), value: placeCaptionEditItem?.id)
         .animation(.easeOut(duration: 0.22), value: dayCaptionEditItem?.id)
@@ -1100,7 +1094,7 @@ struct RecapBlogPageView: View {
                 .buttonStyle(.plain)
             } else {
                 Text(draft.title)
-                    .font(.system(size: 28, weight: .bold))
+                    .font(Font.custom("Georgia-Bold", size: 30))
                     .foregroundColor(recapChromeForeground)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
@@ -1199,7 +1193,7 @@ struct RecapBlogPageView: View {
                     } else {
                         VStack(spacing: 6) {
                             Text(draft.title)
-                                .font(.system(size: 26, weight: .bold))
+                                .font(Font.custom("Georgia-Bold", size: 30))
                                 .foregroundColor(.white)
                                 .lineLimit(2)
                                 .multilineTextAlignment(.center)
@@ -1214,14 +1208,14 @@ struct RecapBlogPageView: View {
                                 )
 
                             Text(tripDurationText)
-                                .font(.subheadline)
+                                .font(.callout)
                                 .foregroundColor(.white.opacity(0.92))
                                 .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
 
                             let placeCount = draft.days.flatMap(\.placeStops).count
                             if placeCount > 0 {
                                 Text("\(placeCount) moment\(placeCount == 1 ? "" : "s")")
-                                    .font(.subheadline)
+                                    .font(.callout)
                                     .foregroundColor(.white.opacity(0.92))
                                     .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
                             }
@@ -1629,8 +1623,7 @@ struct RecapBlogPageView: View {
         return VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 6) {
                 Text(day.shortDateText)
-                    .font(.title3)
-                    .fontWeight(.bold)
+                    .font(Font.custom("Georgia-Bold", size: 20))
                     .foregroundColor(recapChromeForeground)
                 if isDayLoading {
                     ProgressView()
@@ -2935,7 +2928,8 @@ struct RecapBlogPageView: View {
             }()
             if let text = displayCaption {
                 Text(text)
-                    .font(.subheadline)
+                    .font(Font.custom("Georgia", size: 17))
+                    .lineSpacing(8)
                     .foregroundColor(.white.opacity(0.9))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.bottom, 4)
@@ -3067,6 +3061,11 @@ struct RecapBlogPageView: View {
                     return
                 }
                 draft.days[dayIdx].dayNarrative = narrative
+                // In edit mode the caption row shows dayCaption, not dayNarrative,
+                // so copy the result there so it's immediately visible.
+                if isEditMode {
+                    draft.days[dayIdx].dayCaption = narrative
+                }
                 generatingNarrativeDayId = nil
             }
         }
@@ -4266,13 +4265,8 @@ private struct EditBlogPhotoFlowView: View {
     let blogId: UUID
     var onDismiss: () -> Void
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
-    @AppStorage(BlogTripsAppearance.storageKey) private var blogTripsAppearanceRaw = BlogTripsAppearance.system.rawValue
     @State private var trip: TripDraft?
     @State private var tripToUpdate: TripDraft?
-
-    private var blogTripsPreferredColorScheme: ColorScheme? {
-        BlogTripsAppearance.preferredColorScheme(fromStorage: blogTripsAppearanceRaw)
-    }
 
     var body: some View {
         NavigationStack {
@@ -4313,7 +4307,7 @@ private struct EditBlogPhotoFlowView: View {
         .onAppear {
             trip = createdRecapStore.tripDraftApplyingBlogSelection(blogId: blogId)
         }
-        .preferredColorScheme(blogTripsPreferredColorScheme)
+        .preferredColorScheme(nil)
     }
 }
 

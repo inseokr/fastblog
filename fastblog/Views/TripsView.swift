@@ -17,12 +17,7 @@ struct TripsView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
-    @AppStorage(BlogTripsAppearance.storageKey) private var blogTripsAppearanceRaw = BlogTripsAppearance.system.rawValue
     var onDismiss: (() -> Void)? = nil
-
-    private var blogTripsPreferredColorScheme: ColorScheme? {
-        BlogTripsAppearance.preferredColorScheme(fromStorage: blogTripsAppearanceRaw)
-    }
 
     /// Navy backdrop when no map; grouped background in light mode.
     private var tripsEmptyBackdrop: Color {
@@ -293,7 +288,7 @@ struct TripsView: View {
                 }
             }
             .alert("No Photos Available", isPresented: $showNoPhotosAlert, actions: noPhotosAlertActions, message: noPhotosAlertMessage)
-            .preferredColorScheme(blogTripsPreferredColorScheme)
+            .preferredColorScheme(nil)
     }
 
     private var coreBody: some View {
@@ -890,7 +885,7 @@ struct TripsView: View {
             .padding(.bottom, 24)
         }
         .padding(.top, 24)
-        .preferredColorScheme(blogTripsPreferredColorScheme)
+        .preferredColorScheme(nil)
     }
 
     // MARK: - Bottom Overlay (Carousel + CTA)

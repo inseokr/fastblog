@@ -191,8 +191,7 @@ struct PlaceStopRowView: View {
                                 Link(destination: searchURL) {
                                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                                         Text(stop.placeTitle)
-                                            .font(.title2)
-                                            .fontWeight(.bold)
+                                            .font(Font.custom("Georgia-Bold", size: 22))
                                             .foregroundColor(rowTitle)
                                         StoryPlaceExternalLinkIcon(
                                             titleFontSize: UIFont.preferredFont(forTextStyle: .title2).pointSize,
@@ -207,8 +206,7 @@ struct PlaceStopRowView: View {
                                     onNavigate?()
                                 } label: {
                                     Text(stop.placeTitle)
-                                        .font(.title2)
-                                        .fontWeight(.bold)
+                                        .font(Font.custom("Georgia-Bold", size: 22))
                                         .foregroundColor(rowTitle)
                                 }
                                 .buttonStyle(.plain)
@@ -237,7 +235,7 @@ struct PlaceStopRowView: View {
                     }
                     if let subtitle = stop.placeSubtitle, !subtitle.isEmpty {
                         Text(subtitle)
-                            .font(.caption)
+                            .font(.footnote)
                             .foregroundColor(.secondary)
                     }
                     let cat = categoryInfo(for: stop.placeCategory)
@@ -245,7 +243,7 @@ struct PlaceStopRowView: View {
                         HStack(spacing: 8) {
                             if let time = visitTimeText {
                                 Text(time)
-                                    .font(.caption)
+                                    .font(.footnote)
                                     .foregroundColor(.secondary)
                             }
                             if let cat {
@@ -464,8 +462,8 @@ struct PlaceStopRowView: View {
                             }
                         } label: {
                             Text(photoCaption(photo.id).wrappedValue)
-                                .font(.subheadline)
-                                .lineSpacing(3)
+                                .font(.callout)
+                                .lineSpacing(6)
                                 .foregroundColor(rowStoryReadColor)
                                 .lineLimit(isExpanded ? nil : 4)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -601,8 +599,8 @@ struct PlaceStopRowView: View {
                                         }
                                     } label: {
                                         Text(photoCaption(photo.id).wrappedValue)
-                                            .font(.subheadline)
-                                            .lineSpacing(3)
+                                            .font(Font.custom("Georgia", size: 16))
+                                            .lineSpacing(6)
                                             .foregroundColor(rowStoryReadColor)
                                             .lineLimit(isExpanded ? nil : 4)
                                             .frame(width: thumbnailSize, alignment: .leading)
@@ -708,8 +706,8 @@ struct PlaceStopRowView: View {
                                     return overallStory.trimmingCharacters(in: .whitespacesAndNewlines)
                                 }()
                                 Text(displayStory.isEmpty ? placeStoryPlaceholder : displayStory)
-                                    .font(.body)
-                                    .lineSpacing(4)
+                                    .font(Font.custom("Georgia", size: 17))
+                                    .lineSpacing(8)
                                     .foregroundColor(displayStory.isEmpty ? .secondary.opacity(0.9) : rowCaptionFilled)
                                     .multilineTextAlignment(.leading)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -743,8 +741,8 @@ struct PlaceStopRowView: View {
                 if !displayStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(displayStory)
-                            .font(.body)
-                            .lineSpacing(5)
+                            .font(Font.custom("Georgia", size: 17))
+                            .lineSpacing(8)
                             .foregroundColor(rowStoryReadColor)
                             .lineLimit(isOverallStoryExpanded ? nil : 5)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -752,8 +750,8 @@ struct PlaceStopRowView: View {
                             .background(
                                 GeometryReader { constrainedGeo in
                                     Text(displayStory)
-                                        .font(.body)
-                                        .lineSpacing(5)
+                                        .font(Font.custom("Georgia", size: 17))
+                                        .lineSpacing(8)
                                         .fixedSize(horizontal: false, vertical: true)
                                         .frame(width: constrainedGeo.size.width)
                                         .background(GeometryReader { fullGeo in

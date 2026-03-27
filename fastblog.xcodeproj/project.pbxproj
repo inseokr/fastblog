@@ -46,7 +46,6 @@
 		BB000110 /* MockPhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00010F /* MockPhoto.swift */; };
 		BB000112 /* PlaceCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000111 /* PlaceCluster.swift */; };
 		BB000114 /* RecapBlogDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000113 /* RecapBlogDetail.swift */; };
-		BB0003C1 /* BlogTripsAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003C0 /* BlogTripsAppearance.swift */; };
 		BB000116 /* RecapDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000115 /* RecapDraft.swift */; };
 		BB00011A /* ScanConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000119 /* ScanConfig.swift */; };
 		BB00011C /* TripDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00011B /* TripDay.swift */; };
@@ -257,7 +256,6 @@
 		BB00010F /* MockPhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockPhoto.swift; sourceTree = "<group>"; };
 		BB000111 /* PlaceCluster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceCluster.swift; sourceTree = "<group>"; };
 		BB000113 /* RecapBlogDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapBlogDetail.swift; sourceTree = "<group>"; };
-		BB0003C0 /* BlogTripsAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogTripsAppearance.swift; sourceTree = "<group>"; };
 		BB000115 /* RecapDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapDraft.swift; sourceTree = "<group>"; };
 		BB000119 /* ScanConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanConfig.swift; sourceTree = "<group>"; };
 		BB00011B /* TripDay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDay.swift; sourceTree = "<group>"; };
@@ -516,7 +514,6 @@
 				BB00010F /* MockPhoto.swift */,
 				BB000111 /* PlaceCluster.swift */,
 				BB000113 /* RecapBlogDetail.swift */,
-				BB0003C0 /* BlogTripsAppearance.swift */,
 				BB000115 /* RecapDraft.swift */,
 				BB0001D1 /* RecallTrigger.swift */,
 				BB000119 /* ScanConfig.swift */,
@@ -842,7 +839,6 @@
 				BB000110 /* MockPhoto.swift in Sources */,
 				BB000112 /* PlaceCluster.swift in Sources */,
 				BB000114 /* RecapBlogDetail.swift in Sources */,
-				BB0003C1 /* BlogTripsAppearance.swift in Sources */,
 				BB000116 /* RecapDraft.swift in Sources */,
 				BB00011A /* ScanConfig.swift in Sources */,
 				BB00011C /* TripDay.swift in Sources */,
