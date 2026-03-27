@@ -37,31 +37,6 @@ struct PhotoCaptionEditSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Cancel / Done header
-            HStack(alignment: .center) {
-                Button("Cancel") {
-                    onCancel()
-                }
-                .font(.body)
-                .fontWeight(.semibold)
-                .foregroundStyle(Color.primary)
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                Button("Done") {
-                    caption = editedText
-                    onSave()
-                }
-                .font(.body)
-                .fontWeight(.bold)
-                .foregroundStyle(Color(uiColor: .systemBlue))
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .padding(.bottom, 16)
-
             // Photo thumbnail
             RecapPhotoThumbnail(
                 photo: photo,
@@ -116,6 +91,8 @@ struct PhotoCaptionEditSheet: View {
                 }
             }
             .frame(maxHeight: .infinity, alignment: .top)
+            .clipped()
+            .contentShape(Rectangle())
 
             // Action bar
             if !trimmedEditedText.isEmpty {
@@ -175,6 +152,33 @@ struct PhotoCaptionEditSheet: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(uiColor: .systemBackground).ignoresSafeArea())
+        .safeAreaInset(edge: .top, spacing: 0) {
+            HStack(alignment: .center) {
+                Button("Cancel") {
+                    onCancel()
+                }
+                .font(.body)
+                .fontWeight(.semibold)
+                .foregroundStyle(Color.primary)
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+
+                Spacer()
+
+                Button("Done") {
+                    caption = editedText
+                    onSave()
+                }
+                .font(.body)
+                .fontWeight(.bold)
+                .foregroundStyle(Color(uiColor: .systemBlue))
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+            .background(Color(uiColor: .systemBackground).ignoresSafeArea(edges: .top))
+        }
         .preferredColorScheme(.dark)
         .defaultFocus($isFocused, true)
         .onAppear {
