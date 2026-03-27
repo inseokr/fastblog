@@ -1861,8 +1861,6 @@ struct CameraCaptureView: View {
     @State private var showNearHomeConfirmation: Bool = false
     @State private var pendingNearHomeCapture: (image: UIImage, timestamp: Date, vibeURL: URL?)?
     @State private var nearHomeDoNotShowAgain: Bool = false
-    /// When true, show the In-app Photo Gallery (all photos taken with in-app camera).
-    @State private var isShowingInAppGallery = false
     @AppStorage("bloggo.hasSeenCameraTooltip") private var hasSeenCameraTooltip = false
     @State private var showCameraTooltip = false
     // Zoom
@@ -2202,8 +2200,8 @@ struct CameraCaptureView: View {
             .presentationDragIndicator(.visible)
             .preferredColorScheme(.dark)
         }
-        .sheet(isPresented: $isShowingInAppGallery) {
-            InAppPhotoGalleryView()
+        .fullScreenCover(isPresented: $isShowingCapturesGallery, onDismiss: { loadLatestGalleryThumbnail() }) {
+            AppCaptureGalleryView()
         }
         .sheet(isPresented: $isShowingSessionGallery) {
             Group {
@@ -2241,9 +2239,6 @@ struct CameraCaptureView: View {
                     )
                 }
             }
-        }
-        .sheet(isPresented: $isShowingCapturesGallery, onDismiss: { loadLatestGalleryThumbnail() }) {
-            AppCaptureGalleryView()
         }
         .overlay { blogStartedPromptOverlay }
         .overlay { nearHomeConfirmationOverlay }
@@ -3444,6 +3439,29 @@ extension CameraCaptureView {
 
 // MARK: - In-app Photo Gallery
 
+/// Repeating timer invokes the latest scroll closure so gallery state stays current (avoids stale SwiftUI view captures).
+private final class InAppGalleryAutoScrollInvoker: ObservableObject {
+    var scrollAction: (() -> Void)?
+    private var timer: Timer?
+
+    func ensureRunning(interval: TimeInterval) {
+        if timer != nil { return }
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.scrollAction?()
+            }
+        }
+        if let timer { RunLoop.main.add(timer, forMode: .common) }
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    deinit { stop() }
+}
+
 /// Dedicated gallery of all photos taken with the in-app camera (latest first). 3×3 grid; Select mode: Done in toolbar, trash (bottom right) and download (bottom left) in modal.
 private struct InAppPhotoGalleryView: View {
     @ObservedObject private var store = InAppCameraPhotoStore.shared
@@ -3452,6 +3470,14 @@ private struct InAppPhotoGalleryView: View {
     @State private var selectedIds: Set<UUID> = []
     @State private var showRemoveConfirmation = false
     @State private var downloadToast: String?
+    @State private var cellFrames: [UUID: CGRect] = [:]
+    @State private var dragStartIndex: Int?
+    @State private var dragInitialSelectedIds: Set<UUID> = []
+    @State private var dragTargetSelectState: Bool?
+    @State private var lastDragGlobalLocation: CGPoint = .zero
+    @State private var lastDragItemIndex: Int?
+    @State private var galleryViewportFrame: CGRect = .zero
+    @StateObject private var autoScrollInvoker = InAppGalleryAutoScrollInvoker()
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 3)
     private static let darkNavy = Color(red: 5/255, green: 10/255, blue: 48/255)
@@ -3469,14 +3495,11 @@ private struct InAppPhotoGalleryView: View {
                             description: Text("Photos you take with the camera will appear here.")
                         )
                     } else {
-                        ScrollView {
-                            LazyVGrid(columns: columns, spacing: 4) {
-                                ForEach(store.entries) { entry in
-                                    galleryCell(entry)
-                                }
-                            }
-                            .padding(4)
-                            .padding(.bottom, isSelectMode ? 72 : 0)
+                        ScrollViewReader { proxy in
+                            inAppScrollGrid(proxy: proxy)
+                        }
+                        .onChange(of: isSelectMode) { _, new in
+                            if !new { autoScrollInvoker.stop() }
                         }
                     }
                 }
@@ -3538,7 +3561,7 @@ private struct InAppPhotoGalleryView: View {
                         .accessibilityLabel("Remove selected from gallery")
                     }
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 24)
+                    .padding(.bottom, 8)
                 }
 
                 if let toast = downloadToast {
@@ -3548,7 +3571,7 @@ private struct InAppPhotoGalleryView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
                         .background(Capsule().fill(.black.opacity(0.7)))
-                        .padding(.bottom, 100)
+                        .padding(.bottom, 88)
                 }
             }
             .alert("Remove selected photos?", isPresented: $showRemoveConfirmation) {
@@ -3562,9 +3585,182 @@ private struct InAppPhotoGalleryView: View {
                 Text("\(selectedIds.count) photo\(selectedIds.count == 1 ? "" : "s") will be deleted from this gallery. They will not be removed from your device photo library or any blog.")
             }
         }
-        .presentationDetents([.fraction(1)])
-        .presentationDragIndicator(.visible)
+        .interactiveDismissDisabled(isSelectMode)
         .preferredColorScheme(.dark)
+    }
+
+    private func inAppScrollGrid(proxy: ScrollViewProxy) -> some View {
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 4) {
+                ForEach(store.entries) { entry in
+                    galleryCell(entry)
+                        .id(entry.id)
+                        .background(
+                            GeometryReader { geo in
+                                Color.clear.preference(
+                                    key: InAppGalleryCellFramePreferenceKey.self,
+                                    value: [entry.id: geo.frame(in: .global)]
+                                )
+                            }
+                        )
+                }
+            }
+            .padding(4)
+            .padding(.bottom, isSelectMode ? 72 : 0)
+        }
+        .scrollDisabled(isSelectMode && !selectedIds.isEmpty)
+        .background(
+            GeometryReader { g in
+                Color.clear
+                    .onAppear { galleryViewportFrame = g.frame(in: .global) }
+                    .onChange(of: g.frame(in: .global)) { _, new in
+                        galleryViewportFrame = new
+                    }
+            }
+        )
+        .onPreferenceChange(InAppGalleryCellFramePreferenceKey.self) { frames in
+            cellFrames = frames
+        }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                .onChanged { value in
+                    guard isSelectMode else { return }
+                    lastDragGlobalLocation = value.location
+                    if dragStartIndex == nil {
+                        let dragDistance = hypot(value.translation.width, value.translation.height)
+                        guard dragDistance > 8 else { return }
+                        if inAppShouldTreatDragAsScrollOnly(translation: value.translation) {
+                            return
+                        }
+                        guard let startIndex = entryIndex(at: value.startLocation) else { return }
+                        beginDragSelection(at: startIndex)
+                        lastDragItemIndex = startIndex
+                    }
+                    if let currentIndex = entryIndex(at: value.location) {
+                        lastDragItemIndex = currentIndex
+                        applyDragSelection(to: currentIndex)
+                    } else if let idx = lastDragItemIndex {
+                        applyDragSelection(to: idx)
+                    }
+                    updateInAppAutoScroll(proxy: proxy, globalY: value.location.y)
+                }
+                .onEnded { _ in
+                    autoScrollInvoker.stop()
+                    endDragSelection()
+                    lastDragItemIndex = nil
+                }
+        )
+    }
+
+    private func entryIndex(at location: CGPoint) -> Int? {
+        for (index, entry) in store.entries.enumerated() {
+            if let frame = cellFrames[entry.id], frame.contains(location) {
+                return index
+            }
+        }
+        return nil
+    }
+
+    private func beginDragSelection(at index: Int) {
+        guard store.entries.indices.contains(index) else { return }
+        dragStartIndex = index
+        dragInitialSelectedIds = selectedIds
+        let entryId = store.entries[index].id
+        dragTargetSelectState = !dragInitialSelectedIds.contains(entryId)
+        applyDragSelection(to: index)
+    }
+
+    private func applyDragSelection(to currentIndex: Int) {
+        guard let start = dragStartIndex,
+              store.entries.indices.contains(currentIndex),
+              let shouldSelect = dragTargetSelectState else { return }
+        let lower = min(start, currentIndex)
+        let upper = max(start, currentIndex)
+        var nextSelected = dragInitialSelectedIds
+        for idx in lower...upper {
+            let id = store.entries[idx].id
+            if shouldSelect {
+                nextSelected.insert(id)
+            } else {
+                nextSelected.remove(id)
+            }
+        }
+        selectedIds = nextSelected
+    }
+
+    private func endDragSelection() {
+        dragStartIndex = nil
+        dragInitialSelectedIds = []
+        dragTargetSelectState = nil
+    }
+
+    private static let inAppGridColumnCount = 3
+    private static let inAppEdgeAutoScrollInset: CGFloat = 72
+    private static let inAppAutoScrollInterval: TimeInterval = 0.05
+    /// While nothing is selected yet, vertical drags are treated as scroll (avoids starting range-select when scrolling).
+    private static let inAppScrollDragDominanceRatio: CGFloat = 1.35
+
+    private func inAppShouldTreatDragAsScrollOnly(translation: CGSize) -> Bool {
+        selectedIds.isEmpty && abs(translation.height) > abs(translation.width) * Self.inAppScrollDragDominanceRatio
+    }
+
+    private func inAppAutoScrollEdgeDirection(globalY: CGFloat) -> Int? {
+        guard galleryViewportFrame.height > 1 else { return nil }
+        let top = galleryViewportFrame.minY + Self.inAppEdgeAutoScrollInset
+        let bottom = galleryViewportFrame.maxY - Self.inAppEdgeAutoScrollInset
+        if globalY < top { return -1 }
+        if globalY > bottom { return +1 }
+        return nil
+    }
+
+    private func updateInAppAutoScroll(proxy: ScrollViewProxy, globalY: CGFloat) {
+        guard dragStartIndex != nil else {
+            autoScrollInvoker.stop()
+            return
+        }
+        guard let direction = inAppAutoScrollEdgeDirection(globalY: globalY) else {
+            autoScrollInvoker.stop()
+            return
+        }
+        autoScrollInvoker.scrollAction = {
+            performInAppScrollStep(proxy: proxy, direction: direction)
+        }
+        autoScrollInvoker.ensureRunning(interval: Self.inAppAutoScrollInterval)
+    }
+
+    private func performInAppScrollStep(proxy: ScrollViewProxy, direction: Int) {
+        guard !store.entries.isEmpty, dragStartIndex != nil else { return }
+        let col = Self.inAppGridColumnCount
+        let anchorIdx = lastDragItemIndex ?? entryIndex(at: lastDragGlobalLocation) ?? dragStartIndex ?? 0
+        var targetIdx: Int
+        if direction < 0 {
+            targetIdx = max(0, anchorIdx - col)
+        } else {
+            targetIdx = min(store.entries.count - 1, anchorIdx + col)
+        }
+        if targetIdx == anchorIdx {
+            if direction < 0 {
+                targetIdx = max(0, anchorIdx - 1)
+            } else {
+                targetIdx = min(store.entries.count - 1, anchorIdx + 1)
+            }
+        }
+        guard targetIdx != anchorIdx else { return }
+        proxy.scrollTo(store.entries[targetIdx].id, anchor: .center)
+        lastDragItemIndex = targetIdx
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            syncInAppDragSelectionFromFinger()
+        }
+    }
+
+    private func syncInAppDragSelectionFromFinger() {
+        guard dragStartIndex != nil else { return }
+        if let idx = entryIndex(at: lastDragGlobalLocation) {
+            lastDragItemIndex = idx
+            applyDragSelection(to: idx)
+        } else if let idx = lastDragItemIndex {
+            applyDragSelection(to: idx)
+        }
     }
 
     private func saveSelectedToPhotoLibrary() {
@@ -3624,6 +3820,14 @@ private struct InAppPhotoGalleryView: View {
         }
         .buttonStyle(.plain)
         .allowsHitTesting(isSelectMode)
+    }
+}
+
+private struct InAppGalleryCellFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] = [:]
+
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }
 

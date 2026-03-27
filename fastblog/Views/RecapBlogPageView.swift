@@ -670,16 +670,18 @@ struct RecapBlogPageView: View {
                     }
                 )
             }
-            .sheet(item: $showManagePhotosForStop, onDismiss: {
-                // Capture dayId/stopId before syncPhotoChangesWithCloud clears managePhotosEditInfo.
-                let _ = managePhotosEditInfo
-                createdRecapStore.saveBlogDetail(draft)
-                syncPhotoChangesWithCloud()
-            }) { pair in
+            .navigationDestination(item: $showManagePhotosForStop) { pair in
                 ManagePhotosView(
                     placeTitle: placeStop(dayId: pair.dayId, stopId: pair.stopId)?.placeTitle ?? "Photos",
                     photos: bindingForPhotos(dayId: pair.dayId, stopId: pair.stopId)
                 )
+            }
+            .onChange(of: showManagePhotosForStop) { old, new in
+                guard old != nil, new == nil else { return }
+                // Equivalent of onDismiss: save and sync after user navigates back.
+                let _ = managePhotosEditInfo
+                createdRecapStore.saveBlogDetail(draft)
+                syncPhotoChangesWithCloud()
             }
             .fullScreenCover(isPresented: $showEditPhotoFlow, onDismiss: {
                 createdRecapStore.saveBlogDetail(draft)
@@ -4033,7 +4035,7 @@ private struct OverflowItem: Identifiable {
     var id: UUID { stop.id }
 }
 
-private struct ManagePhotosItem: Identifiable {
+private struct ManagePhotosItem: Identifiable, Hashable {
     let dayId: UUID
     let stopId: UUID
     var id: UUID { stopId }

@@ -58,4 +58,15 @@ final class TripCreationViewModel: ObservableObject {
         day.photos[photoIndex] = photo
         trip.days[dayIndex] = day
     }
+
+    func setPhotoSelection(dayIndex: Int, photoIndex: Int, isSelected: Bool) {
+        guard trip.days.indices.contains(dayIndex),
+              trip.days[dayIndex].photos.indices.contains(photoIndex) else { return }
+        var day = trip.days[dayIndex]
+        var photo = day.photos[photoIndex]
+        guard photo.isSelected != isSelected else { return }
+        photo.isSelected = isSelected
+        day.photos[photoIndex] = photo
+        trip.days[dayIndex] = day
+    }
 }

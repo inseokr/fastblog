@@ -36,6 +36,11 @@ struct PhotoSelectView: View {
     @State private var lastDayChangeTime: Date = .distantPast
     /// Minimum drag distance past edge to count as intentional day-change (avoids tap).
     private static let pastEdgeThreshold: CGFloat = 50
+    @State private var thumbnailFrames: [UUID: CGRect] = [:]
+    @State private var dragSelectionStartIndex: Int?
+    @State private var dragSelectionTargetIsSelected: Bool?
+    @State private var dragInitialSelectionById: [UUID: Bool] = [:]
+    @State private var didPerformRangeSelection: Bool = false
 
     private var dayIndex: Int? {
         viewModel.trip.days.firstIndex(where: { $0.id == day.id })
@@ -217,6 +222,45 @@ struct PhotoSelectView: View {
         }
     }
 
+    private func photoIndex(at location: CGPoint) -> Int? {
+        for (idx, photo) in photos.enumerated() {
+            if let frame = thumbnailFrames[photo.id], frame.contains(location) {
+                return idx
+            }
+        }
+        return nil
+    }
+
+    private func beginRangeSelection(at index: Int) {
+        guard photos.indices.contains(index) else { return }
+        dragSelectionStartIndex = index
+        dragInitialSelectionById = Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0.isSelected) })
+        dragSelectionTargetIsSelected = !photos[index].isSelected
+        didPerformRangeSelection = true
+        applyRangeSelection(currentIndex: index)
+    }
+
+    private func applyRangeSelection(currentIndex: Int) {
+        guard let start = dragSelectionStartIndex,
+              let targetIsSelected = dragSelectionTargetIsSelected,
+              let di = dayIndex,
+              photos.indices.contains(currentIndex) else { return }
+        let lower = min(start, currentIndex)
+        let upper = max(start, currentIndex)
+        for idx in photos.indices {
+            let id = photos[idx].id
+            let initial = dragInitialSelectionById[id] ?? photos[idx].isSelected
+            let shouldSelect = (lower...upper).contains(idx) ? targetIsSelected : initial
+            viewModel.setPhotoSelection(dayIndex: di, photoIndex: idx, isSelected: shouldSelect)
+        }
+    }
+
+    private func endRangeSelection() {
+        dragSelectionStartIndex = nil
+        dragSelectionTargetIsSelected = nil
+        dragInitialSelectionById = [:]
+    }
+
     private var selectedCountLabel: some View {
         Text(viewModel.selectedCountLabel)
             .font(.subheadline)
@@ -243,14 +287,30 @@ struct PhotoSelectView: View {
                             }
                         }
                         .id(photo.id)
+                        .background(
+                            GeometryReader { geo in
+                                Color.clear.preference(
+                                    key: ThumbnailFramePreferenceKey.self,
+                                    value: [photo.id: geo.frame(in: .named("thumbnailStripArea"))]
+                                )
+                            }
+                        )
                     }
                 }
                 .padding(.horizontal, 16)
             }
+            .coordinateSpace(name: "thumbnailStripArea")
             .frame(height: 72)
+            .onPreferenceChange(ThumbnailFramePreferenceKey.self) { frames in
+                thumbnailFrames = frames
+            }
             .simultaneousGesture(
                 DragGesture(minimumDistance: 20)
                     .onEnded { value in
+                        guard !didPerformRangeSelection else {
+                            didPerformRangeSelection = false
+                            return
+                        }
                         let dx = value.translation.width
                         let pastEdgeLeft = atLast && dx < -Self.pastEdgeThreshold
                         let pastEdgeRight = atFirst && dx > Self.pastEdgeThreshold
@@ -273,6 +333,22 @@ struct PhotoSelectView: View {
                         #endif
                     }
             )
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .named("thumbnailStripArea"))
+                    .onChanged { value in
+                        if dragSelectionStartIndex == nil {
+                            let dragDistance = hypot(value.translation.width, value.translation.height)
+                            guard dragDistance > 8 else { return }
+                            guard let startIdx = photoIndex(at: value.startLocation) else { return }
+                            beginRangeSelection(at: startIdx)
+                        }
+                        guard let currentIdx = photoIndex(at: value.location) else { return }
+                        applyRangeSelection(currentIndex: currentIdx)
+                    }
+                    .onEnded { _ in
+                        endRangeSelection()
+                    }
+            )
             .onAppear {
                 if let id = currentPhotoId {
                     proxy.scrollTo(id, anchor: .center)
@@ -285,6 +361,14 @@ struct PhotoSelectView: View {
                 }
             }
         }
+    }
+}
+
+private struct ThumbnailFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] = [:]
+
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }
 
