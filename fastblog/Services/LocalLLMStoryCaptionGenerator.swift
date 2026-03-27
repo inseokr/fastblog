@@ -135,6 +135,38 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         return await templateFallback.translateText(userText: userText)
     }
 
+    // MARK: - Narrative Generation (LLM-only, no template fallback)
+
+    /// Generates a 4–6 line narrative for a place visit. Returns nil when LLM is unavailable.
+    func generatePlaceNarrative(context: PlaceNarrativeContext) async -> String? {
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            return await generatePlaceNarrativeWithLLM(context: context)
+        }
+#endif
+        return nil
+    }
+
+    /// Generates a 4–6 line narrative for a travel day. Returns nil when LLM is unavailable.
+    func generateDayNarrative(context: DayNarrativeContext) async -> String? {
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            return await generateDayNarrativeWithLLM(context: context)
+        }
+#endif
+        return nil
+    }
+
+    /// Generates a 5–6 line trip opening narrative. Returns nil when LLM is unavailable.
+    func generateTripNarrative(context: TripNarrativeContext) async -> String? {
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            return await generateTripNarrativeWithLLM(context: context)
+        }
+#endif
+        return nil
+    }
+
 #if canImport(FoundationModels)
 
     // MARK: - Prompt Modifiers
@@ -256,11 +288,11 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             You write short, vivid photo captions for a travel blog. \
             One concise sentence based only on the photo tags provided. \
             No hashtags or emoji. No first person (no "I", "we", "my"). \
-            Output only the caption text. No preamble like "Here is a caption" — just the caption.
+            Output only the text. No preamble, no labels — just the sentence.
             """
         let prompt = """
-            Write one short caption for a travel photo with these tags: \(tagsLine). \
-            Output only the caption text. No introduction, no first person (I/we/my).
+            Write one short sentence for a travel photo with these tags: \(tagsLine). \
+            Output only the text. No introduction, no first person (I/we/my).
             """
 
         return await runSession(instructions: instructions, prompt: prompt)
@@ -299,10 +331,10 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         ].joined(separator: "\n\n")
 
         let prompt = """
-            Generate 1 caption for this place visit.
+            Write a short story for this place visit.
             Tags: \(tagsLine).\(timePart)\(countPart)\(contextBlock)
 
-            Output only the caption. No introduction, no first person.
+            Output only the text. No introduction, no first person.
             """
 
         return await runSession(instructions: instructions, prompt: prompt)
@@ -337,7 +369,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             Your job is to write one very short sentence that summarizes a place visit for a travel blog.
             The sentence should feel natural, warm, and vivid.
             No hashtags or emoji. No first person (no "I", "we", "my"). No exact timestamp.
-            Output only the summary sentence. No preamble like "Here is a summary" — just the sentence.
+            Output only the sentence. No preamble, no labels — just the sentence.
             """
 
         let instructions = [
@@ -352,7 +384,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             Photo captions:
             \(captionsBlock)
 
-            Output only the one-sentence summary. No introduction, no first person.
+            Output only the text. No introduction, no first person.
             """
 
         return await runSession(instructions: instructions, prompt: prompt)
@@ -373,7 +405,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             You write one short, vivid sentence that summarises a travel day for a blog. \
             You are given place stories from that day. Blend them into a single evocative sentence. \
             No hashtags or emoji. No first person (no "I", "we", "my"). No date mention. \
-            Output only the sentence. No preamble like "Here is a summary" — just the sentence.
+            Output only the sentence. No preamble, no labels — just the sentence.
             """
         let prompt = """
             Summarise this travel day into one vivid sentence.\(datePart)
@@ -434,7 +466,7 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             The user wrote: "\(context.userText)"\(langInstruction)
             \(userWritingStyleInstruction)
 
-            Complete this into one short travel caption. Output only the text.
+            Complete this into one short travel sentence. Output only the text.
             """
 
         return await runSession(instructions: instructions, prompt: prompt)
@@ -554,6 +586,129 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             Complete this into one short day story. Output only the text.
             """
 
+        return await runSession(instructions: instructions, prompt: prompt)
+    }
+
+    // MARK: - Narrative Generators
+
+    @available(iOS 26.0, *)
+    private func generatePlaceNarrativeWithLLM(context: PlaceNarrativeContext) async -> String? {
+        let tagsLine = context.tags.isEmpty ? "general visit" : context.tags.prefix(10).joined(separator: ", ")
+        var contextParts: [String] = []
+        if let tod = context.timeOfDay { contextParts.append("Time of day: \(tod)") }
+        if context.photoCount > 1 { contextParts.append("\(context.photoCount) photos taken") }
+        let contextBlock = contextParts.isEmpty ? "" : "\nContext: " + contextParts.joined(separator: ", ") + "."
+        let placePart: String
+        switch context.nameConfidence {
+        case .official, .semi:
+            let line = [context.placeName, context.placeSubtitle].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+            placePart = line.isEmpty ? "" : "\nPlace: \(line)."
+        case .generic:
+            placePart = ""
+        }
+        let seedPart: String = {
+            guard let s = context.existingStory else { return "" }
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? "" : "\nExisting note: \(t)"
+        }()
+        let instructions = [
+            """
+            You are a travel storytelling assistant in a mobile app called Bloggo.
+            Write a vivid, personal travel story about a place visit in 4 to 6 lines of flowing prose.
+            Rules:
+            • 4 to 6 lines only — no bullet points, no headers.
+            • Each sentence on its own line, separated by a single newline.
+            • Rich sensory and emotional detail. Capture atmosphere and memory.
+            • No hashtags, no emoji, no first person (no "I", "we", "my").
+            • No labels, quotes, captions, or meta-text of any kind.
+            • \(userWritingStyleInstruction)
+            Output only the story text. No preamble — just the story.
+            """,
+            categoryModifier(for: context.categoryID),
+            nameConfidenceModifier(for: context.nameConfidence, placeName: context.placeName)
+        ].joined(separator: "\n\n")
+        let prompt = """
+            Write a 4-6 line travel story for this place.\(placePart)\(contextBlock)\(seedPart)
+            Tags: \(tagsLine).
+            Output only the story. No introduction, no first person.
+            """
+        return await runSession(instructions: instructions, prompt: prompt)
+    }
+
+    @available(iOS 26.0, *)
+    private func generateDayNarrativeWithLLM(context: DayNarrativeContext) async -> String? {
+        let placesBlock: String
+        if context.placeEntries.isEmpty {
+            placesBlock = "No places recorded."
+        } else {
+            placesBlock = context.placeEntries.enumerated().map { idx, entry in
+                let story = entry.story.trimmingCharacters(in: .whitespacesAndNewlines)
+                return story.isEmpty ? "\(idx + 1). \(entry.name)" : "\(idx + 1). \(entry.name): \(story)"
+            }.joined(separator: "\n")
+        }
+        let datePart = context.dayDateText.isEmpty ? "" : "Date: \(context.dayDateText)."
+        let weatherPart: String = {
+            guard let w = context.weatherSummary, !w.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "" }
+            return " Weather: \(w)."
+        }()
+        let instructions = """
+            You are a travel storytelling assistant in a mobile app called Bloggo.
+            Write a vivid, personal day story in 4 to 6 lines of flowing prose.
+            Weave together the places and moments of the day into one coherent story arc.
+            Rules:
+            • 4 to 6 lines only — no bullet points, no headers.
+            • Each sentence on its own line, separated by a single newline.
+            • Show the rhythm of the day — where it started, how it flowed, how it felt.
+            • No hashtags, no emoji, no first person (no "I", "we", "my").
+            • No labels, quotes, captions, or meta-text of any kind.
+            • \(userWritingStyleInstruction)
+            Output only the story. No preamble — just the text.
+            """
+        let prompt = """
+            Write a 4-6 line story for this travel day.
+            \(datePart)\(weatherPart)
+
+            Places visited:
+            \(placesBlock)
+
+            Output only the story. No first person (I/we/my).
+            """
+        return await runSession(instructions: instructions, prompt: prompt)
+    }
+
+    @available(iOS 26.0, *)
+    private func generateTripNarrativeWithLLM(context: TripNarrativeContext) async -> String? {
+        let daySummariesBlock = context.daySummaries.prefix(7).enumerated()
+            .map { "Day \($0.offset + 1): \($0.element)" }
+            .joined(separator: "\n")
+        let locationLine = context.locationChain.isEmpty
+            ? ""
+            : "Locations: " + context.locationChain.joined(separator: " → ") + "."
+        let instructions = """
+            You are a travel storytelling assistant in a mobile app called Bloggo.
+            Write a vivid trip opening story in 5 to 6 lines of flowing prose.
+            This will appear at the top of the travel blog as the introduction.
+            Rules:
+            • 5 to 6 lines only — no bullet points, no headers.
+            • Each sentence on its own line, separated by a single newline.
+            • Capture the spirit and mood of the whole trip in an evocative opening.
+            • Reference the places visited naturally — not as a list.
+            • No hashtags, no emoji, no first person (no "I", "we", "my").
+            • No labels, quotes, captions, or meta-text of any kind.
+            • \(userWritingStyleInstruction)
+            Output only the story. No preamble — just the text.
+            """
+        let prompt = """
+            Write a 5-6 line opening story for this trip blog.
+            Trip: \(context.tripTitle).
+            Dates: \(context.dateRangeText) (\(context.dayCount) days).
+            \(locationLine)
+
+            Day summaries:
+            \(daySummariesBlock)
+
+            Output only the story. No first person (I/we/my).
+            """
         return await runSession(instructions: instructions, prompt: prompt)
     }
 

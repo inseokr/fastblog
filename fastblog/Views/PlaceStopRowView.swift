@@ -55,6 +55,10 @@ struct PlaceStopRowView: View {
     var onEditPlaceCaption: (() -> Void)?
     /// When true, shows a "Writing caption…" spinner inside the caption area (e.g. while place-name-triggered generation runs).
     var isGeneratingCaption: Bool = false
+    /// When true, shows a "Generating story…" spinner and disables the Tell Story button.
+    var isGeneratingNarrative: Bool = false
+    /// When set (and device is capable), shows a "Tell Story" button. Parent manages the async task.
+    var onTellPlaceStory: (() -> Void)? = nil
 
     @FocusState private var focusedPlaceNote: Bool
     @FocusState private var focusedOverallStory: Bool
@@ -699,52 +703,93 @@ struct PlaceStopRowView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-            } else if !overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(overallStory)
-                        .font(.body)
-                        .lineSpacing(5)
-                        .foregroundColor(.white.opacity(0.9))
-                        .lineLimit(isOverallStoryExpanded ? nil : 5)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: isOverallStoryExpanded)
-                        .background(
-                            GeometryReader { constrainedGeo in
-                                Text(overallStory)
-                                    .font(.body)
-                                    .lineSpacing(5)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .frame(width: constrainedGeo.size.width)
-                                    .background(GeometryReader { fullGeo in
-                                        Color.clear.preference(
-                                            key: OverallStoryTruncationKey.self,
-                                            value: fullGeo.size.height > constrainedGeo.size.height + 1
-                                        )
-                                    })
-                                    .hidden()
+            } else {
+                let displayStory: String = {
+                    if let n = stop.placeNarrative, !n.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return n }
+                    return overallStory
+                }()
+                if !displayStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(displayStory)
+                            .font(.body)
+                            .lineSpacing(5)
+                            .foregroundColor(.white.opacity(0.9))
+                            .lineLimit(isOverallStoryExpanded ? nil : 5)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: isOverallStoryExpanded)
+                            .background(
+                                GeometryReader { constrainedGeo in
+                                    Text(displayStory)
+                                        .font(.body)
+                                        .lineSpacing(5)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .frame(width: constrainedGeo.size.width)
+                                        .background(GeometryReader { fullGeo in
+                                            Color.clear.preference(
+                                                key: OverallStoryTruncationKey.self,
+                                                value: fullGeo.size.height > constrainedGeo.size.height + 1
+                                            )
+                                        })
+                                        .hidden()
+                                }
+                            )
+                            .onPreferenceChange(OverallStoryTruncationKey.self) { value in
+                                isOverallStoryTruncated = value
                             }
-                        )
-                        .onPreferenceChange(OverallStoryTruncationKey.self) { value in
-                            isOverallStoryTruncated = value
-                        }
 
-                    if isOverallStoryTruncated || isOverallStoryExpanded {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                isOverallStoryExpanded.toggle()
+                        if isOverallStoryTruncated || isOverallStoryExpanded {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    isOverallStoryExpanded.toggle()
+                                }
+                            } label: {
+                                Text(isOverallStoryExpanded ? "Show less" : "Show more")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.white.opacity(0.5))
                             }
-                        } label: {
-                            Text(isOverallStoryExpanded ? "Show less" : "Show more")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(.white.opacity(0.5))
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, onTellPlaceStory != nil && LocalLLMStoryCaptionGenerator.isCapable ? 4 : 8)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 8)
+                if let tell = onTellPlaceStory, LocalLLMStoryCaptionGenerator.isCapable {
+                    HStack {
+                        Spacer()
+                        if isGeneratingNarrative {
+                            HStack(spacing: 6) {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .secondary))
+                                    .scaleEffect(0.7)
+                                Text("Generating story…")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        } else {
+                            Button(action: tell) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "sparkles")
+                                        .font(.caption)
+                                        .foregroundStyle(
+                                            LinearGradient(
+                                                colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                    Text(stop.placeNarrative != nil ? "Refresh Story" : "Tell Story")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                }
             }
         }
     }

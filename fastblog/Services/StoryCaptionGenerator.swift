@@ -236,6 +236,43 @@ struct EnhanceOverallPlaceStoryContext {
     var translateOutputToEnglish: Bool = false
 }
 
+// MARK: - Narrative Context Types (LLM-only, no template fallback)
+
+/// Input context for a 4–6 line place narrative generated on demand.
+struct PlaceNarrativeContext {
+    let tags: [String]
+    let placeName: String
+    let placeSubtitle: String?
+    let dateTimeText: String
+    let photoCount: Int
+    let categoryID: PlaceCategoryID
+    let nameConfidence: PlaceNameConfidence
+    let timeOfDay: String?
+    /// Existing overallStory used as a seed hint for the model.
+    let existingStory: String?
+}
+
+/// Input context for a 4–6 line day narrative generated on demand.
+struct DayNarrativeContext {
+    /// Human-readable date string (e.g. "Saturday Jan-18").
+    let dayDateText: String
+    /// Each place's name + overallStory (or title as fallback), in visit order.
+    let placeEntries: [(name: String, story: String)]
+    /// Optional weather emoji / description for extra colour.
+    let weatherSummary: String?
+}
+
+/// Input context for a 5–6 line trip opening narrative generated on demand.
+struct TripNarrativeContext {
+    let tripTitle: String
+    let dateRangeText: String
+    let dayCount: Int
+    /// Deduplicated location chain in visit order (city / place names).
+    let locationChain: [String]
+    /// dayCaption per day, or place names as fallback, in day order.
+    let daySummaries: [String]
+}
+
 // MARK: - Protocol
 
 /// Provider that generates caption or place story text. Replace with a real local LLM when available.

@@ -301,6 +301,85 @@ actor StoryCaptionService {
         await generator.translateText(userText: userText)
     }
 
+    // MARK: - Narrative Generation (LLM-only, hidden when not capable)
+
+    /// Generates a 4–6 line narrative for a place visit. Returns nil when the on-device LLM is unavailable.
+    func generatePlaceNarrative(stop: PlaceStop, dayDate: Date?) async -> String? {
+        guard LocalLLMStoryCaptionGenerator.isCapable else { return nil }
+        let included = stop.photos.filter(\.isIncluded)
+        var tagSet: [String] = []
+        for photo in included.prefix(5) {
+            if let lid = photo.localIdentifier {
+                let photoTags = await tagService.tags(forLocalIdentifier: lid)
+                for t in photoTags where !tagSet.contains(t) { tagSet.append(t) }
+            }
+        }
+        let tz = await captureTimeZone(for: stop)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d MMM yyyy 'at' h:mm a"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = tz
+        let earliestDate = included.map(\.timestamp).min() ?? dayDate
+        let dateTimeText = earliestDate.map { formatter.string(from: $0) } ?? ""
+        let context = PlaceNarrativeContext(
+            tags: tagSet,
+            placeName: stop.placeTitle,
+            placeSubtitle: stop.placeSubtitle,
+            dateTimeText: dateTimeText,
+            photoCount: included.count,
+            categoryID: PlaceCategoryID.from(mkCategory: stop.placeCategory, placeName: stop.placeTitle),
+            nameConfidence: PlaceNameConfidence.from(placeName: stop.placeTitle),
+            timeOfDay: earliestDate.map { timeOfDayLabel(from: $0, in: tz) },
+            existingStory: stop.overallStory
+        )
+        return await LocalLLMStoryCaptionGenerator.shared.generatePlaceNarrative(context: context)
+    }
+
+    /// Generates a 4–6 line narrative for a travel day. Returns nil when the on-device LLM is unavailable.
+    func generateDayNarrative(day: RecapBlogDay) async -> String? {
+        guard LocalLLMStoryCaptionGenerator.isCapable else { return nil }
+        let placeEntries = day.placeStops.map { stop -> (name: String, story: String) in
+            (name: stop.placeTitle, story: stop.overallStory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+        }
+        let context = DayNarrativeContext(
+            dayDateText: day.shortDateText,
+            placeEntries: placeEntries,
+            weatherSummary: day.weather?.emoji
+        )
+        return await LocalLLMStoryCaptionGenerator.shared.generateDayNarrative(context: context)
+    }
+
+    /// Generates a 5–6 line trip opening narrative. Returns nil when the on-device LLM is unavailable.
+    func generateTripNarrative(detail: RecapBlogDetail) async -> String? {
+        guard LocalLLMStoryCaptionGenerator.isCapable else { return nil }
+        var locationSet: [String] = []
+        for day in detail.days {
+            for stop in day.placeStops {
+                let loc = stop.placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                    ? stop.placeSubtitle!
+                    : stop.placeTitle
+                if !loc.isEmpty && !locationSet.contains(loc) { locationSet.append(loc) }
+            }
+        }
+        let daySummaries = detail.days.map { day -> String in
+            let caption = day.dayCaption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return caption.isEmpty ? day.placeStops.prefix(3).map(\.placeTitle).joined(separator: ", ") : caption
+        }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        let startText = detail.days.first.map { formatter.string(from: $0.date) } ?? ""
+        let endText = detail.days.last.map { formatter.string(from: $0.date) } ?? ""
+        let dateRangeText = [startText, endText].filter { !$0.isEmpty }.joined(separator: " – ")
+        let context = TripNarrativeContext(
+            tripTitle: detail.title,
+            dateRangeText: dateRangeText,
+            dayCount: detail.days.count,
+            locationChain: Array(locationSet.prefix(8)),
+            daySummaries: daySummaries
+        )
+        return await LocalLLMStoryCaptionGenerator.shared.generateTripNarrative(context: context)
+    }
+
     /// Completes and enriches the user's day story draft using place stories as context.
     func enhanceDaySummary(day: RecapBlogDay, userText: String, translateOutputToEnglish: Bool = false) async -> String {
         let placeStories = day.placeStops.map { stop -> String in

@@ -64,6 +64,10 @@ struct RecapBlogPageView: View {
     @State private var showManagePhotosForStop: ManagePhotosItem?
     /// The stop currently having its place caption generated (triggered by place name pick).
     @State private var generatingCaptionStopId: UUID?
+    /// The stop currently having its place narrative generated via "Tell Story".
+    @State private var generatingNarrativeStopId: UUID?
+    /// The day currently having its day narrative generated via "Tell Story".
+    @State private var generatingNarrativeDayId: UUID?
     /// Snapshot taken when ManagePhotosView opens, used to diff on dismiss for targeted cloud sync.
     @State private var managePhotosEditInfo: ManagePhotosEditInfo?
     @State private var isEditMode = true
@@ -864,6 +868,19 @@ struct RecapBlogPageView: View {
                             mapOrPreviewCard
                                 .id("map-anchor")
                         }
+                        if let narrative = draft.tripNarrative, !narrative.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Text(narrative)
+                                .font(.body)
+                                .lineSpacing(5)
+                                .foregroundColor(.white.opacity(0.9))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .background(Color(white: 0.1))
+                                .cornerRadius(12)
+                                .padding(.horizontal, 16)
+                                .padding(.top, 8)
+                        }
                         timelineContent
 
                         if draft.days.isEmpty && hasFinishedInitialLoad {
@@ -1593,6 +1610,32 @@ struct RecapBlogPageView: View {
                 
                 Spacer()
                 
+                if LocalLLMStoryCaptionGenerator.isCapable {
+                    if generatingNarrativeDayId == day.id {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                            .tint(.secondary)
+                    } else {
+                        Button {
+                            triggerDayNarrative(day: day)
+                        } label: {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .padding(6)
+                                .background(Color.white.opacity(0.1))
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
                 // Scissors on Day N (dayIdx > 0) means "split before Day N":
                 // Part 1 = Days 1..N-1, Part 2 = Days N..end. Not shown on Day 1.
                 if isEditMode, draft.days.count >= 2, let dayIdx = draft.days.firstIndex(where: { $0.id == day.id }), dayIdx > 0 {
@@ -1704,7 +1747,11 @@ struct RecapBlogPageView: View {
                     onEditPlaceCaption: {
                         placeCaptionEditItem = PlaceCaptionEditItem(dayId: day.id, stopId: stop.id)
                     },
-                    isGeneratingCaption: generatingCaptionStopId == stop.id
+                    isGeneratingCaption: generatingCaptionStopId == stop.id,
+                    isGeneratingNarrative: generatingNarrativeStopId == stop.id,
+                    onTellPlaceStory: {
+                        triggerPlaceNarrative(dayId: day.id, stopId: stop.id, dayDate: day.date)
+                    }
                 )
                 .id(stop.id)
                 
@@ -2814,12 +2861,19 @@ struct RecapBlogPageView: View {
                 .buttonStyle(.plain)
             }
             .padding(.bottom, 4)
-        } else if !(day.dayCaption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Text(day.dayCaption!)
-                .font(.subheadline)
-                .foregroundColor(.white.opacity(0.9))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, 4)
+        } else {
+            let displayCaption: String? = {
+                if let n = day.dayNarrative, !n.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return n }
+                if let c = day.dayCaption, !c.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return c }
+                return nil
+            }()
+            if let text = displayCaption {
+                Text(text)
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.9))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 4)
+            }
         }
     }
 
@@ -2907,6 +2961,49 @@ struct RecapBlogPageView: View {
         let dateKey = day.dayIndex - 1  // dayIndex is 1-based; API expects 0-based
         let storyText = day.dayCaption ?? ""
         Task { try? await APIManager.shared.updateDayStory(blogKey: blogKey, dateKey: dateKey, story: storyText) }
+    }
+
+    // MARK: - Narrative Generation
+
+    private func triggerPlaceNarrative(dayId: UUID, stopId: UUID, dayDate: Date) {
+        generatingNarrativeStopId = stopId
+        Task {
+            guard let currentStop = placeStop(dayId: dayId, stopId: stopId) else {
+                generatingNarrativeStopId = nil
+                return
+            }
+            let narrative = await StoryCaptionService.shared.generatePlaceNarrative(stop: currentStop, dayDate: dayDate)
+            await MainActor.run {
+                guard let narrative,
+                      let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+                      let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else {
+                    generatingNarrativeStopId = nil
+                    return
+                }
+                draft.days[dayIdx].placeStops[stopIdx].placeNarrative = narrative
+                generatingNarrativeStopId = nil
+            }
+        }
+    }
+
+    private func triggerDayNarrative(day: RecapBlogDay) {
+        generatingNarrativeDayId = day.id
+        Task {
+            guard let currentDay = draft.days.first(where: { $0.id == day.id }) else {
+                generatingNarrativeDayId = nil
+                return
+            }
+            let narrative = await StoryCaptionService.shared.generateDayNarrative(day: currentDay)
+            await MainActor.run {
+                guard let narrative,
+                      let dayIdx = draft.days.firstIndex(where: { $0.id == day.id }) else {
+                    generatingNarrativeDayId = nil
+                    return
+                }
+                draft.days[dayIdx].dayNarrative = narrative
+                generatingNarrativeDayId = nil
+            }
+        }
     }
 
     // MARK: - AI Caption Tracking

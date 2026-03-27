@@ -33,6 +33,7 @@ struct BlogSettingsSheet: View {
     @State private var showRestorePlaces = false
     @State private var showCustomDeletePopup = false
     @State private var showWritingStyle = false
+    @State private var isGeneratingTripNarrative = false
 
     private var hasCloudPhotos: Bool {
         draft.hasCloudPhotos
@@ -110,6 +111,57 @@ struct BlogSettingsSheet: View {
         }
     }
 
+    @ViewBuilder
+    private var aiStorytellingSection: some View {
+        if LocalLLMStoryCaptionGenerator.isCapable {
+            Section {
+                Button {
+                    isGeneratingTripNarrative = true
+                    let currentDraft = draft
+                    Task {
+                        let narrative = await StoryCaptionService.shared.generateTripNarrative(detail: currentDraft)
+                        await MainActor.run {
+                            if let narrative { draft.tripNarrative = narrative }
+                            isGeneratingTripNarrative = false
+                        }
+                    }
+                } label: {
+                    if isGeneratingTripNarrative {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle())
+                                .scaleEffect(0.8)
+                            Text("Generating…")
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        HStack(spacing: 8) {
+                            Image(systemName: "sparkles")
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                            Text(draft.tripNarrative != nil ? "Refresh Trip Story" : "Tell My Story")
+                        }
+                    }
+                }
+                .disabled(isGeneratingTripNarrative)
+            } header: {
+                Text("AI Storytelling")
+            } footer: {
+                if let narrative = draft.tripNarrative, !narrative.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(narrative)
+                        .lineLimit(4)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
     private var titleAndCoverSection: some View {
         Section {
             Button {
@@ -137,7 +189,17 @@ struct BlogSettingsSheet: View {
                 showWritingStyle = true
             } label: {
                 HStack {
-                    Label("Writing Style", systemImage: "wand.and.stars")
+                    HStack(spacing: 8) {
+                        Image(systemName: "wand.and.stars")
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        Text("Writing Style")
+                    }
                     Spacer()
                     Text(styleName)
                         .font(.caption)

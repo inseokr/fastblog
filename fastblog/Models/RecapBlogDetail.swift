@@ -35,8 +35,10 @@ struct RecapBlogDetail: Identifiable, Equatable, Codable, Sendable {
     var blogKey: Int?
     /// Places the user has removed from the blog. Preserved so they can be restored later.
     var removedPlaceStops: [RemovedPlaceEntry]
+    /// AI-generated trip opening narrative (5–6 lines). Shown at the top of the blog before Day 1.
+    var tripNarrative: String?
 
-    init(id: UUID = UUID(), title: String, days: [RecapBlogDay], coverTheme: String = "default", selectedCoverPhotoIdentifier: String? = nil, countryName: String? = nil, blogKey: Int? = nil, removedPlaceStops: [RemovedPlaceEntry] = []) {
+    init(id: UUID = UUID(), title: String, days: [RecapBlogDay], coverTheme: String = "default", selectedCoverPhotoIdentifier: String? = nil, countryName: String? = nil, blogKey: Int? = nil, removedPlaceStops: [RemovedPlaceEntry] = [], tripNarrative: String? = nil) {
         self.id = id
         self.title = title
         self.days = days
@@ -45,6 +47,7 @@ struct RecapBlogDetail: Identifiable, Equatable, Codable, Sendable {
         self.countryName = countryName
         self.blogKey = blogKey
         self.removedPlaceStops = removedPlaceStops
+        self.tripNarrative = tripNarrative
     }
 
     var allIncludedPhotos: [RecapPhoto] {
@@ -63,17 +66,20 @@ struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
     var placeStops: [PlaceStop]
     /// User-written or AI-generated caption for the whole day. Shown right below the day date text.
     var dayCaption: String?
+    /// AI-generated day narrative (4–6 lines). Overrides dayCaption in display when present.
+    var dayNarrative: String?
     /// True after reverse-geocoding and photo scoring have been applied for this day (used for day-by-day rate-limited processing).
     var isPlaceNamesResolved: Bool
     /// Weather fetched from Open-Meteo for this day. Nil until weather has been resolved.
     var weather: DayWeather?
 
-    init(id: UUID = UUID(), dayIndex: Int, date: Date, placeStops: [PlaceStop], dayCaption: String? = nil, isPlaceNamesResolved: Bool = false, weather: DayWeather? = nil) {
+    init(id: UUID = UUID(), dayIndex: Int, date: Date, placeStops: [PlaceStop], dayCaption: String? = nil, dayNarrative: String? = nil, isPlaceNamesResolved: Bool = false, weather: DayWeather? = nil) {
         self.id = id
         self.dayIndex = dayIndex
         self.date = date
         self.placeStops = placeStops
         self.dayCaption = dayCaption
+        self.dayNarrative = dayNarrative
         self.isPlaceNamesResolved = isPlaceNamesResolved
         self.weather = weather
     }
@@ -85,12 +91,13 @@ struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
         date = try c.decode(Date.self, forKey: .date)
         placeStops = try c.decode([PlaceStop].self, forKey: .placeStops)
         dayCaption = try c.decodeIfPresent(String.self, forKey: .dayCaption)
+        dayNarrative = try c.decodeIfPresent(String.self, forKey: .dayNarrative)
         isPlaceNamesResolved = try c.decodeIfPresent(Bool.self, forKey: .isPlaceNamesResolved) ?? false
         weather = try c.decodeIfPresent(DayWeather.self, forKey: .weather)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, dayIndex, date, placeStops, dayCaption, isPlaceNamesResolved, weather
+        case id, dayIndex, date, placeStops, dayCaption, dayNarrative, isPlaceNamesResolved, weather
     }
 
     var dateText: String {
@@ -172,6 +179,8 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
     var noteText: String?
     /// Quick summary of this place derived from photo captions (e.g. LLM summary). Shown above/below place and time.
     var overallStory: String?
+    /// AI-generated place narrative (4–6 lines). Overrides overallStory in display when present.
+    var placeNarrative: String?
     /// Server-assigned placeIndex in user.placeVisitHistory. Set after successful blog upload.
     var cloudPlaceIndex: Int?
     /// Digitized timestamp of the earliest included photo (EXIF format "yyyy:MM:dd HH:mm:ss").
@@ -193,6 +202,7 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         photos: [RecapPhoto],
         noteText: String? = nil,
         overallStory: String? = nil,
+        placeNarrative: String? = nil,
         overallStoryIsManual: Bool = false,
         cloudPlaceIndex: Int? = nil,
         visitedTimeDigitized: String? = nil,
@@ -207,6 +217,7 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         self.photos = photos
         self.noteText = noteText
         self.overallStory = overallStory
+        self.placeNarrative = placeNarrative
         self.overallStoryIsManual = overallStoryIsManual
         self.cloudPlaceIndex = cloudPlaceIndex
         self.visitedTimeDigitized = visitedTimeDigitized
