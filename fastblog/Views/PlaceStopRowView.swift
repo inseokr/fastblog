@@ -72,6 +72,35 @@ struct PlaceStopRowView: View {
     // Vibe playback for blog photo thumbnails
     @StateObject private var vibePlayer = VibePlayer()
     @State private var playingVibePhotoId: UUID? = nil
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var rowSurface: Color {
+        colorScheme == .dark ? Color(white: 0.12) : Color(uiColor: .secondarySystemGroupedBackground)
+    }
+
+    private var rowInset: Color {
+        colorScheme == .dark ? Color(white: 0.08) : Color(uiColor: .tertiarySystemGroupedBackground)
+    }
+
+    private var rowTitle: Color {
+        colorScheme == .dark ? .white : .primary
+    }
+
+    private var rowCaptionFilled: Color {
+        colorScheme == .dark ? .white : .primary
+    }
+
+    private var rowStoryReadColor: Color {
+        colorScheme == .dark ? .white.opacity(0.9) : .primary
+    }
+
+    private var editNamePillFill: Color {
+        colorScheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.08)
+    }
+
+    private var managePhotosOutline: Color {
+        colorScheme == .dark ? Color.white.opacity(0.6) : Color.primary.opacity(0.35)
+    }
 
     /// 12-hour visit time from earliest photo timestamp. Formatter: "h:mm a" (e.g. 3:42 PM).
     private static let visitTimeFormatter: DateFormatter = {
@@ -141,16 +170,16 @@ struct PlaceStopRowView: View {
                                 Button { onEditName?() } label: {
                                     Text(stop.placeTitle)
                                         .font(.headline)
-                                        .foregroundColor(.white)
+                                        .foregroundColor(rowTitle)
                                 }
                                 .buttonStyle(.plain)
                                 Button { onEditName?() } label: {
                                     ZStack {
                                         Circle()
-                                            .fill(Color.white.opacity(0.22))
+                                            .fill(editNamePillFill)
                                         Image(systemName: "square.and.pencil")
                                             .font(.system(size: 14, weight: .semibold))
-                                            .foregroundStyle(.white)
+                                            .foregroundStyle(rowTitle)
                                     }
                                     .frame(width: 28, height: 28)
                                 }
@@ -164,10 +193,10 @@ struct PlaceStopRowView: View {
                                         Text(stop.placeTitle)
                                             .font(.title2)
                                             .fontWeight(.bold)
-                                            .foregroundColor(.white)
+                                            .foregroundColor(rowTitle)
                                         StoryPlaceExternalLinkIcon(
                                             titleFontSize: UIFont.preferredFont(forTextStyle: .title2).pointSize,
-                                            foregroundColor: .white.opacity(0.78)
+                                            foregroundColor: colorScheme == .dark ? .white.opacity(0.78) : Color.primary.opacity(0.55)
                                         )
                                     }
                                 }
@@ -180,7 +209,7 @@ struct PlaceStopRowView: View {
                                     Text(stop.placeTitle)
                                         .font(.title2)
                                         .fontWeight(.bold)
-                                        .foregroundColor(.white)
+                                        .foregroundColor(rowTitle)
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("Open place in Maps")
@@ -325,7 +354,7 @@ struct PlaceStopRowView: View {
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color(white: 0.08))
+                    .background(rowInset)
                     .cornerRadius(10)
                 }
                 .buttonStyle(.plain)
@@ -417,12 +446,12 @@ struct PlaceStopRowView: View {
                             let caption = photoCaption(photo.id).wrappedValue
                             Text(caption.isEmpty ? "Leave a story for this photo" : caption)
                                 .font(.subheadline)
-                                .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : .white)
+                                .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : rowCaptionFilled)
                                 .lineLimit(3)
                                 .multilineTextAlignment(.leading)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(10)
-                                .background(Color(white: 0.08))
+                                .background(rowInset)
                                 .cornerRadius(8)
                         }
                         .buttonStyle(.plain)
@@ -437,7 +466,7 @@ struct PlaceStopRowView: View {
                             Text(photoCaption(photo.id).wrappedValue)
                                 .font(.subheadline)
                                 .lineSpacing(3)
-                                .foregroundColor(.white.opacity(0.85))
+                                .foregroundColor(rowStoryReadColor)
                                 .lineLimit(isExpanded ? nil : 4)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: isExpanded)
@@ -454,7 +483,7 @@ struct PlaceStopRowView: View {
                                 .foregroundColor(.secondary)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 10)
-                                .background(Color(white: 0.08))
+                                .background(rowInset)
                                 .cornerRadius(8)
                         }
                         .buttonStyle(.plain)
@@ -554,12 +583,12 @@ struct PlaceStopRowView: View {
                                         let caption = photoCaption(photo.id).wrappedValue
                                         Text(caption.isEmpty ? "Leave a story for this photo" : caption)
                                             .font(.caption)
-                                            .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : .white)
+                                            .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : rowCaptionFilled)
                                             .lineLimit(2)
                                             .multilineTextAlignment(.leading)
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                             .padding(8)
-                                            .background(Color(white: 0.08))
+                                            .background(rowInset)
                                             .cornerRadius(6)
                                     }
                                     .frame(width: thumbnailSize)
@@ -574,7 +603,7 @@ struct PlaceStopRowView: View {
                                         Text(photoCaption(photo.id).wrappedValue)
                                             .font(.subheadline)
                                             .lineSpacing(3)
-                                            .foregroundColor(.white.opacity(0.9))
+                                            .foregroundColor(rowStoryReadColor)
                                             .lineLimit(isExpanded ? nil : 4)
                                             .frame(width: thumbnailSize, alignment: .leading)
                                             .fixedSize(horizontal: false, vertical: isExpanded)
@@ -589,17 +618,17 @@ struct PlaceStopRowView: View {
                         if isEditMode && hasMultipleAvailable {
                             Button(action: onManagePhotos) {
                                 RoundedRectangle(cornerRadius: 8)
-                                    .strokeBorder(Color.white.opacity(0.6), lineWidth: 1.5)
+                                    .strokeBorder(managePhotosOutline, lineWidth: 1.5)
                                     .frame(width: thumbnailSize, height: thumbnailSize)
                                     .overlay {
                                         VStack(spacing: 6) {
                                             Image(systemName: "photo.on.rectangle")
                                                 .font(.system(size: 40))
-                                                .foregroundColor(.white)
+                                                .foregroundColor(rowTitle)
                                             Text("Manage Photos")
                                                 .font(.caption)
                                                 .fontWeight(.medium)
-                                                .foregroundColor(.white)
+                                                .foregroundColor(rowTitle)
                                         }
                                     }
                             }
@@ -617,7 +646,7 @@ struct PlaceStopRowView: View {
 
             // timelineLine removed per user request
         }
-        .background(Color(white: 0.12))
+        .background(rowSurface)
         .cornerRadius(16)
         .toolbar {
             if focusedPlaceNote || focusedOverallStory || focusedPhotoId != nil {
@@ -655,7 +684,7 @@ struct PlaceStopRowView: View {
     /// Place story row: between place info and photos. Creative placeholder to encourage writing.
     private var placeStoryRow: some View {
         let isGenerating = isGeneratingCaption || isGeneratingOverallStory
-        return Group {
+        return VStack(spacing: 0) {
             if isEditMode {
                 VStack(alignment: .leading, spacing: 6) {
                     // Tappable caption box — full width, no side column
@@ -674,17 +703,20 @@ struct PlaceStopRowView: View {
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             } else {
-                                let trimmed = overallStory.trimmingCharacters(in: .whitespacesAndNewlines)
-                                Text(trimmed.isEmpty ? placeStoryPlaceholder : trimmed)
+                                let displayStory: String = {
+                                    if let n = stop.placeNarrative, !n.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return n }
+                                    return overallStory.trimmingCharacters(in: .whitespacesAndNewlines)
+                                }()
+                                Text(displayStory.isEmpty ? placeStoryPlaceholder : displayStory)
                                     .font(.body)
                                     .lineSpacing(4)
-                                    .foregroundColor(trimmed.isEmpty ? .secondary.opacity(0.9) : .white)
+                                    .foregroundColor(displayStory.isEmpty ? .secondary.opacity(0.9) : rowCaptionFilled)
                                     .multilineTextAlignment(.leading)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
                         .padding(12)
-                        .background(Color(white: 0.08))
+                        .background(rowInset)
                         .cornerRadius(10)
                     }
                     .buttonStyle(.plain)
@@ -713,7 +745,7 @@ struct PlaceStopRowView: View {
                         Text(displayStory)
                             .font(.body)
                             .lineSpacing(5)
-                            .foregroundColor(.white.opacity(0.9))
+                            .foregroundColor(rowStoryReadColor)
                             .lineLimit(isOverallStoryExpanded ? nil : 5)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .fixedSize(horizontal: false, vertical: isOverallStoryExpanded)
@@ -746,7 +778,7 @@ struct PlaceStopRowView: View {
                                 Text(isOverallStoryExpanded ? "Show less" : "Show more")
                                     .font(.caption)
                                     .fontWeight(.medium)
-                                    .foregroundColor(.white.opacity(0.5))
+                                    .foregroundColor(.secondary)
                             }
                             .buttonStyle(.plain)
                         }
@@ -755,41 +787,41 @@ struct PlaceStopRowView: View {
                     .padding(.top, 8)
                     .padding(.bottom, onTellPlaceStory != nil && LocalLLMStoryCaptionGenerator.isCapable ? 4 : 8)
                 }
-                if let tell = onTellPlaceStory, LocalLLMStoryCaptionGenerator.isCapable {
-                    HStack {
-                        Spacer()
-                        if isGeneratingNarrative {
-                            HStack(spacing: 6) {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .secondary))
-                                    .scaleEffect(0.7)
-                                Text("Generating story…")
+            }
+            if let tell = onTellPlaceStory, LocalLLMStoryCaptionGenerator.isCapable {
+                HStack {
+                    Spacer()
+                    if isGeneratingNarrative {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .secondary))
+                                .scaleEffect(0.7)
+                            Text("Generating story…")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Button(action: tell) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "sparkles")
+                                    .font(.caption)
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                Text(stop.placeNarrative != nil ? "Refresh Story" : "Tell Story")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
-                        } else {
-                            Button(action: tell) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "sparkles")
-                                        .font(.caption)
-                                        .foregroundStyle(
-                                            LinearGradient(
-                                                colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
-                                    Text(stop.placeNarrative != nil ? "Refresh Story" : "Tell Story")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            .buttonStyle(.plain)
                         }
+                        .buttonStyle(.plain)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
                 }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
             }
         }
     }

@@ -46,12 +46,14 @@
 		BB000110 /* MockPhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00010F /* MockPhoto.swift */; };
 		BB000112 /* PlaceCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000111 /* PlaceCluster.swift */; };
 		BB000114 /* RecapBlogDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000113 /* RecapBlogDetail.swift */; };
+		BB0003C1 /* BlogTripsAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003C0 /* BlogTripsAppearance.swift */; };
 		BB000116 /* RecapDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000115 /* RecapDraft.swift */; };
 		BB00011A /* ScanConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000119 /* ScanConfig.swift */; };
 		BB00011C /* TripDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00011B /* TripDay.swift */; };
 		BB00011E /* TripDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00011D /* TripDraft.swift */; };
 		BB000120 /* BlogPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00011F /* BlogPreviewView.swift */; };
 		BB000122 /* BlogSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000121 /* BlogSettingsSheet.swift */; };
+		BB0003B5 /* WeatherEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B4 /* WeatherEditSheet.swift */; };
 		BB000124 /* ClusterRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000123 /* ClusterRowView.swift */; };
 		BB000126 /* CountryBlogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000125 /* CountryBlogsView.swift */; };
 		BB000128 /* CountryCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000127 /* CountryCardView.swift */; };
@@ -255,12 +257,14 @@
 		BB00010F /* MockPhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockPhoto.swift; sourceTree = "<group>"; };
 		BB000111 /* PlaceCluster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceCluster.swift; sourceTree = "<group>"; };
 		BB000113 /* RecapBlogDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapBlogDetail.swift; sourceTree = "<group>"; };
+		BB0003C0 /* BlogTripsAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogTripsAppearance.swift; sourceTree = "<group>"; };
 		BB000115 /* RecapDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapDraft.swift; sourceTree = "<group>"; };
 		BB000119 /* ScanConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanConfig.swift; sourceTree = "<group>"; };
 		BB00011B /* TripDay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDay.swift; sourceTree = "<group>"; };
 		BB00011D /* TripDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDraft.swift; sourceTree = "<group>"; };
 		BB00011F /* BlogPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogPreviewView.swift; sourceTree = "<group>"; };
 		BB000121 /* BlogSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogSettingsSheet.swift; sourceTree = "<group>"; };
+		BB0003B4 /* WeatherEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherEditSheet.swift; sourceTree = "<group>"; };
 		BB000123 /* ClusterRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterRowView.swift; sourceTree = "<group>"; };
 		BB000125 /* CountryBlogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryBlogsView.swift; sourceTree = "<group>"; };
 		BB000127 /* CountryCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryCardView.swift; sourceTree = "<group>"; };
@@ -512,6 +516,7 @@
 				BB00010F /* MockPhoto.swift */,
 				BB000111 /* PlaceCluster.swift */,
 				BB000113 /* RecapBlogDetail.swift */,
+				BB0003C0 /* BlogTripsAppearance.swift */,
 				BB000115 /* RecapDraft.swift */,
 				BB0001D1 /* RecallTrigger.swift */,
 				BB000119 /* ScanConfig.swift */,
@@ -545,6 +550,7 @@
 				BB000302 /* MyStatsView.swift */,
 				BB00011F /* BlogPreviewView.swift */,
 				BB000121 /* BlogSettingsSheet.swift */,
+				BB0003B4 /* WeatherEditSheet.swift */,
 				BB000203 /* BottomSheetView.swift */,
 				BB000123 /* ClusterRowView.swift */,
 				BB000125 /* CountryBlogsView.swift */,
@@ -836,12 +842,14 @@
 				BB000110 /* MockPhoto.swift in Sources */,
 				BB000112 /* PlaceCluster.swift in Sources */,
 				BB000114 /* RecapBlogDetail.swift in Sources */,
+				BB0003C1 /* BlogTripsAppearance.swift in Sources */,
 				BB000116 /* RecapDraft.swift in Sources */,
 				BB00011A /* ScanConfig.swift in Sources */,
 				BB00011C /* TripDay.swift in Sources */,
 				BB00011E /* TripDraft.swift in Sources */,
 				BB000120 /* BlogPreviewView.swift in Sources */,
 				BB000122 /* BlogSettingsSheet.swift in Sources */,
+				BB0003B5 /* WeatherEditSheet.swift in Sources */,
 				BB000124 /* ClusterRowView.swift in Sources */,
 				BB000126 /* CountryBlogsView.swift in Sources */,
 				BB00022E /* CountryManageBlogsSheet.swift in Sources */,

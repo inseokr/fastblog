@@ -72,8 +72,10 @@ struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
     var isPlaceNamesResolved: Bool
     /// Weather fetched from Open-Meteo for this day. Nil until weather has been resolved.
     var weather: DayWeather?
+    /// True when the user has manually overridden the weather for this day. Auto-fetch is skipped.
+    var weatherIsManual: Bool
 
-    init(id: UUID = UUID(), dayIndex: Int, date: Date, placeStops: [PlaceStop], dayCaption: String? = nil, dayNarrative: String? = nil, isPlaceNamesResolved: Bool = false, weather: DayWeather? = nil) {
+    init(id: UUID = UUID(), dayIndex: Int, date: Date, placeStops: [PlaceStop], dayCaption: String? = nil, dayNarrative: String? = nil, isPlaceNamesResolved: Bool = false, weather: DayWeather? = nil, weatherIsManual: Bool = false) {
         self.id = id
         self.dayIndex = dayIndex
         self.date = date
@@ -82,6 +84,7 @@ struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
         self.dayNarrative = dayNarrative
         self.isPlaceNamesResolved = isPlaceNamesResolved
         self.weather = weather
+        self.weatherIsManual = weatherIsManual
     }
 
     init(from decoder: Decoder) throws {
@@ -94,10 +97,11 @@ struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
         dayNarrative = try c.decodeIfPresent(String.self, forKey: .dayNarrative)
         isPlaceNamesResolved = try c.decodeIfPresent(Bool.self, forKey: .isPlaceNamesResolved) ?? false
         weather = try c.decodeIfPresent(DayWeather.self, forKey: .weather)
+        weatherIsManual = try c.decodeIfPresent(Bool.self, forKey: .weatherIsManual) ?? false
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, dayIndex, date, placeStops, dayCaption, dayNarrative, isPlaceNamesResolved, weather
+        case id, dayIndex, date, placeStops, dayCaption, dayNarrative, isPlaceNamesResolved, weather, weatherIsManual
     }
 
     var dateText: String {

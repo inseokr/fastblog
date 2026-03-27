@@ -65,7 +65,6 @@ struct BlogPreviewView: View {
         .navigationDestination(isPresented: $showSavedScreen) {
             RecapSavedView()
         }
-        .preferredColorScheme(.dark)
     }
 
     private func daySection(day: TripDay, photos: [MockPhoto]) -> some View {

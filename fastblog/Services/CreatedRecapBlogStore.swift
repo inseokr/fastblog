@@ -2200,7 +2200,8 @@ final class CreatedRecapBlogStore: ObservableObject {
         var updated = detail
         for dayIdx in updated.days.indices {
             if Task.isCancelled { return updated }
-            // Skip if already fetched.
+            // Skip if manually overridden or already fetched.
+            if updated.days[dayIdx].weatherIsManual { continue }
             if updated.days[dayIdx].weather != nil { continue }
             // Use the first place stop with a known location as the coordinate for the day.
             guard let coord = updated.days[dayIdx].placeStops.compactMap(\.representativeLocation).first else { continue }

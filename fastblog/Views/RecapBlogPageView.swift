@@ -56,6 +56,45 @@ struct RecapBlogPageView: View {
     @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
     @EnvironmentObject private var nearbyShare: TripNearbyShareSessionController
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+
+    @AppStorage(BlogTripsAppearance.storageKey) private var blogTripsAppearanceRaw = BlogTripsAppearance.system.rawValue
+
+    private var blogTripsPreferredColorScheme: ColorScheme? {
+        BlogTripsAppearance.preferredColorScheme(fromStorage: blogTripsAppearanceRaw)
+    }
+
+    private var recapScreenBackground: Color {
+        colorScheme == .dark ? .black : Color(uiColor: .systemGroupedBackground)
+    }
+
+    private var recapChromeForeground: Color {
+        colorScheme == .dark ? .white : .primary
+    }
+
+    private var recapSecondaryOnChrome: Color {
+        colorScheme == .dark ? .white.opacity(0.7) : .secondary
+    }
+
+    private var recapCardBackground: Color {
+        colorScheme == .dark ? Color(white: 0.14) : Color(uiColor: .secondarySystemGroupedBackground)
+    }
+
+    private var recapNarrativeCardBackground: Color {
+        colorScheme == .dark ? Color(white: 0.1) : Color(uiColor: .tertiarySystemGroupedBackground)
+    }
+
+    private var recapDayPillIdleBackground: Color {
+        colorScheme == .dark ? Color(white: 0.2) : Color(uiColor: .systemGray5)
+    }
+
+    private var recapHairline: Color {
+        colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08)
+    }
+
+    private var recapMapExpandBackground: Color {
+        colorScheme == .dark ? Color.black.opacity(0.6) : Color.black.opacity(0.45)
+    }
 
     @State private var draft: RecapBlogDetail
     @State private var selectedDayIndex: Int = 0  // 0 = Day 1, 1 = Day 2, ...
@@ -126,6 +165,7 @@ struct RecapBlogPageView: View {
     /// Single pull-up modal: shown when non-nil; content is "You're on the list" when true, else "Join Early Access" prompt.
     @State private var earlyAccessSheetPresented: Bool = false
     @State private var earlyAccessShowOnListConfirm: Bool = false
+    @State private var weatherEditDayId: UUID? = nil
     @AppStorage("hasJoinedEarlyAccess") private var hasJoinedEarlyAccess = false
     @State private var isExportingPDF = false
     @State private var pdfExportURL: URL?
@@ -315,6 +355,7 @@ struct RecapBlogPageView: View {
             }
 
         }
+        .preferredColorScheme(blogTripsPreferredColorScheme)
         .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
         .animation(.easeOut(duration: 0.22), value: placeCaptionEditItem?.id)
         .animation(.easeOut(duration: 0.22), value: dayCaptionEditItem?.id)
@@ -564,7 +605,6 @@ struct RecapBlogPageView: View {
                     }
                 }
             }
-            .preferredColorScheme(.dark)
     }
 
     @ViewBuilder
@@ -762,6 +802,15 @@ struct RecapBlogPageView: View {
                     unsavedSplitModal(splitIdx: splitIdx)
                 }
             }
+            .sheet(isPresented: Binding(
+                get: { weatherEditDayId != nil },
+                set: { if !$0 { weatherEditDayId = nil } }
+            )) {
+                if let dayId = weatherEditDayId,
+                   let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }) {
+                    WeatherEditSheet(day: $draft.days[dayIdx], onDismiss: { weatherEditDayId = nil })
+                }
+            }
             .overlay {
                 if showNewMomentsReviewSheet {
                     Color.black.opacity(0.4)
@@ -831,7 +880,7 @@ struct RecapBlogPageView: View {
     private func mainContent(screenHeight: CGFloat) -> some View {
         ScrollViewReader { proxy in
             ZStack(alignment: .bottom) {
-                Color.black.ignoresSafeArea()
+                recapScreenBackground.ignoresSafeArea()
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
@@ -872,11 +921,11 @@ struct RecapBlogPageView: View {
                             Text(narrative)
                                 .font(.body)
                                 .lineSpacing(5)
-                                .foregroundColor(.white.opacity(0.9))
+                                .foregroundColor(recapChromeForeground.opacity(colorScheme == .dark ? 0.9 : 1))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 12)
-                                .background(Color(white: 0.1))
+                                .background(recapNarrativeCardBackground)
                                 .cornerRadius(12)
                                 .padding(.horizontal, 16)
                                 .padding(.top, 8)
@@ -896,7 +945,7 @@ struct RecapBlogPageView: View {
                         Color.clear
                             .frame(height: Self.dayFilterApproxHeight + 80)
                     }
-                    .background(Color.black)
+                    .background(recapScreenBackground)
                 }
                 .coordinateSpace(name: "scroll")
                 .onPreferenceChange(TitleMinYPreferenceKey.self) { minY in
@@ -905,7 +954,7 @@ struct RecapBlogPageView: View {
                         showNavBarTitle = shouldShow
                     }
                 }
-                .background(Color.black)
+                .background(recapScreenBackground)
                 .ignoresSafeArea(edges: isKeyboardVisible ? [] : .bottom)
                 .onChange(of: scrollToStopId) { _, newId in
                     guard let id = newId else { return }
@@ -1020,7 +1069,7 @@ struct RecapBlogPageView: View {
                 }
             }
             .ignoresSafeArea(.keyboard)
-            .background(Color.black)
+            .background(recapScreenBackground)
         }
     }
 
@@ -1033,14 +1082,14 @@ struct RecapBlogPageView: View {
                     HStack(alignment: .center, spacing: 10) {
                         Text(draft.title)
                             .font(.system(size: 28, weight: .bold))
-                            .foregroundColor(.white)
+                            .foregroundColor(recapChromeForeground)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                         Image(systemName: "pencil")
                             .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(recapChromeForeground)
                             .padding(8)
-                            .background(Circle().fill(Color.white.opacity(0.22)))
+                            .background(Circle().fill(colorScheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.08)))
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 16)
@@ -1052,7 +1101,7 @@ struct RecapBlogPageView: View {
             } else {
                 Text(draft.title)
                     .font(.system(size: 28, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(recapChromeForeground)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                     .background(
@@ -1428,7 +1477,7 @@ struct RecapBlogPageView: View {
                 if isProcessing {
                     ProgressView()
                         .scaleEffect(0.8)
-                        .tint(.white)
+                        .tint(recapChromeForeground)
                 }
                 Text(title)
                     .font(.subheadline)
@@ -1438,7 +1487,7 @@ struct RecapBlogPageView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(isSelected ? Color.blue : Color(white: 0.2))
+            .background(isSelected ? Color.blue : recapDayPillIdleBackground)
             .clipShape(Capsule())
             .opacity(isUnprocessed ? 0.85 : 1)
         }
@@ -1457,7 +1506,7 @@ struct RecapBlogPageView: View {
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.white)
                         .frame(width: 36, height: 36)
-                        .background(Color.black.opacity(0.6))
+                        .background(recapMapExpandBackground)
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -1494,14 +1543,14 @@ struct RecapBlogPageView: View {
                         .frame(width: 40, height: 40)
                     Image(systemName: "arrow.uturn.backward.circle.fill")
                         .font(.system(size: 22))
-                        .foregroundColor(.white)
+                        .foregroundColor(.blue)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Restore Removed Places")
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundColor(.white)
+                        .foregroundColor(recapChromeForeground)
                     Text(draft.removedPlaceStops.count == 1
                          ? "1 place was removed — tap to bring it back"
                          : "\(draft.removedPlaceStops.count) places were removed — tap to bring them back")
@@ -1518,7 +1567,7 @@ struct RecapBlogPageView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-            .background(Color(white: 0.14))
+            .background(recapCardBackground)
             .cornerRadius(12)
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
@@ -1549,7 +1598,7 @@ struct RecapBlogPageView: View {
                     Text("\(newMomentsPlaceCount) moment\(newMomentsPlaceCount == 1 ? "" : "s") found")
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundColor(.white)
+                        .foregroundColor(recapChromeForeground)
                     Text("Tap to review and add to your blog")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -1567,7 +1616,7 @@ struct RecapBlogPageView: View {
         .buttonStyle(.plain)
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(Color(white: 0.14))
+        .background(recapCardBackground)
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
@@ -1582,30 +1631,49 @@ struct RecapBlogPageView: View {
                 Text(day.shortDateText)
                     .font(.title3)
                     .fontWeight(.bold)
-                    .foregroundColor(.white)
+                    .foregroundColor(recapChromeForeground)
                 if isDayLoading {
                     ProgressView()
                         .scaleEffect(0.75)
                         .tint(.secondary)
                 } else if let weather = day.weather {
                     let temps = weather.temperatureHighLow(for: WeatherTemperatureUnit(rawValue: weatherTemperatureUnitRaw) ?? .fahrenheit)
-                    HStack(spacing: 4) {
+                    let chip = HStack(spacing: 4) {
                         Text(weather.emoji)
                             .font(.body)
                         Text("\(temps.high)\(temps.suffix)")
                             .font(.subheadline)
                             .fontWeight(.medium)
-                            .foregroundColor(.white.opacity(0.85))
+                            .foregroundColor(recapChromeForeground.opacity(0.88))
                         Text("/")
                             .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.5))
+                            .foregroundColor(recapSecondaryOnChrome)
                         Text("\(temps.low)\(temps.suffix)")
                             .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.6))
+                            .foregroundColor(recapSecondaryOnChrome.opacity(0.95))
+                        if day.weatherIsManual {
+                            Image(systemName: "pencil")
+                                .font(.caption2)
+                                .foregroundColor(recapSecondaryOnChrome.opacity(0.85))
+                        }
+                    }
+                    if isEditMode {
+                        Button { weatherEditDayId = day.id } label: { chip }
+                            .buttonStyle(.plain)
+                    } else {
+                        chip
                     }
                 } else {
-                    Image(systemName: "sun.max")
-                        .foregroundColor(.secondary)
+                    if isEditMode {
+                        Button { weatherEditDayId = day.id } label: {
+                            Image(systemName: "sun.max")
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Image(systemName: "sun.max")
+                            .foregroundColor(.secondary)
+                    }
                 }
                 
                 Spacer()
@@ -1629,7 +1697,7 @@ struct RecapBlogPageView: View {
                                     )
                                 )
                                 .padding(6)
-                                .background(Color.white.opacity(0.1))
+                                .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06))
                                 .clipShape(Circle())
                         }
                         .buttonStyle(.plain)
@@ -1652,7 +1720,7 @@ struct RecapBlogPageView: View {
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(.orange)
                             .padding(8)
-                            .background(Color.white.opacity(0.15))
+                            .background(colorScheme == .dark ? Color.white.opacity(0.15) : Color.orange.opacity(0.12))
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
@@ -1824,14 +1892,14 @@ struct RecapBlogPageView: View {
                         }
                     )
                 } else {
-                    Color.black
+                    recapScreenBackground
                         .onAppear {
                             createdRecapStore.saveBlogDetail(draft)
                             placePhotoModalItem = nil
                         }
                 }
             } else {
-                Color.black
+                recapScreenBackground
                     .onAppear {
                         createdRecapStore.saveBlogDetail(draft)
                         placePhotoModalItem = nil
@@ -1839,7 +1907,7 @@ struct RecapBlogPageView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.ignoresSafeArea())
+        .background(recapScreenBackground.ignoresSafeArea())
     }
 
     @ViewBuilder
@@ -2162,7 +2230,6 @@ struct RecapBlogPageView: View {
             Spacer(minLength: 18)
         }
         .padding(.top, 8)
-        .preferredColorScheme(.dark)
     }
 
     private func shareOptionRow(
@@ -2175,13 +2242,13 @@ struct RecapBlogPageView: View {
             HStack(spacing: 12) {
                 Image(systemName: icon)
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                     .frame(width: 28)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                     Text(subtitle)
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -2404,7 +2471,6 @@ struct RecapBlogPageView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
     }
 
     private var isNearbySharePulseActive: Bool {
@@ -3241,13 +3307,13 @@ struct RecapBlogPageView: View {
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.body.weight(.semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(recapChromeForeground)
             }
         }
         ToolbarItem(placement: .principal) {
             Text(draft.title)
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundColor(recapChromeForeground)
                 .lineLimit(1)
                 .opacity(!isEditMode && showNavBarTitle ? 1 : 0)
                 .animation(.easeInOut(duration: 0.2), value: showNavBarTitle)
@@ -3280,14 +3346,14 @@ struct RecapBlogPageView: View {
                     } label: {
                         if createdRecapStore.isSyncing {
                             ProgressView()
-                                .tint(.white)
+                                .tint(recapChromeForeground)
                                 .frame(width: 22, height: 22)
                         } else {
                             Image(systemName: blogIsInCloud ? "checkmark.icloud.fill" : "icloud.and.arrow.up")
                                 .resizable()
                                 .scaledToFit()
                                 .frame(width: 22, height: 22)
-                                .foregroundColor(blogIsInCloud ? .green : .white)
+                                .foregroundColor(blogIsInCloud ? .green : recapChromeForeground)
                         }
                     }
                     .buttonStyle(.plain)
@@ -3312,6 +3378,7 @@ struct RecapBlogPageView: View {
                         showBlogSettings = true
                     } label: {
                         Image(systemName: "gearshape")
+                            .foregroundColor(recapChromeForeground)
                     }
                     .buttonStyle(.plain)
                 }
@@ -3332,10 +3399,10 @@ struct RecapBlogPageView: View {
                     Text("Draft has been saved")
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundColor(.white)
+                        .foregroundColor(recapChromeForeground)
                     Text("Your recap blog is ready.")
                         .font(.caption)
-                        .foregroundColor(.white.opacity(0.75))
+                        .foregroundColor(recapSecondaryOnChrome)
                 }
                 Spacer()
                 Button {
@@ -3343,7 +3410,7 @@ struct RecapBlogPageView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title3)
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(recapSecondaryOnChrome.opacity(0.85))
                 }
             }
             .padding(.horizontal, 16)
@@ -3353,7 +3420,7 @@ struct RecapBlogPageView: View {
                     .fill(.ultraThinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: 14)
-                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                            .stroke(recapHairline, lineWidth: 1)
                     )
             )
             .padding(.horizontal, 20)
@@ -3375,10 +3442,10 @@ struct RecapBlogPageView: View {
                     Text("Uploaded to cloud")
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundColor(.white)
+                        .foregroundColor(recapChromeForeground)
                     Text("All photos are now in the cloud.")
                         .font(.caption)
-                        .foregroundColor(.white.opacity(0.75))
+                        .foregroundColor(recapSecondaryOnChrome)
                 }
                 Spacer()
                 Button {
@@ -3386,7 +3453,7 @@ struct RecapBlogPageView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title3)
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(recapSecondaryOnChrome.opacity(0.85))
                 }
             }
             .padding(.horizontal, 16)
@@ -3396,7 +3463,7 @@ struct RecapBlogPageView: View {
                     .fill(.ultraThinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: 14)
-                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                            .stroke(recapHairline, lineWidth: 1)
                     )
             )
             .padding(.horizontal, 20)
@@ -3475,7 +3542,6 @@ struct RecapBlogPageView: View {
             .padding(.bottom, 24)
         }
         .padding(.top, 24)
-        .preferredColorScheme(.dark)
     }
 
     private func cloudFeatureRow(icon: String, text: String) -> some View {
@@ -3597,7 +3663,6 @@ struct RecapBlogPageView: View {
             .padding(.bottom, 24)
         }
         .padding(.top, 24)
-        .preferredColorScheme(.dark)
     }
 
     private func handleCloudUploadTap() {
@@ -4201,8 +4266,13 @@ private struct EditBlogPhotoFlowView: View {
     let blogId: UUID
     var onDismiss: () -> Void
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
+    @AppStorage(BlogTripsAppearance.storageKey) private var blogTripsAppearanceRaw = BlogTripsAppearance.system.rawValue
     @State private var trip: TripDraft?
     @State private var tripToUpdate: TripDraft?
+
+    private var blogTripsPreferredColorScheme: ColorScheme? {
+        BlogTripsAppearance.preferredColorScheme(fromStorage: blogTripsAppearanceRaw)
+    }
 
     var body: some View {
         NavigationStack {
@@ -4243,7 +4313,7 @@ private struct EditBlogPhotoFlowView: View {
         .onAppear {
             trip = createdRecapStore.tripDraftApplyingBlogSelection(blogId: blogId)
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(blogTripsPreferredColorScheme)
     }
 }
 

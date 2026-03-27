@@ -16,7 +16,34 @@ struct TripsView: View {
     @Binding var initialDayIndexForRecap: Int?
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(BlogTripsAppearance.storageKey) private var blogTripsAppearanceRaw = BlogTripsAppearance.system.rawValue
     var onDismiss: (() -> Void)? = nil
+
+    private var blogTripsPreferredColorScheme: ColorScheme? {
+        BlogTripsAppearance.preferredColorScheme(fromStorage: blogTripsAppearanceRaw)
+    }
+
+    /// Navy backdrop when no map; grouped background in light mode.
+    private var tripsEmptyBackdrop: Color {
+        colorScheme == .dark ? Self.emptyStateBackdropDark : Color(uiColor: .systemGroupedBackground)
+    }
+
+    private var tripsNavLabel: Color {
+        colorScheme == .dark ? .white : .primary
+    }
+
+    private var tripsSecondaryOnMapChrome: Color {
+        colorScheme == .dark ? .white.opacity(0.7) : .secondary
+    }
+
+    private var tripsMaterialHairline: Color {
+        colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08)
+    }
+
+    private var tripsDimmingScrim: Color {
+        colorScheme == .dark ? Color.black.opacity(0.6) : Color.black.opacity(0.35)
+    }
     @StateObject private var photoAuth = PhotosAuthorizationManager()
     @AppStorage("blogify.skipSelectPhotosIntro") private var skipSelectPhotosIntro = false
     @State private var selectedTrip: TripDraft?
@@ -266,6 +293,7 @@ struct TripsView: View {
                 }
             }
             .alert("No Photos Available", isPresented: $showNoPhotosAlert, actions: noPhotosAlertActions, message: noPhotosAlertMessage)
+            .preferredColorScheme(blogTripsPreferredColorScheme)
     }
 
     private var coreBody: some View {
@@ -435,7 +463,7 @@ struct TripsView: View {
 
     // MARK: - Main Content
 
-    fileprivate static let emptyStateBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
+    fileprivate static let emptyStateBackdropDark = Color(red: 5/255, green: 10/255, blue: 48/255)
 
     /// Shared top banner slot + bottom carousel / empty CTA (used with and without the map).
     private var tripsForegroundChrome: some View {
@@ -463,18 +491,18 @@ struct TripsView: View {
             // Skip the map when nothing can be annotated — same MapKit .automatic artifact as
             // an empty trip list if we mount the map with zero annotations.
             if !hasTripsPlottableOnMap {
-                Self.emptyStateBackground.ignoresSafeArea()
+                tripsEmptyBackdrop.ignoresSafeArea()
             } else {
                 // Hide the map until its initial position is explicitly set — prevents the
                 // MapKit .automatic camera flying in from a default region before onAppear fires.
-                Self.emptyStateBackground.ignoresSafeArea()
+                tripsEmptyBackdrop.ignoresSafeArea()
                 mapViewLayer
                     .opacity(mapInitialPositionReady ? 1 : 0)
             }
             tripsForegroundChrome
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
+        .background(colorScheme == .dark ? Color.black : Color(uiColor: .systemBackground))
         .onChange(of: hasTripsPlottableOnMap) { _, plottable in
             if !plottable {
                 mapInitialPositionReady = false
@@ -486,6 +514,7 @@ struct TripsView: View {
         Group {
             if allTrips.isEmpty {
                 TripsNoTripsScene(
+                    backdrop: tripsEmptyBackdrop,
                     photoAuth: photoAuth,
                     showLimitedBannerAfterWeakScan: showLimitedBannerAfterWeakScan,
                     limitedBanner: { limitedAccessHelper },
@@ -530,7 +559,6 @@ struct TripsView: View {
         .navigationTitle("Trips")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
-        .preferredColorScheme(.dark)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button {
@@ -542,7 +570,7 @@ struct TripsView: View {
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(tripsNavLabel)
                 }
                 .opacity((showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips) ? 0 : 1)
                 .disabled(showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips)
@@ -557,7 +585,7 @@ struct TripsView: View {
                 } label: {
                     Image(systemName: photoAuth.status == .limited ? "photo.badge.plus" : "sparkle.magnifyingglass")
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundColor(tripsNavLabel)
                 }
                 .opacity((showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips) ? 0 : 1)
                 .disabled(showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips)
@@ -571,7 +599,7 @@ struct TripsView: View {
                 } label: {
                     Image(systemName: viewModel.isRunningDebugScan ? "arrow.clockwise.circle" : "ladybug")
                         .font(.body)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(tripsSecondaryOnMapChrome)
                 }
                 .disabled(viewModel.isRunningDebugScan)
             }
@@ -862,10 +890,32 @@ struct TripsView: View {
             .padding(.bottom, 24)
         }
         .padding(.top, 24)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(blogTripsPreferredColorScheme)
     }
 
     // MARK: - Bottom Overlay (Carousel + CTA)
+
+    @ViewBuilder
+    private var bottomChromeFade: some View {
+        if colorScheme == .dark {
+            LinearGradient(
+                colors: [.clear, Color.black.opacity(0.45), Color.black.opacity(0.65), Color.black.opacity(0.8)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        } else {
+            LinearGradient(
+                colors: [
+                    .clear,
+                    Color(uiColor: .systemBackground).opacity(0.01),
+                    Color(uiColor: .systemBackground).opacity(0.88),
+                    Color(uiColor: .systemBackground)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+    }
 
     private var bottomOverlay: some View {
         VStack(spacing: 14) {
@@ -877,7 +927,7 @@ struct TripsView: View {
                     Text(currentMonthTitle.uppercased())
                         .font(.caption)
                         .fontWeight(.semibold)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(tripsSecondaryOnMapChrome)
                         .tracking(1.5)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 28)
@@ -890,11 +940,7 @@ struct TripsView: View {
         }
         .padding(.bottom, 8)
         .background(
-            LinearGradient(
-                colors: [.clear, Color.black.opacity(0.45), Color.black.opacity(0.65), Color.black.opacity(0.8)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            bottomChromeFade
             .padding(.top, -60) // extend shadow well above the month header
             .ignoresSafeArea(.container, edges: .bottom) // extend all the way to screen bottom
             .allowsHitTesting(false)
@@ -976,25 +1022,25 @@ struct TripsView: View {
             if viewModel.isLoadingOlderTrips {
                 VStack(spacing: 10) {
                     ProgressView()
-                        .tint(.white)
+                        .tint(tripsNavLabel)
                     Text("Finding older trips…")
                         .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(tripsSecondaryOnMapChrome)
                 }
             } else {
                 VStack(spacing: 8) {
                     Text("No Trips Found")
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundColor(tripsNavLabel)
                     if photoAuth.status == .limited {
                         Text("Limited photo access may be hiding some trips.")
                             .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.65))
+                            .foregroundColor(colorScheme == .dark ? .white.opacity(0.65) : .secondary)
                             .multilineTextAlignment(.center)
                     } else {
                         Text("Try scanning a different date range")
                             .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.6))
+                            .foregroundColor(colorScheme == .dark ? .white.opacity(0.6) : .secondary)
                     }
                 }
 
@@ -1005,7 +1051,7 @@ struct TripsView: View {
                     Text("Swipe to load more")
                         .font(.caption)
                 }
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundColor(colorScheme == .dark ? .white.opacity(0.4) : .secondary.opacity(0.75))
             }
         }
         .padding(.horizontal, 24)
@@ -1069,17 +1115,17 @@ struct TripsView: View {
     private var limitedAccessHelper: some View {
         HStack(spacing: 12) {
             Image(systemName: "photo.badge.plus")
-                .foregroundColor(.white)
+                .foregroundColor(tripsNavLabel)
                 .font(.title3)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Not finding your trip?")
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .foregroundColor(.white)
+                    .foregroundColor(tripsNavLabel)
                 Text("Limited access — add more photos to find more trips.")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.75))
+                    .foregroundColor(tripsSecondaryOnMapChrome)
             }
             Spacer()
 
@@ -1089,10 +1135,10 @@ struct TripsView: View {
                 Text("Add Photos")
                     .font(.caption)
                     .fontWeight(.bold)
-                    .foregroundColor(.black)
+                    .foregroundColor(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(Color.white)
+                    .background(Color.blue)
                     .clipShape(Capsule())
             }
         }
@@ -1100,7 +1146,7 @@ struct TripsView: View {
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(.ultraThinMaterial)
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.15), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(tripsMaterialHairline, lineWidth: 1))
         )
         .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
         .padding(.horizontal, 24)
@@ -1152,14 +1198,14 @@ struct TripsView: View {
             Text("Saved as draft")
                 .font(.headline)
                 .fontWeight(.semibold)
-                .foregroundColor(.white)
+                .foregroundColor(tripsNavLabel)
             Spacer()
             Button {
                 withAnimation { createdRecapStore.showDraftSavedToast = false }
             } label: {
                 Image(systemName: "xmark")
                     .font(.body)
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(tripsSecondaryOnMapChrome)
                     .padding(8)
                     .contentShape(Rectangle())
             }
@@ -1167,16 +1213,16 @@ struct TripsView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                )
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(tripsMaterialHairline, lineWidth: 1)
+                    )
         )
         .padding(.horizontal, 20)
         .padding(.top, 8)
-        .shadow(color: .black.opacity(0.3), radius: 10, y: 5)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.12), radius: 10, y: 5)
         .zIndex(100)
         .transition(.opacity)
         .task {
@@ -1191,7 +1237,7 @@ struct TripsView: View {
 
     private func blogCreationPopup(trip: TripDraft) -> some View {
         ZStack {
-            Color.black.opacity(0.6)
+            tripsDimmingScrim
                 .ignoresSafeArea()
                 .onTapGesture {
                     withAnimation { tripForPopup = nil }
@@ -1201,11 +1247,11 @@ struct TripsView: View {
                 Text("Create Recap Blog")
                     .font(.title3)
                     .fontWeight(.bold)
-                    .foregroundColor(.white)
+                    .foregroundColor(tripsNavLabel)
 
                 Text("Would you like to turn \"\(trip.defaultBlogTitle)\" into a blog?")
                     .font(.body)
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(tripsSecondaryOnMapChrome)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
 
@@ -1215,10 +1261,10 @@ struct TripsView: View {
                     } label: {
                         Text("Cancel")
                             .fontWeight(.medium)
-                            .foregroundColor(.white.opacity(0.7))
+                            .foregroundColor(colorScheme == .dark ? .white.opacity(0.7) : .primary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Color.white.opacity(0.1))
+                            .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color(uiColor: .tertiarySystemFill))
                             .cornerRadius(10)
                     }
 
@@ -1245,7 +1291,7 @@ struct TripsView: View {
                     .fill(.ultraThinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: 16)
-                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                            .stroke(tripsMaterialHairline, lineWidth: 1)
                     )
             )
             .shadow(radius: 20)
@@ -1259,7 +1305,7 @@ struct TripsView: View {
 
     private var loadMoreTripsPopup: some View {
         ZStack {
-            Color.black.opacity(0.6)
+            tripsDimmingScrim
                 .ignoresSafeArea()
                 .onTapGesture {
                     withAnimation { showLoadMorePopup = false }
@@ -1273,11 +1319,11 @@ struct TripsView: View {
                 Text("Load older trips?")
                     .font(.title3)
                     .fontWeight(.bold)
-                    .foregroundColor(.white)
+                    .foregroundColor(tripsNavLabel)
 
                 Text("")
                     .font(.body)
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(tripsSecondaryOnMapChrome)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
 
@@ -1288,7 +1334,7 @@ struct TripsView: View {
                             .foregroundColor(.orange)
                         Text("No more trips found in this period.")
                             .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.8))
+                            .foregroundColor(tripsSecondaryOnMapChrome)
                     }
                     .padding(.horizontal)
                     .transition(.opacity)
@@ -1349,10 +1395,10 @@ struct TripsView: View {
                     } label: {
                         Text("Not now")
                             .fontWeight(.medium)
-                            .foregroundColor(.white.opacity(0.7))
+                            .foregroundColor(colorScheme == .dark ? .white.opacity(0.7) : .primary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Color.white.opacity(0.1))
+                            .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color(uiColor: .tertiarySystemFill))
                             .cornerRadius(10)
                     }
                 }
@@ -1365,7 +1411,7 @@ struct TripsView: View {
                     .fill(.ultraThinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: 16)
-                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                            .stroke(tripsMaterialHairline, lineWidth: 1)
                     )
             )
             .shadow(radius: 20)
@@ -1384,7 +1430,7 @@ struct TripsView: View {
 
     private var loadNewerTripsPopup: some View {
         ZStack {
-            Color.black.opacity(0.6)
+            tripsDimmingScrim
                 .ignoresSafeArea()
                 .onTapGesture {
                     withAnimation { showLoadNewerPopup = false }
@@ -1399,11 +1445,11 @@ struct TripsView: View {
                 Text("Load newer trips?")
                     .font(.title3)
                     .fontWeight(.bold)
-                    .foregroundColor(.white)
+                    .foregroundColor(tripsNavLabel)
 
                 Text("")
                     .font(.body)
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(tripsSecondaryOnMapChrome)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
 
@@ -1414,7 +1460,7 @@ struct TripsView: View {
                             .foregroundColor(.orange)
                         Text("No trips found in this period.")
                             .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.8))
+                            .foregroundColor(tripsSecondaryOnMapChrome)
                     }
                     .padding(.horizontal)
                     .transition(.opacity)
@@ -1472,10 +1518,10 @@ struct TripsView: View {
                     } label: {
                         Text("Not now")
                             .fontWeight(.medium)
-                            .foregroundColor(.white.opacity(0.7))
+                            .foregroundColor(colorScheme == .dark ? .white.opacity(0.7) : .primary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Color.white.opacity(0.1))
+                            .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color(uiColor: .tertiarySystemFill))
                             .cornerRadius(10)
                     }
                 }
@@ -1488,7 +1534,7 @@ struct TripsView: View {
                     .fill(.ultraThinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: 16)
-                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                            .stroke(tripsMaterialHairline, lineWidth: 1)
                     )
             )
             .shadow(radius: 20)
@@ -4082,6 +4128,7 @@ private struct SessionGalleryView: View {
 
 /// Separate type so SwiftUI never hosts `TripsMapView` / MapKit when the carousel has zero trips.
 private struct TripsNoTripsScene<Banner: View, Bottom: View>: View {
+    let backdrop: Color
     @ObservedObject var photoAuth: PhotosAuthorizationManager
     let showLimitedBannerAfterWeakScan: Bool
     @ViewBuilder let limitedBanner: () -> Banner
@@ -4089,7 +4136,7 @@ private struct TripsNoTripsScene<Banner: View, Bottom: View>: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            TripsView.emptyStateBackground
+            backdrop
                 .ignoresSafeArea()
             VStack(spacing: 0) {
                 if photoAuth.status == .limited {
@@ -4108,7 +4155,7 @@ private struct TripsNoTripsScene<Banner: View, Bottom: View>: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
+        .background(backdrop)
         .transaction { $0.disablesAnimations = true }
     }
 }
@@ -4125,8 +4172,8 @@ extension TripsView {
                     .font(.system(size: 16, weight: .semibold))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.16))
-                    .foregroundColor(.white)
+                    .background(colorScheme == .dark ? Color.white.opacity(0.16) : Color.black.opacity(0.08))
+                    .foregroundColor(tripsNavLabel)
                     .clipShape(Capsule())
             }
         }
