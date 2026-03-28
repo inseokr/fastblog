@@ -2273,10 +2273,8 @@ struct RecapBlogPageView: View {
                 .fill(.ultraThinMaterial)
                 .ignoresSafeArea()
                 .onTapGesture {
-                    if nearbyShare.hostInvitation == nil {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                            showBloggoQRSheet = false
-                        }
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        showBloggoQRSheet = false
                     }
                 }
 
@@ -2409,33 +2407,6 @@ struct RecapBlogPageView: View {
                 }
             }
 
-            if let invite = nearbyShare.hostInvitation {
-                ZStack {
-                    Color.black.opacity(0.45)
-                        .ignoresSafeArea()
-                    VStack(spacing: 16) {
-                        Text("Allow connection?")
-                            .font(.headline)
-                        Text("\(invite.peerName) wants to receive “\(draft.title)”.")
-                            .font(.subheadline)
-                            .multilineTextAlignment(.center)
-                        HStack(spacing: 12) {
-                            Button("Decline", role: .cancel) {
-                                invite.decide(false)
-                            }
-                            .buttonStyle(.bordered)
-                            Button("Accept") {
-                                invite.decide(true)
-                            }
-                            .buttonStyle(.borderedProminent)
-                        }
-                    }
-                    .padding(24)
-                    .background(.ultraThinMaterial)
-                    .cornerRadius(16)
-                    .padding(32)
-                }
-            }
         }
         .preferredColorScheme(.dark)
         .onAppear {
@@ -2448,12 +2419,6 @@ struct RecapBlogPageView: View {
         }
         .onChange(of: nearbyShare.phase) { oldPhase, newPhase in
             triggerNearbyShareHaptic(oldPhase: oldPhase, newPhase: newPhase)
-        }
-        .onChange(of: nearbyShare.hostInvitation != nil) { _, hasInvite in
-            if hasInvite {
-                UINotificationFeedbackGenerator().notificationOccurred(.warning)
-                vibrateFallback()
-            }
         }
     }
 

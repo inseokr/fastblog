@@ -39,8 +39,6 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
     }
 
     @Published private(set) var phase: Phase = .idle
-    /// Host must accept an incoming browser invitation before any data moves.
-    @Published private(set) var hostInvitation: (peerName: String, decide: (Bool) -> Void)?
     /// Guest must accept the manifest before JPEG resources are accepted into the blog store.
     @Published private(set) var guestManifestConsent: (TripShareRecapManifestV1, senderName: String, decide: (Bool) -> Void)?
     @Published private(set) var sessionCode: String = ""
@@ -56,6 +54,8 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
     @Published private(set) var debugEvents: [String] = []
 
     private var session: MCSession!
+    /// Nonisolated reference used by advertiser/browser delegates that run off the main actor.
+    private nonisolated(unsafe) var _sessionRef: MCSession?
     private var myPeerID: MCPeerID!
     private var advertiser: MCNearbyServiceAdvertiser?
     private var browser: MCNearbyServiceBrowser?
@@ -87,6 +87,7 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
         super.init()
         myPeerID = MCPeerID(displayName: Self.deviceDisplayName())
         session = MCSession(peer: myPeerID, securityIdentity: nil, encryptionPreference: .required)
+        _sessionRef = session
         session.delegate = self
         logDebug("Session initialized as peer '\(myPeerID.displayName)' with service '\(TripShareNearbyConfig.multipeerServiceType)'.")
         logNearbyConfigurationWarningsIfAny()
@@ -205,7 +206,6 @@ final class TripNearbyShareSessionController: NSObject, ObservableObject {
 
     private func resetForNewSession() {
         logDebug("Resetting state for new nearby session.")
-        hostInvitation = nil
         guestManifestConsent = nil
         hostExport = nil
         _hostManifestPayload = nil
@@ -584,16 +584,10 @@ extension TripNearbyShareSessionController: MCSessionDelegate {
 
 extension TripNearbyShareSessionController: MCNearbyServiceAdvertiserDelegate {
     nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didReceiveInvitationFromPeer peerID: MCPeerID, withContext context: Data?, invitationHandler: @escaping (Bool, MCSession?) -> Void) {
+        // The session code in the QR already acts as the shared secret, so auto-accept.
+        invitationHandler(true, _sessionRef)
         Task { @MainActor in
-            self.logDebug("Host received invitation from \(peerID.displayName). Prompting for approval.")
-            self.hostInvitation = (
-                peerID.displayName,
-                { accept in
-                    self.logDebug("Host invitation decision for \(peerID.displayName): \(accept ? "accept" : "decline").")
-                    self.hostInvitation = nil
-                    invitationHandler(accept, accept ? self.session : nil)
-                }
-            )
+            self.logDebug("Host auto-accepted invitation from \(peerID.displayName).")
         }
     }
 

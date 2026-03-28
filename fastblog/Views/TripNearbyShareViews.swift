@@ -150,10 +150,8 @@ struct TripNearbyShareHostBlogSettingsOverlay: View {
                 .fill(.ultraThinMaterial)
                 .ignoresSafeArea()
                 .onTapGesture {
-                    if controller.hostInvitation == nil {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            onBack()
-                        }
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        onBack()
                     }
                 }
 
@@ -195,13 +193,6 @@ struct TripNearbyShareHostBlogSettingsOverlay: View {
                 Spacer(minLength: 0)
             }
 
-            if let invite = controller.hostInvitation {
-                TripNearbyHostInvitationOverlay(
-                    recapTitle: recap.title,
-                    peerName: invite.peerName,
-                    decide: invite.decide
-                )
-            }
         }
         .preferredColorScheme(.dark)
         .onAppear {
@@ -212,45 +203,6 @@ struct TripNearbyShareHostBlogSettingsOverlay: View {
         }
         .onChange(of: controller.phase) { oldPhase, newPhase in
             triggerHostHaptic(oldPhase: oldPhase, newPhase: newPhase)
-        }
-        .onChange(of: controller.hostInvitation != nil) { _, hasInvite in
-            if hasInvite {
-                UINotificationFeedbackGenerator().notificationOccurred(.warning)
-            }
-        }
-    }
-}
-
-private struct TripNearbyHostInvitationOverlay: View {
-    let recapTitle: String
-    let peerName: String
-    let decide: (Bool) -> Void
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.45)
-                .ignoresSafeArea()
-            VStack(spacing: 16) {
-                Text("Allow connection?")
-                    .font(.headline)
-                Text("\(peerName) wants to receive “\(recapTitle)”.")
-                    .font(.subheadline)
-                    .multilineTextAlignment(.center)
-                HStack(spacing: 12) {
-                    Button("Decline", role: .cancel) {
-                        decide(false)
-                    }
-                    .buttonStyle(.bordered)
-                    Button("Accept") {
-                        decide(true)
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-            }
-            .padding(24)
-            .background(.ultraThinMaterial)
-            .cornerRadius(16)
-            .padding(32)
         }
     }
 }
@@ -290,15 +242,6 @@ struct TripNearbyShareHostSheet: View {
                         }
                     }
                 }
-                .overlay {
-                    if let invite = controller.hostInvitation {
-                        TripNearbyHostInvitationOverlay(
-                            recapTitle: recap.title,
-                            peerName: invite.peerName,
-                            decide: invite.decide
-                        )
-                    }
-                }
         }
         .preferredColorScheme(.dark)
         .onAppear {
@@ -309,11 +252,6 @@ struct TripNearbyShareHostSheet: View {
         }
         .onChange(of: controller.phase) { oldPhase, newPhase in
             triggerHostHaptic(oldPhase: oldPhase, newPhase: newPhase)
-        }
-        .onChange(of: controller.hostInvitation != nil) { _, hasInvite in
-            if hasInvite {
-                UINotificationFeedbackGenerator().notificationOccurred(.warning)
-            }
         }
     }
 }
@@ -341,7 +279,7 @@ struct TripNearbyShareReceiveSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    Text("Enter the 6-character code shown on the sender’s screen — pairing starts automatically.")
+                    Text("Enter the 6-character code shown on the sender’s screen if pairing is not working automatically.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
