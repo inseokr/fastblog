@@ -892,6 +892,7 @@ struct RecapBlogPageView: View {
                                 .id("map-anchor")
                         }
                         tripNarrativeCard
+                            .padding(.bottom, 20)
                         timelineContent
 
                         if draft.days.isEmpty && hasFinishedInitialLoad {
@@ -1638,32 +1639,6 @@ struct RecapBlogPageView: View {
                 }
                 
                 Spacer()
-                
-                if LocalLLMStoryCaptionGenerator.isCapable {
-                    if generatingNarrativeDayId == day.id {
-                        ProgressView()
-                            .scaleEffect(0.7)
-                            .tint(.secondary)
-                    } else {
-                        Button {
-                            triggerDayNarrative(day: day)
-                        } label: {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .padding(6)
-                                .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06))
-                                .clipShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
 
                 // Scissors on Day N (dayIdx > 0) means "split before Day N":
                 // Part 1 = Days 1..N-1, Part 2 = Days N..end. Not shown on Day 1.
@@ -1713,6 +1688,43 @@ struct RecapBlogPageView: View {
 
             // Day-level caption — right below the date header
             dayCaptionRow(day: day)
+
+            if isEditMode, LocalLLMStoryCaptionGenerator.isCapable {
+                HStack {
+                    Spacer()
+                    if generatingNarrativeDayId == day.id {
+                        ProgressView()
+                            .scaleEffect(0.75)
+                            .tint(.secondary)
+                            .padding(.trailing, 0)
+                    } else {
+                        let hasDayCaption = !(day.dayCaption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        Button {
+                            triggerDayNarrative(day: day)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "wand.and.sparkles")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text(hasDayCaption ? "Regenerate story" : "Generate story")
+                                    .font(.footnote.weight(.medium))
+                            }
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06))
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.top, -8)
+            }
 
             ForEach(Array(day.placeStops.enumerated()), id: \.element.id) { index, stop in
                 let badgeColor: Color = (index == 0) ? .green : (index == day.placeStops.count - 1 ? .orange : .blue)
@@ -3034,6 +3046,16 @@ struct RecapBlogPageView: View {
                 .padding(.top, 8)
             }
             if LocalLLMStoryCaptionGenerator.isCapable {
+                if !hasNarrative {
+                    Text("Your trip story will appear here…")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary.opacity(0.9))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(Color(white: 0.1))
+                        .cornerRadius(10)
+                        .padding(.horizontal, 16)
+                }
                 HStack {
                     Spacer()
                     if isGeneratingTripNarrative {

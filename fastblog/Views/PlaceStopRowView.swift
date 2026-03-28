@@ -810,7 +810,7 @@ struct PlaceStopRowView: View {
                                             endPoint: .bottomTrailing
                                         )
                                     )
-                                Text(stop.placeNarrative != nil ? "Refresh Story" : "Tell Story")
+                                Text(stop.placeNarrative != nil ? "Refresh Story" : "Generate Story")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }

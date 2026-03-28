@@ -171,7 +171,7 @@ struct BlogSettingsSheet: View {
                                         endPoint: .bottomTrailing
                                     )
                                 )
-                            Text(draft.tripNarrative != nil ? "Refresh Trip Story" : "Tell My Story")
+                            Text(draft.tripNarrative != nil ? "Regenerate story" : "Generate story")
                         }
                     }
                 }
