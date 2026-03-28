@@ -93,6 +93,7 @@ struct CountryManageBlogsSheet: View {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Close") { dismiss() }
                     .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -137,6 +138,7 @@ struct CountryManageBlogsSheet: View {
                 Text("This removes the downloaded blog from local storage. Your cloud blog stays available.")
             }
         }
+        .tint(.primary)
     }
 
     // MARK: - Helpers

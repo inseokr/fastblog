@@ -55,12 +55,14 @@ struct TripNearbyShareHostScrollContent: View {
     @ObservedObject var controller: TripNearbyShareSessionController
     @State private var preparingTooSlow = false
 
-    private var isRadiating: Bool {
+    private var siriRadiationPhase: TripNearbySiriRadiationPhase {
         switch controller.phase {
-        case .hostingAdvertising, .hostingConnected, .transferring:
-            return true
+        case .hostingAdvertising:
+            return .searching
+        case .hostingConnected, .transferring:
+            return .linked
         default:
-            return false
+            return .idle
         }
     }
 
@@ -123,7 +125,10 @@ struct TripNearbyShareHostScrollContent: View {
             }
             .padding()
         }
-        .modifier(TripNearbyRadiatingBorderModifier(isActive: isRadiating))
+        .modifier(TripNearbySiriRadiationModifier(phase: siriRadiationPhase, cornerRadius: 18))
+        .onChange(of: controller.phase) { oldPhase, newPhase in
+            TripNearbyShareHaptics.playForPhaseTransition(from: oldPhase, to: newPhase)
+        }
         .task(id: controller.phase) {
             guard case .hostingPreparing = controller.phase else {
                 preparingTooSlow = false
@@ -162,11 +167,12 @@ struct TripNearbyShareHostBlogSettingsOverlay: View {
                             onBack()
                         }
                     } label: {
-                        Image(systemName: "chevron.left")
+                        Text("Close")
                             .font(.body.weight(.semibold))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(.white)
                     }
-                    .accessibilityLabel("Back")
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
                     Spacer()
                 }
                 .padding(.horizontal, 20)
@@ -201,27 +207,6 @@ struct TripNearbyShareHostBlogSettingsOverlay: View {
         .onDisappear {
             controller.cancel()
         }
-        .onChange(of: controller.phase) { oldPhase, newPhase in
-            triggerHostHaptic(oldPhase: oldPhase, newPhase: newPhase)
-        }
-    }
-}
-
-private func triggerHostHaptic(oldPhase: TripNearbyShareSessionController.Phase, newPhase: TripNearbyShareSessionController.Phase) {
-    if oldPhase == newPhase { return }
-    switch newPhase {
-    case .hostingAdvertising:
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-    case .hostingConnected:
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
-    case .transferring:
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.7)
-    case .succeeded:
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
-    case .failed:
-        UINotificationFeedbackGenerator().notificationOccurred(.error)
-    default:
-        break
     }
 }
 
@@ -236,9 +221,12 @@ struct TripNearbyShareHostSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") {
+                        Button {
                             controller.cancel()
                             dismiss()
+                        } label: {
+                            Text("Close")
+                                .foregroundStyle(.white)
                         }
                     }
                 }
@@ -250,9 +238,8 @@ struct TripNearbyShareHostSheet: View {
         .onDisappear {
             controller.cancel()
         }
-        .onChange(of: controller.phase) { oldPhase, newPhase in
-            triggerHostHaptic(oldPhase: oldPhase, newPhase: newPhase)
-        }
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
     }
 }
 
@@ -266,12 +253,14 @@ struct TripNearbyShareReceiveSheet: View {
     /// User chose to skip copying imports to the Camera Roll for this completed transfer.
     @State private var skippedCameraRollOffer = false
 
-    private var isRadiating: Bool {
+    private var siriRadiationPhase: TripNearbySiriRadiationPhase {
         switch controller.phase {
-        case .receivingBrowsing, .receivingConnected, .transferring:
-            return true
+        case .receivingBrowsing:
+            return .searching
+        case .receivingConnected, .transferring:
+            return .linked
         default:
-            return false
+            return .idle
         }
     }
 
@@ -296,15 +285,18 @@ struct TripNearbyShareReceiveSheet: View {
                 }
                 .padding()
             }
-            .modifier(TripNearbyRadiatingBorderModifier(isActive: isRadiating))
+            .modifier(TripNearbySiriRadiationModifier(phase: siriRadiationPhase, cornerRadius: 18))
             .navigationTitle("Receive trip")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") {
+                    Button {
                         controller.cancel()
                         controller.dismissReceiveDeepLinkPresentation()
                         dismiss()
+                    } label: {
+                        Text("Close")
+                            .foregroundStyle(.white)
                     }
                 }
             }
@@ -319,6 +311,8 @@ struct TripNearbyShareReceiveSheet: View {
             }
         }
         .preferredColorScheme(.dark)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .onAppear {
             if !controller.deepLinkPrefillCode.isEmpty {
                 codeInput = controller.deepLinkPrefillCode
@@ -345,7 +339,7 @@ struct TripNearbyShareReceiveSheet: View {
             }
         }
         .onChange(of: controller.phase) { oldPhase, newPhase in
-            triggerReceiveHaptic(oldPhase: oldPhase, newPhase: newPhase)
+            TripNearbyShareHaptics.playForPhaseTransition(from: oldPhase, to: newPhase)
         }
         .onChange(of: controller.guestManifestConsent != nil) { _, hasConsentPrompt in
             if hasConsentPrompt {
@@ -481,51 +475,188 @@ struct TripNearbyShareReceiveSheet: View {
             .padding(28)
         }
     }
+}
 
-    private func triggerReceiveHaptic(oldPhase: TripNearbyShareSessionController.Phase, newPhase: TripNearbyShareSessionController.Phase) {
-        if oldPhase == newPhase { return }
-        switch newPhase {
-        case .receivingBrowsing:
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        case .receivingConnected:
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-        case .transferring:
-            UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.7)
-        case .succeeded:
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-        case .failed:
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
-        default:
-            break
+// MARK: - Siri-style nearby aura
+
+/// Drives the multicolor “Siri orb” style glow while discovering or linked.
+enum TripNearbySiriRadiationPhase: Equatable {
+    case idle
+    case searching
+    case linked
+}
+
+/// Soft light radiating outward from all four edges (no rings, corners-only blobs, or traveling ripples).
+struct TripNearbySiriCardGlow: View {
+    let size: CGSize
+    let cornerRadius: CGFloat
+    let phase: TripNearbySiriRadiationPhase
+    let time: TimeInterval
+
+    fileprivate static let siriPalette: [Color] = [
+        Color(red: 0.49, green: 0.23, blue: 0.99),
+        Color(red: 0.22, green: 0.56, blue: 1.0),
+        Color(red: 0.28, green: 0.93, blue: 0.85),
+        Color(red: 1.0, green: 0.36, blue: 0.58),
+        Color(red: 0.62, green: 0.38, blue: 1.0),
+        Color(red: 0.35, green: 0.82, blue: 1.0),
+    ]
+
+    private var intensity: CGFloat {
+        switch phase {
+        case .idle: return 0
+        case .searching: return 0.5
+        case .linked: return 0.78
         }
+    }
+
+    private var speed: Double {
+        switch phase {
+        case .idle: return 0
+        case .searching: return 0.68
+        case .linked: return 0.98
+        }
+    }
+
+    private var resolved: TripNearbySiriGlowLayout {
+        let tRaw = time * speed
+        let warp = 0.12 * sin(tRaw * 0.33) + 0.08 * sin(tRaw * 0.71 + 0.5)
+        let t = tRaw + warp
+        let w = max(size.width, 1)
+        let h = max(size.height, 1)
+        let depth = max(min(w, h) * 0.13, 28)
+        let cr = min(cornerRadius, min(w, h) * 0.22)
+        let spanW = max(w - cr * 1.2, 32)
+        let spanH = max(h - cr * 1.2, 32)
+        return TripNearbySiriGlowLayout(t: t, w: w, h: h, intensity: intensity, glowDepth: depth, spanW: spanW, spanH: spanH)
+    }
+
+    var body: some View {
+        let g = resolved
+        ZStack {
+            TripNearbySiriEdgeRadiate(g: g, edge: 0)
+            TripNearbySiriEdgeRadiate(g: g, edge: 1)
+            TripNearbySiriEdgeRadiate(g: g, edge: 2)
+            TripNearbySiriEdgeRadiate(g: g, edge: 3)
+        }
+        .frame(width: g.w, height: g.h)
+        .compositingGroup()
     }
 }
 
-private struct TripNearbyRadiatingBorderModifier: ViewModifier {
-    let isActive: Bool
-    @State private var animatePulse = false
+private struct TripNearbySiriGlowLayout {
+    let t: Double
+    let w: CGFloat
+    let h: CGFloat
+    let intensity: CGFloat
+    let glowDepth: CGFloat
+    let spanW: CGFloat
+    let spanH: CGFloat
+}
+
+private func tripNearbySiriEdgePulse(t: Double, edge: Int) -> CGFloat {
+    let phase = Double(edge) * 1.17
+    let v = 0.52 + 0.48 * sin(t * 0.5 + phase)
+    return CGFloat(v)
+}
+
+/// One side: `edge` 0 top, 1 bottom, 2 leading, 3 trailing — gradient shines *outward* from the card edge.
+private struct TripNearbySiriEdgeRadiate: View {
+    let g: TripNearbySiriGlowLayout
+    let edge: Int
+
+    var body: some View {
+        let pulse = tripNearbySiriEdgePulse(t: g.t, edge: edge)
+        let base = TripNearbySiriCardGlow.siriPalette[edge % TripNearbySiriCardGlow.siriPalette.count]
+        let mid = TripNearbySiriCardGlow.siriPalette[(edge + 2) % TripNearbySiriCardGlow.siriPalette.count]
+        let a0 = 0.42 * pulse * g.intensity
+        let a1 = 0.18 * pulse * g.intensity
+        let clear = Color.clear
+        let d = g.glowDepth
+        let sw = g.spanW
+        let sh = g.spanH
+
+        Group {
+            switch edge {
+            case 0:
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [base.opacity(a0), mid.opacity(a1), clear],
+                            startPoint: .bottom,
+                            endPoint: .top
+                        )
+                    )
+                    .frame(width: sw, height: d)
+                    .position(x: g.w / 2, y: d / 2)
+            case 1:
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [base.opacity(a0), mid.opacity(a1), clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: sw, height: d)
+                    .position(x: g.w / 2, y: g.h - d / 2)
+            case 2:
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [base.opacity(a0), mid.opacity(a1), clear],
+                            startPoint: .trailing,
+                            endPoint: .leading
+                        )
+                    )
+                    .frame(width: d, height: sh)
+                    .position(x: d / 2, y: g.h / 2)
+            default:
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [base.opacity(a0), mid.opacity(a1), clear],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: d, height: sh)
+                    .position(x: g.w - d / 2, y: g.h / 2)
+            }
+        }
+        .blur(radius: 12)
+        .blendMode(.plusLighter)
+    }
+}
+
+private struct TripNearbySiriRadiationModifier: ViewModifier {
+    var phase: TripNearbySiriRadiationPhase
+    var cornerRadius: CGFloat = 18
 
     func body(content: Content) -> some View {
-        content
-            .overlay {
-                RoundedRectangle(cornerRadius: 18)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                Color.blue.opacity(isActive ? 0.85 : 0),
-                                Color.cyan.opacity(isActive ? 0.6 : 0),
-                                Color.blue.opacity(isActive ? 0.85 : 0)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: isActive ? 2.5 : 0
-                    )
-                    .shadow(color: Color.blue.opacity(isActive ? (animatePulse ? 0.75 : 0.25) : 0), radius: animatePulse ? 22 : 8)
-                    .padding(4)
-                    .allowsHitTesting(false)
-                    .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: animatePulse)
-                    .onAppear { animatePulse = true }
+        Group {
+            if phase == .idle {
+                content
+            } else {
+                content
+                    .overlay {
+                        GeometryReader { geo in
+                            let s = geo.size
+                            let margin: CGFloat = 44
+                            TimelineView(.animation(minimumInterval: 1.0 / 45.0, paused: false)) { context in
+                                TripNearbySiriCardGlow(
+                                    size: CGSize(width: s.width + margin * 2, height: s.height + margin * 2),
+                                    cornerRadius: cornerRadius + 6,
+                                    phase: phase,
+                                    time: context.date.timeIntervalSinceReferenceDate
+                                )
+                                .frame(width: s.width + margin * 2, height: s.height + margin * 2)
+                                .position(x: s.width * 0.5, y: s.height * 0.5)
+                            }
+                        }
+                        .allowsHitTesting(false)
+                    }
             }
+        }
     }
 }

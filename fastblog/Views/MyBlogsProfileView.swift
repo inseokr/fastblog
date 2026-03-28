@@ -712,6 +712,7 @@ private struct MyBlogsManageSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
                         .fontWeight(.semibold)
+                        .foregroundStyle(.primary)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -794,6 +795,7 @@ private struct MyBlogsManageSheet: View {
                 Text("Select a country to split a blog from.")
             }
         }
+        .tint(.primary)
     }
 }
 

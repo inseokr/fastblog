@@ -128,6 +128,7 @@ struct ContentView: View {
                     )
                     .environmentObject(createdRecapStore)
                 }
+                .tint(.primary)
                 .preferredColorScheme(.dark)
                 .transition(.opacity)
                 .zIndex(3)
@@ -146,6 +147,7 @@ struct ContentView: View {
                     )
                     .environmentObject(createdRecapStore)
                 }
+                .tint(.primary)
                 .transition(.opacity)
                 .zIndex(4)
             }

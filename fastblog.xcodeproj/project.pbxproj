@@ -94,6 +94,7 @@
 		TS00B02 /* TripSharePackage.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R02 /* TripSharePackage.swift */; };
 		TS00B03 /* TripNearbyShareSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R03 /* TripNearbyShareSessionController.swift */; };
 		TS00B04 /* TripNearbyShareViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R04 /* TripNearbyShareViews.swift */; };
+		TS00B05 /* TripNearbyShareHaptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R05 /* TripNearbyShareHaptics.swift */; };
 		BB00016E /* CitySearchHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00016D /* CitySearchHelper.swift */; };
 		BB000170 /* LocationManagerForOnboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00016F /* LocationManagerForOnboarding.swift */; };
 		BB000172 /* MapWithCenterSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000171 /* MapWithCenterSelector.swift */; };
@@ -304,6 +305,7 @@
 		TS00R02 /* TripSharePackage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripSharePackage.swift; sourceTree = "<group>"; };
 		TS00R03 /* TripNearbyShareSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareSessionController.swift; sourceTree = "<group>"; };
 		TS00R04 /* TripNearbyShareViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareViews.swift; sourceTree = "<group>"; };
+		TS00R05 /* TripNearbyShareHaptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareHaptics.swift; sourceTree = "<group>"; };
 		BB00016D /* CitySearchHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitySearchHelper.swift; sourceTree = "<group>"; };
 		BB00016F /* LocationManagerForOnboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManagerForOnboarding.swift; sourceTree = "<group>"; };
 		BB000171 /* MapWithCenterSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapWithCenterSelector.swift; sourceTree = "<group>"; };
@@ -708,6 +710,7 @@
 				TS00R01 /* TripShareNearbyConfig.swift */,
 				TS00R02 /* TripSharePackage.swift */,
 				TS00R03 /* TripNearbyShareSessionController.swift */,
+				TS00R05 /* TripNearbyShareHaptics.swift */,
 				BB000218 /* SecureShareToken.swift */,
 				F8A22973BB3A461C18315DE5 /* LocalLLMStoryCaptionGenerator.swift */,
 				4E34776F396319FBEE2FCECD /* StoryCaptionGenerator.swift */,
@@ -895,6 +898,7 @@
 				TS00B01 /* TripShareNearbyConfig.swift in Sources */,
 				TS00B02 /* TripSharePackage.swift in Sources */,
 				TS00B03 /* TripNearbyShareSessionController.swift in Sources */,
+				TS00B05 /* TripNearbyShareHaptics.swift in Sources */,
 				TS00B04 /* TripNearbyShareViews.swift in Sources */,
 				BB00016E /* CitySearchHelper.swift in Sources */,
 				BB000170 /* LocationManagerForOnboarding.swift in Sources */,

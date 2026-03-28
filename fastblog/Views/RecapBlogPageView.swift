@@ -8,7 +8,6 @@ import MapKit
 import Combine
 import UIKit
 import Photos
-import AudioToolbox
 
 private struct TitleMinYPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = .greatestFiniteMagnitude
@@ -101,6 +100,10 @@ struct RecapBlogPageView: View {
     @State private var generatingNarrativeStopId: UUID?
     /// The day currently having its day narrative generated via "Tell Story".
     @State private var generatingNarrativeDayId: UUID?
+    /// Whether the trip-level narrative is currently being AI-generated.
+    @State private var isGeneratingTripNarrative = false
+    /// Whether the trip narrative card is expanded (shows full text vs. 4-line preview).
+    @State private var tripNarrativeExpanded = false
     /// Snapshot taken when ManagePhotosView opens, used to diff on dismiss for targeted cloud sync.
     @State private var managePhotosEditInfo: ManagePhotosEditInfo?
     @State private var isEditMode = true
@@ -171,7 +174,6 @@ struct RecapBlogPageView: View {
     @State private var pendingWebLinkAfterAuth = false
     @State private var pendingWebLinkShareAfterUpload = false
     @State private var showBloggoQRSheet = false
-    @State private var animateNearbySharePulse = false
     @State private var storyShareTrigger = false
     @State private var storyContentReady = false
     @State private var storyChromeVisible = true
@@ -889,19 +891,7 @@ struct RecapBlogPageView: View {
                             mapOrPreviewCard
                                 .id("map-anchor")
                         }
-                        if let narrative = draft.tripNarrative, !narrative.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            Text(narrative)
-                                .font(.body)
-                                .lineSpacing(5)
-                                .foregroundColor(recapChromeForeground.opacity(colorScheme == .dark ? 0.9 : 1))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
-                                .background(recapNarrativeCardBackground)
-                                .cornerRadius(12)
-                                .padding(.horizontal, 16)
-                                .padding(.top, 8)
-                        }
+                        tripNarrativeCard
                         timelineContent
 
                         if draft.days.isEmpty && hasFinishedInitialLoad {
@@ -2403,22 +2393,34 @@ struct RecapBlogPageView: View {
             .padding(.horizontal, 24)
             .overlay {
                 if let glow = nearbyShareGlowStyle {
-                    bloggoQRShareGlowOverlay(style: glow)
+                    GeometryReader { geo in
+                        let margin: CGFloat = 44
+                        let s = geo.size
+                        TimelineView(.animation(minimumInterval: 1.0 / 45.0, paused: false)) { context in
+                            TripNearbySiriCardGlow(
+                                size: CGSize(width: s.width + margin * 2, height: s.height + margin * 2),
+                                cornerRadius: 30,
+                                phase: glow == .searching ? .searching : .linked,
+                                time: context.date.timeIntervalSinceReferenceDate
+                            )
+                            .frame(width: s.width + margin * 2, height: s.height + margin * 2)
+                            .position(x: s.width * 0.5, y: s.height * 0.5)
+                        }
+                    }
+                    .allowsHitTesting(false)
                 }
             }
 
         }
         .preferredColorScheme(.dark)
         .onAppear {
-            animateNearbySharePulse = true
             nearbyShare.startHosting(recapDetail: draft)
         }
         .onDisappear {
-            animateNearbySharePulse = false
             nearbyShare.cancel()
         }
         .onChange(of: nearbyShare.phase) { oldPhase, newPhase in
-            triggerNearbyShareHaptic(oldPhase: oldPhase, newPhase: newPhase)
+            TripNearbyShareHaptics.playForPhaseTransition(from: oldPhase, to: newPhase)
         }
     }
 
@@ -2437,82 +2439,6 @@ struct RecapBlogPageView: View {
         default:
             return nil
         }
-    }
-
-    @ViewBuilder
-    private func bloggoQRShareGlowOverlay(style: NearbyShareGlowStyle) -> some View {
-        let isPaired = style == .paired
-        let ringCount = isPaired ? 4 : 2
-        let ringColor = isPaired ? Color.cyan : Color.white
-        let ringPeakOpacity = isPaired ? 0.9 : 0.42
-        let ringDuration = isPaired ? 1.05 : 1.65
-        let ringDelayStep = isPaired ? 0.22 : 0.38
-        let outerScaleEnd: CGFloat = isPaired ? 1.22 : 1.1
-        let coreStroke = isPaired ? Color.mint.opacity(0.95) : Color.cyan.opacity(0.55)
-        let coreWidth: CGFloat = isPaired ? 3.6 : 2.2
-        let glowRadius: CGFloat = isPaired ? (animateNearbySharePulse ? 38 : 18) : (animateNearbySharePulse ? 14 : 8)
-        let secondaryGlow = isPaired ? Color.green.opacity(animateNearbySharePulse ? 0.55 : 0.22) : Color.clear
-
-        ZStack {
-            ForEach(0..<ringCount, id: \.self) { idx in
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(ringColor.opacity(0.85), lineWidth: isPaired ? 2.4 : 1.6)
-                    .scaleEffect(animateNearbySharePulse ? outerScaleEnd : 0.98)
-                    .opacity(animateNearbySharePulse ? 0.0 : ringPeakOpacity)
-                    .padding(2)
-                    .animation(
-                        .easeOut(duration: ringDuration)
-                            .delay(Double(idx) * ringDelayStep)
-                            .repeatForever(autoreverses: false),
-                        value: animateNearbySharePulse
-                    )
-            }
-
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(coreStroke, lineWidth: coreWidth)
-                .shadow(color: Color.cyan.opacity(animateNearbySharePulse ? 0.9 : 0.4), radius: glowRadius)
-                .shadow(color: secondaryGlow, radius: isPaired ? glowRadius * 0.85 : 0)
-                .padding(4)
-                .animation(.easeInOut(duration: isPaired ? 0.75 : 1.1).repeatForever(autoreverses: true), value: animateNearbySharePulse)
-        }
-        .allowsHitTesting(false)
-    }
-
-    private func triggerNearbyShareHaptic(
-        oldPhase: TripNearbyShareSessionController.Phase,
-        newPhase: TripNearbyShareSessionController.Phase
-    ) {
-        if oldPhase == newPhase { return }
-        if case .transferring = oldPhase, case .transferring = newPhase {
-            return
-        }
-
-        switch newPhase {
-        case .hostingPreparing:
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            vibrateFallback()
-        case .hostingAdvertising:
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            vibrateFallback()
-        case .hostingConnected:
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-            vibrateFallback()
-        case .transferring:
-            UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 0.9)
-            vibrateFallback()
-        case .succeeded:
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-            vibrateFallback()
-        case .failed:
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
-            vibrateFallback()
-        default:
-            break
-        }
-    }
-
-    private func vibrateFallback() {
-        AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
     }
 
     private func saveDraft() {
@@ -3070,6 +2996,93 @@ struct RecapBlogPageView: View {
                     draft.days[dayIdx].dayCaption = narrative
                 }
                 generatingNarrativeDayId = nil
+            }
+        }
+    }
+
+    // MARK: - Trip Narrative Card
+
+    @ViewBuilder
+    private var tripNarrativeCard: some View {
+        let narrativeText = draft.tripNarrative?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let hasNarrative = !narrativeText.isEmpty
+        VStack(alignment: .leading, spacing: 8) {
+            if hasNarrative {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(narrativeText)
+                        .font(Font.custom("Georgia", size: 17))
+                        .lineSpacing(8)
+                        .foregroundColor(recapChromeForeground.opacity(colorScheme == .dark ? 0.9 : 1))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .lineLimit(tripNarrativeExpanded ? nil : 4)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            tripNarrativeExpanded.toggle()
+                        }
+                    } label: {
+                        Text(tripNarrativeExpanded ? "Less" : "More")
+                            .font(.footnote.weight(.medium))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(recapNarrativeCardBackground)
+                .cornerRadius(12)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+            }
+            if LocalLLMStoryCaptionGenerator.isCapable {
+                HStack {
+                    Spacer()
+                    if isGeneratingTripNarrative {
+                        ProgressView()
+                            .scaleEffect(0.75)
+                            .tint(.secondary)
+                            .padding(.trailing, 20)
+                            .padding(.top, hasNarrative ? 0 : 8)
+                    } else {
+                        Button {
+                            triggerTripNarrative()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "wand.and.sparkles")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text(hasNarrative ? "Regenerate story" : "Generate story")
+                                    .font(.footnote.weight(.medium))
+                            }
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06))
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 16)
+                        .padding(.top, hasNarrative ? 2 : 8)
+                    }
+                }
+            }
+        }
+    }
+
+    private func triggerTripNarrative() {
+        isGeneratingTripNarrative = true
+        tripNarrativeExpanded = false
+        Task {
+            let narrative = await StoryCaptionService.shared.generateTripNarrative(detail: draft)
+            await MainActor.run {
+                if let narrative {
+                    draft.tripNarrative = narrative
+                }
+                isGeneratingTripNarrative = false
             }
         }
     }

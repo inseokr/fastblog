@@ -34,6 +34,7 @@ struct PlacesVisitedStandaloneView: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
                 }
             }
         }
@@ -322,6 +323,7 @@ struct PlacesVisitedView: View {
                         )
                     }
                     .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
                 } else {
                     Menu {
                         Button("All Countries") { selectedCountry = nil }
@@ -330,6 +332,7 @@ struct PlacesVisitedView: View {
                         }
                     } label: {
                         Image(systemName: selectedCountry == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                            .foregroundStyle(.primary)
                     }
                 }
             }
@@ -340,6 +343,7 @@ struct PlacesVisitedView: View {
                         selectedCountry = nil
                         selectedCategory = nil
                     }
+                    .foregroundStyle(.primary)
                 }
             }
         }
@@ -1073,6 +1077,7 @@ private struct PlacesVisitedMapView: View {
                 } label: {
                     Image(systemName: "chevron.left")
                         .fontWeight(.semibold)
+                        .foregroundStyle(.primary)
                 }
             }
 
@@ -1092,6 +1097,7 @@ private struct PlacesVisitedMapView: View {
                         )
                     }
                     .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
                 } else {
                     // Search icon (left)
                     Button {
@@ -1103,6 +1109,7 @@ private struct PlacesVisitedMapView: View {
                         }
                     } label: {
                         Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.primary)
                     }
 
                     // Existing filter menu (right)
@@ -1113,6 +1120,7 @@ private struct PlacesVisitedMapView: View {
                         }
                     } label: {
                         Image(systemName: selectedCountry == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                            .foregroundStyle(.primary)
                     }
                 }
             }

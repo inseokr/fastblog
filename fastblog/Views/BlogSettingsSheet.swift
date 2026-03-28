@@ -103,7 +103,6 @@ struct BlogSettingsSheet: View {
                 }
             }
             titleAndCoverSection
-            aiStorytellingSection
             weatherSection
             cloudSection
         }
