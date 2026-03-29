@@ -239,7 +239,7 @@ struct PanoramaPlayerView: View {
                     pausedSlideshowMusicForPicker = false
                     showMusicPicker = false
                     selectedSlideshowMusicFilename = nil
-                    SlideshowMusicPreference.clear(blogId: blogId.uuidString)
+                    SlideshowMusicPreference.saveNone(blogId: blogId.uuidString)
                     Task { @MainActor in
                         await slideshowMusic.stopAll()
                     }
@@ -738,16 +738,30 @@ struct PanoramaPlayerView: View {
     /// Restores bundled track from `UserDefaults` when the file is still in the app bundle.
     private func restorePersistedSlideshowMusic() async {
         let key = blogId.uuidString
-        guard let saved = SlideshowMusicPreference.load(blogId: key) else {
+        let saved = SlideshowMusicPreference.load(blogId: key)
+
+        // No preference saved yet — apply the default track.
+        if saved == nil {
+            let defaultFilename = SlideshowMusicPreference.defaultFilename
+            if let url = SlideshowMusicPreference.bundleURL(forBundledFilename: defaultFilename) {
+                selectedSlideshowMusicFilename = defaultFilename
+                await slideshowMusic.play(url: url, startPlayback: isPlaying)
+            }
+            return
+        }
+
+        // User explicitly chose "No background music".
+        if saved!.isExplicitNone {
             selectedSlideshowMusicFilename = nil
             return
         }
-        guard let url = SlideshowMusicPreference.bundleURL(forBundledFilename: saved.filename) else {
+
+        guard let url = SlideshowMusicPreference.bundleURL(forBundledFilename: saved!.filename) else {
             SlideshowMusicPreference.clear(blogId: key)
             selectedSlideshowMusicFilename = nil
             return
         }
-        selectedSlideshowMusicFilename = saved.filename
+        selectedSlideshowMusicFilename = saved!.filename
         await slideshowMusic.play(url: url, startPlayback: isPlaying)
     }
 

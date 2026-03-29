@@ -188,6 +188,7 @@ final class AuthService: NSObject, ObservableObject {
             let nLat = defaults.object(forKey: "blogify.neighborhoodLat")
             let nLon = defaults.object(forKey: "blogify.neighborhoodLon")
             let nRadius = defaults.object(forKey: "blogify.neighborhoodRadiusMiles")
+            let tripExclusionRadius = defaults.object(forKey: "blogify.tripExclusionRadiusMiles")
             let nDisplayName = defaults.string(forKey: "blogify.neighborhoodDisplayName")
             let nRecentSearches = defaults.stringArray(forKey: "blogify.neighborhood.recentSearches")
 
@@ -204,6 +205,7 @@ final class AuthService: NSObject, ObservableObject {
             if let nLat { defaults.set(nLat, forKey: "blogify.neighborhoodLat") }
             if let nLon { defaults.set(nLon, forKey: "blogify.neighborhoodLon") }
             if let nRadius { defaults.set(nRadius, forKey: "blogify.neighborhoodRadiusMiles") }
+            if let tripExclusionRadius { defaults.set(tripExclusionRadius, forKey: "blogify.tripExclusionRadiusMiles") }
             if let nDisplayName { defaults.set(nDisplayName, forKey: "blogify.neighborhoodDisplayName") }
             if let nRecentSearches { defaults.set(nRecentSearches, forKey: "blogify.neighborhood.recentSearches") }
 

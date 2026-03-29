@@ -5,6 +5,7 @@
 
 import CoreLocation
 import Foundation
+import Photos
 
 /// Single source of truth for the user's neighborhood (map-centered coordinate from onboarding).
 /// Used for "non trip" exclusion: photos within localExclusionMiles of the center are excluded from trip building.
@@ -12,6 +13,7 @@ enum NeighborhoodStore {
     private static let latKey = "blogify.neighborhoodLat"
     private static let lonKey = "blogify.neighborhoodLon"
     private static let radiusMilesKey = "blogify.neighborhoodRadiusMiles"
+    private static let tripExclusionRadiusOverrideKey = "blogify.tripExclusionRadiusMiles"
     private static let displayNameKey = "blogify.neighborhoodDisplayName"
     private static let recentSearchesKey = "blogify.neighborhood.recentSearches"
 
@@ -74,12 +76,40 @@ enum NeighborhoodStore {
     }
 
     /// Radius in miles within which photos are considered "local" and excluded from trips. Default 50.
+    /// Used as the fallback for `tripExclusionRadiusMiles` until the user adjusts trip settings.
     static var localExclusionMiles: Double {
         get {
             let v = UserDefaults.standard.double(forKey: radiusMilesKey)
             return v > 0 ? v : 50
         }
         set { UserDefaults.standard.set(newValue, forKey: radiusMilesKey) }
+    }
+
+    /// Miles from home to exclude from trip detection. Clamped to 5...200.
+    /// If the user has never set this override, uses `localExclusionMiles` (neighborhood radius / 50 mi default).
+    /// With **limited** photo library access, the override is ignored; `localExclusionMiles` always applies.
+    static var tripExclusionRadiusMiles: Double {
+        get {
+            if UserDefaults.standard.object(forKey: tripExclusionRadiusOverrideKey) != nil {
+                let v = UserDefaults.standard.double(forKey: tripExclusionRadiusOverrideKey)
+                return min(max(v, 5), 200)
+            }
+            return localExclusionMiles
+        }
+        set {
+            let clamped = min(max(newValue, 5), 200)
+            UserDefaults.standard.set(clamped, forKey: tripExclusionRadiusOverrideKey)
+            PhotoLibraryTripService.invalidateScanCache()
+        }
+    }
+
+    /// Minimum miles from home for trip photo inclusion. Uses `tripExclusionRadiusMiles` for full library access;
+    /// for **limited** access, always `localExclusionMiles` (custom distance is not used).
+    static var effectiveTripMinMilesFromHome: Double {
+        if PHPhotoLibrary.authorizationStatus(for: .readWrite) == .limited {
+            return localExclusionMiles
+        }
+        return tripExclusionRadiusMiles
     }
 
     /// Rounded coordinate for cache keys (4 decimal places ~11 m precision).

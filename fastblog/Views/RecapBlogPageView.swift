@@ -359,6 +359,12 @@ struct RecapBlogPageView: View {
                     .zIndex(132)
             }
 
+            if earlyAccessSheetPresented {
+                earlyAccessOverlay()
+                    .transition(.opacity)
+                    .zIndex(160)
+            }
+
         }
         .preferredColorScheme(nil)
         .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
@@ -366,6 +372,7 @@ struct RecapBlogPageView: View {
         .animation(.easeOut(duration: 0.22), value: dayCaptionEditItem?.id)
         .animation(.easeInOut(duration: 0.38), value: placePhotoModalItem?.id)
         .animation(.easeOut(duration: 0.22), value: photoCaptionEditItem?.id)
+        .animation(.spring(response: 0.38, dampingFraction: 0.88), value: earlyAccessSheetPresented)
     }
 
     private func bodyContent(screenHeight: CGFloat) -> some View {
@@ -417,11 +424,6 @@ struct RecapBlogPageView: View {
                     hostControlsDismiss: true
                 )
                 .environmentObject(authService)
-            }
-            .sheet(isPresented: $earlyAccessSheetPresented) {
-                earlyAccessModalContent(isOnList: earlyAccessShowOnListConfirm)
-                    .presentationDetents([.medium])
-                    .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showPDFPreview) {
                 if let url = pdfExportURL {
@@ -1244,6 +1246,29 @@ struct RecapBlogPageView: View {
                 .padding(.horizontal, 24)
 
 
+                // Slideshow button — top-right corner (view mode only)
+                if !isEditMode && !isCoverPending && displayCoverId != nil {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Button {
+                                showPanorama = true
+                            } label: {
+                                Image(systemName: "film")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(10)
+                                    .background(Circle().fill(Color.black.opacity(0.35)).background(.ultraThinMaterial).clipShape(Circle()))
+                                    .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.top, 14)
+                            .padding(.trailing, 14)
+                        }
+                        Spacer()
+                    }
+                }
+
                 // Badge shown while cover selection is still in progress
                 if isCoverPending {
                     VStack {
@@ -1823,6 +1848,13 @@ struct RecapBlogPageView: View {
                     isGeneratingNarrative: generatingNarrativeStopId == stop.id,
                     onTellPlaceStory: {
                         triggerPlaceNarrative(dayId: day.id, stopId: stop.id, dayDate: day.date)
+                    },
+                    onSentimentChanged: { newValue in
+                        guard let dayIdx = draft.days.firstIndex(where: { $0.id == day.id }),
+                              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stop.id }) else { return }
+                        draft.days[dayIdx].placeStops[stopIdx].sentiment = newValue
+                        createdRecapStore.saveBlogDetail(draft)
+                        syncSentimentToCloudIfNeeded(dayId: day.id, stopId: stop.id)
                     }
                 )
                 .id(stop.id)
@@ -2881,7 +2913,10 @@ struct RecapBlogPageView: View {
             } : nil,
             onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
                 await StoryCaptionService.shared.translateText(userText: userText)
-            } : nil
+            } : nil,
+            onSentimentAnalysisNeeded: {
+                triggerSentimentAnalysis(dayId: item.dayId, stopId: item.stopId)
+            }
         )
     }
 
@@ -2896,6 +2931,7 @@ struct RecapBlogPageView: View {
                 markPhotoCaptionManual(dayId: item.dayId, stopId: item.stopId, photoId: item.photoId)
                 createdRecapStore.saveBlogDetail(draft)
                 syncStoryToCloudIfNeeded(stopId: item.stopId, isPlaceNote: false, photoId: item.photoId)
+                triggerPhotoSentimentAnalysis(dayId: item.dayId, stopId: item.stopId, photoId: item.photoId)
             },
             onCancel: {
                 photoCaptionEditItem = nil
@@ -2953,6 +2989,23 @@ struct RecapBlogPageView: View {
                 stop.overallStory = newValue.isEmpty ? nil : newValue
                 day.placeStops[stopIdx] = stop
                 draft.days[dayIdx] = day
+            }
+        )
+    }
+
+    private func bindingForSentiment(dayId: UUID, stopId: UUID) -> Binding<Int> {
+        Binding(
+            get: {
+                guard let day = draft.days.first(where: { $0.id == dayId }),
+                      let stop = day.placeStops.first(where: { $0.id == stopId }) else { return 2 }
+                return stop.sentiment
+            },
+            set: { newValue in
+                guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+                      let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+                draft.days[dayIdx].placeStops[stopIdx].sentiment = newValue
+                createdRecapStore.saveBlogDetail(draft)
+                syncSentimentToCloudIfNeeded(dayId: dayId, stopId: stopId)
             }
         )
     }
@@ -3086,6 +3139,65 @@ struct RecapBlogPageView: View {
         Task { try? await APIManager.shared.updateStory(placeKey: placeKey, storyText: storyText) }
     }
 
+    /// Pushes the sentiment value to the backend when the blog is in the cloud.
+    private func syncSentimentToCloudIfNeeded(dayId: UUID, stopId: UUID) {
+        guard blogIsInCloud else { return }
+        guard let stop = placeStop(dayId: dayId, stopId: stopId),
+              let placeKey = stop.visitedTimeDigitized else { return }
+        let sentimentValue = stop.sentiment
+        Task { try? await APIManager.shared.updateSentiment(placeKey: placeKey, sentiment: sentimentValue) }
+    }
+
+    /// Analyzes sentiment of a photo caption, then re-derives the place-level sentiment.
+    /// No-ops when LLM is unavailable or the photo has no caption.
+    private func triggerPhotoSentimentAnalysis(dayId: UUID, stopId: UUID, photoId: UUID) {
+        guard LocalLLMStoryCaptionGenerator.isCapable else { return }
+        guard let stop = placeStop(dayId: dayId, stopId: stopId),
+              let photo = stop.photos.first(where: { $0.id == photoId }),
+              let caption = photo.caption,
+              !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        Task {
+            let photoSentiment = await StoryCaptionService.shared.analyzeSentiment(text: caption)
+            await MainActor.run {
+                guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+                      let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }),
+                      let photoIdx = draft.days[dayIdx].placeStops[stopIdx].photos.firstIndex(where: { $0.id == photoId }) else { return }
+                draft.days[dayIdx].placeStops[stopIdx].photos[photoIdx].sentiment = photoSentiment
+                // Re-derive place sentiment from all photo sentiments + place caption
+                let updatedStop = draft.days[dayIdx].placeStops[stopIdx]
+                let derived = updatedStop.computeDerivedSentiment(placeCaption: updatedStop.overallStory)
+                draft.days[dayIdx].placeStops[stopIdx].sentiment = derived
+                createdRecapStore.saveBlogDetail(draft)
+                syncSentimentToCloudIfNeeded(dayId: dayId, stopId: stopId)
+            }
+        }
+    }
+
+    /// Analyzes sentiment of the place's overall story caption, then re-derives place-level sentiment
+    /// from photo sentiments + this new place caption sentiment.
+    /// No-ops when LLM is unavailable or no caption text exists.
+    private func triggerSentimentAnalysis(dayId: UUID, stopId: UUID) {
+        guard LocalLLMStoryCaptionGenerator.isCapable else { return }
+        guard let stop = placeStop(dayId: dayId, stopId: stopId) else { return }
+        let captionText = stop.overallStory ?? stop.noteText ?? ""
+        guard !captionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        Task {
+            // Analyze the place caption itself
+            let placeCaptionSentiment = await StoryCaptionService.shared.analyzeSentiment(text: captionText)
+            await MainActor.run {
+                guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+                      let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+                // Store the analyzed place caption sentiment, then derive the combined value
+                draft.days[dayIdx].placeStops[stopIdx].sentiment = placeCaptionSentiment
+                let updatedStop = draft.days[dayIdx].placeStops[stopIdx]
+                let derived = updatedStop.computeDerivedSentiment(placeCaption: updatedStop.overallStory)
+                draft.days[dayIdx].placeStops[stopIdx].sentiment = derived
+                createdRecapStore.saveBlogDetail(draft)
+                syncSentimentToCloudIfNeeded(dayId: dayId, stopId: stopId)
+            }
+        }
+    }
+
     /// Pushes the day caption to the backend via /trips/day-story when the blog is in the cloud.
     private func syncDayCaptionToCloudIfNeeded(dayId: UUID) {
         guard blogIsInCloud else { return }
@@ -3180,7 +3292,7 @@ struct RecapBlogPageView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
             }
-            if LocalLLMStoryCaptionGenerator.isCapable {
+            if LocalLLMStoryCaptionGenerator.isCapable && isEditMode {
                 if !hasNarrative {
                     Text("Your trip story will appear here…")
                         .font(.subheadline)
@@ -3729,114 +3841,145 @@ struct RecapBlogPageView: View {
         }
     }
 
-    @ViewBuilder
-    private func earlyAccessModalContent(isOnList: Bool) -> some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 20) {
-                Image(systemName: "cloud.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 50, height: 50)
-                    .foregroundColor(.blue)
-                    .padding(.top, 8)
-
-                if isOnList {
-                    VStack(spacing: 8) {
-                        Text("You're on the List!")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.primary)
-
-                        Text("We'll notify you when cloud publishing becomes available. Uploading your blogs to the cloud lets you edit and share them from any device.")
-                            .font(.body)
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.secondary)
-                    }
-                } else {
-                    VStack(spacing: 8) {
-                        Text("Early Access Feature")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.primary)
-
-                        Text("Cloud publishing is a limited early access. \(authService.isSignedIn ? "Join the waitlist!" : "Create an account to join the waitlist!")")
-                            .font(.body)
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.secondary)
-                    }
+    private func earlyAccessOverlay() -> some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    earlyAccessSheetPresented = false
                 }
-            }
-            .padding(.horizontal, 24)
 
-            Spacer()
+            earlyAccessCard(isOnList: earlyAccessShowOnListConfirm)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
 
-            VStack(spacing: 12) {
-                if isOnList {
-                    HStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                        Text("Signed Up!")
-                            .font(.headline)
-                            .foregroundColor(.green)
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(Color.green.opacity(0.15))
-                    .cornerRadius(12)
-                } else {
-                    Button {
-                        if authService.isSignedIn {
-                            Task {
-                                await EarlyAccessManager.shared.registerWaitlist()
-                                await MainActor.run {
-                                    hasJoinedEarlyAccess = true
-                                    earlyAccessShowOnListConfirm = true
-                                }
+    private func earlyAccessCard(isOnList: Bool) -> some View {
+        GeometryReader { geo in
+            VStack(spacing: 0) {
+                Spacer()
+                VStack(spacing: 0) {
+                    // Drag pill
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.primary.opacity(0.2))
+                        .frame(width: 36, height: 5)
+                        .padding(.top, 10)
+                        .padding(.bottom, 20)
+
+                    // Icon + text
+                    VStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.blue.opacity(0.12))
+                                .frame(width: 64, height: 64)
+                            Image(systemName: isOnList ? "checkmark.icloud.fill" : "icloud.and.arrow.up.fill")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 30, height: 30)
+                                .foregroundColor(isOnList ? .green : .blue)
+                        }
+
+                        if isOnList {
+                            VStack(spacing: 6) {
+                                Text("You're on the List!")
+                                    .font(.title3.weight(.bold))
+                                    .multilineTextAlignment(.center)
+                                    .foregroundColor(.primary)
+                                Text("We'll notify you when cloud publishing becomes available. Uploading your blogs to the cloud lets you edit and share them from any device.")
+                                    .font(.subheadline)
+                                    .multilineTextAlignment(.center)
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                         } else {
-                            pendingEarlyAccessAfterAuth = true
-                            showAuth = true
+                            VStack(spacing: 6) {
+                                Text("Early Access Feature")
+                                    .font(.title3.weight(.bold))
+                                    .multilineTextAlignment(.center)
+                                    .foregroundColor(.primary)
+                                Text("Cloud publishing is currently limited.\n\(authService.isSignedIn ? "Join the waitlist to be notified when it opens up." : "Create an account to join the waitlist.")")
+                                    .font(.subheadline)
+                                    .multilineTextAlignment(.center)
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
-                    } label: {
-                        Text("Join Early Access")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.blue)
-                            .cornerRadius(12)
                     }
-                }
+                    .padding(.horizontal, 28)
 
-                if isOnList {
-                    Button {
-                        earlyAccessSheetPresented = false
-                    } label: {
-                        Text("Done")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                } else {
-                    Button {
-                        earlyAccessSheetPresented = false
-                        if authService.isSignedIn {
-                            showPDFExportOptions = true
+                    // Buttons — directly below text, no Spacer
+                    VStack(spacing: 10) {
+                        if isOnList {
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                Text("You're signed up!")
+                                    .font(.headline)
+                                    .foregroundColor(.green)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 15)
+                            .background(Color.green.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+                            Button {
+                                earlyAccessSheetPresented = false
+                            } label: {
+                                Text("Done")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                            }
                         } else {
-                            showExportSignInAlert = true
+                            Button {
+                                if authService.isSignedIn {
+                                    Task {
+                                        await EarlyAccessManager.shared.registerWaitlist()
+                                        await MainActor.run {
+                                            hasJoinedEarlyAccess = true
+                                            earlyAccessShowOnListConfirm = true
+                                        }
+                                    }
+                                } else {
+                                    pendingEarlyAccessAfterAuth = true
+                                    showAuth = true
+                                }
+                            } label: {
+                                Text("Join Early Access")
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 15)
+                                    .background(Color.blue)
+                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            }
+
+                            Button {
+                                earlyAccessSheetPresented = false
+                                if authService.isSignedIn {
+                                    showPDFExportOptions = true
+                                } else {
+                                    showExportSignInAlert = true
+                                }
+                            } label: {
+                                Text("Export as PDF Instead")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                            }
                         }
-                    } label: {
-                        Text("Export as PDF Instead")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
                     }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
+                    .padding(.bottom, geo.safeAreaInsets.bottom + 12)
                 }
+                .background(Color(uiColor: .systemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .shadow(color: .black.opacity(0.18), radius: 24, y: -6)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
         }
-        .padding(.top, 24)
     }
 
     private func handleCloudUploadTap() {

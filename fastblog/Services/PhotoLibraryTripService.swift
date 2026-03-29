@@ -142,7 +142,7 @@ final class PhotoLibraryTripService {
         let totalFetched = allAssets.count
 
         let home = NeighborhoodStore.getNeighborhoodCenter()
-        let minMiles = NeighborhoodStore.localExclusionMiles
+        let minMiles = NeighborhoodStore.effectiveTripMinMilesFromHome
         var missingLocationCount = 0
         var excludedWithin50Count = 0
         var includedBeyond50Count = 0
@@ -316,7 +316,7 @@ final class PhotoLibraryTripService {
         allAssets = filterOutAssetsInOccupiedRanges(allAssets, occupiedDateRanges: occupiedDateRanges)
 
         let home = NeighborhoodStore.getNeighborhoodCenter()
-        let minMiles = NeighborhoodStore.localExclusionMiles
+        let minMiles = NeighborhoodStore.effectiveTripMinMilesFromHome
         var remaining: [PHAsset] = []
         if let homeLocation = home {
             for asset in allAssets {
@@ -472,7 +472,7 @@ final class PhotoLibraryTripService {
         progress?(0.05)
 
         let home = ignoreHomeExclusion ? nil : NeighborhoodStore.getNeighborhoodCenter()
-        let minMiles = NeighborhoodStore.localExclusionMiles
+        let minMiles = NeighborhoodStore.effectiveTripMinMilesFromHome
         var remaining: [PHAsset] = []
         if let homeLocation = home {
             for asset in allAssets {
@@ -1004,7 +1004,7 @@ final class PhotoLibraryTripService {
         // Filter for "Trip" photos (non-local)
         // We do a lighter pass here: just check logic, maybe skip complex clustering
         let home = NeighborhoodStore.getNeighborhoodCenter()
-        let minMiles = NeighborhoodStore.localExclusionMiles
+        let minMiles = NeighborhoodStore.effectiveTripMinMilesFromHome
         
         var tripAssets: [PHAsset] = []
         if let homeLocation = home {

@@ -20,6 +20,8 @@ struct PlaceCaptionEditSheet: View {
     var onEnhanceApplied: (() -> Void)? = nil
     /// Pure translation — no AI story generation.
     var onTranslate: ((String) async -> String)? = nil
+    /// Called when Done is tapped so the caller can run sentiment analysis on the saved caption.
+    var onSentimentAnalysisNeeded: (() -> Void)? = nil
 
     @State private var editedText: String = ""
     @State private var isEnhancing = false
@@ -173,6 +175,7 @@ struct PlaceCaptionEditSheet: View {
                     caption = editedText
                     isFocused = false
                     onSave()
+                    onSentimentAnalysisNeeded?()
                 }
                 .font(.body)
                 .fontWeight(.bold)

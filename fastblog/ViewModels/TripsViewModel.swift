@@ -1853,6 +1853,76 @@ final class TripsViewModel: ObservableObject {
         pendingVisitedCitiesCreateTrip = nil
     }
 
+    /// Builds a TripDraft from manually selected photo library asset identifiers (camera roll picker).
+    /// Photos are grouped by calendar day; location data is used when available but not required.
+    func buildTripDraftFromCameraRollSelection(_ identifiers: [String]) async {
+        guard !identifiers.isEmpty else { return }
+
+        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
+        var assets: [PHAsset] = []
+        fetchResult.enumerateObjects { asset, _, _ in assets.append(asset) }
+        assets.sort { ($0.creationDate ?? .distantPast) < ($1.creationDate ?? .distantPast) }
+        guard !assets.isEmpty else { return }
+
+        let cal = Calendar.current
+        var dayGroups: [(date: Date, assets: [PHAsset])] = []
+        for asset in assets {
+            let date = asset.creationDate ?? Date()
+            let dayStart = cal.startOfDay(for: date)
+            if let last = dayGroups.last, cal.isDate(last.date, inSameDayAs: dayStart) {
+                dayGroups[dayGroups.count - 1].assets.append(asset)
+            } else {
+                dayGroups.append((date: dayStart, assets: [asset]))
+            }
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+
+        let tripDays: [TripDay] = dayGroups.enumerated().map { dayIndex, group in
+            let photos: [MockPhoto] = group.assets.map { asset in
+                let coord: PhotoCoordinate? = asset.location.map {
+                    PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude)
+                }
+                return MockPhoto(
+                    imageName: "photo",
+                    timestamp: asset.creationDate ?? group.date,
+                    locationName: nil,
+                    countryName: nil,
+                    isSelected: true,
+                    localIdentifier: asset.localIdentifier,
+                    location: coord
+                )
+            }
+            return TripDay(
+                dayIndex: dayIndex + 1,
+                dateText: formatter.string(from: group.date),
+                photos: photos
+            )
+        }
+
+        let firstDate = dayGroups.first!.date
+        let lastDate = dayGroups.last!.date
+        let dateRangeText = cal.isDate(firstDate, inSameDayAs: lastDate)
+            ? formatter.string(from: firstDate)
+            : "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
+
+        let draft = TripDraft(
+            title: "Camera Roll Selection",
+            dateRangeText: dateRangeText,
+            days: tripDays,
+            coverImageName: "photo",
+            isScannedFromDefaultRange: false,
+            draftCreatedAgoText: "From your camera roll",
+            daysSeasonText: "\(tripDays.count) day\(tripDays.count == 1 ? "" : "s")",
+            coverTheme: "default",
+            coverAssetIdentifier: assets.first?.localIdentifier
+        )
+
+        await MainActor.run { pendingVisitedCitiesCreateTrip = draft }
+    }
+
     // MARK: - Load Older Trips
 
     /// True when the current window's end date is far enough in the past that a newer window exists.

@@ -135,6 +135,17 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         return await templateFallback.translateText(userText: userText)
     }
 
+    /// Analyzes the sentiment of the given caption/story text.
+    /// Returns 1 (bad), 2 (neutral), or 3 (good). Falls back to 2 when LLM is unavailable.
+    func analyzeSentiment(text: String) async -> Int {
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            return await analyzeSentimentWithLLM(text: text) ?? 2
+        }
+#endif
+        return 2
+    }
+
     // MARK: - Narrative Generation (LLM-only, no template fallback)
 
     /// Generates a 4–6 line narrative for a place visit. Returns nil when LLM is unavailable.
@@ -710,6 +721,24 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             Output only the story. No first person (I/we/my).
             """
         return await runSession(instructions: instructions, prompt: prompt)
+    }
+
+    // MARK: - Sentiment Analysis
+
+    @available(iOS 26.0, *)
+    private func analyzeSentimentWithLLM(text: String) async -> Int? {
+        let instructions = """
+            You are a sentiment classifier for travel captions. \
+            Read the text and decide if the overall sentiment is positive, neutral, or negative. \
+            Respond with exactly one digit: 3 for positive, 2 for neutral, 1 for negative. \
+            No explanation, no punctuation — just the single digit.
+            """
+        let prompt = "Classify the sentiment of this travel caption:\n\"\(text)\""
+        guard let result = await runSession(instructions: instructions, prompt: prompt) else { return nil }
+        let digit = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        if digit == "1" { return 1 }
+        if digit == "3" { return 3 }
+        return 2
     }
 
     // MARK: - Session Runner

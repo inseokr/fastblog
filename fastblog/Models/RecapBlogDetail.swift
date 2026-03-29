@@ -195,6 +195,9 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
 
     /// True when the user has manually typed the overall story (disables AI auto-cascade).
     var overallStoryIsManual: Bool
+    /// User sentiment for this place visit. 1 = bad, 2 = neutral (default), 3 = good.
+    /// Auto-extracted from caption text by local LLM; can also be set manually.
+    var sentiment: Int
 
     init(
         id: UUID = UUID(),
@@ -210,7 +213,8 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         overallStoryIsManual: Bool = false,
         cloudPlaceIndex: Int? = nil,
         visitedTimeDigitized: String? = nil,
-        placeCategory: String? = nil
+        placeCategory: String? = nil,
+        sentiment: Int = 2
     ) {
         self.id = id
         self.orderIndex = orderIndex
@@ -226,6 +230,53 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         self.cloudPlaceIndex = cloudPlaceIndex
         self.visitedTimeDigitized = visitedTimeDigitized
         self.placeCategory = placeCategory
+        self.sentiment = sentiment
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        orderIndex = try c.decode(Int.self, forKey: .orderIndex)
+        placeTitle = try c.decode(String.self, forKey: .placeTitle)
+        placeSubtitle = try c.decodeIfPresent(String.self, forKey: .placeSubtitle)
+        placeTitleIsManual = try c.decodeIfPresent(Bool.self, forKey: .placeTitleIsManual) ?? false
+        representativeLocation = try c.decodeIfPresent(PhotoCoordinate.self, forKey: .representativeLocation)
+        photos = try c.decode([RecapPhoto].self, forKey: .photos)
+        noteText = try c.decodeIfPresent(String.self, forKey: .noteText)
+        overallStory = try c.decodeIfPresent(String.self, forKey: .overallStory)
+        placeNarrative = try c.decodeIfPresent(String.self, forKey: .placeNarrative)
+        overallStoryIsManual = try c.decodeIfPresent(Bool.self, forKey: .overallStoryIsManual) ?? false
+        cloudPlaceIndex = try c.decodeIfPresent(Int.self, forKey: .cloudPlaceIndex)
+        visitedTimeDigitized = try c.decodeIfPresent(String.self, forKey: .visitedTimeDigitized)
+        placeCategory = try c.decodeIfPresent(String.self, forKey: .placeCategory)
+        sentiment = try c.decodeIfPresent(Int.self, forKey: .sentiment) ?? 2
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, orderIndex, placeTitle, placeSubtitle, placeTitleIsManual, representativeLocation
+        case photos, noteText, overallStory, placeNarrative, overallStoryIsManual
+        case cloudPlaceIndex, visitedTimeDigitized, placeCategory, sentiment
+    }
+
+    /// Derives the place-level sentiment from photo sentiments (photos with captions only)
+    /// combined with the stored place-level sentiment.
+    /// Returns nil when there are no captioned photos and no place caption has been analyzed yet.
+    /// The caller should use `sentiment` (stored, possibly manually overridden) for display,
+    /// and call this to recompute after any caption changes.
+    func computeDerivedSentiment(placeCaption: String?) -> Int {
+        // Collect photo sentiments — only photos that have a non-empty caption
+        let photoValues: [Int] = includedPhotos
+            .filter { ($0.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
+            .map(\.sentiment)
+
+        // Include the place-level sentiment only if there is actual caption text
+        let hasCaptionText = !(placeCaption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let placeValue: Int? = hasCaptionText ? sentiment : nil
+
+        let allValues: [Int] = photoValues + (placeValue.map { [$0] } ?? [])
+        guard !allValues.isEmpty else { return 2 }
+        let avg = Double(allValues.reduce(0, +)) / Double(allValues.count)
+        return min(3, max(1, Int(avg.rounded())))
     }
 
     var coverPhoto: RecapPhoto? {
@@ -259,8 +310,11 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
     var cloudURL: String?
     /// True when the user has manually typed this photo's caption (AI wand is hidden and auto-cascade skips this photo).
     var captionIsManual: Bool
+    /// Sentiment extracted from this photo's caption by the local LLM. 1=bad, 2=neutral (default), 3=good.
+    /// Only meaningful when `caption` is non-nil and non-empty.
+    var sentiment: Int
 
-    init(id: UUID = UUID(), timestamp: Date, location: PhotoCoordinate? = nil, imageName: String, isIncluded: Bool = true, localIdentifier: String? = nil, caption: String? = nil, qualityScore: PhotoScore? = nil, cloudURL: String? = nil, captionIsManual: Bool = false) {
+    init(id: UUID = UUID(), timestamp: Date, location: PhotoCoordinate? = nil, imageName: String, isIncluded: Bool = true, localIdentifier: String? = nil, caption: String? = nil, qualityScore: PhotoScore? = nil, cloudURL: String? = nil, captionIsManual: Bool = false, sentiment: Int = 2) {
         self.id = id
         self.timestamp = timestamp
         self.location = location
@@ -271,5 +325,26 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
         self.qualityScore = qualityScore
         self.cloudURL = cloudURL
         self.captionIsManual = captionIsManual
+        self.sentiment = sentiment
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        timestamp = try c.decode(Date.self, forKey: .timestamp)
+        location = try c.decodeIfPresent(PhotoCoordinate.self, forKey: .location)
+        imageName = try c.decode(String.self, forKey: .imageName)
+        isIncluded = try c.decodeIfPresent(Bool.self, forKey: .isIncluded) ?? true
+        localIdentifier = try c.decodeIfPresent(String.self, forKey: .localIdentifier)
+        caption = try c.decodeIfPresent(String.self, forKey: .caption)
+        qualityScore = try c.decodeIfPresent(PhotoScore.self, forKey: .qualityScore)
+        cloudURL = try c.decodeIfPresent(String.self, forKey: .cloudURL)
+        captionIsManual = try c.decodeIfPresent(Bool.self, forKey: .captionIsManual) ?? false
+        sentiment = try c.decodeIfPresent(Int.self, forKey: .sentiment) ?? 2
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, timestamp, location, imageName, isIncluded, localIdentifier
+        case caption, qualityScore, cloudURL, captionIsManual, sentiment
     }
 }

@@ -7,6 +7,7 @@
 //  Select mode: download (left), "# Photos Selected" (center), trash (right); down arrow to dismiss.
 //
 
+import CoreLocation
 import SwiftUI
 import Photos
 
@@ -56,7 +57,9 @@ struct AppCaptureGalleryView: View {
     @State private var isSelectMode = false
     @State private var selectedIds: Set<UUID> = []
     @State private var showRemoveConfirmation = false
+    @State private var showPhotoImportPicker = false
     @State private var downloadToast: String?
+    @State private var importToast: String?
     @State private var cellFrames: [UUID: CGRect] = [:]
     @State private var dragStartIndex: Int?
     @State private var dragInitialSelectedIds: Set<UUID> = []
@@ -132,15 +135,25 @@ struct AppCaptureGalleryView: View {
                     .padding(.bottom, 8)
                 }
 
-                if let toast = downloadToast {
-                    Text(toast)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Capsule().fill(.black.opacity(0.7)))
-                        .padding(.bottom, 88)
+                VStack(spacing: 8) {
+                    if let importToast {
+                        Text(importToast)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Capsule().fill(.black.opacity(0.7)))
+                    }
+                    if let toast = downloadToast {
+                        Text(toast)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Capsule().fill(.black.opacity(0.7)))
+                    }
                 }
+                .padding(.bottom, 88)
             }
             .navigationTitle("Bloggo Photo Gallery")
             .navigationBarTitleDisplayMode(.inline)
@@ -160,19 +173,25 @@ struct AppCaptureGalleryView: View {
                     .accessibilityLabel("Close")
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    if items.isEmpty {
-                        EmptyView()
-                    } else if isSelectMode {
-                        Button("Done") {
-                            isSelectMode = false
-                            selectedIds = []
+                    HStack(spacing: 16) {
+                        Button("Import") {
+                            showPhotoImportPicker = true
                         }
                         .foregroundColor(.white)
-                    } else {
-                        Button("Select") {
-                            isSelectMode = true
+                        if !items.isEmpty {
+                            if isSelectMode {
+                                Button("Done") {
+                                    isSelectMode = false
+                                    selectedIds = []
+                                }
+                                .foregroundColor(.white)
+                            } else {
+                                Button("Select") {
+                                    isSelectMode = true
+                                }
+                                .foregroundColor(.white)
+                            }
                         }
-                        .foregroundColor(.white)
                     }
                 }
             }
@@ -189,6 +208,12 @@ struct AppCaptureGalleryView: View {
         .presentationDragIndicator(.visible)
         .preferredColorScheme(.dark)
         .task { await loadItems() }
+        .sheet(isPresented: $showPhotoImportPicker) {
+            SinglePhotoLibraryPickerView { image, date, location in
+                showPhotoImportPicker = false
+                handleImportedPhoto(image: image, date: date, location: location)
+            }
+        }
         .fullScreenCover(item: $selectedItem) { item in
             AppCaptureDetailView(
                 items: $items,
@@ -305,11 +330,35 @@ struct AppCaptureGalleryView: View {
             Text("No captures yet")
                 .foregroundColor(.white.opacity(0.5))
                 .font(.subheadline)
-            Text("Photos taken with the in-app camera appear here.")
+            Text("Photos from the in-app camera or imported from your library appear here.")
                 .foregroundColor(.white.opacity(0.3))
                 .font(.caption)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
+            Button {
+                showPhotoImportPicker = true
+            } label: {
+                Text("Import from Photos")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(Capsule().fill(Color.white.opacity(0.15)))
+            }
+            .padding(.top, 8)
+        }
+    }
+
+    private func handleImportedPhoto(image: UIImage?, date: Date, location: CLLocation?) {
+        guard let image else { return }
+        do {
+            _ = try AppCapturePhotoService.shared.saveCapture(image: image, timestamp: date, location: location)
+            Task { await loadItems() }
+            importToast = "Photo saved in Bloggo"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { importToast = nil }
+        } catch {
+            importToast = "Couldn't import photo"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { importToast = nil }
         }
     }
 

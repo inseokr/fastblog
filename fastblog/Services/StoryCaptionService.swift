@@ -301,6 +301,14 @@ actor StoryCaptionService {
         await generator.translateText(userText: userText)
     }
 
+    /// Analyzes the sentiment of a caption or place story.
+    /// Returns 1 (bad), 2 (neutral), or 3 (good). Falls back to 2 when LLM is unavailable.
+    func analyzeSentiment(text: String) async -> Int {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return 2 }
+        return await LocalLLMStoryCaptionGenerator.shared.analyzeSentiment(text: trimmed)
+    }
+
     // MARK: - Narrative Generation (LLM-only, hidden when not capable)
 
     /// Generates a 4–6 line narrative for a place visit. Returns nil when the on-device LLM is unavailable.

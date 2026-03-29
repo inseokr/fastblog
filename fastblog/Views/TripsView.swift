@@ -90,7 +90,6 @@ struct TripsView: View {
     @State private var showTripsIntroSheet: Bool = false
     /// When true, shows the "no photos available" alert after a scan that returned zero trips.
     @State private var showNoPhotosAlert: Bool = false
-
     /// Per-identity flag for whether the Trips intro has been seen.
     private var tripsIntroSeenForCurrentIdentity: Bool {
         let key: String
@@ -2660,7 +2659,7 @@ struct CameraCaptureView: View {
                            !TripPhotoFilter.shouldIncludeInTrips(
                                assetLocation: location,
                                home: home,
-                               minMiles: NeighborhoodStore.localExclusionMiles
+                               minMiles: NeighborhoodStore.effectiveTripMinMilesFromHome
                            ) {
                             let suppressed = UserDefaults.standard.bool(forKey: Self.nearHomeAlertSuppressedKey)
                             if suppressed {

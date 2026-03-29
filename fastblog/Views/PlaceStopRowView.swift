@@ -7,6 +7,54 @@ import MapKit
 import SwiftUI
 import UIKit
 
+// MARK: - SentimentBadge
+
+/// A compact sentiment indicator showing 😊 / 😐 / 😞.
+/// In edit mode: tapping cycles through the three values.
+/// In read mode: non-interactive display only.
+/// Only shown when a sentiment has been meaningfully set (any value when place has caption text).
+struct SentimentBadge: View {
+    let sentiment: Int
+    var isEditMode: Bool = false
+    /// Called when user taps to change sentiment in edit mode. Receives the new value.
+    var onChanged: ((Int) -> Void)? = nil
+
+    private var icon: String {
+        switch sentiment {
+        case 1: return "hand.thumbsdown.fill"
+        case 3: return "hand.thumbsup.fill"
+        default: return "hand.raised.fill"
+        }
+    }
+
+    private var color: Color {
+        switch sentiment {
+        case 1: return Color(uiColor: .systemRed)
+        case 3: return Color(uiColor: .systemGreen)
+        default: return Color(uiColor: .systemOrange)
+        }
+    }
+
+    var body: some View {
+        Button {
+            guard isEditMode, let onChange = onChanged else { return }
+            // Cycle: 1 → 2 → 3 → 1
+            let next = sentiment >= 3 ? 1 : sentiment + 1
+            onChange(next)
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(color)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(color.opacity(0.12))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEditMode || onChanged == nil)
+    }
+}
+
 private struct OverallStoryTruncationKey: PreferenceKey {
     static var defaultValue = false
     static func reduce(value: inout Bool, nextValue: () -> Bool) {
@@ -59,6 +107,8 @@ struct PlaceStopRowView: View {
     var isGeneratingNarrative: Bool = false
     /// When set (and device is capable), shows a "Tell Story" button. Parent manages the async task.
     var onTellPlaceStory: (() -> Void)? = nil
+    /// Called when user taps the sentiment badge in edit mode. Receives the new sentiment value (1/2/3).
+    var onSentimentChanged: ((Int) -> Void)? = nil
 
     @FocusState private var focusedPlaceNote: Bool
     @FocusState private var focusedOverallStory: Bool
@@ -239,7 +289,9 @@ struct PlaceStopRowView: View {
                             .foregroundColor(.secondary)
                     }
                     let cat = categoryInfo(for: stop.placeCategory)
-                    if visitTimeText != nil || cat != nil {
+                    let hasCaptionText = !(overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        || stop.photos.contains(where: { !($0.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+                    if visitTimeText != nil || cat != nil || hasCaptionText {
                         HStack(spacing: 8) {
                             if let time = visitTimeText {
                                 Text(time)
@@ -267,6 +319,13 @@ struct PlaceStopRowView: View {
                                     }
                                     .foregroundColor(.secondary)
                                 }
+                            }
+                            if hasCaptionText {
+                                SentimentBadge(
+                                    sentiment: stop.sentiment,
+                                    isEditMode: isEditMode,
+                                    onChanged: onSentimentChanged
+                                )
                             }
                         }
                     }
@@ -462,7 +521,7 @@ struct PlaceStopRowView: View {
                             }
                         } label: {
                             Text(photoCaption(photo.id).wrappedValue)
-                                .font(.callout)
+                                .font(Font.custom("Georgia", size: 16))
                                 .lineSpacing(6)
                                 .foregroundColor(rowStoryReadColor)
                                 .lineLimit(isExpanded ? nil : 4)
@@ -783,10 +842,10 @@ struct PlaceStopRowView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
-                    .padding(.bottom, onTellPlaceStory != nil && LocalLLMStoryCaptionGenerator.isCapable ? 4 : 8)
+                    .padding(.bottom, onTellPlaceStory != nil && LocalLLMStoryCaptionGenerator.isCapable && isEditMode ? 12 : 8)
                 }
             }
-            if let tell = onTellPlaceStory, LocalLLMStoryCaptionGenerator.isCapable {
+            if let tell = onTellPlaceStory, LocalLLMStoryCaptionGenerator.isCapable, isEditMode {
                 HStack {
                     Spacer()
                     if isGeneratingNarrative {

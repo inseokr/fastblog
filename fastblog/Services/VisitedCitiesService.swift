@@ -152,7 +152,7 @@ final class VisitedCitiesService {
 
         // ── Phase 2: Home exclusion ──
         let home = NeighborhoodStore.getNeighborhoodCenter()
-        let minMiles = NeighborhoodStore.localExclusionMiles
+        let minMiles = NeighborhoodStore.effectiveTripMinMilesFromHome
         let filtered: [PHAsset]
         if let homeLocation = home {
             filtered = allAssets.filter {

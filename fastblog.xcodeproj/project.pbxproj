@@ -31,6 +31,7 @@
 		719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */; };
 		75A557C81671BBFA4382AAA5 /* PageFooterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3FBC69125D4B22AEC596A03 /* PageFooterView.swift */; };
 		7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000061 /* GoogleSignIn */; };
+		A1C4M3R12F9E1000010003 /* PhotosUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1C4M3R22F9E1000010003 /* PhotosUI.framework */; };
 		7D19D079975A2110DB757EE7 /* BlogPDFView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E304D9246790A5FC17716A85 /* BlogPDFView.swift */; };
 		7FBD2FEB65535E4150C1E521 /* TOCPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F6DDE63772EF1F878EC3686 /* TOCPageView.swift */; };
 		A31B7C85BABD6199A2A43BB7 /* PDFExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F5C55E3E5D4C283468EF581 /* PDFExportService.swift */; };
@@ -91,6 +92,7 @@
 		BB000168 /* TripDayPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000167 /* TripDayPickerView.swift */; };
 		BB00016A /* TripsMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000169 /* TripsMapView.swift */; };
 		BB00016C /* TripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00016B /* TripsView.swift */; };
+		BB000305 /* CameraRollPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000304 /* CameraRollPickerView.swift */; };
 		TS00B01 /* TripShareNearbyConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R01 /* TripShareNearbyConfig.swift */; };
 		TS00B02 /* TripSharePackage.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R02 /* TripSharePackage.swift */; };
 		TS00B03 /* TripNearbyShareSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R03 /* TripNearbyShareSessionController.swift */; };
@@ -303,6 +305,8 @@
 		BB000167 /* TripDayPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDayPickerView.swift; sourceTree = "<group>"; };
 		BB000169 /* TripsMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsMapView.swift; sourceTree = "<group>"; };
 		BB00016B /* TripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsView.swift; sourceTree = "<group>"; };
+		BB000304 /* CameraRollPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollPickerView.swift; sourceTree = "<group>"; };
+		A1C4M3R22F9E1000010003 /* PhotosUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PhotosUI.framework; path = System/Library/Frameworks/PhotosUI.framework; sourceTree = SDKROOT; };
 		TS00R01 /* TripShareNearbyConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripShareNearbyConfig.swift; sourceTree = "<group>"; };
 		TS00R02 /* TripSharePackage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripSharePackage.swift; sourceTree = "<group>"; };
 		TS00R03 /* TripNearbyShareSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareSessionController.swift; sourceTree = "<group>"; };
@@ -441,6 +445,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */,
+				A1C4M3R12F9E1000010003 /* PhotosUI.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -554,6 +559,7 @@
 				BB0003B4 /* WeatherEditSheet.swift */,
 				BB000203 /* BottomSheetView.swift */,
 				BB000123 /* ClusterRowView.swift */,
+				BB000304 /* CameraRollPickerView.swift */,
 				BB000125 /* CountryBlogsView.swift */,
 				BB00022F /* CountryManageBlogsSheet.swift */,
 				BB000241 /* MergeBlogsView.swift */,
@@ -898,6 +904,7 @@
 				BB000168 /* TripDayPickerView.swift in Sources */,
 				BB00016A /* TripsMapView.swift in Sources */,
 				BB00016C /* TripsView.swift in Sources */,
+				BB000305 /* CameraRollPickerView.swift in Sources */,
 				TS00B01 /* TripShareNearbyConfig.swift in Sources */,
 				TS00B02 /* TripSharePackage.swift in Sources */,
 				TS00B03 /* TripNearbyShareSessionController.swift in Sources */,

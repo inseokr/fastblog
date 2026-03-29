@@ -209,6 +209,7 @@ struct LandingView: View {
                 showProfile = true
             })
             .environmentObject(authService)
+            .environmentObject(photoAuth)
         }
         .alert(
             "New moments added to \"\(newMomentsAlertBlogTitle)\"",
@@ -585,6 +586,7 @@ struct CreatedRecapCard: View {
 private struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var authService: AuthService
+    @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
     @State private var showNeighborhoodFlow = false
     @State private var showAuth = false
     @State private var showDeleteAccountAlert = false
@@ -602,6 +604,8 @@ private struct SettingsView: View {
     @State private var cloudStorageUsage: APIManager.CloudStorageUsageItem?
     @State private var cloudStorageLoading = false
     @State private var cloudStorageError: String?
+
+    @State private var tripExclusionRadius = NeighborhoodStore.tripExclusionRadiusMiles
 
     private var travelStats: (countries: Int, cities: Int, places: Int) {
         let store = CreatedRecapBlogStore.shared
@@ -775,10 +779,36 @@ private struct SettingsView: View {
                             Spacer()
                         }
                     }
+
+                    if photoAuth.status != .limited {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Exclude photos closer than")
+                                Spacer()
+                                Text("\(Int(tripExclusionRadius)) miles")
+                                    .foregroundColor(.secondary)
+                            }
+                            Slider(
+                                value: Binding(
+                                    get: { tripExclusionRadius },
+                                    set: { newValue in
+                                        tripExclusionRadius = newValue
+                                        NeighborhoodStore.tripExclusionRadiusMiles = newValue
+                                    }
+                                ),
+                                in: 5...200,
+                                step: 1
+                            )
+                        }
+                    }
                 } header: {
                     Text("My home")
                 } footer: {
-                    Text("Used to exclude nearby photos from trip results. Change this to update which area counts as \"home.\"")
+                    if photoAuth.status == .limited {
+                        Text("Home sets where nearby photos are measured from. With limited photo access, trip scans use the default distance from home for your neighborhood.")
+                    } else {
+                        Text("Home sets where nearby photos are measured from. Only photos farther than this distance from home are used when finding trips.")
+                    }
                 }
 
                 /*
@@ -878,10 +908,14 @@ private struct SettingsView: View {
             .onAppear {
                 customProfileImageData = authService.profileImageData
                 loadCloudStorageIfNeeded()
+                tripExclusionRadius = NeighborhoodStore.tripExclusionRadiusMiles
             }
             .onChange(of: authService.currentUser?.id) { _, _ in
                 customProfileImageData = authService.profileImageData
                 loadCloudStorageIfNeeded()
+            }
+            .onChange(of: photoAuth.status) { _, _ in
+                tripExclusionRadius = NeighborhoodStore.tripExclusionRadiusMiles
             }
         }
     }

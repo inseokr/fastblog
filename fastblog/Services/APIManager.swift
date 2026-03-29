@@ -610,7 +610,8 @@ final class APIManager {
                     "status": "active",
                     "abstract": true,
                     "categories": categories,
-                    "photoList": photoList
+                    "photoList": photoList,
+                    "sentiment": stop.sentiment
                 ]
                 let placeStoryNote = stop.noteText.map { "\"\($0.prefix(40))\"" } ?? "nil"
                 let dayStoryNote = day.dayCaption.map { "\"\($0.prefix(40))\"" } ?? "nil"
@@ -724,6 +725,25 @@ final class APIManager {
             requiresAuth: true
         )
         print("✅ Place name updated: '\(placeName)' for key=\(visitedTimeDigitized)")
+    }
+
+    /// Updates the sentiment value for a place visit on the backend.
+    /// - Parameters:
+    ///   - placeKey: The `visitedTimeDigitized` key for the place.
+    ///   - sentiment: 1 = bad, 2 = neutral, 3 = good.
+    func updateSentiment(placeKey: String, sentiment: Int) async throws {
+        let payload: [String: Any] = [
+            "visitedTimeDigitized": placeKey,
+            "sentiment": sentiment
+        ]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let _: GenericResponse = try await request(
+            endpoint: "/placeVisitHistory/updateSentiment",
+            method: "POST",
+            body: body,
+            requiresAuth: true
+        )
+        print("✅ Sentiment updated: \(sentiment) for key=\(placeKey)")
     }
 
     func setBlogPrivacy(blogKey: Int, level: String = "public") async throws {
