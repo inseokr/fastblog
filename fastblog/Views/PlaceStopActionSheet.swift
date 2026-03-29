@@ -11,8 +11,19 @@ struct PlaceStopActionSheet: View {
     var onEditName: () -> Void
     var onManagePhotos: () -> Void
     var onEditMode: () -> Void
+    /// Non-nil when there is a next stop to merge into. Tapping merges the two stops immediately.
+    var onMergeWithNext: (() -> Void)?
+    /// Non-nil when the stop has more than one photo and can be split.
+    var onSplit: (() -> Void)?
     var onRemoveFromBlog: () -> Void
     @Environment(\.dismiss) private var dismiss
+
+    private var sheetHeight: CGFloat {
+        var base: CGFloat = 380
+        if onMergeWithNext != nil { base += 52 }
+        if onSplit != nil { base += 52 }
+        return base
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,7 +40,7 @@ struct PlaceStopActionSheet: View {
                     .font(.headline)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
-                
+
                 if let subtitle = placeSubtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.subheadline)
@@ -60,9 +71,34 @@ struct PlaceStopActionSheet: View {
             .background(Color(white: 0.15))
             .cornerRadius(12)
             .padding(.horizontal, 16)
-            .padding(.bottom, 24)
+            .padding(.bottom, onMergeWithNext != nil || onSplit != nil ? 12 : 24)
 
-            // Section 2: Destructive Action
+            // Section 2: Group Actions (merge / split) — shown only when applicable
+            if onMergeWithNext != nil || onSplit != nil {
+                VStack(spacing: 0) {
+                    if let merge = onMergeWithNext {
+                        actionRow(icon: "arrow.triangle.merge", title: "Merge with Next Place", action: {
+                            dismiss()
+                            merge()
+                        })
+                        if onSplit != nil {
+                            Divider().background(Color(white: 0.3))
+                        }
+                    }
+                    if let split = onSplit {
+                        actionRow(icon: "scissors", title: "Split Place Group", action: {
+                            dismiss()
+                            split()
+                        })
+                    }
+                }
+                .background(Color(white: 0.15))
+                .cornerRadius(12)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
+            }
+
+            // Section 3: Destructive Action
             VStack(spacing: 0) {
                 Button(action: {
                     dismiss()
@@ -90,7 +126,7 @@ struct PlaceStopActionSheet: View {
                 .fill(.ultraThinMaterial)
                 .environment(\.colorScheme, .dark)
         }
-        .presentationDetents([.height(380)])
+        .presentationDetents([.height(sheetHeight)])
         .preferredColorScheme(.dark)
         .onAppear {
             let impact = UIImpactFeedbackGenerator(style: .light)
@@ -127,6 +163,8 @@ struct PlaceStopActionSheet: View {
         onEditName: {},
         onManagePhotos: {},
         onEditMode: {},
+        onMergeWithNext: {},
+        onSplit: {},
         onRemoveFromBlog: {}
     )
 }

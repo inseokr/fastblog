@@ -53,6 +53,7 @@
 		BB000120 /* BlogPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00011F /* BlogPreviewView.swift */; };
 		BB000122 /* BlogSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000121 /* BlogSettingsSheet.swift */; };
 		BB0003B5 /* WeatherEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B4 /* WeatherEditSheet.swift */; };
+		BB0003C1 /* SplitPlaceStopView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003C0 /* SplitPlaceStopView.swift */; };
 		BB000124 /* ClusterRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000123 /* ClusterRowView.swift */; };
 		BB000126 /* CountryBlogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000125 /* CountryBlogsView.swift */; };
 		BB000128 /* CountryCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000127 /* CountryCardView.swift */; };
@@ -264,6 +265,7 @@
 		BB00011F /* BlogPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogPreviewView.swift; sourceTree = "<group>"; };
 		BB000121 /* BlogSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogSettingsSheet.swift; sourceTree = "<group>"; };
 		BB0003B4 /* WeatherEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherEditSheet.swift; sourceTree = "<group>"; };
+		BB0003C0 /* SplitPlaceStopView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitPlaceStopView.swift; sourceTree = "<group>"; };
 		BB000123 /* ClusterRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterRowView.swift; sourceTree = "<group>"; };
 		BB000125 /* CountryBlogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryBlogsView.swift; sourceTree = "<group>"; };
 		BB000127 /* CountryCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryCardView.swift; sourceTree = "<group>"; };
@@ -610,6 +612,7 @@
 				BB0001C3 /* UndoOverlayView.swift */,
 				BB00020D /* UnsavedTripCard.swift */,
 				BB000213 /* RemovedPlacesSheet.swift */,
+				BB0003C0 /* SplitPlaceStopView.swift */,
 				BB00020F /* UnsavedTripPhotosView.swift */,
 				BB0001FC /* Auth */,
 				BB0001B3 /* Onboarding */,
@@ -986,6 +989,7 @@
 				BB000210 /* UnsavedTripPhotosView.swift in Sources */,
 				BB000212 /* NeighborhoodExplainerView.swift in Sources */,
 				BB000214 /* RemovedPlacesSheet.swift in Sources */,
+				BB0003C1 /* SplitPlaceStopView.swift in Sources */,
 				BB000217 /* SecureShareToken.swift in Sources */,
 				BB00022C /* SplashStateManager.swift in Sources */,
 				BB000231 /* PhotoAccessRow.swift in Sources */,

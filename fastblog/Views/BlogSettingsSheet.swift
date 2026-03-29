@@ -253,7 +253,7 @@ struct BlogSettingsSheet: View {
 
     @ViewBuilder
     private var cloudSection: some View {
-        if hasCloudPhotos {
+        if blogKey != nil && hasCloudPhotos {
             Section {
                 Button(role: .destructive) {
                     showRemoveFromCloudConfirmation = true

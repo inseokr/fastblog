@@ -200,6 +200,7 @@ struct RecapBlogPageView: View {
     @State private var showNewMomentsReviewSheet = false
     @State private var isCheckingNewMoments = false
     @State private var hasCheckedNewMoments = false
+    @State private var hasCheckedFirstTimeTip = false
 
     // MARK: - Panorama
     @State private var showPanorama = false
@@ -229,14 +230,24 @@ struct RecapBlogPageView: View {
     @State private var unsavedSplitPromptIndex: Int?
     @State private var showSplitUndoBanner = false
 
+    // MARK: - Place Stop Merge / Split
+    private struct SplitPlaceStopItem: Identifiable {
+        let dayId: UUID
+        let stop: PlaceStop
+        var id: UUID { stop.id }
+    }
+    @State private var splitPlaceStopItem: SplitPlaceStopItem?
+
     private enum UndoAction {
         case deletePlace(dayId: UUID, stop: PlaceStop, index: Int)
         case deletePhoto(dayId: UUID, stopId: UUID, photo: RecapPhoto, index: Int)
+        case mergePlaceStops(dayId: UUID, originalFirst: PlaceStop, originalSecond: PlaceStop, firstIndex: Int)
 
         var text: String {
             switch self {
             case .deletePlace: return "Place hidden"
             case .deletePhoto: return "Photo removed"
+            case .mergePlaceStops: return "Places merged"
             }
         }
     }
@@ -694,7 +705,22 @@ struct RecapBlogPageView: View {
                         // Treat this as "Edit Caption" — open the full-screen place caption editor.
                         placeCaptionEditItem = PlaceCaptionEditItem(dayId: item.dayId, stopId: item.stop.id)
                     },
+                    onMergeWithNext: item.nextStopId.map { nextId in
+                        { mergePlaceStops(dayId: item.dayId, firstStopId: item.stop.id, secondStopId: nextId) }
+                    },
+                    onSplit: item.stop.photos.count > 1 ? {
+                        splitPlaceStopItem = SplitPlaceStopItem(dayId: item.dayId, stop: item.stop)
+                    } : nil,
                     onRemoveFromBlog: { removePlaceStop(dayId: item.dayId, stopId: item.stop.id) }
+                )
+            }
+            .sheet(item: $splitPlaceStopItem) { item in
+                SplitPlaceStopView(
+                    placeTitle: item.stop.placeTitle,
+                    photos: item.stop.photos.sorted { $0.timestamp < $1.timestamp },
+                    onSplit: { afterIndex in
+                        splitPlaceStop(dayId: item.dayId, stopId: item.stop.id, afterPhotoIndex: afterIndex)
+                    }
                 )
             }
             .sheet(item: $showEditNameForStop) { stop in
@@ -710,7 +736,11 @@ struct RecapBlogPageView: View {
             .navigationDestination(item: $showManagePhotosForStop) { pair in
                 ManagePhotosView(
                     placeTitle: placeStop(dayId: pair.dayId, stopId: pair.stopId)?.placeTitle ?? "Photos",
-                    photos: bindingForPhotos(dayId: pair.dayId, stopId: pair.stopId)
+                    photos: bindingForPhotos(dayId: pair.dayId, stopId: pair.stopId),
+                    onSplitRequested: {
+                        guard let stop = placeStop(dayId: pair.dayId, stopId: pair.stopId) else { return }
+                        splitPlaceStopItem = SplitPlaceStopItem(dayId: pair.dayId, stop: stop)
+                    }
                 )
             }
             .onChange(of: showManagePhotosForStop) { old, new in
@@ -1741,7 +1771,8 @@ struct RecapBlogPageView: View {
                         removePlaceStop(dayId: day.id, stopId: stop.id)
                     },
                     onKebab: {
-                        overflowStop = OverflowItem(dayId: day.id, stop: stop)
+                        let nextId = index + 1 < day.placeStops.count ? day.placeStops[index + 1].id : nil
+                        overflowStop = OverflowItem(dayId: day.id, stop: stop, nextStopId: nextId)
                     },
                     onManagePhotos: {
                         openManagePhotos(dayId: day.id, stopId: stop.id)
@@ -1796,10 +1827,10 @@ struct RecapBlogPageView: View {
                 )
                 .id(stop.id)
                 
-                if !isEditMode && index < day.placeStops.count - 1 {
+                if index < day.placeStops.count - 1 {
                     let nextStop = day.placeStops[index + 1]
-                    if let dist = distanceString(from: stop, to: nextStop) {
-                        HStack {
+                    HStack {
+                        if !isEditMode, let dist = distanceString(from: stop, to: nextStop) {
                             Image(systemName: "arrow.down")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
@@ -1807,11 +1838,26 @@ struct RecapBlogPageView: View {
                                 .font(.caption)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.secondary)
-                            Spacer()
                         }
-                        .padding(.leading, 16) // Aligned with the numbered circle badge
-                        .padding(.vertical, 4)
+                        Spacer()
+                        if isEditMode {
+                            Button {
+                                mergePlaceStops(dayId: day.id, firstStopId: stop.id, secondStopId: nextStop.id)
+                            } label: {
+                                Label("Merge groups", systemImage: "arrow.triangle.merge")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(Color.secondary.opacity(0.12))
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
+                    .padding(.leading, 16)
+                    .padding(.trailing, 16)
+                    .padding(.vertical, 4)
                 }
             }
         }
@@ -2021,6 +2067,7 @@ struct RecapBlogPageView: View {
     }
 
     private func loadDraftIfNeeded() {
+        guard !hasFinishedInitialLoad else { return }
         if let saved = createdRecapStore.getBlogDetail(blogId: blogId) {
             draft = saved
             hasFinishedInitialLoad = true
@@ -2561,9 +2608,87 @@ struct RecapBlogPageView: View {
         }
     }
 
+    private func mergePlaceStops(dayId: UUID, firstStopId: UUID, secondStopId: UUID) {
+        guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let firstIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == firstStopId }),
+              let secondIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == secondStopId }),
+              firstIdx < secondIdx else { return }
+
+        var day = draft.days[dayIdx]
+        let first = day.placeStops[firstIdx]
+        let second = day.placeStops[secondIdx]
+
+        withAnimation {
+            lastUndoAction = .mergePlaceStops(dayId: dayId, originalFirst: first, originalSecond: second, firstIndex: firstIdx)
+            showUndoOverlay = true
+            isUndoMinimized = false
+        }
+
+        var merged = first
+        merged.photos = (first.photos + second.photos).sorted { $0.timestamp < $1.timestamp }
+        if let firstTime = first.visitedTimeDigitized, let secondTime = second.visitedTimeDigitized {
+            merged.visitedTimeDigitized = min(firstTime, secondTime)
+        } else {
+            merged.visitedTimeDigitized = first.visitedTimeDigitized ?? second.visitedTimeDigitized
+        }
+
+        day.placeStops[firstIdx] = merged
+        day.placeStops.remove(at: secondIdx)
+        for i in day.placeStops.indices { day.placeStops[i].orderIndex = i }
+        draft.days[dayIdx] = day
+    }
+
+    private func splitPlaceStop(dayId: UUID, stopId: UUID, afterPhotoIndex: Int) {
+        guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+
+        var day = draft.days[dayIdx]
+        let original = day.placeStops[stopIdx]
+        guard afterPhotoIndex >= 0, afterPhotoIndex < original.photos.count - 1 else { return }
+
+        var firstHalf = original
+        firstHalf.photos = Array(original.photos[0...afterPhotoIndex])
+
+        // Ensure all second-half photos are included by default
+        var secondPhotos = Array(original.photos[(afterPhotoIndex + 1)...])
+        for i in secondPhotos.indices { secondPhotos[i].isIncluded = true }
+
+        // Derive visitedTimeDigitized for the second half using the same timezone offset
+        // as the original stop (EXIF local time minus UTC timestamp = location offset).
+        var secondVisitedTime: String? = nil
+        let exifFmt = DateFormatter()
+        exifFmt.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        exifFmt.timeZone = TimeZone(secondsFromGMT: 0)
+        if let originalDigitized = original.visitedTimeDigitized,
+           let originalFirstPhoto = original.photos.first,
+           let exifDate = exifFmt.date(from: originalDigitized),
+           let secondFirstPhoto = secondPhotos.first {
+            let locationOffsetSeconds = exifDate.timeIntervalSince(originalFirstPhoto.timestamp)
+            let localTime = secondFirstPhoto.timestamp.addingTimeInterval(locationOffsetSeconds)
+            secondVisitedTime = exifFmt.string(from: localTime)
+        }
+
+        let secondHalf = PlaceStop(
+            orderIndex: stopIdx + 1,
+            placeTitle: original.placeTitle,
+            placeSubtitle: original.placeSubtitle,
+            placeTitleIsManual: original.placeTitleIsManual,
+            representativeLocation: secondPhotos.first?.location,
+            photos: secondPhotos,
+            visitedTimeDigitized: secondVisitedTime
+        )
+
+        day.placeStops[stopIdx] = firstHalf
+        day.placeStops.insert(secondHalf, at: stopIdx + 1)
+        for i in day.placeStops.indices { day.placeStops[i].orderIndex = i }
+        draft.days[dayIdx] = day
+        splitPlaceStopItem = nil
+        showManagePhotosForStop = nil  // pop ManagePhotosView so user sees both new stops
+    }
+
     private func performUndo() {
         guard let action = lastUndoAction else { return }
-        
+
         withAnimation {
             switch action {
             case .deletePlace(let dayId, let stop, let index):
@@ -2576,7 +2701,7 @@ struct RecapBlogPageView: View {
                 }
                 // Remove from the soft-deleted list since user chose to undo (not just restore later)
                 draft.removedPlaceStops.removeAll { $0.stop.id == stop.id }
-                
+
             case .deletePhoto(let dayId, let stopId, let photo, _):
                 if let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
                    let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) {
@@ -2595,6 +2720,16 @@ struct RecapBlogPageView: View {
                             }
                         }
                     }
+                }
+
+            case .mergePlaceStops(let dayId, let originalFirst, let originalSecond, let firstIndex):
+                if let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }) {
+                    var day = draft.days[dayIdx]
+                    day.placeStops.remove(at: firstIndex)
+                    day.placeStops.insert(originalSecond, at: firstIndex)
+                    day.placeStops.insert(originalFirst, at: firstIndex)
+                    for i in day.placeStops.indices { day.placeStops[i].orderIndex = i }
+                    draft.days[dayIdx] = day
                 }
             }
 
@@ -3271,6 +3406,8 @@ struct RecapBlogPageView: View {
     }
 
     private func checkFirstTimeTip() {
+        guard !hasCheckedFirstTimeTip else { return }
+        hasCheckedFirstTimeTip = true
         // If the blog has been saved before, start in View Mode (unless forced into edit).
         if let existing = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }), existing.lastEditedAt != nil {
             isEditMode = forceEditMode
@@ -4282,6 +4419,7 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
 private struct OverflowItem: Identifiable {
     let dayId: UUID
     let stop: PlaceStop
+    let nextStopId: UUID?
     var id: UUID { stop.id }
 }
 

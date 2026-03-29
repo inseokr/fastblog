@@ -11,7 +11,10 @@ import SwiftUI
 struct ManagePhotosView: View {
     let placeTitle: String
     @Binding var photos: [RecapPhoto]
+    /// Called when user taps "Split Group" in the toolbar. Nil hides the button.
+    var onSplitRequested: (() -> Void)? = nil
 
+    @Environment(\.dismiss) private var dismiss
     @State private var isSelectMode = false
     @State private var fullScreenPhotoId: UUID? = nil
     @State private var cachedAiRanks: [UUID: Int] = [:]
@@ -54,9 +57,32 @@ struct ManagePhotosView: View {
             if fullScreenPhotoId == nil {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isSelectMode ? "Done" : "Select") {
-                        withAnimation(.easeInOut(duration: 0.2)) { isSelectMode.toggle() }
+                        if isSelectMode {
+                            withAnimation(.easeInOut(duration: 0.2)) { isSelectMode = false }
+                            dismiss()
+                        } else {
+                            withAnimation(.easeInOut(duration: 0.2)) { isSelectMode = true }
+                        }
                     }
                     .foregroundColor(.orange)
+                }
+                if !isSelectMode, let split = onSplitRequested, photos.count > 1 {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button(action: split) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "scissors")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text("Split")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                            .foregroundColor(.orange)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.orange.opacity(0.15))
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
         }
