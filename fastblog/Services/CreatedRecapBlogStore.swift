@@ -842,6 +842,13 @@ final class CreatedRecapBlogStore: ObservableObject {
         persistBlogDetails()
     }
 
+    /// Writes a cloud URL onto every stored photo row matching the asset id (e.g. after cover-only upload).
+    func applyCloudURLToLocalPhoto(blogId: UUID, localIdentifier: String, cloudURL: String) {
+        guard var detail = getBlogDetail(blogId: blogId) else { return }
+        detail.setCloudURL(cloudURL, forLocalAssetIdentifier: localIdentifier)
+        saveBlogDetail(detail)
+    }
+
     /// Updates the caption of a single photo across any stored blog detail that contains it.
     /// Called when the user edits a caption from the Places Visited photo modal.
     func updatePhotoCaption(photoId: UUID, newCaption: String) {

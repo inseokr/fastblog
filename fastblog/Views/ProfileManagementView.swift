@@ -16,6 +16,7 @@ struct ProfileManagementView: View {
     @State private var showAuth = false
     @State private var uploadingBlogId: UUID?
     @State private var uploadProgress: (current: Int, total: Int) = (0, 0)
+    @State private var uploadCaption: String? = nil
     @State private var showUploadError = false
     @State private var uploadErrorMessage = ""
     @State private var selectedCountryFilter: String? = nil
@@ -179,6 +180,7 @@ struct ProfileManagementView: View {
                                             isDraft: false,
                                             isUploading: uploadingBlogId == blog.sourceTripId,
                                             uploadProgress: uploadingBlogId == blog.sourceTripId ? uploadProgress : nil,
+                                            uploadCaption: uploadingBlogId == blog.sourceTripId ? uploadCaption : nil,
                                             onToggle: { uploadBlog(blog) }
                                         )
                                     }
@@ -375,12 +377,13 @@ struct ProfileManagementView: View {
         guard !photosToUpload.isEmpty else { return }
 
         uploadingBlogId = blog.sourceTripId
+        uploadCaption = nil
         uploadProgress = (0, photosToUpload.count)
 
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
 
-        Task {
+        Task { @MainActor in
             var failCount = 0
             for item in photosToUpload {
                 do {
@@ -394,18 +397,20 @@ struct ProfileManagementView: View {
             }
 
             createdRecapStore.saveBlogDetail(detail)
-            uploadingBlogId = nil
 
             if failCount == 0 {
                 let snapshot = detail
                 let sourceTripId = blog.sourceTripId
-                Task {
-                    if let blogKey = await APIManager.shared.publishBlog(detail: snapshot) {
-                        await MainActor.run {
-                            createdRecapStore.setBlogKey(blogId: sourceTripId, blogKey: blogKey)
-                        }
-                    }
+                uploadCaption = "Publishing to the cloud…"
+                let blogKey = await APIManager.shared.publishBlog(detail: snapshot)
+                uploadCaption = nil
+                uploadingBlogId = nil
+                if let blogKey = blogKey {
+                    createdRecapStore.setBlogKey(blogId: sourceTripId, blogKey: blogKey)
                 }
+            } else {
+                uploadingBlogId = nil
+                uploadCaption = nil
             }
 
             if failCount > 0 {
@@ -422,6 +427,8 @@ struct ProfileManagementRow: View {
     var isDraft: Bool = false
     var isUploading: Bool = false
     var uploadProgress: (current: Int, total: Int)?
+    /// Shown while uploading when set (e.g. publish phase); otherwise uses numeric progress.
+    var uploadCaption: String? = nil
     let onToggle: () -> Void
 
     var body: some View {
@@ -453,10 +460,16 @@ struct ProfileManagementRow: View {
                     .foregroundColor(.primary)
                     .lineLimit(1)
 
-                if isUploading, let progress = uploadProgress {
-                    Text("Uploading \(progress.current)/\(progress.total)\u{2026}")
-                        .font(.caption)
-                        .foregroundColor(.blue)
+                if isUploading {
+                    if let caption = uploadCaption, !caption.isEmpty {
+                        Text(caption)
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                    } else if let progress = uploadProgress {
+                        Text("Uploading \(progress.current)/\(progress.total)\u{2026}")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                    }
                 } else if isDraft {
                     Text("Open blog and save to enable upload")
                         .font(.caption)

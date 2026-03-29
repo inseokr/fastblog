@@ -7,6 +7,11 @@ import SwiftUI
 
 struct UploadingBlogView: View {
     @Binding var uploadProgress: (current: Int, total: Int)
+    /// Main headline under the animation.
+    var title: String = "Uploading Your Blog!"
+    /// When set, shown instead of “n of m photos” (e.g. publishing or cover upload).
+    var progressDetail: String? = nil
+    var allowsCancel: Bool = true
     var onCancel: () -> Void
 
     @State private var ringRotation: Double = 0
@@ -35,18 +40,20 @@ struct UploadingBlogView: View {
                 messageSection
             }
             
-            VStack {
-                Spacer()
-                Button(action: onCancel) {
-                    Text("Cancel")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding(.vertical, 14)
-                        .padding(.horizontal, 40)
-                        .background(Color.red.opacity(0.4))
-                        .clipShape(Capsule())
+            if allowsCancel {
+                VStack {
+                    Spacer()
+                    Button(action: onCancel) {
+                        Text("Cancel")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .padding(.vertical, 14)
+                            .padding(.horizontal, 40)
+                            .background(Color.red.opacity(0.4))
+                            .clipShape(Capsule())
+                    }
+                    .padding(.bottom, 50)
                 }
-                .padding(.bottom, 50)
             }
         }
         .preferredColorScheme(.dark)
@@ -110,7 +117,7 @@ struct UploadingBlogView: View {
 
     private var messageSection: some View {
         VStack(spacing: 12) {
-            Text("Uploading Your Blog!")
+            Text(title)
                 .font(.title2)
                 .fontWeight(.bold)
                 .foregroundColor(.primary)
@@ -121,10 +128,11 @@ struct UploadingBlogView: View {
                 .foregroundColor(.secondary)
                 .animation(.easeInOut(duration: 0.3), value: stepLabelIndex)
 
-            Text("\(uploadProgress.current) of \(uploadProgress.total) photos")
+            Text(progressLine)
                 .font(.headline)
                 .fontWeight(.semibold)
                 .foregroundColor(.blue)
+                .multilineTextAlignment(.center)
                 .contentTransition(.numericText())
                 .animation(.easeInOut(duration: 0.3), value: uploadProgress.current)
 
@@ -134,6 +142,12 @@ struct UploadingBlogView: View {
                 .padding(.top, 4)
         }
         .padding(.horizontal, 24)
+    }
+
+    private var progressLine: String {
+        if let progressDetail { return progressDetail }
+        guard uploadProgress.total > 0 else { return "0 of 0 photos" }
+        return "\(uploadProgress.current) of \(uploadProgress.total) photos"
     }
 
     private func startAnimations() {
@@ -165,4 +179,14 @@ struct UploadingBlogView: View {
 
 #Preview {
     UploadingBlogView(uploadProgress: .constant((3, 12)), onCancel: {})
+}
+
+#Preview("Publishing") {
+    UploadingBlogView(
+        uploadProgress: .constant((1, 1)),
+        title: "Syncing your blog",
+        progressDetail: "Publishing to the cloud…",
+        allowsCancel: false,
+        onCancel: {}
+    )
 }

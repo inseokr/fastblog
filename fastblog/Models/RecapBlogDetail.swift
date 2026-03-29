@@ -57,6 +57,21 @@ struct RecapBlogDetail: Identifiable, Equatable, Codable, Sendable {
     var hasCloudPhotos: Bool {
         days.flatMap(\.placeStops).flatMap(\.photos).contains { $0.cloudURL != nil }
     }
+
+    /// Sets `cloudURL` on every photo whose Photos `localIdentifier` matches (after trim). Used when an asset was uploaded out-of-band (e.g. blog cover) so publish/sync sees the same URI as the server.
+    mutating func setCloudURL(_ url: String, forLocalAssetIdentifier localId: String) {
+        let tid = localId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !tid.isEmpty else { return }
+        for d in days.indices {
+            for s in days[d].placeStops.indices {
+                for p in days[d].placeStops[s].photos.indices {
+                    let lid = days[d].placeStops[s].photos[p].localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    guard lid == tid else { continue }
+                    days[d].placeStops[s].photos[p].cloudURL = url
+                }
+            }
+        }
+    }
 }
 
 struct RecapBlogDay: Identifiable, Equatable, Codable, Sendable {
@@ -313,8 +328,12 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
     /// Sentiment extracted from this photo's caption by the local LLM. 1=bad, 2=neutral (default), 3=good.
     /// Only meaningful when `caption` is non-nil and non-empty.
     var sentiment: Int
+    /// EXIF-style digitized time string ("yyyy:MM:dd HH:mm:ss") computed at publish/upload time using the
+    /// photo's capture-location timezone. Stored so that subsequent updatePhoto calls send the exact same
+    /// value the backend recorded — avoids divergence from re-computing with a different TZ fallback.
+    var digitizedTime: String?
 
-    init(id: UUID = UUID(), timestamp: Date, location: PhotoCoordinate? = nil, imageName: String, isIncluded: Bool = true, localIdentifier: String? = nil, caption: String? = nil, qualityScore: PhotoScore? = nil, cloudURL: String? = nil, captionIsManual: Bool = false, sentiment: Int = 2) {
+    init(id: UUID = UUID(), timestamp: Date, location: PhotoCoordinate? = nil, imageName: String, isIncluded: Bool = true, localIdentifier: String? = nil, caption: String? = nil, qualityScore: PhotoScore? = nil, cloudURL: String? = nil, captionIsManual: Bool = false, sentiment: Int = 2, digitizedTime: String? = nil) {
         self.id = id
         self.timestamp = timestamp
         self.location = location
@@ -326,6 +345,7 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
         self.cloudURL = cloudURL
         self.captionIsManual = captionIsManual
         self.sentiment = sentiment
+        self.digitizedTime = digitizedTime
     }
 
     init(from decoder: Decoder) throws {
@@ -341,10 +361,11 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
         cloudURL = try c.decodeIfPresent(String.self, forKey: .cloudURL)
         captionIsManual = try c.decodeIfPresent(Bool.self, forKey: .captionIsManual) ?? false
         sentiment = try c.decodeIfPresent(Int.self, forKey: .sentiment) ?? 2
+        digitizedTime = try c.decodeIfPresent(String.self, forKey: .digitizedTime)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, timestamp, location, imageName, isIncluded, localIdentifier
-        case caption, qualityScore, cloudURL, captionIsManual, sentiment
+        case caption, qualityScore, cloudURL, captionIsManual, sentiment, digitizedTime
     }
 }

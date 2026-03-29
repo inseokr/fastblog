@@ -566,6 +566,8 @@ final class APIManager {
                 var photoList: [[String: Any]] = []
                 var earliestCreationTimeMs: Int64 = 0
                 var earliestDigitizedTime: String?
+                // localIdentifier → digitizedTime for every photo in this stop (written back to RecapPhoto after publish)
+                var photoDigitizedTimes: [String: String] = [:]
                 for photo in includedPhotos {
                     guard let uri = photo.cloudURL else { continue }
                     let asset = photo.localIdentifier.flatMap { assetMap[$0] }
@@ -573,6 +575,9 @@ final class APIManager {
                     let creationTimeMs = Int64(creationDate.timeIntervalSince1970 * 1000)
                     let tz = photo.localIdentifier.flatMap { assetTimeZoneMap[$0] }
                     let digitizedTime = Self.digitizedTimeString(from: creationDate, timeZone: tz ?? utc)
+                    if let lid = photo.localIdentifier {
+                        photoDigitizedTimes[lid] = digitizedTime
+                    }
                     if earliestCreationTimeMs == 0 || creationTimeMs < earliestCreationTimeMs {
                         earliestCreationTimeMs = creationTimeMs
                         earliestDigitizedTime = digitizedTime
@@ -623,7 +628,8 @@ final class APIManager {
                 placeStopMapping.append(PlaceStopBuildInfo(
                     dayIdx: dayIdx,
                     stopIdx: stopIdx,
-                    visitedTimeDigitized: placeVisitedTimeDigitized
+                    visitedTimeDigitized: placeVisitedTimeDigitized,
+                    photoDigitizedTimes: photoDigitizedTimes
                 ))
                 placeList.append(place)
             }
@@ -701,11 +707,13 @@ final class APIManager {
         let _: GenericResponse = try await post(endpoint: "/trips/update-cover-photo", body: Payload(blogKey: blogKey, photoUri: photoUri))
     }
 
-    /// Uploads a photo asset and sets it as the blog's cover photo.
-    func uploadAndUpdateCoverPhoto(blogKey: Int, assetIdentifier: String) async throws {
+    /// Uploads a photo asset and sets it as the blog's cover photo. Returns the permanent cloud URL (also applied to matching draft photos by callers when needed).
+    @discardableResult
+    func uploadAndUpdateCoverPhoto(blogKey: Int, assetIdentifier: String) async throws -> String {
         let cloudURL = try await uploadPhoto(assetIdentifier: assetIdentifier)
         try await updateCoverPhoto(blogKey: blogKey, photoUri: cloudURL)
         print("✅ Cover photo updated for blogKey=\(blogKey)")
+        return cloudURL
     }
 
     /// Updates the place name (and optionally category) on the backend for DB sync.
@@ -816,22 +824,39 @@ final class APIManager {
     ///   - placeKey: The `visitedTimeDigitized` of the containing place in placeVisitHistory.
     ///   - photo: The photo to add or delete (must have a cloudURL).
     ///   - operation: `"add"` to re-include, `"delete"` to exclude.
-    func updatePhoto(placeKey: String, photo: RecapPhoto, operation: String) async throws {
+    /// - Returns: The `digitizedTime` string used in the request (store on `RecapPhoto.digitizedTime`
+    ///   when adding a new photo so subsequent delete/re-add calls send the same value).
+    @discardableResult
+    func updatePhoto(placeKey: String, photo: RecapPhoto, operation: String, digitizedTimeZoneFallback: TimeZone? = nil) async throws -> String {
         guard let cloudURL = photo.cloudURL else {
-            print("⚠️ updatePhoto: photo has no cloudURL — skipping")
-            return
+            print("⚠️ [updatePhoto] photo has no cloudURL — skipping (op=\(operation) placeKey=\(placeKey))")
+            return ""
         }
 
-        // Recompute digitizedTime the same way createBlogWithPlaces does so the
-        // backend can locate the correct entry in the place's photoList.
+        // Use the digitizedTime stored on the photo at publish/upload time so the backend can match
+        // the exact entry it recorded. Only re-compute if it was never stored (legacy data).
+        let utc = TimeZone(identifier: "UTC")!
         let digitizedTime: String
-        if let assetId = photo.localIdentifier,
-           let asset = PHAsset.fetchAssets(withLocalIdentifiers: [assetId], options: nil).firstObject {
-            let tz = await Self.getLocalTimeZone(for: asset)
-            let creationDate = asset.creationDate ?? photo.timestamp
-            digitizedTime = Self.digitizedTimeString(from: creationDate, timeZone: tz ?? TimeZone(identifier: "UTC")!)
+        if let stored = photo.digitizedTime {
+            digitizedTime = stored
+            print("🔍 [updatePhoto] using stored digitizedTime=\(digitizedTime)")
         } else {
-            digitizedTime = Self.digitizedTimeString(from: photo.timestamp, timeZone: TimeZone(identifier: "UTC")!)
+            // Legacy path: photo was published before digitizedTime field was introduced.
+            // Re-compute using EXIF timezone only (same as createBlogWithPlaces — no geocoding fallback)
+            // to minimise divergence.
+            var tzSource = "utc"
+            if let assetId = photo.localIdentifier,
+               let asset = PHAsset.fetchAssets(withLocalIdentifiers: [assetId], options: nil).firstObject {
+                let tzFromAsset = await Self.getLocalTimeZone(for: asset)
+                let tz = tzFromAsset ?? digitizedTimeZoneFallback ?? utc
+                tzSource = tzFromAsset != nil ? "EXIF" : (digitizedTimeZoneFallback != nil ? "fallbackArg" : "utc")
+                let creationDate = asset.creationDate ?? photo.timestamp
+                digitizedTime = Self.digitizedTimeString(from: creationDate, timeZone: tz)
+                print("🔍 [updatePhoto] legacy re-compute localId=\(assetId.prefix(20)) digitizedTime=\(digitizedTime) tzSource=\(tzSource)")
+            } else {
+                digitizedTime = Self.digitizedTimeString(from: photo.timestamp, timeZone: digitizedTimeZoneFallback ?? utc)
+                print("🔍 [updatePhoto] legacy re-compute (no PHAsset) digitizedTime=\(digitizedTime) tzSource=\(tzSource)")
+            }
         }
 
         var photoDict: [String: Any] = [
@@ -849,6 +874,13 @@ final class APIManager {
             "photo": photoDict,
             "operation": operation
         ]
+
+        print("📤 [updatePhoto] op=\(operation) placeKey=\(placeKey) digitizedTime=\(digitizedTime) uri=\(cloudURL)")
+        if let prettyJSON = try? JSONSerialization.data(withJSONObject: payload, options: .prettyPrinted),
+           let prettyStr = String(data: prettyJSON, encoding: .utf8) {
+            print("📤 [updatePhoto] payload:\n\(prettyStr)")
+        }
+
         let body = try JSONSerialization.data(withJSONObject: payload)
         let _: GenericResponse = try await request(
             endpoint: "/placeVisitHistory/updatePhoto",
@@ -856,7 +888,8 @@ final class APIManager {
             body: body,
             requiresAuth: true
         )
-        print("✅ updatePhoto: \(operation) — placeKey=\(placeKey), digitizedTime=\(digitizedTime)")
+        print("✅ [updatePhoto] SUCCESS op=\(operation) placeKey=\(placeKey) digitizedTime=\(digitizedTime)")
+        return digitizedTime
     }
 
     // MARK: - Admin Analytics
@@ -949,14 +982,57 @@ final class APIManager {
         print("🔍 publishBlog — resolved username: \(username)")
         print("🔍 publishBlog — blog title: \(detail.title), days: \(detail.days.count), country: \(detail.countryName ?? "nil")")
 
-        let allPhotos = detail.days.flatMap(\.placeStops).flatMap { $0.photos.filter(\.isIncluded) }
-        let withCloudURL = allPhotos.filter { $0.cloudURL != nil }
-        print("🔍 publishBlog — photos: \(allPhotos.count) included, \(withCloudURL.count) have cloudURL")
+        let initialIncluded = detail.days.flatMap(\.placeStops).flatMap { $0.photos.filter(\.isIncluded) }
+        let initialWithURL = initialIncluded.filter { $0.cloudURL != nil }
+        print("🔍 publishBlog — photos: \(initialIncluded.count) included, \(initialWithURL.count) have cloudURL (before upload pass)")
 
         do {
+            // Upload any included photo that still lacks a cloud URI. createBlogWithPlaces omits photos without `uri`, which caused missing places/photos after publish.
+            var workingDetail = detail
+            var uploadedMissing = false
+            for dIdx in workingDetail.days.indices {
+                for sIdx in workingDetail.days[dIdx].placeStops.indices {
+                    for pIdx in workingDetail.days[dIdx].placeStops[sIdx].photos.indices {
+                        guard workingDetail.days[dIdx].placeStops[sIdx].photos[pIdx].isIncluded else { continue }
+                        guard workingDetail.days[dIdx].placeStops[sIdx].photos[pIdx].cloudURL == nil else { continue }
+                        let rawId = workingDetail.days[dIdx].placeStops[sIdx].photos[pIdx].localIdentifier?
+                            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        guard !rawId.isEmpty else { continue }
+                        let cloudURL = try await uploadPhoto(assetIdentifier: rawId)
+                        workingDetail.days[dIdx].placeStops[sIdx].photos[pIdx].cloudURL = cloudURL
+                        uploadedMissing = true
+                    }
+                }
+            }
+            if uploadedMissing {
+                CreatedRecapBlogStore.shared.saveBlogDetail(workingDetail)
+            }
+
+            let allIncluded = workingDetail.days.flatMap(\.placeStops).flatMap { $0.photos.filter(\.isIncluded) }
+            print("🔍 publishBlog — after upload pass: \(allIncluded.count) included, \(allIncluded.filter { $0.cloudURL != nil }.count) have cloudURL")
+
             print("🔍 Step 1/3: Calling createBlogWithPlaces...")
-            let (response, placeStopMapping) = try await createBlogWithPlaces(username: username, detail: detail)
+            let (response, placeStopMapping) = try await createBlogWithPlaces(username: username, detail: workingDetail)
             print("✅ Blog created with blogKey: \(response.blogKey), placeIndices: \(response.placeIndices ?? [])")
+
+            // Write the per-photo digitizedTime computed during publish back into workingDetail so that
+            // future updatePhoto calls reuse the exact same value the backend recorded.
+            var digitizedTimesWritten = 0
+            for info in placeStopMapping {
+                guard info.dayIdx < workingDetail.days.count,
+                      info.stopIdx < workingDetail.days[info.dayIdx].placeStops.count else { continue }
+                for pIdx in workingDetail.days[info.dayIdx].placeStops[info.stopIdx].photos.indices {
+                    let photo = workingDetail.days[info.dayIdx].placeStops[info.stopIdx].photos[pIdx]
+                    if let lid = photo.localIdentifier, let dt = info.photoDigitizedTimes[lid] {
+                        workingDetail.days[info.dayIdx].placeStops[info.stopIdx].photos[pIdx].digitizedTime = dt
+                        digitizedTimesWritten += 1
+                    }
+                }
+            }
+            if digitizedTimesWritten > 0 {
+                print("📸 [publishBlog] stored digitizedTime on \(digitizedTimesWritten) photo(s)")
+                CreatedRecapBlogStore.shared.saveBlogDetail(workingDetail)
+            }
 
             // Build the per-stop cloud key mapping and persist it to local storage.
             // Prefer placeMemories (has visitedTimeDigitized for robust matching) over positional placeIndices.
@@ -971,24 +1047,41 @@ final class APIManager {
                         placeMapping.append((dayIdx: loc.dayIdx, stopIdx: loc.stopIdx, placeIndex: memory.placeIndex, visitedTimeDigitized: memory.visitedTimeDigitized))
                     }
                 }
-                CreatedRecapBlogStore.shared.applyCloudKeys(blogId: detail.id, blogKey: response.blogKey, detail: detail, placeMapping: placeMapping)
+                CreatedRecapBlogStore.shared.applyCloudKeys(blogId: workingDetail.id, blogKey: response.blogKey, detail: workingDetail, placeMapping: placeMapping)
             } else if let indices = response.placeIndices, !indices.isEmpty {
                 // Fall back to positional matching (zip truncates if server skipped some as duplicates)
                 let placeMapping: [(dayIdx: Int, stopIdx: Int, placeIndex: Int, visitedTimeDigitized: String)] =
                     zip(placeStopMapping, indices).map { info, idx in
                         (dayIdx: info.dayIdx, stopIdx: info.stopIdx, placeIndex: idx, visitedTimeDigitized: info.visitedTimeDigitized)
                     }
-                CreatedRecapBlogStore.shared.applyCloudKeys(blogId: detail.id, blogKey: response.blogKey, detail: detail, placeMapping: placeMapping)
+                CreatedRecapBlogStore.shared.applyCloudKeys(blogId: workingDetail.id, blogKey: response.blogKey, detail: workingDetail, placeMapping: placeMapping)
             } else {
                 // No place-level info — at least store the blogKey
-                CreatedRecapBlogStore.shared.setBlogKey(blogId: detail.id, blogKey: response.blogKey)
+                CreatedRecapBlogStore.shared.setBlogKey(blogId: workingDetail.id, blogKey: response.blogKey)
             }
 
-            // TODO: Cover photo upload — endpoint not yet available on server
-            // if let coverAssetId = detail.selectedCoverPhotoIdentifier {
-            //     try await uploadCoverPhoto(blogKey: response.blogKey, assetIdentifier: coverAssetId)
-            // }
-            print("🔍 Step 2/3: Cover photo — skipped (endpoint not ready)")
+            print("🔍 Step 2/3: Cover photo…")
+            if let rawCoverId = workingDetail.selectedCoverPhotoIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !rawCoverId.isEmpty {
+                let coverMatch = allIncluded.first {
+                    ($0.localIdentifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines) == rawCoverId
+                }
+                if let existingURL = coverMatch?.cloudURL {
+                    try await updateCoverPhoto(blogKey: response.blogKey, photoUri: existingURL)
+                    print("✅ Cover photo set (existing uploaded URI)")
+                } else {
+                    let cloudURL = try await uploadPhoto(assetIdentifier: rawCoverId)
+                    try await updateCoverPhoto(blogKey: response.blogKey, photoUri: cloudURL)
+                    CreatedRecapBlogStore.shared.applyCloudURLToLocalPhoto(
+                        blogId: workingDetail.id,
+                        localIdentifier: rawCoverId,
+                        cloudURL: cloudURL
+                    )
+                    print("✅ Cover photo uploaded and set on blog; draft cloudURL updated")
+                }
+            } else {
+                print("   (no cover selected)")
+            }
 
             print("🔍 Step 3/3: Setting privacy to public...")
             try await setBlogPrivacy(blogKey: response.blogKey)
@@ -1107,6 +1200,10 @@ private struct PlaceStopBuildInfo {
     let dayIdx: Int
     let stopIdx: Int
     let visitedTimeDigitized: String
+    /// localIdentifier → digitizedTime for each photo in this stop, as computed during publish.
+    /// Used to write the exact digitizedTime back into RecapPhoto so future updatePhoto calls
+    /// send the same value the backend recorded.
+    let photoDigitizedTimes: [String: String]
 }
 
 private struct GenericResponse: Decodable {

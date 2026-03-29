@@ -11,8 +11,10 @@ import SwiftUI
 struct ManagePhotosView: View {
     let placeTitle: String
     @Binding var photos: [RecapPhoto]
-    /// Called when user taps "Split Group" in the toolbar. Nil hides the button.
+    /// Called from the trailing "…" menu when user chooses Split. Nil hides that item.
     var onSplitRequested: (() -> Void)? = nil
+    /// Called from the trailing "…" menu when user chooses Add from Library. Nil hides that item.
+    var onAddFromLibrary: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var isSelectMode = false
@@ -32,6 +34,13 @@ struct ManagePhotosView: View {
     ]
 
     private var includedCount: Int { photos.filter(\.isIncluded).count }
+
+    /// Split and add-from-library live in the trailing "…" menu; hide it when neither action exists.
+    private var managePhotosOverflowMenuVisible: Bool {
+        let canSplit = onSplitRequested != nil && photos.count > 1
+        let canAddFromLibrary = onAddFromLibrary != nil
+        return canSplit || canAddFromLibrary
+    }
 
     var body: some View {
         ZStack {
@@ -55,7 +64,26 @@ struct ManagePhotosView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if fullScreenPhotoId == nil {
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    if !isSelectMode, managePhotosOverflowMenuVisible {
+                        Menu {
+                            if let split = onSplitRequested, photos.count > 1 {
+                                Button(action: split) {
+                                    Label("Split", systemImage: "scissors")
+                                }
+                            }
+                            if onAddFromLibrary != nil {
+                                Button(action: { onAddFromLibrary?() }) {
+                                    Label("Add from Library", systemImage: "photo.badge.plus")
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.system(size: 17, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .accessibilityLabel("More")
+                    }
                     Button(isSelectMode ? "Done" : "Select") {
                         if isSelectMode {
                             withAnimation(.easeInOut(duration: 0.2)) { isSelectMode = false }
@@ -64,29 +92,12 @@ struct ManagePhotosView: View {
                             withAnimation(.easeInOut(duration: 0.2)) { isSelectMode = true }
                         }
                     }
-                    .foregroundColor(.orange)
-                }
-                if !isSelectMode, let split = onSplitRequested, photos.count > 1 {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button(action: split) {
-                            HStack(spacing: 5) {
-                                Image(systemName: "scissors")
-                                    .font(.system(size: 13, weight: .semibold))
-                                Text("Split")
-                                    .font(.subheadline.weight(.semibold))
-                            }
-                            .foregroundColor(.orange)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Color.orange.opacity(0.15))
-                            .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                    }
+                    .foregroundColor(.white)
                 }
             }
         }
         .preferredColorScheme(.dark)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .onAppear {
             let sorted = photos.sorted { ($0.qualityScore?.totalScore ?? 0) > ($1.qualityScore?.totalScore ?? 0) }
             if sorted.map(\.id) != photos.map(\.id) { photos = sorted }

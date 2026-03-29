@@ -106,6 +106,8 @@ struct RecapBlogPageView: View {
     @State private var tripNarrativeExpanded = false
     /// Snapshot taken when ManagePhotosView opens, used to diff on dismiss for targeted cloud sync.
     @State private var managePhotosEditInfo: ManagePhotosEditInfo?
+    /// Presents the system photo picker while managing a place's photo group.
+    @State private var showLibraryImportForManageStop = false
     @State private var isEditMode = true
     @State private var showBlogSettings = false
     @State private var showShareSheet = false
@@ -146,6 +148,9 @@ struct RecapBlogPageView: View {
     @State private var uploadTask: Task<Void, Never>?
     @State private var uploadProgress: (current: Int, total: Int) = (0, 0)
     @State private var showUploadingFullScreen = false
+    @State private var uploadingViewTitle = "Uploading Your Blog!"
+    @State private var uploadingViewProgressDetail: String? = nil
+    @State private var uploadingViewAllowsCancel = true
     @State private var showUploadSuccessBanner = false
     @State private var showUploadErrorAlert = false
     @State private var uploadErrorMessage = ""
@@ -476,7 +481,13 @@ struct RecapBlogPageView: View {
             .overlay(alignment: .top) { uploadSuccessBannerOverlay }
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showUploadSuccessBanner)
             .fullScreenCover(isPresented: $showUploadingFullScreen) {
-                UploadingBlogView(uploadProgress: $uploadProgress, onCancel: cancelUpload)
+                UploadingBlogView(
+                    uploadProgress: $uploadProgress,
+                    title: uploadingViewTitle,
+                    progressDetail: uploadingViewProgressDetail,
+                    allowsCancel: uploadingViewAllowsCancel,
+                    onCancel: cancelUpload
+                )
             }
             .alert("Upload Failed", isPresented: $showUploadErrorAlert) {
                 if uploadErrorMessage == "Cloud storage limit reached.\nRemove a published blog to continue." {
@@ -668,7 +679,18 @@ struct RecapBlogPageView: View {
                         createdRecapStore.saveBlogDetail(draft)
                         syncWithCloudIfNeeded()
                     },
-                    canShareNearby: blogHasBeenSaved
+                    canShareNearby: blogHasBeenSaved,
+                    onCoverCloudUploadStateChanged: { starting in
+                        if starting {
+                            beginAuxiliaryCloudUploadOverlay(
+                                title: "Updating cover",
+                                progressDetail: "Uploading cover photo…",
+                                progress: (0, 1)
+                            )
+                        } else {
+                            endAuxiliaryCloudUploadOverlay()
+                        }
+                    }
                 )
                 .environmentObject(nearbyShare)
             }
@@ -685,7 +707,25 @@ struct RecapBlogPageView: View {
                 if let blogKey = currentBlogKey,
                    let newId = draft.selectedCoverPhotoIdentifier,
                    newId != coverPhotoIdentifierBeforeEdit {
-                    Task { try? await APIManager.shared.uploadAndUpdateCoverPhoto(blogKey: blogKey, assetIdentifier: newId) }
+                    Task { @MainActor in
+                        beginAuxiliaryCloudUploadOverlay(
+                            title: "Updating cover",
+                            progressDetail: "Uploading cover photo…",
+                            progress: (0, 1)
+                        )
+                        defer { endAuxiliaryCloudUploadOverlay() }
+                        do {
+                            let url = try await APIManager.shared.uploadAndUpdateCoverPhoto(
+                                blogKey: blogKey,
+                                assetIdentifier: newId
+                            )
+                            uploadProgress.current = 1
+                            draft.setCloudURL(url, forLocalAssetIdentifier: newId)
+                            createdRecapStore.saveBlogDetail(draft)
+                        } catch {
+                            print("🚨 Cover photo cloud update failed: \(error)")
+                        }
+                    }
                 }
                 coverPhotoIdentifierBeforeEdit = nil
             }) {
@@ -742,13 +782,23 @@ struct RecapBlogPageView: View {
                     onSplitRequested: {
                         guard let stop = placeStop(dayId: pair.dayId, stopId: pair.stopId) else { return }
                         splitPlaceStopItem = SplitPlaceStopItem(dayId: pair.dayId, stop: stop)
-                    }
+                    },
+                    onAddFromLibrary: { showLibraryImportForManageStop = true }
                 )
+            }
+            .sheet(isPresented: $showLibraryImportForManageStop) {
+                CameraRollPickerView { identifiers in
+                    showLibraryImportForManageStop = false
+                    guard let pair = showManagePhotosForStop, !identifiers.isEmpty else { return }
+                    Task {
+                        await importLibraryPhotosIntoStop(assetIdentifiers: identifiers, dayId: pair.dayId, stopId: pair.stopId)
+                    }
+                }
             }
             .onChange(of: showManagePhotosForStop) { old, new in
                 guard old != nil, new == nil else { return }
                 // Equivalent of onDismiss: save and sync after user navigates back.
-                let _ = managePhotosEditInfo
+                print("📸 [ManagePhotos] dismissed — editInfo=\(managePhotosEditInfo != nil ? "set(stopId=\(managePhotosEditInfo!.stopId))" : "nil")")
                 createdRecapStore.saveBlogDetail(draft)
                 syncPhotoChangesWithCloud()
             }
@@ -2747,8 +2797,10 @@ struct RecapBlogPageView: View {
                             if photo.cloudURL != nil {
                                 Task { try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "add") }
                             } else {
-                                // Photo was never uploaded — upload first, then add to cloud
-                                Task { await uploadAndAddPhotoToCloud(photo: photo, placeKey: placeKey, stopId: stopId) }
+                                Task {
+                                    let fallback = await PlaceLibraryPhotoImport.placeTimeZone(for: stop)
+                                    await uploadAndAddPhotoToCloud(photo: photo, placeKey: placeKey, stopId: stopId, digitizedTimeZoneFallback: fallback)
+                                }
                             }
                         }
                     }
@@ -4070,25 +4122,53 @@ struct RecapBlogPageView: View {
         createdRecapStore.saveBlogDetail(draft)
     }
 
+    private func resetUploadingViewChrome() {
+        uploadingViewTitle = "Uploading Your Blog!"
+        uploadingViewProgressDetail = nil
+        uploadingViewAllowsCancel = true
+    }
+
+    /// Full-screen progress for uploads that are not driven by `uploadTask` (cover, republish sync).
+    private func beginAuxiliaryCloudUploadOverlay(title: String, progressDetail: String?, progress: (Int, Int)) {
+        isUploading = true
+        uploadingViewTitle = title
+        uploadingViewProgressDetail = progressDetail
+        uploadingViewAllowsCancel = false
+        uploadProgress = progress
+        showUploadingFullScreen = true
+    }
+
+    private func endAuxiliaryCloudUploadOverlay() {
+        isUploading = false
+        showUploadingFullScreen = false
+        resetUploadingViewChrome()
+    }
+
     private func syncWithCloudIfNeeded() {
         guard blogIsInCloud else { return }
-        
+        guard !isUploading else { return }
+
         let snapshot = draft
         let currentBlogId = blogId
-        
+
         // Hide existing cloud blog if we have its key
         if let existingKey = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.blogKey {
             Task {
                 try? await APIManager.shared.setBlogPrivacy(blogKey: existingKey, level: "hidden")
             }
         }
-        
-        // Publish new snapshot
-        Task {
-            if let newKey = await APIManager.shared.publishBlog(detail: snapshot) {
-                await MainActor.run {
-                    createdRecapStore.setBlogKey(blogId: currentBlogId, blogKey: newKey)
-                }
+
+        Task { @MainActor in
+            beginAuxiliaryCloudUploadOverlay(
+                title: "Syncing your blog",
+                progressDetail: "Publishing to the cloud…",
+                progress: (0, 1)
+            )
+            defer { endAuxiliaryCloudUploadOverlay() }
+            let newKey = await APIManager.shared.publishBlog(detail: snapshot)
+            uploadProgress.current = 1
+            if let newKey = newKey {
+                createdRecapStore.setBlogKey(blogId: currentBlogId, blogKey: newKey)
             }
         }
     }
@@ -4106,65 +4186,219 @@ struct RecapBlogPageView: View {
 
     /// Diffs photo inclusion changes made in ManagePhotosView and fires targeted updatePhoto calls.
     /// For newly included photos that have never been uploaded, uploads first then adds.
+    /// Photos added mid-session (e.g. library import) are not in `photoInclusionBefore`; they are treated as newly included.
     private func syncPhotoChangesWithCloud() {
-        guard let info = managePhotosEditInfo,
-              let stop = placeStop(dayId: info.dayId, stopId: info.stopId),
-              let placeKey = stop.visitedTimeDigitized else {
+        guard let info = managePhotosEditInfo else {
+            print("📸 [syncPhoto] ⚠️ managePhotosEditInfo is nil — skipping cloud sync")
+            return
+        }
+        guard let stop = placeStop(dayId: info.dayId, stopId: info.stopId) else {
+            print("📸 [syncPhoto] ⚠️ could not find stop dayId=\(info.dayId) stopId=\(info.stopId)")
+            managePhotosEditInfo = nil
+            return
+        }
+        guard let placeKey = stop.visitedTimeDigitized else {
+            print("📸 [syncPhoto] ⚠️ stop '\(stop.placeTitle)' has no visitedTimeDigitized — blog not published yet, skipping")
             managePhotosEditInfo = nil
             return
         }
 
-        for photo in stop.photos {
-            guard let wasIncluded = info.photoInclusionBefore[photo.id] else { continue }
-            if wasIncluded && !photo.isIncluded {
-                // Removed — only relevant if the photo was already in the cloud
-                guard photo.cloudURL != nil else { continue }
-                Task { try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "delete") }
-            } else if !wasIncluded && photo.isIncluded {
-                if photo.cloudURL != nil {
-                    // Already uploaded — just re-include it
-                    Task { try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "add") }
-                } else {
-                    // New photo — upload to file server first, then add to the place
-                    Task { await uploadAndAddPhotoToCloud(photo: photo, placeKey: placeKey, stopId: stop.id) }
-                }
+        let before = info.photoInclusionBefore
+        let stopId = stop.id
+        let dayId = info.dayId
+        managePhotosEditInfo = nil
 
-                // Suppress Undo: If the photo being added back matches the one in our pending undo action, clear it.
-                if case .deletePhoto(_, _, let undoPhoto, _) = lastUndoAction, undoPhoto.id == photo.id {
-                    withAnimation {
-                        lastUndoAction = nil
-                        showUndoOverlay = false
+        print("📸 [syncPhoto] placeKey=\(placeKey) stop='\(stop.placeTitle)' totalPhotos=\(stop.photos.count)")
+        print("📸 [syncPhoto] before-snapshot: \(before.map { "\($0.key.uuidString.prefix(6))=\($0.value)" }.joined(separator: ", "))")
+
+        Task { @MainActor in
+            let fallbackTZ = await PlaceLibraryPhotoImport.placeTimeZone(for: stop)
+            guard let currentStop = placeStop(dayId: dayId, stopId: stopId) else {
+                print("📸 [syncPhoto] ⚠️ stop disappeared after await — aborting")
+                return
+            }
+
+            var steps: [ManagePhotosCloudStep] = []
+            for photo in currentStop.photos {
+                let wasIncluded = before[photo.id] ?? false
+                let isIncluded = photo.isIncluded
+                if wasIncluded == isIncluded { continue }
+                if wasIncluded && !isIncluded {
+                    if photo.cloudURL == nil {
+                        print("📸 [syncPhoto] skip delete — photo has no cloudURL (id=\(photo.id.uuidString.prefix(6)))")
+                        continue
+                    }
+                    print("📸 [syncPhoto] → DELETE photoId=\(photo.id.uuidString.prefix(6)) cloudURL=\(photo.cloudURL ?? "nil")")
+                    steps.append(.delete(photo))
+                } else if !wasIncluded && isIncluded {
+                    if photo.cloudURL != nil {
+                        print("📸 [syncPhoto] → ADD(cloud) photoId=\(photo.id.uuidString.prefix(6)) cloudURL=\(photo.cloudURL!)")
+                        steps.append(.addCloud(photo))
+                    } else {
+                        print("📸 [syncPhoto] → UPLOAD+ADD photoId=\(photo.id.uuidString.prefix(6)) localId=\(photo.localIdentifier ?? "nil")")
+                        steps.append(.uploadAndAdd(photo))
                     }
                 }
             }
+
+            // Check for photos in current stop not in before-snapshot (added mid-session)
+            let newPhotoIds = Set(currentStop.photos.map(\.id)).subtracting(before.keys)
+            if !newPhotoIds.isEmpty {
+                print("📸 [syncPhoto] \(newPhotoIds.count) photo(s) added mid-session not in snapshot — they are handled via uploadAndAdd above if included")
+            }
+
+            guard !steps.isEmpty else {
+                print("📸 [syncPhoto] no changes detected — skipping API calls")
+                return
+            }
+
+            print("📸 [syncPhoto] \(steps.count) step(s) to execute, isUploading=\(isUploading)")
+
+            if isUploading {
+                for step in steps {
+                    await runManagePhotosCloudStep(step, placeKey: placeKey, stopId: stopId, fallbackTZ: fallbackTZ)
+                }
+                return
+            }
+
+            isUploading = true
+            uploadingViewTitle = "Syncing photos"
+            uploadingViewProgressDetail = nil
+            uploadingViewAllowsCancel = true
+            uploadProgress = (0, steps.count)
+            showUploadingFullScreen = true
+
+            uploadTask = Task { @MainActor in
+                for (idx, step) in steps.enumerated() {
+                    if Task.isCancelled { break }
+                    await runManagePhotosCloudStep(step, placeKey: placeKey, stopId: stopId, fallbackTZ: fallbackTZ)
+                    uploadProgress.current = idx + 1
+                }
+                isUploading = false
+                showUploadingFullScreen = false
+                uploadTask = nil
+                resetUploadingViewChrome()
+            }
         }
-        managePhotosEditInfo = nil
+    }
+
+    private enum ManagePhotosCloudStep {
+        case delete(RecapPhoto)
+        case addCloud(RecapPhoto)
+        case uploadAndAdd(RecapPhoto)
+    }
+
+    private func clearUndoIfRestoredIncludedPhoto(photoId: UUID) {
+        if case .deletePhoto(_, _, let undoPhoto, _) = lastUndoAction, undoPhoto.id == photoId {
+            withAnimation {
+                lastUndoAction = nil
+                showUndoOverlay = false
+            }
+        }
+    }
+
+    private func runManagePhotosCloudStep(
+        _ step: ManagePhotosCloudStep,
+        placeKey: String,
+        stopId: UUID,
+        fallbackTZ: TimeZone
+    ) async {
+        switch step {
+        case .delete(let photo):
+            try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "delete")
+        case .addCloud(let photo):
+            try? await APIManager.shared.updatePhoto(
+                placeKey: placeKey,
+                photo: photo,
+                operation: "add",
+                digitizedTimeZoneFallback: fallbackTZ
+            )
+            clearUndoIfRestoredIncludedPhoto(photoId: photo.id)
+        case .uploadAndAdd(let photo):
+            await uploadAndAddPhotoToCloud(
+                photo: photo,
+                placeKey: placeKey,
+                stopId: stopId,
+                digitizedTimeZoneFallback: fallbackTZ
+            )
+            clearUndoIfRestoredIncludedPhoto(photoId: photo.id)
+        }
     }
 
     /// Uploads a photo that has no cloudURL yet, persists the URL locally, then calls updatePhoto(add).
-    private func uploadAndAddPhotoToCloud(photo: RecapPhoto, placeKey: String, stopId: UUID) async {
+    private func uploadAndAddPhotoToCloud(photo: RecapPhoto, placeKey: String, stopId: UUID, digitizedTimeZoneFallback: TimeZone? = nil) async {
         guard let assetId = photo.localIdentifier else { return }
         do {
             let cloudURL = try await APIManager.shared.uploadPhoto(assetIdentifier: assetId)
 
-            // Persist the new cloudURL in the draft so it survives future syncs
+            var uploaded = photo
+            uploaded.cloudURL = cloudURL
+
+            // Call add first so the backend records the photo with the digitizedTime we're about to store.
+            let usedDigitizedTime = try await APIManager.shared.updatePhoto(
+                placeKey: placeKey,
+                photo: uploaded,
+                operation: "add",
+                digitizedTimeZoneFallback: digitizedTimeZoneFallback
+            )
+
+            // Persist cloudURL and the digitizedTime used by the backend so future delete/re-add
+            // calls send the exact same value and the backend can locate this photo.
             for dayIdx in draft.days.indices {
                 for stopIdx in draft.days[dayIdx].placeStops.indices
                     where draft.days[dayIdx].placeStops[stopIdx].id == stopId {
                     if let photoIdx = draft.days[dayIdx].placeStops[stopIdx].photos
                         .firstIndex(where: { $0.id == photo.id }) {
                         draft.days[dayIdx].placeStops[stopIdx].photos[photoIdx].cloudURL = cloudURL
+                        if !usedDigitizedTime.isEmpty {
+                            draft.days[dayIdx].placeStops[stopIdx].photos[photoIdx].digitizedTime = usedDigitizedTime
+                        }
                         createdRecapStore.saveBlogDetail(draft)
                     }
                 }
             }
-
-            var uploaded = photo
-            uploaded.cloudURL = cloudURL
-            try await APIManager.shared.updatePhoto(placeKey: placeKey, photo: uploaded, operation: "add")
         } catch {
             print("🚨 uploadAndAddPhotoToCloud failed: \(error)")
         }
+    }
+
+    /// Appends library picks to the managed place, fills missing metadata from the place/day, and copies pixels into the in-app gallery.
+    @MainActor
+    private func importLibraryPhotosIntoStop(assetIdentifiers: [String], dayId: UUID, stopId: UUID) async {
+        guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+
+        var stop = draft.days[dayIdx].placeStops[stopIdx]
+        let day = draft.days[dayIdx]
+        var existingIds = Set(stop.photos.compactMap(\.localIdentifier))
+        let placeTZ = await PlaceLibraryPhotoImport.placeTimeZone(for: stop)
+
+        for rawId in assetIdentifiers {
+            let id = rawId.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !id.isEmpty, !existingIds.contains(id) else { continue }
+            let assets = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
+            guard let asset = assets.firstObject else { continue }
+
+            let coord = PlaceLibraryPhotoImport.resolvedCoordinate(asset: asset, stop: stop)
+            let timestamp = PlaceLibraryPhotoImport.resolvedTimestamp(asset: asset, stop: stop, day: day, placeTimeZone: placeTZ)
+            let recap = RecapPhoto(
+                timestamp: timestamp,
+                location: coord,
+                imageName: "photo",
+                isIncluded: true,
+                localIdentifier: id
+            )
+            stop.photos.append(recap)
+            existingIds.insert(id)
+
+            if let img = await ImageLoader.shared.loadImage(assetIdentifier: id, targetSize: CGSize(width: 2048, height: 2048)) {
+                InAppCameraPhotoStore.shared.addPhoto(image: img, timestamp: timestamp)
+            }
+        }
+
+        stop.photos.sort { $0.timestamp < $1.timestamp }
+        draft.days[dayIdx].placeStops[stopIdx] = stop
+        createdRecapStore.saveBlogDetail(draft)
     }
 
     /// True if every included photo already has a cloud URL.
@@ -4322,11 +4556,12 @@ struct RecapBlogPageView: View {
             return
         }
 
+        resetUploadingViewChrome()
         isUploading = true
         uploadProgress = (0, photosToUpload.count)
         showUploadingFullScreen = true
 
-        uploadTask = Task {
+        uploadTask = Task { @MainActor in
             var failCount = 0
             for item in photosToUpload {
                 if Task.isCancelled { break }
@@ -4342,35 +4577,33 @@ struct RecapBlogPageView: View {
             }
 
             if Task.isCancelled {
-                // Return without doing any further cloud actions if cancelled
+                isUploading = false
+                showUploadingFullScreen = false
+                resetUploadingViewChrome()
+                uploadTask = nil
                 return
             }
 
             // Save updated draft with cloud URLs
             createdRecapStore.saveBlogDetail(draft)
 
-            // Publish blog to server; on success, show the first-blog modal.
-            // The modal fires *after* the fullScreenCover has fully dismissed
-            // to avoid iOS silently dropping a sheet presented during a cover's
-            // dismiss animation.
+            // Publish blog to server; keep the upload overlay visible until publish finishes.
             if failCount == 0 {
                 let snapshot = draft
                 let currentBlogId = blogId
                 let isFirstBlog = !hasUploadedFirstBlog
                 let shouldOpenWebShare = pendingWebLinkShareAfterUpload
-                Task {
-                    if let blogKey = await APIManager.shared.publishBlog(detail: snapshot) {
-                        await MainActor.run {
-                            createdRecapStore.setBlogKey(blogId: currentBlogId, blogKey: blogKey)
-                            if shouldOpenWebShare {
-                                pendingWebLinkShareAfterUpload = false
-                                presentWebLinkShareSheetIfPossible()
-                            }
-                        }
-                        if isFirstBlog {
-                            // Wait for the fullScreenCover dismiss animation to finish
-                            // before presenting the sheet (iOS drops sheets presented
-                            // while a fullScreenCover is mid-dismissal).
+                uploadingViewProgressDetail = "Publishing your blog…"
+                uploadProgress.current = max(1, uploadProgress.total)
+                let blogKey = await APIManager.shared.publishBlog(detail: snapshot)
+                if let blogKey = blogKey {
+                    createdRecapStore.setBlogKey(blogId: currentBlogId, blogKey: blogKey)
+                    if shouldOpenWebShare {
+                        pendingWebLinkShareAfterUpload = false
+                        presentWebLinkShareSheetIfPossible()
+                    }
+                    if isFirstBlog {
+                        Task {
                             try? await Task.sleep(nanoseconds: 700_000_000) // 0.7 s
                             await MainActor.run {
                                 if !hasUploadedFirstBlog {
@@ -4386,6 +4619,8 @@ struct RecapBlogPageView: View {
 
             isUploading = false
             showUploadingFullScreen = false
+            resetUploadingViewChrome()
+            uploadTask = nil
 
             if failCount > 0 {
                 uploadErrorMessage = "\(failCount) photo\(failCount == 1 ? "" : "s") failed to upload. Tap the cloud button to retry."
@@ -4405,6 +4640,7 @@ struct RecapBlogPageView: View {
         uploadTask = nil
         isUploading = false
         showUploadingFullScreen = false
+        resetUploadingViewChrome()
     }
 
     private func openNavigation(for stop: PlaceStop) {

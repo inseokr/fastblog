@@ -148,10 +148,6 @@ struct PlaceStopRowView: View {
         colorScheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.08)
     }
 
-    private var managePhotosOutline: Color {
-        colorScheme == .dark ? Color.white.opacity(0.6) : Color.primary.opacity(0.35)
-    }
-
     /// 12-hour visit time from earliest photo timestamp. Formatter: "h:mm a" (e.g. 3:42 PM).
     private static let visitTimeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -395,30 +391,9 @@ struct PlaceStopRowView: View {
 
             // Photo strip: large thumbnails; one full photo visible + peek of next so users know they can scroll
             let includedPhotos = stop.photos.filter(\.isIncluded)
-            let hasAnyPhotos = !stop.photos.isEmpty
-            let hasMultipleAvailable = stop.photos.count > 1
 
-            // --- CASE 1: No included photos — show standalone "Manage Photos" button in edit mode ---
-            if isEditMode && includedPhotos.isEmpty && hasAnyPhotos {
-                Button(action: onManagePhotos) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "photo.on.rectangle")
-                            .font(.body)
-                        Text("Manage Photos")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                    }
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(rowInset)
-                    .cornerRadius(10)
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 12)
-            } else if includedPhotos.count == 1, let photo = includedPhotos.first {
+            // When no photos are included, Manage Photos lives in `placeStoryRow` (with Generate Story). No strip here.
+            if includedPhotos.count == 1, let photo = includedPhotos.first {
                 // --- CASE 2a: Single photo — full-width hero layout ---
                 VStack(alignment: .leading, spacing: 0) {
                     ZStack(alignment: .topTrailing) {
@@ -527,21 +502,6 @@ struct PlaceStopRowView: View {
                                 .lineLimit(isExpanded ? nil : 4)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: isExpanded)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.top, 8)
-                    }
-
-                    // Subtle "Manage Photos" link in edit mode
-                    if isEditMode && hasMultipleAvailable {
-                        Button(action: onManagePhotos) {
-                            Label("Manage Photos", systemImage: "photo.on.rectangle")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .background(rowInset)
-                                .cornerRadius(8)
                         }
                         .buttonStyle(.plain)
                         .padding(.top, 8)
@@ -670,27 +630,6 @@ struct PlaceStopRowView: View {
                             }
                             .frame(width: thumbnailSize)
                             .id(photo.id)
-                        }
-                        // Outlined-box Manage Photos card — always shown in edit mode when photos exist
-                        if isEditMode && hasMultipleAvailable {
-                            Button(action: onManagePhotos) {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .strokeBorder(managePhotosOutline, lineWidth: 1.5)
-                                    .frame(width: thumbnailSize, height: thumbnailSize)
-                                    .overlay {
-                                        VStack(spacing: 6) {
-                                            Image(systemName: "photo.on.rectangle")
-                                                .font(.system(size: 40))
-                                                .foregroundColor(rowTitle)
-                                            Text("Manage Photos")
-                                                .font(.caption)
-                                                .fontWeight(.medium)
-                                                .foregroundColor(rowTitle)
-                                        }
-                                    }
-                            }
-                            .buttonStyle(.plain)
-                            .contentShape(Rectangle())
                         }
                     }
                     .padding(.leading, 16)
@@ -845,36 +784,61 @@ struct PlaceStopRowView: View {
                     .padding(.bottom, onTellPlaceStory != nil && LocalLLMStoryCaptionGenerator.isCapable && isEditMode ? 12 : 8)
                 }
             }
-            if let tell = onTellPlaceStory, LocalLLMStoryCaptionGenerator.isCapable, isEditMode {
-                HStack {
-                    Spacer()
-                    if isGeneratingNarrative {
-                        HStack(spacing: 6) {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .secondary))
-                                .scaleEffect(0.7)
-                            Text("Generating story…")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    } else {
-                        Button(action: tell) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "sparkles")
+            let showManagePhotosInStoryRow = isEditMode && !stop.photos.isEmpty
+            let showGenerateStoryInStoryRow = isEditMode
+                && onTellPlaceStory != nil
+                && LocalLLMStoryCaptionGenerator.isCapable
+            if showManagePhotosInStoryRow || showGenerateStoryInStoryRow {
+                HStack(alignment: .center, spacing: 12) {
+                    if showManagePhotosInStoryRow {
+                        Button(action: onManagePhotos) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "photo.on.rectangle")
+                                    .font(.system(size: 15, weight: .medium))
+                                Text("Manage Photos")
                                     .font(.caption)
-                                    .foregroundStyle(
-                                        LinearGradient(
-                                            colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                Text(stop.placeNarrative != nil ? "Refresh Story" : "Generate Story")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .fontWeight(.medium)
                             }
+                            .foregroundColor(.primary)
                         }
                         .buttonStyle(.plain)
+                    }
+                    Spacer(minLength: 0)
+                    if showGenerateStoryInStoryRow {
+                        if isGeneratingNarrative {
+                            HStack(spacing: 6) {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .secondary))
+                                    .scaleEffect(0.7)
+                                Text("Generating story…")
+                                    .font(.caption)
+                                    .foregroundColor(.primary)
+                            }
+                        } else if let tell = onTellPlaceStory {
+                            Button(action: tell) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "sparkles")
+                                        .font(.caption)
+                                        .foregroundStyle(
+                                            LinearGradient(
+                                                colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                    Text(stop.placeNarrative != nil ? "Refresh Story" : "Generate story")
+                                        .font(.caption)
+                                        .foregroundStyle(
+                                            LinearGradient(
+                                                colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
                 .padding(.horizontal, 16)

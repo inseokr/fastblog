@@ -20,6 +20,8 @@ struct BlogSettingsSheet: View {
     var onRestore: (() -> Void)? = nil
     /// When true, shows “Share trip nearby” for saved blogs (inline overlay; uses ``TripNearbyShareSessionController`` from the environment).
     var canShareNearby: Bool = false
+    /// Parent shows full-screen upload UI when `true`, hides when `false` (cover photo cloud sync).
+    var onCoverCloudUploadStateChanged: ((Bool) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var nearbyShare: TripNearbyShareSessionController
     @AppStorage(StoryWritingStyle.storageKey) private var writingStyle: String = ""
@@ -321,7 +323,19 @@ struct BlogSettingsSheet: View {
         if let key = blogKey,
            let newId = draft.selectedCoverPhotoIdentifier,
            newId != coverPhotoIdentifierBeforeEdit {
-            Task { try? await APIManager.shared.uploadAndUpdateCoverPhoto(blogKey: key, assetIdentifier: newId) }
+            Task { @MainActor in
+                onCoverCloudUploadStateChanged?(true)
+                defer { onCoverCloudUploadStateChanged?(false) }
+                do {
+                    let url = try await APIManager.shared.uploadAndUpdateCoverPhoto(blogKey: key, assetIdentifier: newId)
+                    var d = draft
+                    d.setCloudURL(url, forLocalAssetIdentifier: newId)
+                    draft = d
+                    onSave()
+                } catch {
+                    print("🚨 Cover photo cloud update failed: \(error)")
+                }
+            }
         }
         coverPhotoIdentifierBeforeEdit = nil
     }

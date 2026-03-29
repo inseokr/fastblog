@@ -193,6 +193,7 @@
 		BB0002B5 /* SlideshowBundledMusic.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B4 /* SlideshowBundledMusic.swift */; };
 		BB0002E1 /* OnTheGoTripStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002E0 /* OnTheGoTripStore.swift */; };
 		BB0002E3 /* InAppCameraPhotoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002E2 /* InAppCameraPhotoStore.swift */; };
+		BB0002E5 /* PlaceLibraryPhotoImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002E4 /* PlaceLibraryPhotoImport.swift */; };
 		BB0002F1 /* ScanSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F0 /* ScanSessionStore.swift */; };
 		BB0002F3 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F2 /* WeatherService.swift */; };
 		BB0002F5 /* NewMomentsPullUpPresentationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F4 /* NewMomentsPullUpPresentationStore.swift */; };
@@ -410,6 +411,7 @@
 		BB0002B4 /* SlideshowBundledMusic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowBundledMusic.swift; sourceTree = "<group>"; };
 		BB0002E0 /* OnTheGoTripStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnTheGoTripStore.swift; sourceTree = "<group>"; };
 		BB0002E2 /* InAppCameraPhotoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppCameraPhotoStore.swift; sourceTree = "<group>"; };
+		BB0002E4 /* PlaceLibraryPhotoImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceLibraryPhotoImport.swift; sourceTree = "<group>"; };
 		BB0002F0 /* ScanSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanSessionStore.swift; sourceTree = "<group>"; };
 		BB0002F2 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
 		BB0002F4 /* NewMomentsPullUpPresentationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewMomentsPullUpPresentationStore.swift; sourceTree = "<group>"; };
@@ -689,6 +691,7 @@
 				BB00018F /* NeighborhoodStore.swift */,
 				BB0002E0 /* OnTheGoTripStore.swift */,
 				BB0002E2 /* InAppCameraPhotoStore.swift */,
+				BB0002E4 /* PlaceLibraryPhotoImport.swift */,
 				BB0002F0 /* ScanSessionStore.swift */,
 				BB0002F4 /* NewMomentsPullUpPresentationStore.swift */,
 				BB0002F2 /* WeatherService.swift */,
@@ -930,6 +933,7 @@
 				BB000190 /* NeighborhoodStore.swift in Sources */,
 				BB0002E1 /* OnTheGoTripStore.swift in Sources */,
 				BB0002E3 /* InAppCameraPhotoStore.swift in Sources */,
+				BB0002E5 /* PlaceLibraryPhotoImport.swift in Sources */,
 				BB0002F1 /* ScanSessionStore.swift in Sources */,
 				BB0002F5 /* NewMomentsPullUpPresentationStore.swift in Sources */,
 				BB0002F3 /* WeatherService.swift in Sources */,
