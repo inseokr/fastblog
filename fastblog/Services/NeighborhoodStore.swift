@@ -80,7 +80,7 @@ enum NeighborhoodStore {
     static var localExclusionMiles: Double {
         get {
             let v = UserDefaults.standard.double(forKey: radiusMilesKey)
-            return v > 0 ? v : 50
+            return v > 0 ? v : 25
         }
         set { UserDefaults.standard.set(newValue, forKey: radiusMilesKey) }
     }

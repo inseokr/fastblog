@@ -807,7 +807,7 @@ private struct SettingsView: View {
                     if photoAuth.status == .limited {
                         Text("Home sets where nearby photos are measured from. With limited photo access, trip scans use the default distance from home for your neighborhood.")
                     } else {
-                        Text("Home sets where nearby photos are measured from. Only photos farther than this distance from home are used when finding trips.")
+                        Text("Please adjust it to a smaller value if you want to blog about activities around your neighborhood.")
                     }
                 }
 
