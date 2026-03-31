@@ -135,7 +135,7 @@ struct AppCaptureGalleryView: View {
                     .padding(.bottom, 8)
                 }
 
-                VStack(spacing: 8) {
+                VStack(spacing: 12) {
                     if let importToast {
                         Text(importToast)
                             .font(.subheadline.weight(.medium))
@@ -152,10 +152,28 @@ struct AppCaptureGalleryView: View {
                             .padding(.vertical, 10)
                             .background(Capsule().fill(.black.opacity(0.7)))
                     }
+                    if !isSelectMode {
+                        HStack {
+                            Spacer(minLength: 0)
+                            Button {
+                                showPhotoImportPicker = true
+                            } label: {
+                                Text("Import")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 28)
+                                    .padding(.vertical, 12)
+                                    .background(.ultraThinMaterial, in: Capsule())
+                            }
+                            .accessibilityLabel("Import from Photos")
+                            Spacer(minLength: 0)
+                        }
+                    }
                 }
-                .padding(.bottom, 88)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
             }
-            .navigationTitle("Bloggo Photo Gallery")
+            .navigationTitle("Bloggo Gallery")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbarBackground(Color.black, for: .navigationBar)
@@ -173,24 +191,18 @@ struct AppCaptureGalleryView: View {
                     .accessibilityLabel("Close")
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    HStack(spacing: 16) {
-                        Button("Import") {
-                            showPhotoImportPicker = true
-                        }
-                        .foregroundColor(.white)
-                        if !items.isEmpty {
-                            if isSelectMode {
-                                Button("Done") {
-                                    isSelectMode = false
-                                    selectedIds = []
-                                }
-                                .foregroundColor(.white)
-                            } else {
-                                Button("Select") {
-                                    isSelectMode = true
-                                }
-                                .foregroundColor(.white)
+                    if !items.isEmpty {
+                        if isSelectMode {
+                            Button("Done") {
+                                isSelectMode = false
+                                selectedIds = []
                             }
+                            .foregroundColor(.white)
+                        } else {
+                            Button("Select") {
+                                isSelectMode = true
+                            }
+                            .foregroundColor(.white)
                         }
                     }
                 }
@@ -276,7 +288,7 @@ struct AppCaptureGalleryView: View {
                     )
                 }
             }
-            .padding(.bottom, isSelectMode ? 72 : 24)
+            .padding(.bottom, isSelectMode ? 72 : 88)
         }
         .scrollDisabled(isSelectMode && !selectedIds.isEmpty)
         .background(
@@ -335,17 +347,6 @@ struct AppCaptureGalleryView: View {
                 .font(.caption)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
-            Button {
-                showPhotoImportPicker = true
-            } label: {
-                Text("Import from Photos")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    .background(Capsule().fill(Color.white.opacity(0.15)))
-            }
-            .padding(.top, 8)
         }
     }
 

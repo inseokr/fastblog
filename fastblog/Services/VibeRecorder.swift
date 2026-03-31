@@ -43,8 +43,7 @@ final class VibeRecorder: NSObject, ObservableObject {
         let duration = rec.currentTime
         rec.stop()
         recorder = nil
-        // Ensure the shared audio session is not left in record mode.
-        try? AVAudioSession.sharedInstance().setActive(false)
+        // Keep the audio session active so other apps (e.g. Spotify) stay paused until the camera UI dismisses.
         return await trim(sourceURL: sourceURL, totalDuration: duration, maxSeconds: 10)
     }
 
@@ -54,8 +53,6 @@ final class VibeRecorder: NSObject, ObservableObject {
         let url = recorder?.url ?? sessionTempURL
         recorder?.stop()
         recorder = nil
-        // Ensure the shared audio session is not left in record mode.
-        try? AVAudioSession.sharedInstance().setActive(false)
         if let url {
             try? FileManager.default.removeItem(at: url)
         }
@@ -68,7 +65,8 @@ final class VibeRecorder: NSObject, ObservableObject {
         guard recorder == nil else { return }
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .mixWithOthers])
+            // Do not use `.mixWithOthers` — we want other apps' music (Spotify, etc.) to pause while Vibe records.
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
             try session.setActive(true)
         } catch {
             return
@@ -143,5 +141,26 @@ final class VibeRecorder: NSObject, ObservableObject {
 extension VibeRecorder: AVAudioRecorderDelegate {
     func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {
         cancelAndDelete()
+    }
+}
+
+// MARK: - In-app camera audio (pause external music)
+
+/// Owns `AVAudioSession` while the in-app camera is visible so background audio does not clash with Vibe.
+enum InAppCameraAudioSession {
+    /// Call when the in-app camera UI appears. Interrupts other apps’ playback (Spotify, Podcasts, etc.).
+    static func activateForCamera() {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+            try session.setActive(true)
+        } catch {
+            // Camera still works without audio session; Vibe may be limited.
+        }
+    }
+
+    /// Call when the in-app camera UI is dismissed so other apps can resume if the user returns to them.
+    static func deactivateAfterCamera() {
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 }

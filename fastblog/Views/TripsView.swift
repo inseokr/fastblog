@@ -2138,6 +2138,8 @@ struct CameraCaptureView: View {
         )
         .overlay(alignment: .top) { toastOverlay }
         .onAppear {
+            // Pause music/podcasts from other apps so they don't clash with Vibe capture.
+            InAppCameraAudioSession.activateForCamera()
             // Fresh session each time camera is opened.
             sessionMoments = []
             sessionCapturesForDisplay = []
@@ -2168,6 +2170,7 @@ struct CameraCaptureView: View {
         .onDisappear {
             cameraController.stopRunning()
             vibeRecorder.cancelAndDelete()
+            InAppCameraAudioSession.deactivateAfterCamera()
             // Sync any captions typed in the gallery into the blog for real-time injected photos.
             syncSessionCaptionsToBlog()
             // If user swipes away with unsaved session moments (e.g. closed before blog creation completed), save as draft.
@@ -2240,7 +2243,7 @@ struct CameraCaptureView: View {
             .presentationDragIndicator(.visible)
             .preferredColorScheme(.dark)
         }
-        .fullScreenCover(isPresented: $isShowingCapturesGallery, onDismiss: { loadLatestGalleryThumbnail() }) {
+        .sheet(isPresented: $isShowingCapturesGallery, onDismiss: { loadLatestGalleryThumbnail() }) {
             AppCaptureGalleryView()
         }
         .sheet(isPresented: $isShowingSessionGallery) {

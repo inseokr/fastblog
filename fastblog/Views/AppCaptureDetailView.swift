@@ -251,6 +251,7 @@ struct AppCaptureDetailView: View {
                                         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
                                         let newCaption: String? = trimmed.isEmpty ? nil : trimmed
                                         try? AppCapturePhotoService.shared.updateCaption(captureId: item.id, caption: newCaption)
+                                        CreatedRecapBlogStore.shared.syncPhotoCaptionFromAppCapture(captureId: item.id, caption: newCaption)
                                         items[currentIndex].caption = newCaption
                                         onCaptionSaved(item.id, newCaption)
                                         isGeneratingCaption = false
@@ -396,6 +397,7 @@ struct AppCaptureDetailView: View {
         let trimmed = captionDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         let newCaption: String? = trimmed.isEmpty ? nil : trimmed
         try? AppCapturePhotoService.shared.updateCaption(captureId: item.id, caption: newCaption)
+        CreatedRecapBlogStore.shared.syncPhotoCaptionFromAppCapture(captureId: item.id, caption: newCaption)
         items[currentIndex].caption = newCaption
         onCaptionSaved(item.id, newCaption)
         withAnimation { isEditingCaption = false }

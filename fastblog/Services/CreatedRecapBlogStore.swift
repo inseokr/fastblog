@@ -886,6 +886,43 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
     }
 
+    /// After a caption is saved from **Bloggo Gallery** (in-app camera storage), copies it into every blog
+    /// whose `RecapPhoto.localIdentifier` matches this capture (`bloggo-capture:<uuid>`).
+    func syncPhotoCaptionFromAppCapture(captureId: UUID, caption: String?) {
+        let assetId = AppCapturePhotoService.identifier(for: captureId)
+        let trimmed = caption?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalCaption: String? = (trimmed == nil || trimmed?.isEmpty == true) ? nil : trimmed
+        var changed = false
+        var changedSourceIds: Set<UUID> = []
+        for key in blogDetailsBySourceId.keys {
+            guard var detail = blogDetailsBySourceId[key] else { continue }
+            var detailChanged = false
+            for dayIdx in detail.days.indices {
+                for stopIdx in detail.days[dayIdx].placeStops.indices {
+                    for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
+                        guard detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].localIdentifier == assetId else { continue }
+                        detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].caption = finalCaption
+                        detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].captionIsManual = true
+                        detailChanged = true
+                    }
+                }
+            }
+            if detailChanged {
+                blogDetailsBySourceId[key] = detail
+                changed = true
+                changedSourceIds.insert(key)
+            }
+        }
+        if changed {
+            persistBlogDetails()
+            for sourceId in changedSourceIds {
+                patchRecentsAfterDetailCaptionEdit(sourceTripId: sourceId)
+            }
+            persistRecents()
+            objectWillChange.send()
+        }
+    }
+
     /// Keeps My Blogs / recents line in sync when a caption is edited outside RecapBlogPageView.
     private func patchRecentsAfterDetailCaptionEdit(sourceTripId: UUID) {
         guard let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }),
