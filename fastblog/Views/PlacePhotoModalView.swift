@@ -268,16 +268,17 @@ struct PlacePhotoModalView: View {
 
     /// Slides the modal the rest of the way off-screen, then runs `completion` (typically `onDismiss`).
     private func animateSwipeDismissCompletion(_ completion: @escaping () -> Void) {
+        let dismissDuration: TimeInterval = blogIsEditMode ? 0.24 : 0.42
         dismissFrozenPhotoId = currentPhotoId
         isDismissExitAnimating = true
         let h = UIScreen.main.bounds.height
         let baseline = interactiveDismissDragOffset
         let target = max(baseline + h * 0.42, h * 0.94)
-        withAnimation(.easeIn(duration: 0.42)) {
+        withAnimation(.easeIn(duration: dismissDuration)) {
             interactiveDismissDragOffset = target
         }
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 420_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(dismissDuration * 1_000_000_000))
             completion()
         }
     }
@@ -760,7 +761,8 @@ struct PlacePhotoModalView: View {
                         }
                     }
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 24)
+                    .padding(.top, 24)
+                    .padding(.bottom, 34)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         LinearGradient(
@@ -887,7 +889,8 @@ struct PlacePhotoModalView: View {
                         }
                     }
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 24)
+                    .padding(.top, 24)
+                    .padding(.bottom, 34)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         LinearGradient(

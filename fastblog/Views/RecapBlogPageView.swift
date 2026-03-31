@@ -974,7 +974,7 @@ struct RecapBlogPageView: View {
                                 .id("map-anchor")
                         }
                         tripNarrativeCard
-                            .padding(.bottom, 20)
+                            .padding(.bottom, 12)
                         timelineContent
 
                         if draft.days.isEmpty && hasFinishedInitialLoad {

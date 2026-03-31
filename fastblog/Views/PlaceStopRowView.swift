@@ -62,6 +62,13 @@ private struct OverallStoryTruncationKey: PreferenceKey {
     }
 }
 
+private struct PlaceTitleHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct PlaceStopRowView: View {
     let day: RecapBlogDay
     let stop: PlaceStop
@@ -119,6 +126,7 @@ struct PlaceStopRowView: View {
     @State private var expandedCaptionPhotoId: UUID? = nil
     @State private var isOverallStoryExpanded = false
     @State private var isOverallStoryTruncated = false
+    @State private var measuredPlaceTitleHeight: CGFloat = 0
     // Vibe playback for blog photo thumbnails
     @StateObject private var vibePlayer = VibePlayer()
     @State private var playingVibePhotoId: UUID? = nil
@@ -188,6 +196,12 @@ struct PlaceStopRowView: View {
 
     /// Photo size in strip — 80% of screen width so one photo is prominent and the next peeks on the right.
     private var thumbnailSize: CGFloat { UIScreen.main.bounds.width * 0.8 }
+    private var placeTitleSingleLineHeight: CGFloat {
+        UIFont.preferredFont(forTextStyle: .title2).lineHeight
+    }
+    private var isPlaceTitleTwoLines: Bool {
+        measuredPlaceTitleHeight > placeTitleSingleLineHeight * 1.35
+    }
 
     /// Returns the local vibe audio URL for a photo if it was captured with the in-app camera.
     private func vibeURL(for photo: RecapPhoto) -> URL? {
@@ -209,14 +223,20 @@ struct PlaceStopRowView: View {
             // Row 1: badge + title, subtitle, time
             HStack(alignment: .top, spacing: 12) {
                 stopBadge
+                    .padding(.top, isPlaceTitleTwoLines ? max(0, (measuredPlaceTitleHeight - 28) / 2) : 0)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         if isEditMode {
                             HStack(alignment: .center, spacing: 10) {
                                 Button { onEditName?() } label: {
                                     Text(stop.placeTitle)
-                                        .font(.headline)
+                                        .font(Font.custom("Georgia-Bold", size: 22))
                                         .foregroundColor(rowTitle)
+                                        .background(
+                                            GeometryReader { geo in
+                                                Color.clear.preference(key: PlaceTitleHeightPreferenceKey.self, value: geo.size.height)
+                                            }
+                                        )
                                 }
                                 .buttonStyle(.plain)
                                 Button { onEditName?() } label: {
@@ -239,6 +259,11 @@ struct PlaceStopRowView: View {
                                         Text(stop.placeTitle)
                                             .font(Font.custom("Georgia-Bold", size: 22))
                                             .foregroundColor(rowTitle)
+                                            .background(
+                                                GeometryReader { geo in
+                                                    Color.clear.preference(key: PlaceTitleHeightPreferenceKey.self, value: geo.size.height)
+                                                }
+                                            )
                                         StoryPlaceExternalLinkIcon(
                                             titleFontSize: UIFont.preferredFont(forTextStyle: .title2).pointSize,
                                             foregroundColor: colorScheme == .dark ? .white.opacity(0.78) : Color.primary.opacity(0.55)
@@ -254,6 +279,11 @@ struct PlaceStopRowView: View {
                                     Text(stop.placeTitle)
                                         .font(Font.custom("Georgia-Bold", size: 22))
                                         .foregroundColor(rowTitle)
+                                        .background(
+                                            GeometryReader { geo in
+                                                Color.clear.preference(key: PlaceTitleHeightPreferenceKey.self, value: geo.size.height)
+                                            }
+                                        )
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("Open place in Maps")
@@ -327,6 +357,7 @@ struct PlaceStopRowView: View {
                     }
                 }
             }
+            .onPreferenceChange(PlaceTitleHeightPreferenceKey.self) { measuredPlaceTitleHeight = $0 }
             .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, 8)
@@ -508,7 +539,7 @@ struct PlaceStopRowView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
+                .padding(.top, isEditMode ? 4 : 8)
                 .padding(.bottom, isEditMode ? 20 : 12)
             } else if !includedPhotos.isEmpty {
                 // --- CASE 2b: Multiple photos — horizontal scroll strip ---
@@ -636,7 +667,7 @@ struct PlaceStopRowView: View {
                     .padding(.trailing, 32) // Extra space so Manage Photos card scrolls fully into view
                 }
                 .frame(minHeight: isEditMode ? thumbnailSize + 56 : thumbnailSize + 28)
-                .padding(.top, 8) // Added top padding here
+                .padding(.top, isEditMode ? 4 : 8)
                 .padding(.bottom, isEditMode ? 20 : 12)
             }
 
@@ -789,59 +820,77 @@ struct PlaceStopRowView: View {
                 && onTellPlaceStory != nil
                 && LocalLLMStoryCaptionGenerator.isCapable
             if showManagePhotosInStoryRow || showGenerateStoryInStoryRow {
-                HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
                     if showManagePhotosInStoryRow {
                         Button(action: onManagePhotos) {
-                            HStack(spacing: 6) {
+                            HStack(spacing: 8) {
                                 Image(systemName: "photo.on.rectangle")
-                                    .font(.system(size: 15, weight: .medium))
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                    .frame(width: 24, height: 24)
+                                    .background(rowSurface)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                                 Text("Manage Photos")
                                     .font(.caption)
-                                    .fontWeight(.medium)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.primary)
+                                Spacer(minLength: 0)
                             }
-                            .foregroundColor(.primary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(rowInset)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                            )
                         }
                         .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    Spacer(minLength: 0)
                     if showGenerateStoryInStoryRow {
-                        if isGeneratingNarrative {
-                            HStack(spacing: 6) {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .secondary))
-                                    .scaleEffect(0.7)
-                                Text("Generating story…")
-                                    .font(.caption)
-                                    .foregroundColor(.primary)
-                            }
-                        } else if let tell = onTellPlaceStory {
-                            Button(action: tell) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "sparkles")
+                        HStack {
+                            Spacer(minLength: 0)
+                            if isGeneratingNarrative {
+                                HStack(spacing: 6) {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .secondary))
+                                        .scaleEffect(0.7)
+                                    Text("Generating story…")
                                         .font(.caption)
-                                        .foregroundStyle(
-                                            LinearGradient(
-                                                colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
-                                    Text(stop.placeNarrative != nil ? "Refresh Story" : "Generate story")
-                                        .font(.caption)
-                                        .foregroundStyle(
-                                            LinearGradient(
-                                                colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
+                                        .foregroundColor(.primary)
                                 }
+                            } else if let tell = onTellPlaceStory {
+                                Button(action: tell) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "sparkles")
+                                            .font(.caption)
+                                            .foregroundStyle(
+                                                LinearGradient(
+                                                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                )
+                                            )
+                                        Text(stop.placeNarrative != nil ? "Refresh Story" : "Generate story")
+                                            .font(.caption)
+                                            .foregroundStyle(
+                                                LinearGradient(
+                                                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                )
+                                            )
+                                    }
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
                 .padding(.horizontal, 16)
+                .padding(.top, 16)
                 .padding(.bottom, 8)
             }
         }

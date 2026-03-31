@@ -241,6 +241,11 @@ struct LandingView: View {
         }
         .animation(.easeInOut(duration: 0.3), value: showAuth)
         .onReceive(textCycleTimer) { _ in
+            guard isIPhoneMax else {
+                showAlternateText = false
+                ctaTextOpacity = 1
+                return
+            }
             guard ctaTextOpacity >= 1 else { return }
             withAnimation(.easeOut(duration: 0.25)) {
                 ctaTextOpacity = 0
