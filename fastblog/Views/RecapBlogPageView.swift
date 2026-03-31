@@ -5092,70 +5092,71 @@ private struct NewMomentsReviewSheet: View {
         let thumbSpacing: CGFloat = 8
         let displayedPhotos = Array(group.photos.prefix(3))
         let extraCount = group.photos.count - 3
-        return HStack(alignment: .top, spacing: 0) {
-            // Photo strip: at most 3 thumbnails
-            HStack(spacing: thumbSpacing) {
-                ForEach(displayedPhotos) { photo in
-                    Group {
-                        if let lid = photo.localIdentifier {
-                            AssetPhotoView(assetIdentifier: lid, cornerRadius: 8, targetSize: CGSize(width: 200, height: 200))
-                                .aspectRatio(contentMode: .fill)
-                        } else {
-                            MockPhotoView(seed: photo.id.hashValue, cornerRadius: 8, showIcon: false, iconName: photo.imageName)
-                                .aspectRatio(contentMode: .fill)
+        return Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                if isHidden {
+                    hiddenPlaceKeys.remove(group.placeKey)
+                } else {
+                    hiddenPlaceKeys.insert(group.placeKey)
+                }
+            }
+        } label: {
+            HStack(alignment: .top, spacing: 0) {
+                // Photo strip: at most 3 thumbnails
+                HStack(spacing: thumbSpacing) {
+                    ForEach(displayedPhotos) { photo in
+                        Group {
+                            if let lid = photo.localIdentifier {
+                                AssetPhotoView(assetIdentifier: lid, cornerRadius: 8, targetSize: CGSize(width: 200, height: 200))
+                                    .aspectRatio(contentMode: .fill)
+                            } else {
+                                MockPhotoView(seed: photo.id.hashValue, cornerRadius: 8, showIcon: false, iconName: photo.imageName)
+                                    .aspectRatio(contentMode: .fill)
+                            }
                         }
+                        .frame(width: thumbSize, height: thumbSize)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
-                    .frame(width: thumbSize, height: thumbSize)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-            }
-            .padding(.vertical, 4)
-            .frame(width: displayedPhotos.isEmpty ? 0 : CGFloat(displayedPhotos.count) * (thumbSize + thumbSpacing) - thumbSpacing)
+                .padding(.vertical, 4)
+                .frame(width: displayedPhotos.isEmpty ? 0 : CGFloat(displayedPhotos.count) * (thumbSize + thumbSpacing) - thumbSpacing)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text(group.placeKey)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                Text(newMomentsTimeFormatter.string(from: group.earliestTimestamp))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.secondary)
-                if extraCount > 0 {
-                    Text("+\(extraCount) more")
-                        .font(.system(size: 12, weight: .medium))
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(group.placeKey)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    Text(newMomentsTimeFormatter.string(from: group.earliestTimestamp))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.secondary)
-                }
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, 12)
-            .padding(.top, 4)
-
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    if isHidden {
-                        hiddenPlaceKeys.remove(group.placeKey)
-                    } else {
-                        hiddenPlaceKeys.insert(group.placeKey)
+                    if extraCount > 0 {
+                        Text("+\(extraCount) more")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.secondary)
                     }
+                    Spacer(minLength: 0)
                 }
-            } label: {
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 12)
+                .padding(.top, 4)
+
                 Image(systemName: isHidden ? "eye" : "eye.slash")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(isHidden ? .green : .secondary)
                     .frame(width: 36, height: 36)
             }
-            .buttonStyle(.plain)
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(uiColor: .tertiarySystemGroupedBackground))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 16))
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(uiColor: .tertiarySystemGroupedBackground))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-                )
-        )
+        .buttonStyle(.plain)
         .opacity(isHidden ? 0.35 : 1.0)
     }
 }

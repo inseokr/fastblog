@@ -173,7 +173,7 @@ struct AppCaptureGalleryView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 16)
             }
-            .navigationTitle("Bloggo Gallery")
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbarBackground(Color.black, for: .navigationBar)
@@ -183,12 +183,12 @@ struct AppCaptureGalleryView: View {
                     Button {
                         dismiss()
                     } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(.white)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Close")
+                    .accessibilityLabel("Dismiss")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if !items.isEmpty {
@@ -246,16 +246,19 @@ struct AppCaptureGalleryView: View {
 
     private func scrollGrid(proxy: ScrollViewProxy) -> some View {
         ScrollView {
-            // Count header (when not in select mode)
+            // In-content title and count header (when not in select mode)
             if !isSelectMode {
-                HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Bloggo Gallery")
+                        .font(.headline)
+                        .foregroundColor(.white)
                     Text("\(items.count) photo\(items.count == 1 ? "" : "s")")
                         .font(.caption)
                         .foregroundColor(.white.opacity(0.5))
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
-                    Spacer()
                 }
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             LazyVGrid(columns: columns, spacing: 2) {

@@ -6,7 +6,9 @@
 //  Supports caption editing and photo deletion.
 //
 
+import Photos
 import SwiftUI
+import UIKit
 
 struct AppCaptureDetailView: View {
     @Binding var items: [AppCaptureItem]
@@ -20,8 +22,11 @@ struct AppCaptureDetailView: View {
     @State private var showControls = true
     @State private var isEditingCaption = false
     @State private var captionDraft = ""
+    @State private var resolvedPlaceTitle: String = ""
     @State private var showDeleteConfirm = false
     @State private var isGeneratingCaption = false
+    @State private var downloadToast: String?
+    @State private var pendingCaptionEditorClose = false
     @FocusState private var captionFocused: Bool
 
     // MARK: - Vibe
@@ -29,10 +34,40 @@ struct AppCaptureDetailView: View {
     /// Global toggle: once enabled, auto-plays Vibe as the user pages through photos.
     @State private var isVibeEnabled: Bool = false
 
+    /// Restrict writing assist in full-screen gallery to iPhone 15+ hardware.
+    private var supportsFullScreenWritingAssist: Bool {
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return true }
+        guard let modelIdentifier = Self.currentDeviceModelIdentifier() else { return false }
+        guard modelIdentifier.hasPrefix("iPhone") else { return true }
+
+        let remainder = modelIdentifier.dropFirst("iPhone".count)
+        guard let majorPart = remainder.split(separator: ",").first,
+              let major = Int(majorPart) else { return false }
+        return major >= 15
+    }
+
+    private static func currentDeviceModelIdentifier() -> String? {
+        // Simulator exposes target hardware via env var.
+        if let simModel = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"],
+           !simModel.isEmpty {
+            return simModel
+        }
+
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        let mirror = Mirror(reflecting: systemInfo.machine)
+        let id = mirror.children.reduce(into: "") { partial, element in
+            guard let value = element.value as? Int8, value != 0 else { return }
+            partial.append(Character(UnicodeScalar(UInt8(value))))
+        }
+        return id.isEmpty ? nil : id
+    }
+
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .short
+        // Matches `PlacePhotoModalView` style (e.g. "30 Aug 2025 at 1:53 PM").
+        f.dateFormat = "d MMM yyyy 'at' h:mm a"
+        f.locale = Locale(identifier: "en_US_POSIX")
         return f
     }()
 
@@ -48,6 +83,20 @@ struct AppCaptureDetailView: View {
                     topBar
                     bottomOverlay
                 }
+                if let downloadToast {
+                    VStack {
+                        Spacer()
+                        Text(downloadToast)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Capsule().fill(.black.opacity(0.7)))
+                            .padding(.bottom, 100)
+                    }
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+                }
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -61,9 +110,22 @@ struct AppCaptureDetailView: View {
                 currentIndex = idx
             }
             captionDraft = currentItem?.caption ?? ""
+            if let id = currentItem?.id {
+                resolvedPlaceTitle = resolvePlaceTitle(for: id)
+            } else {
+                resolvedPlaceTitle = ""
+            }
         }
         .onDisappear {
             vibePlayer.stop()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { notification in
+            guard pendingCaptionEditorClose else { return }
+            pendingCaptionEditorClose = false
+            let duration = (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? TimeInterval) ?? 0.25
+            withAnimation(.easeOut(duration: duration)) {
+                isEditingCaption = false
+            }
         }
         .confirmationDialog(
             "Delete this photo?",
@@ -103,6 +165,7 @@ struct AppCaptureDetailView: View {
         .onChange(of: currentIndex) { _, newIdx in
             if items.indices.contains(newIdx) {
                 captionDraft = items[newIdx].caption ?? ""
+                resolvedPlaceTitle = resolvePlaceTitle(for: items[newIdx].id)
             }
             vibePlayer.stop()
             if isVibeEnabled, let url = items[safe: newIdx]?.localVibeURL {
@@ -158,9 +221,7 @@ struct AppCaptureDetailView: View {
                                                     endPoint: .bottom
                                                 )
                                         )
-                                    Image(systemName: "dot.radiowaves.left.and.right")
-                                        .font(.system(size: 17, weight: .semibold))
-                                        .foregroundColor(isPlaying ? .white : Color.white.opacity(0.35))
+                                    AtmosphericWaveformView(isActive: isVibeEnabled)
                                 }
                                 .frame(width: 36, height: 36)
                                 .overlay(
@@ -198,6 +259,11 @@ struct AppCaptureDetailView: View {
                         }
 
                         Menu {
+                            Button {
+                                downloadCurrentPhotoToPhotoLibrary()
+                            } label: {
+                                Label("Download Photo", systemImage: "square.and.arrow.down")
+                            }
                             Button(role: .destructive) {
                                 showDeleteConfirm = true
                             } label: {
@@ -227,67 +293,81 @@ struct AppCaptureDetailView: View {
         }
     }
 
-    // MARK: - Bottom overlay (timestamp + caption preview)
-
+    // MARK: - Bottom overlay (place name + timestamp + caption preview)
     private var bottomOverlay: some View {
         VStack {
             Spacer()
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 if let item = currentItem {
-                    // Timestamp row with magic wand
-                    HStack(alignment: .center) {
-                        Text(Self.dateFormatter.string(from: item.timestamp))
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.6))
+                    let placeTitle = resolvedPlaceTitle.isEmpty ? "Unknown Place" : resolvedPlaceTitle
 
-                        Spacer()
+                    // Place title + timestamp (and magic wand when caption exists)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(placeTitle)
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .shadow(color: .black.opacity(0.4), radius: 2)
 
-                        if let cap = item.caption, !cap.isEmpty, let cgImage = item.image?.cgImage {
-                            Button {
-                                isGeneratingCaption = true
-                                Task {
-                                    let text = await StoryCaptionService.shared.generateCaptionForImage(cgImage: cgImage)
-                                    await MainActor.run {
-                                        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        let newCaption: String? = trimmed.isEmpty ? nil : trimmed
-                                        try? AppCapturePhotoService.shared.updateCaption(captureId: item.id, caption: newCaption)
-                                        CreatedRecapBlogStore.shared.syncPhotoCaptionFromAppCapture(captureId: item.id, caption: newCaption)
-                                        items[currentIndex].caption = newCaption
-                                        onCaptionSaved(item.id, newCaption)
-                                        isGeneratingCaption = false
+                        HStack(alignment: .center, spacing: 12) {
+                            Text(Self.dateFormatter.string(from: item.timestamp))
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(.white.opacity(0.8))
+                                .shadow(color: .black.opacity(0.3), radius: 1)
+
+                            Spacer()
+
+                            if supportsFullScreenWritingAssist,
+                               let cap = item.caption, !cap.isEmpty,
+                               let cgImage = item.image?.cgImage {
+                                Button {
+                                    isGeneratingCaption = true
+                                    Task {
+                                        let text = await StoryCaptionService.shared.generateCaptionForImage(cgImage: cgImage)
+                                        await MainActor.run {
+                                            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            let newCaption: String? = trimmed.isEmpty ? nil : trimmed
+                                            try? AppCapturePhotoService.shared.updateCaption(captureId: item.id, caption: newCaption)
+                                            CreatedRecapBlogStore.shared.syncPhotoCaptionFromAppCapture(captureId: item.id, caption: newCaption)
+                                            items[currentIndex].caption = newCaption
+                                            onCaptionSaved(item.id, newCaption)
+                                            isGeneratingCaption = false
+                                        }
+                                    }
+                                } label: {
+                                    if isGeneratingCaption {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                            .scaleEffect(0.8)
+                                            .frame(width: 20, height: 20)
+                                    } else {
+                                        Image(systemName: "wand.and.stars")
+                                            .font(.caption)
+                                            .foregroundStyle(
+                                                LinearGradient(
+                                                    colors: [
+                                                        Color(red: 0.8, green: 0.5, blue: 1.0),
+                                                        Color(red: 0.4, green: 0.7, blue: 1.0)
+                                                    ],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                )
+                                            )
                                     }
                                 }
-                            } label: {
-                                if isGeneratingCaption {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                        .scaleEffect(0.8)
-                                        .frame(width: 20, height: 20)
-                                } else {
-                                    Image(systemName: "wand.and.stars")
-                                        .font(.caption)
-                                        .foregroundStyle(
-                                            LinearGradient(
-                                                colors: [
-                                                    Color(red: 0.8, green: 0.5, blue: 1.0),
-                                                    Color(red: 0.4, green: 0.7, blue: 1.0)
-                                                ],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
-                                }
+                                .disabled(isGeneratingCaption)
                             }
-                            .disabled(isGeneratingCaption)
                         }
                     }
 
-                    // Caption (tap to edit)
+                    // Caption (tap to edit) — matches the style of the Place pull-up editing panel.
                     if let cap = item.caption, !cap.isEmpty {
                         Text(cap)
-                            .font(.subheadline)
+                            .font(.body)
                             .foregroundColor(.white)
-                            .lineLimit(3)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
                             .onTapGesture {
                                 captionDraft = cap
                                 withAnimation { isEditingCaption = true }
@@ -299,9 +379,11 @@ struct AppCaptureDetailView: View {
                             withAnimation { isEditingCaption = true }
                             DispatchQueue.main.async { captionFocused = true }
                         } label: {
-                            Label("Leave a story for this photo...", systemImage: "text.bubble")
-                                .font(.subheadline)
+                            Text("Leave a story for this photo...")
+                                .font(.body)
                                 .foregroundColor(.white.opacity(0.45))
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
                         }
                     }
                 }
@@ -328,40 +410,41 @@ struct AppCaptureDetailView: View {
             // Toolbar: Cancel / Done
             HStack {
                 Button("Cancel") {
-                    withAnimation { isEditingCaption = false }
-                    captionFocused = false
                     captionDraft = currentItem?.caption ?? ""
+                    requestCaptionEditorClose()
                 }
                 .foregroundColor(.white.opacity(0.7))
 
                 Spacer()
 
-                Text("Caption")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.white)
-
-                Spacer()
-
-                Button("Done") {
-                    saveCaption()
-                }
-                .foregroundColor(.blue)
-                .fontWeight(.semibold)
+                Button("Done") { saveCaption() }
+                    .foregroundColor(.blue)
+                    .fontWeight(.semibold)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(Color(white: 0.12))
+            .background(Color.black)
 
             Divider().background(Color.white.opacity(0.15))
 
-            // Content: title/date + caption field + AI wand (same pattern as PlacePhotoModalView)
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
                 if let item = currentItem {
-                    Text(Self.dateFormatter.string(from: item.timestamp))
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundColor(.white.opacity(0.8))
-                        .padding(.bottom, 4)
+                    let placeTitle = resolvedPlaceTitle.isEmpty ? "Unknown Place" : resolvedPlaceTitle
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(placeTitle)
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+
+                        if !Self.dateFormatter.string(from: item.timestamp).isEmpty {
+                            Text(Self.dateFormatter.string(from: item.timestamp))
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                    }
+                    .padding(.bottom, 4)
 
                     TextField("Leave a story for this photo...", text: $captionDraft, axis: .vertical)
                         .focused($captionFocused)
@@ -375,22 +458,51 @@ struct AppCaptureDetailView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                LinearGradient(
-                    colors: [
-                        Color.black.opacity(0.8),
-                        Color.black.opacity(0.4),
-                        Color.clear
-                    ],
-                    startPoint: .bottom,
-                    endPoint: .top
-                )
-            )
+            .background(Color.black)
         }
-        .background(Color(white: 0.12))
+        .background(Color.black.ignoresSafeArea(edges: .bottom))
     }
 
     // MARK: - Actions
+
+    private func resolvePlaceTitle(for captureId: UUID) -> String {
+        let target = AppCapturePhotoService.identifier(for: captureId)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // `visitedPlaces` contains the per-photo graph and is what the Year/Category filters also use.
+        if let match = CreatedRecapBlogStore.shared.visitedPlaces.first(where: { place in
+            place.photos.contains(where: { photo in
+                photo.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines) == target
+            })
+        }) {
+            return match.displayName
+        }
+
+        return "Unknown Place"
+    }
+
+    private func downloadCurrentPhotoToPhotoLibrary() {
+        guard let item = currentItem else { return }
+        let image = item.image ?? AppCapturePhotoService.shared.loadImage(captureId: item.id)
+        guard let image else {
+            downloadToast = "Couldn’t load photo"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { downloadToast = nil }
+            return
+        }
+        PHPhotoLibrary.shared().performChanges {
+            PHAssetChangeRequest.creationRequestForAsset(from: image)
+        } completionHandler: { success, _ in
+            DispatchQueue.main.async {
+                if success {
+                    downloadToast = "1 photo saved to Photos"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { downloadToast = nil }
+                } else {
+                    downloadToast = "Couldn’t save to Photos"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { downloadToast = nil }
+                }
+            }
+        }
+    }
 
     private func saveCaption() {
         guard let item = currentItem else { return }
@@ -400,8 +512,21 @@ struct AppCaptureDetailView: View {
         CreatedRecapBlogStore.shared.syncPhotoCaptionFromAppCapture(captureId: item.id, caption: newCaption)
         items[currentIndex].caption = newCaption
         onCaptionSaved(item.id, newCaption)
-        withAnimation { isEditingCaption = false }
+        requestCaptionEditorClose()
+    }
+
+    private func requestCaptionEditorClose() {
+        pendingCaptionEditorClose = true
         captionFocused = false
+
+        // If no software keyboard animation will fire (e.g. hardware keyboard), close immediately.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            guard pendingCaptionEditorClose else { return }
+            pendingCaptionEditorClose = false
+            withAnimation(.easeOut(duration: 0.2)) {
+                isEditingCaption = false
+            }
+        }
     }
 
     private func deleteCurrentPhoto() {

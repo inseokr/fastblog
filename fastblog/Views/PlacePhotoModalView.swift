@@ -489,7 +489,7 @@ struct PlacePhotoModalView: View {
                         
                         if !isEditing && !blogIsEditMode {
                             // Kebab menu + action buttons stacked vertically in top right
-                            VStack(spacing: 16) {
+                            VStack(spacing: 18) {
                                 Menu {
                                     Button {
                                         showRenameSheet = true
@@ -532,18 +532,17 @@ struct PlacePhotoModalView: View {
                                             vibePlayer.stop()
                                         }
                                     } label: {
-                                        Image(systemName: "waveform")
-                                            .font(.system(size: 20, weight: .semibold))
-                                            .foregroundStyle(
-                                                LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
-                                            )
-                                            .symbolEffect(.variableColor.iterative.reversing, isActive: isPlaying)
-                                            .frame(width: 44, height: 44)
-                                            .background(Color.black.opacity(0.55))
+                                        AtmosphericWaveformView(isActive: isVibeEnabled)
+                                            .frame(width: 50, height: 50)
+                                            .background(.ultraThinMaterial)
+                                            .background(isVibeEnabled ? Color.cyan.opacity(0.22) : Color.clear)
                                             .clipShape(Circle())
-                                            .overlay(Circle().stroke(Color.green.opacity(isPlaying ? 0.85 : 0.5), lineWidth: isPlaying ? 1.5 : 1))
-                                            .scaleEffect(isPlaying ? 1.15 : 1.0)
-                                            .animation(.spring(response: 0.35, dampingFraction: 0.6), value: isPlaying)
+                                            .overlay(
+                                                Circle().stroke(
+                                                    isVibeEnabled ? Color.cyan.opacity(0.5) : Color.clear,
+                                                    lineWidth: 1
+                                                )
+                                            )
                                     }
                                     .buttonStyle(.plain)
                                     .accessibilityLabel(isPlaying ? "Vibe playing" : "Play vibe")

@@ -1,0 +1,201 @@
+40 synonyms
+*----------------------------------------------*
+Yelp Category: {"alias": "airports", "parents": ["hotelstravel"], "title": "Airports"}
+All Category: {"alias": "airport", "parents": ["hotelstravel"], "title": "Airports"}
+Similarity: 0.966666666667
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "amusementparks", "parents": ["active"], "title": "Amusement Parks"}
+All Category: {"alias": "amusement_park", "parents": ["active"], "title": "Amusement Parks"}
+Similarity: 0.964285714286
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "aquariums", "parents": ["active"], "title": "Aquariums"}
+All Category: {"alias": "aquarium", "parents": ["active"], "title": "Aquariums"}
+Similarity: 0.970588235294
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "banks", "parents": ["financialservices"], "title": "Banks & Credit Unions"}
+All Category: {"alias": "bank", "parents": ["financialservices"], "title": "Banks & Credit Unions"}
+Similarity: 0.944444444444
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "bars", "parents": ["nightlife"], "title": "Bars"}
+All Category: {"alias": "bar", "parents": ["nightlife"], "title": "Bars"}
+Similarity: 0.928571428571
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "bookstores", "parents": ["media"], "title": "Bookstores"}
+All Category: {"alias": "book_store", "parents": ["media"], "title": "Bookstores"}
+Similarity: 0.95
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "busstations", "parents": ["transport"], "title": "Bus Stations"}
+All Category: {"alias": "bus_station", "parents": ["transport"], "title": "Bus Stations"}
+Similarity: 0.954545454545
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "cafes", "parents": ["restaurants"], "title": "Cafes"}
+All Category: {"alias": "cafe", "parents": ["restaurants"], "title": "Cafes"}
+Similarity: 0.944444444444
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "campgrounds", "parents": ["hotelstravel"], "title": "Campgrounds"}
+All Category: {"alias": "campground", "parents": ["hotelstravel"], "title": "Campgrounds"}
+Similarity: 0.97619047619
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "car_dealers", "parents": ["auto"], "title": "Car Dealers"}
+All Category: {"alias": "car_dealer", "parents": ["auto"], "title": "Car Dealers"}
+Similarity: 0.97619047619
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "carrental", "parents": ["hotelstravel"], "title": "Car Rental"}
+All Category: {"alias": "car_rental", "parents": ["hotelstravel"], "title": "Car Rental"}
+Similarity: 0.973684210526
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "carwash", "parents": ["auto"], "title": "Car Wash"}
+All Category: {"alias": "car_wash", "parents": ["auto"], "title": "Car Wash"}
+Similarity: 0.966666666667
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "casinos", "parents": ["arts"], "title": "Casinos"}
+All Category: {"alias": "casino", "parents": ["arts"], "title": "Casinos"}
+Similarity: 0.961538461538
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "churches", "parents": ["religiousorgs"], "title": "Churches"}
+All Category: {"alias": "church", "parents": ["religiousorgs"], "title": "Churches"}
+Similarity: 0.928571428571
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "courthouses", "parents": ["publicservicesgovt"], "title": "Courthouses"}
+All Category: {"alias": "courthouse", "parents": ["publicservicesgovt"], "title": "Courthouses"}
+Similarity: 0.97619047619
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "dentists", "parents": ["health"], "title": "Dentists"}
+All Category: {"alias": "dentist", "parents": ["health"], "title": "Dentists"}
+Similarity: 0.966666666667
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "drugstores", "parents": ["shopping"], "title": "Drugstores"}
+All Category: {"alias": "drugstore", "parents": ["shopping"], "title": "Drugstores"}
+Similarity: 0.973684210526
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "electricians", "parents": ["homeservices"], "title": "Electricians"}
+All Category: {"alias": "electrician", "parents": ["homeservices"], "title": "Electricians"}
+Similarity: 0.978260869565
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "florists", "parents": ["flowers"], "title": "Florists"}
+All Category: {"alias": "florist", "parents": ["flowers"], "title": "Florists"}
+Similarity: 0.966666666667
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "gyms", "parents": ["fitness"], "title": "Gyms"}
+All Category: {"alias": "gym", "parents": ["fitness"], "title": "Gyms"}
+Similarity: 0.928571428571
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "hindu_temples", "parents": ["religiousorgs"], "title": "Hindu Temples"}
+All Category: {"alias": "hindu_temple", "parents": ["religiousorgs"], "title": "Hindu Temples"}
+Similarity: 0.98
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "hospitals", "parents": ["health"], "title": "Hospitals"}
+All Category: {"alias": "hospital", "parents": ["health"], "title": "Hospitals"}
+Similarity: 0.970588235294
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "landmarks", "parents": ["publicservicesgovt"], "title": "Landmarks & Historical Buildings"}
+All Category: {"alias": "landmark", "parents": ["publicservicesgovt"], "title": "Landmarks & Historical Buildings"}
+Similarity: 0.970588235294
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "lawyers", "parents": ["professional"], "title": "Lawyers"}
+All Category: {"alias": "lawyer", "parents": ["professional"], "title": "Lawyers"}
+Similarity: 0.961538461538
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "locksmiths", "parents": ["homeservices"], "title": "Keys & Locksmiths"}
+All Category: {"alias": "locksmith", "parents": ["homeservices"], "title": "Keys & Locksmiths"}
+Similarity: 0.973684210526
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "mosques", "parents": ["religiousorgs"], "title": "Mosques"}
+All Category: {"alias": "mosque", "parents": ["religiousorgs"], "title": "Mosques"}
+Similarity: 0.961538461538
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "movietheaters", "parents": ["arts"], "title": "Cinema"}
+All Category: {"alias": "movie_theater", "parents": ["arts"], "title": "Cinema"}
+Similarity: 0.961538461538
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "museums", "parents": ["arts"], "title": "Museums"}
+All Category: {"alias": "museum", "parents": ["arts"], "title": "Museums"}
+Similarity: 0.961538461538
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "painters", "parents": ["homeservices"], "title": "Painters"}
+All Category: {"alias": "painter", "parents": ["homeservices"], "title": "Painters"}
+Similarity: 0.966666666667
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "parks", "parents": ["active"], "title": "Parks"}
+All Category: {"alias": "park", "parents": ["active", "address"], "title": "Parks"}
+Similarity: 0.944444444444
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "petstore", "parents": ["pets"], "title": "Pet Stores"}
+All Category: {"alias": "pet_store", "parents": ["pets"], "title": "Pet Stores"}
+Similarity: 0.970588235294
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "postoffices", "parents": ["publicservicesgovt"], "title": "Post Offices"}
+All Category: {"alias": "post_office", "parents": ["publicservicesgovt"], "title": "Post Offices"}
+Similarity: 0.954545454545
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "realestateagents", "parents": ["realestate"], "title": "Real Estate Agents"}
+All Category: {"alias": "real_estate_agency", "parents": ["realestate"], "title": "Real Estate Agents"}
+Similarity: 0.911764705882
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "restaurants", "parents": [], "title": "Restaurants"}
+All Category: {"alias": "restaurant", "parents": ["restaurants"], "title": "Restaurants"}
+Similarity: 0.97619047619
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "rvparks", "parents": ["hotelstravel"], "title": "RV Parks"}
+All Category: {"alias": "rv_park", "parents": ["hotelstravel"], "title": "RV Parks"}
+Similarity: 0.928571428571
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "spas", "parents": ["beautysvc"], "title": "Day Spas"}
+All Category: {"alias": "spa", "parents": ["beautysvc"], "title": "Day Spas"}
+Similarity: 0.928571428571
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "synagogues", "parents": ["religiousorgs"], "title": "Synagogues"}
+All Category: {"alias": "synagogue", "parents": ["religiousorgs"], "title": "Synagogues"}
+Similarity: 0.973684210526
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "trainstations", "parents": ["hotelstravel"], "title": "Train Stations"}
+All Category: {"alias": "train_station", "parents": ["hotelstravel"], "title": "Train Stations"}
+Similarity: 0.961538461538
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "travelagents", "parents": ["travelservices"], "title": "Travel Agents"}
+All Category: {"alias": "travel_agency", "parents": ["travelservices"], "title": "Travel Agents"}
+Similarity: 0.9
+*----------------------------------------------*
+*----------------------------------------------*
+Yelp Category: {"alias": "zoos", "parents": ["active"], "title": "Zoos"}
+All Category: {"alias": "zoo", "parents": ["active"], "title": "Zoos"}
+Similarity: 0.928571428571
+*----------------------------------------------*

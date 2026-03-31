@@ -131,6 +131,7 @@
 		BB0001AC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB0001AB /* Assets.xcassets */; };
 		BB0001C0 /* PlaceSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001BF /* PlaceSearchViewModel.swift */; };
 		BB0001C2 /* KeyboardCaptionToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C1 /* KeyboardCaptionToolbar.swift */; };
+		BB000306 /* AtmosphericWaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000307 /* AtmosphericWaveformView.swift */; };
 		BB0001C4 /* UndoOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C3 /* UndoOverlayView.swift */; };
 		BB0001C6 /* NeighborhoodIntroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C5 /* NeighborhoodIntroView.swift */; };
 		BB0001C8 /* NeighborhoodMapRefinementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C7 /* NeighborhoodMapRefinementView.swift */; };
@@ -346,6 +347,7 @@
 		BB0001AB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BB0001BF /* PlaceSearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSearchViewModel.swift; sourceTree = "<group>"; };
 		BB0001C1 /* KeyboardCaptionToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardCaptionToolbar.swift; sourceTree = "<group>"; };
+		BB000307 /* AtmosphericWaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmosphericWaveformView.swift; sourceTree = "<group>"; };
 		BB0001C3 /* UndoOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoOverlayView.swift; sourceTree = "<group>"; };
 		BB0001C5 /* NeighborhoodIntroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodIntroView.swift; sourceTree = "<group>"; };
 		BB0001C7 /* NeighborhoodMapRefinementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodMapRefinementView.swift; sourceTree = "<group>"; };
@@ -738,6 +740,7 @@
 		BB0001CB /* Components */ = {
 			isa = PBXGroup;
 			children = (
+				BB000307 /* AtmosphericWaveformView.swift */,
 				BB0001C1 /* KeyboardCaptionToolbar.swift */,
 				BB0001E8 /* PlaceCardView.swift */,
 				BB0001E0 /* RecallCard.swift */,
@@ -959,6 +962,7 @@
 				BB000224 /* StoryCaptionService.swift in Sources */,
 				BB000226 /* LocalLLMStoryCaptionGenerator.swift in Sources */,
 				BB0001C0 /* PlaceSearchViewModel.swift in Sources */,
+				BB000306 /* AtmosphericWaveformView.swift in Sources */,
 				BB0001C2 /* KeyboardCaptionToolbar.swift in Sources */,
 				BB0001C4 /* UndoOverlayView.swift in Sources */,
 				BB0001C6 /* NeighborhoodIntroView.swift in Sources */,

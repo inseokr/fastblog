@@ -807,6 +807,7 @@ final class CreatedRecapBlogStore: ObservableObject {
     /// - Parameter asDraft: If true, preserves the existing lastEditedAt (keeping it nil if it was a draft).
     func saveBlogDetail(_ detail: RecapBlogDetail, asDraft: Bool = false) {
         blogDetailsBySourceId[detail.id] = detail
+        syncAppCaptureCaptionsFromBlogDetail(detail)
         guard let idx = recents.firstIndex(where: { $0.sourceTripId == detail.id }) else { return }
         let old = recents[idx]
         let country = (detail.countryName.flatMap { $0.isEmpty || $0 == "Unknown" ? nil : $0 }) ?? old.countryName
@@ -854,6 +855,7 @@ final class CreatedRecapBlogStore: ObservableObject {
     func updatePhotoCaption(photoId: UUID, newCaption: String) {
         var changed = false
         var changedSourceIds: Set<UUID> = []
+        var appCaptureIdToSync: UUID?
         for key in blogDetailsBySourceId.keys {
             guard var detail = blogDetailsBySourceId[key] else { continue }
             var detailChanged = false
@@ -861,6 +863,11 @@ final class CreatedRecapBlogStore: ObservableObject {
                 for stopIdx in detail.days[dayIdx].placeStops.indices {
                     for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
                         if detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].id == photoId {
+                            if appCaptureIdToSync == nil,
+                               let lid = detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].localIdentifier,
+                               let captureId = AppCapturePhotoService.uuid(from: lid) {
+                                appCaptureIdToSync = captureId
+                            }
                             detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].caption = newCaption.isEmpty ? nil : newCaption
                             detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].captionIsManual = true
                             detailChanged = true
@@ -874,6 +881,10 @@ final class CreatedRecapBlogStore: ObservableObject {
                 changedSourceIds.insert(key)
             }
         }
+        if let cid = appCaptureIdToSync {
+            let trimmed = newCaption.trimmingCharacters(in: .whitespacesAndNewlines)
+            try? AppCapturePhotoService.shared.updateCaption(captureId: cid, caption: trimmed.isEmpty ? nil : trimmed)
+        }
         if changed {
             persistBlogDetails()
             for sourceId in changedSourceIds {
@@ -883,6 +894,22 @@ final class CreatedRecapBlogStore: ObservableObject {
             // Notify SwiftUI observers so views reading `visitedPlaces` (a computed property
             // derived from `blogDetailsBySourceId`) re-render immediately with the new caption.
             objectWillChange.send()
+        }
+    }
+
+    /// Keeps **Bloggo Gallery** `meta.json` captions in sync when the user edits or clears captions in the blog.
+    /// Only affects photos whose `localIdentifier` is `bloggo-capture:<uuid>`.
+    private func syncAppCaptureCaptionsFromBlogDetail(_ detail: RecapBlogDetail) {
+        for day in detail.days {
+            for stop in day.placeStops {
+                for photo in stop.photos {
+                    guard let lid = photo.localIdentifier,
+                          let captureId = AppCapturePhotoService.uuid(from: lid) else { continue }
+                    let trimmed = (photo.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    let finalCaption: String? = trimmed.isEmpty ? nil : trimmed
+                    try? AppCapturePhotoService.shared.updateCaption(captureId: captureId, caption: finalCaption)
+                }
+            }
         }
     }
 

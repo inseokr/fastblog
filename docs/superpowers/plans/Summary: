@@ -1,0 +1,74 @@
+Summary:
+The dropdown picker I'm using in React Native only supports sub categories for direct children categories.
+Which means the dropdown will only contain the parent category and the direct children categories.
+
+Problem:
+1. Direct children may also have direct chidren.
+    Example: "skate_parks" technically isn't selectable through the dropdown picker because it's an indirect child of "fitness".
+    Reason: Since "skate_parks" is an indirect child, a favorites place for a skatepark would not be filterable because it's not a direct child of one of the categories in the dropdown picker.
+2. It's possible for a certain category to have multiple parents.
+    Example: "wineries" has two parents: "arts" and "food".
+    Reason: "wineries" would require two separate entries in the list fed into the dropdown picker. And each of those entries could have entirely different sub categories depending on the parent.
+3. Since Yelp and Google had their own way of categorizing there's a few aliases that mean the same thing but are spelled differently.
+    Example: "movie_theater" vs "movietheaters" or "museum" vs "museums". 
+    Reason: Filtering will have issues because even though the two aliases mean the same thing, literally they are two different aliases.
+
+Proposal:
+- Create another JSON Object but instead of a list it will be key value pairs.
+- Can add additional fields such as direct_children, indirect_children.
+{
+    "active": {
+
+    }
+}
+
+(Shortened tree structure view of a parent category)
+Active Life (active)
+    Airsoft (airsoft)
+    Amateur Sports Teams (amateursportsteams)
+    Diving (diving)
+        Free Diving (freediving)
+        Scuba Diving (scuba)
+    Escape Games (escapegames)
+    Fitness & Instruction (fitness)
+        Aerial Fitness (aerialfitness)
+        Barre Classes (barreclasses)
+        Golf Lessons (golflessons)
+        Gyms (gyms)
+            Circuit Training Gyms (circuittraininggyms)
+            Interval Training Gyms (intervaltraininggyms)
+        Trainers (healthtrainers)
+        Martial Arts (martialarts)
+            Brazilian Jiu-jitsu (brazilianjiujitsu)
+            Taekwondo (taekwondo)
+        Meditation Centers (meditationcenters)
+        Pilates (pilates)
+        Self-defense Classes (selfdefenseclasses)
+        Swimming Lessons/Schools (swimminglessons)
+        Tai Chi (taichi)
+        Yoga (yoga)
+    Parasailing (parasailing)
+    Parks (parks)
+        Dog Parks (dog_parks)
+        Skate Parks (skate_parks)
+    Pickleball (pickleball)
+    Surfing (surfing)
+    Swimming Pools (swimmingpools)
+    Tennis (tennis)
+    Zoos (zoos)
+        Petting Zoos (pettingzoos)
+
+(Shortened tree structure view of a parent category with only one level of sub categories)
+Active Life (active)
+    Airsoft (airsoft)
+    Amateur Sports Teams (amateursportsteams)
+    Diving (diving)
+    Escape Games (escapegames)
+    Fitness & Instruction (fitness)
+    Parasailing (parasailing)
+    Parks (parks)
+    Pickleball (pickleball)
+    Surfing (surfing)
+    Swimming Pools (swimmingpools)
+    Tennis (tennis)
+    Zoos (zoos)
