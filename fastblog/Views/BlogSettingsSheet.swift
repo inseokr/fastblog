@@ -5,6 +5,45 @@
 
 import SwiftUI
 
+// MARK: - Blog Font Helper
+extension Font {
+    /// Returns the blog font for the given user-selected style and size.
+    /// - "Default"     → SF Pro (clean system font)
+    /// - "Serif"       → Georgia (warm editorial — original blog look)
+    /// - "Mono"        → SF Mono (code / typewriter feel)
+    /// - "Rounded"     → SF Pro Rounded (soft, friendly)
+    /// - "Baskerville" → Baskerville (classical literary serif)
+    /// - "Avenir"      → Avenir Next (elegant geometric sans)
+    /// - "Bodoni"      → Bodoni 72 (high-contrast luxury serif)
+    /// - "Futura"      → Futura (geometric modernist sans)
+    /// - "Optima"      → Optima (flared humanist sans)
+    /// - "Typewriter"  → American Typewriter (nostalgic serif typewriter)
+    static func blog(_ style: String, size: CGFloat, bold: Bool = false) -> Font {
+        switch style {
+        case "Serif":
+            return .custom(bold ? "Georgia-Bold" : "Georgia", size: size)
+        case "Mono":
+            return .system(size: size, weight: bold ? .bold : .regular, design: .monospaced)
+        case "Rounded":
+            return .system(size: size, weight: bold ? .bold : .regular, design: .rounded)
+        case "Baskerville":
+            return .custom(bold ? "Baskerville-Bold" : "Baskerville", size: size)
+        case "Avenir":
+            return .custom(bold ? "AvenirNext-Bold" : "AvenirNext-Regular", size: size)
+        case "Bodoni":
+            return .custom(bold ? "BodoniSvtyTwoITCTT-Bold" : "BodoniSvtyTwoITCTT-Book", size: size)
+        case "Futura":
+            return .custom(bold ? "Futura-Bold" : "Futura-Medium", size: size)
+        case "Optima":
+            return .custom(bold ? "Optima-Bold" : "Optima-Regular", size: size)
+        case "Typewriter":
+            return .custom(bold ? "AmericanTypewriter-Bold" : "AmericanTypewriter", size: size)
+        default: // "Default"
+            return .system(size: size, weight: bold ? .bold : .regular)
+        }
+    }
+}
+
 /// Shown from the blog page (RecapBlogPageView). Change title, cover, and manage photos.
 struct BlogSettingsSheet: View {
     @Binding var draft: RecapBlogDetail
@@ -27,6 +66,7 @@ struct BlogSettingsSheet: View {
     @AppStorage(StoryWritingStyle.storageKey) private var writingStyle: String = ""
     @AppStorage(StoryWritingStyle.presetStorageKey) private var writingStylePresetId: String = ""
     @AppStorage(WeatherTemperatureUnit.storageKey) private var weatherTemperatureUnitRaw: String = WeatherTemperatureUnit.fahrenheit.rawValue
+    @AppStorage("selectedBlogFont") private var selectedBlogFont: String = "Serif"
 
     @State private var showTitleChange = false
     @State private var showCoverChange = false
@@ -83,6 +123,7 @@ struct BlogSettingsSheet: View {
         List {
             editAndRestoreSection
             titleAndCoverSection
+            fontStyleSection
             weatherSection
             cloudSection
         }
@@ -130,6 +171,43 @@ struct BlogSettingsSheet: View {
                 showCoverChange = true
             } label: {
                 Label("Change Cover Photo", systemImage: "photo")
+            }
+        }
+    }
+
+    private var fontStyleSection: some View {
+        Section {
+            Picker("Font Style", selection: $selectedBlogFont) {
+                Text("Default")
+                    .font(.system(size: 16))
+                    .tag("Default")
+                Text("Serif")
+                    .font(.custom("Georgia", size: 16))
+                    .tag("Serif")
+                Text("Mono")
+                    .font(.system(size: 16, design: .monospaced))
+                    .tag("Mono")
+                Text("Rounded")
+                    .font(.system(size: 16, design: .rounded))
+                    .tag("Rounded")
+                Text("Baskerville")
+                    .font(.custom("Baskerville", size: 16))
+                    .tag("Baskerville")
+                Text("Avenir")
+                    .font(.custom("AvenirNext-Regular", size: 16))
+                    .tag("Avenir")
+                Text("Bodoni")
+                    .font(.custom("BodoniSvtyTwoITCTT-Book", size: 16))
+                    .tag("Bodoni")
+                Text("Futura")
+                    .font(.custom("Futura-Medium", size: 16))
+                    .tag("Futura")
+                Text("Optima")
+                    .font(.custom("Optima-Regular", size: 16))
+                    .tag("Optima")
+                Text("Typewriter")
+                    .font(.custom("AmericanTypewriter", size: 16))
+                    .tag("Typewriter")
             }
         }
     }

@@ -128,6 +128,7 @@ struct RecapBlogPageView: View {
     @AppStorage("bloggo.hasSeenPhotoGroupingTip") private var hasSeenPhotoGroupingTip = false
     @AppStorage("hasUploadedFirstBlog") private var hasUploadedFirstBlog = false
     @AppStorage(WeatherTemperatureUnit.storageKey) private var weatherTemperatureUnitRaw: String = WeatherTemperatureUnit.fahrenheit.rawValue
+    @AppStorage("selectedBlogFont") private var selectedBlogFont: String = "Serif"
     @State private var showCloudOnboardingModal = false
     @State private var newlyUploadedBlogKey: Int? = nil
     @State private var showSaveTipAlert = false
@@ -660,8 +661,7 @@ struct RecapBlogPageView: View {
         placeCaptionEditItem != nil ||
         dayCaptionEditItem != nil ||
         placePhotoModalItem != nil ||
-        photoCaptionEditItem != nil ||
-        showBloggoQRSheet
+        photoCaptionEditItem != nil
     }
 
     private func coreContentChrome(screenHeight: CGFloat) -> some View {
@@ -1168,7 +1168,7 @@ struct RecapBlogPageView: View {
                 } label: {
                     HStack(alignment: .center, spacing: 10) {
                         Text(draft.title)
-                            .font(.system(size: 28, weight: .bold))
+                            .font(.blog(selectedBlogFont, size: 28, bold: true))
                             .foregroundColor(recapChromeForeground)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
@@ -1187,7 +1187,7 @@ struct RecapBlogPageView: View {
                 .buttonStyle(.plain)
             } else {
                 Text(draft.title)
-                    .font(Font.custom("Georgia-Bold", size: 30))
+                    .font(.blog(selectedBlogFont, size: 30, bold: true))
                     .foregroundColor(recapChromeForeground)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
@@ -1248,7 +1248,7 @@ struct RecapBlogPageView: View {
                         Button { showTitleChange = true } label: {
                             HStack(spacing: 10) {
                                 Text(draft.title)
-                                    .font(.system(size: 26, weight: .bold))
+                                    .font(.blog(selectedBlogFont, size: 26, bold: true))
                                     .foregroundColor(.white)
                                     .lineLimit(2)
                                     .multilineTextAlignment(.center)
@@ -1286,7 +1286,7 @@ struct RecapBlogPageView: View {
                     } else {
                         VStack(spacing: 6) {
                             Text(draft.title)
-                                .font(Font.custom("Georgia-Bold", size: 30))
+                                .font(.blog(selectedBlogFont, size: 30, bold: true))
                                 .foregroundColor(.white)
                                 .lineLimit(2)
                                 .multilineTextAlignment(.center)
@@ -1750,7 +1750,7 @@ struct RecapBlogPageView: View {
         return VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 6) {
                 Text(day.shortDateText)
-                    .font(Font.custom("Georgia-Bold", size: 20))
+                    .font(.blog(selectedBlogFont, size: 20, bold: true))
                     .foregroundColor(recapChromeForeground)
                 if isDayLoading {
                     ProgressView()
@@ -3170,7 +3170,7 @@ struct RecapBlogPageView: View {
             }()
             if let text = displayCaption {
                 Text(text)
-                    .font(Font.custom("Georgia", size: 17))
+                    .font(.blog(selectedBlogFont, size: 17))
                     .lineSpacing(8)
                     .foregroundColor(.white.opacity(0.9))
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -4955,9 +4955,7 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 12)
-
-            Spacer(minLength: 24)
+            .padding(.bottom, 24)
         }
         .padding(.top, 24)
     }
