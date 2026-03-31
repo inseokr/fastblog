@@ -113,6 +113,7 @@ struct RecapBlogPageView: View {
     @State private var showShareSheet = false
     @State private var showEditPhotoFlow = false
     @State private var fullScreenMapDay: RecapBlogDay?
+    @State private var fullScreenMapFocusedPlaceId: UUID?
     @State private var showTitleChange = false
     @State private var placePhotoModalItem: PlacePhotoModalItem?
     @State private var showUnsavedChangesAlert = false
@@ -123,7 +124,8 @@ struct RecapBlogPageView: View {
     @State private var cyclingCoverPhotoId: String? = nil
     /// Snapshot of the draft when edit mode was entered; compared to detect changes.
     @State private var draftSnapshot: RecapBlogDetail?
-    @AppStorage("blogify.showFirstTimeSaveTip") private var showFirstTimeSaveTip = true
+    /// Independent of the legacy "tap Save" tip — many users dismissed that key; split/merge onboarding uses its own flag.
+    @AppStorage("bloggo.hasSeenPhotoGroupingTip") private var hasSeenPhotoGroupingTip = false
     @AppStorage("hasUploadedFirstBlog") private var hasUploadedFirstBlog = false
     @AppStorage(WeatherTemperatureUnit.storageKey) private var weatherTemperatureUnitRaw: String = WeatherTemperatureUnit.fahrenheit.rawValue
     @State private var showCloudOnboardingModal = false
@@ -644,6 +646,25 @@ struct RecapBlogPageView: View {
     }
 
     private func coreContentWithSheets(screenHeight: CGFloat) -> some View {
+        applyFinalContentModifiers(
+            to: applySecondarySheetModifiers(
+                to: applyPrimarySheetModifiers(
+                    to: coreContentChrome(screenHeight: screenHeight)
+                )
+            )
+        )
+    }
+
+    private var shouldHideRecapNavigationBar: Bool {
+        showStoryMode ||
+        placeCaptionEditItem != nil ||
+        dayCaptionEditItem != nil ||
+        placePhotoModalItem != nil ||
+        photoCaptionEditItem != nil ||
+        showBloggoQRSheet
+    }
+
+    private func coreContentChrome(screenHeight: CGFloat) -> some View {
         coreContentRoot(screenHeight: screenHeight)
             .navigationBarBackButtonHidden(true)
             .navigationTitle(navTitle)
@@ -651,7 +672,11 @@ struct RecapBlogPageView: View {
             .toolbarBackground(recapNavigationBarBackgroundVisibility, for: .navigationBar)
             .toolbarBackground(recapNavigationBarBackgroundFill, for: .navigationBar)
             .toolbar { toolbarContent }
-            .toolbar((showStoryMode || placeCaptionEditItem != nil || dayCaptionEditItem != nil || placePhotoModalItem != nil || photoCaptionEditItem != nil || showBloggoQRSheet) ? .hidden : .automatic, for: .navigationBar)
+            .toolbar(shouldHideRecapNavigationBar ? .hidden : .automatic, for: .navigationBar)
+    }
+
+    private func applyPrimarySheetModifiers<Content: View>(to content: Content) -> some View {
+        content
             .sheet(isPresented: $showShareSheet) {
                 ShareSheet(items: shareItems)
             }
@@ -745,6 +770,10 @@ struct RecapBlogPageView: View {
                     }
                 )
             }
+    }
+
+    private func applySecondarySheetModifiers<Content: View>(to content: Content) -> some View {
+        content
             .sheet(item: $overflowStop) { item in
                 PlaceStopActionSheet(
                     placeTitle: item.stop.placeTitle,
@@ -819,12 +848,13 @@ struct RecapBlogPageView: View {
             .fullScreenCover(item: $fullScreenMapDay) { day in
                 FullScreenMapView(day: day, onDismiss: {
                     fullScreenMapDay = nil
+                    fullScreenMapFocusedPlaceId = nil
                 }, onCaptionSaved: { stopId, photoId, newCaption in
                     // Write the edited caption back into the draft and persist it
                     bindingForPhotoCaption(dayId: day.id, stopId: stopId, photoId: photoId).wrappedValue = newCaption
                     createdRecapStore.saveBlogDetail(draft)
                     syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: false, photoId: photoId)
-                })
+                }, initialFocusedPlaceId: fullScreenMapFocusedPlaceId)
             }
             .fullScreenCover(isPresented: $showPanorama) {
                 // Build one group per PlaceStop so diptych never mixes places.
@@ -858,6 +888,10 @@ struct RecapBlogPageView: View {
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
+    }
+
+    private func applyFinalContentModifiers<Content: View>(to content: Content) -> some View {
+        content
             .sheet(isPresented: Binding(
                 get: { unsavedSplitPromptIndex != nil },
                 set: { if !$0 { unsavedSplitPromptIndex = nil } }
@@ -920,7 +954,7 @@ struct RecapBlogPageView: View {
     private func coreContentAlertsAndLifecycleModifier() -> some ViewModifier {
         CoreContentAlertsAndLifecycleModifier(
             showSaveTipAlert: $showSaveTipAlert,
-            showFirstTimeSaveTip: $showFirstTimeSaveTip,
+            hasSeenPhotoGroupingTip: $hasSeenPhotoGroupingTip,
             showUnsavedChangesAlert: $showUnsavedChangesAlert,
             draftSnapshot: $draftSnapshot,
             cancellables: $cancellables,
@@ -1574,8 +1608,19 @@ struct RecapBlogPageView: View {
     private var mapOrPreviewCard: some View {
         if let day = day(at: selectedDayIndex) {
             ZStack(alignment: .bottomTrailing) {
-                MapDayView(placeStops: day.placeStops, onTap: { fullScreenMapDay = day })
+                MapDayView(
+                    placeStops: day.placeStops,
+                    onTap: {
+                        fullScreenMapFocusedPlaceId = nil
+                        fullScreenMapDay = day
+                    },
+                    onAnnotationTap: { stopId in
+                        fullScreenMapFocusedPlaceId = stopId
+                        fullScreenMapDay = day
+                    }
+                )
                 Button {
+                    fullScreenMapFocusedPlaceId = nil
                     fullScreenMapDay = day
                 } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
@@ -2612,6 +2657,9 @@ struct RecapBlogPageView: View {
             withAnimation {
                 showFirstSaveBanner = true
             }
+            // Guarantee first-time split/merge onboarding appears even when the
+            // initial on-appear sheet presentation is skipped (e.g. camera-first flow).
+            presentPhotoGroupingTipIfNeeded(afterNanoseconds: 800_000_000)
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                 withAnimation {
                     showFirstSaveBanner = false
@@ -3591,15 +3639,25 @@ struct RecapBlogPageView: View {
         // If the blog has been saved before, start in View Mode (unless forced into edit).
         if let existing = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }), existing.lastEditedAt != nil {
             isEditMode = forceEditMode
-        } else if showFirstTimeSaveTip {
-            showSaveTipAlert = true
         }
+        // Photo grouping split/merge: show once (dedicated AppStorage), not tied to legacy save tip or draft state.
+        presentPhotoGroupingTipIfNeeded(afterNanoseconds: 550_000_000)
         
         // Snapshot for change detection (after a brief delay so draft is loaded)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             if self.draftSnapshot == nil {
                 self.draftSnapshot = self.draft
             }
+        }
+    }
+
+    @MainActor
+    private func presentPhotoGroupingTipIfNeeded(afterNanoseconds delay: UInt64) {
+        guard !hasSeenPhotoGroupingTip else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: delay)
+            guard !hasSeenPhotoGroupingTip, !showSaveTipAlert else { return }
+            showSaveTipAlert = true
         }
     }
 
@@ -4741,7 +4799,7 @@ private struct PhotoLibraryAccessPromptView: View {
 // MARK: - Core content alerts & lifecycle (split out to help type-checker)
 private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
     @Binding var showSaveTipAlert: Bool
-    @Binding var showFirstTimeSaveTip: Bool
+    @Binding var hasSeenPhotoGroupingTip: Bool
     @Binding var showUnsavedChangesAlert: Bool
     @Binding var draftSnapshot: RecapBlogDetail?
     @Binding var cancellables: Set<AnyCancellable>
@@ -4759,6 +4817,7 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
         content
             .sheet(isPresented: $showSaveTipAlert, onDismiss: {
                 blogGroupingTipPage = 0
+                hasSeenPhotoGroupingTip = true
             }) {
                 blogGroupingTooltipContent
                     .presentationDetents([.medium])
@@ -4825,17 +4884,17 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
                         .resizable()
                         .scaledToFit()
                         .frame(width: 50, height: 50)
-                        .foregroundColor(.cyan)
+                        .foregroundColor(.orange)
                         .padding(.top, 8)
 
                     VStack(spacing: 8) {
-                        Text("Split")
+                        Text("Split Moments")
                             .font(.title2)
                             .fontWeight(.bold)
                             .multilineTextAlignment(.center)
                             .foregroundColor(.primary)
 
-                        Text("Photo grouping may not be perfect. Use Split when one group contains moments from two different places.")
+                        Text("If a moment includes photos from different places, you can split it into separate moments.")
                             .font(.body)
                             .multilineTextAlignment(.center)
                             .foregroundColor(.secondary)
@@ -4856,17 +4915,17 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
                         .resizable()
                         .scaledToFit()
                         .frame(width: 50, height: 50)
-                        .foregroundColor(.cyan)
+                        .foregroundColor(.orange)
                         .padding(.top, 8)
 
                     VStack(spacing: 8) {
-                        Text("Merge")
+                        Text("Merge Moments")
                             .font(.title2)
                             .fontWeight(.bold)
                             .multilineTextAlignment(.center)
                             .foregroundColor(.primary)
 
-                        Text("Use Merge when moments from the same place were split into separate groups and should be combined.")
+                        Text("If photos from the same place appear in separate moments, you can merge them together.")
                             .font(.body)
                             .multilineTextAlignment(.center)
                             .foregroundColor(.secondary)
@@ -4898,15 +4957,7 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
             .padding(.horizontal, 24)
             .padding(.bottom, 12)
 
-            Button {
-                showFirstTimeSaveTip = false
-                showSaveTipAlert = false
-            } label: {
-                Text("Don't show again")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundColor(.secondary)
-            }
-            .padding(.bottom, 24)
+            Spacer(minLength: 24)
         }
         .padding(.top, 24)
     }

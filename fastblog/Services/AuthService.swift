@@ -147,6 +147,8 @@ final class AuthService: NSObject, ObservableObject {
         defaults.set(false, forKey: "blogify.tripsIntroSeen.guest")
         // Capture intro
         defaults.set(false, forKey: "blogify.captureIntroSeen.guest")
+        // Recap split/merge onboarding tooltip
+        defaults.set(false, forKey: "bloggo.hasSeenPhotoGroupingTip")
         // Vibe: reset toggle and first-time tooltip so guest starts fresh
         defaults.set(false, forKey: "bloggo.camera.vibeEnabled")
         defaults.set(false, forKey: "bloggo.hasSeenVibeTooltip")

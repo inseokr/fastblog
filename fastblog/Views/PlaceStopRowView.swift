@@ -516,36 +516,6 @@ struct PlaceStopRowView: View {
                 // --- CASE 2b: Multiple photos (or edit-mode manage card) — horizontal scroll strip ---
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 10) {
-                        if shouldShowManagePhotosCard {
-                            Button(action: onManagePhotos) {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(rowInset)
-                                    VStack(spacing: 8) {
-                                        Image(systemName: "photo.on.rectangle")
-                                            .font(.system(size: 22, weight: .semibold))
-                                            .foregroundStyle(
-                                                LinearGradient(
-                                                    colors: [Color.white.opacity(0.9), Color.white.opacity(0.55)],
-                                                    startPoint: .top,
-                                                    endPoint: .bottom
-                                                )
-                                            )
-                                        Text("Manage Photos")
-                                            .font(.caption.weight(.semibold))
-                                            .foregroundColor(.primary)
-                                            .multilineTextAlignment(.center)
-                                    }
-                                    .padding(.horizontal, 8)
-                                }
-                                .frame(width: thumbnailSize, height: thumbnailSize)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
                         ForEach(includedPhotos) { photo in
                             VStack(alignment: .leading, spacing: 6) {
                                 ZStack(alignment: .topTrailing) {
@@ -662,6 +632,40 @@ struct PlaceStopRowView: View {
                             }
                             .frame(width: thumbnailSize)
                             .id(photo.id)
+                        }
+                        if shouldShowManagePhotosCard {
+                            Button(action: onManagePhotos) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(rowInset)
+                                    VStack(spacing: 8) {
+                                        Image(systemName: "photo.on.rectangle")
+                                            .font(.system(size: 22, weight: .semibold))
+                                            .foregroundStyle(
+                                                LinearGradient(
+                                                    colors: [Color.white.opacity(0.9), Color.white.opacity(0.55)],
+                                                    startPoint: .top,
+                                                    endPoint: .bottom
+                                                )
+                                            )
+                                        Text("Manage Photos")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundColor(.primary)
+                                            .multilineTextAlignment(.center)
+                                        Text("\(stop.photos.count) \(stop.photos.count == 1 ? "Photo" : "Photos")")
+                                            .font(.caption2.weight(.medium))
+                                            .foregroundColor(.secondary)
+                                            .multilineTextAlignment(.center)
+                                    }
+                                    .padding(.horizontal, 8)
+                                }
+                                .frame(width: thumbnailSize, height: thumbnailSize)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.leading, 16)

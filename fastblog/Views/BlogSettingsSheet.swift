@@ -82,27 +82,6 @@ struct BlogSettingsSheet: View {
     private var settingsList: some View {
         List {
             editAndRestoreSection
-            if canShareNearby {
-                Section {
-                    Button {
-                        let hasAnyExportableIncludedPhoto = draft.days
-                            .flatMap(\.placeStops)
-                            .flatMap(\.photos)
-                            .contains { $0.isIncluded && !(($0.localIdentifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
-                        guard hasAnyExportableIncludedPhoto else {
-                            showNearbyShareUnavailableAlert = true
-                            return
-                        }
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            showNearbyShareHost = true
-                        }
-                    } label: {
-                        Label("Share trip nearby", systemImage: "dot.radiowaves.left.and.right")
-                    }
-                } header: {
-                    Text("Sharing")
-                }
-            }
             titleAndCoverSection
             weatherSection
             cloudSection

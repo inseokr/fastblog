@@ -1903,6 +1903,7 @@ struct CameraCaptureView: View {
     @State private var nearHomeDoNotShowAgain: Bool = false
     @AppStorage("bloggo.hasSeenCameraTooltip") private var hasSeenCameraTooltip = false
     @State private var showCameraTooltip = false
+    @State private var pendingCameraTooltipTask: Task<Void, Never>? = nil
     // Zoom
     @State private var zoomBaseScale: CGFloat = 1.0
     @State private var showZoomIndicator: Bool = false
@@ -2153,6 +2154,7 @@ struct CameraCaptureView: View {
             loadLatestGalleryThumbnail()
             if cameraController.isConfigured {
                 cameraController.startRunning()
+                presentCameraTooltipIfNeeded()
             }
             // Kick off the waveform icon pulse loop
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -2165,9 +2167,12 @@ struct CameraCaptureView: View {
             if configured {
                 cameraController.startRunning()
                 if vibeEnabled { vibeRecorder.start() }
+                presentCameraTooltipIfNeeded()
             }
         }
         .onDisappear {
+            pendingCameraTooltipTask?.cancel()
+            pendingCameraTooltipTask = nil
             cameraController.stopRunning()
             vibeRecorder.cancelAndDelete()
             InAppCameraAudioSession.deactivateAfterCamera()
@@ -2303,6 +2308,18 @@ struct CameraCaptureView: View {
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
                 .preferredColorScheme(.dark)
+        }
+    }
+
+    @MainActor
+    private func presentCameraTooltipIfNeeded() {
+        guard !hasSeenCameraTooltip, !showCameraTooltip, cameraController.isConfigured else { return }
+        pendingCameraTooltipTask?.cancel()
+        pendingCameraTooltipTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            guard !hasSeenCameraTooltip, !showCameraTooltip, cameraController.isConfigured else { return }
+            showCameraTooltip = true
         }
     }
 

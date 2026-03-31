@@ -62,10 +62,35 @@ struct ManagePhotosView: View {
         }
         .navigationTitle(isSelectMode ? "\(includedCount) of \(photos.count) selected" : placeTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(fullScreenPhotoId != nil)
         .toolbar {
+            if fullScreenPhotoId != nil {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { fullScreenPhotoId = nil }
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .foregroundColor(.white)
+                    .accessibilityLabel("Close full photo")
+                }
+            }
             if fullScreenPhotoId == nil {
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    if !isSelectMode, managePhotosOverflowMenuVisible {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(isSelectMode ? "Done" : "Select") {
+                        if isSelectMode {
+                            withAnimation(.easeInOut(duration: 0.2)) { isSelectMode = false }
+                            dismiss()
+                        } else {
+                            withAnimation(.easeInOut(duration: 0.2)) { isSelectMode = true }
+                        }
+                    }
+                    .frame(minWidth: isSelectMode ? 56 : 0, alignment: .center)
+                    .foregroundColor(.white)
+                }
+
+                if !isSelectMode, managePhotosOverflowMenuVisible {
+                    ToolbarItem(placement: .navigationBarTrailing) {
                         Menu {
                             if let split = onSplitRequested, photos.count > 1 {
                                 Button(action: split) {
@@ -74,7 +99,7 @@ struct ManagePhotosView: View {
                             }
                             if onAddFromLibrary != nil {
                                 Button(action: { onAddFromLibrary?() }) {
-                                    Label("Add from Library", systemImage: "photo.badge.plus")
+                                    Label("Add Photos", systemImage: "photo.badge.plus")
                                 }
                             }
                         } label: {
@@ -84,15 +109,6 @@ struct ManagePhotosView: View {
                         .foregroundColor(.white)
                         .accessibilityLabel("More")
                     }
-                    Button(isSelectMode ? "Done" : "Select") {
-                        if isSelectMode {
-                            withAnimation(.easeInOut(duration: 0.2)) { isSelectMode = false }
-                            dismiss()
-                        } else {
-                            withAnimation(.easeInOut(duration: 0.2)) { isSelectMode = true }
-                        }
-                    }
-                    .foregroundColor(.white)
                 }
             }
         }
@@ -267,6 +283,13 @@ private struct ManagePhotoGridCell: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(6)
+                } else if photo.isIncluded {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.4), radius: 3)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .padding(6)
                 }
             }
         }
@@ -296,91 +319,123 @@ private struct ManagePhotoDetailView: View {
         ZStack(alignment: .topLeading) {
             Color.black.ignoresSafeArea()
 
-            TabView(selection: $currentPhotoId) {
-                ForEach(photos) { photo in
-                    ZStack {
-                        RecapPhotoThumbnail(
-                            photo: photo,
-                            cornerRadius: 0,
-                            showIcon: false,
-                            targetSize: CGSize(width: 800, height: 800)
-                        )
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .scaleEffect(zoomScale)
+            VStack(spacing: 12) {
+                TabView(selection: $currentPhotoId) {
+                    ForEach(photos) { photo in
+                        ZStack {
+                            RecapPhotoThumbnail(
+                                photo: photo,
+                                cornerRadius: 0,
+                                showIcon: false,
+                                targetSize: CGSize(width: 800, height: 800)
+                            )
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .scaleEffect(zoomScale)
 
-                        if photo.isIncluded {
-                            Color.black.opacity(0.4)
-                                .allowsHitTesting(false)
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 72))
-                                .foregroundStyle(.white)
-                                .shadow(color: .black.opacity(0.4), radius: 6)
-                                .transaction { $0.animation = nil }
-                        }
-                    }
-                    .contentShape(Rectangle())
-                    .tag(photo.id)
-                    .onTapGesture {
-                        if zoomScale > 1.01 {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                zoomScale = 1.0; baseZoomScale = 1.0
+                            if photo.isIncluded {
+                                Color.black.opacity(0.4)
+                                    .allowsHitTesting(false)
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 72))
+                                    .foregroundStyle(.white)
+                                    .shadow(color: .black.opacity(0.4), radius: 6)
+                                    .transaction { $0.animation = nil }
                             }
-                        } else {
-                            toggleInclusion()
                         }
-                    }
-                    .simultaneousGesture(
-                        MagnificationGesture()
-                            .onChanged { value in
-                                zoomScale = max(1.0, baseZoomScale * value)
-                            }
-                            .onEnded { _ in
-                                if zoomScale < 1.1 {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        zoomScale = 1.0; baseZoomScale = 1.0
-                                    }
-                                } else {
-                                    baseZoomScale = zoomScale
+                        .contentShape(Rectangle())
+                        .tag(photo.id)
+                        .onTapGesture {
+                            if zoomScale > 1.01 {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    zoomScale = 1.0; baseZoomScale = 1.0
                                 }
+                            } else {
+                                toggleInclusion()
                             }
-                    )
-                }
-            }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .ignoresSafeArea()
-
-            // Close button
-            Button(action: onDismiss) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(.white, .black.opacity(0.5))
-                    .shadow(color: .black.opacity(0.3), radius: 4)
-                    .padding(16)
-            }
-            .buttonStyle(.plain)
-
-            // Bottom info: rank + inclusion count
-            VStack(spacing: 4) {
-                if let rank = aiRanks[currentPhotoId ?? UUID()] {
-                    HStack(spacing: 4) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 11, weight: .bold))
-                        Text("AI rank #\(rank)")
-                            .font(.system(size: 12, weight: .semibold))
+                        }
+                        .simultaneousGesture(
+                            MagnificationGesture()
+                                .onChanged { value in
+                                    zoomScale = max(1.0, baseZoomScale * value)
+                                }
+                                .onEnded { _ in
+                                    if zoomScale < 1.1 {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            zoomScale = 1.0; baseZoomScale = 1.0
+                                        }
+                                    } else {
+                                        baseZoomScale = zoomScale
+                                    }
+                                }
+                        )
                     }
-                    .foregroundColor(Color(red: 1.0, green: 0.84, blue: 0.0))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.black.opacity(0.6))
-                    .cornerRadius(6)
                 }
-                Text("Tap to \(currentPhoto?.isIncluded == true ? "remove" : "include")")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.7))
+                .tabViewStyle(.page(indexDisplayMode: .never))
+
+                VStack(spacing: 4) {
+                    if let rank = aiRanks[currentPhotoId ?? UUID()] {
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 11, weight: .bold))
+                            Text("AI rank #\(rank)")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .foregroundColor(Color(red: 1.0, green: 0.84, blue: 0.0))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.black.opacity(0.6))
+                        .cornerRadius(6)
+                    }
+                    Text("Tap to \(currentPhoto?.isIncluded == true ? "remove" : "include")")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.7))
+                }
+
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(photos) { photo in
+                                let isCurrent = photo.id == currentPhotoId
+                                Button {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        currentPhotoId = photo.id
+                                    }
+                                } label: {
+                                    RecapPhotoThumbnail(
+                                        photo: photo,
+                                        cornerRadius: 8,
+                                        showIcon: false,
+                                        targetSize: CGSize(width: 120, height: 120)
+                                    )
+                                    .frame(width: 56, height: 56)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(isCurrent ? Color.white : Color.clear, lineWidth: 2)
+                                    )
+                                    .opacity(photo.isIncluded ? 1.0 : 0.55)
+                                }
+                                .buttonStyle(.plain)
+                                .id(photo.id)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                    }
+                    .onAppear {
+                        if let id = currentPhotoId {
+                            proxy.scrollTo(id, anchor: .center)
+                        }
+                    }
+                    .onChange(of: currentPhotoId) { _, newId in
+                        guard let id = newId else { return }
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            proxy.scrollTo(id, anchor: .center)
+                        }
+                    }
+                }
+                .padding(.bottom, 4)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .padding(.bottom, 32)
+            .padding(.top, 8)
         }
         .onAppear {
             currentPhotoId = initialPhotoId

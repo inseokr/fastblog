@@ -36,7 +36,7 @@ struct NeighborhoodSearchView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            OnboardingConstants.Colors.background.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 // Pull-up handle indicator
