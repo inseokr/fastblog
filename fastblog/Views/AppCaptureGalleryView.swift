@@ -57,9 +57,7 @@ struct AppCaptureGalleryView: View {
     @State private var isSelectMode = false
     @State private var selectedIds: Set<UUID> = []
     @State private var showRemoveConfirmation = false
-    @State private var showPhotoImportPicker = false
     @State private var downloadToast: String?
-    @State private var importToast: String?
     @State private var cellFrames: [UUID: CGRect] = [:]
     @State private var dragStartIndex: Int?
     @State private var dragInitialSelectedIds: Set<UUID> = []
@@ -136,14 +134,6 @@ struct AppCaptureGalleryView: View {
                 }
 
                 VStack(spacing: 12) {
-                    if let importToast {
-                        Text(importToast)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(Capsule().fill(.black.opacity(0.7)))
-                    }
                     if let toast = downloadToast {
                         Text(toast)
                             .font(.subheadline.weight(.medium))
@@ -151,23 +141,6 @@ struct AppCaptureGalleryView: View {
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
                             .background(Capsule().fill(.black.opacity(0.7)))
-                    }
-                    if !isSelectMode {
-                        HStack {
-                            Spacer(minLength: 0)
-                            Button {
-                                showPhotoImportPicker = true
-                            } label: {
-                                Text("Import")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 28)
-                                    .padding(.vertical, 12)
-                                    .background(.ultraThinMaterial, in: Capsule())
-                            }
-                            .accessibilityLabel("Import from Photos")
-                            Spacer(minLength: 0)
-                        }
                     }
                 }
                 .padding(.horizontal, 20)
@@ -220,12 +193,6 @@ struct AppCaptureGalleryView: View {
         .presentationDragIndicator(.visible)
         .preferredColorScheme(.dark)
         .task { await loadItems() }
-        .sheet(isPresented: $showPhotoImportPicker) {
-            MultiPhotoLibraryImportPickerView { imported in
-                showPhotoImportPicker = false
-                handleImportedPhotos(imported)
-            }
-        }
         .fullScreenCover(item: $selectedItem) { item in
             AppCaptureDetailView(
                 items: $items,
@@ -345,32 +312,12 @@ struct AppCaptureGalleryView: View {
             Text("No captures yet")
                 .foregroundColor(.white.opacity(0.5))
                 .font(.subheadline)
-            Text("Photos from the in-app camera or imported from your library appear here.")
+            Text("Photos you take with the in-app camera appear here.")
                 .foregroundColor(.white.opacity(0.3))
                 .font(.caption)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
         }
-    }
-
-    private func handleImportedPhotos(_ photos: [(UIImage, Date, CLLocation?)]) {
-        guard !photos.isEmpty else { return }
-        var saved = 0
-        for (image, date, location) in photos {
-            do {
-                _ = try AppCapturePhotoService.shared.saveCapture(image: image, timestamp: date, location: location)
-                saved += 1
-            } catch {
-                // Continue importing the rest
-            }
-        }
-        Task { await loadItems() }
-        if saved > 0 {
-            importToast = saved == 1 ? "Photo saved in Bloggo" : "\(saved) photos saved in Bloggo"
-        } else {
-            importToast = "Couldn't import photos"
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { importToast = nil }
     }
 
     // MARK: - Data loading
