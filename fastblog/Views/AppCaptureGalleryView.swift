@@ -373,14 +373,28 @@ struct AppCaptureGalleryView: View {
         let service = AppCapturePhotoService.shared
         let ids = service.allCaptureIds()
         var loaded: [AppCaptureItem] = []
+        let store = CreatedRecapBlogStore.shared
         for uuid in ids {
             let image = service.loadImage(captureId: uuid)
             let info = service.metadata(captureId: uuid)
+            let metaCaption = info?.caption?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let blogCaption = store.captionForAppCaptureInStoredBlogs(captureId: uuid)
+            let merged: String?
+            if let b = blogCaption, !b.isEmpty {
+                merged = b
+                if metaCaption != b {
+                    try? service.updateCaption(captureId: uuid, caption: b)
+                }
+            } else if let m = metaCaption, !m.isEmpty {
+                merged = m
+            } else {
+                merged = nil
+            }
             loaded.append(AppCaptureItem(
                 id: uuid,
                 image: image,
                 timestamp: info?.timestamp ?? Date(),
-                caption: info?.caption,
+                caption: merged,
                 location: info?.location,
                 localVibeURL: service.vibeFileURL(for: uuid)
             ))

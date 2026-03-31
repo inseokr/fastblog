@@ -913,6 +913,24 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
     }
 
+    /// Non-empty caption from any persisted `RecapBlogDetail` row for this Bloggo capture (`bloggo-capture:<uuid>`).
+    /// Used so **Bloggo Gallery** can show the same caption as the blog when `meta.json` was never synced.
+    func captionForAppCaptureInStoredBlogs(captureId: UUID) -> String? {
+        let assetId = AppCapturePhotoService.identifier(for: captureId)
+        for (_, detail) in blogDetailsBySourceId {
+            for day in detail.days {
+                for stop in day.placeStops {
+                    for photo in stop.photos {
+                        guard photo.localIdentifier == assetId else { continue }
+                        let trimmed = (photo.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty { return trimmed }
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
     /// After a caption is saved from **Bloggo Gallery** (in-app camera storage), copies it into every blog
     /// whose `RecapPhoto.localIdentifier` matches this capture (`bloggo-capture:<uuid>`).
     func syncPhotoCaptionFromAppCapture(captureId: UUID, caption: String?) {

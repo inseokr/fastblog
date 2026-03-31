@@ -1795,22 +1795,26 @@ struct RecapBlogPageView: View {
             dayCaptionRow(day: day)
 
             if isEditMode, LocalLLMStoryCaptionGenerator.isCapable {
-                HStack {
-                    Spacer()
-                    if generatingNarrativeDayId == day.id {
+                let dayCaptionEmpty = (day.dayCaption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                if generatingNarrativeDayId == day.id {
+                    HStack {
+                        Spacer()
                         ProgressView()
                             .scaleEffect(0.75)
                             .tint(.secondary)
                             .padding(.trailing, 0)
-                    } else {
-                        let hasDayCaption = !(day.dayCaption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    }
+                    .padding(.top, -8)
+                } else if dayCaptionEmpty {
+                    HStack {
+                        Spacer()
                         Button {
                             triggerDayNarrative(day: day)
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "wand.and.sparkles")
                                     .font(.system(size: 13, weight: .medium))
-                                Text(hasDayCaption ? "Regenerate story" : "Generate story")
+                                Text("Generate story")
                                     .font(.footnote.weight(.medium))
                             }
                             .foregroundStyle(
@@ -1827,8 +1831,8 @@ struct RecapBlogPageView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    .padding(.top, -8)
                 }
-                .padding(.top, -8)
             }
 
             ForEach(Array(day.placeStops.enumerated()), id: \.element.id) { index, stop in
@@ -3355,22 +3359,25 @@ struct RecapBlogPageView: View {
                         .cornerRadius(10)
                         .padding(.horizontal, 16)
                 }
-                HStack {
-                    Spacer()
-                    if isGeneratingTripNarrative {
+                if isGeneratingTripNarrative {
+                    HStack {
+                        Spacer()
                         ProgressView()
                             .scaleEffect(0.75)
                             .tint(.secondary)
                             .padding(.trailing, 20)
                             .padding(.top, hasNarrative ? 0 : 8)
-                    } else {
+                    }
+                } else if !hasNarrative {
+                    HStack {
+                        Spacer()
                         Button {
                             triggerTripNarrative()
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "wand.and.sparkles")
                                     .font(.system(size: 13, weight: .medium))
-                                Text(hasNarrative ? "Regenerate story" : "Generate story")
+                                Text("Generate story")
                                     .font(.footnote.weight(.medium))
                             }
                             .foregroundStyle(

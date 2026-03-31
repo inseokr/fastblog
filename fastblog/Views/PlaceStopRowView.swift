@@ -422,10 +422,10 @@ struct PlaceStopRowView: View {
 
             // Photo strip: large thumbnails; one full photo visible + peek of next so users know they can scroll
             let includedPhotos = stop.photos.filter(\.isIncluded)
+            let shouldShowManagePhotosCard = isEditMode && !stop.photos.isEmpty
 
-            // When no photos are included, Manage Photos lives in `placeStoryRow` (with Generate Story). No strip here.
-            if includedPhotos.count == 1, let photo = includedPhotos.first {
-                // --- CASE 2a: Single photo — full-width hero layout ---
+            if includedPhotos.count == 1, let photo = includedPhotos.first, !isEditMode {
+                // --- CASE 2a: Single photo — full-width hero (view mode only). Edit mode uses the horizontal strip so “Manage Photos” is always first in the list.
                 VStack(alignment: .leading, spacing: 0) {
                     ZStack(alignment: .topTrailing) {
                         RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 960, height: 640))
@@ -434,18 +434,6 @@ struct PlaceStopRowView: View {
                             .cornerRadius(10)
                             .contentShape(Rectangle())
                             .onTapGesture { onPhotoTapped?(photo) }
-                        if isEditMode {
-                            Button {
-                                onRemovePhoto?(photo.id)
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 30))
-                                    .symbolRenderingMode(.palette)
-                                    .foregroundStyle(.white, Color.black.opacity(0.6))
-                            }
-                            .buttonStyle(.plain)
-                            .padding(8)
-                        }
                     }
                     .overlay(alignment: .bottomLeading) {
                         if vibeURL(for: photo) != nil {
@@ -501,25 +489,8 @@ struct PlaceStopRowView: View {
                         }
                     }
 
-                    // Caption below the hero photo
-                    if isEditMode {
-                        Button {
-                            onCaptionTapped?(photo.id)
-                        } label: {
-                            let caption = photoCaption(photo.id).wrappedValue
-                            Text(caption.isEmpty ? "Leave a story for this photo" : caption)
-                                .font(.subheadline)
-                                .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : rowCaptionFilled)
-                                .lineLimit(3)
-                                .multilineTextAlignment(.leading)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(10)
-                                .background(rowInset)
-                                .cornerRadius(8)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.top, 8)
-                    } else if !photoCaption(photo.id).wrappedValue.isEmpty {
+                    // Caption below the hero photo (view mode only here)
+                    if !photoCaption(photo.id).wrappedValue.isEmpty {
                         let isExpanded = expandedCaptionPhotoId == photo.id
                         Button {
                             withAnimation(.easeInOut(duration: 0.2)) {
@@ -539,12 +510,42 @@ struct PlaceStopRowView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, isEditMode ? 4 : 8)
-                .padding(.bottom, isEditMode ? 20 : 12)
-            } else if !includedPhotos.isEmpty {
-                // --- CASE 2b: Multiple photos — horizontal scroll strip ---
+                .padding(.top, 8)
+                .padding(.bottom, 12)
+            } else if !includedPhotos.isEmpty || shouldShowManagePhotosCard {
+                // --- CASE 2b: Multiple photos (or edit-mode manage card) — horizontal scroll strip ---
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 10) {
+                        if shouldShowManagePhotosCard {
+                            Button(action: onManagePhotos) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(rowInset)
+                                    VStack(spacing: 8) {
+                                        Image(systemName: "photo.on.rectangle")
+                                            .font(.system(size: 22, weight: .semibold))
+                                            .foregroundStyle(
+                                                LinearGradient(
+                                                    colors: [Color.white.opacity(0.9), Color.white.opacity(0.55)],
+                                                    startPoint: .top,
+                                                    endPoint: .bottom
+                                                )
+                                            )
+                                        Text("Manage Photos")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundColor(.primary)
+                                            .multilineTextAlignment(.center)
+                                    }
+                                    .padding(.horizontal, 8)
+                                }
+                                .frame(width: thumbnailSize, height: thumbnailSize)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
                         ForEach(includedPhotos) { photo in
                             VStack(alignment: .leading, spacing: 6) {
                                 ZStack(alignment: .topTrailing) {
@@ -815,40 +816,16 @@ struct PlaceStopRowView: View {
                     .padding(.bottom, onTellPlaceStory != nil && LocalLLMStoryCaptionGenerator.isCapable && isEditMode ? 12 : 8)
                 }
             }
-            let showManagePhotosInStoryRow = isEditMode && !stop.photos.isEmpty
+            let placeStoryEmptyForAI: Bool = {
+                if let n = stop.placeNarrative, !n.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return false }
+                return overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }()
             let showGenerateStoryInStoryRow = isEditMode
                 && onTellPlaceStory != nil
                 && LocalLLMStoryCaptionGenerator.isCapable
-            if showManagePhotosInStoryRow || showGenerateStoryInStoryRow {
+                && placeStoryEmptyForAI
+            if showGenerateStoryInStoryRow {
                 VStack(alignment: .leading, spacing: 8) {
-                    if showManagePhotosInStoryRow {
-                        Button(action: onManagePhotos) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "photo.on.rectangle")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.primary)
-                                    .frame(width: 24, height: 24)
-                                    .background(rowSurface)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                Text("Manage Photos")
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.primary)
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(rowInset)
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
                     if showGenerateStoryInStoryRow {
                         HStack {
                             Spacer(minLength: 0)
@@ -873,7 +850,7 @@ struct PlaceStopRowView: View {
                                                     endPoint: .bottomTrailing
                                                 )
                                             )
-                                        Text(stop.placeNarrative != nil ? "Refresh Story" : "Generate story")
+                                        Text("Generate story")
                                             .font(.caption)
                                             .foregroundStyle(
                                                 LinearGradient(

@@ -109,6 +109,9 @@ struct AppCaptureDetailView: View {
             if let idx = items.firstIndex(where: { $0.id == initialId }) {
                 currentIndex = idx
             }
+            if items.indices.contains(currentIndex) {
+                reconcileCaptionWithBlog(at: currentIndex)
+            }
             captionDraft = currentItem?.caption ?? ""
             if let id = currentItem?.id {
                 resolvedPlaceTitle = resolvePlaceTitle(for: id)
@@ -164,6 +167,7 @@ struct AppCaptureDetailView: View {
         .ignoresSafeArea()
         .onChange(of: currentIndex) { _, newIdx in
             if items.indices.contains(newIdx) {
+                reconcileCaptionWithBlog(at: newIdx)
                 captionDraft = items[newIdx].caption ?? ""
                 resolvedPlaceTitle = resolvePlaceTitle(for: items[newIdx].id)
             }
@@ -301,7 +305,7 @@ struct AppCaptureDetailView: View {
                 if let item = currentItem {
                     let placeTitle = resolvedPlaceTitle.isEmpty ? "Unknown Place" : resolvedPlaceTitle
 
-                    // Place title + timestamp (and magic wand when caption exists)
+                    // Place title + timestamp (AI wand only when caption is still empty)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(placeTitle)
                             .font(.title3)
@@ -319,8 +323,8 @@ struct AppCaptureDetailView: View {
                             Spacer()
 
                             if supportsFullScreenWritingAssist,
-                               let cap = item.caption, !cap.isEmpty,
-                               let cgImage = item.image?.cgImage {
+                               (item.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                               let cgImage = (item.image ?? AppCapturePhotoService.shared.loadImage(captureId: item.id))?.cgImage {
                                 Button {
                                     isGeneratingCaption = true
                                     Task {
@@ -464,6 +468,18 @@ struct AppCaptureDetailView: View {
     }
 
     // MARK: - Actions
+
+    /// Prefer caption from persisted blog details when `meta.json` is missing it (same fix as gallery grid load).
+    private func reconcileCaptionWithBlog(at index: Int) {
+        guard items.indices.contains(index) else { return }
+        let captureId = items[index].id
+        guard let blogCaption = CreatedRecapBlogStore.shared.captionForAppCaptureInStoredBlogs(captureId: captureId) else { return }
+        let existing = items[index].caption?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard existing != blogCaption else { return }
+        try? AppCapturePhotoService.shared.updateCaption(captureId: captureId, caption: blogCaption)
+        items[index].caption = blogCaption
+        onCaptionSaved(captureId, blogCaption)
+    }
 
     private func resolvePlaceTitle(for captureId: UUID) -> String {
         let target = AppCapturePhotoService.identifier(for: captureId)
