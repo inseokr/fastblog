@@ -221,9 +221,9 @@ struct AppCaptureGalleryView: View {
         .preferredColorScheme(.dark)
         .task { await loadItems() }
         .sheet(isPresented: $showPhotoImportPicker) {
-            SinglePhotoLibraryPickerView { image, date, location in
+            MultiPhotoLibraryImportPickerView { imported in
                 showPhotoImportPicker = false
-                handleImportedPhoto(image: image, date: date, location: location)
+                handleImportedPhotos(imported)
             }
         }
         .fullScreenCover(item: $selectedItem) { item in
@@ -353,17 +353,24 @@ struct AppCaptureGalleryView: View {
         }
     }
 
-    private func handleImportedPhoto(image: UIImage?, date: Date, location: CLLocation?) {
-        guard let image else { return }
-        do {
-            _ = try AppCapturePhotoService.shared.saveCapture(image: image, timestamp: date, location: location)
-            Task { await loadItems() }
-            importToast = "Photo saved in Bloggo"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { importToast = nil }
-        } catch {
-            importToast = "Couldn't import photo"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { importToast = nil }
+    private func handleImportedPhotos(_ photos: [(UIImage, Date, CLLocation?)]) {
+        guard !photos.isEmpty else { return }
+        var saved = 0
+        for (image, date, location) in photos {
+            do {
+                _ = try AppCapturePhotoService.shared.saveCapture(image: image, timestamp: date, location: location)
+                saved += 1
+            } catch {
+                // Continue importing the rest
+            }
         }
+        Task { await loadItems() }
+        if saved > 0 {
+            importToast = saved == 1 ? "Photo saved in Bloggo" : "\(saved) photos saved in Bloggo"
+        } else {
+            importToast = "Couldn't import photos"
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { importToast = nil }
     }
 
     // MARK: - Data loading

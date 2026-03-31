@@ -33,6 +33,8 @@ struct MyBlogsProfileView: View {
     @ObservedObject var tripsViewModel: TripsViewModel
     /// Called when user taps "View" on new-moments alert so the parent can dismiss the fullScreenCover.
     var onDismissCover: (() -> Void)? = nil
+    /// Reports whether the visible scroll is at top (for swipe-to-dismiss gating).
+    var onTopScrollStateChange: ((Bool) -> Void)? = nil
     @StateObject private var viewModel = MyBlogsProfileViewModel()
     // Page navigation (ZStack-based, bottom bar persists across all pages)
     @State private var currentPage: MyBlogsPage = .blogs
@@ -63,12 +65,14 @@ struct MyBlogsProfileView: View {
         selectedCreatedRecap: Binding<CreatedRecapBlog?>,
         initialDayIndexForRecap: Binding<Int?> = .constant(nil),
         tripsViewModel: TripsViewModel,
-        onDismissCover: (() -> Void)? = nil
+        onDismissCover: (() -> Void)? = nil,
+        onTopScrollStateChange: ((Bool) -> Void)? = nil
     ) {
         _selectedCreatedRecap = selectedCreatedRecap
         _initialDayIndexForRecap = initialDayIndexForRecap
         _tripsViewModel = ObservedObject(wrappedValue: tripsViewModel)
         self.onDismissCover = onDismissCover
+        self.onTopScrollStateChange = onTopScrollStateChange
     }
 
     private let backgroundBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
@@ -248,6 +252,7 @@ struct MyBlogsProfileView: View {
         .onAppear {
             viewModel.loadUnsavedTrips()
             checkForNewMoments()
+            reportTopScrollState()
         }
         .alert(
             "New moments added to \"\(newMomentsAlertBlogTitle)\"",
@@ -283,10 +288,13 @@ struct MyBlogsProfileView: View {
             if case .country = newPage {
                 countryScrollOffset = 0
             }
+            reportTopScrollState()
         }
         .onChange(of: sharedSearchText) { _, newValue in
             if case .blogs = currentPage { viewModel.searchText = newValue }
         }
+        .onChange(of: scrollOffset) { _, _ in reportTopScrollState() }
+        .onChange(of: countryScrollOffset) { _, _ in reportTopScrollState() }
     }
 
     // MARK: - Page routing
@@ -301,6 +309,19 @@ struct MyBlogsProfileView: View {
     private var isOnBlogsPage: Bool {
         if case .blogs = currentPage { return true }
         return false
+    }
+
+    private var isCurrentPageAtTop: Bool {
+        switch currentPage {
+        case .blogs:
+            return scrollOffset >= -2
+        case .country:
+            return countryScrollOffset >= -2
+        }
+    }
+
+    private func reportTopScrollState() {
+        onTopScrollStateChange?(isCurrentPageAtTop)
     }
 
     @ViewBuilder

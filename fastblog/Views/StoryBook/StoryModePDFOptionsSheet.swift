@@ -26,7 +26,7 @@ struct StoryModePDFOptionsSheet: View {
                 .padding(20)
             }
             .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("Book Options")
+            .navigationTitle("PDF Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
