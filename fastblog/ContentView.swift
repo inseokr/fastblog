@@ -23,6 +23,8 @@ struct ContentView: View {
     @State private var showSeeAll = false
     @State private var showPlacesVisited = false
     @State private var showCameraFromHome = false
+    @State private var isMyBlogsAtTop = true
+    @State private var isMyPlacesAtTop = true
     @State private var postCameraToastMessage: String?
     @State private var selectedCreatedRecap: CreatedRecapBlog?
     @State private var initialDayIndexForRecap: Int?
@@ -61,6 +63,104 @@ struct ContentView: View {
     }
 
     var body: some View {
+        rootContent
+            .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
+            .animation(.easeInOut(duration: 0.18), value: showCameraFromHome)
+            .animation(.easeInOut(duration: 0.25), value: showSeeAll)
+            .animation(.easeInOut(duration: 0.18), value: showPlacesVisited)
+            .animation(.easeInOut(duration: 0.35), value: showTrips)
+            .animation(.easeInOut(duration: 0.25), value: selectedCreatedRecap != nil)
+            .animation(.easeInOut(duration: 0.3), value: postCameraToastMessage != nil)
+            .alert("No Photos Selected", isPresented: $showNoPhotosAlert) {
+                Button("Select Photos") {
+                    presentLimitedLibraryPickerFromLanding()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Please select at least one photo to create a travel blog.")
+            }
+            .alert("No additional photos selected for trip scanning", isPresented: $showLimitedPickerDismissedWithoutChangeAlert) {
+                Button("Select More") {
+                    presentLimitedLibraryPickerFromLanding()
+                }
+                Button("Cancel", role: .cancel) { }
+                Button("Proceed", role: .cancel) {
+                    pendingShowTripsWhenIdle = true
+                    tripsViewModel.startDefaultScan(forceFullScan: true)
+                }
+            } message: {
+                Text("Your shared photo selection didn't change. Choose photos that include location data so we can find trips, or cancel to stay on the home screen.")
+            }
+            .environmentObject(createdRecapStore)
+            .sheet(isPresented: Binding(
+                get: { nearbyShare.presentReceiveFromDeepLink },
+                set: { new in
+                    if !new { nearbyShare.dismissReceiveDeepLinkPresentation() }
+                }
+            )) {
+                TripNearbyShareReceiveSheet(controller: nearbyShare)
+            }
+            .environment(\.dismissToLanding, {
+                dismissToLandingRequested = true
+            })
+            .sheet(isPresented: $showCaptureIntroSheet, onDismiss: {
+                // Any dismissal (swipe down, tap outside, or Continue) counts as seen for this identity.
+                markCaptureIntroSeenForCurrentIdentity()
+            }) {
+                captureIntroModalContent
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
+                    .preferredColorScheme(.dark)
+            }
+            .onChange(of: tripsViewModel.scanState) { _, newState in
+                if newState == .idle && pendingShowTripsWhenIdle {
+                    pendingShowTripsWhenIdle = false
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        showTrips = true
+                    }
+                }
+            }
+            .onChange(of: dismissToLandingRequested) { _, requested in
+                if requested {
+                    dismissToLandingRequested = false
+                    // After blog creation, navigate to the new recap blog on top of TripsView
+                    // so back button returns to Trips page for creating more blogs.
+                    // Use a non-animated transaction so the blog appears instantly behind
+                    // the fullScreenCover instead of sliding in from the right.
+                    if let latest = createdRecapStore.displayRecents.first {
+                        showTrips = true
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            selectedCreatedRecap = latest
+                        }
+                    } else {
+                        dismissTripsOverlay()
+                    }
+                }
+            }
+            .onAppear {
+                if justFinishedOnboarding {
+                    justFinishedOnboarding = false
+                    if tripsViewModel.tripDrafts.isEmpty {
+                        tripsViewModel.startDefaultScan()
+                        pendingShowTripsWhenIdle = true
+                    } else {
+                        showTrips = true
+                    }
+                }
+            }
+            .onChange(of: showCameraFromHome) { _, isShowing in
+                // Show first-time Capture intro when camera opens from home, once per identity.
+                if isShowing, !captureIntroSeenForCurrentIdentity {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        showCaptureIntroSheet = true
+                    }
+                }
+            }
+    }
+
+    private var rootContent: some View {
         ZStack {
             NavigationStack {
                 LandingView(
@@ -110,6 +210,14 @@ struct ContentView: View {
                 }
                 .transition(.opacity)
                 .zIndex(2)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 24).onEnded { value in
+                        guard isDownwardDismissSwipe(value) else { return }
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            showCameraFromHome = false
+                        }
+                    }
+                )
             }
 
             // My Blogs overlay (fade in/out). preferredColorScheme on container avoids color flash during dismiss.
@@ -124,6 +232,9 @@ struct ContentView: View {
                             withAnimation(.easeInOut(duration: 0.25)) {
                                 showSeeAll = false
                             }
+                        },
+                        onTopScrollStateChange: { atTop in
+                            isMyBlogsAtTop = atTop
                         }
                     )
                     .environmentObject(createdRecapStore)
@@ -132,6 +243,14 @@ struct ContentView: View {
                 .preferredColorScheme(.dark)
                 .transition(.opacity)
                 .zIndex(3)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 24).onEnded { value in
+                        guard isMyBlogsAtTop, isDownwardDismissSwipe(value) else { return }
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showSeeAll = false
+                        }
+                    }
+                )
             }
 
             // Places Visited overlay (fade in/out).
@@ -143,6 +262,9 @@ struct ContentView: View {
                             withAnimation(.easeInOut(duration: 0.18)) {
                                 showPlacesVisited = false
                             }
+                        },
+                        onTopScrollStateChange: { atTop in
+                            isMyPlacesAtTop = atTop
                         }
                     )
                     .environmentObject(createdRecapStore)
@@ -150,6 +272,14 @@ struct ContentView: View {
                 .tint(.primary)
                 .transition(.opacity)
                 .zIndex(4)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 24).onEnded { value in
+                        guard isMyPlacesAtTop, isDownwardDismissSwipe(value) else { return }
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            showPlacesVisited = false
+                        }
+                    }
+                )
             }
 
             // Trips overlay — added when user taps "Tap to Blog"; opacity-only fade (no slide).
@@ -204,100 +334,6 @@ struct ContentView: View {
                 .zIndex(20)
             }
         }
-        .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
-        .animation(.easeInOut(duration: 0.18), value: showCameraFromHome)
-        .animation(.easeInOut(duration: 0.25), value: showSeeAll)
-        .animation(.easeInOut(duration: 0.18), value: showPlacesVisited)
-        .animation(.easeInOut(duration: 0.35), value: showTrips)
-        .animation(.easeInOut(duration: 0.25), value: selectedCreatedRecap != nil)
-        .animation(.easeInOut(duration: 0.3), value: postCameraToastMessage != nil)
-        .alert("No Photos Selected", isPresented: $showNoPhotosAlert) {
-            Button("Select Photos") {
-                presentLimitedLibraryPickerFromLanding()
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("Please select at least one photo to create a travel blog.")
-        }
-        .alert("No additional photos selected for trip scanning", isPresented: $showLimitedPickerDismissedWithoutChangeAlert) {
-            Button("Select More") {
-                presentLimitedLibraryPickerFromLanding()
-            }
-            Button("Cancel", role: .cancel) { }
-            Button("Proceed", role: .cancel) {
-                pendingShowTripsWhenIdle = true
-                tripsViewModel.startDefaultScan(forceFullScan: true)
-            }
-        } message: {
-            Text("Your shared photo selection didn't change. Choose photos that include location data so we can find trips, or cancel to stay on the home screen.")
-        }
-        .environmentObject(createdRecapStore)
-        .sheet(isPresented: Binding(
-            get: { nearbyShare.presentReceiveFromDeepLink },
-            set: { new in
-                if !new { nearbyShare.dismissReceiveDeepLinkPresentation() }
-            }
-        )) {
-            TripNearbyShareReceiveSheet(controller: nearbyShare)
-        }
-        .environment(\.dismissToLanding, {
-            dismissToLandingRequested = true
-        })
-        .sheet(isPresented: $showCaptureIntroSheet, onDismiss: {
-            // Any dismissal (swipe down, tap outside, or Continue) counts as seen for this identity.
-            markCaptureIntroSeenForCurrentIdentity()
-        }) {
-            captureIntroModalContent
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
-                .preferredColorScheme(.dark)
-        }
-        .onChange(of: tripsViewModel.scanState) { _, newState in
-            if newState == .idle && pendingShowTripsWhenIdle {
-                pendingShowTripsWhenIdle = false
-                withAnimation(.easeInOut(duration: 0.35)) {
-                    showTrips = true
-                }
-            }
-        }
-        .onChange(of: dismissToLandingRequested) { _, requested in
-            if requested {
-                dismissToLandingRequested = false
-                // After blog creation, navigate to the new recap blog on top of TripsView
-                // so back button returns to Trips page for creating more blogs.
-                // Use a non-animated transaction so the blog appears instantly behind
-                // the fullScreenCover instead of sliding in from the right.
-                if let latest = createdRecapStore.displayRecents.first {
-                    showTrips = true
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) {
-                        selectedCreatedRecap = latest
-                    }
-                } else {
-                    dismissTripsOverlay()
-                }
-            }
-        }
-        .onAppear {
-            if justFinishedOnboarding {
-                justFinishedOnboarding = false
-                if tripsViewModel.tripDrafts.isEmpty {
-                    tripsViewModel.startDefaultScan()
-                    pendingShowTripsWhenIdle = true
-                } else {
-                    showTrips = true
-                }
-            }
-        }
-        .onChange(of: showCameraFromHome) { _, isShowing in
-            // Show first-time Capture intro when camera opens from home, once per identity.
-            if isShowing, !captureIntroSeenForCurrentIdentity {
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    showCaptureIntroSheet = true
-                }
-            }
-        }
     }
 
     // MARK: - Trips overlay lifecycle
@@ -313,6 +349,11 @@ struct ContentView: View {
             guard !showTrips, !pendingShowTripsWhenIdle else { return }
             tripsViewKeepMounted = false
         }
+    }
+
+    private func isDownwardDismissSwipe(_ value: DragGesture.Value) -> Bool {
+        value.translation.height > 100 &&
+        abs(value.translation.height) > abs(value.translation.width) * 1.15
     }
 
     // MARK: - Landing CTA handling

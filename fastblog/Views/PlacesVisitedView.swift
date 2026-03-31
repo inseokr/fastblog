@@ -1,11 +1,19 @@
 import MapKit
 import SwiftUI
 
+private struct PlacesVisitedScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 // MARK: - Standalone full-screen Places Visited (from home icon)
 struct PlacesVisitedStandaloneView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     var onDismiss: () -> Void
+    var onTopScrollStateChange: ((Bool) -> Void)? = nil
 
     @State private var searchText: String = ""
     @State private var showPlacesMap: Bool = false
@@ -16,7 +24,8 @@ struct PlacesVisitedStandaloneView: View {
         PlacesVisitedView(
             searchText: $searchText,
             showPlacesMap: $showPlacesMap,
-            selectedCreatedRecap: $selectedCreatedRecap
+            selectedCreatedRecap: $selectedCreatedRecap,
+            onTopScrollStateChange: onTopScrollStateChange
         )
         .background(backgroundBlue.ignoresSafeArea())
         .scrollContentBackground(.hidden)
@@ -47,6 +56,7 @@ struct PlacesVisitedView: View {
     @Binding var searchText: String
     @Binding var showPlacesMap: Bool
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
+    var onTopScrollStateChange: ((Bool) -> Void)? = nil
 
     @State private var selectedYear: Int? = nil
     @State private var selectedCountry: String? = nil
@@ -55,6 +65,7 @@ struct PlacesVisitedView: View {
     @State private var selectedPlaceForModal: VisitedPlaceSummary?
     @FocusState private var isSearchFocused: Bool
     @State private var isSearchActive: Bool = false
+    @State private var scrollOffset: CGFloat = 0
 
     private let searchBarHeight: CGFloat = 56
     private let mapButtonSize: CGFloat = 52
@@ -265,9 +276,18 @@ struct PlacesVisitedView: View {
                             }
                         }
                     }
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: PlacesVisitedScrollOffsetKey.self,
+                                value: proxy.frame(in: .named("PlacesVisitedScroll")).minY
+                            )
+                        }
+                    )
                     .padding(.horizontal, horizontalPadding)
                     .padding(.bottom, 140)
                 }
+                .coordinateSpace(name: "PlacesVisitedScroll")
             }
 
             // Persistent bottom bar (search + map), same design as My Blogs
@@ -353,6 +373,13 @@ struct PlacesVisitedView: View {
                !availableCategories.contains(where: { $0.caseInsensitiveCompare(selectedCategory) == .orderedSame }) {
                 self.selectedCategory = nil
             }
+        }
+        .onPreferenceChange(PlacesVisitedScrollOffsetKey.self) { value in
+            scrollOffset = value
+            onTopScrollStateChange?(value >= -2)
+        }
+        .onAppear {
+            onTopScrollStateChange?(true)
         }
     }
 

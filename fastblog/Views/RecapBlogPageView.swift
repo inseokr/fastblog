@@ -179,6 +179,7 @@ struct RecapBlogPageView: View {
     @State private var pendingWebLinkAfterAuth = false
     @State private var pendingWebLinkShareAfterUpload = false
     @State private var showBloggoQRSheet = false
+    @State private var pendingBloggoQRSheetAfterShareDismiss = false
     @State private var storyShareTrigger = false
     @State private var storyContentReady = false
     @State private var storyChromeVisible = true
@@ -446,7 +447,14 @@ struct RecapBlogPageView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
-            .sheet(isPresented: $showShareYourBlogSheet) {
+            .sheet(isPresented: $showShareYourBlogSheet, onDismiss: {
+                if pendingBloggoQRSheetAfterShareDismiss {
+                    pendingBloggoQRSheetAfterShareDismiss = false
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showBloggoQRSheet = true
+                    }
+                }
+            }) {
                 shareYourBlogSheetContent()
                     .presentationDetents([.height(360)])
                     .presentationDragIndicator(.visible)
@@ -593,8 +601,8 @@ struct RecapBlogPageView: View {
                 }
                 if showBloggoQRSheet {
                     bloggoQRSharePopup()
-                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showBloggoQRSheet)
+                        .transition(.opacity)
+                        .animation(.easeInOut(duration: 0.2), value: showBloggoQRSheet)
                         .zIndex(1000)
                 }
             }
@@ -643,7 +651,7 @@ struct RecapBlogPageView: View {
             .toolbarBackground(recapNavigationBarBackgroundVisibility, for: .navigationBar)
             .toolbarBackground(recapNavigationBarBackgroundFill, for: .navigationBar)
             .toolbar { toolbarContent }
-            .toolbar((showStoryMode || placeCaptionEditItem != nil || dayCaptionEditItem != nil || placePhotoModalItem != nil || photoCaptionEditItem != nil) ? .hidden : .automatic, for: .navigationBar)
+            .toolbar((showStoryMode || placeCaptionEditItem != nil || dayCaptionEditItem != nil || placePhotoModalItem != nil || photoCaptionEditItem != nil || showBloggoQRSheet) ? .hidden : .automatic, for: .navigationBar)
             .sheet(isPresented: $showShareSheet) {
                 ShareSheet(items: shareItems)
             }
@@ -2321,8 +2329,8 @@ struct RecapBlogPageView: View {
                     subtitle: "Open instantly in the app",
                     icon: "qrcode"
                 ) {
+                    pendingBloggoQRSheetAfterShareDismiss = true
                     showShareYourBlogSheet = false
-                    showBloggoQRSheet = true
                 }
             }
             .background(Color(uiColor: .secondarySystemGroupedBackground))
@@ -2400,11 +2408,10 @@ struct RecapBlogPageView: View {
     @ViewBuilder
     private func bloggoQRSharePopup() -> some View {
         ZStack {
-            Rectangle()
-                .fill(.ultraThinMaterial)
+            Color.black.opacity(0.42)
                 .ignoresSafeArea()
                 .onTapGesture {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
                         showBloggoQRSheet = false
                     }
                 }
@@ -2431,6 +2438,8 @@ struct RecapBlogPageView: View {
                     Text("Sharing Between Bloggo Users")
                         .font(.title3.weight(.semibold))
                         .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, alignment: .center)
 
                     Text("Share your blog with friends who use Bloggo.\n\nThey can scan the QR code to open the blog instantly in the app.")
                         .font(.subheadline)
@@ -2499,7 +2508,7 @@ struct RecapBlogPageView: View {
                     .padding(.top, 8)
 
                     Button {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
                             showBloggoQRSheet = false
                         }
                     } label: {
@@ -4737,18 +4746,18 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
     var checkFirstTimeTip: () -> Void
     var createdRecapStore: CreatedRecapBlogStore
     var dismiss: DismissAction
+    @State private var blogGroupingTipPage = 0
 
     func body(content: Content) -> some View {
         content
-            .background(
-                Color.clear
-                    .alert("Welcome to Your Blog!", isPresented: $showSaveTipAlert) {
-                        Button("Don't Show Again") { showFirstTimeSaveTip = false }
-                        Button("Okay", role: .cancel) { }
-                    } message: {
-                        Text("Tap Save when you're done editing to keep your changes and unlock your map routes.")
-                    }
-            )
+            .sheet(isPresented: $showSaveTipAlert, onDismiss: {
+                blogGroupingTipPage = 0
+            }) {
+                blogGroupingTooltipContent
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
+                    .preferredColorScheme(.dark)
+            }
             .background(
                 Color.clear
                     .alert("Unsaved Changes", isPresented: $showUnsavedChangesAlert) {
@@ -4792,6 +4801,107 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
                 withAnimation { isKeyboardVisible = false }
             }
+    }
+
+    @ViewBuilder private var blogGroupingTooltipContent: some View {
+        VStack(spacing: 0) {
+            if blogGroupingTipPage == 0 {
+                VStack(spacing: 20) {
+                    HStack {
+                        Text("1/2")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+
+                    Image(systemName: "scissors")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 50, height: 50)
+                        .foregroundColor(.cyan)
+                        .padding(.top, 8)
+
+                    VStack(spacing: 8) {
+                        Text("Split")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.primary)
+
+                        Text("Photo grouping may not be perfect. Use Split when one group contains moments from two different places.")
+                            .font(.body)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .transition(.opacity)
+            } else {
+                VStack(spacing: 20) {
+                    HStack {
+                        Text("2/2")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+
+                    Image(systemName: "arrow.triangle.merge")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 50, height: 50)
+                        .foregroundColor(.cyan)
+                        .padding(.top, 8)
+
+                    VStack(spacing: 8) {
+                        Text("Merge")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.primary)
+
+                        Text("Use Merge when moments from the same place were split into separate groups and should be combined.")
+                            .font(.body)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .transition(.opacity)
+            }
+
+            Spacer()
+
+            Button {
+                if blogGroupingTipPage == 0 {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        blogGroupingTipPage = 1
+                    }
+                } else {
+                    showSaveTipAlert = false
+                }
+            } label: {
+                Text("Continue")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 12)
+
+            Button {
+                showFirstTimeSaveTip = false
+                showSaveTipAlert = false
+            } label: {
+                Text("Don't show again")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.bottom, 24)
+        }
+        .padding(.top, 24)
     }
 }
 

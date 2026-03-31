@@ -23,7 +23,7 @@ struct StoryBookView: View {
     @State private var showExportErrorAlert = false
     @State private var exportErrorMessage: String?
     @State private var showSavedToFilesBanner = false
-    /// Same key as `RecapBlogPageView` so Story Share matches Export → Book Options.
+    /// Same key as `RecapBlogPageView` so Story Share matches Export → PDF Settings.
     @AppStorage("pdfExportOptions") private var pdfExportOptionsData: Data = (try? JSONEncoder().encode(PDFExportOptions())) ?? Data()
     @Environment(\.dismiss) private var dismiss
 
