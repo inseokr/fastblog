@@ -122,6 +122,8 @@ struct RecapBlogPageView: View {
     @State private var coverPhotoIdentifierBeforeEdit: String? = nil
     /// Cycling photo shown while cover selection scoring is still in progress.
     @State private var cyclingCoverPhotoId: String? = nil
+    /// Stabilizes cover hero sizing so transient share/QR layout changes don't stretch the cover.
+    @State private var coverHeroBaseScreenHeight: CGFloat? = nil
     /// Snapshot of the draft when edit mode was entered; compared to detect changes.
     @State private var draftSnapshot: RecapBlogDetail?
     /// Independent of the legacy "tap Save" tip — many users dismissed that key; split/merge onboarding uses its own flag.
@@ -342,6 +344,12 @@ struct RecapBlogPageView: View {
                 .zIndex(200)
             }
 
+            if showPanorama {
+                panoramaOverlayLayer()
+                    .transition(.opacity)
+                    .zIndex(127)
+            }
+
             if let item = placeCaptionEditItem, let stop = placeStop(dayId: item.dayId, stopId: item.stopId) {
                 placeCaptionEditLayer(item: item, stop: stop)
                     .transition(.opacity)
@@ -379,6 +387,7 @@ struct RecapBlogPageView: View {
         .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
         .animation(.easeOut(duration: 0.22), value: placeCaptionEditItem?.id)
         .animation(.easeOut(duration: 0.22), value: dayCaptionEditItem?.id)
+        .animation(.easeInOut(duration: 0.22), value: showPanorama)
         .animation(.easeInOut(duration: 0.38), value: placePhotoModalItem?.id)
         .animation(.easeOut(duration: 0.22), value: photoCaptionEditItem?.id)
         .animation(.spring(response: 0.38, dampingFraction: 0.88), value: earlyAccessSheetPresented)
@@ -856,27 +865,6 @@ struct RecapBlogPageView: View {
                     syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: false, photoId: photoId)
                 }, initialFocusedPlaceId: fullScreenMapFocusedPlaceId)
             }
-            .fullScreenCover(isPresented: $showPanorama) {
-                // Build one group per PlaceStop so diptych never mixes places.
-                let groups: [[PanoramaPhotoEntry]] = draft.days
-                    .flatMap(\.placeStops)
-                    .compactMap { stop -> [PanoramaPhotoEntry]? in
-                        let entries = stop.photos
-                            .filter(\.isIncluded)
-                            .compactMap { photo -> PanoramaPhotoEntry? in
-                                guard let id = photo.localIdentifier, !id.isEmpty else { return nil }
-                                return PanoramaPhotoEntry(id: id, caption: photo.caption)
-                            }
-                        return entries.isEmpty ? nil : entries
-                    }
-                // Fall back to cover photo when no included photos exist.
-                let photoGroups = groups.isEmpty
-                    ? draft.selectedCoverPhotoIdentifier.map { [[PanoramaPhotoEntry(id: $0, caption: nil)]] } ?? []
-                    : groups
-                if !photoGroups.isEmpty {
-                    PanoramaPlayerView(photoGroups: photoGroups, blogId: blogId, onDismiss: { showPanorama = false })
-                }
-            }
             .sheet(isPresented: $showRestorePlaces) {
                 RemovedPlacesSheet(draft: $draft, selectedDayIndex: $selectedDayIndex) {
                     createdRecapStore.saveBlogDetail(draft)
@@ -888,6 +876,44 @@ struct RecapBlogPageView: View {
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
+    }
+
+    @ViewBuilder
+    private func panoramaOverlayLayer() -> some View {
+        // Build one group per PlaceStop so diptych never mixes places.
+        let groups: [[PanoramaPhotoEntry]] = draft.days
+            .flatMap(\.placeStops)
+            .compactMap { stop -> [PanoramaPhotoEntry]? in
+                let entries = stop.photos
+                    .filter(\.isIncluded)
+                    .compactMap { photo -> PanoramaPhotoEntry? in
+                        guard let id = photo.localIdentifier, !id.isEmpty else { return nil }
+                        return PanoramaPhotoEntry(
+                            id: id,
+                            caption: photo.caption,
+                            placeName: stop.placeTitle,
+                            timestamp: photo.timestamp
+                        )
+                    }
+                return entries.isEmpty ? nil : entries
+            }
+        // Fall back to cover photo when no included photos exist.
+        let photoGroups = groups.isEmpty
+            ? draft.selectedCoverPhotoIdentifier.map {
+                [[PanoramaPhotoEntry(id: $0, caption: nil, placeName: nil, timestamp: nil)]]
+            } ?? []
+            : groups
+        if !photoGroups.isEmpty {
+            PanoramaPlayerView(
+                photoGroups: photoGroups,
+                blogId: blogId,
+                onCaptionTapped: { tappedAssetId in
+                    openPlaceModalFromPanoramaCaptionTap(localIdentifier: tappedAssetId)
+                },
+                onDismiss: { showPanorama = false }
+            )
+            .ignoresSafeArea()
+        }
     }
 
     private func applyFinalContentModifiers<Content: View>(to content: Content) -> some View {
@@ -1215,6 +1241,7 @@ struct RecapBlogPageView: View {
 
     private func coverPhotoHero(screenHeight: CGFloat) -> some View {
         let displayCoverId = cyclingCoverPhotoId ?? draft.selectedCoverPhotoIdentifier
+        let resolvedBaseHeight = coverHeroBaseScreenHeight ?? screenHeight
         return GeometryReader { geo in
             ZStack {
                 // Cover photo — cycles through trip photos while scoring, shows best when done
@@ -1398,6 +1425,17 @@ struct RecapBlogPageView: View {
             }
         }
         .animation(.easeInOut(duration: 0.5), value: isCoverPending)
+        .onAppear {
+            if coverHeroBaseScreenHeight == nil {
+                coverHeroBaseScreenHeight = screenHeight
+            }
+        }
+        .onChange(of: screenHeight) { _, newHeight in
+            // Ignore transient geometry shifts while Share/QR overlays are active.
+            if !showShareYourBlogSheet && !showBloggoQRSheet {
+                coverHeroBaseScreenHeight = newHeight
+            }
+        }
         .task(id: isCoverPending) {
             guard isCoverPending else {
                 // Scoring complete — fade out cycling and let the real cover show
@@ -1418,7 +1456,7 @@ struct RecapBlogPageView: View {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
-        .frame(height: screenHeight * 0.55)
+        .frame(height: resolvedBaseHeight * 0.55)
         .padding(.bottom, 16)
     }
 
@@ -2449,6 +2487,26 @@ struct RecapBlogPageView: View {
             showShareSheet = false
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 showShareSheet = true
+            }
+        }
+    }
+
+    /// From panorama caption tap, open the place pull-up focused on that photo's caption.
+    private func openPlaceModalFromPanoramaCaptionTap(localIdentifier: String) {
+        guard !localIdentifier.isEmpty else { return }
+        for day in draft.days {
+            for stop in day.placeStops {
+                if let photo = stop.photos.first(where: {
+                    $0.isIncluded && ($0.localIdentifier ?? "") == localIdentifier
+                }) {
+                    placePhotoModalItem = PlacePhotoModalItem(
+                        dayId: day.id,
+                        stopId: stop.id,
+                        initialPhotoId: photo.id,
+                        autoFocusCaption: true
+                    )
+                    return
+                }
             }
         }
     }

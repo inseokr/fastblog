@@ -84,7 +84,7 @@ struct VisitedCitiesSheet: View {
     private var groupedFilteredTrips: [(monthStart: Date, title: String, trips: [VisitedCityTrip])] {
         let formatter = DateFormatter()
         formatter.locale = Locale.current
-        formatter.dateFormat = "MMMM yyyy"
+        formatter.dateFormat = "MMMM"
         let cal = Calendar.current
 
         let grouped = Dictionary(grouping: filteredTrips) { trip in
@@ -128,8 +128,7 @@ struct VisitedCitiesSheet: View {
                     }
                 }
             }
-            .navigationTitle("Your Memories")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
             .onAppear {
                 viewModel.loadVisitedCities(year: viewModel.visitedCitiesYear)
                 seedCurrentYearCache()
@@ -144,25 +143,14 @@ struct VisitedCitiesSheet: View {
                     warmAllYearsForSearch()
                 }
             }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Done") { dismiss() }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    if case .done = viewModel.visitedCitiesBuildState {
-                        Button { viewModel.refreshVisitedCities() } label: {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                    }
-                }
-            }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if case .done = viewModel.visitedCitiesBuildState,
-                   !filteredTrips.isEmpty,
-                   !selectedTripIds.isEmpty {
+                   !filteredTrips.isEmpty {
                     selectionBottomOverlay
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 10)
+                        .background(alignment: .bottom) {
+                            Color.black
+                                .ignoresSafeArea(.keyboard, edges: .bottom)
+                        }
                 }
             }
         }
@@ -201,55 +189,114 @@ struct VisitedCitiesSheet: View {
     // MARK: - Controls header (always visible)
 
     private var controlsHeader: some View {
-        VStack(spacing: 8) {
-            searchBarView
+        VStack(alignment: .leading, spacing: 0) {
+            topNavigationHeader
+                .padding(.bottom, 20)
 
-            Picker("Year", selection: $viewModel.visitedCitiesYear) {
-                ForEach(availableYears, id: \.self) { year in
-                    Text(String(year)).tag(year)
+            searchBarView
+                .padding(.bottom, 12)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(availableYears, id: \.self) { year in
+                        Button {
+                            guard viewModel.visitedCitiesYear != year else { return }
+                            viewModel.visitedCitiesYear = year
+                            selectedTripIds.removeAll()
+                            viewModel.loadVisitedCities(year: year)
+                            tripsListResetToken = UUID()
+                        } label: {
+                            Text(String(year))
+                                .font(.system(size: 14, weight: viewModel.visitedCitiesYear == year ? .semibold : .medium))
+                                .foregroundStyle(viewModel.visitedCitiesYear == year ? Color.white : Color.primary.opacity(0.75))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(
+                                    Capsule()
+                                        .fill(viewModel.visitedCitiesYear == year ? Color.accentColor : Color.clear)
+                                )
+                                .overlay(
+                                    Capsule()
+                                        .stroke(
+                                            viewModel.visitedCitiesYear == year
+                                                ? Color.accentColor
+                                                : Color.secondary.opacity(0.25),
+                                            lineWidth: 1
+                                        )
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+                .padding(.horizontal, 1)
             }
-            .pickerStyle(.segmented)
-            .onChange(of: viewModel.visitedCitiesYear) { _, newYear in
-                selectedTripIds.removeAll()
-                viewModel.loadVisitedCities(year: newYear)
-                tripsListResetToken = UUID()
+            .padding(.bottom, 16)
+
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(filteredTrips.count) \(filteredTrips.count == 1 ? "trip" : "trips")")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Text("Select memories to create a blog")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if case .done = viewModel.visitedCitiesBuildState {
+                    Button("Rescan memories") {
+                        viewModel.refreshVisitedCities()
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.accentColor.opacity(0.9))
+                }
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 4)
-        .padding(.bottom, 10)
+        .padding(.top, 22)
+        .padding(.bottom, 14)
         .background(Color(UIColor.systemGroupedBackground))
     }
 
-    private var selectionBottomOverlay: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("\(selectedTripIds.count) selected")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                Spacer()
-                Button("Clear") { selectedTripIds.removeAll() }
-                    .font(.subheadline)
-                    .disabled(selectedTripIds.isEmpty)
+    private var topNavigationHeader: some View {
+        HStack {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
             }
-            Text(selectedTripIds.isEmpty
-                 ? "Tap places to select a continuous range. Up to 7 days when you pick more than one place."
-                 : "Selection is one continuous stretch of places. Tap the first or last selected place to remove it, or Clear.")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(alignment: .firstTextBaseline) {
-                HStack(spacing: 8) {
-                    Image(systemName: "calendar")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(selectedTripIds.isEmpty ? Color.secondary : Color.accentColor)
-                    Text(selectedDateRangeText)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(selectedTripIds.isEmpty ? Color.secondary : Color.primary)
-                }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Done")
+
+            Spacer()
+
+            Text("Your Memories")
+                .font(.system(size: 23, weight: .semibold))
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            // Keeps title optically centered against the leading close button.
+            Color.clear
+                .frame(width: 15, height: 15)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var selectionBottomOverlay: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Selecting multiple memories will be merged into one blog.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(alignment: .center) {
+                Text("\(selectedTripIds.count) selected")
+                    .font(.system(size: 15, weight: .semibold))
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
                 Spacer()
+
                 Button {
                     beginCreateBlogFromSelection()
                 } label: {
@@ -259,20 +306,22 @@ struct VisitedCitiesSheet: View {
                             .tint(.white)
                             .frame(width: 120)
                     } else {
-                        Text("Create Blog")
+                        Text(selectedTripIds.isEmpty ? "Select memories" : "Create Blog")
                             .font(.subheadline)
                             .fontWeight(.semibold)
                             .frame(minWidth: 120)
                     }
                 }
-                .disabled(isCreatingBlog)
+                .disabled(isCreatingBlog || selectedTripIds.isEmpty)
                 .buttonStyle(.borderedProminent)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+        .background(Color.black)
+        .overlay(alignment: .top) {
+            Divider()
+        }
     }
 
     // MARK: - Search bar
@@ -291,72 +340,53 @@ struct VisitedCitiesSheet: View {
             if !searchText.isEmpty {
                 Button { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.secondary.opacity(0.9))
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(Color(UIColor.tertiarySystemFill))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, 14)
+        .frame(height: 46)
+        .background(Color(UIColor.secondarySystemFill))
+        .clipShape(RoundedRectangle(cornerRadius: 15))
     }
 
     // MARK: - Trip list
 
     private var tripsListView: some View {
         ScrollView {
-            VStack(spacing: 0) {
-                HStack {
-                    Text(searchText.isEmpty ? String(viewModel.visitedCitiesYear) : "All Years")
-                        .font(.footnote)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                        .textCase(.uppercase)
-                        .tracking(0.5)
-                    Spacer()
-                    Text("\(filteredTrips.count) \(filteredTrips.count == 1 ? "place" : "places")")
-                        .font(.footnote)
-                        .foregroundColor(.white.opacity(0.9))
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 10)
+            VStack(spacing: 16) {
+                ForEach(groupedFilteredTrips, id: \.monthStart) { group in
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(group.title)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.secondary)
 
-                VStack(spacing: 12) {
-                    ForEach(groupedFilteredTrips, id: \.monthStart) { group in
                         VStack(spacing: 0) {
-                            HStack {
-                                Text(group.title)
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                                    .textCase(.uppercase)
-                                Spacer()
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.bottom, 6)
-
-                            VStack(spacing: 0) {
-                                ForEach(Array(group.trips.enumerated()), id: \.element.id) { index, trip in
-                                    CityTripRow(
-                                        trip: trip,
-                                        isSelected: selectedTripIds.contains(trip.id),
-                                        isUnavailable: isUnavailableForSelection(trip),
-                                        interactionLabel: interactionLabel(for: trip),
-                                        onToggleSelection: { handleToggle(trip) },
-                                        onTapCover: { openCoverPreview(for: trip) }
-                                    )
-                                    if index < group.trips.count - 1 {
-                                        Divider().padding(.leading, 82)
-                                    }
+                            ForEach(Array(group.trips.enumerated()), id: \.element.id) { index, trip in
+                                CityTripRow(
+                                    trip: trip,
+                                    isSelected: selectedTripIds.contains(trip.id),
+                                    isUnavailable: isUnavailableForSelection(trip),
+                                    interactionLabel: interactionLabel(for: trip),
+                                    onToggleSelection: { handleToggle(trip) },
+                                    onTapCover: { openCoverPreview(for: trip) }
+                                )
+                                if index < group.trips.count - 1 {
+                                    Divider().padding(.leading, 92)
                                 }
                             }
-                            .background(Color(UIColor.secondarySystemGroupedBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
+                        .background(Color(UIColor.secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18)
+                                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                        )
                     }
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 20)
+                .padding(.top, 10)
             }
         }
         .id(tripsListResetToken)
@@ -368,7 +398,7 @@ struct VisitedCitiesSheet: View {
         VStack(spacing: 6) {
             HStack(spacing: 6) {
                 ProgressView().scaleEffect(0.75)
-                Text("Scanning \(String(viewModel.visitedCitiesYear))…")
+                Text("Loading trips from \(String(viewModel.visitedCitiesYear))...")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -389,40 +419,19 @@ struct VisitedCitiesSheet: View {
 
     @ViewBuilder
     private func buildingView(progress: Double) -> some View {
-        VStack(spacing: 24) {
-            Spacer()
-
-            Image(systemName: "globe.americas.fill")
-                .font(.system(size: 52))
-                .foregroundStyle(.secondary)
-
-            VStack(spacing: 8) {
-                Text("Scanning Photo Library")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-
-                Text("Finding places you visited in \(String(viewModel.visitedCitiesYear))…")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
-            }
-
-            VStack(spacing: 8) {
-                ProgressView(value: progress > 0 ? progress : nil)
-                    .progressViewStyle(.linear)
-                    .frame(width: 220)
-                    .tint(.blue)
-                if progress > 0 {
-                    Text("\(Int(progress * 100))%")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.top, 4)
-
-            Spacer()
-        }
+        LoadingScanView(
+            message: "Loading Trips from \(String(viewModel.visitedCitiesYear))",
+            isOverlay: false,
+            progress: progress > 0 ? progress : 0,
+            onCancel: nil,
+            onUseCamera: nil,
+            onClose: nil,
+            progressStepLabelOverride: { p in
+                p >= 0.9 ? "Almost done..." : "Please wait..."
+            },
+            backgroundColorOverride: Color(UIColor.systemGroupedBackground),
+            useCenteredLayout: true
+        )
     }
 
     // MARK: - Empty
@@ -457,12 +466,9 @@ struct VisitedCitiesSheet: View {
     }
 
     private func interactionLabel(for trip: VisitedCityTrip) -> String {
-        if isUnavailableForSelection(trip) { return "" }
-        guard selectedTripIds.contains(trip.id) else { return "Tap to select" }
-        let sel = availableTripsChronological.filter { selectedTripIds.contains($0.id) }
-        if sel.count <= 1 { return "Selected" }
-        if trip.id == sel.first?.id || trip.id == sel.last?.id { return "Selected" }
-        return "Tap start or end to narrow"
+        if isUnavailableForSelection(trip) { return "Already added to a blog" }
+        if selectedTripIds.contains(trip.id) { return "Selected" }
+        return "Available to select"
     }
 
     /// Fills every available place between the earliest and latest selected (chronological).
@@ -999,33 +1005,26 @@ private struct CityTripRow: View {
     @State private var coverImage: UIImage?
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             Button {
                 onTapCover()
             } label: {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: 12)
                         .fill(Color(UIColor.tertiarySystemFill))
-                        .frame(width: 54, height: 54)
+                        .frame(width: 60, height: 60)
 
                     if let img = coverImage {
                         Image(uiImage: img)
                             .resizable()
                             .scaledToFill()
-                            .frame(width: 54, height: 54)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .frame(width: 60, height: 60)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
                     } else {
                         Image(systemName: "mappin.circle.fill")
                             .font(.system(size: 22))
                             .foregroundStyle(.secondary)
                     }
-                }
-                .overlay(alignment: .bottomTrailing) {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 9, weight: .bold))
-                        .padding(4)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .padding(3)
                 }
             }
             .buttonStyle(.plain)
@@ -1034,39 +1033,41 @@ private struct CityTripRow: View {
                 onToggleSelection()
             } label: {
                 HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text(trip.displayTitle)
-                            .font(.body)
-                            .fontWeight(.semibold)
+                            .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
 
                         Text(trip.displaySubtitle)
-                            .font(.caption)
+                            .font(.system(size: 14))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
 
                         if isUnavailable {
-                            Text("Already in a created/saved blog")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(.red)
+                            Text("Already added")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color(red: 0.88, green: 0.52, blue: 0.56))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Capsule().fill(Color(red: 0.88, green: 0.52, blue: 0.56).opacity(0.16))
+                                )
                         } else {
                             Text(interactionLabel)
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundColor(isSelected ? .blue : .secondary)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
                         }
                     }
 
                     Spacer()
 
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .font(.title3)
+                    Image(systemName: checkboxIconName)
+                        .font(.system(size: 21, weight: .semibold))
                         .foregroundColor(
                             isUnavailable
                                 ? Color.gray.opacity(0.45)
-                                : (isSelected ? Color.blue : Color.secondary)
+                                : (isSelected ? Color.accentColor : Color.secondary.opacity(0.8))
                         )
                 }
             }
@@ -1075,12 +1076,22 @@ private struct CityTripRow: View {
             .contentShape(Rectangle())
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.vertical, 12)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(isSelected ? Color.blue.opacity(0.12) : Color.clear)
+            RoundedRectangle(cornerRadius: 14)
+                .fill(isSelected ? Color.accentColor.opacity(0.10) : Color.clear)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(isSelected ? Color.accentColor.opacity(0.35) : Color.clear, lineWidth: 1)
+        )
+        .opacity(isUnavailable ? 0.75 : 1)
         .onAppear { loadThumbnail() }
+    }
+
+    private var checkboxIconName: String {
+        if isUnavailable { return "square" }
+        return isSelected ? "checkmark.square.fill" : "square"
     }
 
     private func loadThumbnail() {
