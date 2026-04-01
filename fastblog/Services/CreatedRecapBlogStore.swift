@@ -626,8 +626,8 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
 
         var modifiedDayIndices: Set<Int> = []
-        // Tracks (dayIndex, stopIndex) for newly created stops that have a location and need geocoding.
-        var newStopsToGeocode: [(dayIdx: Int, stopIdx: Int)] = []
+        /// New stops that need reverse-geocode — keyed by `PlaceStop.id` so reordering below does not break lookups.
+        var newStopsToGeocode: [(dayIdx: Int, stopId: UUID)] = []
 
         for (dayStart, dayPhotos) in byDay.sorted(by: { $0.key < $1.key }) {
             // Find or create the matching RecapBlogDay.
@@ -731,10 +731,16 @@ final class CreatedRecapBlogStore: ObservableObject {
                     )
                     detail.days[di].placeStops.append(newStop)
                     if repLoc != nil {
-                        newStopsToGeocode.append((dayIdx: di, stopIdx: newStopIdx))
+                        newStopsToGeocode.append((dayIdx: di, stopId: newStop.id))
                     }
                 }
                 modifiedDayIndices.insert(di)
+            }
+
+            // New stops were appended at the end; merge may leave groups out of chronological order
+            // (e.g. in-app capture between two library stops). Match `buildBlogDetail(from:)`.
+            if modifiedDayIndices.contains(di) {
+                sortPlaceStopsChronologically(&detail.days[di].placeStops)
             }
         }
 
@@ -748,9 +754,8 @@ final class CreatedRecapBlogStore: ObservableObject {
                    var geocodedDetail = blogDetailsBySourceId[sourceTripId] {
                     for entry in newStopsToGeocode {
                         let di = entry.dayIdx
-                        let si = entry.stopIdx
                         guard di < geocodedDetail.days.count,
-                              si < geocodedDetail.days[di].placeStops.count,
+                              let si = geocodedDetail.days[di].placeStops.firstIndex(where: { $0.id == entry.stopId }),
                               let coord = geocodedDetail.days[di].placeStops[si].representativeLocation else { continue }
                         let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
                         let place = await GeocodingService.shared.place(for: loc)
@@ -1827,6 +1832,22 @@ final class CreatedRecapBlogStore: ObservableObject {
     }
 
     // MARK: - Build Blog Detail
+
+    /// Orders place stops by earliest photo time (same rule as `buildBlogDetail(from:)`), fixes `orderIndex`, and renumbers auto-generated `Stop N` titles.
+    private func sortPlaceStopsChronologically(_ stops: inout [PlaceStop]) {
+        stops.sort {
+            let t0 = $0.photos.map(\.timestamp).min() ?? .distantFuture
+            let t1 = $1.photos.map(\.timestamp).min() ?? .distantFuture
+            return t0 < t1
+        }
+        for i in stops.indices {
+            stops[i].orderIndex = i
+            guard !stops[i].placeTitleIsManual else { continue }
+            if stops[i].placeTitle.range(of: "^Stop \\d+$", options: .regularExpression) != nil {
+                stops[i].placeTitle = "Stop \(i + 1)"
+            }
+        }
+    }
 
     /// Build RecapBlogDetail from a TripDraft, clustered into place stops. Use when no saved detail exists.
     /// All photos in a day are clustered together; isIncluded reflects the user's original selection.
