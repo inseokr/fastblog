@@ -126,7 +126,10 @@ private actor GeocodeRateLimiter {
 @MainActor
 final class GeocodingService {
     static let shared = GeocodingService()
-    private let geocoder = CLGeocoder()
+    /// Apple: only one reverse-geocode at a time per `CLGeocoder`. Overlapping `await`s on MainActor still interleave tasks,
+    /// so a second request can start while the first is suspended and stall completions (recap “Day 2” pill spins until reopen).
+    /// Chain requests so each waits for the previous to finish; use a fresh geocoder per request (valid and avoids stale state).
+    private var reverseGeocodeTail: Task<[CLPlacemark], Error>?
     private let rateLimiter = GeocodeRateLimiter()
     private var memoryCache: [String: GeocodedPlace] = [:]
     /// Timezone at location (from CLPlacemark); populated when we reverse-geocode. Used for photo digitized time in local TZ.
@@ -190,9 +193,22 @@ final class GeocodingService {
         return place
     }
 
+    private func serializedReverseGeocodePlacemarks(_ location: CLLocation) async throws -> [CLPlacemark] {
+        let previous = reverseGeocodeTail
+        let task = Task<[CLPlacemark], Error> { @MainActor in
+            if let previous {
+                _ = try? await previous.value
+            }
+            let geocoder = CLGeocoder()
+            return try await geocoder.reverseGeocodeLocation(location)
+        }
+        reverseGeocodeTail = task
+        return try await task.value
+    }
+
     private func performGeocodeWithTimeZone(location: CLLocation) async -> (GeocodedPlace, TimeZone?) {
         do {
-            let placemarks = try await geocoder.reverseGeocodeLocation(location)
+            let placemarks = try await serializedReverseGeocodePlacemarks(location)
             guard let pm = placemarks.first else {
                 return (GeocodedPlace(title: "Unknown Place", subtitle: "", areaName: "Unknown Place", cityName: "Unknown Place", countryName: "Unknown", isoCountryCode: "", bestPlaceLabel: "Unknown Place"), nil)
             }
