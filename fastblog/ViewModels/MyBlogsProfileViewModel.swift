@@ -81,11 +81,10 @@ final class MyBlogsProfileViewModel: ObservableObject {
             // This ensures we have the full context for matching (e.g. overlap checks).
             let result = await photoLibraryService.scanLast90Days(occupiedDateRanges: [])
             let detected = result.trips
-            let saved = createdRecapStore.visibleRecents
 
             let dismissed = Self.loadDismissedKeys()
             let filtered = detected.filter { draft in
-                !TripMatchingService.isTripSaved(draft: draft, against: saved)
+                !createdRecapStore.isDraftRedundantWithSavedBlogs(draft)
                 && !dismissed.contains(Self.dismissKey(for: draft))
             }
             
@@ -109,10 +108,9 @@ final class MyBlogsProfileViewModel: ObservableObject {
         if unsavedTrips.isEmpty && !isScanning {
             loadUnsavedTrips()
         } else {
-            let saved = createdRecapStore.visibleRecents
             let dismissed = Self.loadDismissedKeys()
             unsavedTrips = unsavedTrips.filter { draft in
-                !TripMatchingService.isTripSaved(draft: draft, against: saved)
+                !createdRecapStore.isDraftRedundantWithSavedBlogs(draft)
                 && !dismissed.contains(Self.dismissKey(for: draft))
             }
         }

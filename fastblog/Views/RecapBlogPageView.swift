@@ -211,6 +211,9 @@ struct RecapBlogPageView: View {
     @State private var showNewMomentsReviewSheet = false
     @State private var isCheckingNewMoments = false
     @State private var hasCheckedNewMoments = false
+    @State private var showNoNewMomentsAlert = false
+    @State private var showRescanResultAlert = false
+    @State private var rescanResultMessage = ""
     @State private var hasCheckedFirstTimeTip = false
 
     // MARK: - Panorama
@@ -561,6 +564,16 @@ struct RecapBlogPageView: View {
             } message: {
                 Text("Web link sharing requires a Bloggo account and early cloud access.")
             }
+            .alert("No New Moments Found", isPresented: $showNoNewMomentsAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("No new photos were found in your library for this trip's date range.")
+            }
+            .alert("Rescan Complete", isPresented: $showRescanResultAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(rescanResultMessage)
+            }
             .alert("Cloud sharing coming soon", isPresented: $showCloudSharingComingSoonAlert) {
                 Button("Join Early Access") {
                     showCloudSharingComingSoonAlert = false
@@ -705,6 +718,12 @@ struct RecapBlogPageView: View {
                             showNewMomentsReviewSheet = true
                         }
                     },
+                    onRescanAllMoments: isOnTheGoBlogForRescan
+                        ? {
+                            showBlogSettings = false
+                            rescanAllMomentsFromStart()
+                        }
+                        : nil,
                     onDelete: {
                         createdRecapStore.deleteBlog(sourceTripId: blogId)
                         performDismiss()
@@ -797,7 +816,7 @@ struct RecapBlogPageView: View {
                         { mergePlaceStops(dayId: item.dayId, firstStopId: item.stop.id, secondStopId: nextId) }
                     },
                     onSplit: item.stop.photos.count > 1 ? {
-                        splitPlaceStopItem = SplitPlaceStopItem(dayId: item.dayId, stop: item.stop)
+                        presentSplitPlaceStopSheet(dayId: item.dayId, stop: item.stop)
                     } : nil,
                     onRemoveFromBlog: { removePlaceStop(dayId: item.dayId, stopId: item.stop.id) }
                 )
@@ -807,6 +826,7 @@ struct RecapBlogPageView: View {
                     placeTitle: item.stop.placeTitle,
                     photos: item.stop.photos.sorted { $0.timestamp < $1.timestamp },
                     onSplit: { afterIndex in
+                        print("[SplitPlaceStop] sheet onSplit callback afterPhotoIndex=\(afterIndex) dayId=\(item.dayId) stopId=\(item.stop.id) photoCount=\(item.stop.photos.count)")
                         splitPlaceStop(dayId: item.dayId, stopId: item.stop.id, afterPhotoIndex: afterIndex)
                     }
                 )
@@ -827,7 +847,7 @@ struct RecapBlogPageView: View {
                     photos: bindingForPhotos(dayId: pair.dayId, stopId: pair.stopId),
                     onSplitRequested: {
                         guard let stop = placeStop(dayId: pair.dayId, stopId: pair.stopId) else { return }
-                        splitPlaceStopItem = SplitPlaceStopItem(dayId: pair.dayId, stop: stop)
+                        presentSplitPlaceStopSheet(dayId: pair.dayId, stop: stop)
                     },
                     onAddFromLibrary: { showLibraryImportForManageStop = true }
                 )
@@ -2331,6 +2351,34 @@ struct RecapBlogPageView: View {
         }
     }
 
+    private func rescanAllMomentsFromStart() {
+        guard isOnTheGoBlogForRescan else { return }
+        Task { @MainActor in
+            isCheckingNewMoments = true
+            let result = await createdRecapStore.performFullRescanAndInject(blogId: blogId)
+            isCheckingNewMoments = false
+
+            if result.newStops == 0 && result.addedToExisting == 0 {
+                showNoNewMomentsAlert = true
+            } else {
+                // Reload draft so newly injected photos are visible immediately.
+                if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
+                    draft = updated
+                    draftSnapshot = updated
+                }
+                var parts: [String] = []
+                if result.newStops > 0 {
+                    parts.append("\(result.newStops) new place\(result.newStops == 1 ? "" : "s") added")
+                }
+                if result.addedToExisting > 0 {
+                    parts.append("\(result.addedToExisting) photo\(result.addedToExisting == 1 ? "" : "s") added to existing places (unselected)")
+                }
+                rescanResultMessage = parts.joined(separator: "\n")
+                showRescanResultAlert = true
+            }
+        }
+    }
+
     private func dismissNewMoments() {
         newMomentPhotos = []
     }
@@ -2350,6 +2398,12 @@ struct RecapBlogPageView: View {
     /// All included photos across all days/stops, for cover photo selection.
     private var allIncludedPhotos: [RecapPhoto] {
         draft.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded)
+    }
+
+    /// “On the go” for rescan: latest included photo is from the last 24 hours.
+    private var isOnTheGoBlogForRescan: Bool {
+        guard let latest = allIncludedPhotos.map(\.timestamp).max() else { return false }
+        return Date().timeIntervalSince(latest) < 24 * 3600
     }
 
     private var shareText: String {
@@ -2839,13 +2893,30 @@ struct RecapBlogPageView: View {
         draft.days[dayIdx] = day
     }
 
+    /// Split sheet must not be presented in the same update as (or while) the place overflow sheet is up;
+    /// stacked `.sheet` presentations often show UI that does not receive touches.
+    private func presentSplitPlaceStopSheet(dayId: UUID, stop: PlaceStop) {
+        overflowStop = nil
+        let payload = SplitPlaceStopItem(dayId: dayId, stop: stop)
+        DispatchQueue.main.async {
+            splitPlaceStopItem = payload
+        }
+    }
+
     private func splitPlaceStop(dayId: UUID, stopId: UUID, afterPhotoIndex: Int) {
         guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
-              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else {
+            print("[SplitPlaceStop] splitPlaceStop ABORT — day or stop not found dayId=\(dayId) stopId=\(stopId)")
+            return
+        }
 
         var day = draft.days[dayIdx]
         let original = day.placeStops[stopIdx]
-        guard afterPhotoIndex >= 0, afterPhotoIndex < original.photos.count - 1 else { return }
+        guard afterPhotoIndex >= 0, afterPhotoIndex < original.photos.count - 1 else {
+            print("[SplitPlaceStop] splitPlaceStop ABORT — invalid afterPhotoIndex=\(afterPhotoIndex) photoCount=\(original.photos.count) (need 0..<\(max(0, original.photos.count - 1)))")
+            return
+        }
+        print("[SplitPlaceStop] splitPlaceStop applying — stopIdx=\(stopIdx) afterPhotoIndex=\(afterPhotoIndex) photos=\(original.photos.count)")
 
         var firstHalf = original
         firstHalf.photos = Array(original.photos[0...afterPhotoIndex])

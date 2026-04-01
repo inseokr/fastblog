@@ -531,14 +531,13 @@ final class TripsViewModel: ObservableObject {
         windowEnd: Date,
         setCurrentWindow: Bool = true
     ) -> Int {
-        let saved = createdRecapStore.visibleRecents
         let myDraftIds = TripDraftStore.draftTripIds()
         let existingKeys = Set(tripDrafts.map { "\($0.title)|\($0.dateRangeText)" })
 
         let deduped = windowTrips.filter { trip in
             guard !existingKeys.contains("\(trip.title)|\(trip.dateRangeText)")
                 && !createdRecapStore.hasCreatedBlog(sourceTripId: trip.id)
-                && !TripMatchingService.isTripSaved(draft: trip, against: saved)
+                && !createdRecapStore.isDraftRedundantWithSavedBlogs(trip)
             else { return false }
             // Avoid adding a scanned trip whose photos are already in an existing draft (e.g. camera capture).
             let tripPhotoIds = Set(trip.days.flatMap(\.photos).compactMap(\.localIdentifier))
@@ -570,10 +569,9 @@ final class TripsViewModel: ObservableObject {
     /// Draft trips that have not yet been turned into a created recap blog. Use this for the Trips list.
     /// Filters by both UUID match and date/location overlap so trips never survive a re-scan.
     var visibleDraftTrips: [TripDraft] {
-        let saved = createdRecapStore.visibleRecents
         return tripDrafts.filter { draft in
             !createdRecapStore.hasCreatedBlog(sourceTripId: draft.id)
-            && !TripMatchingService.isTripSaved(draft: draft, against: saved)
+            && !createdRecapStore.isDraftRedundantWithSavedBlogs(draft)
         }
     }
 
@@ -654,10 +652,9 @@ final class TripsViewModel: ObservableObject {
     var visibleDraftTripsNewestFirst: [TripDraft] {
         let source: [TripDraft]
         if let window = currentWindowTrips {
-            let saved = createdRecapStore.visibleRecents
             source = window.filter { draft in
                 !createdRecapStore.hasCreatedBlog(sourceTripId: draft.id)
-                && !TripMatchingService.isTripSaved(draft: draft, against: saved)
+                && !createdRecapStore.isDraftRedundantWithSavedBlogs(draft)
             }
         } else {
             source = visibleDraftTrips
@@ -765,7 +762,22 @@ final class TripsViewModel: ObservableObject {
         newMomentsMatchedBlog = nil
         showNewlyScannedSheet = false
         AppAnalytics.shared.trackEvent(name: "trip_scan_started")
-        let occupiedRanges = createdRecapStore.occupiedDateRanges()
+        /// While the active on-the-go blog’s latest photo is under 24 hours old, re-scan whole calendar days from trip start through now: omit only that blog from occupied ranges (so library assets on day 1 are not stripped) and widen incremental fetch / overlap window to `tripStartDate`.
+        let activeOnTheGoBlogId = OnTheGoTripStore.activeBlogId
+        let latestPhotoForActiveOnTheGo: Date? = {
+            guard let id = activeOnTheGoBlogId else { return nil }
+            if let t = createdRecapStore.latestPhotoTimestamp(forSourceTripId: id) { return t }
+            return createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == id })?.tripEndDate
+                ?? OnTheGoTripStore.tripEndDate
+        }()
+        let scanFullCalendarDaysForFreshOnTheGo = activeOnTheGoBlogId != nil
+            && OnTheGoTripStore.isTripStillOngoing()
+            && (latestPhotoForActiveOnTheGo.map { Date().timeIntervalSince($0) < 24 * 3600 } ?? false)
+        let occupiedRangesExcludedBlogIds: Set<UUID> = {
+            guard scanFullCalendarDaysForFreshOnTheGo, let id = activeOnTheGoBlogId else { return Set() }
+            return Set([id])
+        }()
+        let occupiedRanges = createdRecapStore.occupiedDateRanges(excludingSourceTripIds: occupiedRangesExcludedBlogIds)
         let userId = currentUserId
         let previousLastScanned = forceFullScan ? nil : ScanSessionStore.lastScannedDate(for: userId)
 
@@ -774,6 +786,7 @@ final class TripsViewModel: ObservableObject {
         debugPrint("[Scan] lastScannedDate = \(scanDbg(previousLastScanned))")
         debugPrint("[Scan] tripDrafts.count = \(tripDrafts.count)")
         debugPrint("[Scan] savedBlogs.count = \(createdRecapStore.visibleRecents.count)")
+        debugPrint("[Scan] freshOnTheGo24h=\(scanFullCalendarDaysForFreshOnTheGo) latestPhoto=\(scanDbg(latestPhotoForActiveOnTheGo)) excludeBlogFromOccupied=\(occupiedRangesExcludedBlogIds.map(\.uuidString).joined(separator: ","))")
         for (i, blog) in createdRecapStore.visibleRecents.enumerated() {
             debugPrint("[Scan]   blog[\(i)] \"\(blog.title)\" createdAt=\(scanDbg(blog.createdAt)) start=\(scanDbg(blog.tripStartDate)) end=\(scanDbg(blog.tripEndDate)) country=\(blog.countryName ?? "nil")")
         }
@@ -837,12 +850,24 @@ final class TripsViewModel: ObservableObject {
                 loadingMessage = "Checking for new moments…"
 
                 // Pad behind lastDate so trips that straddle the boundary are complete.
-                let fetchStart = cal.date(byAdding: .day, value: -Self.fetchPaddingDays, to: lastDate) ?? lastDate
+                var fetchStart = cal.date(byAdding: .day, value: -Self.fetchPaddingDays, to: lastDate) ?? lastDate
+                // Fresh on-the-go blog: include every calendar day from trip start through now (not only since lastScanned).
+                var incrementalWindowStart = cal.startOfDay(for: lastDate)
+                if scanFullCalendarDaysForFreshOnTheGo,
+                   let goId = activeOnTheGoBlogId,
+                   let activeBlog = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == goId }),
+                   let tripStart = activeBlog.tripStartDate {
+                    let blogDayStart = cal.startOfDay(for: tripStart)
+                    let expandedFetch = cal.date(byAdding: .day, value: -Self.fetchPaddingDays, to: blogDayStart) ?? blogDayStart
+                    fetchStart = min(fetchStart, expandedFetch)
+                    incrementalWindowStart = min(incrementalWindowStart, blogDayStart)
+                }
 
                 #if DEBUG
                 debugPrint("[Scan] mode = INCREMENTAL")
-                debugPrint("[Scan] fetchStart = \(scanDbg(fetchStart))  (lastScanned − \(Self.fetchPaddingDays)d)")
+                debugPrint("[Scan] fetchStart = \(scanDbg(fetchStart))  (lastScanned − \(Self.fetchPaddingDays)d, or blog start if fresh on-the-go)")
                 debugPrint("[Scan] fetchEnd   = \(scanDbg(windowEnd))")
+                debugPrint("[Scan] incrementalWindowStart = \(scanDbg(incrementalWindowStart))")
                 #endif
 
                 // Pass empty occupied ranges so photos in saved-blog date
@@ -859,7 +884,6 @@ final class TripsViewModel: ObservableObject {
                 // Keep only trips that overlap the incremental window.
                 // Use startOfDay because trip dates are day-granular (midnight),
                 // while lastDate is a precise timestamp within the day.
-                let incrementalWindowStart = cal.startOfDay(for: lastDate)
                 let incrementalTrips = newTrips.filter { trip in
                     tripOverlapsWindow(trip, windowStart: incrementalWindowStart, windowEnd: windowEnd)
                 }
@@ -1082,7 +1106,14 @@ final class TripsViewModel: ObservableObject {
                     debugPrint("[Scan]   photo id=\(p.localIdentifier?.suffix(8) ?? "nil") ts=\(scanDbg(p.timestamp)) afterCutoff=\(afterCutoff) alreadyInBlog=\(alreadyInBlog) → kept=\(kept)")
                 }
                 #endif
-                continue
+                // Library photos not yet in the blog still need a trip card / merge pass (blogs from in-app camera only store `bloggo-capture:` ids).
+                let libraryIdsInScan = Set(
+                    allPhotos.compactMap(\.localIdentifier).filter { !$0.hasPrefix(AppCapturePhotoService.prefix) }
+                )
+                let hasLibraryAssetsNotInBlog = libraryIdsInScan.contains { !existingIds.contains($0) }
+                if !hasLibraryAssetsNotInBlog {
+                    continue
+                }
             }
 
             // 2. Check existing drafts — merge photos into matching trip.
@@ -1144,10 +1175,9 @@ final class TripsViewModel: ObservableObject {
             }
         }
 
-        let saved = createdRecapStore.visibleRecents
         let deduped = remainingNew.filter {
             !createdRecapStore.hasCreatedBlog(sourceTripId: $0.id)
-            && !TripMatchingService.isTripSaved(draft: $0, against: saved)
+            && !createdRecapStore.isDraftRedundantWithSavedBlogs($0)
         }
         if !deduped.isEmpty {
             tripDrafts.append(contentsOf: deduped)
@@ -1559,10 +1589,9 @@ final class TripsViewModel: ObservableObject {
             guard !Task.isCancelled else { return }
             hasPerformedCustomScan = true
             let existingKeys = Set(draftOnlyTrips.map { "\($0.title)|\($0.dateRangeText)" })
-            let saved = createdRecapStore.visibleRecents
             let deduped = newTrips.filter { trip in
                 !existingKeys.contains("\(trip.title)|\(trip.dateRangeText)")
-                && !TripMatchingService.isTripSaved(draft: trip, against: saved)
+                && !createdRecapStore.isDraftRedundantWithSavedBlogs(trip)
             }
             AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
             AppAnalytics.shared.incrementCounter("trips_detected", by: newTrips.count)
@@ -1762,10 +1791,9 @@ final class TripsViewModel: ObservableObject {
             let myDraftIds = TripDraftStore.draftTripIds()
             let draftOnlyTrips = tripDrafts.filter { myDraftIds.contains($0.id) }
             let existingKeys = Set(draftOnlyTrips.map { "\($0.title)|\($0.dateRangeText)" })
-            let saved = createdRecapStore.visibleRecents
             let deduped = newTrips.filter { trip in
                 !existingKeys.contains("\(trip.title)|\(trip.dateRangeText)")
-                    && !TripMatchingService.isTripSaved(draft: trip, against: saved)
+                    && !createdRecapStore.isDraftRedundantWithSavedBlogs(trip)
             }
 
             withAnimation {
@@ -1988,10 +2016,9 @@ final class TripsViewModel: ObservableObject {
                 finalWindowEnd = windowEnd
 
                 // Count visible trips (excluding already-created blogs).
-                let saved = createdRecapStore.visibleRecents
                 let visibleCount = windowTrips.filter { trip in
                     !createdRecapStore.hasCreatedBlog(sourceTripId: trip.id)
-                        && !TripMatchingService.isTripSaved(draft: trip, against: saved)
+                        && !createdRecapStore.isDraftRedundantWithSavedBlogs(trip)
                 }.count
 
                 if visibleCount >= 3 { break }
