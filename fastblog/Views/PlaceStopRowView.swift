@@ -131,6 +131,7 @@ struct PlaceStopRowView: View {
     @StateObject private var vibePlayer = VibePlayer()
     @State private var playingVibePhotoId: UUID? = nil
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("selectedBlogFont") private var selectedBlogFont: String = "Serif"
 
     private var rowSurface: Color {
         colorScheme == .dark ? Color(white: 0.12) : Color(uiColor: .secondarySystemGroupedBackground)
@@ -230,7 +231,7 @@ struct PlaceStopRowView: View {
                             HStack(alignment: .center, spacing: 10) {
                                 Button { onEditName?() } label: {
                                     Text(stop.placeTitle)
-                                        .font(Font.custom("Georgia-Bold", size: 22))
+                                        .font(Font.blog(selectedBlogFont, size: 22, bold: true))
                                         .foregroundColor(rowTitle)
                                         .background(
                                             GeometryReader { geo in
@@ -257,7 +258,7 @@ struct PlaceStopRowView: View {
                                 Link(destination: searchURL) {
                                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                                         Text(stop.placeTitle)
-                                            .font(Font.custom("Georgia-Bold", size: 22))
+                                            .font(.blog(selectedBlogFont, size: 22, bold: true))
                                             .foregroundColor(rowTitle)
                                             .background(
                                                 GeometryReader { geo in
@@ -277,7 +278,7 @@ struct PlaceStopRowView: View {
                                     onNavigate?()
                                 } label: {
                                     Text(stop.placeTitle)
-                                        .font(Font.custom("Georgia-Bold", size: 22))
+                                        .font(.blog(selectedBlogFont, size: 22, bold: true))
                                         .foregroundColor(rowTitle)
                                         .background(
                                             GeometryReader { geo in
@@ -498,7 +499,7 @@ struct PlaceStopRowView: View {
                             }
                         } label: {
                             Text(photoCaption(photo.id).wrappedValue)
-                                .font(Font.custom("Georgia", size: 16))
+                                .font(.blog(selectedBlogFont, size: 16))
                                 .lineSpacing(6)
                                 .foregroundColor(rowStoryReadColor)
                                 .lineLimit(isExpanded ? nil : 4)
@@ -516,36 +517,6 @@ struct PlaceStopRowView: View {
                 // --- CASE 2b: Multiple photos (or edit-mode manage card) — horizontal scroll strip ---
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 10) {
-                        if shouldShowManagePhotosCard {
-                            Button(action: onManagePhotos) {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(rowInset)
-                                    VStack(spacing: 8) {
-                                        Image(systemName: "photo.on.rectangle")
-                                            .font(.system(size: 22, weight: .semibold))
-                                            .foregroundStyle(
-                                                LinearGradient(
-                                                    colors: [Color.white.opacity(0.9), Color.white.opacity(0.55)],
-                                                    startPoint: .top,
-                                                    endPoint: .bottom
-                                                )
-                                            )
-                                        Text("Manage Photos")
-                                            .font(.caption.weight(.semibold))
-                                            .foregroundColor(.primary)
-                                            .multilineTextAlignment(.center)
-                                    }
-                                    .padding(.horizontal, 8)
-                                }
-                                .frame(width: thumbnailSize, height: thumbnailSize)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
                         ForEach(includedPhotos) { photo in
                             VStack(alignment: .leading, spacing: 6) {
                                 ZStack(alignment: .topTrailing) {
@@ -650,7 +621,7 @@ struct PlaceStopRowView: View {
                                         }
                                     } label: {
                                         Text(photoCaption(photo.id).wrappedValue)
-                                            .font(Font.custom("Georgia", size: 16))
+                                            .font(.blog(selectedBlogFont, size: 16))
                                             .lineSpacing(6)
                                             .foregroundColor(rowStoryReadColor)
                                             .lineLimit(isExpanded ? nil : 4)
@@ -662,6 +633,40 @@ struct PlaceStopRowView: View {
                             }
                             .frame(width: thumbnailSize)
                             .id(photo.id)
+                        }
+                        if shouldShowManagePhotosCard {
+                            Button(action: onManagePhotos) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(rowInset)
+                                    VStack(spacing: 8) {
+                                        Image(systemName: "photo.on.rectangle")
+                                            .font(.system(size: 22, weight: .semibold))
+                                            .foregroundStyle(
+                                                LinearGradient(
+                                                    colors: [Color.white.opacity(0.9), Color.white.opacity(0.55)],
+                                                    startPoint: .top,
+                                                    endPoint: .bottom
+                                                )
+                                            )
+                                        Text("Manage Photos")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundColor(.primary)
+                                            .multilineTextAlignment(.center)
+                                        Text("\(stop.photos.count) \(stop.photos.count == 1 ? "Photo" : "Photos")")
+                                            .font(.caption2.weight(.medium))
+                                            .foregroundColor(.secondary)
+                                            .multilineTextAlignment(.center)
+                                    }
+                                    .padding(.horizontal, 8)
+                                }
+                                .frame(width: thumbnailSize, height: thumbnailSize)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.leading, 16)
@@ -736,7 +741,7 @@ struct PlaceStopRowView: View {
                                     return overallStory.trimmingCharacters(in: .whitespacesAndNewlines)
                                 }()
                                 Text(displayStory.isEmpty ? placeStoryPlaceholder : displayStory)
-                                    .font(Font.custom("Georgia", size: 17))
+                                    .font(Font.blog(selectedBlogFont, size: 17))
                                     .lineSpacing(8)
                                     .foregroundColor(displayStory.isEmpty ? .secondary.opacity(0.9) : rowCaptionFilled)
                                     .multilineTextAlignment(.leading)
@@ -771,7 +776,7 @@ struct PlaceStopRowView: View {
                 if !displayStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(displayStory)
-                            .font(Font.custom("Georgia", size: 17))
+                            .font(.blog(selectedBlogFont, size: 17))
                             .lineSpacing(8)
                             .foregroundColor(rowStoryReadColor)
                             .lineLimit(isOverallStoryExpanded ? nil : 5)
@@ -780,7 +785,7 @@ struct PlaceStopRowView: View {
                             .background(
                                 GeometryReader { constrainedGeo in
                                     Text(displayStory)
-                                        .font(Font.custom("Georgia", size: 17))
+                                        .font(.blog(selectedBlogFont, size: 17))
                                         .lineSpacing(8)
                                         .fixedSize(horizontal: false, vertical: true)
                                         .frame(width: constrainedGeo.size.width)

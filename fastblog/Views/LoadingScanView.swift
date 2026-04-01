@@ -19,6 +19,12 @@ struct LoadingScanView: View {
     var onUseCamera: (() -> Void)? = nil
     /// When non-nil, shows an X close button in the top-right corner.
     var onClose: (() -> Void)? = nil
+    /// Optional override for the secondary progress text.
+    var progressStepLabelOverride: ((Double) -> String)? = nil
+    /// Optional full-screen background override for non-overlay mode.
+    var backgroundColorOverride: Color? = nil
+    /// When true, centers the animation + message stack without the lower offset.
+    var useCenteredLayout: Bool = false
 
     @State private var ringRotation: Double = 0
     @State private var pulseScale: CGFloat = 1
@@ -42,6 +48,9 @@ struct LoadingScanView: View {
     /// Step label driven by real progress value.
     private var progressStepLabel: String {
         guard let p = progress else { return timerStepLabels[stepLabelIndex] }
+        if let progressStepLabelOverride {
+            return progressStepLabelOverride(p)
+        }
         switch p {
         case ..<0.20: return "Organizing…"
         case 0.20..<0.40: return "Filtering trip photos…"
@@ -60,60 +69,28 @@ struct LoadingScanView: View {
                 loadingBackground.opacity(0.65)
                     .ignoresSafeArea()
             } else {
-                loadingBackground
+                (backgroundColorOverride ?? loadingBackground)
                     .ignoresSafeArea()
             }
 
-            ZStack {
-                scanAnimation
-
-                VStack(spacing: 36) {
-                    messageSection
-
-                    if let onUseCamera {
-                        Button {
-                            onUseCamera()
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "camera.fill")
-                                    .font(.system(size: 15, weight: .semibold))
-                                Text("Use Camera")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 32)
-                            .padding(.vertical, 11)
-                            .background(
-                                LinearGradient(
-                                    colors: [
-                                        Color(red: 0.18, green: 0.40, blue: 0.78),
-                                        Color(red: 0.25, green: 0.35, blue: 0.72)
-                                    ],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .cornerRadius(12)
-                            .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+            Group {
+                if useCenteredLayout {
+                    VStack(spacing: 20) {
+                        scanAnimation
+                        messageSection
+                        actionButtons
+                    }
+                } else {
+                    ZStack {
+                        scanAnimation
+                        VStack(spacing: 36) {
+                            messageSection
+                            actionButtons
                         }
-                    } else if let onCancel {
-                        Button {
-                            onCancel()
-                        } label: {
-                            Text("Cancel")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                                .foregroundColor(.white.opacity(0.7))
-                                .padding(.horizontal, 32)
-                                .padding(.vertical, 10)
-                                .background(Color.white.opacity(0.12))
-                                .cornerRadius(10)
-                        }
+                        // Keep the text block below the scan animation so it doesn't overlap.
+                        .offset(y: 240)
                     }
                 }
-                // Keep the text block below the scan animation so it doesn't overlap.
-                .offset(y: 240)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -156,6 +133,51 @@ struct LoadingScanView: View {
             slowScanHintTask?.cancel()
             slowScanHintTask = nil
             showSlowScanHint = false
+        }
+    }
+
+    @ViewBuilder
+    private var actionButtons: some View {
+        if let onUseCamera {
+            Button {
+                onUseCamera()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("Use Camera")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 32)
+                .padding(.vertical, 11)
+                .background(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.18, green: 0.40, blue: 0.78),
+                            Color(red: 0.25, green: 0.35, blue: 0.72)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .cornerRadius(12)
+                .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+            }
+        } else if let onCancel {
+            Button {
+                onCancel()
+            } label: {
+                Text("Cancel")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.white.opacity(0.7))
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 10)
+                    .background(Color.white.opacity(0.12))
+                    .cornerRadius(10)
+            }
         }
     }
 

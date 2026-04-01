@@ -42,12 +42,12 @@ struct SplitPlaceStopView: View {
                         .padding(.bottom, 24)
                 }
             }
-            .navigationTitle("Split Place Group")
+            .navigationTitle("Split Photo Group")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundColor(.orange)
+                        .foregroundColor(.gray)
                 }
             }
             .preferredColorScheme(.dark)
@@ -71,60 +71,54 @@ struct SplitPlaceStopView: View {
     }
 
     private var photoStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .center, spacing: 0) {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 0) {
                 ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
-                    // Photo thumbnail
                     RecapPhotoThumbnail(photo: photo, cornerRadius: 6, showIcon: false)
-                        .frame(width: 90, height: 90)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 200)
                         .clipped()
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
                                 .stroke(Color.white.opacity(0.1), lineWidth: 1)
                         )
-                        .padding(.horizontal, 4)
+                        .padding(.horizontal, 16)
 
-                    // Split-point tap zone (not after the last photo)
                     if index < photos.count - 1 {
                         splitPointButton(afterIndex: index)
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
         }
     }
 
     private func splitPointButton(afterIndex index: Int) -> some View {
         let isSelected = splitAfterIndex == index
-        return Button {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
-                splitAfterIndex = isSelected ? nil : index
-            }
-            let impact = UIImpactFeedbackGenerator(style: .light)
-            impact.impactOccurred()
-        } label: {
-            ZStack {
-                // Tap-target (invisible, generous touch area)
-                Color.clear.frame(width: 32, height: 90)
+        return ZStack {
+            Rectangle()
+                .fill(isSelected ? Color.orange.opacity(0.12) : Color.white.opacity(0.05))
+                .frame(height: 44)
 
-                // Vertical divider line
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(isSelected ? Color.orange : Color.white.opacity(0.2))
-                    .frame(width: 2, height: 90)
+            Rectangle()
+                .fill(isSelected ? Color.orange : Color.white.opacity(0.3))
+                .frame(height: isSelected ? 3 : 2)
+                .padding(.horizontal, 16)
 
-                // Small orange pill badge when selected
-                if isSelected {
-                    Text("✂")
-                        .font(.system(size: 10))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 3)
-                        .background(Color.orange)
-                        .clipShape(Capsule())
-                }
+            if isSelected {
+                Image(systemName: "scissors")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(5)
+                    .background(Circle().fill(Color.orange))
             }
         }
-        .buttonStyle(.plain)
+        .onTapGesture {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                splitAfterIndex = splitAfterIndex == index ? nil : index
+            }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
     }
 
@@ -133,12 +127,12 @@ struct SplitPlaceStopView: View {
         let firstCount = idx + 1
         let secondCount = photos.count - firstCount
 
-        HStack(spacing: 12) {
-            groupLabel(title: "Group 1", photoCount: firstCount, color: .green)
+        HStack(spacing: 16) {
+            groupLabel(title: "Group 1", photoCount: firstCount, color: .orange)
             Image(systemName: "scissors")
-                .font(.footnote)
+                .font(.system(size: 14, weight: .bold))
                 .foregroundColor(.orange)
-            groupLabel(title: "Group 2", photoCount: secondCount, color: .blue)
+            groupLabel(title: "Group 2", photoCount: secondCount, color: .white)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 10)
@@ -152,11 +146,10 @@ struct SplitPlaceStopView: View {
             Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundColor(color)
-            Text("\(photoCount) photo\(photoCount == 1 ? "" : "s")")
+            Text("\(photoCount) Photos")
                 .font(.caption2)
                 .foregroundColor(.secondary)
         }
-        .frame(maxWidth: .infinity)
     }
 
     private var confirmButton: some View {

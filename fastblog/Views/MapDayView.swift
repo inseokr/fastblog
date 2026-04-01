@@ -298,8 +298,11 @@ struct FullScreenMapView: View {
     var onDismiss: () -> Void
     /// Called when a photo caption is saved inside the modal. Receives (stopId, photoId, newCaption).
     var onCaptionSaved: ((UUID, UUID, String) -> Void)? = nil
+    /// When set, opens focused on this place marker.
+    var initialFocusedPlaceId: UUID? = nil
 
     @State private var selectedPlaceIndex: Int = 0
+    @State private var didApplyInitialFocus = false
     // Photo modal
     @State private var photoModalStop: PlaceStop?
     @State private var photoModalInitialPhotoId: UUID?
@@ -308,6 +311,18 @@ struct FullScreenMapView: View {
     @State private var photoModalCaptionsSnapshot: [UUID: String] = [:]
     
     @State private var selectedCategory: String? = nil
+
+    init(
+        day: RecapBlogDay,
+        onDismiss: @escaping () -> Void,
+        onCaptionSaved: ((UUID, UUID, String) -> Void)? = nil,
+        initialFocusedPlaceId: UUID? = nil
+    ) {
+        self.day = day
+        self.onDismiss = onDismiss
+        self.onCaptionSaved = onCaptionSaved
+        self.initialFocusedPlaceId = initialFocusedPlaceId
+    }
 
     private var availableCategories: [String] {
         let cats = day.placeStops
@@ -439,6 +454,9 @@ struct FullScreenMapView: View {
         .background(Color.black)
         .ignoresSafeArea(edges: .all)
         .preferredColorScheme(.dark)
+        .onAppear {
+            applyInitialFocusIfNeeded()
+        }
         .sheet(isPresented: Binding(
             get: { photoModalStop != nil },
             set: { if !$0 { photoModalStop = nil } }
@@ -471,6 +489,14 @@ struct FullScreenMapView: View {
     }
 
     @State private var scrolledPlaceID: UUID?
+
+    private func applyInitialFocusIfNeeded() {
+        guard !didApplyInitialFocus else { return }
+        didApplyInitialFocus = true
+        guard let placeId = initialFocusedPlaceId,
+              let index = day.placeStops.firstIndex(where: { $0.id == placeId }) else { return }
+        selectedPlaceIndex = index
+    }
 
     private func categoryDisplayLabel(for rawValue: String) -> String {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)

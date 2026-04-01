@@ -25,7 +25,7 @@ struct NeighborhoodSelectionView: View {
     @FocusState private var isFocused: Bool
     @State private var isMapRevealed = false
     private var settingsBackground: Color {
-        Color(uiColor: .systemGroupedBackground)
+        OnboardingConstants.Colors.background
     }
     private var titleTopPadding: CGFloat {
         // When embedded in the Settings navigation stack, a navigation bar back button exists
