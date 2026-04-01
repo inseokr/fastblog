@@ -19,47 +19,49 @@ struct SplitPlaceStopView: View {
     /// Index in `photos` after which the split will be made. Nil = nothing selected yet.
     @State private var splitAfterIndex: Int?
 
+    private let thumbSize: CGFloat = 140
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            RoundedRectangle(cornerRadius: 3)
-                .fill(Color.secondary.opacity(0.45))
-                .frame(width: 38, height: 5)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 10)
+        NavigationStack {
+            VStack(spacing: 0) {
+                instructionBanner
 
-            instructionBanner
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Choose where to split")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
                 photoStrip
-                    .frame(maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 20)
 
                 if let idx = splitAfterIndex {
                     splitPreview(afterIndex: idx)
+                        .padding(.top, 20)
+                }
+
+                Spacer(minLength: 0)
+
+                confirmButton
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle("Split Photo Group")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundColor(.gray)
                 }
             }
-            .padding(12)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(uiColor: .secondarySystemBackground))
-            )
-
-            Spacer()
-
-            confirmButton
-                .padding(.bottom, 8)
-        }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
-        .presentationDetents([.large])
-        .presentationDragIndicator(.hidden)
-        .presentationBackground {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .opacity(0.92)
+            .preferredColorScheme(.dark)
+            .onAppear {
+                let ids = photos.map(\.id)
+                let uniqueIds = Set(ids)
+                print("[SplitPlaceStop] onAppear place=\"\(placeTitle)\" photoCount=\(photos.count) uniqueIds=\(uniqueIds.count)")
+                if uniqueIds.count != ids.count {
+                    print("[SplitPlaceStop] ⚠️ duplicate RecapPhoto.id — duplicate count=\(ids.count - uniqueIds.count)")
+                }
+            }
+            .onChange(of: splitAfterIndex) { old, new in
+                print("[SplitPlaceStop] splitAfterIndex \(String(describing: old)) → \(String(describing: new))")
+            }
         }
     }
 
@@ -82,19 +84,23 @@ struct SplitPlaceStopView: View {
 
             Text(placeTitle)
                 .font(.subheadline.weight(.semibold))
-                .foregroundColor(.primary)
+                .foregroundColor(.white)
+            Text("Tap the divider between two photos to set the split point.")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
         }
         .padding(.top, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var photoStrip: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 0) {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
                 ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
                     RecapPhotoThumbnail(photo: photo, cornerRadius: 6, showIcon: false)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 150)
+                        .frame(width: thumbSize, height: thumbSize)
                         .clipped()
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
@@ -102,44 +108,43 @@ struct SplitPlaceStopView: View {
                         )
 
                     if index < photos.count - 1 {
-                        splitPointButton(afterIndex: index)
+                        splitDivider(afterIndex: index)
                     }
                 }
             }
-            .padding(.vertical, 8)
+            .padding(.horizontal, 16)
         }
-        .frame(maxHeight: .infinity, alignment: .top)
+        .frame(height: thumbSize)
     }
 
-    private func splitPointButton(afterIndex index: Int) -> some View {
+    private func splitDivider(afterIndex index: Int) -> some View {
         let isSelected = splitAfterIndex == index
-        return Button {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
-                splitAfterIndex = index
-            }
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        } label: {
-            ZStack {
-                Rectangle()
-                    .fill(isSelected ? Color.orange.opacity(0.16) : Color(uiColor: .secondarySystemBackground))
-                    .frame(height: 48)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .padding(.horizontal, 2)
+        return ZStack {
+            Rectangle()
+                .fill(isSelected ? Color.orange.opacity(0.15) : Color.clear)
+                .frame(width: 36)
 
-                Rectangle()
-                    .fill(isSelected ? Color.orange : Color.secondary.opacity(0.5))
-                    .frame(height: isSelected ? 3 : 2)
-                    .padding(.horizontal, 16)
+            Rectangle()
+                .fill(isSelected ? Color.orange : Color.white.opacity(0.25))
+                .frame(width: isSelected ? 3 : 1)
 
                 Image(systemName: "scissors")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.orange)
-                    .padding(5)
-                    .background(Circle().fill(Color.secondary.opacity(0.9)))
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(4)
+                    .background(Circle().fill(Color.orange))
             }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .frame(width: 36, height: thumbSize)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            let next: Int? = splitAfterIndex == index ? nil : index
+            print("[SplitPlaceStop] divider tapped afterIndex=\(index) → \(String(describing: next))")
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                splitAfterIndex = next
+            }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
     }
 
@@ -175,6 +180,7 @@ struct SplitPlaceStopView: View {
     private var confirmButton: some View {
         Button {
             guard let idx = splitAfterIndex else { return }
+            print("[SplitPlaceStop] confirm split afterPhotoIndex=\(idx)")
             onSplit(idx)
             dismiss()
         } label: {

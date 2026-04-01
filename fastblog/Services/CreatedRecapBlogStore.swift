@@ -472,10 +472,12 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Date ranges (start, end) of created blogs visible to the current user AND active drafts.
     /// Logged-out users only exclude anonymous blog ranges; logged-in users only exclude their own.
-    func occupiedDateRanges() -> [(start: Date, end: Date)] {
+    /// Pass `excludingSourceTripIds` to omit specific blogs (e.g. active on-the-go trip) so the library scan can still find Photos assets on those calendar days.
+    func occupiedDateRanges(excludingSourceTripIds: Set<UUID> = []) -> [(start: Date, end: Date)] {
         let calendar = Calendar.current
 
         let blogRanges: [(start: Date, end: Date)] = visibleRecents.compactMap { blog in
+            guard !excludingSourceTripIds.contains(blog.sourceTripId) else { return nil }
             guard let start = blog.tripStartDate, let end = blog.tripEndDate else { return nil }
             let endOfDay = calendar.date(bySettingHour: 23, minute: 59, second: 59, of: end) ?? end
             return (start: start, end: endOfDay)
@@ -487,6 +489,40 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
         
         return blogRanges + activeDraftRanges
+    }
+
+    /// Latest photo timestamp in saved blog detail (any stop). Nil if detail not loaded.
+    func latestPhotoTimestamp(forSourceTripId sourceTripId: UUID) -> Date? {
+        guard let detail = blogDetailsBySourceId[sourceTripId] else { return nil }
+        let stamps = detail.days.flatMap(\.placeStops).flatMap(\.photos).map(\.timestamp)
+        return stamps.max()
+    }
+
+    /// Photos library asset ids (`PHAsset.localIdentifier`) present in any visible recap blog.
+    /// Excludes in-app captures (`bloggo-capture:`) so we can tell when a scanned trip has library photos not yet in a blog.
+    func allPhotoLibraryLocalIdentifiersInVisibleBlogs() -> Set<String> {
+        var ids = Set<String>()
+        for blog in visibleRecents {
+            guard let detail = blogDetailsBySourceId[blog.sourceTripId] else { continue }
+            for lid in detail.days.flatMap(\.placeStops).flatMap(\.photos).compactMap(\.localIdentifier) {
+                guard !lid.hasPrefix(AppCapturePhotoService.prefix) else { continue }
+                ids.insert(lid)
+            }
+        }
+        return ids
+    }
+
+    /// True when `TripMatchingService` would hide this draft as a duplicate of a saved blog **and**
+    /// every Photos-library asset in the draft already appears in some visible blog.
+    /// Drafts that only match by date/country but contain library photos not in any blog stay visible
+    /// (e.g. same day as a blog built from in-app captures only).
+    func isDraftRedundantWithSavedBlogs(_ draft: TripDraft) -> Bool {
+        guard TripMatchingService.isTripSaved(draft: draft, against: visibleRecents) else { return false }
+        let libraryIds = draft.days.flatMap(\.photos).compactMap(\.localIdentifier)
+            .filter { !$0.hasPrefix(AppCapturePhotoService.prefix) }
+        if libraryIds.isEmpty { return true }
+        let known = allPhotoLibraryLocalIdentifiersInVisibleBlogs()
+        return libraryIds.allSatisfy { known.contains($0) }
     }
 
     /// TripDraft snapshot for opening BlogPreviewView. Nil if not found.
@@ -2394,6 +2430,249 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
 
         return newPhotos.sorted { $0.timestamp < $1.timestamp }
+    }
+
+    /// Full rescan triggered manually from Blog Settings.
+    /// Scans from the blog's first day to now. New photos are automatically injected:
+    /// - Photos matching an existing stop are added with isIncluded = false (unselected).
+    /// - Photos that don't belong to any existing stop are clustered into new place stops,
+    ///   quality-scored to auto-select the best photos, and reverse-geocoded.
+    /// Returns the number of new stops created and photos silently added to existing stops.
+    func performFullRescanAndInject(blogId: UUID) async -> (newStops: Int, addedToExisting: Int) {
+        guard let detail = blogDetailsBySourceId[blogId] else { return (0, 0) }
+
+        let firstDayDate = detail.days.first?.date ?? Date.distantPast
+        let scanStart = Calendar.current.startOfDay(for: firstDayDate)
+        let scanEnd = Date()
+
+        let trips = await PhotoLibraryTripService.shared.scanInDateRange(
+            startDate: scanStart,
+            endDate: scanEnd,
+            ignoreHomeExclusion: true
+        )
+
+        let scannedPhotos = trips.flatMap { $0.days.flatMap(\.photos) }
+        guard !scannedPhotos.isEmpty else { return (0, 0) }
+
+        let existingIds = Set(detail.days.flatMap(\.placeStops).flatMap(\.photos).compactMap(\.localIdentifier))
+        let newPhotos = scannedPhotos.filter { photo in
+            photo.localIdentifier.map { !existingIds.contains($0) } ?? true
+        }.sorted { $0.timestamp < $1.timestamp }
+
+        guard !newPhotos.isEmpty else { return (0, 0) }
+
+        return await injectPhotosFromRescan(newPhotos, intoSourceTripId: blogId)
+    }
+
+    /// Injects photos from a full rescan with differentiated treatment for existing vs. new stops.
+    /// Photos matched to existing stops are added unselected; photos forming new groups get
+    /// their own PlaceStop with quality-based auto-selection and reverse geocoding.
+    private func injectPhotosFromRescan(_ newPhotos: [MockPhoto], intoSourceTripId sourceTripId: UUID) async -> (newStops: Int, addedToExisting: Int) {
+        guard !newPhotos.isEmpty,
+              var detail = blogDetailsBySourceId[sourceTripId] else { return (0, 0) }
+
+        let cal = Calendar.current
+        let gapLimit: TimeInterval = Double(ScanConfig.gapHoursNewSegment) * 3600
+        let locationLimit: Double = ScanConfig.placeClusterMeters
+
+        let existingIds = Set(detail.days.flatMap(\.placeStops).flatMap(\.photos).compactMap(\.localIdentifier))
+        let photos = newPhotos.filter { photo in
+            guard let lid = photo.localIdentifier else { return true }
+            return !existingIds.contains(lid)
+        }
+        guard !photos.isEmpty else { return (0, 0) }
+
+        let byDay = Dictionary(grouping: photos) { cal.startOfDay(for: $0.timestamp) }
+
+        var newStopIds: [UUID] = []
+        var addedToExisting = 0
+        var newStopsToGeocode: [(dayIdx: Int, stopId: UUID)] = []
+
+        for (dayStart, dayPhotos) in byDay.sorted(by: { $0.key < $1.key }) {
+            var dayIdx = detail.days.firstIndex(where: { cal.startOfDay(for: $0.date) == dayStart })
+            if dayIdx == nil {
+                let newDay = RecapBlogDay(dayIndex: 0, date: dayStart, placeStops: [])
+                detail.days.append(newDay)
+                detail.days.sort { $0.date < $1.date }
+                for i in detail.days.indices { detail.days[i].dayIndex = i + 1 }
+                dayIdx = detail.days.firstIndex(where: { cal.startOfDay(for: $0.date) == dayStart })!
+            }
+            guard let di = dayIdx else { continue }
+
+            var unmatchedRecapPhotos: [RecapPhoto] = []
+
+            for photo in dayPhotos.sorted(by: { $0.timestamp < $1.timestamp }) {
+                let isInAppCapture = photo.localIdentifier?.hasPrefix(AppCapturePhotoService.prefix) ?? false
+                let recapPhoto = RecapPhoto(
+                    id: photo.id,
+                    timestamp: photo.timestamp,
+                    location: photo.location,
+                    imageName: photo.imageName,
+                    isIncluded: isInAppCapture,
+                    localIdentifier: photo.localIdentifier
+                )
+
+                // Match to the closest existing stop within gap + location thresholds.
+                var bestIdx: Int? = nil
+                var bestGap: TimeInterval = .greatestFiniteMagnitude
+                for (si, stop) in detail.days[di].placeStops.enumerated() {
+                    let stopPhotos = stop.photos
+                    guard let earliest = stopPhotos.map(\.timestamp).min(),
+                          let latest = stopPhotos.map(\.timestamp).max() else { continue }
+                    let gapBefore = max(0, earliest.timeIntervalSince(photo.timestamp))
+                    let gapAfter  = max(0, photo.timestamp.timeIntervalSince(latest))
+                    let gap = min(gapBefore, gapAfter)
+                    guard gap <= gapLimit else { continue }
+
+                    if gapAfter > 0 {
+                        let hasInterveningStop = detail.days[di].placeStops.enumerated().contains { otherSi, other in
+                            guard otherSi != si else { return false }
+                            guard let otherEarliest = other.photos.map(\.timestamp).min() else { return false }
+                            return otherEarliest > latest && otherEarliest < photo.timestamp
+                        }
+                        if hasInterveningStop { continue }
+                    }
+
+                    if let photoCoord = photo.location, let stopCoord = stop.representativeLocation {
+                        let photoLoc = CLLocation(latitude: photoCoord.latitude, longitude: photoCoord.longitude)
+                        let stopLoc  = CLLocation(latitude: stopCoord.latitude, longitude: stopCoord.longitude)
+                        guard photoLoc.distance(from: stopLoc) <= locationLimit else { continue }
+                    }
+
+                    if gap < bestGap { bestGap = gap; bestIdx = si }
+                }
+
+                if let si = bestIdx {
+                    // Existing stop: add unselected, skip quality scoring for this stop.
+                    detail.days[di].placeStops[si].photos.append(recapPhoto)
+                    detail.days[di].placeStops[si].photos.sort { $0.timestamp < $1.timestamp }
+                    addedToExisting += 1
+                } else {
+                    unmatchedRecapPhotos.append(recapPhoto)
+                }
+            }
+
+            // Cluster unmatched photos into new place stops.
+            if !unmatchedRecapPhotos.isEmpty {
+                let inputs = unmatchedRecapPhotos.map { ClusterPhotoInput(id: $0.id, timestamp: $0.timestamp, location: $0.location) }
+                let baseIndex = detail.days[di].placeStops.count
+                let groups = clusteringService.placeStops(from: inputs) { idx in "Stop \(baseIndex + idx + 1)" }
+                for (orderIndex, groupInputs) in groups {
+                    let groupPhotos = groupInputs.compactMap { input in
+                        unmatchedRecapPhotos.first { $0.id == input.id }
+                    }.sorted { $0.timestamp < $1.timestamp }
+                    let repLoc = groupPhotos.compactMap(\.location).first
+                    let placeTitle: String
+                    if repLoc == nil {
+                        placeTitle = groups.count > 1 ? "Captured Moment \(orderIndex + 1)" : "Captured Moment"
+                    } else {
+                        placeTitle = "Stop \(detail.days[di].placeStops.count + 1)"
+                    }
+                    let newStop = PlaceStop(
+                        orderIndex: detail.days[di].placeStops.count,
+                        placeTitle: placeTitle,
+                        representativeLocation: repLoc,
+                        photos: groupPhotos
+                    )
+                    detail.days[di].placeStops.append(newStop)
+                    newStopIds.append(newStop.id)
+                    if repLoc != nil {
+                        newStopsToGeocode.append((dayIdx: di, stopId: newStop.id))
+                    }
+                }
+            }
+
+            sortPlaceStopsChronologically(&detail.days[di].placeStops)
+        }
+
+        saveBlogDetail(detail, asDraft: true)
+
+        // Geocode new stops, then quality-score only those stops (leave existing stops untouched).
+        Task {
+            if !newStopsToGeocode.isEmpty,
+               var geocodedDetail = blogDetailsBySourceId[sourceTripId] {
+                for entry in newStopsToGeocode {
+                    let di = entry.dayIdx
+                    guard di < geocodedDetail.days.count,
+                          let si = geocodedDetail.days[di].placeStops.firstIndex(where: { $0.id == entry.stopId }),
+                          let coord = geocodedDetail.days[di].placeStops[si].representativeLocation else { continue }
+                    let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+                    let place = await GeocodingService.shared.place(for: loc)
+                    if !geocodedDetail.days[di].placeStops[si].placeTitleIsManual {
+                        geocodedDetail.days[di].placeStops[si].placeTitle = "Near \(place.areaName)"
+                        geocodedDetail.days[di].placeStops[si].placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
+                    }
+                }
+                saveBlogDetail(geocodedDetail, asDraft: true)
+            }
+            if !newStopIds.isEmpty {
+                await applyPhotoQualitySelectionForStops(sourceTripId: sourceTripId, stopIds: Set(newStopIds))
+            }
+        }
+
+        // Update blog metadata.
+        if let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }) {
+            let allDayDates = detail.days.map(\.date)
+            if let minDate = allDayDates.min(),
+               (recents[idx].tripStartDate == nil || minDate < recents[idx].tripStartDate!) {
+                recents[idx].tripStartDate = minDate
+            }
+            if let maxDate = allDayDates.max(),
+               (recents[idx].tripEndDate == nil || maxDate > recents[idx].tripEndDate!) {
+                recents[idx].tripEndDate = maxDate
+            }
+            recents[idx].tripDateRangeText = Self.formatDateRange(start: recents[idx].tripStartDate, end: recents[idx].tripEndDate)
+            recents[idx].selectedPhotoCount = detail.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
+            recents[idx].totalPlaceVisitCount = detail.days.reduce(0) { $0 + $1.placeStops.count }
+            recents[idx].tripDurationDays = detail.days.count
+            recents[idx].lastEditedAt = Date()
+            recents[idx].syncStatus = .needsUpload
+            persistRecents()
+        }
+
+        return (newStops: newStopIds.count, addedToExisting: addedToExisting)
+    }
+
+    /// Scores and auto-selects photos only within the specified stop IDs.
+    /// Used after a full rescan so existing stops are not re-scored.
+    private func applyPhotoQualitySelectionForStops(sourceTripId: UUID, stopIds: Set<UUID>) async {
+        guard var detail = blogDetailsBySourceId[sourceTripId], !stopIds.isEmpty else { return }
+        let scorer = PhotoQualityScorer.shared
+
+        for dayIdx in detail.days.indices {
+            for stopIdx in detail.days[dayIdx].placeStops.indices {
+                guard stopIds.contains(detail.days[dayIdx].placeStops[stopIdx].id) else { continue }
+                if Task.isCancelled { return }
+
+                let identifiers = detail.days[dayIdx].placeStops[stopIdx].photos.compactMap(\.localIdentifier)
+                guard !identifiers.isEmpty else { continue }
+
+                let scores = await scorer.scorePhotos(identifiers: identifiers)
+                for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
+                    let photo = detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
+                    if let id = photo.localIdentifier, let score = scores[id] {
+                        detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].qualityScore = score
+                    }
+                }
+
+                let topIds = detail.days[dayIdx].placeStops[stopIdx].photos.autoSelectedIds()
+                for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
+                    let photo = detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
+                    let isCameraCapture = photo.imageName == "camera.fill"
+                    if isCameraCapture {
+                        detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = true
+                    } else if !topIds.isEmpty {
+                        detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = topIds.contains(photo.id)
+                    }
+                }
+            }
+        }
+
+        saveBlogDetail(detail, asDraft: true)
+        if let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }) {
+            recents[idx].selectedPhotoCount = detail.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
+            persistRecents()
+        }
     }
 
     // MARK: - Private Helpers

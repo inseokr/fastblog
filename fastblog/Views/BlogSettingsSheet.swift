@@ -52,6 +52,7 @@ struct BlogSettingsSheet: View {
     var onSave: () -> Void
     var onEditMode: (() -> Void)? = nil
     var onAddNewMoments: (() -> Void)? = nil
+    var onRescanAllMoments: (() -> Void)? = nil
     var onDelete: () -> Void
     var onRemoveLocalOnly: (() -> Void)? = nil
     var onRemoveFromCloud: (() -> Void)? = nil
@@ -154,6 +155,14 @@ struct BlogSettingsSheet: View {
                     dismiss()
                 } label: {
                     Label("Add New Moments", systemImage: "plus.circle")
+                }
+            }
+            if onRescanAllMoments != nil {
+                Button {
+                    onRescanAllMoments?()
+                    dismiss()
+                } label: {
+                    Label("Rescan All Moments", systemImage: "arrow.clockwise.circle")
                 }
             }
         }

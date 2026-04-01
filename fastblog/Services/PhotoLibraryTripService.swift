@@ -99,6 +99,126 @@ final class PhotoLibraryTripService {
             )
         }
     }
+
+    /// Same format as `APIManager.digitizedTimeString`; defined here so DEBUG scan logs avoid calling `@MainActor` APIManager from a nonisolated context.
+    private static func debugFormatDigitizedTime(from date: Date, timeZone: TimeZone) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = timeZone
+        return f.string(from: date)
+    }
+
+    /// Reads EXIF `OffsetTimeOriginal` / `OffsetTimeDigitized` per asset in parallel (image metadata only).
+    private func debugBuildEXIFTimeZoneMap(for assets: [PHAsset]) async -> [String: TimeZone] {
+        var tzMap: [String: TimeZone] = [:]
+        await withTaskGroup(of: (String, TimeZone?).self) { group in
+            for asset in assets {
+                let id = asset.localIdentifier
+                group.addTask {
+                    (id, await APIManager.getLocalTimeZone(for: asset))
+                }
+            }
+            for await (id, tz) in group {
+                if let tz { tzMap[id] = tz }
+            }
+        }
+        return tzMap
+    }
+
+    /// Same digitized format as the API (`yyyy:MM:dd HH:mm:ss`) in capture offset TZ when EXIF has it, else `Calendar.current` timezone.
+    private func debugDigitizedLogFragment(for asset: PHAsset, tzMap: [String: TimeZone]) -> String {
+        let eff = effectiveDate(for: asset)
+        let tz = tzMap[asset.localIdentifier] ?? calendar.timeZone
+        let s = Self.debugFormatDigitizedTime(from: eff, timeZone: tz)
+        let src = tzMap[asset.localIdentifier] != nil ? "exifOffset" : "deviceCalendarFallback"
+        return "digitized=\(s) tz=\(src)"
+    }
+
+    /// Photos included in the scan after filters, grouped by calendar day (output of `groupAssetsByDay`), before trips are merged.
+    /// Grep Xcode console for `[Scan][PerDayPhotos]` to review counts per day, EXIF-style digitized time, and timestamps.
+    private func debugLogPhotosPerScanDay(_ dayGroups: [(date: Date, assets: [PHAsset])], context: String) async {
+        let flatAssets = dayGroups.flatMap(\.assets)
+        let tzMap = await debugBuildEXIFTimeZoneMap(for: flatAssets)
+        let dayFmt = DateFormatter()
+        dayFmt.locale = Locale(identifier: "en_US_POSIX")
+        dayFmt.timeZone = calendar.timeZone
+        dayFmt.dateFormat = "yyyy-MM-dd"
+        let totalAssets = dayGroups.reduce(0) { $0 + $1.assets.count }
+        debugPrint("[Scan][PerDayPhotos] context=\(context) calendarDays=\(dayGroups.count) totalAssets=\(totalAssets) (digitized uses EXIF offset when present, else device calendar TZ)")
+        let maxPerDay = 120
+        for (dayIdx, group) in dayGroups.enumerated() {
+            let dayLabel = dayFmt.string(from: group.date)
+            let assets = group.assets.sorted { effectiveDate(for: $0) < effectiveDate(for: $1) }
+            debugPrint("[Scan][PerDayPhotos]   day \(dayIdx + 1)/\(dayGroups.count) \(dayLabel) photos=\(assets.count)")
+            for (i, asset) in assets.prefix(maxPerDay).enumerated() {
+                let suffix = String(asset.localIdentifier.suffix(8))
+                let dig = debugDigitizedLogFragment(for: asset, tzMap: tzMap)
+                debugPrint(
+                    "[Scan][PerDayPhotos]     #\(i + 1) id=\(suffix) \(dig) effective=\(debugDateString(effectiveDate(for: asset))) creation=\(debugDateString(asset.creationDate)) hasGPS=\(asset.location != nil)"
+                )
+            }
+            if assets.count > maxPerDay {
+                debugPrint("[Scan][PerDayPhotos]     ... \(assets.count - maxPerDay) more not logged (cap=\(maxPerDay) per day)")
+            }
+        }
+    }
+
+    /// Explains which `PHAsset`s from the fetch never reach trip grouping (occupied dates, no GPS, or too close to home).
+    /// Filter the console for `[Scan][Rejections]`.
+    private func debugLogScanRejections(
+        context: String,
+        fetchStart: Date,
+        fetchEnd: Date,
+        screenshotSkipped: Int,
+        beforeOccupied: [PHAsset],
+        afterOccupied: [PHAsset],
+        remaining: [PHAsset],
+        occupiedRanges: [(start: Date, end: Date)],
+        ignoreHomeExclusion: Bool,
+        home: CLLocation?,
+        minMiles: Double
+    ) async {
+        let tzMap = await debugBuildEXIFTimeZoneMap(for: beforeOccupied)
+        let rangeFmt = DateFormatter()
+        rangeFmt.locale = Locale(identifier: "en_US_POSIX")
+        rangeFmt.timeZone = calendar.timeZone
+        rangeFmt.dateFormat = "yyyy-MM-dd HH:mm"
+        let remIds = Set(remaining.map(\.localIdentifier))
+        let afterOccIds = Set(afterOccupied.map(\.localIdentifier))
+        let droppedOccupied = beforeOccupied.filter { !afterOccIds.contains($0.localIdentifier) }
+        debugPrint(
+            "[Scan][Rejections] context=\(context) fetch=[\(rangeFmt.string(from: fetchStart)), \(rangeFmt.string(from: fetchEnd))) screenshotsSkipped=\(screenshotSkipped) beforeOccupied=\(beforeOccupied.count) afterOccupied=\(afterOccupied.count) remaining=\(remaining.count) occupiedRanges=\(occupiedRanges.count) ignoreHome=\(ignoreHomeExclusion)"
+        )
+        let maxLines = 80
+        func logAsset(_ prefix: String, _ asset: PHAsset, extra: String = "") {
+            let suf = String(asset.localIdentifier.suffix(8))
+            let dig = debugDigitizedLogFragment(for: asset, tzMap: tzMap)
+            debugPrint(
+                "[Scan][Rejections]   \(prefix) id=\(suf) \(dig) creation=\(debugDateString(asset.creationDate)) effective=\(debugDateString(effectiveDate(for: asset)))\(extra)"
+            )
+        }
+        for (i, asset) in droppedOccupied.prefix(maxLines).enumerated() {
+            logAsset("dropped_occupied[\(i + 1)]", asset)
+        }
+        if droppedOccupied.count > maxLines {
+            debugPrint("[Scan][Rejections]   ... \(droppedOccupied.count - maxLines) more dropped_occupied not logged")
+        }
+        let notRemaining = afterOccupied.filter { !remIds.contains($0.localIdentifier) }
+        for (i, asset) in notRemaining.prefix(maxLines).enumerated() {
+            if asset.location == nil {
+                logAsset("dropped_noGPS[\(i + 1)]", asset)
+            } else if let h = home, let loc = asset.location, !ignoreHomeExclusion {
+                let miles = TripPhotoFilter.distanceMiles(from: h, to: loc)
+                logAsset("dropped_nearHome[\(i + 1)]", asset, extra: String(format: " distanceFromHomeMi=%.2f (need >= %.1f)", miles, minMiles))
+            } else {
+                logAsset("dropped_unknown[\(i + 1)]", asset)
+            }
+        }
+        if notRemaining.count > maxLines {
+            debugPrint("[Scan][Rejections]   ... \(notRemaining.count - maxLines) more post-occupied drops not logged")
+        }
+    }
 #endif
 
     /// Call when neighborhood center changes so the next scan is not served from stale cache.
@@ -195,6 +315,9 @@ final class PhotoLibraryTripService {
         let dayGroups = await groupAssetsByDay(sortedByDate)
         let sortedDayGroups = dayGroups.sorted { $0.date < $1.date }
         debugPrint("[Scan] Grouped into \(sortedDayGroups.count) day groups")
+#if DEBUG
+        await debugLogPhotosPerScanDay(sortedDayGroups, context: "scanLast90Days")
+#endif
         guard !sortedDayGroups.isEmpty else {
             cachedScanKey = cacheKey
             cachedTrips = []
@@ -335,6 +458,9 @@ final class PhotoLibraryTripService {
         let dayGroups = await groupAssetsByDay(sortedByDate)
         let sortedDayGroups = dayGroups.sorted { $0.date < $1.date }
         guard !sortedDayGroups.isEmpty else { return [] }
+#if DEBUG
+        await debugLogPhotosPerScanDay(sortedDayGroups, context: "scanFlexibleRange")
+#endif
 
         let dayClusters = await buildDayClusters(from: sortedDayGroups)
         let groupingResult = DayToTripGrouper.groupDaysIntoTrips(
@@ -464,10 +590,19 @@ final class PhotoLibraryTripService {
 
         let fetchResult = PHAsset.fetchAssets(with: .image, options: options)
         var allAssets: [PHAsset] = []
+#if DEBUG
+        var screenshotSkippedInRange = 0
+#endif
         fetchResult.enumerateObjects { asset, _, _ in
-            if asset.mediaSubtypes.contains(.photoScreenshot) { return }
+            if asset.mediaSubtypes.contains(.photoScreenshot) {
+#if DEBUG
+                screenshotSkippedInRange += 1
+#endif
+                return
+            }
             allAssets.append(asset)
         }
+        let beforeOccupied = allAssets
         allAssets = filterOutAssetsInOccupiedRanges(allAssets, occupiedDateRanges: occupiedDateRanges)
         progress?(0.05)
 
@@ -487,12 +622,34 @@ final class PhotoLibraryTripService {
         }
         progress?(0.15)
 
+#if DEBUG
+        await debugLogScanRejections(
+            context: "scanInDateRange",
+            fetchStart: startDate,
+            fetchEnd: endDate,
+            screenshotSkipped: screenshotSkippedInRange,
+            beforeOccupied: beforeOccupied,
+            afterOccupied: allAssets,
+            remaining: remaining,
+            occupiedRanges: occupiedDateRanges,
+            ignoreHomeExclusion: ignoreHomeExclusion,
+            home: home,
+            minMiles: minMiles
+        )
+        if let h = home, !allAssets.isEmpty {
+            Self.logTripFilterSample(assets: allAssets, home: h, minMiles: minMiles, sampleSize: min(50, allAssets.count))
+        }
+#endif
+
         guard !remaining.isEmpty else { return [] }
 
         let sortedByDate = remaining.sorted { effectiveDate(for: $0) < effectiveDate(for: $1) }
         let dayGroups = await groupAssetsByDay(sortedByDate)
         let sortedDayGroups = dayGroups.sorted { $0.date < $1.date }
         guard !sortedDayGroups.isEmpty else { return [] }
+#if DEBUG
+        await debugLogPhotosPerScanDay(sortedDayGroups, context: "scanInDateRange")
+#endif
         progress?(0.25)
 
         let dayClusters = await buildDayClusters(from: sortedDayGroups, progress: progress)
@@ -598,6 +755,9 @@ final class PhotoLibraryTripService {
         let dayGroups = await groupAssetsByDay(sortedByDate)
         let sortedDayGroups = dayGroups.sorted { $0.date < $1.date }
         guard !sortedDayGroups.isEmpty else { return [] }
+#if DEBUG
+        await debugLogPhotosPerScanDay(sortedDayGroups, context: "scanAllForLimitedAccess")
+#endif
         progress?(0.25)
 
         let dayClusters = await buildDayClusters(from: sortedDayGroups, progress: progress)
