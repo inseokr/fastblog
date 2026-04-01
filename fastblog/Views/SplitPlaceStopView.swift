@@ -20,54 +20,72 @@ struct SplitPlaceStopView: View {
     @State private var splitAfterIndex: Int?
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
+        VStack(alignment: .leading, spacing: 16) {
+            RoundedRectangle(cornerRadius: 3)
+                .fill(Color.secondary.opacity(0.45))
+                .frame(width: 38, height: 5)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 10)
 
-                VStack(spacing: 0) {
-                    instructionBanner
+            instructionBanner
 
-                    photoStrip
-                        .padding(.top, 16)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Choose where to split")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                photoStrip
+                    .frame(maxHeight: .infinity, alignment: .top)
 
-                    if let idx = splitAfterIndex {
-                        splitPreview(afterIndex: idx)
-                            .padding(.top, 16)
-                    }
-
-                    Spacer()
-
-                    confirmButton
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 24)
+                if let idx = splitAfterIndex {
+                    splitPreview(afterIndex: idx)
                 }
             }
-            .navigationTitle("Split Photo Group")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundColor(.gray)
-                }
-            }
-            .preferredColorScheme(.dark)
+            .padding(12)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(uiColor: .secondarySystemBackground))
+            )
+
+            Spacer()
+
+            confirmButton
+                .padding(.bottom, 8)
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.hidden)
+        .presentationBackground {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .opacity(0.92)
         }
     }
 
     // MARK: - Subviews
 
     private var instructionBanner: some View {
-        VStack(spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: "scissors")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(.orange)
+
+            Text("Split Photo Group")
+                .font(.title3.weight(.semibold))
+                .foregroundColor(.primary)
+
+            Text("Tap between two photos to set the split point.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.leading)
+
             Text(placeTitle)
                 .font(.subheadline.weight(.semibold))
-                .foregroundColor(.white)
-            Text("Tap between two photos to set the split point.")
-                .font(.footnote)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
+                .foregroundColor(.primary)
         }
-        .padding(.top, 16)
+        .padding(.top, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var photoStrip: some View {
@@ -76,13 +94,12 @@ struct SplitPlaceStopView: View {
                 ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
                     RecapPhotoThumbnail(photo: photo, cornerRadius: 6, showIcon: false)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 200)
+                        .frame(height: 150)
                         .clipped()
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                .stroke(Color.secondary.opacity(0.35), lineWidth: 1)
                         )
-                        .padding(.horizontal, 16)
 
                     if index < photos.count - 1 {
                         splitPointButton(afterIndex: index)
@@ -91,34 +108,38 @@ struct SplitPlaceStopView: View {
             }
             .padding(.vertical, 8)
         }
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private func splitPointButton(afterIndex index: Int) -> some View {
         let isSelected = splitAfterIndex == index
-        return ZStack {
-            Rectangle()
-                .fill(isSelected ? Color.orange.opacity(0.12) : Color.white.opacity(0.05))
-                .frame(height: 44)
-
-            Rectangle()
-                .fill(isSelected ? Color.orange : Color.white.opacity(0.3))
-                .frame(height: isSelected ? 3 : 2)
-                .padding(.horizontal, 16)
-
-            if isSelected {
-                Image(systemName: "scissors")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(5)
-                    .background(Circle().fill(Color.orange))
-            }
-        }
-        .onTapGesture {
+        return Button {
             withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
-                splitAfterIndex = splitAfterIndex == index ? nil : index
+                splitAfterIndex = index
             }
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } label: {
+            ZStack {
+                Rectangle()
+                    .fill(isSelected ? Color.orange.opacity(0.16) : Color(uiColor: .secondarySystemBackground))
+                    .frame(height: 48)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .padding(.horizontal, 2)
+
+                Rectangle()
+                    .fill(isSelected ? Color.orange : Color.secondary.opacity(0.5))
+                    .frame(height: isSelected ? 3 : 2)
+                    .padding(.horizontal, 16)
+
+                Image(systemName: "scissors")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.orange)
+                    .padding(5)
+                    .background(Circle().fill(Color.secondary.opacity(0.9)))
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
     }
 
@@ -132,13 +153,12 @@ struct SplitPlaceStopView: View {
             Image(systemName: "scissors")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundColor(.orange)
-            groupLabel(title: "Group 2", photoCount: secondCount, color: .white)
+            groupLabel(title: "Group 2", photoCount: secondCount, color: .primary)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 10)
-        .background(Color.white.opacity(0.06))
+        .background(Color(uiColor: .secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .padding(.horizontal, 20)
     }
 
     private func groupLabel(title: String, photoCount: Int, color: Color) -> some View {
@@ -163,7 +183,7 @@ struct SplitPlaceStopView: View {
                 .foregroundColor(splitAfterIndex == nil ? .secondary : .white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
-                .background(splitAfterIndex == nil ? Color.white.opacity(0.08) : Color.orange)
+                .background(splitAfterIndex == nil ? Color(uiColor: .secondarySystemBackground) : Color.orange)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(.plain)
