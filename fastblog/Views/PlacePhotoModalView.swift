@@ -34,6 +34,8 @@ struct PlacePhotoModalView: View {
     var showsSheetDragHandle: Bool = true
     var photoCaption: (UUID) -> Binding<String>
     var onDismiss: () -> Void
+    /// Blog overlay: fire when the slide-off dismiss animation begins so the recap nav bar can show in sync with the panel.
+    var onDismissSlideBegan: (() -> Void)? = nil
     var onViewBlog: (() -> Void)?
     /// When provided, a magic wand button is shown in the caption editing panel (only when user has written text).
     /// Called with (photo, placeName, placeSubtitle, userText); returns enriched caption.
@@ -177,6 +179,7 @@ struct PlacePhotoModalView: View {
         showsSheetDragHandle: Bool = true,
         photoCaption: @escaping (UUID) -> Binding<String>,
         onDismiss: @escaping () -> Void,
+        onDismissSlideBegan: (() -> Void)? = nil,
         onViewBlog: (() -> Void)? = nil,
         onGenerateCaption: ((RecapPhoto, String, String?, String) async -> String)? = nil,
         onTranslateCaption: ((String) async -> String)? = nil,
@@ -197,6 +200,7 @@ struct PlacePhotoModalView: View {
         self.showsSheetDragHandle = showsSheetDragHandle
         self.photoCaption = photoCaption
         self.onDismiss = onDismiss
+        self.onDismissSlideBegan = onDismissSlideBegan
         self.onViewBlog = onViewBlog
         self.onGenerateCaption = onGenerateCaption
         self.onTranslateCaption = onTranslateCaption
@@ -275,6 +279,7 @@ struct PlacePhotoModalView: View {
         let response: CGFloat = blogIsEditMode ? 0.32 : 0.4
         let damping: CGFloat = blogIsEditMode ? 0.9 : 0.93
         let settleNanoseconds: UInt64 = blogIsEditMode ? 380_000_000 : 480_000_000
+        onDismissSlideBegan?()
         dismissFrozenPhotoId = currentPhotoId
         isDismissExitAnimating = true
         let h = UIScreen.main.bounds.height
