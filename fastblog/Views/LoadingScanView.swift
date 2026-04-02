@@ -25,6 +25,8 @@ struct LoadingScanView: View {
     var backgroundColorOverride: Color? = nil
     /// When true, centers the animation + message stack without the lower offset.
     var useCenteredLayout: Bool = false
+    /// When false, hides the top-right circular action buttons.
+    var showsTopTrailingActions: Bool = true
 
     @State private var ringRotation: Double = 0
     @State private var pulseScale: CGFloat = 1
@@ -95,34 +97,36 @@ struct LoadingScanView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .overlay(alignment: .topTrailing) {
-            HStack(spacing: 12) {
-                if let onUseCamera {
-                    Button {
-                        onUseCamera()
-                    } label: {
-                        Image(systemName: "camera.fill")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.85))
-                            .padding(10)
-                            .background(Color.white.opacity(0.16))
-                            .clipShape(Circle())
+            if showsTopTrailingActions {
+                HStack(spacing: 12) {
+                    if let onUseCamera {
+                        Button {
+                            onUseCamera()
+                        } label: {
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.85))
+                                .padding(10)
+                                .background(Color.white.opacity(0.16))
+                                .clipShape(Circle())
+                        }
+                    }
+                    if let onClose {
+                        Button {
+                            onClose()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.85))
+                                .padding(10)
+                                .background(Color.white.opacity(0.16))
+                                .clipShape(Circle())
+                        }
                     }
                 }
-                if let onClose {
-                    Button {
-                        onClose()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.85))
-                            .padding(10)
-                            .background(Color.white.opacity(0.16))
-                            .clipShape(Circle())
-                    }
-                }
+                .padding(.top, 20)
+                .padding(.trailing, 20)
             }
-            .padding(.top, 20)
-            .padding(.trailing, 20)
         }
         .preferredColorScheme(.dark)
         .onAppear {
