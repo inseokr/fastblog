@@ -483,7 +483,7 @@ struct FullScreenMapView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.hidden)
                 .presentationCornerRadius(24)
-                .presentationBackground(.black)
+                .presentationBackground(.clear)
             }
         }
     }

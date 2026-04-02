@@ -240,6 +240,7 @@ struct RemovedPlacesSheet: View {
                     onDismiss: { placeModalItem = nil }
                 )
                 .presentationDetents([.large])
+                .presentationBackground(.clear)
             } else {
                 Color.white.onAppear { placeModalItem = nil }
             }

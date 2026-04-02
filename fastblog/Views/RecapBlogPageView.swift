@@ -368,7 +368,8 @@ struct RecapBlogPageView: View {
 
             if let item = placePhotoModalItem {
                 placePhotoModalOverlay(item: item)
-                    .transition(.opacity)
+                    // Clear under the sliding panel so the blog shows through during dismiss; instant removal avoids an extra fade on black.
+                    .transition(.asymmetric(insertion: .opacity, removal: .identity))
                     .zIndex(128)
             }
 
@@ -2135,7 +2136,8 @@ struct RecapBlogPageView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(recapScreenBackground.ignoresSafeArea())
+        // Must stay clear: a black backing matches the modal and hides the real blog until this layer is removed (flash after dismiss).
+        .background(Color.clear)
     }
 
     @ViewBuilder

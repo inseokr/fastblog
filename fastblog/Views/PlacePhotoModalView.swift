@@ -243,10 +243,13 @@ struct PlacePhotoModalView: View {
         let y = Double(interactiveDismissDragOffset)
         guard y > 0 else { return 1 }
         let screenH = Double(UIScreen.main.bounds.height)
-        // Ease toward transparent as the sheet moves farther (finger or exit animation).
-        let t = min(1, y / max(320, screenH * 0.5))
-        let eased = 1 - t * t
-        return max(0, eased)
+        // Stay opaque while sliding so the blog/map shows through the *uncovered* region (clear overlay / sheet bg),
+        // not through a fading full-screen layer (which reads as a black hold before teardown).
+        let startFadeAt = max(380, screenH * 0.7)
+        guard y > startFadeAt else { return 1 }
+        let span = max(140, screenH * 0.22)
+        let t = min(1, (y - startFadeAt) / span)
+        return max(0, 1 - t * t)
     }
 
     /// Close / Cancel / swipe-down share the same rules (including unsaved-changes alert).
@@ -267,54 +270,62 @@ struct PlacePhotoModalView: View {
     }
 
     /// Slides the modal the rest of the way off-screen, then runs `completion` (typically `onDismiss`).
+    /// Uses a spring (not ease-in) so the finish matches system sheet / pull-modal dismiss: quick to start, smooth settle.
     private func animateSwipeDismissCompletion(_ completion: @escaping () -> Void) {
-        let dismissDuration: TimeInterval = blogIsEditMode ? 0.24 : 0.42
+        let response: CGFloat = blogIsEditMode ? 0.32 : 0.4
+        let damping: CGFloat = blogIsEditMode ? 0.9 : 0.93
+        let settleNanoseconds: UInt64 = blogIsEditMode ? 380_000_000 : 480_000_000
         dismissFrozenPhotoId = currentPhotoId
         isDismissExitAnimating = true
         let h = UIScreen.main.bounds.height
         let baseline = interactiveDismissDragOffset
         let target = max(baseline + h * 0.42, h * 0.94)
-        withAnimation(.easeIn(duration: dismissDuration)) {
+        withAnimation(.spring(response: response, dampingFraction: damping, blendDuration: 0)) {
             interactiveDismissDragOffset = target
         }
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(dismissDuration * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: settleNanoseconds)
             completion()
         }
     }
 
+    /// Downward drag must dominate horizontal movement so TabView paging never fights dismiss (diagonal swipes).
+    private func isPrimarilyVerticalDismissDrag(dx: CGFloat, dy: CGFloat) -> Bool {
+        dy > 0 && dy > abs(dx) * 1.75
+    }
+
     private var photoModalSwipeDismissGesture: some Gesture {
-        DragGesture(minimumDistance: 28, coordinateSpace: .local)
+        DragGesture(minimumDistance: 12, coordinateSpace: .local)
             .onChanged { value in
                 guard swipeToDismissEnabled else { return }
                 let dx = value.translation.width
                 let dy = value.translation.height
-                guard dy > 0, abs(dy) > abs(dx) * 1.12 else { return }
-                interactiveDismissDragOffset = dy
-                // Lock paging early so diagonal motion can’t swap to another photo (and trigger its image load).
-                if dy > 40, dismissFrozenPhotoId == nil {
+                guard isPrimarilyVerticalDismissDrag(dx: dx, dy: dy) else { return }
+                // Lock paging on first accepted vertical frame — avoids horizontal wobble before dy was > 40.
+                if dismissFrozenPhotoId == nil {
                     dismissFrozenPhotoId = currentPhotoId
                 }
+                interactiveDismissDragOffset = dy
             }
             .onEnded { value in
                 guard !isDismissExitAnimating else { return }
                 guard swipeToDismissEnabled || interactiveDismissDragOffset > 0 else {
                     dismissFrozenPhotoId = nil
-                    withAnimation(.interactiveSpring(response: 0.52, dampingFraction: 0.78, blendDuration: 0.15)) {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.86, blendDuration: 0)) {
                         interactiveDismissDragOffset = 0
                     }
                     return
                 }
                 let dx = value.translation.width
                 let dy = value.translation.height
-                let mostlyVertical = dy > 0 && abs(dy) > abs(dx) * 1.12
+                let mostlyVertical = isPrimarilyVerticalDismissDrag(dx: dx, dy: dy)
                 let predicted = value.predictedEndTranslation.height
                 let shouldDismiss = mostlyVertical && (dy > 115 || predicted > 220)
                 if shouldDismiss {
                     let needsSaveAlert = (isEditing || blogIsEditMode) && hasAnyChanges
                     if needsSaveAlert {
                         dismissFrozenPhotoId = nil
-                        withAnimation(.interactiveSpring(response: 0.52, dampingFraction: 0.78, blendDuration: 0.15)) {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.86, blendDuration: 0)) {
                             interactiveDismissDragOffset = 0
                         }
                         showSaveConfirmationAlert = true
@@ -323,7 +334,7 @@ struct PlacePhotoModalView: View {
                     }
                 } else {
                     dismissFrozenPhotoId = nil
-                    withAnimation(.interactiveSpring(response: 0.52, dampingFraction: 0.78, blendDuration: 0.15)) {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.86, blendDuration: 0)) {
                         interactiveDismissDragOffset = 0
                     }
                 }
@@ -622,9 +633,12 @@ struct PlacePhotoModalView: View {
                     onSavePlaceName?(newName, category, coord)
                 }
             )
+            // Root photo modal disables UIKit sheet dismiss; nested sheets must stay interactively dismissible.
+            .interactiveDismissDisabled(false)
         }
         .sheet(isPresented: $showWritingStyleSheet) {
             StoryWritingStyleSheet()
+                .interactiveDismissDisabled(false)
         }
         .confirmationDialog("Choose writing style", isPresented: $showEnhanceStylePicker, titleVisibility: .visible) {
             Button("Use \(currentStyleTitle)") {
@@ -905,7 +919,8 @@ struct PlacePhotoModalView: View {
         .offset(y: interactiveDismissDragOffset)
         .opacity(dismissDragOverlayOpacity)
         .simultaneousGesture(photoModalSwipeDismissGesture)
-        .interactiveDismissDisabled(isEditing && hasAnyChanges)
+        // Avoid UIKit sheet dismiss + this view’s vertical offset both driving the same drag (jitter, uneven speed).
+        .interactiveDismissDisabled(true)
         .alert("Save changes?", isPresented: $showSaveConfirmationAlert) {
             Button("Save") {
                 commitCaption()

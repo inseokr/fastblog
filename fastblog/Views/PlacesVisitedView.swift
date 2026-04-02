@@ -518,6 +518,7 @@ struct PlacesVisitedView: View {
         )
         .environmentObject(createdRecapStore)
         .presentationDetents([.large])
+        .presentationBackground(.clear)
     }
 }
 
@@ -1096,6 +1097,7 @@ private struct PlacesVisitedMapView: View {
             )
             .environmentObject(createdRecapStore)
             .presentationDetents([.large])
+            .presentationBackground(.clear)
         }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
