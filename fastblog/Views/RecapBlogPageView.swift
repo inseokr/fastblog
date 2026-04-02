@@ -117,6 +117,8 @@ struct RecapBlogPageView: View {
     @State private var fullScreenMapFocusedPlaceId: UUID?
     @State private var showTitleChange = false
     @State private var placePhotoModalItem: PlacePhotoModalItem?
+    /// While the photo overlay is still animating off, show the recap navigation bar so it tracks the dismiss instead of popping in after teardown.
+    @State private var revealRecapNavigationDuringPhotoDismiss = false
     @State private var showUnsavedChangesAlert = false
     @State private var showCoverPhotoPicker = false
     /// The cover photo asset identifier captured just before the cover picker opens, used to detect changes on dismiss.
@@ -394,8 +396,14 @@ struct RecapBlogPageView: View {
         .animation(.easeOut(duration: 0.22), value: dayCaptionEditItem?.id)
         .animation(.easeInOut(duration: 0.22), value: showPanorama)
         .animation(.easeInOut(duration: 0.38), value: placePhotoModalItem?.id)
+        .animation(.spring(response: 0.28, dampingFraction: 0.9), value: revealRecapNavigationDuringPhotoDismiss)
         .animation(.easeOut(duration: 0.22), value: photoCaptionEditItem?.id)
         .animation(.spring(response: 0.38, dampingFraction: 0.88), value: earlyAccessSheetPresented)
+        .onChange(of: placePhotoModalItem?.id) { _, newId in
+            if newId != nil {
+                revealRecapNavigationDuringPhotoDismiss = false
+            }
+        }
     }
 
     private func bodyContent(screenHeight: CGFloat) -> some View {
@@ -685,7 +693,7 @@ struct RecapBlogPageView: View {
         showPanorama ||
         placeCaptionEditItem != nil ||
         dayCaptionEditItem != nil ||
-        placePhotoModalItem != nil ||
+        (placePhotoModalItem != nil && !revealRecapNavigationDuringPhotoDismiss) ||
         photoCaptionEditItem != nil
     }
 
@@ -2095,6 +2103,9 @@ struct RecapBlogPageView: View {
                         onDismiss: {
                             createdRecapStore.saveBlogDetail(draft)
                             placePhotoModalItem = nil
+                        },
+                        onDismissSlideBegan: {
+                            revealRecapNavigationDuringPhotoDismiss = true
                         },
                         onGenerateCaption: { photo, placeName, placeSubtitle, userText in
                             await StoryCaptionService.shared.enhanceCaption(
