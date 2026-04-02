@@ -680,6 +680,7 @@ struct RecapBlogPageView: View {
 
     private var shouldHideRecapNavigationBar: Bool {
         showStoryMode ||
+        showPanorama ||
         placeCaptionEditItem != nil ||
         dayCaptionEditItem != nil ||
         placePhotoModalItem != nil ||
@@ -932,7 +933,6 @@ struct RecapBlogPageView: View {
                 },
                 onDismiss: { showPanorama = false }
             )
-            .ignoresSafeArea()
         }
     }
 

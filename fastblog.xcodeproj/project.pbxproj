@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A1B2C3D52F9E1000010002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D52F9E1000010001 /* PrivacyInfo.xcprivacy */; };
 		01B2787FA0EA66741089467C /* CoverPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72929F115FE37110FB2BE7BF /* CoverPageView.swift */; };
 		037E251F2F70FACD00C7E8B8 /* burtysounds-happy-124917.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E251E2F70FACD00C7E8B8 /* burtysounds-happy-124917.mp3 */; };
 		037E25282F70FD0600C7E8B8 /* nastelbom-travel-437814.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E25252F70FD0600C7E8B8 /* nastelbom-travel-437814.mp3 */; };
@@ -18,22 +17,28 @@
 		037E252D2F70FD0600C7E8B8 /* paulyudin-travel-159836.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E25262F70FD0600C7E8B8 /* paulyudin-travel-159836.mp3 */; };
 		037E252E2F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf in Resources */ = {isa = PBXBuildFile; fileRef = 037E25272F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf */; };
 		037E252F2F70FD0600C7E8B8 /* delosound-trap-travel-378471.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E25232F70FD0600C7E8B8 /* delosound-trap-travel-378471.mp3 */; };
+		03B8B65D2F7CD9D90088C39F /* vantage_point.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 03B8B65C2F7CD9D90088C39F /* vantage_point.mp3 */; };
+		03B8B65E2F7CD9D90088C39F /* high_beams.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 03B8B6592F7CD9D90088C39F /* high_beams.mp3 */; };
+		03B8B65F2F7CD9D90088C39F /* kings_and_queens.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 03B8B65A2F7CD9D90088C39F /* kings_and_queens.mp3 */; };
+		03B8B6602F7CD9D90088C39F /* all_season.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 03B8B6582F7CD9D90088C39F /* all_season.mp3 */; };
+		03B8B6612F7CD9D90088C39F /* let_you_go.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 03B8B65B2F7CD9D90088C39F /* let_you_go.mp3 */; };
 		0B1189F592CFDEDAF3305FAB /* PhotoPermissionOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */; };
 		0C30D67375CF715A0AE52995 /* MapSnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A586130A3384B2A62AC27350 /* MapSnapshotHelper.swift */; };
 		285D83E64056D6DBF8E9894F /* StoryPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E27CCA2B392AD6D7D60A651A /* StoryPage.swift */; };
 		315C7029393A82205980943C /* DayCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C198E17B0447F89CC98721F /* DayCaptionEditSheet.swift */; };
-		3A9F2B1C4D8E5F7A2B0C6E91 /* PhotoCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C7D8E2F1A3B5C6D9E0F2A4B /* PhotoCaptionEditSheet.swift */; };
 		32D85DD5E6FD49691543F872 /* StoryBookBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3CF1895D23A7F11A1F1B7B0 /* StoryBookBuilder.swift */; };
 		33A0384A2DEF7075550C1327 /* PhotoContinuationBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF27B8BE17452A92005EEECF /* PhotoContinuationBlockView.swift */; };
 		37FBA08B0004D6825EFD3370 /* DayMapPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C820592BA8137D8FF7F05AA /* DayMapPageView.swift */; };
+		3A9F2B1C4D8E5F7A2B0C6E91 /* PhotoCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C7D8E2F1A3B5C6D9E0F2A4B /* PhotoCaptionEditSheet.swift */; };
 		43EA38F00CD64247BB84651D /* StoryBookViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8B39A532FFD631E0B9D8312 /* StoryBookViewModel.swift */; };
 		5050088081A6CE14C59511C2 /* DayContentPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A01A8A2A53646AA22C132E3 /* DayContentPageView.swift */; };
 		719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */; };
 		75A557C81671BBFA4382AAA5 /* PageFooterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3FBC69125D4B22AEC596A03 /* PageFooterView.swift */; };
 		7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000061 /* GoogleSignIn */; };
-		A1C4M3R12F9E1000010003 /* PhotosUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1C4M3R22F9E1000010003 /* PhotosUI.framework */; };
 		7D19D079975A2110DB757EE7 /* BlogPDFView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E304D9246790A5FC17716A85 /* BlogPDFView.swift */; };
 		7FBD2FEB65535E4150C1E521 /* TOCPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F6DDE63772EF1F878EC3686 /* TOCPageView.swift */; };
+		A1B2C3D52F9E1000010002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D52F9E1000010001 /* PrivacyInfo.xcprivacy */; };
+		A1C4M3R12F9E1000010003 /* PhotosUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1C4M3R22F9E1000010003 /* PhotosUI.framework */; };
 		A31B7C85BABD6199A2A43BB7 /* PDFExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F5C55E3E5D4C283468EF581 /* PDFExportService.swift */; };
 		AC413CC9DFEB2B2939B89DA5 /* StoryBookContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67D919F737961D65785318BA /* StoryBookContent.swift */; };
 		ACC2FF7BA930277126E43C96 /* StoryPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0733072C4EA957FE04A03752 /* StoryPageView.swift */; };
@@ -53,8 +58,6 @@
 		BB00011E /* TripDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00011D /* TripDraft.swift */; };
 		BB000120 /* BlogPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00011F /* BlogPreviewView.swift */; };
 		BB000122 /* BlogSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000121 /* BlogSettingsSheet.swift */; };
-		BB0003B5 /* WeatherEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B4 /* WeatherEditSheet.swift */; };
-		BB0003C1 /* SplitPlaceStopView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003C0 /* SplitPlaceStopView.swift */; };
 		BB000124 /* ClusterRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000123 /* ClusterRowView.swift */; };
 		BB000126 /* CountryBlogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000125 /* CountryBlogsView.swift */; };
 		BB000128 /* CountryCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000127 /* CountryCardView.swift */; };
@@ -92,12 +95,6 @@
 		BB000168 /* TripDayPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000167 /* TripDayPickerView.swift */; };
 		BB00016A /* TripsMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000169 /* TripsMapView.swift */; };
 		BB00016C /* TripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00016B /* TripsView.swift */; };
-		BB000305 /* CameraRollPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000304 /* CameraRollPickerView.swift */; };
-		TS00B01 /* TripShareNearbyConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R01 /* TripShareNearbyConfig.swift */; };
-		TS00B02 /* TripSharePackage.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R02 /* TripSharePackage.swift */; };
-		TS00B03 /* TripNearbyShareSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R03 /* TripNearbyShareSessionController.swift */; };
-		TS00B04 /* TripNearbyShareViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R04 /* TripNearbyShareViews.swift */; };
-		TS00B05 /* TripNearbyShareHaptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R05 /* TripNearbyShareHaptics.swift */; };
 		BB00016E /* CitySearchHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00016D /* CitySearchHelper.swift */; };
 		BB000170 /* LocationManagerForOnboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00016F /* LocationManagerForOnboarding.swift */; };
 		BB000172 /* MapWithCenterSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000171 /* MapWithCenterSelector.swift */; };
@@ -131,7 +128,6 @@
 		BB0001AC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB0001AB /* Assets.xcassets */; };
 		BB0001C0 /* PlaceSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001BF /* PlaceSearchViewModel.swift */; };
 		BB0001C2 /* KeyboardCaptionToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C1 /* KeyboardCaptionToolbar.swift */; };
-		BB000306 /* AtmosphericWaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000307 /* AtmosphericWaveformView.swift */; };
 		BB0001C4 /* UndoOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C3 /* UndoOverlayView.swift */; };
 		BB0001C6 /* NeighborhoodIntroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C5 /* NeighborhoodIntroView.swift */; };
 		BB0001C8 /* NeighborhoodMapRefinementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C7 /* NeighborhoodMapRefinementView.swift */; };
@@ -201,9 +197,13 @@
 		BB0002F7 /* NewMomentsPullUpViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F6 /* NewMomentsPullUpViews.swift */; };
 		BB000301 /* AdminAnalyticsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000300 /* AdminAnalyticsDashboardView.swift */; };
 		BB000303 /* MyStatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000302 /* MyStatsView.swift */; };
+		BB000305 /* CameraRollPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000304 /* CameraRollPickerView.swift */; };
+		BB000306 /* AtmosphericWaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000307 /* AtmosphericWaveformView.swift */; };
 		BB0003A1 /* PDFExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003A2 /* PDFExportOptionsSheet.swift */; };
 		BB0003B1 /* VisitedCitiesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B0 /* VisitedCitiesService.swift */; };
 		BB0003B3 /* VisitedCitiesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B2 /* VisitedCitiesSheet.swift */; };
+		BB0003B5 /* WeatherEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B4 /* WeatherEditSheet.swift */; };
+		BB0003C1 /* SplitPlaceStopView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003C0 /* SplitPlaceStopView.swift */; };
 		BB00A001 /* Analytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00A002 /* Analytics.swift */; };
 		BB00AI01 /* AnalyticsIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00AI02 /* AnalyticsIdentity.swift */; };
 		BB00F002 /* PlacesVisitedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F001 /* PlacesVisitedView.swift */; };
@@ -220,6 +220,11 @@
 		PD00PD02 /* PDFPreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = PD00PD01 /* PDFPreviewSheet.swift */; };
 		PS00PS02 /* PreparingStoryBookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PS00PS01 /* PreparingStoryBookView.swift */; };
 		SM00SM02 /* StoryModePDFOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM00SM01 /* StoryModePDFOptionsSheet.swift */; };
+		TS00B01 /* TripShareNearbyConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R01 /* TripShareNearbyConfig.swift */; };
+		TS00B02 /* TripSharePackage.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R02 /* TripSharePackage.swift */; };
+		TS00B03 /* TripNearbyShareSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R03 /* TripNearbyShareSessionController.swift */; };
+		TS00B04 /* TripNearbyShareViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R04 /* TripNearbyShareViews.swift */; };
+		TS00B05 /* TripNearbyShareHaptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = TS00R05 /* TripNearbyShareHaptics.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -233,21 +238,28 @@
 		037E25252F70FD0600C7E8B8 /* nastelbom-travel-437814.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "nastelbom-travel-437814.mp3"; sourceTree = "<group>"; };
 		037E25262F70FD0600C7E8B8 /* paulyudin-travel-159836.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "paulyudin-travel-159836.mp3"; sourceTree = "<group>"; };
 		037E25272F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = "Trip To Daegu in Winter | Storybook.pdf"; sourceTree = "<group>"; };
+		03B8B6582F7CD9D90088C39F /* all_season.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = all_season.mp3; sourceTree = "<group>"; };
+		03B8B6592F7CD9D90088C39F /* high_beams.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = high_beams.mp3; sourceTree = "<group>"; };
+		03B8B65A2F7CD9D90088C39F /* kings_and_queens.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = kings_and_queens.mp3; sourceTree = "<group>"; };
+		03B8B65B2F7CD9D90088C39F /* let_you_go.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = let_you_go.mp3; sourceTree = "<group>"; };
+		03B8B65C2F7CD9D90088C39F /* vantage_point.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = vantage_point.mp3; sourceTree = "<group>"; };
 		0733072C4EA957FE04A03752 /* StoryPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StoryPageView.swift; path = StoryBook/StoryPageView.swift; sourceTree = "<group>"; };
 		0D31200382275E7A7520CD4F /* PlaceBlockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaceBlockView.swift; path = StoryBook/PlaceBlockView.swift; sourceTree = "<group>"; };
 		2C198E17B0447F89CC98721F /* DayCaptionEditSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DayCaptionEditSheet.swift; sourceTree = "<group>"; };
-		4C7D8E2F1A3B5C6D9E0F2A4B /* PhotoCaptionEditSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhotoCaptionEditSheet.swift; sourceTree = "<group>"; };
 		2C820592BA8137D8FF7F05AA /* DayMapPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DayMapPageView.swift; path = StoryBook/DayMapPageView.swift; sourceTree = "<group>"; };
 		2F5C55E3E5D4C283468EF581 /* PDFExportService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PDFExportService.swift; sourceTree = "<group>"; };
 		2F6DDE63772EF1F878EC3686 /* TOCPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TOCPageView.swift; path = StoryBook/TOCPageView.swift; sourceTree = "<group>"; };
 		30C7F49D9E66B6763CCCD7B9 /* PhotoCardView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PhotoCardView.swift; path = StoryBook/PhotoCardView.swift; sourceTree = "<group>"; };
 		3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhotoPermissionOnboardingView.swift; sourceTree = "<group>"; };
+		4C7D8E2F1A3B5C6D9E0F2A4B /* PhotoCaptionEditSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhotoCaptionEditSheet.swift; sourceTree = "<group>"; };
 		4E34776F396319FBEE2FCECD /* StoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryCaptionGenerator.swift; sourceTree = "<group>"; };
 		67D919F737961D65785318BA /* StoryBookContent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryBookContent.swift; sourceTree = "<group>"; };
 		6ABC2F392F2EBDD1636DC399 /* StoryBookView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StoryBookView.swift; path = StoryBook/StoryBookView.swift; sourceTree = "<group>"; };
 		72929F115FE37110FB2BE7BF /* CoverPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CoverPageView.swift; path = StoryBook/CoverPageView.swift; sourceTree = "<group>"; };
 		7A01A8A2A53646AA22C132E3 /* DayContentPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DayContentPageView.swift; path = StoryBook/DayContentPageView.swift; sourceTree = "<group>"; };
 		7EE07F9D5505A841A5CD7CAE /* StoryPageLayout.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryPageLayout.swift; sourceTree = "<group>"; };
+		A1B2C3D52F9E1000010001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A1C4M3R22F9E1000010003 /* PhotosUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PhotosUI.framework; path = System/Library/Frameworks/PhotosUI.framework; sourceTree = SDKROOT; };
 		A586130A3384B2A62AC27350 /* MapSnapshotHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MapSnapshotHelper.swift; sourceTree = "<group>"; };
 		A8B39A532FFD631E0B9D8312 /* StoryBookViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryBookViewModel.swift; sourceTree = "<group>"; };
 		AA000003 /* Bloggo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Bloggo.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -268,8 +280,6 @@
 		BB00011D /* TripDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDraft.swift; sourceTree = "<group>"; };
 		BB00011F /* BlogPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogPreviewView.swift; sourceTree = "<group>"; };
 		BB000121 /* BlogSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogSettingsSheet.swift; sourceTree = "<group>"; };
-		BB0003B4 /* WeatherEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherEditSheet.swift; sourceTree = "<group>"; };
-		BB0003C0 /* SplitPlaceStopView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitPlaceStopView.swift; sourceTree = "<group>"; };
 		BB000123 /* ClusterRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterRowView.swift; sourceTree = "<group>"; };
 		BB000125 /* CountryBlogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryBlogsView.swift; sourceTree = "<group>"; };
 		BB000127 /* CountryCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryCardView.swift; sourceTree = "<group>"; };
@@ -307,13 +317,6 @@
 		BB000167 /* TripDayPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDayPickerView.swift; sourceTree = "<group>"; };
 		BB000169 /* TripsMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsMapView.swift; sourceTree = "<group>"; };
 		BB00016B /* TripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsView.swift; sourceTree = "<group>"; };
-		BB000304 /* CameraRollPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollPickerView.swift; sourceTree = "<group>"; };
-		A1C4M3R22F9E1000010003 /* PhotosUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PhotosUI.framework; path = System/Library/Frameworks/PhotosUI.framework; sourceTree = SDKROOT; };
-		TS00R01 /* TripShareNearbyConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripShareNearbyConfig.swift; sourceTree = "<group>"; };
-		TS00R02 /* TripSharePackage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripSharePackage.swift; sourceTree = "<group>"; };
-		TS00R03 /* TripNearbyShareSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareSessionController.swift; sourceTree = "<group>"; };
-		TS00R04 /* TripNearbyShareViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareViews.swift; sourceTree = "<group>"; };
-		TS00R05 /* TripNearbyShareHaptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareHaptics.swift; sourceTree = "<group>"; };
 		BB00016D /* CitySearchHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitySearchHelper.swift; sourceTree = "<group>"; };
 		BB00016F /* LocationManagerForOnboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManagerForOnboarding.swift; sourceTree = "<group>"; };
 		BB000171 /* MapWithCenterSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapWithCenterSelector.swift; sourceTree = "<group>"; };
@@ -347,7 +350,6 @@
 		BB0001AB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BB0001BF /* PlaceSearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSearchViewModel.swift; sourceTree = "<group>"; };
 		BB0001C1 /* KeyboardCaptionToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardCaptionToolbar.swift; sourceTree = "<group>"; };
-		BB000307 /* AtmosphericWaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmosphericWaveformView.swift; sourceTree = "<group>"; };
 		BB0001C3 /* UndoOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoOverlayView.swift; sourceTree = "<group>"; };
 		BB0001C5 /* NeighborhoodIntroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodIntroView.swift; sourceTree = "<group>"; };
 		BB0001C7 /* NeighborhoodMapRefinementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodMapRefinementView.swift; sourceTree = "<group>"; };
@@ -369,7 +371,6 @@
 		BB0001EB /* PhotoQualityScorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoQualityScorer.swift; sourceTree = "<group>"; };
 		BB0001ED /* GoogleAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleAuthManager.swift; sourceTree = "<group>"; };
 		BB0001EF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		A1B2C3D52F9E1000010001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		BB0001F0 /* AuthUser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthUser.swift; sourceTree = "<group>"; };
 		BB0001F2 /* APIManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIManager.swift; sourceTree = "<group>"; };
 		BB0001F4 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
@@ -420,9 +421,13 @@
 		BB0002F6 /* NewMomentsPullUpViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewMomentsPullUpViews.swift; sourceTree = "<group>"; };
 		BB000300 /* AdminAnalyticsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminAnalyticsDashboardView.swift; sourceTree = "<group>"; };
 		BB000302 /* MyStatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyStatsView.swift; sourceTree = "<group>"; };
+		BB000304 /* CameraRollPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollPickerView.swift; sourceTree = "<group>"; };
+		BB000307 /* AtmosphericWaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmosphericWaveformView.swift; sourceTree = "<group>"; };
 		BB0003A2 /* PDFExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFExportOptionsSheet.swift; sourceTree = "<group>"; };
 		BB0003B0 /* VisitedCitiesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesService.swift; sourceTree = "<group>"; };
 		BB0003B2 /* VisitedCitiesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesSheet.swift; sourceTree = "<group>"; };
+		BB0003B4 /* WeatherEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherEditSheet.swift; sourceTree = "<group>"; };
+		BB0003C0 /* SplitPlaceStopView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitPlaceStopView.swift; sourceTree = "<group>"; };
 		BB00A002 /* Analytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Analytics.swift; sourceTree = "<group>"; };
 		BB00AI02 /* AnalyticsIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsIdentity.swift; sourceTree = "<group>"; };
 		BB00F001 /* PlacesVisitedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacesVisitedView.swift; sourceTree = "<group>"; };
@@ -441,6 +446,11 @@
 		PD00PD01 /* PDFPreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFPreviewSheet.swift; sourceTree = "<group>"; };
 		PS00PS01 /* PreparingStoryBookView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreparingStoryBookView.swift; sourceTree = "<group>"; };
 		SM00SM01 /* StoryModePDFOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = StoryModePDFOptionsSheet.swift; path = StoryBook/StoryModePDFOptionsSheet.swift; sourceTree = "<group>"; };
+		TS00R01 /* TripShareNearbyConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripShareNearbyConfig.swift; sourceTree = "<group>"; };
+		TS00R02 /* TripSharePackage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripSharePackage.swift; sourceTree = "<group>"; };
+		TS00R03 /* TripNearbyShareSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareSessionController.swift; sourceTree = "<group>"; };
+		TS00R04 /* TripNearbyShareViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareViews.swift; sourceTree = "<group>"; };
+		TS00R05 /* TripNearbyShareHaptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNearbyShareHaptics.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -456,6 +466,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		03B8B6572F7CA2EB0088C39F /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				A1C4M3R22F9E1000010003 /* PhotosUI.framework */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
 		80B209C887D886E7146C1DC1 /* StoryBook */ = {
 			isa = PBXGroup;
 			children = (
@@ -477,6 +495,11 @@
 		BB0001AD /* main */ = {
 			isa = PBXGroup;
 			children = (
+				03B8B6582F7CD9D90088C39F /* all_season.mp3 */,
+				03B8B6592F7CD9D90088C39F /* high_beams.mp3 */,
+				03B8B65A2F7CD9D90088C39F /* kings_and_queens.mp3 */,
+				03B8B65B2F7CD9D90088C39F /* let_you_go.mp3 */,
+				03B8B65C2F7CD9D90088C39F /* vantage_point.mp3 */,
 				037E25202F70FD0600C7E8B8 /* alexgrohl-travel-478797.mp3 */,
 				037E25212F70FD0600C7E8B8 /* burtysounds-happy-124917 2.mp3 */,
 				037E25222F70FD0600C7E8B8 /* burtysounds-uplifting-pop-181963.mp3 */,
@@ -489,6 +512,7 @@
 				0354AFB52F6737A300C41BAA /* Bloggo.entitlements */,
 				BB0001AE /* fastblog */,
 				BB0001AF /* Products */,
+				03B8B6572F7CA2EB0088C39F /* Recovered References */,
 			);
 			name = main;
 			sourceTree = "<group>";
@@ -819,6 +843,11 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				03B8B65D2F7CD9D90088C39F /* vantage_point.mp3 in Resources */,
+				03B8B65E2F7CD9D90088C39F /* high_beams.mp3 in Resources */,
+				03B8B65F2F7CD9D90088C39F /* kings_and_queens.mp3 in Resources */,
+				03B8B6602F7CD9D90088C39F /* all_season.mp3 in Resources */,
+				03B8B6612F7CD9D90088C39F /* let_you_go.mp3 in Resources */,
 				037E25282F70FD0600C7E8B8 /* nastelbom-travel-437814.mp3 in Resources */,
 				037E25292F70FD0600C7E8B8 /* burtysounds-uplifting-pop-181963.mp3 in Resources */,
 				037E252A2F70FD0600C7E8B8 /* alexgrohl-travel-478797.mp3 in Resources */,
