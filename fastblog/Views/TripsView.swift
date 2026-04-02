@@ -181,58 +181,7 @@ struct TripsView: View {
     var body: some View {
         coreBody
             .overlay {
-                if let trip = tripForPopup {
-                    blogCreationPopup(trip: trip)
-                }
-            }
-            .overlay {
-                if showLoadMorePopup && !viewModel.isLoadingOlderTrips {
-                    loadMoreTripsPopup
-                }
-            }
-            .overlay {
-                if showLoadNewerPopup && !viewModel.isLoadingNewerTrips {
-                    loadNewerTripsPopup
-                }
-            }
-            .overlay {
-                if viewModel.isVisitedCityScanning {
-                    LoadingScanView(
-                        message: "Finding your trip…",
-                        isOverlay: true,
-                        progress: viewModel.visitedCityScanProgress,
-                        onCancel: { viewModel.cancelVisitedCityScan() }
-                    )
-                    .transition(.opacity)
-                }
-            }
-            .overlay {
-                if viewModel.isLoadingOlderTrips {
-                    LoadingScanView(
-                        message: "Finding older trips…",
-                        isOverlay: true,
-                        progress: viewModel.loadOlderProgress,
-                        onCancel: {
-                            viewModel.cancelLoadOlderTrips()
-                            withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
-                        }
-                    )
-                    .transition(.opacity)
-                }
-            }
-            .overlay {
-                if viewModel.isLoadingNewerTrips {
-                    LoadingScanView(
-                        message: "Finding newer trips…",
-                        isOverlay: true,
-                        progress: viewModel.loadNewerProgress,
-                        onCancel: {
-                            viewModel.cancelLoadNewerTrips()
-                            withAnimation(.easeOut(duration: 0.3)) { showLoadNewerPopup = true }
-                        }
-                    )
-                    .transition(.opacity)
-                }
+                overlayLayer
             }
             .animation(.easeInOut(duration: 0.4), value: viewModel.isLoadingOlderTrips)
             .animation(.easeInOut(duration: 0.4), value: viewModel.isLoadingNewerTrips)
@@ -288,6 +237,56 @@ struct TripsView: View {
             }
             .alert("No Photos Available", isPresented: $showNoPhotosAlert, actions: noPhotosAlertActions, message: noPhotosAlertMessage)
             .preferredColorScheme(nil)
+    }
+
+    @ViewBuilder
+    private var overlayLayer: some View {
+        if let trip = tripForPopup {
+            blogCreationPopup(trip: trip)
+        }
+        if showLoadMorePopup && !viewModel.isLoadingOlderTrips {
+            loadMoreTripsPopup
+        }
+        if showLoadNewerPopup && !viewModel.isLoadingNewerTrips {
+            loadNewerTripsPopup
+        }
+        if viewModel.isVisitedCityScanning {
+            LoadingScanView(
+                message: "Finding your trip…",
+                isOverlay: true,
+                progress: viewModel.visitedCityScanProgress,
+                onCancel: { viewModel.cancelVisitedCityScan() }
+            )
+            .transition(.opacity)
+        }
+        if viewModel.isLoadingOlderTrips {
+            LoadingScanView(
+                message: "Finding older trips…",
+                isOverlay: true,
+                progress: viewModel.loadOlderProgress,
+                onCancel: {
+                    viewModel.cancelLoadOlderTrips()
+                    withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
+                },
+                useCenteredLayout: true,
+                showsTopTrailingActions: false
+            )
+            .transition(.opacity)
+        }
+        if viewModel.isLoadingNewerTrips {
+            LoadingScanView(
+                message: "Finding newer trips…",
+                isOverlay: true,
+                progress: viewModel.loadNewerProgress,
+                onCancel: {
+                    viewModel.cancelLoadNewerTrips()
+                    withAnimation(.easeOut(duration: 0.3)) { showLoadNewerPopup = true }
+                },
+                useCenteredLayout: true,
+                showsTopTrailingActions: false
+            )
+            .transition(.opacity)
+        }
     }
 
     private var coreBody: some View {

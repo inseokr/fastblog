@@ -11,8 +11,8 @@ struct PlaceStopActionSheet: View {
     var onEditName: () -> Void
     var onManagePhotos: () -> Void
     var onEditMode: () -> Void
-    /// Non-nil when there is a next stop to merge into. Tapping merges the two stops immediately.
-    var onMergeWithNext: (() -> Void)?
+    /// Non-nil when there is at least one adjacent stop eligible for merge.
+    var onMergePlaces: (() -> Void)?
     /// Non-nil when the stop has more than one photo and can be split.
     var onSplit: (() -> Void)?
     var onRemoveFromBlog: () -> Void
@@ -20,7 +20,7 @@ struct PlaceStopActionSheet: View {
 
     private var sheetHeight: CGFloat {
         var base: CGFloat = 380
-        if onMergeWithNext != nil { base += 52 }
+        if onMergePlaces != nil { base += 52 }
         if onSplit != nil { base += 52 }
         return base
     }
@@ -71,13 +71,13 @@ struct PlaceStopActionSheet: View {
             .background(Color(white: 0.15))
             .cornerRadius(12)
             .padding(.horizontal, 16)
-            .padding(.bottom, onMergeWithNext != nil || onSplit != nil ? 12 : 24)
+            .padding(.bottom, onMergePlaces != nil || onSplit != nil ? 12 : 24)
 
             // Section 2: Group Actions (merge / split) — shown only when applicable
-            if onMergeWithNext != nil || onSplit != nil {
+            if onMergePlaces != nil || onSplit != nil {
                 VStack(spacing: 0) {
-                    if let merge = onMergeWithNext {
-                        actionRow(icon: "arrow.triangle.merge", title: "Merge with Next Place", action: {
+                    if let merge = onMergePlaces {
+                        actionRow(icon: "arrow.triangle.merge", title: "Merge Places", action: {
                             dismiss()
                             merge()
                         })
@@ -86,7 +86,7 @@ struct PlaceStopActionSheet: View {
                         }
                     }
                     if let split = onSplit {
-                        actionRow(icon: "scissors", title: "Split Place Group", action: {
+                        actionRow(icon: "scissors", title: "Split Photo Group", action: {
                             dismiss()
                             split()
                         })
@@ -163,7 +163,7 @@ struct PlaceStopActionSheet: View {
         onEditName: {},
         onManagePhotos: {},
         onEditMode: {},
-        onMergeWithNext: {},
+        onMergePlaces: {},
         onSplit: {},
         onRemoveFromBlog: {}
     )

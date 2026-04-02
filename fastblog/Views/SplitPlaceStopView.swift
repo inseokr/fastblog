@@ -68,7 +68,20 @@ struct SplitPlaceStopView: View {
     // MARK: - Subviews
 
     private var instructionBanner: some View {
-        VStack(spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: "scissors")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(.orange)
+
+            Text("Split Photo Group")
+                .font(.title3.weight(.semibold))
+                .foregroundColor(.primary)
+
+            Text("Tap between two photos to set the split point.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.leading)
+
             Text(placeTitle)
                 .font(.subheadline.weight(.semibold))
                 .foregroundColor(.white)
@@ -78,7 +91,8 @@ struct SplitPlaceStopView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
         }
-        .padding(.top, 16)
+        .padding(.top, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var photoStrip: some View {
@@ -90,7 +104,7 @@ struct SplitPlaceStopView: View {
                         .clipped()
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                .stroke(Color.secondary.opacity(0.35), lineWidth: 1)
                         )
 
                     if index < photos.count - 1 {
@@ -114,13 +128,11 @@ struct SplitPlaceStopView: View {
                 .fill(isSelected ? Color.orange : Color.white.opacity(0.25))
                 .frame(width: isSelected ? 3 : 1)
 
-            if isSelected {
-                Image(systemName: "scissors")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(4)
-                    .background(Circle().fill(Color.orange))
-            }
+            Image(systemName: "scissors")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(.white)
+                .padding(4)
+                .background(Circle().fill(Color.orange))
         }
         .frame(width: 36, height: thumbSize)
         .contentShape(Rectangle())
@@ -145,13 +157,12 @@ struct SplitPlaceStopView: View {
             Image(systemName: "scissors")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundColor(.orange)
-            groupLabel(title: "Group 2", photoCount: secondCount, color: .white)
+            groupLabel(title: "Group 2", photoCount: secondCount, color: .primary)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 10)
-        .background(Color.white.opacity(0.06))
+        .background(Color(uiColor: .secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .padding(.horizontal, 20)
     }
 
     private func groupLabel(title: String, photoCount: Int, color: Color) -> some View {
@@ -177,7 +188,7 @@ struct SplitPlaceStopView: View {
                 .foregroundColor(splitAfterIndex == nil ? .secondary : .white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
-                .background(splitAfterIndex == nil ? Color.white.opacity(0.08) : Color.orange)
+                .background(splitAfterIndex == nil ? Color(uiColor: .secondarySystemBackground) : Color.orange)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(.plain)

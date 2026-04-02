@@ -55,6 +55,7 @@ struct TermsOfServiceView: View {
                 Group {
                     sectionTitle("6. Content Policy")
                     bodyText("You retain ownership of the content you create on Bloggo. By posting content or uploading it to the cloud, you grant us a non-exclusive, worldwide license to store, display, distribute, and promote your content on our platform.")
+                    bodyText("Users are responsible for the content they choose to share with others through Bloggo's sharing features, including QR code sharing and exported files.")
                     bodyText("You agree not to post or upload content that:")
                     bullet("Is illegal, harmful, or violates others' rights")
                     bullet("Contains spam, malware, or deceptive information")

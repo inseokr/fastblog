@@ -92,6 +92,7 @@ struct RecapBlogPageView: View {
     @State private var draft: RecapBlogDetail
     @State private var selectedDayIndex: Int = 0  // 0 = Day 1, 1 = Day 2, ...
     @State private var overflowStop: OverflowItem?
+    @State private var mergeSelectionItem: MergeSelectionItem?
     @State private var showEditNameForStop: PlaceStop?
     @State private var showManagePhotosForStop: ManagePhotosItem?
     /// The stop currently having its place caption generated (triggered by place name pick).
@@ -813,13 +814,25 @@ struct RecapBlogPageView: View {
                         // Treat this as "Edit Caption" — open the full-screen place caption editor.
                         placeCaptionEditItem = PlaceCaptionEditItem(dayId: item.dayId, stopId: item.stop.id)
                     },
-                    onMergeWithNext: item.nextStopId.map { nextId in
-                        { mergePlaceStops(dayId: item.dayId, firstStopId: item.stop.id, secondStopId: nextId) }
+                    onMergePlaces: mergeCandidates(dayId: item.dayId, sourceStopId: item.stop.id).isEmpty ? nil : {
+                        mergeSelectionItem = MergeSelectionItem(dayId: item.dayId, sourceStopId: item.stop.id)
                     },
                     onSplit: item.stop.photos.count > 1 ? {
                         presentSplitPlaceStopSheet(dayId: item.dayId, stop: item.stop)
                     } : nil,
                     onRemoveFromBlog: { removePlaceStop(dayId: item.dayId, stopId: item.stop.id) }
+                )
+            }
+            .sheet(item: $mergeSelectionItem) { item in
+                RecapMergePlacesSelectionSheet(
+                    sourcePlaceTitle: placeStop(dayId: item.dayId, stopId: item.sourceStopId)?.placeTitle ?? "This place",
+                    sourcePreviewPhoto: placeStop(dayId: item.dayId, stopId: item.sourceStopId)?.photos.first,
+                    candidates: mergeCandidates(dayId: item.dayId, sourceStopId: item.sourceStopId),
+                    onSelectCandidate: { candidate in
+                        DispatchQueue.main.async {
+                            mergeSelectedStops(dayId: item.dayId, sourceStopId: item.sourceStopId, targetStopId: candidate.stopId)
+                        }
+                    }
                 )
             }
             .sheet(item: $splitPlaceStopItem) { item in
@@ -1961,8 +1974,7 @@ struct RecapBlogPageView: View {
                         removePlaceStop(dayId: day.id, stopId: stop.id)
                     },
                     onKebab: {
-                        let nextId = index + 1 < day.placeStops.count ? day.placeStops[index + 1].id : nil
-                        overflowStop = OverflowItem(dayId: day.id, stop: stop, nextStopId: nextId)
+                        overflowStop = OverflowItem(dayId: day.id, stop: stop)
                     },
                     onManagePhotos: {
                         openManagePhotos(dayId: day.id, stopId: stop.id)
@@ -2891,6 +2903,59 @@ struct RecapBlogPageView: View {
         day.placeStops.remove(at: secondIdx)
         for i in day.placeStops.indices { day.placeStops[i].orderIndex = i }
         draft.days[dayIdx] = day
+    }
+
+    private func mergeCandidates(dayId: UUID, sourceStopId: UUID) -> [RecapMergePlaceCandidateItem] {
+        guard let day = draft.days.first(where: { $0.id == dayId }),
+              let sourceIdx = day.placeStops.firstIndex(where: { $0.id == sourceStopId }) else { return [] }
+
+        func detailText(for stop: PlaceStop) -> String {
+            let includedCount = stop.includedPhotos.count
+            return includedCount == 1 ? "1 photo" : "\(includedCount) photos"
+        }
+
+        var items: [RecapMergePlaceCandidateItem] = []
+
+        if sourceIdx > 0 {
+            let previous = day.placeStops[sourceIdx - 1]
+            items.append(
+                RecapMergePlaceCandidateItem(
+                    stopId: previous.id,
+                    position: .previous,
+                    placeTitle: previous.placeTitle,
+                    detailText: detailText(for: previous),
+                    previewPhoto: previous.photos.first
+                )
+            )
+        }
+
+        if sourceIdx < day.placeStops.count - 1 {
+            let next = day.placeStops[sourceIdx + 1]
+            items.append(
+                RecapMergePlaceCandidateItem(
+                    stopId: next.id,
+                    position: .next,
+                    placeTitle: next.placeTitle,
+                    detailText: detailText(for: next),
+                    previewPhoto: next.photos.first
+                )
+            )
+        }
+
+        return items
+    }
+
+    private func mergeSelectedStops(dayId: UUID, sourceStopId: UUID, targetStopId: UUID) {
+        guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let sourceIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == sourceStopId }),
+              let targetIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == targetStopId }) else { return }
+
+        guard abs(sourceIdx - targetIdx) == 1 else { return }
+
+        let firstId = sourceIdx < targetIdx ? sourceStopId : targetStopId
+        let secondId = sourceIdx < targetIdx ? targetStopId : sourceStopId
+        mergePlaceStops(dayId: dayId, firstStopId: firstId, secondStopId: secondId)
+        mergeSelectionItem = nil
     }
 
     /// Split sheet must not be presented in the same update as (or while) the place overflow sheet is up;
@@ -5093,8 +5158,182 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
 private struct OverflowItem: Identifiable {
     let dayId: UUID
     let stop: PlaceStop
-    let nextStopId: UUID?
     var id: UUID { stop.id }
+}
+
+private struct RecapMergePlaceCandidateItem: Identifiable {
+    enum Position {
+        case previous
+        case next
+
+        var label: String {
+            switch self {
+            case .previous: return "Previous place"
+            case .next: return "Next place"
+            }
+        }
+    }
+
+    let stopId: UUID
+    let position: Position
+    let placeTitle: String
+    let detailText: String
+    let previewPhoto: RecapPhoto?
+    var id: UUID { stopId }
+}
+
+private struct RecapMergePlacesSelectionSheet: View {
+    let sourcePlaceTitle: String
+    let sourcePreviewPhoto: RecapPhoto?
+    let candidates: [RecapMergePlaceCandidateItem]
+    let onSelectCandidate: (RecapMergePlaceCandidateItem) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    
+    private var previousCandidate: RecapMergePlaceCandidateItem? {
+        candidates.first(where: { $0.position == .previous })
+    }
+    
+    private var nextCandidate: RecapMergePlaceCandidateItem? {
+        candidates.first(where: { $0.position == .next })
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.secondary.opacity(0.45))
+                    .frame(width: 38, height: 5)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 10)
+
+                Image(systemName: "arrow.triangle.merge")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(.orange)
+                    .padding(.top, 6)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Merge this place with another")
+                        .font(.title3.weight(.semibold))
+                    Text("Choose the place you want to combine with this one.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 8)
+
+                if candidates.isEmpty {
+                    currentPlaceCard
+                    Text("No adjacent places are available to merge.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 20)
+                } else {
+                    VStack(spacing: 10) {
+                        if let previousCandidate {
+                            candidateButton(previousCandidate)
+                            betweenCardArrow(for: .previous)
+                        }
+                        currentPlaceCard
+                        if let nextCandidate {
+                            betweenCardArrow(for: .next)
+                            candidateButton(nextCandidate)
+                        }
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+        .presentationDetents([.medium])
+    }
+    
+    private var currentPlaceCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                photoPreview(photo: sourcePreviewPhoto)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Current place")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Text(sourcePlaceTitle)
+                                .font(.body.weight(.medium))
+                                .foregroundStyle(.primary)
+                        }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.orange.opacity(0.2))
+        )
+    }
+    
+    @ViewBuilder
+    private func candidateButton(_ candidate: RecapMergePlaceCandidateItem) -> some View {
+        Button {
+            dismiss()
+            onSelectCandidate(candidate)
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                photoPreview(photo: candidate.previewPhoto)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(candidate.position.label)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(candidate.placeTitle)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Text(candidate.detailText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(uiColor: .secondarySystemBackground))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private func betweenCardArrow(for position: RecapMergePlaceCandidateItem.Position) -> some View {
+        Image(systemName: position == .previous ? "arrow.up" : "arrow.down")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.orange)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func photoPreview(photo: RecapPhoto?) -> some View {
+        if let photo {
+            RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 200, height: 200))
+                .frame(width: 52, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        } else {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.secondary.opacity(0.2))
+                .frame(width: 52, height: 52)
+                .overlay(
+                    Image(systemName: "photo")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                )
+        }
+    }
+}
+
+private struct MergeSelectionItem: Identifiable {
+    let dayId: UUID
+    let sourceStopId: UUID
+    var id: UUID { sourceStopId }
 }
 
 private struct ManagePhotosItem: Identifiable, Hashable {
