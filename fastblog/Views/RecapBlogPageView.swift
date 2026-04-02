@@ -170,6 +170,8 @@ struct RecapBlogPageView: View {
     @State private var pendingExportAfterAuth = false
     /// When true, shows "Sign in or Cancel" alert for guest tapping Export.
     @State private var showExportSignInAlert = false
+    /// Pull-up modal shown when a guest taps the cloud upload button.
+    @State private var showGuestCloudUploadModal = false
     /// Single pull-up modal: shown when non-nil; content is "You're on the list" when true, else "Join Early Access" prompt.
     @State private var earlyAccessSheetPresented: Bool = false
     @State private var earlyAccessShowOnListConfirm: Bool = false
@@ -562,8 +564,14 @@ struct RecapBlogPageView: View {
             } message: {
                 Text("Create an account or sign in to export your blog as PDF.")
             }
+            .sheet(isPresented: $showGuestCloudUploadModal) {
+                guestCloudUploadModalContent
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
+                    .preferredColorScheme(.dark)
+            }
             .alert("Create an account to share", isPresented: $showShareCreateAccountAlert) {
-                Button("Create Account") {
+                Button("Sign In") {
                     showShareCreateAccountAlert = false
                     pendingWebLinkAfterAuth = true
                     showAuth = true
@@ -950,9 +958,6 @@ struct RecapBlogPageView: View {
             PanoramaPlayerView(
                 photoGroups: photoGroups,
                 blogId: blogId,
-                onCaptionTapped: { tappedAssetId in
-                    openPlaceModalFromPanoramaCaptionTap(localIdentifier: tappedAssetId)
-                },
                 onDismiss: { showPanorama = false }
             )
         }
@@ -4315,10 +4320,71 @@ struct RecapBlogPageView: View {
         }
     }
 
+    private var guestCloudUploadModalContent: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 20) {
+                Image(systemName: "icloud.and.arrow.up")
+                    .font(.system(size: 48, weight: .light))
+                    .foregroundColor(.white)
+                    .padding(.top, 8)
+
+                VStack(spacing: 8) {
+                    Text("Back Up Your Blog")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+
+                    Text("Securely back up this blog to the cloud so you can edit it on your computer and keep it safe.")
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+
+                    Text("Your blog stays private. Nothing is shared unless you choose to share it.")
+                        .font(.footnote)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary.opacity(0.8))
+                        .padding(.top, 4)
+                }
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+
+            VStack(spacing: 12) {
+                Button {
+                    showGuestCloudUploadModal = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        pendingCloudUploadAfterAuth = true
+                        showAuth = true
+                    }
+                } label: {
+                    Text("Sign In")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .cornerRadius(12)
+                }
+
+                Button {
+                    showGuestCloudUploadModal = false
+                } label: {
+                    Text("Cancel")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+        .padding(.top, 24)
+    }
+
     private func handleCloudUploadTap() {
         guard authService.isSignedIn else {
-            pendingCloudUploadAfterAuth = true
-            showAuth = true
+            showGuestCloudUploadModal = true
             return
         }
         let cachedLevel = authService.currentUser?.userLevel ?? .normal

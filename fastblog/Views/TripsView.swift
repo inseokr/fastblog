@@ -43,6 +43,8 @@ struct TripsView: View {
     @AppStorage("blogify.skipSelectPhotosIntro") private var skipSelectPhotosIntro = false
     @State private var selectedTrip: TripDraft?
     @State private var createBlogFlowTrip: TripDraft?
+    @State private var showGuestBlogLimitModal = false
+    @State private var showAuth = false
     @State private var mapPosition: MapCameraPosition = .automatic
     /// Gates map visibility — map is hidden until its initial position is explicitly set,
     /// preventing the MapKit auto-fit animation from the default .automatic position.
@@ -216,7 +218,7 @@ struct TripsView: View {
             }
             .onChange(of: viewModel.openCreateFlowForPendingTrip) { _, shouldOpen in
                 guard shouldOpen, let trip = viewModel.pendingTripForCreateFlow else { return }
-                createBlogFlowTrip = trip
+                attemptCreateBlog(trip: trip)
                 viewModel.clearPendingCreateFlow()
             }
             .onChange(of: selectedTrip) { _, newTrip in
@@ -331,7 +333,7 @@ struct TripsView: View {
             TripDayPickerView(
                 trip: viewModel.tripForPicker(trip),
                 initialDayIndex: tripInitialDayIndex,
-                onStartCreateBlog: { createBlogFlowTrip = $0 }
+                onStartCreateBlog: { attemptCreateBlog(trip: $0) }
             )
         }
         .fullScreenCover(item: $createBlogFlowTrip) { trip in
@@ -384,7 +386,7 @@ struct TripsView: View {
         }
         .onChange(of: viewModel.pendingVisitedCitiesCreateTrip) { _, newTrip in
             guard let trip = newTrip else { return }
-            createBlogFlowTrip = trip
+            attemptCreateBlog(trip: trip)
             viewModel.clearPendingVisitedCitiesCreateTrip()
         }
         .sheet(isPresented: $showTripsIntroSheet, onDismiss: {
@@ -394,6 +396,18 @@ struct TripsView: View {
             tripsIntroModalContent()
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showGuestBlogLimitModal) {
+            guestBlogLimitModalContent
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .preferredColorScheme(.dark)
+        }
+        .fullScreenCover(isPresented: $showAuth) {
+            AuthView(
+                onAuthenticated: { showAuth = false },
+                onDismiss: { showAuth = false }
+            )
         }
         .onAppear {
             viewModel.onAppear()
@@ -565,8 +579,8 @@ struct TripsView: View {
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(tripsNavLabel)
                 }
-                .opacity((showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips) ? 0 : 1)
-                .disabled(showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips)
+                .opacity((showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips || viewModel.scanState != .idle) ? 0 : 1)
+                .disabled(showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips || viewModel.scanState != .idle)
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -580,8 +594,8 @@ struct TripsView: View {
                         .font(.headline)
                         .foregroundColor(tripsNavLabel)
                 }
-                .opacity((showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips) ? 0 : 1)
-                .disabled(showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips)
+                .opacity((showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips || viewModel.scanState != .idle) ? 0 : 1)
+                .disabled(showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips || viewModel.scanState != .idle)
             }
             // Scan Debug ladybug — hidden for now; set to DEBUG to show.
             #if false
@@ -832,6 +846,83 @@ struct TripsView: View {
         return f
     }()
 
+    // MARK: - Guest Blog Limit
+
+    /// Routes blog creation through the guest limit gate. If the user is a guest
+    /// and already has one anonymous blog, shows the upgrade modal instead.
+    private func attemptCreateBlog(trip: TripDraft) {
+        let isGuest = AuthService.shared.currentUser == nil
+        let alreadyHasBlog = createdRecapStore.anonymousDrafts.count >= 1
+        if isGuest && alreadyHasBlog {
+            showGuestBlogLimitModal = true
+        } else {
+            createBlogFlowTrip = trip
+        }
+    }
+
+    private var guestBlogLimitModalContent: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 20) {
+                Image("SplashIcon")
+                    .resizable()
+                    .renderingMode(.template)
+                    .scaledToFit()
+                    .frame(width: 52, height: 52)
+                    .foregroundColor(.white)
+                    .padding(.top, 8)
+
+                VStack(spacing: 8) {
+                    Text("Create an Account")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+
+                    Text("Keep your blogs secure and optionally back them up to the cloud.")
+
+                    Text("Sign in to create as many blogs as you like.")
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+
+            VStack(spacing: 12) {
+                Button {
+                    showGuestBlogLimitModal = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showAuth = true
+                    }
+                } label: {
+                    Text("Sign In")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .cornerRadius(12)
+                }
+
+                Button {
+                    showGuestBlogLimitModal = false
+                } label: {
+                    Text("Cancel")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+        .padding(.top, 24)
+    }
+
     // MARK: - First-time Trips Intro Pull-Up
 
     @ViewBuilder
@@ -850,7 +941,7 @@ struct TripsView: View {
                         .fontWeight(.bold)
                         .multilineTextAlignment(.center)
 
-                    Text("We selected the best three photos for each moment. Tap a trip to create your blog.")
+                    Text("Tap a trip to create your blog. We select up to 3 of your photos per moment. Manage photo selection anytime.")
                         .font(.body)
                         .multilineTextAlignment(.center)
                         .foregroundColor(.secondary)
@@ -1264,7 +1355,7 @@ struct TripsView: View {
                     Button {
                         withAnimation { tripForPopup = nil }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                            createBlogFlowTrip = trip
+                            attemptCreateBlog(trip: trip)
                         }
                     } label: {
                         Text("Create")

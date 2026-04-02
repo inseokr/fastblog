@@ -424,15 +424,19 @@ struct PlacePhotoModalView: View {
                                     .padding(.top, 0)
                                     .padding(.bottom, 8)
                                 } else if let single = photos.first {
-                                    RecapPhotoThumbnail(photo: single, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 160, height: 160))
-                                        .frame(width: 56, height: 56)
-                                        .clipped()
-                                        .cornerRadius(8)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .stroke(Color.white.opacity(0.6), lineWidth: 1)
-                                        )
-                                        .padding(.bottom, 8)
+                                    HStack {
+                                        RecapPhotoThumbnail(photo: single, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 160, height: 160))
+                                            .frame(width: 56, height: 56)
+                                            .clipped()
+                                            .cornerRadius(8)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .stroke(Color.white.opacity(0.6), lineWidth: 1)
+                                            )
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.bottom, 8)
                                 }
                             }
                         }
@@ -440,10 +444,11 @@ struct PlacePhotoModalView: View {
                         .background(
                             (isEditing || isZoomMode) ? nil :
                             LinearGradient(
-                                colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
+                                colors: [Color.black.opacity(0.9), Color.black.opacity(0.75), Color.black.opacity(0.45), Color.black.opacity(0.1), Color.clear],
                                 startPoint: .bottom,
                                 endPoint: .top
                             )
+                            .padding(.top, -120)
                         )
                         .opacity(isZoomMode ? 0 : 1)
                         .animation(.easeInOut(duration: 0.25), value: isZoomMode)

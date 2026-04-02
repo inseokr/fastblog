@@ -35,8 +35,6 @@ struct PanoramaPlayerView: View {
     let photoGroups: [[PanoramaPhotoEntry]]
     /// Used to persist the chosen slideshow track for this recap (`UserDefaults`, keyed by blog).
     let blogId: UUID
-    /// Called when the floating caption is tapped; passes the tapped photo's asset identifier.
-    var onCaptionTapped: ((String) -> Void)? = nil
     var onDismiss: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -96,30 +94,6 @@ struct PanoramaPlayerView: View {
 
     /// Asset ID of the top (or only) photo on the current slide.
     private var topPhotoId: String? {
-        guard currentSlideOffset < currentGroup.count else { return nil }
-        return currentGroup[currentSlideOffset].id
-    }
-
-    /// Caption of the top (or only) photo on the current slide.
-    private var topPhotoCaption: String? {
-        guard currentSlideOffset < currentGroup.count else { return nil }
-        return currentGroup[currentSlideOffset].caption
-    }
-
-    private var topPhotoPlaceName: String? {
-        guard currentSlideOffset < currentGroup.count else { return nil }
-        return currentGroup[currentSlideOffset].placeName
-    }
-
-    private var topPhotoTimestampText: String? {
-        guard currentSlideOffset < currentGroup.count,
-              let timestamp = currentGroup[currentSlideOffset].timestamp
-        else { return nil }
-        return Self.captionTimestampFormatter.string(from: timestamp)
-    }
-
-    /// Asset identifier whose caption is currently shown.
-    private var topCaptionPhotoId: String? {
         guard currentSlideOffset < currentGroup.count else { return nil }
         return currentGroup[currentSlideOffset].id
     }
@@ -218,17 +192,6 @@ struct PanoramaPlayerView: View {
                     .padding(.horizontal, 20)
                 Spacer()
                 VStack(spacing: 10) {
-                    if let caption = topPhotoCaption,
-                       let photoId = topCaptionPhotoId,
-                       !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        floatingCaptionButton(
-                            text: caption,
-                            photoId: photoId,
-                            placeName: topPhotoPlaceName,
-                            timestampText: topPhotoTimestampText
-                        )
-                            .transition(.opacity)
-                    }
                     progressBar
                         .padding(.horizontal, 24)
                     bottomControls
@@ -570,55 +533,6 @@ struct PanoramaPlayerView: View {
     }
 
     // MARK: - Bottom controls
-
-    private func floatingCaptionButton(
-        text: String,
-        photoId: String,
-        placeName: String?,
-        timestampText: String?
-    ) -> some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            let y = CGFloat(sin(t * 1.05) * 5.0)
-            Button {
-                onCaptionTapped?(photoId)
-            } label: {
-                VStack(spacing: 4) {
-                    if let placeName, !placeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text(placeName)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.9))
-                            .lineLimit(1)
-                    }
-                    if let timestampText, !timestampText.isEmpty {
-                        Text(timestampText)
-                            .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.78))
-                            .lineLimit(1)
-                    }
-                    Text(text)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.96))
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 11)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(.black.opacity(0.38))
-                        .overlay(
-                            Capsule(style: .continuous)
-                                .stroke(.white.opacity(0.24), lineWidth: 0.6)
-                        )
-                )
-                .shadow(color: .black.opacity(0.6), radius: 6, x: 0, y: 2)
-            }
-            .buttonStyle(.plain)
-            .offset(y: y - 14)
-        }
-        .padding(.horizontal, 36)
-    }
 
     private var bottomControls: some View {
         HStack(spacing: 0) {

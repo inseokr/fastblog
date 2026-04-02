@@ -229,7 +229,7 @@ struct CountryManageRow: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
 
-                HStack(alignment: .center, spacing: 8) {
+                VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 4) {
                         Image(systemName: isInCloud ? "checkmark.icloud.fill" : "icloud.slash")
                             .font(.system(size: 10, weight: .semibold))
@@ -244,33 +244,33 @@ struct CountryManageRow: View {
                             .fill(isInCloud ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
                     )
 
-                    Spacer(minLength: 4)
-
-                    Button(action: onRemove) {
-                        Group {
-                            if isRemoved {
-                                HStack(spacing: 5) {
-                                    Image(systemName: "checkmark")
-                                    Text("Removed")
+                    HStack(alignment: .center) {
+                        Spacer(minLength: 0)
+                        Button(action: onRemove) {
+                            Group {
+                                if isRemoved {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: "checkmark")
+                                        Text("Removed")
+                                    }
+                                } else {
+                                    Image(systemName: "trash")
                                 }
-                            } else {
-                                Image(systemName: "trash")
                             }
+                            .font(.system(.subheadline, weight: .medium))
+                            .foregroundColor(isRemoved ? .secondary : .red)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(isRemoved ? Color.secondary.opacity(0.1) : Color.red.opacity(0.08))
+                            )
                         }
-                        .font(.system(.subheadline, weight: .medium))
-                        .foregroundColor(isRemoved ? .secondary : .red)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(isRemoved ? Color.secondary.opacity(0.1) : Color.red.opacity(0.08))
-                        )
+                        .buttonStyle(.plain)
+                        .disabled(isRemoved)
+                        .animation(.easeInOut(duration: 0.2), value: isRemoved)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isRemoved)
-                    .animation(.easeInOut(duration: 0.2), value: isRemoved)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(minWidth: descriptionColumnWidth, maxWidth: descriptionColumnWidth, alignment: .leading)
         }
