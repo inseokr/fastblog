@@ -128,12 +128,11 @@ struct SplitPlaceStopView: View {
                 .fill(isSelected ? Color.orange : Color.white.opacity(0.25))
                 .frame(width: isSelected ? 3 : 1)
 
-                Image(systemName: "scissors")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(4)
-                    .background(Circle().fill(Color.orange))
-            }
+            Image(systemName: "scissors")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(.white)
+                .padding(4)
+                .background(Circle().fill(Color.orange))
         }
         .frame(width: 36, height: thumbSize)
         .contentShape(Rectangle())

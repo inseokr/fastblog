@@ -2905,6 +2905,59 @@ struct RecapBlogPageView: View {
         draft.days[dayIdx] = day
     }
 
+    private func mergeCandidates(dayId: UUID, sourceStopId: UUID) -> [RecapMergePlaceCandidateItem] {
+        guard let day = draft.days.first(where: { $0.id == dayId }),
+              let sourceIdx = day.placeStops.firstIndex(where: { $0.id == sourceStopId }) else { return [] }
+
+        func detailText(for stop: PlaceStop) -> String {
+            let includedCount = stop.includedPhotos.count
+            return includedCount == 1 ? "1 photo" : "\(includedCount) photos"
+        }
+
+        var items: [RecapMergePlaceCandidateItem] = []
+
+        if sourceIdx > 0 {
+            let previous = day.placeStops[sourceIdx - 1]
+            items.append(
+                RecapMergePlaceCandidateItem(
+                    stopId: previous.id,
+                    position: .previous,
+                    placeTitle: previous.placeTitle,
+                    detailText: detailText(for: previous),
+                    previewPhoto: previous.photos.first
+                )
+            )
+        }
+
+        if sourceIdx < day.placeStops.count - 1 {
+            let next = day.placeStops[sourceIdx + 1]
+            items.append(
+                RecapMergePlaceCandidateItem(
+                    stopId: next.id,
+                    position: .next,
+                    placeTitle: next.placeTitle,
+                    detailText: detailText(for: next),
+                    previewPhoto: next.photos.first
+                )
+            )
+        }
+
+        return items
+    }
+
+    private func mergeSelectedStops(dayId: UUID, sourceStopId: UUID, targetStopId: UUID) {
+        guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let sourceIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == sourceStopId }),
+              let targetIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == targetStopId }) else { return }
+
+        guard abs(sourceIdx - targetIdx) == 1 else { return }
+
+        let firstId = sourceIdx < targetIdx ? sourceStopId : targetStopId
+        let secondId = sourceIdx < targetIdx ? targetStopId : sourceStopId
+        mergePlaceStops(dayId: dayId, firstStopId: firstId, secondStopId: secondId)
+        mergeSelectionItem = nil
+    }
+
     /// Split sheet must not be presented in the same update as (or while) the place overflow sheet is up;
     /// stacked `.sheet` presentations often show UI that does not receive touches.
     private func presentSplitPlaceStopSheet(dayId: UUID, stop: PlaceStop) {

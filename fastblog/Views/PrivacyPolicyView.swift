@@ -55,27 +55,33 @@ struct PrivacyPolicyView: View {
                 }
 
                 Group {
-                    sectionTitle("6. Data Retention")
+                    sectionTitle("6. Sharing Content With Other Users")
+                    bodyText("Bloggo allows users to share their blogs with others using features such as QR code sharing or exported files.")
+                    bodyText("This sharing occurs only when initiated by the user and transfers only the blog content selected by the user.")
+                }
+
+                Group {
+                    sectionTitle("7. Data Retention")
                     bodyText("We retain your personal information and cloud-stored content for as long as your account is active or as needed to provide services. You may request deletion of your account and all associated data, including uploaded photos and blog posts, at any time by contacting our support team. Data is removed from active systems promptly and from backups within 30 days.")
                 }
 
                 Group {
-                    sectionTitle("7. Data Security")
+                    sectionTitle("8. Data Security")
                     bodyText("We implement industry-standard security measures to protect your personal information and uploaded content, including encrypted transmission (HTTPS/TLS) and encrypted storage for sensitive account data. However, no method of transmission over the internet is 100% secure, and we cannot guarantee absolute security. We encourage you to use a strong, unique password for your Bloggo account.")
                 }
 
                 Group {
-                    sectionTitle("8. Your Rights")
+                    sectionTitle("9. Your Rights")
                     bodyText("Depending on your location, you may have the right to access, correct, export, or delete your personal data and uploaded content. You may also have the right to object to or restrict certain processing of your data. To exercise these rights, please contact us at bloggo@linkedspaces.com.")
                 }
 
                 Group {
-                    sectionTitle("9. Changes to This Policy")
+                    sectionTitle("10. Changes to This Policy")
                     bodyText("We may update this privacy policy from time to time. We will notify you of any material changes by posting the new policy on this page, and, where appropriate, sending a notification via email or within the app.")
                 }
 
                 Group {
-                    sectionTitle("10. Contact Us")
+                    sectionTitle("11. Contact Us")
                     bodyText("If you have questions about this privacy policy, please contact us at bloggo@linkedspaces.com.")
                 }
 

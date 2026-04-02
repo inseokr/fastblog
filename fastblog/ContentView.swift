@@ -178,9 +178,6 @@ struct ContentView: View {
                     ProfileView(selectedCreatedRecap: $selectedCreatedRecap)
                         .environmentObject(createdRecapStore)
                 }
-                .onChange(of: selectedCreatedRecap) { _, new in
-                    if new != nil { showPlacesVisited = false }
-                }
             }
             .opacity(showSeeAll || showPlacesVisited || showTrips || showCameraFromHome || selectedCreatedRecap != nil ? 0 : 1)
 
