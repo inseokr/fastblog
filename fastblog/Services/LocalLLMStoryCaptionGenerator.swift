@@ -249,6 +249,45 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
                 This place is categorized as an event venue or entertainment space.
                 Focus on atmosphere, crowd energy, anticipation, or the feeling of being part of something larger.
                 """
+        case .golf:
+            return """
+                This place is categorized as a golf course or golf entertainment venue.
+                Focus on the sweep of the fairway, the satisfying crack of a well-struck shot, friendly competition, and the social energy of the round.
+                Capture both the skill involved and the relaxed, outdoor enjoyment of the game.
+                """
+        case .music:
+            return """
+                This place is categorized as a music venue or concert hall.
+                Focus on the energy of live sound, the crowd, the physical sensation of bass and melody filling the room.
+                Capture the shared moment between performer and audience.
+                """
+        case .nightlife:
+            return """
+                This place is categorized as a bar, lounge, or nightlife venue.
+                Focus on the mood, lighting, conversation, and the social energy that builds as the night goes on.
+                Keep it vibrant without being generic.
+                """
+        case .winery:
+            return """
+                This place is categorized as a winery, brewery, or distillery.
+                Focus on craft, the sensory experience of tasting, the setting — rolling vineyards, industrial tap rooms, or rustic barrels.
+                Capture the story behind what's in the glass.
+                """
+        case .fitness:
+            return """
+                This place is categorized as a fitness center, gym, or sports facility.
+                Focus on the physical energy, the push of effort, the rhythm of movement, and the satisfaction of activity.
+                """
+        case .shopping:
+            return """
+                This place is categorized as a shopping area, mall, or market.
+                Focus on discovery, the variety of things to see and find, the energy of browsing, and the small wins of a good find.
+                """
+        case .amusementPark:
+            return """
+                This place is categorized as an amusement park, zoo, or aquarium.
+                Focus on wonder, excitement, sensory overload in the best way — the sounds, the movement, the joy of being fully present.
+                """
         case .street:
             return """
                 This place is categorized as a street or general city area.

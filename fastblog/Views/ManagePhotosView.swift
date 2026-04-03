@@ -65,6 +65,38 @@ struct ManagePhotosView: View {
                 .transition(.opacity)
                 .zIndex(10)
             }
+
+            // Bottom-corner action buttons (hidden in select mode and full-screen photo)
+            if !isSelectMode && fullScreenPhotoId == nil && managePhotosOverflowMenuVisible {
+                VStack {
+                    Spacer()
+                    HStack {
+                        if let split = onSplitRequested, photos.count > 1 {
+                            Button(action: split) {
+                                Image(systemName: "scissors")
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 56, height: 56)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            }
+                            .accessibilityLabel("Split")
+                        }
+                        Spacer()
+                        if onAddFromLibrary != nil {
+                            Button(action: { onAddFromLibrary?() }) {
+                                Image(systemName: "photo.badge.plus")
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 56, height: 56)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            }
+                            .accessibilityLabel("Add Photos")
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+                }
+            }
         }
         .navigationTitle(navigationBarTitle)
         .navigationBarTitleDisplayMode(.inline)
@@ -95,27 +127,6 @@ struct ManagePhotosView: View {
                     .foregroundColor(.white)
                 }
 
-                if !isSelectMode, managePhotosOverflowMenuVisible {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Menu {
-                            if let split = onSplitRequested, photos.count > 1 {
-                                Button(action: split) {
-                                    Label("Split", systemImage: "scissors")
-                                }
-                            }
-                            if onAddFromLibrary != nil {
-                                Button(action: { onAddFromLibrary?() }) {
-                                    Label("Add Photos", systemImage: "photo.badge.plus")
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
-                                .font(.system(size: 17, weight: .semibold))
-                        }
-                        .foregroundColor(.white)
-                        .accessibilityLabel("More")
-                    }
-                }
             }
         }
         .preferredColorScheme(.dark)

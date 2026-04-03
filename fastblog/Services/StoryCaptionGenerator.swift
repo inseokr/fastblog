@@ -71,19 +71,26 @@ enum StoryWritingStyle {
 
 /// Normalized place category used to select the right prompt modifier.
 enum PlaceCategoryID: String, Sendable {
-    case landmark    = "LANDMARK"
-    case restaurant  = "RESTAURANT"
-    case cafe        = "CAFE"
-    case beach       = "BEACH"
-    case mountain    = "MOUNTAIN"
-    case trail       = "TRAIL"
-    case park        = "PARK"
-    case museum      = "MUSEUM"
-    case hotel       = "HOTEL"
-    case street      = "STREET"
-    case viewpoint   = "VIEWPOINT"
-    case event       = "EVENT"
-    case unknown     = "UNKNOWN"
+    case landmark      = "LANDMARK"
+    case restaurant    = "RESTAURANT"
+    case cafe          = "CAFE"
+    case beach         = "BEACH"
+    case mountain      = "MOUNTAIN"
+    case trail         = "TRAIL"
+    case park          = "PARK"
+    case museum        = "MUSEUM"
+    case hotel         = "HOTEL"
+    case street        = "STREET"
+    case viewpoint     = "VIEWPOINT"
+    case event         = "EVENT"
+    case golf          = "GOLF"
+    case music         = "MUSIC"
+    case nightlife     = "NIGHTLIFE"
+    case shopping      = "SHOPPING"
+    case fitness       = "FITNESS"
+    case winery        = "WINERY"
+    case amusementPark = "AMUSEMENT_PARK"
+    case unknown       = "UNKNOWN"
 
     /// Maps Apple MKPOICategory strings and the user-visible place name to a normalized ID.
     static func from(mkCategory: String?, placeName: String? = nil) -> PlaceCategoryID {
@@ -92,7 +99,13 @@ enum PlaceCategoryID: String, Sendable {
             let cat = raw.lowercased()
             if cat.contains("restaurant") || cat.contains("fooddelivery") || cat.contains("dining") { return .restaurant }
             if cat.contains("cafe") || cat.contains("coffee") || cat.contains("bakery") { return .cafe }
-            if cat.contains("nightlife") || cat.contains("brewery") || cat.contains("bar") { return .restaurant }
+            if cat.contains("golf") { return .golf }
+            if cat.contains("musicvenue") || cat.contains("music") { return .music }
+            if cat.contains("nightlife") || cat.contains("bar") { return .nightlife }
+            if cat.contains("brewery") || cat.contains("winery") || cat.contains("distillery") { return .winery }
+            if cat.contains("fitnesscenter") || cat.contains("fitness") || cat.contains("gym") || cat.contains("bowling") || cat.contains("tennis") || cat.contains("rockclimbing") || cat.contains("iceskating") || cat.contains("skating") { return .fitness }
+            if cat.contains("store") || cat.contains("shop") || cat.contains("mall") || cat.contains("market") { return .shopping }
+            if cat.contains("amusement") || cat.contains("zoo") || cat.contains("aquarium") || cat.contains("carnival") { return .amusementPark }
             if cat.contains("beach") || cat.contains("marina") || cat.contains("surf") { return .beach }
             if cat.contains("trail") || cat.contains("trailhead") { return .trail }
             if cat.contains("hiking") || cat.contains("mountain") || cat.contains("ski") { return .mountain }
@@ -108,6 +121,13 @@ enum PlaceCategoryID: String, Sendable {
         // Fall back to place name keywords
         if let name = placeName {
             let lower = name.lowercased()
+            if lower.contains("golf") || lower.contains("topgolf") { return .golf }
+            if lower.contains("concert") || lower.contains("music hall") || lower.contains("amphitheater") || lower.contains("amphitheatre") { return .music }
+            if lower.contains("bar ") || lower.contains("nightclub") || lower.contains("lounge") { return .nightlife }
+            if lower.contains("winery") || lower.contains("brewery") || lower.contains("distillery") { return .winery }
+            if lower.contains("gym") || lower.contains("fitness") || lower.contains("bowling") || lower.contains("tennis") { return .fitness }
+            if lower.contains("mall") || lower.contains("outlet") || lower.contains("shopping") { return .shopping }
+            if lower.contains("zoo") || lower.contains("aquarium") || lower.contains("amusement") { return .amusementPark }
             if lower.contains("trail") || lower.contains("trails") || lower.contains("trek") { return .trail }
             if lower.contains("hike") || lower.contains("hiking") { return .trail }
             if lower.contains("mountain") || lower.contains("peak") || lower.contains("summit") { return .mountain }

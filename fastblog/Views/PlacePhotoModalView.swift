@@ -355,7 +355,7 @@ struct PlacePhotoModalView: View {
                         TapGesture(count: 1).onEnded {
                             if isCaptionFocused {
                                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                            } else if !isZoomMode {
+                            } else if !isZoomMode, !isEditing {
                                 enterZoomMode()
                             }
                         }
@@ -788,13 +788,20 @@ struct PlacePhotoModalView: View {
                     .padding(.top, 24)
                     .padding(.bottom, 34)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        LinearGradient(
-                            colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
-                            startPoint: .bottom,
-                            endPoint: .top
-                        )
-                    )
+                    .background {
+                        ZStack(alignment: .bottom) {
+                            // Solid fill extends seamlessly behind the keyboard
+                            Color.black.opacity(0.92)
+                                .frame(height: 1)
+                                .ignoresSafeArea(.keyboard, edges: .bottom)
+                            // Gradient that fades up into the photo
+                            LinearGradient(
+                                colors: [Color.black.opacity(0.92), Color.black.opacity(0.92), Color.black.opacity(0.75), Color.black.opacity(0.3), Color.clear],
+                                startPoint: .bottom,
+                                endPoint: .top
+                            )
+                        }
+                    }
                 } else {
                     // ── Read mode editing panel ──
                     VStack(alignment: .leading, spacing: 8) {
@@ -916,13 +923,20 @@ struct PlacePhotoModalView: View {
                     .padding(.top, 24)
                     .padding(.bottom, 34)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        LinearGradient(
-                            colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
-                            startPoint: .bottom,
-                            endPoint: .top
-                        )
-                    )
+                    .background {
+                        ZStack(alignment: .bottom) {
+                            // Solid fill extends seamlessly behind the keyboard
+                            Color.black.opacity(0.92)
+                                .frame(height: 1)
+                                .ignoresSafeArea(.keyboard, edges: .bottom)
+                            // Gradient that fades up into the photo
+                            LinearGradient(
+                                colors: [Color.black.opacity(0.92), Color.black.opacity(0.92), Color.black.opacity(0.75), Color.black.opacity(0.3), Color.clear],
+                                startPoint: .bottom,
+                                endPoint: .top
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1014,13 +1028,13 @@ struct PlacePhotoModalView: View {
             guard !isZoomMode else { return }
             if isCaptionFocused {
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-            } else {
+            } else if !isEditing {
                 enterZoomMode()
             }
         }
 
         let doubleTap = TapGesture(count: 2).onEnded {
-            guard !isZoomMode else { return }
+            guard !isZoomMode, !isEditing else { return }
             enterZoomMode()
         }
 

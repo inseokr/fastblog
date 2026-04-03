@@ -32,6 +32,8 @@ struct EditPlaceStopNameSheet: View {
     /// Incremented to request zoom on the embedded `MKMapView` (handled in `TappableMapView.updateUIView`).
     @State private var mapZoomInTrigger = 0
     @State private var mapZoomOutTrigger = 0
+    /// Square cell size for the stacked map zoom control (compact, map-style).
+    private let mapZoomControlSide: CGFloat = 34
 
     var body: some View {
         NavigationStack {
@@ -203,15 +205,14 @@ struct EditPlaceStopNameSheet: View {
                selectedCategory != initialCategory
     }
 
-    /// Stacked zoom controls: leading column above the bottom photo strip (aligned with first thumbnail inset).
     private var mapZoomControlsColumn: some View {
         VStack(spacing: 0) {
             Button {
                 mapZoomInTrigger += 1
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 17, weight: .semibold))
-                    .frame(width: 44, height: 44)
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: mapZoomControlSide, height: mapZoomControlSide)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -220,14 +221,14 @@ struct EditPlaceStopNameSheet: View {
 
             Rectangle()
                 .fill(Color.white.opacity(0.22))
-                .frame(height: 1)
+                .frame(width: mapZoomControlSide, height: 1)
 
             Button {
                 mapZoomOutTrigger += 1
             } label: {
                 Image(systemName: "minus")
-                    .font(.system(size: 17, weight: .semibold))
-                    .frame(width: 44, height: 44)
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: mapZoomControlSide, height: mapZoomControlSide)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -235,12 +236,12 @@ struct EditPlaceStopNameSheet: View {
             .accessibilityLabel("Zoom out")
         }
         .background(Color.black.opacity(0.55))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(Color.white.opacity(0.18), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+        .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
     }
 
     private func saveAndDismiss() {
