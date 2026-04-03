@@ -74,7 +74,7 @@ struct ProfileManagementView: View {
 
                     // Header
                     VStack(spacing: 8) {
-                        Image(systemName: "icloud.and.arrow.up")
+                        Image(systemName: "arrow.up.circle.fill")
                             .font(.system(size: 40))
                             .foregroundColor(.blue)
                             .padding(.bottom, 4)
@@ -97,7 +97,7 @@ struct ProfileManagementView: View {
                     if !publishedBlogs.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 6) {
-                                Image(systemName: "checkmark.icloud.fill")
+                                Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.green)
                                 Text("Published")
                                     .font(.headline)
@@ -135,7 +135,7 @@ struct ProfileManagementView: View {
                     // MARK: - Not Uploaded / Ready-to-Upload Section
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(spacing: 6) {
-                            Image(systemName: "icloud.and.arrow.up")
+                            Image(systemName: "arrow.up.circle.fill")
                                 .foregroundColor(.blue)
                             Text("Not Uploaded")
                                 .font(.headline)
@@ -492,12 +492,12 @@ struct ProfileManagementRow: View {
                             .frame(width: 16, height: 16)
                     } else if isDraft {
                         HStack(spacing: 6) {
-                            Image(systemName: "lock.icloud")
+                            Image(systemName: "lock.fill")
                             Text("Draft")
                         }
                     } else {
                         HStack(spacing: 6) {
-                            Image(systemName: isPublished ? "checkmark.icloud.fill" : "icloud.and.arrow.up")
+                            Image(systemName: isPublished ? "checkmark.circle.fill" : "arrow.up.circle")
                             Text(isPublished ? "Published" : "Upload")
                         }
                     }

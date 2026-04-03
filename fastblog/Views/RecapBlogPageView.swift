@@ -153,6 +153,10 @@ struct RecapBlogPageView: View {
     @State private var showUploadPromptAlert = false
     @State private var showNavBarTitle = false
     @State private var hasFinishedInitialLoad = false
+    /// Education for account users when blog photos only exist on another device.
+    @State private var showMissingPhotosTooltip = false
+    @State private var sessionDismissedMissingPhotosTooltip = false
+    @State private var missingPhotosTooltipDebounceTask: Task<Void, Never>?
 
     // Undo State
     @State private var lastUndoAction: UndoAction?
@@ -173,8 +177,6 @@ struct RecapBlogPageView: View {
     @State private var showUploadSuccessBanner = false
     @State private var showUploadErrorAlert = false
     @State private var uploadErrorMessage = ""
-    @State private var showRemoveFromCloudAlert = false
-    @State private var showCloudActionSheet = false
     @State private var showAuth = false
     @State private var pendingEarlyAccessAfterAuth = false
     @State private var pendingCloudUploadAfterAuth = false
@@ -197,7 +199,7 @@ struct RecapBlogPageView: View {
     @State private var showShareYourBlogSheet = false
     /// Which screen is shown inside the “Share Your Blog” pull-up (menu vs guest prompts).
     @State private var shareYourBlogSheetPhase: ShareYourBlogSheetPhase = .menu
-    @State private var shareSheetPresentationDetent: PresentationDetent = .height(410)
+    @State private var shareSheetPresentationDetent: PresentationDetent = .height(428)
     @State private var showCloudSharingComingSoonAlert = false
     @State private var pendingWebLinkAfterAuth = false
     /// After guest signs in from the “Share with Bloggo” prompt, open the QR share overlay.
@@ -407,6 +409,26 @@ struct RecapBlogPageView: View {
                     .zIndex(160)
             }
 
+            if showMissingPhotosTooltip {
+                MissingPhotosTooltipOverlay(
+                    onGotIt: {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            sessionDismissedMissingPhotosTooltip = true
+                            showMissingPhotosTooltip = false
+                        }
+                    },
+                    onDoNotShowAgain: {
+                        MissingPhotosTooltipPresentationStore.suppressPermanently(blogId: blogId)
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            sessionDismissedMissingPhotosTooltip = true
+                            showMissingPhotosTooltip = false
+                        }
+                    }
+                )
+                .transition(.opacity)
+                .zIndex(158)
+            }
+
         }
         .preferredColorScheme(nil)
         .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
@@ -417,10 +439,20 @@ struct RecapBlogPageView: View {
         .animation(.spring(response: 0.28, dampingFraction: 0.9), value: revealRecapNavigationDuringPhotoDismiss)
         .animation(.easeOut(duration: 0.22), value: photoCaptionEditItem?.id)
         .animation(.spring(response: 0.38, dampingFraction: 0.88), value: earlyAccessSheetPresented)
+        .animation(.easeInOut(duration: 0.28), value: showMissingPhotosTooltip)
+        .onAppear {
+            refreshMissingPhotosTooltipVisibility()
+        }
+        .onChange(of: showStoryMode) { _, _ in refreshMissingPhotosTooltipVisibility() }
+        .onChange(of: showPanorama) { _, _ in refreshMissingPhotosTooltipVisibility() }
+        .onChange(of: isExportingPDF) { _, _ in refreshMissingPhotosTooltipVisibility() }
+        .onChange(of: showAuth) { _, _ in refreshMissingPhotosTooltipVisibility() }
+        .onChange(of: earlyAccessSheetPresented) { _, _ in refreshMissingPhotosTooltipVisibility() }
         .onChange(of: placePhotoModalItem?.id) { _, newId in
             if newId != nil {
                 revealRecapNavigationDuringPhotoDismiss = false
             }
+            refreshMissingPhotosTooltipVisibility()
         }
     }
 
@@ -499,7 +531,7 @@ struct RecapBlogPageView: View {
             }
             .sheet(isPresented: $showShareYourBlogSheet, onDismiss: {
                 shareYourBlogSheetPhase = .menu
-                shareSheetPresentationDetent = .height(410)
+                shareSheetPresentationDetent = .height(428)
                 if pendingBloggoQRSheetAfterShareDismiss {
                     pendingBloggoQRSheetAfterShareDismiss = false
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -509,14 +541,14 @@ struct RecapBlogPageView: View {
             }) {
                 shareYourBlogSheetContent()
                     .onAppear {
-                        shareSheetPresentationDetent = shareYourBlogSheetPhase == .menu ? .height(410) : .height(520)
+                        shareSheetPresentationDetent = shareYourBlogSheetPhase == .menu ? .height(428) : .height(538)
                     }
                     .onChange(of: shareYourBlogSheetPhase) { _, phase in
                         withAnimation(.easeInOut(duration: shareYourBlogSheetPhaseTransitionDuration)) {
-                            shareSheetPresentationDetent = phase == .menu ? .height(410) : .height(520)
+                            shareSheetPresentationDetent = phase == .menu ? .height(428) : .height(538)
                         }
                     }
-                    .presentationDetents([.height(410), .height(520)], selection: $shareSheetPresentationDetent)
+                    .presentationDetents([.height(428), .height(538)], selection: $shareSheetPresentationDetent)
                     .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showStoryModePDFOptions, onDismiss: {
@@ -568,14 +600,6 @@ struct RecapBlogPageView: View {
                 }
             } message: {
                 Text(uploadErrorMessage)
-            }
-            .alert("Remove from Cloud?", isPresented: $showRemoveFromCloudAlert) {
-                Button("Yes", role: .destructive) {
-                    removeCloudURLsFromDraft()
-                }
-                Button("No", role: .cancel) { }
-            } message: {
-                Text("This will remove your blog from the cloud. Your local blog and photos will not be affected.")
             }
             .alert("Upload to Cloud?", isPresented: $showUploadPromptAlert) {
                 Button("Yes") {
@@ -690,6 +714,7 @@ struct RecapBlogPageView: View {
                         }
                     }
                 }
+                scheduleMissingPhotosTooltipRefresh()
             }
     }
 
@@ -1432,30 +1457,6 @@ struct RecapBlogPageView: View {
                 }
                 .padding(.horizontal, 24)
 
-
-                // Slideshow button — top-right corner (view mode only)
-                if !isEditMode && !isCoverPending && displayCoverId != nil {
-                    VStack {
-                        HStack {
-                            Spacer()
-                            Button {
-                                showPanorama = true
-                            } label: {
-                                Image(systemName: "film")
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .padding(10)
-                                    .background(Circle().fill(Color.black.opacity(0.35)).background(.ultraThinMaterial).clipShape(Circle()))
-                                    .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.top, 14)
-                            .padding(.trailing, 14)
-                        }
-                        Spacer()
-                    }
-                }
-
                 // Badge shown while cover selection is still in progress
                 if isCoverPending {
                     VStack {
@@ -2042,7 +2043,7 @@ struct RecapBlogPageView: View {
                         markPhotoCaptionManual(dayId: day.id, stopId: stop.id, photoId: photoId)
                     },
                     onCaptionTapped: { photoId in
-                        photoCaptionEditItem = PhotoCaptionEditItem(dayId: day.id, stopId: stop.id, photoId: photoId)
+                        placePhotoModalItem = PlacePhotoModalItem(dayId: day.id, stopId: stop.id, initialPhotoId: photoId, autoFocusCaption: true)
                     },
                     onOverallStoryUserEdited: {
                         markOverallStoryManual(dayId: day.id, stopId: stop.id)
@@ -2323,10 +2324,12 @@ struct RecapBlogPageView: View {
             Task { @MainActor in await createdRecapStore.continueGeocodingDays(blogId: blogId) }
             // Check for new moments for this recent blog (if it passes the recency + cutoff checks).
             checkForNewMomentsIfRecent()
+            refreshMissingPhotosTooltipVisibility()
             return
         }
         guard let trip = initialTrip ?? createdRecapStore.tripDraft(for: blogId) else {
             hasFinishedInitialLoad = true
+            refreshMissingPhotosTooltipVisibility()
             return
         }
         Task { @MainActor in
@@ -2336,6 +2339,41 @@ struct RecapBlogPageView: View {
             hasFinishedInitialLoad = true
             // Process remaining days in background (rate limit: 50 geocode/min).
             await createdRecapStore.continueGeocodingDays(blogId: blogId)
+            refreshMissingPhotosTooltipVisibility()
+        }
+    }
+
+    private func refreshMissingPhotosTooltipVisibility() {
+        guard hasFinishedInitialLoad else { return }
+        let blockingChrome = showStoryMode || showPanorama || isExportingPDF || showAuth
+            || placePhotoModalItem != nil || dayCaptionEditItem != nil || placeCaptionEditItem != nil
+            || photoCaptionEditItem != nil || earlyAccessSheetPresented
+        if blockingChrome {
+            if showMissingPhotosTooltip {
+                withAnimation(.easeInOut(duration: 0.2)) { showMissingPhotosTooltip = false }
+            }
+            return
+        }
+        let recap = createdRecapStore.recents.first { $0.sourceTripId == blogId }
+        let eligible = BlogMissingPhotosEvaluator.shouldOfferTooltip(
+            isSignedIn: authService.currentUser != nil,
+            ownerScope: recap?.ownerScope,
+            detail: draft,
+            recapSummary: recap,
+            isSuppressedForBlog: MissingPhotosTooltipPresentationStore.isSuppressed(blogId: blogId)
+        )
+        let show = eligible && !sessionDismissedMissingPhotosTooltip
+        withAnimation(.easeInOut(duration: 0.25)) {
+            showMissingPhotosTooltip = show
+        }
+    }
+
+    private func scheduleMissingPhotosTooltipRefresh() {
+        missingPhotosTooltipDebounceTask?.cancel()
+        missingPhotosTooltipDebounceTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard !Task.isCancelled else { return }
+            refreshMissingPhotosTooltipVisibility()
         }
     }
 
@@ -2547,20 +2585,6 @@ struct RecapBlogPageView: View {
                 }
                 Divider().padding(.leading, 52)
                 shareOptionRow(
-                    title: "Share Web Link",
-                    subtitle: "Publish and share online",
-                    icon: "link"
-                ) {
-                    if authService.isSignedIn {
-                        showShareYourBlogSheet = false
-                        handleShareWebLinkTap()
-                    } else {
-                        shareYourBlogSheetPhase = .guestWebLinkCloudBackup
-                    }
-                }
-                .opacity(!authService.isSignedIn ? 0.4 : 1)
-                Divider().padding(.leading, 52)
-                shareOptionRow(
                     title: "Share with Bloggo",
                     subtitle: "Open instantly in the app",
                     icon: "qrcode"
@@ -2580,7 +2604,7 @@ struct RecapBlogPageView: View {
 
             Spacer(minLength: 18)
         }
-        .padding(.top, 8)
+        .padding(.top, 26)
     }
 
     /// Guest prompt: same pull-up sheet, replaces the share menu (no separate full-screen overlay).
@@ -2652,7 +2676,7 @@ Your blog remains private unless you choose to share it.
             .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.top, 8)
+        .padding(.top, 26)
     }
 
     /// Guest prompt: sign in to use Bloggo QR sharing (same pull-up sheet as the share menu).
@@ -2714,7 +2738,7 @@ Your blog remains private unless you choose to share it.
             .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.top, 8)
+        .padding(.top, 26)
     }
 
     private func shareOptionRow(
@@ -2837,7 +2861,7 @@ Your blog remains private unless you choose to share it.
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity, alignment: .center)
 
-                    Text("Share your blog with friends who use Bloggo.\n\nThey can scan the QR code to open the blog instantly in the app.")
+                    Text("Other Bloggo users can scan this to open your blog in the app.")
                         .font(.subheadline)
                         .foregroundColor(.white.opacity(0.75))
                         .multilineTextAlignment(.center)
@@ -4172,51 +4196,27 @@ Your blog remains private unless you choose to share it.
                 }
                 .buttonStyle(.plain)
             } else if !isExportingPDF && !showStoryMode {
-                HStack(spacing: 16) {
-                    Button {
-                        if blogIsInCloud {
-                            showCloudActionSheet = true
-                        } else {
-                            handleCloudUploadTap()
+                HStack(spacing: 20) {
+                    if !isCoverPending, draft.selectedCoverPhotoIdentifier != nil {
+                        Button {
+                            showPanorama = true
+                        } label: {
+                            Image(systemName: "film")
+                                .font(.body.weight(.semibold))
+                                .foregroundColor(recapChromeForeground)
                         }
-                    } label: {
-                        if createdRecapStore.isSyncing {
-                            ProgressView()
-                                .tint(recapChromeForeground)
-                                .frame(width: 22, height: 22)
-                        } else {
-                            Image(systemName: blogIsInCloud ? "checkmark.icloud.fill" : "icloud.and.arrow.up")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 22, height: 22)
-                                .foregroundColor(blogIsInCloud ? .green : recapChromeForeground)
-                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Slideshow")
                     }
-                    .buttonStyle(.plain)
-                    .padding(.leading, 12)
-                    .disabled(createdRecapStore.isSyncing)
-                    .confirmationDialog("Cloud", isPresented: $showCloudActionSheet) {
-                        Button("Sync") {
-                            Task {
-                                await createdRecapStore.syncFromCloud()
-                                if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
-                                    draft = updated
-                                }
-                            }
-                        }
-                        Button("Remove Blog", role: .destructive) {
-                            showRemoveFromCloudAlert = true
-                        }
-                        Button("Cancel", role: .cancel) { }
-                    }
-
                     Button {
                         showBlogSettings = true
                     } label: {
                         Image(systemName: "gearshape")
+                            .font(.body.weight(.semibold))
                             .foregroundColor(recapChromeForeground)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Blog Settings")
                 }
             }
         }
@@ -4315,7 +4315,7 @@ Your blog remains private unless you choose to share it.
         VStack(spacing: 0) {
             // Scrollable content area
             VStack(spacing: 20) {
-                Image(systemName: "cloud.fill")
+                Image(systemName: "externaldrive.fill")
                     .resizable()
                     .scaledToFit()
                     .frame(width: 60, height: 60)
@@ -4337,7 +4337,7 @@ Your blog remains private unless you choose to share it.
 
                 VStack(alignment: .leading, spacing: 14) {
                     cloudFeatureRow(icon: "pencil.and.outline", text: "Edit on any device via web")
-                    cloudFeatureRow(icon: "arrow.clockwise.icloud", text: "Automatic cloud backup")
+                    cloudFeatureRow(icon: "arrow.clockwise", text: "Automatic cloud backup")
                     cloudFeatureRow(icon: "link", text: "Share your blog via a web link")
                 }
                 .padding(16)
@@ -4422,7 +4422,7 @@ Your blog remains private unless you choose to share it.
                             Circle()
                                 .fill(Color.blue.opacity(0.12))
                                 .frame(width: 64, height: 64)
-                            Image(systemName: isOnList ? "checkmark.icloud.fill" : "icloud.and.arrow.up.fill")
+                            Image(systemName: isOnList ? "checkmark.circle.fill" : "arrow.up.circle.fill")
                                 .resizable()
                                 .scaledToFit()
                                 .frame(width: 30, height: 30)
@@ -4535,7 +4535,7 @@ Your blog remains private unless you choose to share it.
     private var guestCloudUploadModalContent: some View {
         VStack(spacing: 0) {
             VStack(spacing: 20) {
-                Image(systemName: "icloud.and.arrow.up")
+                Image(systemName: "arrow.up.circle")
                     .font(.system(size: 48, weight: .light))
                     .foregroundColor(.white)
                     .padding(.top, 8)
@@ -4653,32 +4653,6 @@ Your blog remains private unless you choose to share it.
         if let mailtoUrl = URL(string: "mailto:?subject=\(subject)&body=\(body)") {
             UIApplication.shared.open(mailtoUrl)
         }
-    }
-
-    private func removeCloudURLsFromDraft() {
-        // 1. Update backend to hide the blog if we have a blogKey
-        if let existing = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }),
-           let key = existing.blogKey {
-            Task {
-                do {
-                    try await APIManager.shared.setBlogPrivacy(blogKey: key, level: "hidden")
-                    print("✅ Successfully hid blog (key: \(key)) from cloud on backend.")
-                } catch {
-                    print("🚨 Failed to hide blog on backend: \(error)")
-                }
-            }
-        }
-
-        // 2. Clear local cloudURLs
-        for dayIdx in draft.days.indices {
-            for stopIdx in draft.days[dayIdx].placeStops.indices {
-                for photoIdx in draft.days[dayIdx].placeStops[stopIdx].photos.indices {
-                    draft.days[dayIdx].placeStops[stopIdx].photos[photoIdx].cloudURL = nil
-                }
-            }
-        }
-// AutosaveManager.shared.cancelPending() — removed
-        createdRecapStore.saveBlogDetail(draft)
     }
 
     private func resetUploadingViewChrome() {
@@ -5983,6 +5957,67 @@ private struct NewMomentsReviewSheet: View {
         }
         .buttonStyle(.plain)
         .opacity(isHidden ? 0.35 : 1.0)
+    }
+}
+
+// MARK: - Missing photos (other device) tooltip
+
+private struct MissingPhotosTooltipOverlay: View {
+    let onGotIt: () -> Void
+    let onDoNotShowAgain: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.52)
+                .ignoresSafeArea()
+                .allowsHitTesting(true)
+
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Photos Not Available")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+
+                Text("Photos for this blog are stored on another device.")
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.9))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("This blog's text and structure were saved, but the photos remain on the original device.")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.72))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(spacing: 12) {
+                    Button(action: onGotIt) {
+                        Text("Got it")
+                            .font(.body.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.white.opacity(0.2), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: onDoNotShowAgain) {
+                        Text("Do not show again")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.78))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 6)
+            }
+            .padding(24)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(Color.white.opacity(0.14), lineWidth: 1)
+            )
+            .padding(.horizontal, 28)
+        }
     }
 }
 

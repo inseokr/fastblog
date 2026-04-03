@@ -29,6 +29,9 @@ struct EditPlaceStopNameSheet: View {
     @State private var initialCoordinate: CLLocationCoordinate2D? = nil
     @State private var initialCategory: String? = nil
     @State private var showSaveConfirmationAlert = false
+    /// Incremented to request zoom on the embedded `MKMapView` (handled in `TappableMapView.updateUIView`).
+    @State private var mapZoomInTrigger = 0
+    @State private var mapZoomOutTrigger = 0
 
     var body: some View {
         NavigationStack {
@@ -37,6 +40,8 @@ struct EditPlaceStopNameSheet: View {
                     TappableMapView(
                         center: selectedCoordinate ?? coord,
                         title: selectedCoordinate != nil ? editedTitle : nil,
+                        zoomInTrigger: mapZoomInTrigger,
+                        zoomOutTrigger: mapZoomOutTrigger,
                         onTap: { tappedCoordinate, mapRegion in
                             resolvePOI(at: tappedCoordinate, mapRegion: mapRegion)
                         }
@@ -71,6 +76,13 @@ struct EditPlaceStopNameSheet: View {
             .overlay(alignment: .bottom) {
                 if !photos.isEmpty && !isFocused {
                     VStack(spacing: 0) {
+                        HStack(alignment: .bottom, spacing: 0) {
+                            mapZoomControlsColumn
+                                .padding(.leading, 16)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.bottom, 8)
+
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
                                 ForEach(photos) { photo in
@@ -82,7 +94,7 @@ struct EditPlaceStopNameSheet: View {
                                 }
                             }
                             .padding(.horizontal, 16)
-                            .padding(.top, 20)
+                            .padding(.top, 12)
                             .padding(.bottom, 12)
                         }
                         // Spacer so the strip clears the "Tap a place…" hint capsule pinned at the bottom
@@ -191,6 +203,46 @@ struct EditPlaceStopNameSheet: View {
                selectedCategory != initialCategory
     }
 
+    /// Stacked zoom controls: leading column above the bottom photo strip (aligned with first thumbnail inset).
+    private var mapZoomControlsColumn: some View {
+        VStack(spacing: 0) {
+            Button {
+                mapZoomInTrigger += 1
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.white)
+            .accessibilityLabel("Zoom in")
+
+            Rectangle()
+                .fill(Color.white.opacity(0.22))
+                .frame(height: 1)
+
+            Button {
+                mapZoomOutTrigger += 1
+            } label: {
+                Image(systemName: "minus")
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.white)
+            .accessibilityLabel("Zoom out")
+        }
+        .background(Color.black.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+    }
+
     private func saveAndDismiss() {
         let trimmed = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         onSave(trimmed.isEmpty ? "Stop" : trimmed, selectedCoordinate, selectedCategory)
@@ -296,7 +348,21 @@ struct EditPlaceStopNameSheet: View {
     private struct TappableMapView: UIViewRepresentable {
         let center: CLLocationCoordinate2D
         let title: String?
+        var zoomInTrigger: Int = 0
+        var zoomOutTrigger: Int = 0
         var onTap: (CLLocationCoordinate2D, MKCoordinateRegion) -> Void
+
+        /// `spanScale` multiplies span: smaller than 1 zooms in, larger than 1 zooms out.
+        private static func applyZoom(_ mapView: MKMapView, spanScale: CGFloat) {
+            var region = mapView.region
+            let lat = region.span.latitudeDelta * spanScale
+            let lon = region.span.longitudeDelta * spanScale
+            let minDelta: CLLocationDegrees = 0.0003
+            let maxDelta: CLLocationDegrees = 120
+            region.span.latitudeDelta = min(max(lat, minDelta), maxDelta)
+            region.span.longitudeDelta = min(max(lon, minDelta), maxDelta)
+            mapView.setRegion(region, animated: true)
+        }
 
         func makeUIView(context: Context) -> MKMapView {
             let map = MKMapView()
@@ -335,6 +401,15 @@ struct EditPlaceStopNameSheet: View {
                     mapView.deselectAnnotation(pin, animated: true)
                 }
             }
+
+            if zoomInTrigger != context.coordinator.lastZoomInTrigger {
+                context.coordinator.lastZoomInTrigger = zoomInTrigger
+                Self.applyZoom(mapView, spanScale: 0.5)
+            }
+            if zoomOutTrigger != context.coordinator.lastZoomOutTrigger {
+                context.coordinator.lastZoomOutTrigger = zoomOutTrigger
+                Self.applyZoom(mapView, spanScale: 2.0)
+            }
         }
 
         func makeCoordinator() -> Coordinator {
@@ -343,6 +418,8 @@ struct EditPlaceStopNameSheet: View {
 
         final class Coordinator: NSObject, MKMapViewDelegate {
             let parent: TappableMapView
+            var lastZoomInTrigger: Int = 0
+            var lastZoomOutTrigger: Int = 0
 
             init(_ parent: TappableMapView) {
                 self.parent = parent

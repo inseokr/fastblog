@@ -50,19 +50,19 @@ struct ProfileMapView: View {
                 Button {
                     withAnimation(.easeInOut(duration: 0.22)) {
                         if isSearchActive {
-                            // Back out of search mode
-                            isSearchActive = false
-                            viewModel.searchText = ""
-                            isSearchFocused = false
+                            if isSearchFocused {
+                                isSearchFocused = false
+                            } else {
+                                isSearchActive = false
+                                viewModel.searchText = ""
+                            }
                         } else {
-                            // Enter search mode
                             isSearchActive = true
-                            isSearchFocused = true
                         }
                     }
                 } label: {
                     if isSearchActive {
-                        Text("Back")
+                        Text(isSearchFocused ? "Done" : "Back")
                             .font(.body.weight(.semibold))
                     } else {
                         Image(systemName: "magnifyingglass")
@@ -207,22 +207,25 @@ struct ProfileMapView: View {
                             .padding(.top, 24)
                         } else {
                             ForEach(results, id: \.sourceTripId) { trip in
-                                Button {
-                                    // Open selected blog and dismiss search
-                                    withAnimation(.easeInOut(duration: 0.22)) {
-                                        selectedCreatedRecap = trip
-                                        isSearchFocused = false
-                                        isSearchActive = false
-                                    }
-                                } label: {
-                                    ProfileMapCardView(
-                                        blog: trip,
-                                        isSelected: false,
-                                        onTap: {},
-                                        onNavigate: {}
-                                    )
-                                }
-                                .buttonStyle(.plain)
+                                ProfileMapCardView(
+                                    blog: trip,
+                                    isSelected: false,
+                                    onTap: {
+                                        withAnimation(.easeInOut(duration: 0.22)) {
+                                            selectedCreatedRecap = trip
+                                            isSearchFocused = false
+                                            isSearchActive = false
+                                        }
+                                    },
+                                    onNavigate: {
+                                        withAnimation(.easeInOut(duration: 0.22)) {
+                                            selectedCreatedRecap = trip
+                                            isSearchFocused = false
+                                            isSearchActive = false
+                                        }
+                                    },
+                                    showsTrailingNavigateButton: false
+                                )
                             }
                         }
                     }
@@ -316,22 +319,26 @@ private struct ProfileMapCardView: View {
     let isSelected: Bool
     let onTap: () -> Void
     let onNavigate: () -> Void
+    /// Map search rows open the blog from the outer `Button`; hide the non-functional chevron-in-circle affordance.
+    var showsTrailingNavigateButton: Bool = true
 
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
                 coverImage
-                
+
                 VStack(alignment: .leading, spacing: 4) {
                     tripInfo
                 }
                 .padding(.vertical, 12)
-                
+
                 Spacer()
-                
-                chevronButton
-                    .padding(.trailing, 12)
+
+                if showsTrailingNavigateButton {
+                    chevronButton
+                }
             }
+            .padding(.trailing, 12)
             .frame(height: 104)
             .background(.ultraThinMaterial)
             .cornerRadius(20)
@@ -364,16 +371,11 @@ private struct ProfileMapCardView: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
             
-            HStack(spacing: 4) {
-                if let country = blog.countryName {
-                    Text(country)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.white.opacity(0.85))
-                    Text("•")
-                        .font(.caption2)
-                        .foregroundColor(.white.opacity(0.4))
-                }
+            if let country = blog.countryName {
+                Text(country)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.white.opacity(0.85))
             }
 
             // Trip duration (and places) directly under the country info
@@ -525,19 +527,19 @@ struct CountryMapView: View {
                 Button {
                     withAnimation(.easeInOut(duration: 0.22)) {
                         if isSearchActive {
-                            // Back out of search mode
-                            isSearchActive = false
-                            searchText = ""
-                            isSearchFocused = false
+                            if isSearchFocused {
+                                isSearchFocused = false
+                            } else {
+                                isSearchActive = false
+                                searchText = ""
+                            }
                         } else {
-                            // Enter search mode
                             isSearchActive = true
-                            isSearchFocused = true
                         }
                     }
                 } label: {
                     if isSearchActive {
-                        Text("Back")
+                        Text(isSearchFocused ? "Done" : "Back")
                             .font(.body.weight(.semibold))
                     } else {
                         Image(systemName: "magnifyingglass")
@@ -672,21 +674,25 @@ struct CountryMapView: View {
                             .padding(.top, 24)
                         } else {
                             ForEach(results, id: \.sourceTripId) { blog in
-                                Button {
-                                    withAnimation(.easeInOut(duration: 0.22)) {
-                                        openBlogFromMap(blog)
-                                        isSearchFocused = false
-                                        isSearchActive = false
-                                    }
-                                } label: {
-                                    ProfileMapCardView(
-                                        blog: blog,
-                                        isSelected: false,
-                                        onTap: {},
-                                        onNavigate: {}
-                                    )
-                                }
-                                .buttonStyle(.plain)
+                                ProfileMapCardView(
+                                    blog: blog,
+                                    isSelected: false,
+                                    onTap: {
+                                        withAnimation(.easeInOut(duration: 0.22)) {
+                                            openBlogFromMap(blog)
+                                            isSearchFocused = false
+                                            isSearchActive = false
+                                        }
+                                    },
+                                    onNavigate: {
+                                        withAnimation(.easeInOut(duration: 0.22)) {
+                                            openBlogFromMap(blog)
+                                            isSearchFocused = false
+                                            isSearchActive = false
+                                        }
+                                    },
+                                    showsTrailingNavigateButton: false
+                                )
                             }
                         }
                     }

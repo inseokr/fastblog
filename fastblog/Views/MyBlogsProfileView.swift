@@ -166,7 +166,6 @@ struct MyBlogsProfileView: View {
 
             // ── Persistent bottom bar (always visible) ───────────────────
             VStack(spacing: 0) {
-                Spacer()
                 HStack {
                     Spacer()
                     MyMapButton {
@@ -661,8 +660,6 @@ private struct MyMapButton: View {
 
 private struct RecentBlogCard: View {
     let recap: CreatedRecapBlog
-    @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
-    @State private var showRemoveCloudPopup = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -685,24 +682,6 @@ private struct RecentBlogCard: View {
                         .background(Color.black.opacity(0.6))
                         .cornerRadius(4)
                         .padding(4)
-                } else {
-                    if createdRecapStore.isBlogInCloud(blogId: recap.sourceTripId) {
-                        Image(systemName: "checkmark.icloud.fill")
-                            .font(.caption2)
-                            .foregroundColor(.white)
-                            .padding(4)
-                            .background(Circle().fill(Color.green))
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                showRemoveCloudPopup = true
-                            }
-                    } else {
-                        Image(systemName: "icloud.and.arrow.up")
-                            .font(.caption2)
-                            .foregroundColor(.orange)
-                            .padding(4)
-                            .background(Circle().fill(Color.white))
-                    }
                 }
             }
 
@@ -726,14 +705,6 @@ private struct RecentBlogCard: View {
         .padding(10)
         .background(Color.white.opacity(0.1))
         .cornerRadius(12)
-        .alert("Remove from Cloud?", isPresented: $showRemoveCloudPopup) {
-            Button("Yes", role: .destructive) {
-                createdRecapStore.removeFromCloud(blogId: recap.sourceTripId)
-            }
-            Button("No", role: .cancel) { }
-        } message: {
-            Text("Are you sure you want to remove this blog from the cloud?")
-        }
     }
 }
 

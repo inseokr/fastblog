@@ -104,7 +104,7 @@ struct UploadingBlogView: View {
         let radius: CGFloat = 72
         let x = radius * cos(angle * .pi / 180)
         let y = radius * sin(angle * .pi / 180)
-        let iconName = ["icloud.and.arrow.up", "photo.fill", "checkmark.circle"][index]
+        let iconName = ["arrow.up.circle", "photo.fill", "checkmark.circle"][index]
         let visible = assembledStep > index
 
         return Image(systemName: iconName)

@@ -205,9 +205,7 @@ struct LandingView: View {
                 }
         )
         .sheet(isPresented: $showSettings) {
-            SettingsView(onProfileTapped: {
-                showProfile = true
-            })
+            SettingsView()
             .environmentObject(authService)
             .environmentObject(photoAuth)
         }
@@ -502,7 +500,6 @@ struct LandingView: View {
 
 struct CreatedRecapCard: View {
     let recap: CreatedRecapBlog
-    @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
 
     private static let lastEditedFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -510,8 +507,6 @@ struct CreatedRecapCard: View {
         f.doesRelativeDateFormatting = true
         return f
     }()
-
-    @State private var showRemoveCloudPopup = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -529,24 +524,6 @@ struct CreatedRecapCard: View {
                         .background(Color.black.opacity(0.6))
                         .cornerRadius(4)
                         .padding(4)
-                } else {
-                    if createdRecapStore.isBlogInCloud(blogId: recap.sourceTripId) {
-                        Image(systemName: "checkmark.icloud.fill")
-                            .font(.caption2)
-                            .foregroundColor(.white)
-                            .padding(4)
-                            .background(Circle().fill(Color.green))
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                showRemoveCloudPopup = true
-                            }
-                    } else {
-                        Image(systemName: "icloud.and.arrow.up")
-                            .font(.caption2)
-                            .foregroundColor(.orange)
-                            .padding(4)
-                            .background(Circle().fill(Color.white))
-                    }
                 }
             }
 
@@ -571,14 +548,6 @@ struct CreatedRecapCard: View {
         .padding(10)
         .background(Color.white.opacity(0.1))
         .cornerRadius(12)
-        .alert("Remove from Cloud?", isPresented: $showRemoveCloudPopup) {
-            Button("Yes", role: .destructive) {
-                createdRecapStore.removeFromCloud(blogId: recap.sourceTripId)
-            }
-            Button("No", role: .cancel) { }
-        } message: {
-            Text("Are you sure you want to remove this blog from the cloud?")
-        }
     }
 
     private var lastEditedText: String {
@@ -599,8 +568,6 @@ private struct SettingsView: View {
     #if DEBUG
     @AppStorage("capper.tripClustering.debugLogging") private var tripClusteringDebug = false
     #endif
-
-    var onProfileTapped: (() -> Void)? = nil
 
     // Per-user profile photo — loaded from authService on appear.
     @State private var customProfileImageData: Data?
@@ -666,50 +633,40 @@ private struct SettingsView: View {
                 // Account
                 Section {
                     if let user = authService.currentUser {
-                        // Signed-in row
-                        Button {
-                            dismiss()
-                            onProfileTapped?()
-                        } label: {
-                            HStack(spacing: 14) {
-                                if let data = customProfileImageData, let uiImage = UIImage(data: data) {
-                                    Image(uiImage: uiImage)
-                                        .resizable()
-                                        .scaledToFill()
+                        HStack(spacing: 14) {
+                            if let data = customProfileImageData, let uiImage = UIImage(data: data) {
+                                Image(uiImage: uiImage)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 40, height: 40)
+                                    .clipShape(Circle())
+                            } else {
+                                ZStack {
+                                    Circle()
+                                        .fill(LinearGradient(
+                                            colors: [Color(red: 0.2, green: 0.5, blue: 1), Color(red: 0.1, green: 0.3, blue: 0.8)],
+                                            startPoint: .topLeading, endPoint: .bottomTrailing
+                                        ))
                                         .frame(width: 40, height: 40)
-                                        .clipShape(Circle())
-                                } else {
-                                    ZStack {
-                                        Circle()
-                                            .fill(LinearGradient(
-                                                colors: [Color(red: 0.2, green: 0.5, blue: 1), Color(red: 0.1, green: 0.3, blue: 0.8)],
-                                                startPoint: .topLeading, endPoint: .bottomTrailing
-                                            ))
-                                            .frame(width: 40, height: 40)
-                                        Text(user.initials)
-                                            .font(.system(size: 15, weight: .bold))
-                                            .foregroundColor(.white)
-                                    }
+                                    Text(user.initials)
+                                        .font(.system(size: 15, weight: .bold))
+                                        .foregroundColor(.white)
                                 }
-                                VStack(alignment: .leading, spacing: 2) {
-                                    if let name = user.displayName, !name.isEmpty {
-                                        Text(name)
-                                            .font(.subheadline)
-                                            .fontWeight(.semibold)
-                                            .foregroundColor(.primary)
-                                    }
-                                    Text(user.email ?? user.provider.rawValue.capitalized)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                if let name = user.displayName, !name.isEmpty {
+                                    Text(name)
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.primary)
                                 }
-                                Spacer()
-                                Image(systemName: "chevron.right")
+                                Text(user.email ?? user.provider.rawValue.capitalized)
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
-                            .padding(.vertical, 4)
+                            Spacer()
                         }
-                        .buttonStyle(.plain)
+                        .padding(.vertical, 4)
 
                         if cloudStorageLoading {
                             HStack {
@@ -972,9 +929,6 @@ struct AllRecentsSheet: View {
     @Binding var selectedRecap: CreatedRecapBlog?
     @Environment(\.dismiss) private var dismiss
     
-    @State private var showRemoveCloudPopup = false
-    @State private var blogToRemove: CreatedRecapBlog?
-
     var body: some View {
         NavigationStack {
             List {
@@ -998,25 +952,6 @@ struct AllRecentsSheet: View {
                                         .background(Color.black.opacity(0.6))
                                         .cornerRadius(4)
                                         .padding(3)
-                                } else {
-                                    if createdRecapStore.isBlogInCloud(blogId: recap.sourceTripId) {
-                                        Image(systemName: "checkmark.icloud.fill")
-                                            .font(.caption2)
-                                            .foregroundColor(.white)
-                                            .padding(4)
-                                            .background(Circle().fill(Color.green))
-                                            .contentShape(Rectangle())
-                                            .onTapGesture {
-                                                blogToRemove = recap
-                                                showRemoveCloudPopup = true
-                                            }
-                                    } else {
-                                        Image(systemName: "icloud.and.arrow.up")
-                                            .font(.caption2)
-                                            .foregroundColor(.orange)
-                                            .padding(4)
-                                            .background(Circle().fill(Color.white))
-                                    }
                                 }
                             }
                             VStack(alignment: .leading, spacing: 4) {
@@ -1035,16 +970,6 @@ struct AllRecentsSheet: View {
             }
             .navigationTitle("Recent Recaps")
             .navigationBarTitleDisplayMode(.inline)
-            .alert("Remove from Cloud?", isPresented: $showRemoveCloudPopup, presenting: blogToRemove) { blog in
-                Button("Yes", role: .destructive) {
-                    createdRecapStore.removeFromCloud(blogId: blog.sourceTripId)
-                }
-                Button("No", role: .cancel) {
-                    blogToRemove = nil
-                }
-            } message: { blog in
-                Text("Are you sure you want to remove this blog from the cloud?")
-            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") {

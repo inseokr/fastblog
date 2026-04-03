@@ -415,6 +415,7 @@ private struct ManagePhotoDetailView: View {
                                         targetSize: CGSize(width: 120, height: 120)
                                     )
                                     .frame(width: 56, height: 56)
+                                    .clipped()
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 8)
                                             .stroke(isCurrent ? Color.white : Color.clear, lineWidth: 2)

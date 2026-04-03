@@ -39,7 +39,7 @@ struct PhotoCaptionEditSheet: View {
         // No nested NavigationStack: RecapBlogPageView already lives in NavigationStack and hides the nav bar
         // while this overlay is up — inner `.toolbar` items can fail to show or receive taps.
         VStack(spacing: 0) {
-            // Photo thumbnail
+            // Photo fills available space — before keyboard: full modal; after keyboard: shrinks naturally
             RecapPhotoThumbnail(
                 photo: photo,
                 cornerRadius: 12,
@@ -47,7 +47,7 @@ struct PhotoCaptionEditSheet: View {
                 targetSize: CGSize(width: 600, height: 400)
             )
             .frame(maxWidth: .infinity)
-            .frame(height: 200)
+            .frame(minHeight: 160, maxHeight: .infinity)
             .clipped()
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .padding(.horizontal, 20)
@@ -92,7 +92,6 @@ struct PhotoCaptionEditSheet: View {
                         .allowsHitTesting(false)
                 }
             }
-            .frame(maxHeight: .infinity, alignment: .top)
             .clipped()
             .contentShape(Rectangle())
 

@@ -1,0 +1,63 @@
+//
+//  BlogMissingPhotosTooltipSupport.swift
+//  fastblog
+//
+
+import Foundation
+import Photos
+
+/// Persists per-blog "Do not show again" for the missing-photos account tooltip.
+enum MissingPhotosTooltipPresentationStore {
+    private static let defaultsKey = "bloggo.missingPhotosTooltipSuppressedBlogIds"
+
+    static func isSuppressed(blogId: UUID) -> Bool {
+        let ids = Set(UserDefaults.standard.stringArray(forKey: defaultsKey) ?? [])
+        return ids.contains(blogId.uuidString)
+    }
+
+    static func suppressPermanently(blogId: UUID) {
+        var arr = UserDefaults.standard.stringArray(forKey: defaultsKey) ?? []
+        let s = blogId.uuidString
+        if !arr.contains(s) { arr.append(s) }
+        UserDefaults.standard.set(arr, forKey: defaultsKey)
+    }
+}
+
+/// Detects blogs whose included photos cannot be loaded on this device (e.g. signed in on a new phone).
+enum BlogMissingPhotosEvaluator {
+    /// Whether to show education for signed-in account blogs with no usable photo media.
+    static func shouldOfferTooltip(
+        isSignedIn: Bool,
+        ownerScope: OwnerScope?,
+        detail: RecapBlogDetail,
+        recapSummary: CreatedRecapBlog?,
+        isSuppressedForBlog: Bool
+    ) -> Bool {
+        guard isSignedIn, !isSuppressedForBlog else { return false }
+        guard ownerScope == .account else { return false }
+        return blogHasMissingOrNoResolvablePhotos(detail: detail, recapSummary: recapSummary)
+    }
+
+    static func blogHasMissingOrNoResolvablePhotos(detail: RecapBlogDetail, recapSummary: CreatedRecapBlog?) -> Bool {
+        let included = detail.allIncludedPhotos
+        if included.isEmpty {
+            let metaCount = recapSummary?.selectedPhotoCount ?? 0
+            return metaCount > 0
+        }
+        return included.allSatisfy { !photoHasResolvableMedia($0) }
+    }
+
+    private static func photoHasResolvableMedia(_ photo: RecapPhoto) -> Bool {
+        let cloud = (photo.cloudURL ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cloud.isEmpty { return true }
+
+        guard let lid = photo.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines), !lid.isEmpty else {
+            return false
+        }
+        if lid.hasPrefix(AppCapturePhotoService.prefix) {
+            return AppCapturePhotoService.shared.loadImage(identifier: lid) != nil
+        }
+        let fetch = PHAsset.fetchAssets(withLocalIdentifiers: [lid], options: nil)
+        return fetch.firstObject != nil
+    }
+}

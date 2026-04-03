@@ -1,19 +1,11 @@
 import MapKit
 import SwiftUI
 
-private struct PlacesVisitedScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 // MARK: - Standalone full-screen Places Visited (from home icon)
 struct PlacesVisitedStandaloneView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     var onDismiss: () -> Void
-    var onTopScrollStateChange: ((Bool) -> Void)? = nil
 
     @State private var searchText: String = ""
     @State private var showPlacesMap: Bool = false
@@ -24,8 +16,7 @@ struct PlacesVisitedStandaloneView: View {
         PlacesVisitedView(
             searchText: $searchText,
             showPlacesMap: $showPlacesMap,
-            selectedCreatedRecap: $selectedCreatedRecap,
-            onTopScrollStateChange: onTopScrollStateChange
+            selectedCreatedRecap: $selectedCreatedRecap
         )
         .background(backgroundBlue.ignoresSafeArea())
         .scrollContentBackground(.hidden)
@@ -56,7 +47,6 @@ struct PlacesVisitedView: View {
     @Binding var searchText: String
     @Binding var showPlacesMap: Bool
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
-    var onTopScrollStateChange: ((Bool) -> Void)? = nil
 
     @State private var selectedYear: Int? = nil
     @State private var selectedCountry: String? = nil
@@ -65,7 +55,6 @@ struct PlacesVisitedView: View {
     @State private var selectedPlaceForModal: VisitedPlaceSummary?
     @FocusState private var isSearchFocused: Bool
     @State private var isSearchActive: Bool = false
-    @State private var scrollOffset: CGFloat = 0
 
     private let searchBarHeight: CGFloat = 56
     private let mapButtonSize: CGFloat = 52
@@ -276,18 +265,9 @@ struct PlacesVisitedView: View {
                             }
                         }
                     }
-                    .background(
-                        GeometryReader { proxy in
-                            Color.clear.preference(
-                                key: PlacesVisitedScrollOffsetKey.self,
-                                value: proxy.frame(in: .named("PlacesVisitedScroll")).minY
-                            )
-                        }
-                    )
                     .padding(.horizontal, horizontalPadding)
                     .padding(.bottom, 140)
                 }
-                .coordinateSpace(name: "PlacesVisitedScroll")
             }
 
             // Persistent bottom bar (search + map), same design as My Blogs
@@ -373,13 +353,6 @@ struct PlacesVisitedView: View {
                !availableCategories.contains(where: { $0.caseInsensitiveCompare(selectedCategory) == .orderedSame }) {
                 self.selectedCategory = nil
             }
-        }
-        .onPreferenceChange(PlacesVisitedScrollOffsetKey.self) { value in
-            scrollOffset = value
-            onTopScrollStateChange?(value >= -2)
-        }
-        .onAppear {
-            onTopScrollStateChange?(true)
         }
     }
 
@@ -588,13 +561,13 @@ private struct PlaceVisitedCard: View {
     let place: VisitedPlaceSummary
     var showCaptionSpace: Bool = true
 
-    var body: some View {
-        let thumbSize: CGFloat = 44
-        let thumbSpacing: CGFloat = 8
-        let stripPadding: CGFloat = 10
-        let maxThumbs: Int = 3
-        let backingWidth: CGFloat = (CGFloat(maxThumbs) * thumbSize) + (CGFloat(maxThumbs - 1) * thumbSpacing) + (stripPadding * 2)
+    private let maxThumbs: Int = 3
+    private let thumbSpacing: CGFloat = 8
+    private let stripPadding: CGFloat = 10
+    /// Preferred thumb size on wide cards; scales down when the grid column is narrower (non‑Max iPhones).
+    private let preferredThumbSize: CGFloat = 44
 
+    var body: some View {
         let heroId = place.heroPhoto?.id
         let previewThumbs = place.photos
             .filter { $0.id != heroId }
@@ -602,58 +575,74 @@ private struct PlaceVisitedCard: View {
             .prefix(maxThumbs)
 
         VStack(alignment: .leading, spacing: 10) {
-            ZStack(alignment: .bottom) {
-                if let hero = place.heroPhoto {
-                    RecapPhotoThumbnail(photo: hero, cornerRadius: 14, showIcon: false, targetSize: CGSize(width: 900, height: 600))
-                        .frame(height: 150)
-                        .frame(maxWidth: .infinity)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                } else {
-                    Color.clear
-                        .frame(height: 150)
-                        .frame(maxWidth: .infinity)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .overlay {
-                            Image(systemName: "photo")
-                                .font(.title2)
-                                .foregroundStyle(.secondary)
-                        }
-                }
+            GeometryReader { geo in
+                let availableWidth = geo.size.width
+                let thumbCount = previewThumbs.count
+                let thumbSize: CGFloat = {
+                    guard thumbCount > 0 else { return preferredThumbSize }
+                    let gutters = stripPadding * 2 + CGFloat(thumbCount - 1) * thumbSpacing
+                    let raw = (availableWidth - gutters) / CGFloat(thumbCount)
+                    // No minimum clamp — a floor can make the strip wider than the column on narrow phones.
+                    return min(preferredThumbSize, max(1, raw))
+                }()
+                let backingWidth = CGFloat(thumbCount) * thumbSize
+                    + CGFloat(thumbCount - 1) * thumbSpacing
+                    + stripPadding * 2
 
-                VStack {
-                    HStack {
-                        Text(place.latestVisitDate.formatted(.dateTime.month(.abbreviated).day()))
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(.black.opacity(0.55))
-                            .clipShape(Capsule())
+                ZStack(alignment: .bottom) {
+                    if let hero = place.heroPhoto {
+                        RecapPhotoThumbnail(photo: hero, cornerRadius: 14, showIcon: false, targetSize: CGSize(width: 900, height: 600))
+                            .frame(height: 150)
+                            .frame(maxWidth: .infinity)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                    } else {
+                        Color.clear
+                            .frame(height: 150)
+                            .frame(maxWidth: .infinity)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .overlay {
+                                Image(systemName: "photo")
+                                    .font(.title2)
+                                    .foregroundStyle(.secondary)
+                            }
+                    }
+
+                    VStack {
+                        HStack {
+                            Text(place.latestVisitDate.formatted(.dateTime.month(.abbreviated).day()))
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(.black.opacity(0.55))
+                                .clipShape(Capsule())
+                            Spacer()
+                        }
                         Spacer()
                     }
-                    Spacer()
-                }
-                .padding(10)
+                    .padding(10)
 
-                if !previewThumbs.isEmpty {
-                    HStack(spacing: thumbSpacing) {
-                        ForEach(Array(previewThumbs)) { photo in
-                            RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 200, height: 200))
-                                .frame(width: thumbSize, height: thumbSize)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                                .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 2)
+                    if !previewThumbs.isEmpty {
+                        HStack(spacing: thumbSpacing) {
+                            ForEach(Array(previewThumbs)) { photo in
+                                RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 200, height: 200))
+                                    .frame(width: thumbSize, height: thumbSize)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 2)
+                            }
                         }
+                        .padding(stripPadding)
+                        .frame(width: min(backingWidth, availableWidth))
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(Color.black.opacity(0.35))
+                                .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 6)
+                        )
                     }
-                    .padding(stripPadding)
-                    .frame(width: backingWidth)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Color.black.opacity(0.35))
-                            .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 6)
-                    )
                 }
             }
+            .frame(height: 150)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(place.displayName)

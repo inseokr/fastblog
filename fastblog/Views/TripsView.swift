@@ -1954,6 +1954,7 @@ struct CameraCaptureView: View {
     @ObservedObject var tripsViewModel: TripsViewModel
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// When set, receives the summary message (e.g. "3 moments added to Trip") when user leaves with attached photos.
     var postDismissToast: ((String) -> Void)? = nil
     /// When set (ZStack overlay presentation), called instead of dismiss().
@@ -2011,6 +2012,7 @@ struct CameraCaptureView: View {
     @AppStorage("bloggo.hasSeenVibeTooltip") private var hasSeenVibeTooltip = false
     @State private var showVibeTooltip = false
     @State private var vibeTooltipPage = 0
+    @State private var vibeTooltipDetent: PresentationDetent = .medium
 
     private static let nearHomeAlertSuppressedKey = "bloggo.nearHomeAlertSuppressed"
     private static let nearHomeSuppressedPreferKeepKey = "bloggo.nearHomeSuppressedPreferKeep"
@@ -2089,31 +2091,39 @@ struct CameraCaptureView: View {
                 .animation(.easeInOut(duration: 0.2), value: showZoomIndicator)
             }
 
-            // "Capturing Vibe" pill — top-center, below nav bar
+            // "Capturing Vibe" pill — top-center; tap opens the Vibe explainer sheet
             if vibeEnabled {
                 VStack {
-                    HStack(spacing: 7) {
-                        // Pulsing dot
-                        ZStack {
-                            Circle()
-                                .fill(Color.cyan.opacity(vibePulse ? 0 : 0.45))
-                                .frame(width: 9, height: 9)
-                                .scaleEffect(vibePulse ? 1.5 : 1.0)
-                            Circle()
-                                .fill(Color.cyan)
-                                .frame(width: 6, height: 6)
+                    Button {
+                        vibeTooltipPage = 0
+                        showVibeTooltip = true
+                    } label: {
+                        HStack(spacing: 7) {
+                            // Pulsing dot
+                            ZStack {
+                                Circle()
+                                    .fill(Color.cyan.opacity(vibePulse ? 0 : 0.45))
+                                    .frame(width: 9, height: 9)
+                                    .scaleEffect(vibePulse ? 1.5 : 1.0)
+                                Circle()
+                                    .fill(Color.cyan)
+                                    .frame(width: 6, height: 6)
+                            }
+                            Text("Capturing Vibe")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.white.opacity(0.9))
                         }
-                        Text("Capturing Vibe")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.white.opacity(0.9))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(.ultraThinMaterial)
+                        .background(Color.cyan.opacity(0.22))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(Color.cyan.opacity(0.5), lineWidth: 1))
+                        .shadow(color: .cyan.opacity(0.25), radius: 8)
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(.ultraThinMaterial)
-                    .background(Color.cyan.opacity(0.22))
-                    .clipShape(Capsule())
-                    .overlay(Capsule().stroke(Color.cyan.opacity(0.5), lineWidth: 1))
-                    .shadow(color: .cyan.opacity(0.25), radius: 8)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Capturing vibe")
+                    .accessibilityHint("Shows what vibe capture does")
                     Spacer()
                 }
                 .padding(.top, 8)
@@ -2390,13 +2400,22 @@ struct CameraCaptureView: View {
         .sheet(isPresented: $showVibeTooltip, onDismiss: {
             hasSeenVibeTooltip = true
             vibeTooltipPage = 0
+            vibeTooltipDetent = .medium
             // Now that the tooltip is done, request mic permission and begin recording.
             if vibeEnabled { vibeRecorder.start() }
         }) {
             vibeTooltipContent
-                .presentationDetents([.medium])
+                .presentationDetents([.medium, .large], selection: $vibeTooltipDetent)
                 .presentationDragIndicator(.visible)
+                .presentationContentInteraction(.scrolls)
                 .preferredColorScheme(.dark)
+                .onAppear {
+                    if dynamicTypeSize >= .xxxLarge || dynamicTypeSize.isAccessibilitySize {
+                        vibeTooltipDetent = .large
+                    } else {
+                        vibeTooltipDetent = .medium
+                    }
+                }
         }
     }
 
@@ -2569,71 +2588,77 @@ struct CameraCaptureView: View {
 
     @ViewBuilder private var vibeTooltipContent: some View {
         VStack(spacing: 0) {
-            if vibeTooltipPage == 0 {
-                VStack(spacing: 20) {
-                    HStack {
-                        Text("1/2")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                    }
+            ScrollView {
+                Group {
+                    if vibeTooltipPage == 0 {
+                        VStack(spacing: 20) {
+                            HStack {
+                                Text("1/2")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                            }
 
-                    Image(systemName: "waveform")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 50, height: 50)
-                        .foregroundColor(.cyan)
-                        .padding(.top, 8)
+                            Image(systemName: "waveform")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 50, height: 50)
+                                .foregroundColor(.cyan)
+                                .padding(.top, 8)
 
-                    VStack(spacing: 8) {
-                        Text("Capture the Vibe")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.primary)
+                            VStack(spacing: 8) {
+                                Text("Capture the Vibe")
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                    .multilineTextAlignment(.center)
+                                    .foregroundColor(.primary)
 
-                        Text("Record the sounds and atmosphere around your moment. From ocean waves to busy city streets, Bloggo helps preserve the feeling of where you were.")
-                            .font(.body)
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.secondary)
+                                Text("Record the sounds and atmosphere around your moment. From ocean waves to busy city streets, Bloggo helps preserve the feeling of where you were.")
+                                    .font(.body)
+                                    .multilineTextAlignment(.center)
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .transition(.opacity)
+                    } else {
+                        VStack(spacing: 20) {
+                            HStack {
+                                Text("2/2")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                            }
+
+                            Image(systemName: "waveform")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 50, height: 50)
+                                .foregroundColor(.cyan)
+                                .padding(.top, 8)
+
+                            VStack(spacing: 8) {
+                                Text("How It Works")
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                    .multilineTextAlignment(.center)
+                                    .foregroundColor(.primary)
+
+                                Text("We're constantly listening when you open the camera, so start capturing the vibe today!")
+                                    .font(.body)
+                                    .multilineTextAlignment(.center)
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .transition(.opacity)
                     }
                 }
+                .animation(.easeInOut(duration: 0.25), value: vibeTooltipPage)
                 .padding(.horizontal, 24)
-                .transition(.opacity)
-            } else {
-                VStack(spacing: 20) {
-                    HStack {
-                        Text("2/2")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                    }
-
-                    Image(systemName: "waveform")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 50, height: 50)
-                        .foregroundColor(.cyan)
-                        .padding(.top, 8)
-
-                    VStack(spacing: 8) {
-                        Text("How It Works")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.primary)
-
-                        Text("We're constantly listening when you open the camera, so start capturing the vibe today!")
-                            .font(.body)
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .padding(.horizontal, 24)
-                .transition(.opacity)
+                .frame(maxWidth: .infinity)
             }
-
-            Spacer()
+            .frame(maxWidth: .infinity)
 
             Button {
                 if vibeTooltipPage == 0 {
@@ -2654,6 +2679,7 @@ struct CameraCaptureView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .padding(.horizontal, 24)
+            .padding(.top, 12)
             .padding(.bottom, 24)
         }
         .padding(.top, 24)

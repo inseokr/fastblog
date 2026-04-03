@@ -8,6 +8,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 // MARK: - Sheet Root
 
@@ -162,17 +163,37 @@ struct CountryManageRow: View {
     let isRemoved: Bool
     let onRemove: () -> Void
 
-    private let thumbnailSize: CGFloat = 72
+    /// Portrait (3:4) thumb so covers match My Blogs cards.
+    /// Scales up on smaller iPhones and larger Dynamic Type to reduce
+    /// the "empty space" below the thumbnails when text wraps taller.
+    private var thumbnailWidth: CGFloat {
+        let screenWidth = UIScreen.main.bounds.width
+        let baseWidth: CGFloat
+        if screenWidth <= 390 {
+            baseWidth = 80
+        } else if screenWidth >= 428 {
+            baseWidth = 92
+        } else {
+            baseWidth = 84
+        }
+        return baseWidth
+    }
+
+    private var thumbnailHeight: CGFloat { thumbnailWidth * 4 / 3 }
+    private var coverTargetSize: CGSize {
+        // Keep the existing ~5x thumbnail-to-thumbnail-load-size ratio for sharpness.
+        CGSize(width: thumbnailWidth * 5, height: thumbnailHeight * 5)
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             AssetPhotoView(
                 assetIdentifier: blog.coverAssetIdentifier ?? blog.coverImageName,
                 cornerRadius: 0,
-                targetSize: CGSize(width: 400, height: 400)
+                targetSize: coverTargetSize
             )
-            .aspectRatio(1, contentMode: .fill)
-            .frame(width: thumbnailSize, height: thumbnailSize)
+            .aspectRatio(3 / 4, contentMode: .fill)
+            .frame(minWidth: thumbnailWidth, maxWidth: thumbnailWidth, minHeight: thumbnailHeight, maxHeight: .infinity)
             .clipped()
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
@@ -188,14 +209,15 @@ struct CountryManageRow: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
+                Spacer(minLength: 4)
+
                 HStack(alignment: .center, spacing: 10) {
                     cloudBadge
                     Spacer(minLength: 8)
                     removeControl
                 }
-                .padding(.top, 4)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: thumbnailHeight, alignment: .leading)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -206,19 +228,15 @@ struct CountryManageRow: View {
     }
 
     private var cloudBadge: some View {
-        HStack(spacing: 4) {
-            Image(systemName: isInCloud ? "checkmark.icloud.fill" : "icloud.slash")
-                .font(.system(size: 11, weight: .semibold))
-            Text(isInCloud ? "In Cloud" : "Local Only")
-                .font(.system(size: 11, weight: .semibold))
-        }
-        .foregroundStyle(isInCloud ? Color.green : Color.secondary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            Capsule()
-                .fill(isInCloud ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
-        )
+        Text(isInCloud ? "In Cloud" : "Local Only")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(isInCloud ? Color.green : Color.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(isInCloud ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
+            )
     }
 
     private var removeControl: some View {

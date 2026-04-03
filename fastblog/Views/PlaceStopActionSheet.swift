@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct PlaceStopActionSheet: View {
     let placeTitle: String
@@ -17,12 +18,33 @@ struct PlaceStopActionSheet: View {
     var onSplit: (() -> Void)?
     var onRemoveFromBlog: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// Header truncation on non‑Max phones at xxxLarge+ Dynamic Type (40 = 45 − 5 vs. the usual comfortable cap).
+    private static let placeTitleHeaderCharLimitNarrowLargestType = 40
 
     private var sheetHeight: CGFloat {
         var base: CGFloat = 380
         if onMergePlaces != nil { base += 52 }
         if onSplit != nil { base += 52 }
         return base
+    }
+
+    /// Non‑Max iPhone widths are below ~428pt (e.g. 11 / 12 / 13 / 14 standard); Pro Max / Plus are wider.
+    private var shouldUseTighterPlaceTitleHeader: Bool {
+        UIScreen.main.bounds.width < 428 && dynamicTypeSize >= .xxxLarge
+    }
+
+    private var placeTitleForHeader: String {
+        guard shouldUseTighterPlaceTitleHeader else { return placeTitle }
+        let limit = Self.placeTitleHeaderCharLimitNarrowLargestType
+        guard placeTitle.count > limit else { return placeTitle }
+        guard let endIdx = placeTitle.index(placeTitle.startIndex, offsetBy: limit, limitedBy: placeTitle.endIndex) else {
+            return placeTitle
+        }
+        let trimmed = String(placeTitle[..<endIdx]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return placeTitle }
+        return trimmed + "…"
     }
 
     var body: some View {
@@ -36,10 +58,14 @@ struct PlaceStopActionSheet: View {
 
             // Header - Typography Hierarchy
             VStack(spacing: 4) {
-                Text(placeTitle)
+                Text(placeTitleForHeader)
                     .font(.headline)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                    .accessibilityLabel(placeTitle)
 
                 if let subtitle = placeSubtitle, !subtitle.isEmpty {
                     Text(subtitle)

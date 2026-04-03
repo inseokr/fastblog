@@ -28,7 +28,7 @@ struct RecapPreviewView: View {
                 Button {
                     // Upload stub
                 } label: {
-                    Label("Upload", systemImage: "icloud.and.arrow.up")
+                    Label("Upload", systemImage: "arrow.up.circle")
                         .foregroundColor(.blue)
                 }
             }

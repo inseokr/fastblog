@@ -690,7 +690,7 @@ struct BlogCard: View {
                             Button {
                                 showRemoveCloudPopup = true
                             } label: {
-                                Label("Remove from Cloud", systemImage: "icloud.slash")
+                                Text("Remove from Cloud")
                             }
                         }
                         
@@ -872,7 +872,7 @@ struct LockedCloudSection: View {
                         )
                         .frame(width: 52, height: 52)
 
-                    Image(systemName: "lock.icloud")
+                    Image(systemName: "lock.fill")
                         .font(.system(size: 22))
                         .foregroundStyle(
                             LinearGradient(
@@ -932,7 +932,7 @@ struct ProfileEmptyState: View {
             onTap?()
         } label: {
             VStack(spacing: ProfileTheme.Spacing.md) {
-                Image(systemName: "icloud.and.arrow.up")
+                Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 36))
                     .foregroundColor(.secondary)
 

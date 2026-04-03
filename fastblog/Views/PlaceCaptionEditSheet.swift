@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct PlaceCaptionEditSheet: View {
     let placeTitle: String
@@ -32,9 +33,23 @@ struct PlaceCaptionEditSheet: View {
     /// Captures the user's own text before the first AI run, enabling "Revert to original".
     @State private var originalDraft: String? = nil
     @FocusState private var isFocused: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var trimmedEditedText: String {
         editedText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Matches other blog sheets: non‑Max width + xxxLarge Dynamic Type so long placeholders don’t clip awkwardly.
+    private var shouldUseTwoLineCaptionPlaceholder: Bool {
+        UIScreen.main.bounds.width < 428 && dynamicTypeSize >= .xxxLarge
+    }
+
+    /// Single line by default; explicit newline on narrow phones at largest content sizes.
+    private var captionPlaceholderText: String {
+        if shouldUseTwoLineCaptionPlaceholder {
+            return "Write a caption for this\nplace..."
+        }
+        return "Write a caption for this place…"
     }
 
     var body: some View {
@@ -52,7 +67,8 @@ struct PlaceCaptionEditSheet: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)
-            .padding(.bottom, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 14)
 
             ZStack(alignment: .topLeading) {
                 TextEditor(text: $editedText)
@@ -62,15 +78,18 @@ struct PlaceCaptionEditSheet: View {
                     .scrollContentBackground(.hidden)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
-                    .frame(minHeight: 180)
+                    .frame(minHeight: 152)
                     .background(Color(uiColor: .secondarySystemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .padding(.horizontal, 20)
 
                 if editedText.isEmpty {
-                    Text("Write a caption for this place…")
+                    Text(captionPlaceholderText)
                         .font(.body)
                         .foregroundColor(Color(uiColor: .placeholderText))
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.leading, 40)
                         .padding(.top, 22)
                         .allowsHitTesting(false)
@@ -152,7 +171,8 @@ struct PlaceCaptionEditSheet: View {
                     .padding(.horizontal, 20)
                 }
                 .frame(height: 60)
-                .padding(.vertical, 10)
+                .padding(.top, 8)
+                .padding(.bottom, 10)
                 .background(Color(uiColor: .systemBackground))
             }
         }

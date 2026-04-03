@@ -450,30 +450,6 @@ struct CountryBlogRowView: View {
                 .frame(height: 250)
                 .frame(maxWidth: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(alignment: .topTrailing) {
-                    if !isDraft {
-                        if isBlogInCloud {
-                            Image(systemName: "checkmark.icloud.fill")
-                                .font(.body)
-                                .foregroundColor(.white)
-                                .padding(8)
-                                .background(Circle().fill(Color.green))
-                                .clipShape(Circle())
-                                .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
-                                .padding(12)
-                                .onTapGesture(perform: onRemoveFromCloud)
-                        } else {
-                            Image(systemName: "icloud.and.arrow.up")
-                                .font(.body)
-                                .foregroundColor(.orange)
-                                .padding(8)
-                                .background(Circle().fill(Color.white))
-                                .clipShape(Circle())
-                                .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
-                                .padding(12)
-                        }
-                    }
-                }
                 .overlay(alignment: .center) {
                     if isDraft {
                         ZStack {
@@ -526,7 +502,7 @@ struct CountryBlogRowView: View {
                             Button {
                                 onRemoveFromCloud()
                             } label: {
-                                Label("Remove from Cloud", systemImage: "icloud.slash")
+                                Text("Remove from Cloud")
                             }
                         }
 

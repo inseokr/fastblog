@@ -195,6 +195,7 @@
 		BB0002F3 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F2 /* WeatherService.swift */; };
 		BB0002F5 /* NewMomentsPullUpPresentationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F4 /* NewMomentsPullUpPresentationStore.swift */; };
 		BB0002F7 /* NewMomentsPullUpViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F6 /* NewMomentsPullUpViews.swift */; };
+		BB0002F9 /* BlogMissingPhotosTooltipSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002F8 /* BlogMissingPhotosTooltipSupport.swift */; };
 		BB000301 /* AdminAnalyticsDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000300 /* AdminAnalyticsDashboardView.swift */; };
 		BB000303 /* MyStatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000302 /* MyStatsView.swift */; };
 		BB000305 /* CameraRollPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000304 /* CameraRollPickerView.swift */; };
@@ -419,6 +420,7 @@
 		BB0002F2 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
 		BB0002F4 /* NewMomentsPullUpPresentationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewMomentsPullUpPresentationStore.swift; sourceTree = "<group>"; };
 		BB0002F6 /* NewMomentsPullUpViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewMomentsPullUpViews.swift; sourceTree = "<group>"; };
+		BB0002F8 /* BlogMissingPhotosTooltipSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogMissingPhotosTooltipSupport.swift; sourceTree = "<group>"; };
 		BB000300 /* AdminAnalyticsDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminAnalyticsDashboardView.swift; sourceTree = "<group>"; };
 		BB000302 /* MyStatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyStatsView.swift; sourceTree = "<group>"; };
 		BB000304 /* CameraRollPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollPickerView.swift; sourceTree = "<group>"; };
@@ -720,6 +722,7 @@
 				BB0002E4 /* PlaceLibraryPhotoImport.swift */,
 				BB0002F0 /* ScanSessionStore.swift */,
 				BB0002F4 /* NewMomentsPullUpPresentationStore.swift */,
+				BB0002F8 /* BlogMissingPhotosTooltipSupport.swift */,
 				BB0002F2 /* WeatherService.swift */,
 				BB000191 /* OnboardingStore.swift */,
 				BB000193 /* PhotoAssetService.swift */,
@@ -968,6 +971,7 @@
 				BB0002E5 /* PlaceLibraryPhotoImport.swift in Sources */,
 				BB0002F1 /* ScanSessionStore.swift in Sources */,
 				BB0002F5 /* NewMomentsPullUpPresentationStore.swift in Sources */,
+				BB0002F9 /* BlogMissingPhotosTooltipSupport.swift in Sources */,
 				BB0002F3 /* WeatherService.swift in Sources */,
 				BB0002F7 /* NewMomentsPullUpViews.swift in Sources */,
 				BB000192 /* OnboardingStore.swift in Sources */,

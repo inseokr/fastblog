@@ -274,7 +274,7 @@ struct BlogSettingsSheet: View {
                 Button(role: .destructive) {
                     showRemoveFromCloudConfirmation = true
                 } label: {
-                    Label("Remove from Cloud", systemImage: "icloud.slash")
+                    Text("Remove from Cloud")
                 }
             } footer: {
                 Text("This will remove uploaded photos from the cloud. Your local blog and photos are not affected.")

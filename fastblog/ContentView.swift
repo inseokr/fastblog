@@ -23,7 +23,6 @@ struct ContentView: View {
     @State private var showSeeAll = false
     @State private var showPlacesVisited = false
     @State private var showCameraFromHome = false
-    @State private var isMyPlacesAtTop = true
     @State private var postCameraToastMessage: String?
     @State private var selectedCreatedRecap: CreatedRecapBlog?
     @State private var initialDayIndexForRecap: Int?
@@ -253,9 +252,6 @@ struct ContentView: View {
                             withAnimation(.easeInOut(duration: 0.18)) {
                                 showPlacesVisited = false
                             }
-                        },
-                        onTopScrollStateChange: { atTop in
-                            isMyPlacesAtTop = atTop
                         }
                     )
                     .environmentObject(createdRecapStore)
@@ -263,14 +259,6 @@ struct ContentView: View {
                 .tint(.primary)
                 .transition(.opacity)
                 .zIndex(4)
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 24).onEnded { value in
-                        guard isMyPlacesAtTop, isDownwardDismissSwipe(value) else { return }
-                        withAnimation(.easeInOut(duration: 0.18)) {
-                            showPlacesVisited = false
-                        }
-                    }
-                )
             }
 
             // Trips overlay — added when user taps "Tap to Blog"; opacity-only fade (no slide).
