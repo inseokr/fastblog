@@ -367,11 +367,10 @@ struct MyBlogsProfileView: View {
                         .multilineTextAlignment(.center)
 
                     Text("Keep your blogs secure and optionally back them up to the cloud.")
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
 
                     Text("Sign in to create as many blogs as you like.")
-                        .font(.body)
-                        .multilineTextAlignment(.center)
-                        .foregroundColor(.secondary)
                         .font(.body)
                         .multilineTextAlignment(.center)
                         .foregroundColor(.secondary)

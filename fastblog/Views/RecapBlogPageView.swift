@@ -42,6 +42,15 @@ struct PhotoCaptionEditItem: Identifiable {
 }
 
 struct RecapBlogPageView: View {
+    private enum ShareYourBlogSheetPhase: Equatable {
+        case menu
+        case guestWebLinkCloudBackup
+        case guestBloggoQR
+    }
+
+    /// Crossfade + detent animation when switching between the share menu and guest tooltips.
+    private let shareYourBlogSheetPhaseTransitionDuration: Double = 0.52
+
     let blogId: UUID
     let initialTrip: TripDraft?
     /// When set (e.g. from new-moments "Add to blog"), open scrolled to this day (0-based).
@@ -184,9 +193,13 @@ struct RecapBlogPageView: View {
     @State private var showStoryMode = false
     @State private var showStoryModePDFOptions = false
     @State private var showShareYourBlogSheet = false
-    @State private var showShareCreateAccountAlert = false
+    /// Which screen is shown inside the “Share Your Blog” pull-up (menu vs guest prompts).
+    @State private var shareYourBlogSheetPhase: ShareYourBlogSheetPhase = .menu
+    @State private var shareSheetPresentationDetent: PresentationDetent = .height(410)
     @State private var showCloudSharingComingSoonAlert = false
     @State private var pendingWebLinkAfterAuth = false
+    /// After guest signs in from the “Share with Bloggo” prompt, open the QR share overlay.
+    @State private var pendingBloggoQRAfterAuth = false
     @State private var pendingWebLinkShareAfterUpload = false
     @State private var showBloggoQRSheet = false
     @State private var pendingBloggoQRSheetAfterShareDismiss = false
@@ -427,6 +440,12 @@ struct RecapBlogPageView: View {
                             pendingCloudUploadAfterAuth = false
                             showAuth = false
                             handleCloudUploadTap()
+                        } else if pendingBloggoQRAfterAuth {
+                            pendingBloggoQRAfterAuth = false
+                            showAuth = false
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showBloggoQRSheet = true
+                            }
                         } else if pendingWebLinkAfterAuth {
                             pendingWebLinkAfterAuth = false
                             showAuth = false
@@ -452,6 +471,7 @@ struct RecapBlogPageView: View {
                             earlyAccessSheetPresented = false
                         }
                         pendingWebLinkAfterAuth = false
+                        pendingBloggoQRAfterAuth = false
                         showAuth = false
                     },
                     hostControlsDismiss: true
@@ -475,6 +495,8 @@ struct RecapBlogPageView: View {
                 .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showShareYourBlogSheet, onDismiss: {
+                shareYourBlogSheetPhase = .menu
+                shareSheetPresentationDetent = .height(410)
                 if pendingBloggoQRSheetAfterShareDismiss {
                     pendingBloggoQRSheetAfterShareDismiss = false
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -483,7 +505,15 @@ struct RecapBlogPageView: View {
                 }
             }) {
                 shareYourBlogSheetContent()
-                    .presentationDetents([.height(360)])
+                    .onAppear {
+                        shareSheetPresentationDetent = shareYourBlogSheetPhase == .menu ? .height(410) : .height(520)
+                    }
+                    .onChange(of: shareYourBlogSheetPhase) { _, phase in
+                        withAnimation(.easeInOut(duration: shareYourBlogSheetPhaseTransitionDuration)) {
+                            shareSheetPresentationDetent = phase == .menu ? .height(410) : .height(520)
+                        }
+                    }
+                    .presentationDetents([.height(410), .height(520)], selection: $shareSheetPresentationDetent)
                     .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showStoryModePDFOptions, onDismiss: {
@@ -569,18 +599,6 @@ struct RecapBlogPageView: View {
                     .presentationDetents([.medium])
                     .presentationDragIndicator(.visible)
                     .preferredColorScheme(.dark)
-            }
-            .alert("Create an account to share", isPresented: $showShareCreateAccountAlert) {
-                Button("Sign In") {
-                    showShareCreateAccountAlert = false
-                    pendingWebLinkAfterAuth = true
-                    showAuth = true
-                }
-                Button("Cancel", role: .cancel) {
-                    showShareCreateAccountAlert = false
-                }
-            } message: {
-                Text("Web link sharing requires a Bloggo account and early cloud access.")
             }
             .alert("No New Moments Found", isPresented: $showNoNewMomentsAlert) {
                 Button("OK", role: .cancel) {}
@@ -2368,6 +2386,10 @@ struct RecapBlogPageView: View {
         // Save cutoff so these photos don't resurface.
         if let maxDate = newMomentPhotos.map(\.timestamp).max() {
             ScanSessionStore.saveBlogNotifiedDate(maxDate, for: blogId)
+            // Also save under `CreatedRecapBlog.id` because Trips-flow scan logic uses that UUID.
+            if let created = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }) {
+                ScanSessionStore.saveBlogNotifiedDate(maxDate, for: created.id)
+            }
         }
         NewMomentsPullUpPresentationStore.clear(for: blogId)
         // Reload the draft with injected photos.
@@ -2417,6 +2439,10 @@ struct RecapBlogPageView: View {
         // Save cutoff so these photos don't resurface until genuinely new ones appear.
         if let maxDate = newMomentPhotos.map(\.timestamp).max() {
             ScanSessionStore.saveBlogNotifiedDate(maxDate, for: blogId)
+            // Also save under `CreatedRecapBlog.id` because Trips-flow scan logic uses that UUID.
+            if let created = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }) {
+                ScanSessionStore.saveBlogNotifiedDate(maxDate, for: created.id)
+            }
         }
         NewMomentsPullUpPresentationStore.clear(for: blogId)
         newMomentPhotos = []
@@ -2464,14 +2490,45 @@ struct RecapBlogPageView: View {
 
     @ViewBuilder
     private func shareYourBlogSheetContent() -> some View {
+        ZStack(alignment: .top) {
+            shareYourBlogSheetMenuBody()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .opacity(shareYourBlogSheetPhase == .menu ? 1 : 0)
+                .allowsHitTesting(shareYourBlogSheetPhase == .menu)
+
+            guestShareWebLinkRequiresCloudBackupSheetBody()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .opacity(shareYourBlogSheetPhase == .guestWebLinkCloudBackup ? 1 : 0)
+                .allowsHitTesting(shareYourBlogSheetPhase == .guestWebLinkCloudBackup)
+
+            guestShareBloggoQRSheetBody()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .opacity(shareYourBlogSheetPhase == .guestBloggoQR ? 1 : 0)
+                .allowsHitTesting(shareYourBlogSheetPhase == .guestBloggoQR)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeInOut(duration: shareYourBlogSheetPhaseTransitionDuration), value: shareYourBlogSheetPhase)
+    }
+
+    /// Main “Share Your Blog” options list inside the pull-up sheet.
+    @ViewBuilder
+    private func shareYourBlogSheetMenuBody() -> some View {
         VStack(spacing: 0) {
-            VStack(spacing: 6) {
-                Text("Share Your Blog")
-                    .font(.title3.weight(.semibold))
+            VStack(spacing: 14) {
+                Image(systemName: "book.pages")
+                    .font(.system(size: 28, weight: .semibold))
                     .foregroundColor(.primary)
-                Text("Choose how you want to share")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
+
+                VStack(spacing: 6) {
+                    Text("Share Your Blog")
+                        .font(.title3.weight(.semibold))
+                        .foregroundColor(.primary)
+                    Text("Choose how you want to share")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
             }
             .padding(.top, 12)
             .padding(.bottom, 18)
@@ -2491,18 +2548,28 @@ struct RecapBlogPageView: View {
                     subtitle: "Publish and share online",
                     icon: "link"
                 ) {
-                    showShareYourBlogSheet = false
-                    handleShareWebLinkTap()
+                    if authService.isSignedIn {
+                        showShareYourBlogSheet = false
+                        handleShareWebLinkTap()
+                    } else {
+                        shareYourBlogSheetPhase = .guestWebLinkCloudBackup
+                    }
                 }
+                .opacity(!authService.isSignedIn ? 0.4 : 1)
                 Divider().padding(.leading, 52)
                 shareOptionRow(
                     title: "Share with Bloggo",
                     subtitle: "Open instantly in the app",
                     icon: "qrcode"
                 ) {
-                    pendingBloggoQRSheetAfterShareDismiss = true
-                    showShareYourBlogSheet = false
+                    if authService.isSignedIn {
+                        pendingBloggoQRSheetAfterShareDismiss = true
+                        showShareYourBlogSheet = false
+                    } else {
+                        shareYourBlogSheetPhase = .guestBloggoQR
+                    }
                 }
+                .opacity(!authService.isSignedIn ? 0.4 : 1)
             }
             .background(Color(uiColor: .secondarySystemGroupedBackground))
             .cornerRadius(14)
@@ -2510,6 +2577,140 @@ struct RecapBlogPageView: View {
 
             Spacer(minLength: 18)
         }
+        .padding(.top, 8)
+    }
+
+    /// Guest prompt: same pull-up sheet, replaces the share menu (no separate full-screen overlay).
+    @ViewBuilder
+    private func guestShareWebLinkRequiresCloudBackupSheetBody() -> some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 14) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
+
+                VStack(spacing: 4) {
+                    Text("Share Web Link")
+                        .font(.title3.weight(.semibold))
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.center)
+                    Text("Requires Cloud Backup")
+                        .font(.title3.weight(.semibold))
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.center)
+                }
+
+                Text("""
+Sign in to your Bloggo account to join early access and enable cloud backup for sharing.
+
+Your blog remains private unless you choose to share it.
+""")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 12)
+            .frame(maxWidth: .infinity)
+
+            Spacer(minLength: 0)
+
+            VStack(spacing: 10) {
+                Button {
+                    shareYourBlogSheetPhase = .menu
+                    showShareYourBlogSheet = false
+                    pendingWebLinkAfterAuth = true
+                    showAuth = true
+                } label: {
+                    Text("Sign In")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                        .background(Color.blue)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+
+                Button {
+                    shareYourBlogSheetPhase = .menu
+                } label: {
+                    Text("Cancel")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.top, 8)
+    }
+
+    /// Guest prompt: sign in to use Bloggo QR sharing (same pull-up sheet as the share menu).
+    @ViewBuilder
+    private func guestShareBloggoQRSheetBody() -> some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 14) {
+                Image(systemName: "qrcode")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
+
+                Text("Share Between Bloggo Users")
+                    .font(.title3.weight(.semibold))
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.center)
+
+                Text("Sign in to generate a QR code that another Bloggo user can scan with their phone to instantly open your blog in the app.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 12)
+            .frame(maxWidth: .infinity)
+
+            Spacer(minLength: 0)
+
+            VStack(spacing: 10) {
+                Button {
+                    shareYourBlogSheetPhase = .menu
+                    showShareYourBlogSheet = false
+                    pendingBloggoQRAfterAuth = true
+                    showAuth = true
+                } label: {
+                    Text("Sign In")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                        .background(Color.blue)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+
+                Button {
+                    shareYourBlogSheetPhase = .menu
+                } label: {
+                    Text("Cancel")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.top, 8)
     }
 
@@ -2545,7 +2746,8 @@ struct RecapBlogPageView: View {
 
     private func handleShareWebLinkTap() {
         guard authService.isSignedIn else {
-            showShareCreateAccountAlert = true
+            shareYourBlogSheetPhase = .guestWebLinkCloudBackup
+            showShareYourBlogSheet = true
             return
         }
         guard hasEarlyCloudAccess else {
