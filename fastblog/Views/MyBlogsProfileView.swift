@@ -30,6 +30,10 @@ struct MyBlogsProfileView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @Binding var initialDayIndexForRecap: Int?
+    /// Passed to `CountryBlogsView` for kebab "Edit Blog"; consumed by root `RecapBlogPageView` as `forceEditMode`.
+    @Binding var openRecapInEditMode: Bool
+    /// Passed to `CountryBlogsView` for kebab "Share Blog"; consumed by `RecapBlogPageView` as `forcePresentShareYourBlogSheet`.
+    @Binding var openRecapPresentShareYourBlogSheet: Bool
     @ObservedObject var tripsViewModel: TripsViewModel
     /// Called when user taps "View" on new-moments alert so the parent can dismiss the fullScreenCover.
     var onDismissCover: (() -> Void)? = nil
@@ -66,12 +70,16 @@ struct MyBlogsProfileView: View {
         createdRecapStore: CreatedRecapBlogStore,
         selectedCreatedRecap: Binding<CreatedRecapBlog?>,
         initialDayIndexForRecap: Binding<Int?> = .constant(nil),
+        openRecapInEditMode: Binding<Bool> = .constant(false),
+        openRecapPresentShareYourBlogSheet: Binding<Bool> = .constant(false),
         tripsViewModel: TripsViewModel,
         onDismissCover: (() -> Void)? = nil,
         onTopScrollStateChange: ((Bool) -> Void)? = nil
     ) {
         _selectedCreatedRecap = selectedCreatedRecap
         _initialDayIndexForRecap = initialDayIndexForRecap
+        _openRecapInEditMode = openRecapInEditMode
+        _openRecapPresentShareYourBlogSheet = openRecapPresentShareYourBlogSheet
         _tripsViewModel = ObservedObject(wrappedValue: tripsViewModel)
         self.onDismissCover = onDismissCover
         self.onTopScrollStateChange = onTopScrollStateChange
@@ -129,6 +137,8 @@ struct MyBlogsProfileView: View {
                                         withAnimation(.easeInOut(duration: 0.22)) {
                                             isSearchActive = false
                                         }
+                                        openRecapInEditMode = false
+                                        openRecapPresentShareYourBlogSheet = false
                                         selectedCreatedRecap = blog
                                     } label: {
                                         CountryBlogRowView(
@@ -136,6 +146,7 @@ struct MyBlogsProfileView: View {
                                             isBlogInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
                                             isDraft: createdRecapStore.getBlogDetail(blogId: blog.sourceTripId) == nil,
                                             onRemoveFromCloud: {},
+                                            onShareBlog: {},
                                             onEditBlog: {},
                                             onDeleteBlog: {}
                                         )
@@ -246,6 +257,7 @@ struct MyBlogsProfileView: View {
             MyBlogsManageSheet { recap in
                 showManage = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    openRecapInEditMode = false
                     selectedCreatedRecap = recap
                 }
             }
@@ -284,6 +296,7 @@ struct MyBlogsProfileView: View {
                 if let blogId = newMomentsAlertBlogId,
                    let recap = createdRecapStore.displayRecents.first(where: { $0.sourceTripId == blogId }) {
                     initialDayIndexForRecap = newMomentsDayIndex
+                    openRecapInEditMode = false
                     selectedCreatedRecap = recap
                     onDismissCover?()
                 }
@@ -419,6 +432,8 @@ struct MyBlogsProfileView: View {
             CountryBlogsView(
                 section: section,
                 selectedBlog: $selectedCreatedRecap,
+                openRecapInEditMode: $openRecapInEditMode,
+                openRecapPresentShareYourBlogSheet: $openRecapPresentShareYourBlogSheet,
                 showMap: $showCountryMap,
                 searchText: $sharedSearchText,
                 scrollOffset: $countryScrollOffset,

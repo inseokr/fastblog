@@ -85,45 +85,45 @@ struct CountryManageBlogsSheet: View {
                     .padding(.horizontal, 16)
 
                     Spacer(minLength: 40)
+                    }
                 }
             }
-        }
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Close") { dismiss() }
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.primary)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button {
-                        showMergeView = true
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.primary)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            showMergeView = true
+                        } label: {
+                            Label("Merge Blogs", systemImage: "arrow.triangle.merge")
+                        }
+                        Button {
+                            showSplitView = true
+                        } label: {
+                            Label("Split Blog", systemImage: "scissors")
+                        }
                     } label: {
-                        Label("Merge Blogs", systemImage: "arrow.triangle.merge")
+                        Image(systemName: "line.3.horizontal")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.primary)
                     }
-                    Button {
-                        showSplitView = true
-                    } label: {
-                        Label("Split Blog", systemImage: "scissors")
-                    }
-                } label: {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.primary)
                 }
             }
-        }
-        .navigationDestination(isPresented: $showMergeView) {
-            MergeBlogsView(countryName: countryName)
-                .environmentObject(createdRecapStore)
-        }
-        .navigationDestination(isPresented: $showSplitView) {
-            SplitBlogView(countryName: countryName)
-                .environmentObject(createdRecapStore)
-        }
-        // ── Remove Confirmation Alert ──────────────────────────────
-        .alert(
+            .navigationDestination(isPresented: $showMergeView) {
+                MergeBlogsView(countryName: countryName)
+                    .environmentObject(createdRecapStore)
+            }
+            .navigationDestination(isPresented: $showSplitView) {
+                SplitBlogView(countryName: countryName)
+                    .environmentObject(createdRecapStore)
+            }
+            // ── Remove Confirmation Alert ──────────────────────────────
+            .alert(
                 "Remove from this device?",
                 isPresented: $showRemoveAlert,
                 presenting: blogPendingRemoval
@@ -137,8 +137,8 @@ struct CountryManageBlogsSheet: View {
             } message: { _ in
                 Text("This removes the downloaded blog from local storage. Your cloud blog stays available.")
             }
+            .tint(.primary)
         }
-        .tint(.primary)
     }
 
     // MARK: - Helpers
@@ -154,15 +154,6 @@ struct CountryManageBlogsSheet: View {
     }
 }
 
-// MARK: - Row layout
-
-private struct CountryManageRowContentWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 // MARK: - Row
 
 struct CountryManageRow: View {
@@ -171,130 +162,88 @@ struct CountryManageRow: View {
     let isRemoved: Bool
     let onRemove: () -> Void
 
-    /// Inner width of the row (inside card padding). Photo column is weighted a bit wider than 1∶4 so text sits further right.
-    @State private var contentWidth: CGFloat = 0
-
-    private let columnGap: CGFloat = 12
-    /// Inset between photo column edge and square thumbnail (smaller = larger thumb).
-    private let coverOuterPadding: CGFloat = 5
-    private let photoColumnWeight: CGFloat = 1.45
-    private let descriptionColumnWeight: CGFloat = 4.0
-
-    private var weightTotal: CGFloat { photoColumnWeight + descriptionColumnWeight }
-
-    private var photoColumnWidth: CGFloat {
-        guard contentWidth > 1 else {
-            return 84
-        }
-        return (contentWidth - columnGap) * (photoColumnWeight / weightTotal)
-    }
-
-    private var descriptionColumnWidth: CGFloat {
-        guard contentWidth > 1 else {
-            return 260
-        }
-        return (contentWidth - columnGap) * (descriptionColumnWeight / weightTotal)
-    }
-
-    /// Square thumbnail inside the photo column, with even padding on all sides.
-    private var thumbnailSide: CGFloat {
-        max(52, photoColumnWidth - coverOuterPadding * 2)
-    }
+    private let thumbnailSize: CGFloat = 72
 
     var body: some View {
-        HStack(alignment: .center, spacing: columnGap) {
-            // ── Cover: fixed square crop, vertically centered with text column ─────────
-            ZStack {
-                AssetPhotoView(
-                    assetIdentifier: blog.coverAssetIdentifier ?? blog.coverImageName,
-                    cornerRadius: 0,
-                    targetSize: CGSize(width: 400, height: 400)
-                )
-                .aspectRatio(1, contentMode: .fill)
-                .frame(width: thumbnailSide, height: thumbnailSide)
-                .clipped()
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            }
-            .frame(width: photoColumnWidth, height: photoColumnWidth)
+        HStack(alignment: .top, spacing: 14) {
+            AssetPhotoView(
+                assetIdentifier: blog.coverAssetIdentifier ?? blog.coverImageName,
+                cornerRadius: 0,
+                targetSize: CGSize(width: 400, height: 400)
+            )
+            .aspectRatio(1, contentMode: .fill)
+            .frame(width: thumbnailSize, height: thumbnailSize)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-            // ── Description; delete on same row as cloud chip, full-width row ────────
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(blog.title)
                     .font(.headline)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .lineLimit(2)
+                    .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(blog.tripDateRangeText ?? "Unknown Date")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
 
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 4) {
-                        Image(systemName: isInCloud ? "checkmark.icloud.fill" : "icloud.slash")
-                            .font(.system(size: 10, weight: .semibold))
-                        Text(isInCloud ? "In Cloud" : "Local Only")
-                            .font(.system(size: 10, weight: .semibold))
-                    }
-                    .foregroundColor(isInCloud ? .green : .secondary)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(
-                        Capsule()
-                            .fill(isInCloud ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
-                    )
-
-                    HStack(alignment: .center) {
-                        Spacer(minLength: 0)
-                        Button(action: onRemove) {
-                            Group {
-                                if isRemoved {
-                                    HStack(spacing: 5) {
-                                        Image(systemName: "checkmark")
-                                        Text("Removed")
-                                    }
-                                } else {
-                                    Image(systemName: "trash")
-                                }
-                            }
-                            .font(.system(.subheadline, weight: .medium))
-                            .foregroundColor(isRemoved ? .secondary : .red)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(isRemoved ? Color.secondary.opacity(0.1) : Color.red.opacity(0.08))
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isRemoved)
-                        .animation(.easeInOut(duration: 0.2), value: isRemoved)
-                    }
+                HStack(alignment: .center, spacing: 10) {
+                    cloudBadge
+                    Spacer(minLength: 8)
+                    removeControl
                 }
+                .padding(.top, 4)
             }
-            .frame(minWidth: descriptionColumnWidth, maxWidth: descriptionColumnWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            GeometryReader { geometry in
-                Color.clear.preference(
-                    key: CountryManageRowContentWidthKey.self,
-                    value: geometry.size.width
-                )
-            }
-        )
-        .onPreferenceChange(CountryManageRowContentWidthKey.self) { width in
-            if abs(width - contentWidth) > 0.5 {
-                contentWidth = width
-            }
-        }
-        .padding(.top, 12)
-        .padding(.leading, 12)
-        .padding(.bottom, 12)
-        .padding(.trailing, 6)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .opacity(isRemoved ? 0.6 : 1.0)
         .animation(.easeInOut(duration: 0.25), value: isRemoved)
+    }
+
+    private var cloudBadge: some View {
+        HStack(spacing: 4) {
+            Image(systemName: isInCloud ? "checkmark.icloud.fill" : "icloud.slash")
+                .font(.system(size: 11, weight: .semibold))
+            Text(isInCloud ? "In Cloud" : "Local Only")
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .foregroundStyle(isInCloud ? Color.green : Color.secondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(isInCloud ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
+        )
+    }
+
+    private var removeControl: some View {
+        Button(action: onRemove) {
+            Group {
+                if isRemoved {
+                    HStack(spacing: 5) {
+                        Image(systemName: "checkmark")
+                        Text("Removed")
+                    }
+                } else {
+                    Image(systemName: "trash")
+                }
+            }
+            .font(.system(.subheadline, weight: .medium))
+            .foregroundStyle(isRemoved ? Color.secondary : Color.red)
+            .frame(minWidth: 40, minHeight: 36)
+            .padding(.horizontal, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isRemoved ? Color.secondary.opacity(0.1) : Color.red.opacity(0.08))
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isRemoved)
+        .animation(.easeInOut(duration: 0.2), value: isRemoved)
     }
 }

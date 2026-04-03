@@ -23,11 +23,14 @@ struct ContentView: View {
     @State private var showSeeAll = false
     @State private var showPlacesVisited = false
     @State private var showCameraFromHome = false
-    @State private var isMyBlogsAtTop = true
     @State private var isMyPlacesAtTop = true
     @State private var postCameraToastMessage: String?
     @State private var selectedCreatedRecap: CreatedRecapBlog?
     @State private var initialDayIndexForRecap: Int?
+    /// Set from My Blogs country list "Edit Blog" so `RecapBlogPageView` opens in edit mode.
+    @State private var openRecapInEditMode = false
+    /// Set from My Blogs country list "Share Blog" so the Share Your Blog sheet opens on the recap.
+    @State private var openRecapPresentShareYourBlogSheet = false
     @State private var dismissToLandingRequested = false
     @State private var showNoPhotosAlert = false
     /// User dismissed the limited library picker without changing which photos are shared (e.g. tapped away).
@@ -224,14 +227,13 @@ struct ContentView: View {
                         createdRecapStore: createdRecapStore,
                         selectedCreatedRecap: $selectedCreatedRecap,
                         initialDayIndexForRecap: $initialDayIndexForRecap,
+                        openRecapInEditMode: $openRecapInEditMode,
+                        openRecapPresentShareYourBlogSheet: $openRecapPresentShareYourBlogSheet,
                         tripsViewModel: tripsViewModel,
                         onDismissCover: {
                             withAnimation(.easeInOut(duration: 0.25)) {
                                 showSeeAll = false
                             }
-                        },
-                        onTopScrollStateChange: { atTop in
-                            isMyBlogsAtTop = atTop
                         }
                     )
                     .environmentObject(createdRecapStore)
@@ -240,14 +242,6 @@ struct ContentView: View {
                 .preferredColorScheme(.dark)
                 .transition(.opacity)
                 .zIndex(3)
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 24).onEnded { value in
-                        guard isMyBlogsAtTop, isDownwardDismissSwipe(value) else { return }
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            showSeeAll = false
-                        }
-                    }
-                )
             }
 
             // Places Visited overlay (fade in/out).
@@ -306,8 +300,12 @@ struct ContentView: View {
                         blogId: recap.sourceTripId,
                         initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId),
                         initialDayIndex: initialDayIndexForRecap,
+                        forceEditMode: openRecapInEditMode,
+                        forcePresentShareYourBlogSheet: openRecapPresentShareYourBlogSheet,
                         onRequestDismiss: {
                             initialDayIndexForRecap = nil
+                            openRecapInEditMode = false
+                            openRecapPresentShareYourBlogSheet = false
                             selectedCreatedRecap = nil
                         }
                     )

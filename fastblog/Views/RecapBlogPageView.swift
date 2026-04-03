@@ -56,6 +56,8 @@ struct RecapBlogPageView: View {
     /// When set (e.g. from new-moments "Add to blog"), open scrolled to this day (0-based).
     var initialDayIndex: Int? = nil
     let forceEditMode: Bool
+    /// When true (e.g. My Blogs country kebab "Share Blog"), present the Share Your Blog sheet after load.
+    let forcePresentShareYourBlogSheet: Bool
     /// When set (e.g. when presented as overlay), called instead of environment dismiss to close the blog.
     var onRequestDismiss: (() -> Void)? = nil
 
@@ -284,11 +286,12 @@ struct RecapBlogPageView: View {
         }
     }
 
-    init(blogId: UUID, initialTrip: TripDraft?, initialDayIndex: Int? = nil, forceEditMode: Bool = false, onRequestDismiss: (() -> Void)? = nil) {
+    init(blogId: UUID, initialTrip: TripDraft?, initialDayIndex: Int? = nil, forceEditMode: Bool = false, forcePresentShareYourBlogSheet: Bool = false, onRequestDismiss: (() -> Void)? = nil) {
         self.blogId = blogId
         self.initialTrip = initialTrip
         self.initialDayIndex = initialDayIndex
         self.forceEditMode = forceEditMode
+        self.forcePresentShareYourBlogSheet = forcePresentShareYourBlogSheet
         self.onRequestDismiss = onRequestDismiss
         _draft = State(initialValue: RecapBlogDetail(id: blogId, title: "", days: [], coverTheme: "default"))
     }
@@ -4061,6 +4064,12 @@ Your blog remains private unless you choose to share it.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             if self.draftSnapshot == nil {
                 self.draftSnapshot = self.draft
+            }
+        }
+
+        if forcePresentShareYourBlogSheet {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                self.showShareYourBlogSheet = true
             }
         }
     }
