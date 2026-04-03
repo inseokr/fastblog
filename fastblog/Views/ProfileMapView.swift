@@ -445,6 +445,8 @@ struct CountryMapView: View {
     let countryName: String
     let blogs: [CreatedRecapBlog]
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
+    /// Cleared whenever a blog is opened from this map (read-only), so a prior "Edit Blog" flag is not reused.
+    @Binding var openRecapInEditMode: Bool
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
 
     @State private var mapPosition: MapCameraPosition = .automatic
@@ -454,10 +456,21 @@ struct CountryMapView: View {
     @State private var searchText: String = ""
     @FocusState private var isSearchFocused: Bool
 
-    init(countryName: String, blogs: [CreatedRecapBlog], selectedCreatedRecap: Binding<CreatedRecapBlog?>) {
+    init(
+        countryName: String,
+        blogs: [CreatedRecapBlog],
+        selectedCreatedRecap: Binding<CreatedRecapBlog?>,
+        openRecapInEditMode: Binding<Bool> = .constant(false)
+    ) {
         self.countryName = countryName
         self.blogs = blogs
         _selectedCreatedRecap = selectedCreatedRecap
+        _openRecapInEditMode = openRecapInEditMode
+    }
+
+    private func openBlogFromMap(_ blog: CreatedRecapBlog) {
+        openRecapInEditMode = false
+        selectedCreatedRecap = blog
     }
 
     /// Sorted blogs (most recent first) — same order the list uses.
@@ -563,10 +576,10 @@ struct CountryMapView: View {
                             isSelected: selectedTripID == blog.sourceTripId,
                             onTap: {
                                 // Open blog via global overlay (fade) when card is tapped.
-                                selectedCreatedRecap = blog
+                                openBlogFromMap(blog)
                             },
                             onNavigate: {
-                                selectedCreatedRecap = blog
+                                openBlogFromMap(blog)
                             }
                         )
                         .id(blog.sourceTripId)
@@ -661,7 +674,7 @@ struct CountryMapView: View {
                             ForEach(results, id: \.sourceTripId) { blog in
                                 Button {
                                     withAnimation(.easeInOut(duration: 0.22)) {
-                                        selectedCreatedRecap = blog
+                                        openBlogFromMap(blog)
                                         isSearchFocused = false
                                         isSearchActive = false
                                     }
@@ -696,7 +709,7 @@ struct CountryMapView: View {
             .onTapGesture {
                 if selectedTripID == item.blog.sourceTripId {
                     // Second tap → open blog via global overlay (fade).
-                    selectedCreatedRecap = item.blog
+                    openBlogFromMap(item.blog)
                 } else {
                     // First tap → select + re-center
                     withAnimation {

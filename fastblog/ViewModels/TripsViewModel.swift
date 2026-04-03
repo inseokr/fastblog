@@ -210,7 +210,10 @@ final class TripsViewModel: ObservableObject {
             // photo are silenced. Genuinely newer photos still surface on the next scan.
             // Guard: if photos are empty for any reason, skip saving to avoid accidentally
             // setting a future cutoff via Date() that would silence real new photos.
+            // Blog-page scanning uses `sourceTripId`; Trips-flow scanning uses `CreatedRecapBlog.id`.
+            // Save under both so whichever UI the user hits next doesn't re-surface the same moments.
             ScanSessionStore.saveBlogNotifiedDate(maxPhotoDate, for: blog.id)
+            ScanSessionStore.saveBlogNotifiedDate(maxPhotoDate, for: blog.sourceTripId)
         }
         resetNewMomentsState()
         pendingTripForCreateFlow = nil

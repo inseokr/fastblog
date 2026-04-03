@@ -449,8 +449,13 @@ final class CreatedRecapBlogStore: ObservableObject {
         blogDetailsBySourceId[trip.id] = tempDetail
         // Set the per-blog notification cutoff to the latest photo timestamp so that
         // the very next scan does not re-surface photos already in the blog.
+        //
+        // Important: `RecapBlogPageView` scans using the Trip's `sourceTripId` (not
+        // `CreatedRecapBlog.id`), so we persist the cutoff under BOTH UUIDs to keep
+        // Trips-flow + Blog-page scans consistent.
         if let maxDate = tempDetail.days.flatMap(\.placeStops).flatMap(\.photos).map(\.timestamp).max() {
             ScanSessionStore.saveBlogNotifiedDate(maxDate, for: blog.id)
+            ScanSessionStore.saveBlogNotifiedDate(maxDate, for: trip.id) // RecapBlogPageView uses this
         }
         recents.insert(blog, at: 0)
         pendingRecapCreated = true

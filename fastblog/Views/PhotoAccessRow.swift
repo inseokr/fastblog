@@ -12,7 +12,6 @@ import SwiftUI
 
 struct PhotoAccessRow: View {
     @StateObject private var manager = PhotosAuthorizationManager()
-    @State private var showFullAccessOptions = false
 
     var body: some View {
         if manager.status == .limited {
@@ -42,15 +41,6 @@ struct PhotoAccessRow: View {
             }
         }
         .buttonStyle(.plain)
-        .confirmationDialog("Photo Library Access", isPresented: $showFullAccessOptions) {
-            Button("Manage Selected Photos") {
-                presentLimitedPicker()
-            }
-            Button("Open iOS Settings") {
-                openAppSettings()
-            }
-            Button("Cancel", role: .cancel) { }
-        }
         .onReceive(
             NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
         ) { _ in
@@ -117,7 +107,7 @@ struct PhotoAccessRow: View {
         case .denied, .restricted:
             openAppSettings()
         case .authorized:
-            showFullAccessOptions = true
+            openAppSettings()
         case .limited:
             break // handled by limitedAccessRows
         @unknown default:

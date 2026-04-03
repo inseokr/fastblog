@@ -18,6 +18,10 @@ private struct CountryListScrollOffsetKey: PreferenceKey {
 struct CountryBlogsView: View {
     let section: CountrySection
     @Binding var selectedBlog: CreatedRecapBlog?
+    /// When true, the next presentation of this blog should open in edit mode (kebab "Edit Blog").
+    @Binding var openRecapInEditMode: Bool
+    /// When true, the next presentation should show the Share Your Blog sheet (kebab "Share Blog").
+    @Binding var openRecapPresentShareYourBlogSheet: Bool
     @Binding var showMap: Bool
     @Binding var searchText: String
     /// Reported to parent for swipe-down-to-dismiss when at top. Optional so callers can omit.
@@ -37,9 +41,6 @@ struct CountryBlogsView: View {
     @State private var blogToDelete: CreatedRecapBlog?
     @State private var showDeleteConfirmSheet = false
 
-    // Edit — force edit mode when opening via kebab
-    @State private var openInEditMode = false
-
     // Soft-delete + Undo state
     /// The blog is hidden from the list immediately; deletion is only committed when the timer fires.
     @State private var pendingDeleteBlog: CreatedRecapBlog?
@@ -53,6 +54,8 @@ struct CountryBlogsView: View {
     @State private var selectedYear: Int? = nil
 
     private let darkNavy = Color(red: 5/255, green: 10/255, blue: 48/255)
+    /// Swipe delete: explicit colors so parent `.tint(.primary)` (white in dark mode) does not wash out the icon.
+    private let swipeDeleteRed = Color(red: 0.88, green: 0.38, blue: 0.40)
 
     // Search filter (driven by parent's shared search bar)
     // searchText is a @Binding — no local @State needed
@@ -133,6 +136,8 @@ struct CountryBlogsView: View {
                 List {
                     ForEach(Array(filteredAndSortedBlogs.enumerated()), id: \.element.id) { index, blog in
                         Button {
+                            openRecapInEditMode = false
+                            openRecapPresentShareYourBlogSheet = false
                             selectedBlog = blog
                         } label: {
                             CountryBlogRowView(
@@ -143,8 +148,14 @@ struct CountryBlogsView: View {
                                     blogToRemove = blog
                                     showRemoveCloudPopup = true
                                 },
+                                onShareBlog: {
+                                    openRecapInEditMode = false
+                                    openRecapPresentShareYourBlogSheet = true
+                                    selectedBlog = blog
+                                },
                                 onEditBlog: {
-                                    openInEditMode = true
+                                    openRecapPresentShareYourBlogSheet = false
+                                    openRecapInEditMode = true
                                     selectedBlog = blog
                                 },
                                 onDeleteBlog: {
@@ -168,15 +179,19 @@ struct CountryBlogsView: View {
                         })
                         // ─── Swipe-left trailing action ───────────────────
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) {
+                            Button {
                                 let captured = blog
                                 DispatchQueue.main.async {
                                     blogToDelete = captured
                                     showDeleteConfirmSheet = true
                                 }
                             } label: {
-                                Label("Delete", systemImage: "trash")
+                                Image(systemName: "trash.fill")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(.white)
                             }
+                            .tint(swipeDeleteRed)
+                            .accessibilityLabel("Delete")
                         }
                     }
                 }
@@ -256,7 +271,8 @@ struct CountryBlogsView: View {
             CountryMapView(
                 countryName: section.countryName,
                 blogs: filteredAndSortedBlogs,
-                selectedCreatedRecap: $selectedBlog
+                selectedCreatedRecap: $selectedBlog,
+                openRecapInEditMode: $openRecapInEditMode
             )
             .environmentObject(createdRecapStore)
         }
@@ -418,6 +434,7 @@ struct CountryBlogRowView: View {
     let isBlogInCloud: Bool
     let isDraft: Bool
     let onRemoveFromCloud: () -> Void
+    let onShareBlog: () -> Void
     let onEditBlog: () -> Void
     let onDeleteBlog: () -> Void
 
@@ -494,6 +511,12 @@ struct CountryBlogRowView: View {
 
                     Menu {
                         Button {
+                            onShareBlog()
+                        } label: {
+                            Label("Share Blog", systemImage: "square.and.arrow.up")
+                        }
+
+                        Button {
                             onEditBlog()
                         } label: {
                             Label("Edit Blog", systemImage: "pencil")
@@ -510,7 +533,12 @@ struct CountryBlogRowView: View {
                         Button(role: .destructive) {
                             onDeleteBlog()
                         } label: {
-                            Label("Delete Blog", systemImage: "trash")
+                            Label {
+                                Text("Delete Blog")
+                            } icon: {
+                                Image(systemName: "trash")
+                            }
+                            .foregroundStyle(.red)
                         }
                     } label: {
                         Image(systemName: "ellipsis")

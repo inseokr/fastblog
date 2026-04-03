@@ -29,11 +29,23 @@ struct PDFExportOptionsSheet: View {
                 VStack(spacing: 20) {
                     fontThemeSection
                     colorStyleSection
-                    exportButton
                 }
                 .padding(20)
+                .padding(.bottom, 8)
             }
             .background(Color(uiColor: .systemGroupedBackground))
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                VStack(spacing: 0) {
+                    Divider()
+                        .opacity(0.35)
+                    exportButton
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
+                        .padding(.bottom, 12)
+                }
+                .frame(maxWidth: .infinity)
+                .background(Color(uiColor: .systemGroupedBackground))
+            }
             .navigationTitle("PDF Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

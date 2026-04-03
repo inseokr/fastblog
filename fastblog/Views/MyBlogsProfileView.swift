@@ -30,6 +30,10 @@ struct MyBlogsProfileView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
     @Binding var initialDayIndexForRecap: Int?
+    /// Passed to `CountryBlogsView` for kebab "Edit Blog"; consumed by root `RecapBlogPageView` as `forceEditMode`.
+    @Binding var openRecapInEditMode: Bool
+    /// Passed to `CountryBlogsView` for kebab "Share Blog"; consumed by `RecapBlogPageView` as `forcePresentShareYourBlogSheet`.
+    @Binding var openRecapPresentShareYourBlogSheet: Bool
     @ObservedObject var tripsViewModel: TripsViewModel
     /// Called when user taps "View" on new-moments alert so the parent can dismiss the fullScreenCover.
     var onDismissCover: (() -> Void)? = nil
@@ -48,6 +52,8 @@ struct MyBlogsProfileView: View {
     @FocusState private var isSearchFocused: Bool
     @State private var selectedUnsavedTripPhotos: TripDraft?
     @State private var createBlogFlowTrip: TripDraft?
+    @State private var showGuestBlogLimitModal = false
+    @State private var showAuth = false
     @State private var scrollOffset: CGFloat = 0
     /// Scroll offset for country page — used for swipe-down-to-dismiss when at top.
     @State private var countryScrollOffset: CGFloat = 0
@@ -64,12 +70,16 @@ struct MyBlogsProfileView: View {
         createdRecapStore: CreatedRecapBlogStore,
         selectedCreatedRecap: Binding<CreatedRecapBlog?>,
         initialDayIndexForRecap: Binding<Int?> = .constant(nil),
+        openRecapInEditMode: Binding<Bool> = .constant(false),
+        openRecapPresentShareYourBlogSheet: Binding<Bool> = .constant(false),
         tripsViewModel: TripsViewModel,
         onDismissCover: (() -> Void)? = nil,
         onTopScrollStateChange: ((Bool) -> Void)? = nil
     ) {
         _selectedCreatedRecap = selectedCreatedRecap
         _initialDayIndexForRecap = initialDayIndexForRecap
+        _openRecapInEditMode = openRecapInEditMode
+        _openRecapPresentShareYourBlogSheet = openRecapPresentShareYourBlogSheet
         _tripsViewModel = ObservedObject(wrappedValue: tripsViewModel)
         self.onDismissCover = onDismissCover
         self.onTopScrollStateChange = onTopScrollStateChange
@@ -127,6 +137,8 @@ struct MyBlogsProfileView: View {
                                         withAnimation(.easeInOut(duration: 0.22)) {
                                             isSearchActive = false
                                         }
+                                        openRecapInEditMode = false
+                                        openRecapPresentShareYourBlogSheet = false
                                         selectedCreatedRecap = blog
                                     } label: {
                                         CountryBlogRowView(
@@ -134,6 +146,7 @@ struct MyBlogsProfileView: View {
                                             isBlogInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
                                             isDraft: createdRecapStore.getBlogDetail(blogId: blog.sourceTripId) == nil,
                                             onRemoveFromCloud: {},
+                                            onShareBlog: {},
                                             onEditBlog: {},
                                             onDeleteBlog: {}
                                         )
@@ -244,10 +257,23 @@ struct MyBlogsProfileView: View {
             MyBlogsManageSheet { recap in
                 showManage = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    openRecapInEditMode = false
                     selectedCreatedRecap = recap
                 }
             }
             .environmentObject(createdRecapStore)
+        }
+        .sheet(isPresented: $showGuestBlogLimitModal) {
+            guestBlogLimitModalContent
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .preferredColorScheme(.dark)
+        }
+        .fullScreenCover(isPresented: $showAuth) {
+            AuthView(
+                onAuthenticated: { showAuth = false },
+                onDismiss: { showAuth = false }
+            )
         }
         .onAppear {
             viewModel.loadUnsavedTrips()
@@ -270,6 +296,7 @@ struct MyBlogsProfileView: View {
                 if let blogId = newMomentsAlertBlogId,
                    let recap = createdRecapStore.displayRecents.first(where: { $0.sourceTripId == blogId }) {
                     initialDayIndexForRecap = newMomentsDayIndex
+                    openRecapInEditMode = false
                     selectedCreatedRecap = recap
                     onDismissCover?()
                 }
@@ -324,6 +351,78 @@ struct MyBlogsProfileView: View {
         onTopScrollStateChange?(isCurrentPageAtTop)
     }
 
+    private func attemptCreateBlog(trip: TripDraft) {
+        let isGuest = AuthService.shared.currentUser == nil
+        let alreadyHasBlog = createdRecapStore.anonymousDrafts.count >= 1
+        if isGuest && alreadyHasBlog {
+            showGuestBlogLimitModal = true
+        } else {
+            selectedUnsavedTripPhotos = trip
+        }
+    }
+
+    private var guestBlogLimitModalContent: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 20) {
+                Image("SplashIcon")
+                    .resizable()
+                    .renderingMode(.template)
+                    .scaledToFit()
+                    .frame(width: 52, height: 52)
+                    .foregroundColor(.white)
+                    .padding(.top, 8)
+
+                VStack(spacing: 8) {
+                    Text("Create an Account")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+
+                    Text("Keep your blogs secure and optionally back them up to the cloud.")
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+
+                    Text("Sign in to create as many blogs as you like.")
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+
+            VStack(spacing: 12) {
+                Button {
+                    showGuestBlogLimitModal = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showAuth = true
+                    }
+                } label: {
+                    Text("Sign In")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .cornerRadius(12)
+                }
+
+                Button {
+                    showGuestBlogLimitModal = false
+                } label: {
+                    Text("Cancel")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+        .padding(.top, 24)
+    }
+
     @ViewBuilder
     private var pageContent: some View {
         switch currentPage {
@@ -333,6 +432,8 @@ struct MyBlogsProfileView: View {
             CountryBlogsView(
                 section: section,
                 selectedBlog: $selectedCreatedRecap,
+                openRecapInEditMode: $openRecapInEditMode,
+                openRecapPresentShareYourBlogSheet: $openRecapPresentShareYourBlogSheet,
                 showMap: $showCountryMap,
                 searchText: $sharedSearchText,
                 scrollOffset: $countryScrollOffset,
@@ -513,7 +614,7 @@ struct MyBlogsProfileView: View {
                 HStack(spacing: 12) {
                     ForEach(viewModel.unsavedTrips) { trip in
                         UnsavedTripCard(trip: trip) {
-                            selectedUnsavedTripPhotos = trip
+                            attemptCreateBlog(trip: trip)
                         }
                     }
                 }
