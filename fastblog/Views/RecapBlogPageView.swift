@@ -3371,8 +3371,9 @@ struct RecapBlogPageView: View {
             .padding(.bottom, 4)
         } else {
             let displayCaption: String? = {
-                if let n = day.dayNarrative, !n.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return n }
+                // User-entered caption should win when both exist.
                 if let c = day.dayCaption, !c.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return c }
+                if let n = day.dayNarrative, !n.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return n }
                 return nil
             }()
             if let text = displayCaption {

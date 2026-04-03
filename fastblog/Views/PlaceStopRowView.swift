@@ -737,8 +737,10 @@ struct PlaceStopRowView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             } else {
                                 let displayStory: String = {
+                                    let manual = overallStory.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if stop.overallStoryIsManual, !manual.isEmpty { return manual }
                                     if let n = stop.placeNarrative, !n.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return n }
-                                    return overallStory.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    return manual
                                 }()
                                 Text(displayStory.isEmpty ? placeStoryPlaceholder : displayStory)
                                     .font(Font.blog(selectedBlogFont, size: 17))
@@ -770,8 +772,10 @@ struct PlaceStopRowView: View {
                 .padding(.vertical, 8)
             } else {
                 let displayStory: String = {
+                    let manual = overallStory.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if stop.overallStoryIsManual, !manual.isEmpty { return manual }
                     if let n = stop.placeNarrative, !n.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return n }
-                    return overallStory
+                    return manual
                 }()
                 if !displayStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
