@@ -41,6 +41,11 @@ struct PhotoCaptionEditItem: Identifiable {
     var id: UUID { photoId }
 }
 
+/// Sheet target for changing a stop’s POI category (`PlaceStop.placeCategory`).
+private struct PlaceCategoryPickerTarget: Identifiable {
+    let id: UUID
+}
+
 struct RecapBlogPageView: View {
     private enum ShareYourBlogSheetPhase: Equatable {
         case menu
@@ -107,6 +112,7 @@ struct RecapBlogPageView: View {
     @State private var overflowStop: OverflowItem?
     @State private var mergeSelectionItem: MergeSelectionItem?
     @State private var showEditNameForStop: PlaceStop?
+    @State private var placeCategoryPickerTarget: PlaceCategoryPickerTarget?
     @State private var showManagePhotosForStop: ManagePhotosItem?
     /// The stop currently having its place caption generated (triggered by place name pick).
     @State private var generatingCaptionStopId: UUID?
@@ -1014,6 +1020,16 @@ struct RecapBlogPageView: View {
                     photos: stop.includedPhotos,
                     onSave: { newTitle, newCoordinate, newCategory in
                         updatePlaceTitle(stopId: stop.id, to: newTitle, category: newCategory, coordinate: newCoordinate)
+                    }
+                )
+            }
+            .sheet(item: $placeCategoryPickerTarget) { target in
+                PlaceStopCategoryPickerSheet(
+                    initialCategoryRaw: placeStop(stopId: target.id)?.placeCategory,
+                    onCancel: { placeCategoryPickerTarget = nil },
+                    onDone: { newCategory in
+                        updatePlaceCategory(stopId: target.id, category: newCategory)
+                        placeCategoryPickerTarget = nil
                     }
                 )
             }
@@ -2239,6 +2255,7 @@ struct RecapBlogPageView: View {
                     onCaptionFocus: { focusId in scrollToStopId = focusId },
                     onNavigate: { openNavigation(for: stop) },
                     onEditName: { showEditNameForStop = stop },
+                    onEditCategory: isEditMode ? { placeCategoryPickerTarget = PlaceCategoryPickerTarget(id: stop.id) } : nil,
                     onDoneEditingStory: { stopId, isPlaceNote, photoId in
                         syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: isPlaceNote, photoId: photoId)
                     },
@@ -3586,6 +3603,23 @@ Your blog remains private unless you choose to share it.
         showEditNameForStop = nil
     }
 
+    private func updatePlaceCategory(stopId: UUID, category: String?) {
+        for i in draft.days.indices {
+            guard let j = draft.days[i].placeStops.firstIndex(where: { $0.id == stopId }) else { continue }
+            var day = draft.days[i]
+            var stop = day.placeStops[j]
+            stop.placeCategory = category
+            day.placeStops[j] = stop
+            draft.days[i] = day
+            persistRecapBlogDetail()
+            if let placeKey = stop.visitedTimeDigitized {
+                let categories = category.map { [$0] } ?? ["unknown"]
+                Task { try? await APIManager.shared.updatePlaceName(visitedTimeDigitized: placeKey, placeName: stop.placeTitle, categories: categories) }
+            }
+            break
+        }
+    }
+
     private func bindingForPlaceTitle(stopId: UUID) -> Binding<String> {
         Binding(
             get: {
@@ -3637,6 +3671,13 @@ Your blog remains private unless you choose to share it.
         draft.days.first(where: { $0.id == dayId })?.placeStops.first(where: { $0.id == stopId })
     }
 
+    private func placeStop(stopId: UUID) -> PlaceStop? {
+        for d in draft.days {
+            if let s = d.placeStops.first(where: { $0.id == stopId }) { return s }
+        }
+        return nil
+    }
+
     /// Full-screen fade overlay (not a sheet) so the editor does not slide up from the bottom.
     @ViewBuilder
     private func dayCaptionEditLayer(item: DayCaptionEditItem) -> some View {
@@ -3676,11 +3717,20 @@ Your blog remains private unless you choose to share it.
             placeSubtitle: stop.placeSubtitle,
             photos: stop.includedPhotos,
             caption: bindingForOverallStory(dayId: item.dayId, stopId: item.stopId),
-            onSave: {
+            photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
+            onSave: { placeCaptionChanged, changedPhotoIds in
                 placeCaptionEditItem = nil
-                markOverallStoryManual(dayId: item.dayId, stopId: item.stopId)
+                if placeCaptionChanged {
+                    markOverallStoryManual(dayId: item.dayId, stopId: item.stopId)
+                    syncOverallStoryToCloudIfNeeded(dayId: item.dayId, stopId: item.stopId)
+                    triggerSentimentAnalysis(dayId: item.dayId, stopId: item.stopId)
+                }
+                for photoId in changedPhotoIds {
+                    markPhotoCaptionManual(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
+                    syncStoryToCloudIfNeeded(stopId: item.stopId, isPlaceNote: false, photoId: photoId)
+                    triggerPhotoSentimentAnalysis(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
+                }
                 persistRecapBlogDetail()
-                syncOverallStoryToCloudIfNeeded(dayId: item.dayId, stopId: item.stopId)
             },
             onCancel: {
                 placeCaptionEditItem = nil
@@ -3701,10 +3751,7 @@ Your blog remains private unless you choose to share it.
             } : nil,
             onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
                 await StoryCaptionService.shared.translateText(userText: userText)
-            } : nil,
-            onSentimentAnalysisNeeded: {
-                triggerSentimentAnalysis(dayId: item.dayId, stopId: item.stopId)
-            }
+            } : nil
         )
     }
 

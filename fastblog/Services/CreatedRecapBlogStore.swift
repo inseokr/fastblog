@@ -1649,6 +1649,9 @@ final class CreatedRecapBlogStore: ObservableObject {
         isSyncing = true
         defer { isSyncing = false }
 
+        var syncedTrips: [ServerTrip]?
+        var syncedPlaceByIndex: [Int: ServerPlaceRecord]?
+
         do {
             // Fetch trips and place history in parallel.
             async let tripsTask = APIManager.shared.fetchTrips(username: username)
@@ -1664,6 +1667,9 @@ final class CreatedRecapBlogStore: ObservableObject {
                 allPlaces.map { ($0.placeIndex, $0) },
                 uniquingKeysWith: { _, new in new }
             )
+
+            syncedTrips = serverTrips
+            syncedPlaceByIndex = placeByIndex
 
             var detailsChanged = false
 
@@ -1762,50 +1768,9 @@ final class CreatedRecapBlogStore: ObservableObject {
 
                 } else {
                     // ── Cloud-only blog — create a local stub ────────────────────────────
-                    let userId = user.id
-
-                    let newBlogId = UUID()
-                    let tripPlaces = (serverTrip.placeList ?? [])
-                        .compactMap { placeByIndex[$0.placeIndex] }
-
-                    let detail = buildDetailFromServerPlaces(
-                        tripPlaces,
-                        blogId: newBlogId,
-                        blogKey: serverTrip.blogKey,
-                        title: serverTrip.title ?? "Trip",
-                        countryName: serverTrip.country
-                    )
-
-                    let startDate = serverTrip.startTimestamp.map { Date(timeIntervalSince1970: $0 / 1000) }
-                    let endDate   = serverTrip.endTimestamp.map   { Date(timeIntervalSince1970: $0 / 1000) }
-                    let photoCount = detail.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
-
-                    let stub = CreatedRecapBlog(
-                        id: UUID(),
-                        sourceTripId: newBlogId,
-                        title: serverTrip.title ?? "Trip",
-                        createdAt: startDate ?? Date(),
-                        coverImageName: "default",
-                        coverAssetIdentifier: nil,
-                        selectedPhotoCount: photoCount,
-                        countryName: serverTrip.country,
-                        tripDateRangeText: nil,
-                        lastEditedAt: nil,
-                        tripStartDate: startDate,
-                        tripEndDate: endDate,
-                        totalPlaceVisitCount: detail.days.reduce(0) { $0 + $1.placeStops.count },
-                        tripDurationDays: max(1, detail.days.count),
-                        caption: nil,
-                        blogKey: serverTrip.blogKey,
-                        ownerScope: .account,
-                        ownerUserId: userId,
-                        cloudState: .uploadedActive,
-                        syncStatus: .clean
-                    )
-
-                    recents.append(stub)
-                    blogDetailsBySourceId[newBlogId] = detail
-                    detailsChanged = true
+                    if materializeCloudStubIfNeeded(serverTrip: serverTrip, ownerUserId: user.id, placeByIndex: placeByIndex) {
+                        detailsChanged = true
+                    }
                 }
             }
 
@@ -1816,10 +1781,30 @@ final class CreatedRecapBlogStore: ObservableObject {
                 // so any open blog view re-reads the fully-updated detail.
                 objectWillChange.send()
             }
-            enforceArchiveRules()
         } catch {
             print("🚨 syncFromCloud failed: \(error)")
         }
+
+        // Drop account rows whose included photos only existed on another device (no cloud URL / local file).
+        // Runs even when the network request failed so a restored backup does not list unusable blogs.
+        pruneAccountBlogsNotDisplayableOnThisDevice(currentUserId: user.id)
+
+        // Re-create cloud stubs for any trip we removed above so uploaded blogs still appear with server photo URLs.
+        if let serverTrips = syncedTrips, let placeByIndex = syncedPlaceByIndex {
+            var stubsAfterPrune = false
+            for serverTrip in serverTrips {
+                if materializeCloudStubIfNeeded(serverTrip: serverTrip, ownerUserId: user.id, placeByIndex: placeByIndex) {
+                    stubsAfterPrune = true
+                }
+            }
+            if stubsAfterPrune {
+                persistRecents()
+                persistBlogDetails()
+                objectWillChange.send()
+            }
+        }
+
+        enforceArchiveRules()
     }
 
     /// Reconstructs a RecapBlogDetail from server-side place records.
@@ -1926,6 +1911,87 @@ final class CreatedRecapBlogStore: ObservableObject {
             countryName: countryName,
             blogKey: blogKey
         )
+    }
+
+    /// Creates a local recap + detail from a server trip when this device has no matching `blogKey`. No-op if a row already exists.
+    @discardableResult
+    private func materializeCloudStubIfNeeded(
+        serverTrip: ServerTrip,
+        ownerUserId: String,
+        placeByIndex: [Int: ServerPlaceRecord]
+    ) -> Bool {
+        guard !recents.contains(where: { $0.blogKey == serverTrip.blogKey }) else { return false }
+
+        let newBlogId = UUID()
+        let tripPlaces = (serverTrip.placeList ?? [])
+            .compactMap { placeByIndex[$0.placeIndex] }
+
+        let detail = buildDetailFromServerPlaces(
+            tripPlaces,
+            blogId: newBlogId,
+            blogKey: serverTrip.blogKey,
+            title: serverTrip.title ?? "Trip",
+            countryName: serverTrip.country
+        )
+
+        let startDate = serverTrip.startTimestamp.map { Date(timeIntervalSince1970: $0 / 1000) }
+        let endDate = serverTrip.endTimestamp.map { Date(timeIntervalSince1970: $0 / 1000) }
+        let photoCount = detail.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded).count
+
+        let stub = CreatedRecapBlog(
+            id: UUID(),
+            sourceTripId: newBlogId,
+            title: serverTrip.title ?? "Trip",
+            createdAt: startDate ?? Date(),
+            coverImageName: "default",
+            coverAssetIdentifier: nil,
+            selectedPhotoCount: photoCount,
+            countryName: serverTrip.country,
+            tripDateRangeText: nil,
+            lastEditedAt: nil,
+            tripStartDate: startDate,
+            tripEndDate: endDate,
+            totalPlaceVisitCount: detail.days.reduce(0) { $0 + $1.placeStops.count },
+            tripDurationDays: max(1, detail.days.count),
+            caption: nil,
+            blogKey: serverTrip.blogKey,
+            ownerScope: .account,
+            ownerUserId: ownerUserId,
+            cloudState: .uploadedActive,
+            syncStatus: .clean
+        )
+
+        recents.append(stub)
+        blogDetailsBySourceId[newBlogId] = detail
+        return true
+    }
+
+    /// Removes account-owned blogs whose included photos cannot be loaded on this device (and are not backed by cloud URLs).
+    /// Does not delete trips from the server; the next sync can re-materialize cloud-backed stubs.
+    private func pruneAccountBlogsNotDisplayableOnThisDevice(currentUserId: String) {
+        let idsToRemove: [UUID] = recents.compactMap { recent in
+            guard recent.ownerScope == .account, recent.ownerUserId == currentUserId else { return nil }
+            guard let detail = blogDetailsBySourceId[recent.sourceTripId] else { return recent.sourceTripId }
+            if BlogMissingPhotosEvaluator.blogIsDisplayableOnThisDevice(detail: detail, recapSummary: recent) { return nil }
+            return recent.sourceTripId
+        }
+        guard !idsToRemove.isEmpty else { return }
+
+        for id in idsToRemove {
+            if OnTheGoTripStore.activeBlogId == id {
+                OnTheGoTripStore.markTripAsEnded()
+            }
+            recents.removeAll { $0.sourceTripId == id }
+            blogDetailsBySourceId.removeValue(forKey: id)
+        }
+        if pendingRecapCreated {
+            pendingRecapCreated = false
+        }
+        lastDiscardedTripId = idsToRemove.last
+        needsRescan = true
+        persistRecents()
+        persistBlogDetails()
+        objectWillChange.send()
     }
 
     // MARK: - Build Blog Detail

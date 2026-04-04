@@ -323,6 +323,7 @@ struct FullScreenMapView: View {
     @State private var photoModalCaptionsSnapshot: [UUID: String] = [:]
     
     @State private var selectedCategory: String? = nil
+    @State private var scrolledPlaceID: UUID?
 
     init(
         day: RecapBlogDay,
@@ -534,8 +535,6 @@ struct FullScreenMapView: View {
             applyInitialFocusIfNeeded()
         }
     }
-
-    @State private var scrolledPlaceID: UUID?
 
     private func applyInitialFocusIfNeeded() {
         guard !didApplyInitialFocus else { return }
