@@ -13,7 +13,10 @@ struct PlaceCaptionEditSheet: View {
     let placeSubtitle: String?
     let photos: [RecapPhoto]
     @Binding var caption: String
-    var onSave: () -> Void
+    /// Bindings for per-photo captions (only the first three thumbnails are shown).
+    var photoCaption: (UUID) -> Binding<String>
+    /// `placeCaptionChanged` / `changedPhotoIds` reflect edits vs. values when the sheet opened.
+    var onSave: (_ placeCaptionChanged: Bool, _ changedPhotoIds: Set<UUID>) -> Void
     var onCancel: () -> Void
     /// When provided, the Enhance button is shown. Receives the draft; returns AI-enriched text.
     var onEnhance: ((String) async -> String)? = nil
@@ -21,9 +24,6 @@ struct PlaceCaptionEditSheet: View {
     var onEnhanceApplied: (() -> Void)? = nil
     /// Pure translation — no AI story generation.
     var onTranslate: ((String) async -> String)? = nil
-    /// Called when Done is tapped so the caller can run sentiment analysis on the saved caption.
-    var onSentimentAnalysisNeeded: (() -> Void)? = nil
-
     @State private var editedText: String = ""
     @State private var isEnhancing = false
     @State private var isTranslating = false
@@ -34,6 +34,28 @@ struct PlaceCaptionEditSheet: View {
     @State private var originalDraft: String? = nil
     @FocusState private var isFocused: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// Matches kebab `PlaceStopActionSheet` “Edit Caption & Details” row (`text.alignleft`).
+    private enum CaptionThumbnailSelection: Equatable {
+        case placeCaption
+        case photo(UUID)
+    }
+
+    @State private var captionThumbnailSelection: CaptionThumbnailSelection = .placeCaption
+    @State private var draftPlaceCaption: String = ""
+    @State private var draftPhotoCaptions: [UUID: String] = [:]
+    @State private var initialPlaceCaption: String = ""
+    @State private var initialPhotoCaptions: [UUID: String] = [:]
+
+    private let thumbnailSize: CGFloat = 60
+    private let thumbnailCorner: CGFloat = 10
+    private let thumbnailStroke: CGFloat = 2
+
+    /// Horizontal inset for typed text inside the rounded editor (both sides).
+    private let editorTextHorizontalPadding: CGFloat = 20
+    /// Placeholder is nudged further left to line up with the `TextEditor` caret; trailing must match so lines don’t hug the right edge.
+    private let placeholderLeadingInset: CGFloat = 40
+    private let placeholderTrailingInset: CGFloat = 20
 
     private var trimmedEditedText: String {
         editedText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -46,26 +68,80 @@ struct PlaceCaptionEditSheet: View {
 
     /// Single line by default; explicit newline on narrow phones at largest content sizes.
     private var captionPlaceholderText: String {
-        if shouldUseTwoLineCaptionPlaceholder {
-            return "Write a caption for this\nplace..."
+        switch captionThumbnailSelection {
+        case .placeCaption:
+            if shouldUseTwoLineCaptionPlaceholder {
+                return "Write a caption for this\nplace..."
+            }
+            return "Write a caption for this place…"
+        case .photo:
+            if shouldUseTwoLineCaptionPlaceholder {
+                return "Photo selected, write a caption for\nthis photo..."
+            }
+            return "Photo selected, write a caption for this photo..."
         }
-        return "Write a caption for this place…"
+    }
+
+    private var captionPlaceholderLineLimit: Int {
+        captionThumbnailSelection == .placeCaption ? 2 : 3
+    }
+
+    private var placeTitleAndSubtitle: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(placeTitle)
+                .font(.title3.weight(.semibold))
+                .foregroundColor(.primary)
+                .lineLimit(2)
+            if let placeSubtitle, !placeSubtitle.isEmpty {
+                Text(placeSubtitle)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Shown beside the place name only when a photo thumbnail is selected (place story uses title only).
+    @ViewBuilder
+    private func headerPhotoThumbnail(for photoId: UUID) -> some View {
+        if let photo = photos.first(where: { $0.id == photoId }) {
+            RecapPhotoThumbnail(
+                photo: photo,
+                cornerRadius: thumbnailCorner,
+                showIcon: false,
+                targetSize: CGSize(width: 200, height: 200)
+            )
+            .frame(width: thumbnailSize, height: thumbnailSize)
+            .clipShape(RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous)
+                    .strokeBorder(Color.white, lineWidth: thumbnailStroke)
+            }
+            .accessibilityLabel("Editing caption for selected photo")
+        } else {
+            RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous)
+                .fill(Color(uiColor: .tertiarySystemFill))
+                .frame(width: thumbnailSize, height: thumbnailSize)
+                .overlay {
+                    Image(systemName: "photo")
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityLabel("Photo")
+        }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(placeTitle)
-                    .font(.title3.weight(.semibold))
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
-                if let placeSubtitle, !placeSubtitle.isEmpty {
-                    Text(placeSubtitle)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+            Group {
+                if case .photo(let photoId) = captionThumbnailSelection {
+                    HStack(alignment: .top, spacing: 12) {
+                        headerPhotoThumbnail(for: photoId)
+                        placeTitleAndSubtitle
+                    }
+                } else {
+                    placeTitleAndSubtitle
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)
             .padding(.top, 10)
             .padding(.bottom, 14)
@@ -76,7 +152,7 @@ struct PlaceCaptionEditSheet: View {
                     .font(.body)
                     .foregroundColor(.primary)
                     .scrollContentBackground(.hidden)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, editorTextHorizontalPadding)
                     .padding(.vertical, 14)
                     .frame(minHeight: 152)
                     .background(Color(uiColor: .secondarySystemBackground))
@@ -88,9 +164,10 @@ struct PlaceCaptionEditSheet: View {
                         .font(.body)
                         .foregroundColor(Color(uiColor: .placeholderText))
                         .multilineTextAlignment(.leading)
-                        .lineLimit(2)
+                        .lineLimit(captionPlaceholderLineLimit)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.leading, 40)
+                        .padding(.leading, placeholderLeadingInset)
+                        .padding(.trailing, placeholderTrailingInset)
                         .padding(.top, 22)
                         .allowsHitTesting(false)
                 }
@@ -157,20 +234,14 @@ struct PlaceCaptionEditSheet: View {
             if !photos.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
+                        placeCaptionThumbnailCell
                         ForEach(photos.prefix(3)) { photo in
-                            RecapPhotoThumbnail(
-                                photo: photo,
-                                cornerRadius: 10,
-                                showIcon: false,
-                                targetSize: CGSize(width: 200, height: 200)
-                            )
-                            .frame(width: 60, height: 60)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            photoThumbnailCell(photo)
                         }
                     }
                     .padding(.horizontal, 20)
                 }
-                .frame(height: 60)
+                .frame(height: thumbnailSize)
                 .padding(.top, 8)
                 .padding(.bottom, 10)
                 .background(Color(uiColor: .systemBackground))
@@ -192,10 +263,19 @@ struct PlaceCaptionEditSheet: View {
                 Spacer()
 
                 Button("Done") {
-                    caption = editedText
+                    flushCurrentDraftFromEditor()
+                    caption = draftPlaceCaption
+                    for p in photos.prefix(3) {
+                        photoCaption(p.id).wrappedValue = draftPhotoCaptions[p.id] ?? ""
+                    }
+                    let placeChanged = draftPlaceCaption != initialPlaceCaption
+                    let changedPhotoIds = Set(
+                        photos.prefix(3).map(\.id).filter { id in
+                            (draftPhotoCaptions[id] ?? "") != (initialPhotoCaptions[id] ?? "")
+                        }
+                    )
                     isFocused = false
-                    onSave()
-                    onSentimentAnalysisNeeded?()
+                    onSave(placeChanged, changedPhotoIds)
                 }
                 .font(.body)
                 .fontWeight(.bold)
@@ -208,11 +288,87 @@ struct PlaceCaptionEditSheet: View {
         }
         .preferredColorScheme(.dark)
         .onAppear {
-            editedText = caption
+            initialPlaceCaption = caption
+            draftPlaceCaption = caption
+            var photoMap: [UUID: String] = [:]
+            for p in photos.prefix(3) {
+                photoMap[p.id] = p.caption ?? ""
+            }
+            initialPhotoCaptions = photoMap
+            draftPhotoCaptions = photoMap
+            editedText = draftPlaceCaption
+            captionThumbnailSelection = .placeCaption
             DispatchQueue.main.async {
                 isFocused = true
             }
         }
+    }
+
+    private func flushCurrentDraftFromEditor() {
+        switch captionThumbnailSelection {
+        case .placeCaption:
+            draftPlaceCaption = editedText
+        case .photo(let id):
+            draftPhotoCaptions[id] = editedText
+        }
+    }
+
+    private func selectThumbnail(_ newSelection: CaptionThumbnailSelection) {
+        guard newSelection != captionThumbnailSelection else { return }
+        flushCurrentDraftFromEditor()
+        captionThumbnailSelection = newSelection
+        switch newSelection {
+        case .placeCaption:
+            editedText = draftPlaceCaption
+        case .photo(let id):
+            editedText = draftPhotoCaptions[id] ?? ""
+        }
+    }
+
+    private var placeCaptionThumbnailCell: some View {
+        let placeSelected = captionThumbnailSelection == .placeCaption
+        return Button {
+            selectThumbnail(.placeCaption)
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous)
+                    .fill(placeSelected ? Color.white : Color.clear)
+                Image(systemName: "text.alignleft")
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(placeSelected ? Color.black : Color.white)
+            }
+            .frame(width: thumbnailSize, height: thumbnailSize)
+            .opacity(placeSelected ? 1 : 0.6)
+            .overlay {
+                RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous)
+                    .strokeBorder(Color.white, lineWidth: thumbnailStroke)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Place caption")
+    }
+
+    private func photoThumbnailCell(_ photo: RecapPhoto) -> some View {
+        let photoSelected = captionThumbnailSelection == .photo(photo.id)
+        return Button {
+            selectThumbnail(.photo(photo.id))
+        } label: {
+            RecapPhotoThumbnail(
+                photo: photo,
+                cornerRadius: thumbnailCorner,
+                showIcon: false,
+                targetSize: CGSize(width: 200, height: 200)
+            )
+            .frame(width: thumbnailSize, height: thumbnailSize)
+            .clipShape(RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous)
+                    .strokeBorder(Color.white, lineWidth: photoSelected ? thumbnailStroke : 0)
+            }
+            .opacity(photoSelected ? 1 : (captionThumbnailSelection == .placeCaption ? 1 : 0.6))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Photo thumbnail")
     }
 
     private var currentStyleTitle: String {

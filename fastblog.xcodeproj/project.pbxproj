@@ -79,6 +79,7 @@
 		BB000148 /* PlacePhotoModalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000147 /* PlacePhotoModalView.swift */; };
 		BB00014A /* PlaceStopActionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000149 /* PlaceStopActionSheet.swift */; };
 		BB00014C /* PlaceStopRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00014B /* PlaceStopRowView.swift */; };
+		BB0002C1 /* PlaceStopCategoryPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002C2 /* PlaceStopCategoryPickerSheet.swift */; };
 		BB00014E /* PrivacyPolicyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00014D /* PrivacyPolicyView.swift */; };
 		BB000150 /* ProfileMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00014F /* ProfileMapView.swift */; };
 		BB000152 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000151 /* ProfileView.swift */; };
@@ -302,6 +303,7 @@
 		BB000147 /* PlacePhotoModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacePhotoModalView.swift; sourceTree = "<group>"; };
 		BB000149 /* PlaceStopActionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceStopActionSheet.swift; sourceTree = "<group>"; };
 		BB00014B /* PlaceStopRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceStopRowView.swift; sourceTree = "<group>"; };
+		BB0002C2 /* PlaceStopCategoryPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceStopCategoryPickerSheet.swift; sourceTree = "<group>"; };
 		BB00014D /* PrivacyPolicyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyPolicyView.swift; sourceTree = "<group>"; };
 		BB00014F /* ProfileMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileMapView.swift; sourceTree = "<group>"; };
 		BB000151 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
@@ -621,6 +623,7 @@
 				BB000147 /* PlacePhotoModalView.swift */,
 				BB000149 /* PlaceStopActionSheet.swift */,
 				BB00014B /* PlaceStopRowView.swift */,
+				BB0002C2 /* PlaceStopCategoryPickerSheet.swift */,
 				BB00014D /* PrivacyPolicyView.swift */,
 				BB00014F /* ProfileMapView.swift */,
 				BB000207 /* ProfileManagementView.swift */,
@@ -926,6 +929,7 @@
 				BB000148 /* PlacePhotoModalView.swift in Sources */,
 				BB00014A /* PlaceStopActionSheet.swift in Sources */,
 				BB00014C /* PlaceStopRowView.swift in Sources */,
+				BB0002C1 /* PlaceStopCategoryPickerSheet.swift in Sources */,
 				BB00014E /* PrivacyPolicyView.swift in Sources */,
 				BB000150 /* ProfileMapView.swift in Sources */,
 				BB000152 /* ProfileView.swift in Sources */,

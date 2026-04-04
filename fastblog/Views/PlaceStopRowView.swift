@@ -62,6 +62,53 @@ private struct OverallStoryTruncationKey: PreferenceKey {
     }
 }
 
+// MARK: - Place category chip (read vs edit: same footprint, edit adds outline only)
+
+/// Shared pill for place POI category so read-only and edit mode align; interactive state adds a white ring (no extra bulk).
+private struct PlaceCategoryChip: View {
+    let symbol: String
+    let label: String
+    /// When true, draws a subtle white stroke so the control reads as tappable in edit flows.
+    var showsInteractiveOutline: Bool
+    /// Read-only recap uses a slightly tighter pill; edit mode keeps more vertical breathing room.
+    var verticalPadding: CGFloat = 6
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: symbol)
+                .font(.caption2)
+            Text(label)
+                .font(.caption2)
+                .fontWeight(.medium)
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, Self.horizontalPadding)
+        .padding(.vertical, verticalPadding)
+        .background(
+            Capsule()
+                .fill(pillFill)
+        )
+        .overlay {
+            if showsInteractiveOutline {
+                Capsule()
+                    .strokeBorder(outlineColor, lineWidth: 1)
+            }
+        }
+    }
+
+    private static let horizontalPadding: CGFloat = 12
+
+    /// Soft fill so both states share the same silhouette without edit mode feeling heavier.
+    private var pillFill: Color {
+        Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.055)
+    }
+
+    private var outlineColor: Color {
+        Color.white.opacity(colorScheme == .dark ? 0.48 : 0.36)
+    }
+}
+
 
 struct PlaceStopRowView: View {
     let day: RecapBlogDay
@@ -80,6 +127,8 @@ struct PlaceStopRowView: View {
     var onCaptionFocus: ((UUID) -> Void)?
     var onNavigate: (() -> Void)?
     var onEditName: (() -> Void)?
+    /// When set and the place has a resolved name, tapping the category chip opens the category picker (edit flow).
+    var onEditCategory: (() -> Void)? = nil
     /// Called when user taps Done on the keyboard toolbar; (stopId, isPlaceNote, photoId if photo caption).
     var onDoneEditingStory: ((UUID, Bool, UUID?) -> Void)?
     /// When set, a magic wand button is shown for the place note (only when user has written text).
@@ -169,23 +218,39 @@ struct PlaceStopRowView: View {
         Self.dayDateFormatter.string(from: day.date)
     }
 
-    private var visitTimeText: String? {
-        // Prefer visitedTimeDigitized (EXIF local time — already timezone-correct) over
-        // photo.timestamp (UTC Date formatted in device timezone, which may differ from capture location).
-        if let digitized = stop.visitedTimeDigitized {
-            let parts = digitized.split(separator: " ")
-            if parts.count == 2 {
-                let timeParts = parts[1].split(separator: ":")
-                if timeParts.count >= 2,
-                   let hours = Int(timeParts[0]),
-                   let minutes = Int(timeParts[1]) {
-                    let period = hours >= 12 ? "PM" : "AM"
-                    let h = hours == 0 ? 12 : (hours > 12 ? hours - 12 : hours)
-                    return "\(h):\(String(format: "%02d", minutes)) \(period)"
-                }
-            }
+    /// Parses EXIF-style `yyyy:MM:dd HH:mm:ss` into a 12-hour clock label (e.g. `3:42 PM`).
+    private static func formattedClockTime(fromDigitized digitized: String) -> String? {
+        let parts = digitized.split(separator: " ")
+        guard parts.count == 2 else { return nil }
+        let timeParts = parts[1].split(separator: ":")
+        guard timeParts.count >= 2,
+              let hours = Int(timeParts[0]),
+              let minutes = Int(timeParts[1]) else { return nil }
+        let period = hours >= 12 ? "PM" : "AM"
+        let h = hours == 0 ? 12 : (hours > 12 ? hours - 12 : hours)
+        return "\(h):\(String(format: "%02d", minutes)) \(period)"
+    }
+
+    /// Clock time for one photo: digitized EXIF string when present, else asset `timestamp`.
+    private func photoTimeDisplayText(for photo: RecapPhoto) -> String? {
+        if let d = photo.digitizedTime,
+           let t = Self.formattedClockTime(fromDigitized: d) {
+            return t
         }
-        return stop.photos.map(\.timestamp).min().map { Self.visitTimeFormatter.string(from: $0) }
+        return Self.visitTimeFormatter.string(from: photo.timestamp)
+    }
+
+    @ViewBuilder
+    private func photoTimestampBadge(for photo: RecapPhoto) -> some View {
+        if let text = photoTimeDisplayText(for: photo) {
+            Text(text)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3.5)
+                .background(Color.black.opacity(0.6))
+                .cornerRadius(6)
+        }
     }
 
     /// Photo size in strip — 80% of screen width so one photo is prominent and the next peeks on the right.
@@ -288,37 +353,37 @@ struct PlaceStopRowView: View {
                             .foregroundColor(.secondary)
                     }
                     let cat = categoryInfo(for: stop.placeCategory)
+                    let hasResolvedPlaceName = day.isPlaceNamesResolved
+                        && !stop.placeTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     let hasCaptionText = !(overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         || stop.photos.contains(where: { !($0.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-                    if visitTimeText != nil || cat != nil || hasCaptionText {
-                        HStack(spacing: 8) {
-                            if let time = visitTimeText {
-                                Text(time)
-                                    .font(.footnote)
-                                    .foregroundColor(.secondary)
-                            }
+                    let hasSubtitle = !(stop.placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+                    if cat != nil || hasCaptionText {
+                        HStack(alignment: .center, spacing: 12) {
                             if let cat {
-                                if isEditMode {
-                                    Button { onEditName?() } label: {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: cat.symbol)
-                                                .font(.caption2)
-                                            Text(cat.label)
-                                                .font(.caption2)
-                                        }
-                                        .foregroundColor(.secondary)
+                                if hasResolvedPlaceName, let pickCategory = onEditCategory {
+                                    Button {
+                                        pickCategory()
+                                    } label: {
+                                        PlaceCategoryChip(
+                                            symbol: cat.symbol,
+                                            label: cat.label,
+                                            showsInteractiveOutline: true,
+                                            verticalPadding: isEditMode ? 6 : 5
+                                        )
                                     }
                                     .buttonStyle(.plain)
+                                    .accessibilityLabel("Change place category, \(cat.label)")
                                 } else {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: cat.symbol)
-                                            .font(.caption2)
-                                        Text(cat.label)
-                                            .font(.caption2)
-                                    }
-                                    .foregroundColor(.secondary)
+                                    PlaceCategoryChip(
+                                        symbol: cat.symbol,
+                                        label: cat.label,
+                                        showsInteractiveOutline: false,
+                                        verticalPadding: isEditMode ? 6 : 5
+                                    )
                                 }
                             }
+                            Spacer(minLength: 0)
                             if hasCaptionText {
                                 SentimentBadge(
                                     sentiment: stop.sentiment,
@@ -327,12 +392,14 @@ struct PlaceStopRowView: View {
                                 )
                             }
                         }
+                        // Read mode: tighter under address. Edit mode: original rhythm for title → category → story.
+                        .padding(.top, isEditMode ? (hasSubtitle ? 12 : 8) : (hasSubtitle ? 8 : 5))
                     }
                 }
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
-            .padding(.bottom, 8)
+            .padding(.bottom, isEditMode ? 4 : 0)
 
             // Place story: between place info and photos — creative placeholder to encourage writing
             placeStoryRow
@@ -444,79 +511,84 @@ struct PlaceStopRowView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 0) {
-                        ZStack(alignment: .topTrailing) {
                         RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 960, height: 640))
                             .frame(maxWidth: .infinity, maxHeight: 260)
                             .clipped()
                             .cornerRadius(10)
-                            .contentShape(Rectangle())
-                            .onTapGesture { onPhotoTapped?(photo) }
-                        if isEditMode {
-                            Button {
-                                onRemovePhoto?(photo.id)
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 30))
-                                    .symbolRenderingMode(.palette)
-                                    .foregroundStyle(.white, Color.black.opacity(0.6))
+                            .overlay(alignment: .topLeading) {
+                                photoTimestampBadge(for: photo)
+                                    .padding(.leading, 8)
+                                    .padding(.top, 8)
                             }
-                            .buttonStyle(.plain)
-                            .padding(6)
-                        }
-                        }
-                    .overlay(alignment: .bottomLeading) {
-                        if vibeURL(for: photo) != nil {
-                            let isPlaying = playingVibePhotoId == photo.id && vibePlayer.isPlaying
-                            HStack(spacing: 5) {
-                                Button {
-                                    if isPlaying {
-                                        vibePlayer.stop()
-                                        playingVibePhotoId = nil
-                                    } else {
-                                        if let url = vibeURL(for: photo) {
-                                            playingVibePhotoId = photo.id
-                                            vibePlayer.play(url: url)
-                                        }
-                                    }
-                                } label: {
-                                    Image(systemName: "waveform")
-                                        .font(.system(size: isPlaying ? 15 : 11, weight: .semibold))
-                                        .foregroundStyle(
-                                            LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
-                                        )
-                                        .symbolEffect(.variableColor.iterative.reversing, isActive: isPlaying)
-                                        .padding(isPlaying ? 8 : 6)
-                                        .background(Color.black.opacity(0.55))
-                                        .clipShape(Circle())
-                                        .overlay(Circle().stroke(Color.green.opacity(isPlaying ? 0.85 : 0.5), lineWidth: isPlaying ? 1.5 : 1))
-                                        .scaleEffect(isPlaying ? 1.25 : 1.0)
-                                        .animation(.spring(response: 0.35, dampingFraction: 0.6), value: isPlaying)
-                                }
-                                .buttonStyle(.plain)
-                                if !isPlaying {
+                            .overlay(alignment: .topTrailing) {
+                                if isEditMode {
                                     Button {
-                                        if let url = vibeURL(for: photo) {
-                                            playingVibePhotoId = photo.id
-                                            vibePlayer.play(url: url)
-                                        }
+                                        onRemovePhoto?(photo.id)
                                     } label: {
-                                        Text("Play Vibe")
-                                            .font(.system(size: 11, weight: .semibold))
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(Color.black.opacity(0.55))
-                                            .clipShape(Capsule())
-                                            .overlay(Capsule().stroke(Color.green.opacity(0.5), lineWidth: 1))
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 30))
+                                            .symbolRenderingMode(.palette)
+                                            .foregroundStyle(.white, Color.black.opacity(0.6))
                                     }
                                     .buttonStyle(.plain)
-                                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                                    .padding(6)
                                 }
                             }
-                            .padding(8)
-                            .animation(.easeInOut(duration: 0.2), value: isPlaying)
-                        }
-                    }
+                            .overlay(alignment: .bottomLeading) {
+                                if vibeURL(for: photo) != nil {
+                                    let isPlaying = playingVibePhotoId == photo.id && vibePlayer.isPlaying
+                                    HStack(spacing: 5) {
+                                        Button {
+                                            if isPlaying {
+                                                vibePlayer.stop()
+                                                playingVibePhotoId = nil
+                                            } else {
+                                                if let url = vibeURL(for: photo) {
+                                                    playingVibePhotoId = photo.id
+                                                    vibePlayer.play(url: url)
+                                                }
+                                            }
+                                        } label: {
+                                            Image(systemName: "waveform")
+                                                .font(.system(size: isPlaying ? 15 : 11, weight: .semibold))
+                                                .foregroundStyle(
+                                                    LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
+                                                )
+                                                .symbolEffect(.variableColor.iterative.reversing, isActive: isPlaying)
+                                                .padding(isPlaying ? 8 : 6)
+                                                .background(Color.black.opacity(0.55))
+                                                .clipShape(Circle())
+                                                .overlay(Circle().stroke(Color.green.opacity(isPlaying ? 0.85 : 0.5), lineWidth: isPlaying ? 1.5 : 1))
+                                                .scaleEffect(isPlaying ? 1.25 : 1.0)
+                                                .animation(.spring(response: 0.35, dampingFraction: 0.6), value: isPlaying)
+                                        }
+                                        .buttonStyle(.plain)
+                                        if !isPlaying {
+                                            Button {
+                                                if let url = vibeURL(for: photo) {
+                                                    playingVibePhotoId = photo.id
+                                                    vibePlayer.play(url: url)
+                                                }
+                                            } label: {
+                                                Text("Play Vibe")
+                                                    .font(.system(size: 11, weight: .semibold))
+                                                    .foregroundColor(.white)
+                                                    .padding(.horizontal, 8)
+                                                    .padding(.vertical, 4)
+                                                    .background(Color.black.opacity(0.55))
+                                                    .clipShape(Capsule())
+                                                    .overlay(Capsule().stroke(Color.green.opacity(0.5), lineWidth: 1))
+                                            }
+                                            .buttonStyle(.plain)
+                                            .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                                        }
+                                    }
+                                    .padding(8)
+                                    .animation(.easeInOut(duration: 0.2), value: isPlaying)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture { onPhotoTapped?(photo) }
 
                     if isEditMode {
                         Button {
@@ -556,7 +628,7 @@ struct PlaceStopRowView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, isEditMode ? 4 : 8)
+                .padding(.top, isEditMode ? 4 : 0)
                 .padding(.bottom, isEditMode ? 20 : 12)
             } else if includedPhotos.count > 1 || (includedPhotos.isEmpty && shouldShowManagePhotosCard) {
                 // --- CASE 2b: Multiple included photos, or edit mode with none included but a pool to manage — Manage Photos bar + horizontal strip when applicable ---
@@ -610,29 +682,34 @@ struct PlaceStopRowView: View {
                             HStack(alignment: .top, spacing: 10) {
                                 ForEach(includedPhotos) { photo in
                                     VStack(alignment: .leading, spacing: 6) {
-                                        ZStack(alignment: .topTrailing) {
-                                            RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 480, height: 480))
-                                                .aspectRatio(1, contentMode: .fill)
-                                                .frame(width: thumbnailSize, height: thumbnailSize)
-                                                .clipped()
-                                                .cornerRadius(8)
-                                                .contentShape(Rectangle())
-                                                .onTapGesture {
-                                                    onPhotoTapped?(photo)
-                                                }
-                                            if isEditMode {
-                                                Button {
-                                                    onRemovePhoto?(photo.id)
-                                                } label: {
-                                                    Image(systemName: "xmark.circle.fill")
-                                                        .font(.system(size: 30))
-                                                        .symbolRenderingMode(.palette)
-                                                        .foregroundStyle(.white, Color.black.opacity(0.6))
-                                                }
-                                                .buttonStyle(.plain)
-                                                .padding(6)
+                                        RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 480, height: 480))
+                                            .aspectRatio(1, contentMode: .fill)
+                                            .frame(width: thumbnailSize, height: thumbnailSize)
+                                            .clipped()
+                                            .cornerRadius(8)
+                                            .overlay(alignment: .topLeading) {
+                                                photoTimestampBadge(for: photo)
+                                                    .padding(.leading, 8)
+                                                    .padding(.top, 8)
                                             }
-                                        }
+                                            .overlay(alignment: .topTrailing) {
+                                                if isEditMode {
+                                                    Button {
+                                                        onRemovePhoto?(photo.id)
+                                                    } label: {
+                                                        Image(systemName: "xmark.circle.fill")
+                                                            .font(.system(size: 30))
+                                                            .symbolRenderingMode(.palette)
+                                                            .foregroundStyle(.white, Color.black.opacity(0.6))
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                    .padding(6)
+                                                }
+                                            }
+                                            .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                onPhotoTapped?(photo)
+                                            }
                                         .overlay(alignment: .bottomLeading) {
                                             if vibeURL(for: photo) != nil {
                                                 let isPlaying = playingVibePhotoId == photo.id && vibePlayer.isPlaying
@@ -732,7 +809,7 @@ struct PlaceStopRowView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, isEditMode ? 4 : 8)
+                .padding(.top, isEditMode ? 4 : 0)
                 .padding(.bottom, isEditMode ? 20 : 12)
             }
 
@@ -828,7 +905,8 @@ struct PlaceStopRowView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.top, 6)
+                .padding(.bottom, 4)
             } else {
                 let displayStory: String = {
                     let manual = overallStory.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -880,8 +958,8 @@ struct PlaceStopRowView: View {
                         }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, onTellPlaceStory != nil && LocalLLMStoryCaptionGenerator.isCapable && isEditMode ? 12 : 8)
+                    .padding(.top, 6)
+                    .padding(.bottom, onTellPlaceStory != nil && LocalLLMStoryCaptionGenerator.isCapable && isEditMode ? 8 : 6)
                 }
             }
             let placeStoryEmptyForAI: Bool = {
@@ -1032,6 +1110,7 @@ struct PlaceStopRowView: View {
             onCaptionFocus: nil,
             onNavigate: nil,
             onEditName: nil,
+            onEditCategory: nil,
             onDoneEditingStory: nil,
             onGeneratePlaceStory: nil,
             onGenerateOverallStory: nil,

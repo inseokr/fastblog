@@ -31,6 +31,10 @@ struct PhotoCaptionEditSheet: View {
     @State private var originalDraft: String? = nil
     @FocusState private var isFocused: Bool
 
+    private let editorTextHorizontalPadding: CGFloat = 20
+    private let placeholderLeadingInset: CGFloat = 40
+    private let placeholderTrailingInset: CGFloat = 20
+
     private var trimmedEditedText: String {
         editedText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -76,7 +80,7 @@ struct PhotoCaptionEditSheet: View {
                     .font(.body)
                     .foregroundColor(.primary)
                     .scrollContentBackground(.hidden)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, editorTextHorizontalPadding)
                     .padding(.vertical, 14)
                     .frame(minHeight: 140)
                     .background(Color(uiColor: .secondarySystemBackground))
@@ -87,7 +91,8 @@ struct PhotoCaptionEditSheet: View {
                     Text("Write a caption for this photo…")
                         .font(.body)
                         .foregroundColor(Color(uiColor: .placeholderText))
-                        .padding(.leading, 40)
+                        .padding(.leading, placeholderLeadingInset)
+                        .padding(.trailing, placeholderTrailingInset)
                         .padding(.top, 22)
                         .allowsHitTesting(false)
                 }

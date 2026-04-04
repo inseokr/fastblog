@@ -47,6 +47,17 @@ enum BlogMissingPhotosEvaluator {
         return included.allSatisfy { !photoHasResolvableMedia($0) }
     }
 
+    /// True when the blog can be shown on this device: no "phantom" selected-photo metadata, and every included photo loads from cloud URL or local storage.
+    /// Used after sign-in / sync to drop stale rows from another device that only referenced that device's photo library or capture files.
+    static func blogIsDisplayableOnThisDevice(detail: RecapBlogDetail, recapSummary: CreatedRecapBlog?) -> Bool {
+        let included = detail.allIncludedPhotos
+        if included.isEmpty {
+            let metaCount = recapSummary?.selectedPhotoCount ?? 0
+            return metaCount == 0
+        }
+        return included.allSatisfy { photoHasResolvableMedia($0) }
+    }
+
     private static func photoHasResolvableMedia(_ photo: RecapPhoto) -> Bool {
         let cloud = (photo.cloudURL ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !cloud.isEmpty { return true }
