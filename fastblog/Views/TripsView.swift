@@ -43,8 +43,6 @@ struct TripsView: View {
     @AppStorage("blogify.skipSelectPhotosIntro") private var skipSelectPhotosIntro = false
     @State private var selectedTrip: TripDraft?
     @State private var createBlogFlowTrip: TripDraft?
-    @State private var showGuestBlogLimitModal = false
-    @State private var showAuth = false
     @State private var mapPosition: MapCameraPosition = .automatic
     /// Gates map visibility — map is hidden until its initial position is explicitly set,
     /// preventing the MapKit auto-fit animation from the default .automatic position.
@@ -396,18 +394,6 @@ struct TripsView: View {
             tripsIntroModalContent()
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
-        }
-        .sheet(isPresented: $showGuestBlogLimitModal) {
-            guestBlogLimitModalContent
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
-                .preferredColorScheme(.dark)
-        }
-        .fullScreenCover(isPresented: $showAuth) {
-            AuthView(
-                onAuthenticated: { showAuth = false },
-                onDismiss: { showAuth = false }
-            )
         }
         .onAppear {
             viewModel.onAppear()
@@ -846,80 +832,8 @@ struct TripsView: View {
         return f
     }()
 
-    // MARK: - Guest Blog Limit
-
-    /// Routes blog creation through the guest limit gate. If the user is a guest
-    /// and already has one anonymous blog, shows the upgrade modal instead.
     private func attemptCreateBlog(trip: TripDraft) {
-        let isGuest = AuthService.shared.currentUser == nil
-        let alreadyHasBlog = createdRecapStore.anonymousDrafts.count >= 1
-        if isGuest && alreadyHasBlog {
-            showGuestBlogLimitModal = true
-        } else {
-            createBlogFlowTrip = trip
-        }
-    }
-
-    private var guestBlogLimitModalContent: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 20) {
-                Image("SplashIcon")
-                    .resizable()
-                    .renderingMode(.template)
-                    .scaledToFit()
-                    .frame(width: 52, height: 52)
-                    .foregroundColor(.white)
-                    .padding(.top, 8)
-
-                VStack(spacing: 8) {
-                    Text("Create an Account")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                        .multilineTextAlignment(.center)
-
-                    Text("Keep your blogs secure and optionally back them up to the cloud.")
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-
-                    Text("Sign in to create as many blogs as you like.")
-                        .font(.body)
-                        .multilineTextAlignment(.center)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .padding(.horizontal, 24)
-
-            Spacer()
-
-            VStack(spacing: 12) {
-                Button {
-                    showGuestBlogLimitModal = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        showAuth = true
-                    }
-                } label: {
-                    Text("Sign In")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(12)
-                }
-
-                Button {
-                    showGuestBlogLimitModal = false
-                } label: {
-                    Text("Cancel")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
-        }
-        .padding(.top, 24)
+        createBlogFlowTrip = trip
     }
 
     // MARK: - First-time Trips Intro Pull-Up

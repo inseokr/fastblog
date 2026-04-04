@@ -52,8 +52,6 @@ struct MyBlogsProfileView: View {
     @FocusState private var isSearchFocused: Bool
     @State private var selectedUnsavedTripPhotos: TripDraft?
     @State private var createBlogFlowTrip: TripDraft?
-    @State private var showGuestBlogLimitModal = false
-    @State private var showAuth = false
     @State private var scrollOffset: CGFloat = 0
     /// Scroll offset for country page — used for swipe-down-to-dismiss when at top.
     @State private var countryScrollOffset: CGFloat = 0
@@ -262,18 +260,6 @@ struct MyBlogsProfileView: View {
             }
             .environmentObject(createdRecapStore)
         }
-        .sheet(isPresented: $showGuestBlogLimitModal) {
-            guestBlogLimitModalContent
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
-                .preferredColorScheme(.dark)
-        }
-        .fullScreenCover(isPresented: $showAuth) {
-            AuthView(
-                onAuthenticated: { showAuth = false },
-                onDismiss: { showAuth = false }
-            )
-        }
         .onAppear {
             viewModel.loadUnsavedTrips()
             checkForNewMoments()
@@ -351,75 +337,7 @@ struct MyBlogsProfileView: View {
     }
 
     private func attemptCreateBlog(trip: TripDraft) {
-        let isGuest = AuthService.shared.currentUser == nil
-        let alreadyHasBlog = createdRecapStore.anonymousDrafts.count >= 1
-        if isGuest && alreadyHasBlog {
-            showGuestBlogLimitModal = true
-        } else {
-            selectedUnsavedTripPhotos = trip
-        }
-    }
-
-    private var guestBlogLimitModalContent: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 20) {
-                Image("SplashIcon")
-                    .resizable()
-                    .renderingMode(.template)
-                    .scaledToFit()
-                    .frame(width: 52, height: 52)
-                    .foregroundColor(.white)
-                    .padding(.top, 8)
-
-                VStack(spacing: 8) {
-                    Text("Create an Account")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                        .multilineTextAlignment(.center)
-
-                    Text("Keep your blogs secure and optionally back them up to the cloud.")
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-
-                    Text("Sign in to create as many blogs as you like.")
-                        .font(.body)
-                        .multilineTextAlignment(.center)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .padding(.horizontal, 24)
-
-            Spacer()
-
-            VStack(spacing: 12) {
-                Button {
-                    showGuestBlogLimitModal = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        showAuth = true
-                    }
-                } label: {
-                    Text("Sign In")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(12)
-                }
-
-                Button {
-                    showGuestBlogLimitModal = false
-                } label: {
-                    Text("Cancel")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
-        }
-        .padding(.top, 24)
+        selectedUnsavedTripPhotos = trip
     }
 
     @ViewBuilder

@@ -17,6 +17,7 @@ private func filterChipUnselectedFill() -> Color {
 struct PlacesVisitedStandaloneView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
+    @Binding var initialScrollToStopIdForRecap: UUID?
     var onDismiss: () -> Void
 
     @State private var searchText: String = ""
@@ -28,7 +29,9 @@ struct PlacesVisitedStandaloneView: View {
         PlacesVisitedView(
             searchText: $searchText,
             showPlacesMap: $showPlacesMap,
-            selectedCreatedRecap: $selectedCreatedRecap
+            selectedCreatedRecap: $selectedCreatedRecap,
+            initialScrollToStopIdForRecap: $initialScrollToStopIdForRecap,
+            standaloneOnDismiss: onDismiss
         )
         .background(backgroundBlue.ignoresSafeArea())
         .scrollContentBackground(.hidden)
@@ -36,20 +39,6 @@ struct PlacesVisitedStandaloneView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .preferredColorScheme(.dark)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        onDismiss()
-                    }
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.primary)
-                }
-            }
-        }
     }
 }
 
@@ -59,6 +48,9 @@ struct PlacesVisitedView: View {
     @Binding var searchText: String
     @Binding var showPlacesMap: Bool
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
+    @Binding var initialScrollToStopIdForRecap: UUID?
+    /// When set (standalone presentation), shows a leading dismiss control in the navigation bar.
+    var standaloneOnDismiss: (() -> Void)? = nil
 
     @State private var selectedYear: Int? = nil
     @State private var selectedCountry: String? = nil
@@ -306,21 +298,62 @@ struct PlacesVisitedView: View {
                 placesSearchBar
             }
             .allowsHitTesting(true)
+
+            // Full-screen place viewer (matches blog overlay, not a sheet).
+            if let place = selectedPlaceForModal {
+                PlaceVisitedPhotoModalWrapper(
+                    place: place,
+                    onDismiss: { selectedPlaceForModal = nil },
+                    onViewBlog: {
+                        guard let ref = place.relatedBlogs.first,
+                              let recap = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == ref.blogId }) else { return }
+                        selectedPlaceForModal = nil
+                        initialScrollToStopIdForRecap = ref.placeStopId
+                        selectedCreatedRecap = recap
+                    }
+                )
+                .environmentObject(createdRecapStore)
+                .transition(.asymmetric(insertion: .opacity, removal: .identity))
+                .zIndex(200)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea()
+            }
         }
-        .sheet(item: $selectedPlaceForModal) { place in
-            placeModalSheet(place: place)
-        }
+        .animation(.easeInOut(duration: 0.38), value: selectedPlaceForModal?.id)
         .navigationDestination(isPresented: $showPlacesMap) {
             PlacesVisitedMapView(
                 selectedYear: $selectedYear,
                 selectedCountry: $selectedCountry,
                 selectedCategory: $selectedCategory,
                 searchText: $searchText,
-                selectedCreatedRecap: $selectedCreatedRecap
+                selectedCreatedRecap: $selectedCreatedRecap,
+                initialScrollToStopIdForRecap: $initialScrollToStopIdForRecap
             )
             .environmentObject(createdRecapStore)
         }
         .toolbar {
+            ToolbarItemGroup(placement: .topBarLeading) {
+                if let standaloneOnDismiss {
+                    Button {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            standaloneOnDismiss()
+                        }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.primary)
+                    }
+                }
+                if selectedYear != nil || selectedCountry != nil || selectedCategory != nil {
+                    Button("Reset") {
+                        selectedYear = nil
+                        selectedCountry = nil
+                        selectedCategory = nil
+                    }
+                    .foregroundStyle(.primary)
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 if isSearchActive {
                     Button("Done") {
@@ -348,17 +381,9 @@ struct PlacesVisitedView: View {
                     }
                 }
             }
-            if selectedYear != nil || selectedCountry != nil || selectedCategory != nil {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Reset") {
-                        selectedYear = nil
-                        selectedCountry = nil
-                        selectedCategory = nil
-                    }
-                    .foregroundStyle(.primary)
-                }
-            }
         }
+        .toolbar(selectedPlaceForModal != nil ? .hidden : .automatic, for: .navigationBar)
+        .toolbarBackground(selectedPlaceForModal != nil ? .hidden : .automatic, for: .navigationBar)
         .onChange(of: selectedYear) { _, _ in
             // If the user switches years, drop any category that doesn't exist for the new year.
             if let selectedCategory,
@@ -489,26 +514,10 @@ struct PlacesVisitedView: View {
         .buttonStyle(.plain)
     }
 
-    @ViewBuilder
-    private func placeModalSheet(place: VisitedPlaceSummary) -> some View {
-        PlaceVisitedPhotoModalWrapper(
-            place: place,
-            onDismiss: { selectedPlaceForModal = nil },
-            onViewBlog: {
-                guard let blogId = place.relatedBlogs.first?.blogId,
-                      let recap = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == blogId }) else { return }
-                selectedPlaceForModal = nil
-                selectedCreatedRecap = recap
-            }
-        )
-        .environmentObject(createdRecapStore)
-        .presentationDetents([.large])
-        .presentationBackground(.clear)
-    }
 }
 
 
-/// Stateful wrapper around PlacePhotoModalView for the Places Visited sheet.
+/// Stateful wrapper around PlacePhotoModalView for the Places Visited full-screen overlay.
 /// Holds live per-photo caption state so the binding getter always reflects the latest value,
 /// and calls updatePhotoCaption on the store whenever a caption is committed.
 private struct PlaceVisitedPhotoModalWrapper: View {
@@ -544,6 +553,7 @@ private struct PlaceVisitedPhotoModalWrapper: View {
                 stopDigitizedTime: nil,
                 blogIsEditMode: false,
                 showAssetTimeMetadata: false,
+                presentation: .fullscreen(source: .placesVisited),
                 photoCaption: { photoId in
                     Binding(
                         get: { liveCaptions[photoId] ?? photos.first(where: { $0.id == photoId })?.caption ?? "" },
@@ -554,7 +564,7 @@ private struct PlaceVisitedPhotoModalWrapper: View {
                     )
                 },
                 onDismiss: onDismiss,
-                onViewBlog: onViewBlog,
+                onViewBlog: place.relatedBlogs.isEmpty ? nil : onViewBlog,
                 onPhotoCaptionManuallyEdited: { photoId in
                     // updatePhotoCaption already called via the binding setter
                 },
@@ -711,6 +721,7 @@ private struct PlacesVisitedMapView: View {
     @Binding var selectedCategory: String?
     @Binding var searchText: String
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
+    @Binding var initialScrollToStopIdForRecap: UUID?
 
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var selectedPlaceForModal: VisitedPlaceSummary?
@@ -1080,26 +1091,32 @@ private struct PlacesVisitedMapView: View {
                 }
                 .transition(.opacity)
             }
+
+            // Full-screen place viewer (matches blog overlay, not a sheet).
+            if let place = selectedPlaceForModal {
+                PlaceVisitedPhotoModalWrapper(
+                    place: place,
+                    onDismiss: { selectedPlaceForModal = nil },
+                    onViewBlog: {
+                        guard let ref = place.relatedBlogs.first,
+                              let recap = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == ref.blogId }) else { return }
+                        selectedPlaceForModal = nil
+                        initialScrollToStopIdForRecap = ref.placeStopId
+                        selectedCreatedRecap = recap
+                    }
+                )
+                .environmentObject(createdRecapStore)
+                .transition(.asymmetric(insertion: .opacity, removal: .identity))
+                .zIndex(200)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea()
+            }
         }
         .navigationBarBackButtonHidden(true)
         .navigationTitle("Map")
         .navigationBarTitleDisplayMode(.inline)
         .preferredColorScheme(.dark)
-        .sheet(item: $selectedPlaceForModal) { place in
-            PlaceVisitedPhotoModalWrapper(
-                place: place,
-                onDismiss: { selectedPlaceForModal = nil },
-                onViewBlog: {
-                    guard let blogId = place.relatedBlogs.first?.blogId,
-                          let recap = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == blogId }) else { return }
-                    selectedPlaceForModal = nil
-                    selectedCreatedRecap = recap
-                }
-            )
-            .environmentObject(createdRecapStore)
-            .presentationDetents([.large])
-            .presentationBackground(.clear)
-        }
+        .animation(.easeInOut(duration: 0.38), value: selectedPlaceForModal?.id)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
@@ -1155,6 +1172,8 @@ private struct PlacesVisitedMapView: View {
                 }
             }
         }
+        .toolbar(selectedPlaceForModal != nil ? .hidden : .automatic, for: .navigationBar)
+        .toolbarBackground(selectedPlaceForModal != nil ? .hidden : .automatic, for: .navigationBar)
     }
 
     private func chip(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {

@@ -39,10 +39,11 @@ struct AuthView: View {
                         AuthService.Analytics.track(.authCancelled)
                         if let onDismiss { onDismiss() } else { dismiss() }
                     } label: {
-                        Image(systemName: "xmark")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.5))
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.white.opacity(0.3))
                     }
+                    .buttonStyle(.plain)
                     .padding(.leading, 20)
                     .padding(.top, 20)
                     Spacer()
@@ -138,7 +139,7 @@ struct AuthView: View {
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
 
-            Text("Sign up for early access to secure cloud uploads · Edit on desktop · Access from any device")
+            Text("Save and download unlimited blogs.\nGuest users can export 1 blog to try Bloggo")
                 .font(.subheadline)
                 .foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
@@ -189,12 +190,6 @@ struct AuthView: View {
                     .padding(.horizontal, 10)
                 authDivider
             }
-
-            Text("Use the same sign in method on web to edit your blogs.")
-                .font(.caption)
-                .foregroundColor(.white.opacity(0.45))
-                .multilineTextAlignment(.center)
-                .padding(.bottom, 4)
 
             // Email
             Button {

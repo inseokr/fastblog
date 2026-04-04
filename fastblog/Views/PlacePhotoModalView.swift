@@ -17,7 +17,60 @@ struct PlacePhotoModalItem: Identifiable {
     var id: String { "\(dayId.uuidString)-\(stopId.uuidString)-\(initialPhotoId.uuidString)" }
 }
 
+// MARK: - Fullscreen place presentation (shared chrome)
+
+/// Entry point for a fullscreen / sheet place viewer; drives title-row affordances (e.g. Places Visited → blog).
+enum PlaceDetailSource: Equatable {
+    case blogRecap
+    case blogMap
+    case placesVisited
+}
+
+/// Sheet vs fullscreen overlay. All `fullscreen` sources share identical top chrome metrics and layout.
+enum PlaceDetailPresentation: Equatable {
+    case sheet
+    case fullscreen(source: PlaceDetailSource)
+
+    var isSheet: Bool {
+        if case .sheet = self { return true }
+        return false
+    }
+
+    var fullscreenSource: PlaceDetailSource? {
+        if case .fullscreen(let s) = self { return s }
+        return nil
+    }
+
+    /// Blog control belongs in the place title row (`BottomInfoOverlay`), not the top-right action stack.
+    var showsBlogButtonInTitleRow: Bool {
+        fullscreenSource == .placesVisited
+    }
+}
+
+/// Single source of truth for place detail top chrome and matching horizontal rhythm with the bottom stack.
+private enum PlaceDetailChromeLayout {
+    static let horizontalPadding: CGFloat = 16
+    static let actionStackSpacing: CGFloat = 14
+    /// Fullscreen: inset header below the device safe top (status bar / Dynamic Island).
+    static let fullscreenPaddingBelowSafeAreaTop: CGFloat = 10
+    static let sheetGrabberTopPadding: CGFloat = 10
+    /// Inner padding for the header row (below grabber for sheet; below safe-area inset for fullscreen).
+    static let sheetInnerTopPadding: CGFloat = 20
+    static let fullscreenInnerTopPadding: CGFloat = 14
+    /// Fullscreen top fade: safe area + this height.
+    static let fullscreenTopGradientExtensionBelowSafeArea: CGFloat = 120
+    static let circleActionSize: CGFloat = 44
+
+    static func bottomContentVerticalPadding(sheet: Bool) -> CGFloat { sheet ? 20 : 14 }
+    static func bottomContentHorizontalPadding(sheet: Bool) -> CGFloat { sheet ? 20 : horizontalPadding }
+    static func thumbnailStripBottomPadding(sheet: Bool) -> CGFloat { sheet ? 8 : 4 }
+    static func bottomGradientNegativeTopPadding(sheet: Bool) -> CGFloat { sheet ? -120 : -100 }
+}
+
 /// Presents when user taps a photo in a Place. Full-screen photo viewer with overlays.
+///
+/// **Fullscreen (blog timeline, blog map, Places Visited):** use `presentation: .fullscreen(source:)` so top chrome
+/// matches across entry points. **Sheet (e.g. removed places):** use `presentation: .sheet` (default).
 struct PlacePhotoModalView: View {
     @Binding var placeTitle: String
     let placeSubtitle: String?
@@ -30,8 +83,8 @@ struct PlacePhotoModalView: View {
     /// When false, hide PHAsset "Created/Modified" metadata lines (useful for read-only presentation).
     var showAssetTimeMetadata: Bool = true
     var autoFocusCaption: Bool = false
-    /// When `true` (default), shows the grabber at the top — intended for sheet presentation. Full-screen blog overlay uses `false`.
-    var showsSheetDragHandle: Bool = true
+    /// Sheet (removed places, etc.) vs fullscreen overlay; all `fullscreen` sources use the same header layout.
+    var presentation: PlaceDetailPresentation = .sheet
     var photoCaption: (UUID) -> Binding<String>
     var onDismiss: () -> Void
     /// Blog overlay: fire when the slide-off dismiss animation begins so the recap nav bar can show in sync with the panel.
@@ -176,7 +229,7 @@ struct PlacePhotoModalView: View {
         blogIsEditMode: Bool = false,
         showAssetTimeMetadata: Bool = true,
         autoFocusCaption: Bool = false,
-        showsSheetDragHandle: Bool = true,
+        presentation: PlaceDetailPresentation = .sheet,
         photoCaption: @escaping (UUID) -> Binding<String>,
         onDismiss: @escaping () -> Void,
         onDismissSlideBegan: (() -> Void)? = nil,
@@ -197,7 +250,7 @@ struct PlacePhotoModalView: View {
         self.blogIsEditMode = blogIsEditMode
         self.showAssetTimeMetadata = showAssetTimeMetadata
         self.autoFocusCaption = autoFocusCaption
-        self.showsSheetDragHandle = showsSheetDragHandle
+        self.presentation = presentation
         self.photoCaption = photoCaption
         self.onDismiss = onDismiss
         self.onDismissSlideBegan = onDismissSlideBegan
@@ -231,6 +284,18 @@ struct PlacePhotoModalView: View {
 
     private func trim(_ text: String) -> String {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Full-screen / blog overlay: inset bottom chrome from the home indicator and nudge it upward vs sheet layout.
+    private func bottomPhotoChromeInset(safeBottom: CGFloat) -> CGFloat {
+        if presentation.isSheet { return 0 }
+        return max(safeBottom, 10) + 6
+    }
+
+    /// Title-row “View blog” only for Places Visited; never in the top-right stack.
+    private var titleRowOnViewBlog: (() -> Void)? {
+        guard presentation.showsBlogButtonInTitleRow, !blogIsEditMode, let onViewBlog else { return nil }
+        return onViewBlog
     }
 
     private var hasAnyChanges: Bool {
@@ -347,6 +412,7 @@ struct PlacePhotoModalView: View {
     }
 
     var body: some View {
+        GeometryReader { geo in
         ZStack {
                 // 1. Full screen media viewer — horizontal ScrollView with paging (not TabView) so the
                 // sheet’s drag-to-dismiss doesn’t steal horizontal swipes. Tap/double-tap to zoom (same flow as non-modal).
@@ -394,6 +460,7 @@ struct PlacePhotoModalView: View {
                         currentPhotoAssetMetadata = result
                     }
                     .overlay(alignment: .bottom) {
+                        let bottomInset = bottomPhotoChromeInset(safeBottom: geo.safeAreaInsets.bottom)
                         VStack(spacing: 0) {
                             if !isEditing {
                                 BottomInfoOverlay(
@@ -406,8 +473,10 @@ struct PlacePhotoModalView: View {
                                     isCaptionExpanded: $isReadOnlyCaptionExpanded,
                                     placeholder: "Leave a story for this photo...",
                                     blogIsEditMode: blogIsEditMode,
-                                    onViewBlog: onViewBlog,
+                                    contentVerticalPadding: PlaceDetailChromeLayout.bottomContentVerticalPadding(sheet: presentation.isSheet),
+                                    contentHorizontalPadding: PlaceDetailChromeLayout.bottomContentHorizontalPadding(sheet: presentation.isSheet),
                                     onTitleTap: { openGoogleSearch() },
+                                    onViewBlog: titleRowOnViewBlog,
                                     onCommitCaption: { commitCaption() }
                                 )
                             }
@@ -420,9 +489,9 @@ struct PlacePhotoModalView: View {
                                         onSelectPhoto: { currentPhotoId = $0 }
                                     )
                                     .disabled(isPhotoPagingLocked)
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, PlaceDetailChromeLayout.horizontalPadding)
                                     .padding(.top, 0)
-                                    .padding(.bottom, 8)
+                                    .padding(.bottom, PlaceDetailChromeLayout.thumbnailStripBottomPadding(sheet: presentation.isSheet))
                                 } else if let single = photos.first {
                                     HStack {
                                         RecapPhotoThumbnail(photo: single, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 160, height: 160))
@@ -435,12 +504,13 @@ struct PlacePhotoModalView: View {
                                             )
                                         Spacer()
                                     }
-                                    .padding(.horizontal, 16)
-                                    .padding(.bottom, 8)
+                                    .padding(.horizontal, PlaceDetailChromeLayout.horizontalPadding)
+                                    .padding(.bottom, PlaceDetailChromeLayout.thumbnailStripBottomPadding(sheet: presentation.isSheet))
                                 }
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.bottom, bottomInset)
                         .background(
                             (isEditing || isZoomMode) ? nil :
                             LinearGradient(
@@ -448,175 +518,55 @@ struct PlacePhotoModalView: View {
                                 startPoint: .bottom,
                                 endPoint: .top
                             )
-                            .padding(.top, -120)
+                            .padding(.top, PlaceDetailChromeLayout.bottomGradientNegativeTopPadding(sheet: presentation.isSheet))
                         )
                         .opacity(isZoomMode ? 0 : 1)
                         .animation(.easeInOut(duration: 0.25), value: isZoomMode)
                     }
 
-            // 4. Top bar + bottom-right action stack (drawn on top so never covered when modal is small).
-            // Pass-through layer so taps in the center reach the photo view; only the bar content gets hits.
-            ZStack(alignment: .top) {
-                Color.clear
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .allowsHitTesting(false)
-                if showsSheetDragHandle {
-                    Capsule()
-                        .fill(Color.white.opacity(0.4))
-                        .frame(width: 40, height: 5)
-                        .padding(.top, 10)
-                }
-
-                VStack(spacing: 0) {
-                    HStack(alignment: .top) {
-                        if isEditing && !blogIsEditMode {
-                            // Cancel button in top left when editing in read mode
-                            Button(action: handleUserRequestedDismiss) {
-                                Text("Cancel")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(Color.black.opacity(0.35))
-                                    .clipShape(Capsule())
-                            }
-                        } else if blogIsEditMode {
-                            // Cancel button in top left when in blog edit mode
-                            Button(action: handleUserRequestedDismiss) {
-                                Text("Cancel")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(Color.black.opacity(0.35))
-                                    .clipShape(Capsule())
-                            }
-                        } else {
-                            // Close button in top left when not editing
-                            Button(action: handleUserRequestedDismiss) {
-                                Text("Close")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(Color.black.opacity(0.35))
-                                    .clipShape(Capsule())
-                            }
-                        }
-
-                        Spacer()
-                        
-                        if !isEditing && !blogIsEditMode {
-                            // Kebab menu + action buttons stacked vertically in top right
-                            VStack(spacing: 18) {
-                                Menu {
-                                    Button {
-                                        showRenameSheet = true
-                                    } label: {
-                                        Label("Edit Place Name", systemImage: "mappin.and.ellipse")
-                                    }
-
-                                    Button {
-                                        captionWhenEditingStarted = currentCaption
-                                        titleWhenEditingStarted = placeTitle
-                                        editedCaptionText = currentCaption
-                                        editedPlaceTitle = placeTitle
-                                        isEditing = true
-                                        focusCaptionFieldOnNextLayout()
-                                    } label: {
-                                        Label("Edit caption", systemImage: "pencil")
-                                    }
-
-                                    Button(role: .destructive) {
-                                        onRemovePhoto?(currentPhotoId)
-                                    } label: {
-                                        Label("Remove photo", systemImage: "trash")
-                                    }
-                                } label: {
-                                    Image(systemName: "ellipsis")
-                                        .font(.system(size: 22, weight: .bold))
-                                        .foregroundColor(.white)
-                                        .frame(width: 44, height: 44)
-                                        .shadow(color: .black.opacity(0.5), radius: 3)
-                                }
-
-                                // Vibe button — only shown when the current photo has a Vibe clip
-                                if currentVibeURL != nil {
-                                    let isPlaying = isVibeEnabled && vibePlayer.isPlaying
-                                    Button {
-                                        isVibeEnabled.toggle()
-                                        if isVibeEnabled, let url = currentVibeURL {
-                                            vibePlayer.play(url: url)
-                                        } else {
-                                            vibePlayer.stop()
-                                        }
-                                    } label: {
-                                        AtmosphericWaveformView(isActive: isVibeEnabled)
-                                            .frame(width: 50, height: 50)
-                                            .background(.ultraThinMaterial)
-                                            .background(isVibeEnabled ? Color.cyan.opacity(0.22) : Color.clear)
-                                            .clipShape(Circle())
-                                            .overlay(
-                                                Circle().stroke(
-                                                    isVibeEnabled ? Color.cyan.opacity(0.5) : Color.clear,
-                                                    lineWidth: 1
-                                                )
-                                            )
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel(isPlaying ? "Vibe playing" : "Play vibe")
-                                }
-
-                                RightActionStack(
-                                    onSparkles: { /* AI assist */ },
-                                    onNavigate: { openNavigation() },
-                                    onLink: { openGoogleSearch() }
-                                )
-                            }
-                        } else if isEditing && !blogIsEditMode {
-                            // Save button in top right when editing in read mode
-                            Button(action: {
-                                commitCaption()
-                                onDismiss()
-                            }) {
-                                Text("Save")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
-                                    .background(Color.blue)
-                                    .clipShape(Capsule())
-                            }
-                        } else if blogIsEditMode {
-                            // Always show Done in blog edit mode so the user can finish the flow even when nothing changed.
-                            Button(action: {
-                                if hasUnsavedChanges {
-                                    commitCaption()
-                                }
-                                onDismiss()
-                            }) {
-                                Text("Done")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(Color.black.opacity(0.35))
-                                    .clipShape(Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
-                        }
+            // 4. Shared top chrome (Close + actions): identical for every fullscreen source; sheet adds grabber.
+            PlaceDetailTopChrome(
+                safeAreaTop: geo.safeAreaInsets.top,
+                presentation: presentation,
+                isEditing: isEditing,
+                blogIsEditMode: blogIsEditMode,
+                hasUnsavedChanges: hasUnsavedChanges,
+                currentPhotoId: effectiveDisplayedPhotoId,
+                hasVibeClip: currentVibeURL != nil,
+                isVibeEnabled: isVibeEnabled,
+                isVibePlaying: isVibeEnabled && vibePlayer.isPlaying,
+                onLeadingPrimary: { handleUserRequestedDismiss() },
+                onSaveCaptionAndDismiss: {
+                    commitCaption()
+                    onDismiss()
+                },
+                onDoneBlogEdit: {
+                    if hasUnsavedChanges {
+                        commitCaption()
                     }
-                    .animation(.easeInOut(duration: 0.2), value: hasUnsavedChanges)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 20)
-                }
-                .frame(maxWidth: .infinity, alignment: .top)
-            }
+                    onDismiss()
+                },
+                onMenuEditPlaceName: { showRenameSheet = true },
+                onMenuBeginCaptionEdit: {
+                    captionWhenEditingStarted = currentCaption
+                    titleWhenEditingStarted = placeTitle
+                    editedCaptionText = currentCaption
+                    editedPlaceTitle = placeTitle
+                    isEditing = true
+                    focusCaptionFieldOnNextLayout()
+                },
+                onMenuRemovePhoto: { photoId in onRemovePhoto?(photoId) },
+                onToggleVibe: {
+                    isVibeEnabled.toggle()
+                    if isVibeEnabled, let url = currentVibeURL {
+                        vibePlayer.play(url: url)
+                    } else {
+                        vibePlayer.stop()
+                    }
+                },
+                onNavigate: { openNavigation() },
+                onLink: { openGoogleSearch() }
+            )
             .allowsHitTesting(!isZoomMode)
             .opacity(isZoomMode ? 0 : 1)
             .animation(.easeInOut(duration: 0.25), value: isZoomMode)
@@ -626,6 +576,8 @@ struct PlacePhotoModalView: View {
                 zoomablePhotoOverlay(photo: photo)
             }
 
+        }
+        .frame(width: geo.size.width, height: geo.size.height)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
@@ -946,6 +898,21 @@ struct PlacePhotoModalView: View {
         withAnimation(.easeInOut(duration: 0.25)) { isZoomMode = true }
     }
 
+    private func exitZoomMode() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            isZoomMode = false
+            accumulatedZoomScale = 1.0
+            accumulatedDragOffset = .zero
+        }
+    }
+
+    /// Single tap exits zoom back to the place chrome; double-tap also exits without firing a lone single tap first (avoids re-entering zoom on the page below).
+    private func zoomOverlayTapToExitGesture() -> some Gesture {
+        let doubleTap = TapGesture(count: 2).onEnded { exitZoomMode() }
+        let singleTap = TapGesture(count: 1).onEnded { exitZoomMode() }
+        return doubleTap.exclusively(before: singleTap)
+    }
+
     @ViewBuilder
     private func zoomablePhotoOverlay(photo: RecapPhoto) -> some View {
         let scale = max(1.0, accumulatedZoomScale * pinchScale)
@@ -970,11 +937,7 @@ struct PlacePhotoModalView: View {
                             .onEnded { value in
                                 let newScale = max(1.0, min(5.0, accumulatedZoomScale * value))
                                 if newScale <= 1.05 {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        accumulatedZoomScale = 1.0
-                                        accumulatedDragOffset = .zero
-                                        isZoomMode = false
-                                    }
+                                    exitZoomMode()
                                 } else {
                                     accumulatedZoomScale = newScale
                                 }
@@ -989,23 +952,11 @@ struct PlacePhotoModalView: View {
                             }
                     )
                 )
-                .simultaneousGesture(
-                    TapGesture(count: 2).onEnded {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            accumulatedZoomScale = 1.0
-                            accumulatedDragOffset = .zero
-                            isZoomMode = false
-                        }
-                    }
-                )
+                .highPriorityGesture(zoomOverlayTapToExitGesture())
 
             // Close button — always visible so user can exit zoom mode easily
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isZoomMode = false
-                    accumulatedZoomScale = 1.0
-                    accumulatedDragOffset = .zero
-                }
+                exitZoomMode()
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 28))
@@ -1193,6 +1144,184 @@ struct PlacePhotoModalView: View {
     }
 }
 
+// MARK: - Shared fullscreen / sheet top chrome
+
+/// Single implementation of the place detail header: safe-area-aware insets, grabber (sheet only), Close / Cancel / Done, and the vertical action stack.
+private struct PlaceDetailTopChrome: View {
+    let safeAreaTop: CGFloat
+    let presentation: PlaceDetailPresentation
+    let isEditing: Bool
+    let blogIsEditMode: Bool
+    let hasUnsavedChanges: Bool
+    let currentPhotoId: UUID
+    let hasVibeClip: Bool
+    let isVibeEnabled: Bool
+    let isVibePlaying: Bool
+    let onLeadingPrimary: () -> Void
+    let onSaveCaptionAndDismiss: () -> Void
+    let onDoneBlogEdit: () -> Void
+    let onMenuEditPlaceName: () -> Void
+    let onMenuBeginCaptionEdit: () -> Void
+    let onMenuRemovePhoto: (UUID) -> Void
+    let onToggleVibe: () -> Void
+    let onNavigate: () -> Void
+    let onLink: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .allowsHitTesting(false)
+
+            if !presentation.isSheet {
+                VStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [
+                            Color.black.opacity(0.52),
+                            Color.black.opacity(0.28),
+                            Color.black.opacity(0.08),
+                            Color.clear
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: safeAreaTop + PlaceDetailChromeLayout.fullscreenTopGradientExtensionBelowSafeArea)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .allowsHitTesting(false)
+            }
+
+            if presentation.isSheet {
+                Capsule()
+                    .fill(Color.white.opacity(0.4))
+                    .frame(width: 40, height: 5)
+                    .padding(.top, PlaceDetailChromeLayout.sheetGrabberTopPadding)
+            }
+
+            VStack(spacing: 0) {
+                HStack(alignment: .top) {
+                    if isEditing && !blogIsEditMode {
+                        capsuleButton(title: "Cancel", action: onLeadingPrimary)
+                    } else if blogIsEditMode {
+                        capsuleButton(title: "Cancel", action: onLeadingPrimary)
+                    } else {
+                        Button(action: onLeadingPrimary) {
+                            Text("Close")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background {
+                                    Capsule()
+                                        .fill(.ultraThinMaterial)
+                                        .overlay {
+                                            Capsule().fill(Color.white.opacity(0.12))
+                                        }
+                                }
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Spacer()
+
+                    if !isEditing && !blogIsEditMode {
+                        VStack(spacing: PlaceDetailChromeLayout.actionStackSpacing) {
+                            Menu {
+                                Button(action: onMenuEditPlaceName) {
+                                    Label("Edit Place Name", systemImage: "mappin.and.ellipse")
+                                }
+                                Button(action: onMenuBeginCaptionEdit) {
+                                    Label("Edit caption", systemImage: "pencil")
+                                }
+                                Button(role: .destructive) {
+                                    onMenuRemovePhoto(currentPhotoId)
+                                } label: {
+                                    Label("Remove photo", systemImage: "trash")
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .frame(width: PlaceDetailChromeLayout.circleActionSize, height: PlaceDetailChromeLayout.circleActionSize)
+                                    .background(Color.white.opacity(0.22))
+                                    .clipShape(Circle())
+                                    .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
+                            }
+
+                            if hasVibeClip {
+                                Button(action: onToggleVibe) {
+                                    AtmosphericWaveformView(isActive: isVibeEnabled)
+                                        .frame(width: PlaceDetailChromeLayout.circleActionSize, height: PlaceDetailChromeLayout.circleActionSize)
+                                        .background(.ultraThinMaterial)
+                                        .background(isVibeEnabled ? Color.cyan.opacity(0.22) : Color.clear)
+                                        .clipShape(Circle())
+                                        .overlay(
+                                            Circle().stroke(
+                                                isVibeEnabled ? Color.cyan.opacity(0.5) : Color.clear,
+                                                lineWidth: 1
+                                            )
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(isVibePlaying ? "Vibe playing" : "Play vibe")
+                            }
+
+                            RightActionStack(
+                                onSparkles: { },
+                                onNavigate: onNavigate,
+                                onLink: onLink
+                            )
+                        }
+                    } else if isEditing && !blogIsEditMode {
+                        Button(action: onSaveCaptionAndDismiss) {
+                            Text("Save")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.blue)
+                                .clipShape(Capsule())
+                        }
+                    } else if blogIsEditMode {
+                        Button(action: onDoneBlogEdit) {
+                            Text("Done")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.black.opacity(0.35))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: hasUnsavedChanges)
+                .padding(.horizontal, PlaceDetailChromeLayout.horizontalPadding)
+                .padding(.top, presentation.isSheet ? PlaceDetailChromeLayout.sheetInnerTopPadding : PlaceDetailChromeLayout.fullscreenInnerTopPadding)
+            }
+            .padding(.top, presentation.isSheet ? 0 : safeAreaTop + PlaceDetailChromeLayout.fullscreenPaddingBelowSafeAreaTop)
+            .frame(maxWidth: .infinity, alignment: .top)
+        }
+    }
+
+    private func capsuleButton(title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.black.opacity(0.35))
+                .clipShape(Capsule())
+        }
+    }
+}
+
 // MARK: - Top overlay controls
 
 struct TopControlsRow: View {
@@ -1225,10 +1354,8 @@ struct RightActionStack: View {
     var onNavigate: () -> Void
     var onLink: () -> Void
 
-    private let spacing: CGFloat = 20
-
     var body: some View {
-        VStack(spacing: spacing) {
+        VStack(spacing: PlaceDetailChromeLayout.actionStackSpacing) {
 /*
             Button(action: onSparkles) {
                 Image(systemName: "sparkles")
@@ -1252,15 +1379,16 @@ struct RightActionStack: View {
 
             Button(action: onLink) {
                 Image(systemName: "link")
-                    .font(.system(size: 20))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(.white)
-                    .frame(width: 44, height: 44)
-                    .background(Color.gray.opacity(0.85))
+                    .frame(width: PlaceDetailChromeLayout.circleActionSize, height: PlaceDetailChromeLayout.circleActionSize)
+                    .background(Color.white.opacity(0.22))
                     .clipShape(Circle())
+                    .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
             }
             .buttonStyle(.plain)
         }
-        .shadow(color: .black.opacity(0.3), radius: 2)
+        .shadow(color: .black.opacity(0.25), radius: 2)
     }
 }
 
@@ -1279,8 +1407,13 @@ struct BottomInfoOverlay: View {
     @Binding var isCaptionExpanded: Bool
     let placeholder: String
     var blogIsEditMode: Bool = false
-    var onViewBlog: (() -> Void)?
+    /// Tighter vertical padding when presented as full-screen overlay (not a sheet).
+    var contentVerticalPadding: CGFloat = 20
+    /// Matches top chrome / thumbnail strip (16 full-screen, 20 sheet).
+    var contentHorizontalPadding: CGFloat = 20
     var onTitleTap: (() -> Void)? = nil
+    /// Places Visited only: opens the source blog; trailing-aligned with the place title row.
+    var onViewBlog: (() -> Void)? = nil
     var onCommitCaption: () -> Void
 
     var body: some View {
@@ -1294,6 +1427,7 @@ struct BottomInfoOverlay: View {
                             .fontWeight(.bold)
                             .foregroundColor(.white)
                             .shadow(color: .black.opacity(0.4), radius: 2)
+                            .lineLimit(1)
                         if onTitleTap != nil {
                             Image(systemName: "arrow.up.right.square")
                                 .font(.system(size: 13, weight: .semibold))
@@ -1301,20 +1435,20 @@ struct BottomInfoOverlay: View {
                                 .shadow(color: .black.opacity(0.4), radius: 2)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
                 .disabled(onTitleTap == nil)
 
-                Spacer()
-
                 if let onViewBlog {
                     Button(action: onViewBlog) {
                         Image(systemName: "book.fill")
-                            .font(.system(size: 16, weight: .bold))
+                            .font(.system(size: 18, weight: .semibold))
                             .foregroundColor(.white)
-                            .frame(width: 36, height: 36)
-                            .background(Color.black.opacity(0.35))
+                            .frame(width: 44, height: 44)
+                            .background(Color.white.opacity(0.22))
                             .clipShape(Circle())
+                            .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("View blog")
@@ -1383,8 +1517,8 @@ struct BottomInfoOverlay: View {
                 }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 20)
+        .padding(.horizontal, contentHorizontalPadding)
+        .padding(.vertical, contentVerticalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 

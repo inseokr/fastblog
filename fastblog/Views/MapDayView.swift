@@ -406,110 +406,110 @@ struct FullScreenMapView: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .topLeading) {
-                MapDayView(
-                    placeStops: filteredStops,
-                    height: geo.size.height,
-                    onTap: nil,
-                    focusedPlaceId: focusedPlaceId,
-                    onAnnotationTap: { stopId in
-                        guard let stop = filteredStops.first(where: { $0.id == stopId }) else { return }
-                        openPhotoModal(for: stop)
-                    },
-                    hideStartEndMarkers: selectedCategory != nil
-                )
-                .ignoresSafeArea(edges: .all)
+        ZStack {
+            GeometryReader { geo in
+                ZStack(alignment: .topLeading) {
+                    MapDayView(
+                        placeStops: filteredStops,
+                        height: geo.size.height,
+                        onTap: nil,
+                        focusedPlaceId: focusedPlaceId,
+                        onAnnotationTap: { stopId in
+                            guard let stop = filteredStops.first(where: { $0.id == stopId }) else { return }
+                            openPhotoModal(for: stop)
+                        },
+                        hideStartEndMarkers: selectedCategory != nil
+                    )
+                    .ignoresSafeArea(edges: .all)
 
-                // Soft top scrim so back button, day title, and category chips stay readable on any map.
-                fullScreenMapHeaderGradientOverlay(safeTop: geo.safeAreaInsets.top)
-                .allowsHitTesting(false)
-                .zIndex(0.5)
+                    if photoModalStop == nil {
+                        // Soft top scrim so back button, day title, and category chips stay readable on any map.
+                        fullScreenMapHeaderGradientOverlay(safeTop: geo.safeAreaInsets.top)
+                            .allowsHitTesting(false)
+                            .zIndex(0.5)
 
-                // Top bar: Back button on left, Day info centered
-                HStack(alignment: .top) {
-                    Button(action: onDismiss) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 40, height: 40)
-                            .background(Color.black.opacity(0.5))
-                            .clipShape(Circle())
-                            .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
-                    }
-                    .buttonStyle(.plain)
+                        // Top bar: Back button on left, Day info centered
+                        HStack(alignment: .top) {
+                            Button(action: onDismiss) {
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 40, height: 40)
+                                    .background(Color.black.opacity(0.5))
+                                    .clipShape(Circle())
+                                    .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
+                            }
+                            .buttonStyle(.plain)
 
-                    Spacer()
+                            Spacer()
 
-                    VStack(spacing: 2) {
-                        Text("Day \(day.dayIndex)")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .shadow(color: .black.opacity(0.8), radius: 2)
-                        
-                        Text(day.shortDateText)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.white.opacity(0.9))
-                            .shadow(color: .black.opacity(0.8), radius: 2)
-                    }
-                    .padding(.top, 4) // Slight visual tweak to center with the 40 height button
+                            VStack(spacing: 2) {
+                                Text("Day \(day.dayIndex)")
+                                    .font(.headline)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.white)
+                                    .shadow(color: .black.opacity(0.8), radius: 2)
 
-                    Spacer()
-                    
-                    // Invisible spacer for symmetry so the title is perfectly centered
-                    Color.clear.frame(width: 40, height: 40)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 44) // Moved up closer to the top edge
-                .zIndex(2)
+                                Text(day.shortDateText)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.white.opacity(0.9))
+                                    .shadow(color: .black.opacity(0.8), radius: 2)
+                            }
+                            .padding(.top, 4) // Slight visual tweak to center with the 40 height button
 
-                VStack(spacing: 8) {
-                    if !availableCategories.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                chip(label: "All", isSelected: selectedCategory == nil) {
-                                    withAnimation { selectedCategory = nil; selectedPlaceIndex = 0 }
-                                }
-                                ForEach(availableCategories, id: \.self) { cat in
-                                    chip(label: categoryDisplayLabel(for: cat), isSelected: selectedCategory == cat) {
-                                        withAnimation { selectedCategory = (selectedCategory == cat) ? nil : cat; selectedPlaceIndex = 0 }
+                            Spacer()
+
+                            // Invisible spacer for symmetry so the title is perfectly centered
+                            Color.clear.frame(width: 40, height: 40)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 44) // Moved up closer to the top edge
+                        .zIndex(2)
+
+                        VStack(spacing: 8) {
+                            if !availableCategories.isEmpty {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        chip(label: "All", isSelected: selectedCategory == nil) {
+                                            withAnimation { selectedCategory = nil; selectedPlaceIndex = 0 }
+                                        }
+                                        ForEach(availableCategories, id: \.self) { cat in
+                                            chip(label: categoryDisplayLabel(for: cat), isSelected: selectedCategory == cat) {
+                                                withAnimation { selectedCategory = (selectedCategory == cat) ? nil : cat; selectedPlaceIndex = 0 }
+                                            }
+                                        }
                                     }
+                                    .padding(.horizontal, 20)
                                 }
                             }
-                            .padding(.horizontal, 20)
+                        }
+                        .padding(.top, 98) // Push filters below the adjusted top bar
+                        .frame(maxWidth: .infinity, alignment: .top)
+                        .zIndex(1)
+
+                        if !filteredStops.isEmpty {
+                            VStack {
+                                Spacer()
+                                placeCardsStrip(in: geo)
+                                    .padding(.bottom, geo.safeAreaInsets.bottom + 12)
+                            }
                         }
                     }
                 }
-                .padding(.top, 98) // Push filters below the adjusted top bar
-                .frame(maxWidth: .infinity, alignment: .top)
-                .zIndex(1)
-
-                if !filteredStops.isEmpty {
-                    VStack {
-                        Spacer()
-                        placeCardsStrip(in: geo)
-                            .padding(.bottom, geo.safeAreaInsets.bottom + 12)
-                    }
-                }
             }
-        }
-        .background(Color.black)
-        .ignoresSafeArea(edges: .all)
-        .preferredColorScheme(.dark)
-        .onAppear {
-            applyInitialFocusIfNeeded()
-        }
-        .sheet(item: $photoModalStop) { stop in
-            if let initialId = photoModalInitialPhotoId {
+
+            // Same full-screen fade overlay as RecapBlogPageView place viewer (not a pull-up sheet).
+            if let stop = photoModalStop, let initialId = photoModalInitialPhotoId {
                 PlacePhotoModalView(
                     placeTitle: .constant(stop.placeTitle),
                     placeSubtitle: stop.placeSubtitle,
                     photos: stop.includedPhotos,
                     initialPhotoId: initialId,
+                    stopDigitizedTime: stop.visitedTimeDigitized,
                     blogIsEditMode: false,
                     showAssetTimeMetadata: false,
+                    presentation: .fullscreen(source: .blogMap),
                     photoCaption: { id in
                         Binding(
                             get: { photoModalCaptions[id] ?? "" },
@@ -517,16 +517,21 @@ struct FullScreenMapView: View {
                         )
                     },
                     onDismiss: {
-                        // Flush caption changes; sheet(item:) keeps stop visible during dismiss animation
                         flushCaptionChanges(stop: stop)
                         photoModalStop = nil
+                        photoModalInitialPhotoId = nil
                     }
                 )
-                .presentationDetents([.large])
-                .presentationDragIndicator(.hidden)
-                .presentationCornerRadius(24)
-                .presentationBackground(.clear)
+                .transition(.asymmetric(insertion: .opacity, removal: .identity))
+                .zIndex(20)
             }
+        }
+        .background(Color.black)
+        .ignoresSafeArea(edges: .all)
+        .preferredColorScheme(.dark)
+        .animation(.easeInOut(duration: 0.38), value: photoModalStop?.id)
+        .onAppear {
+            applyInitialFocusIfNeeded()
         }
     }
 
