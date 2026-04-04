@@ -722,62 +722,6 @@ struct PlacePhotoModalView: View {
                                             .foregroundColor(.white.opacity(0.75))
                                     }
                                 }
-
-                                if onGenerateCaption != nil, currentPhoto != nil {
-                                    Button {
-                                        showEnhanceStylePicker = true
-                                    } label: {
-                                        if isGeneratingCaption {
-                                            HStack(spacing: 4) {
-                                                ProgressView()
-                                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                                    .scaleEffect(0.75)
-                                                Text("Enhancing…")
-                                                    .font(.subheadline)
-                                                    .foregroundColor(.white.opacity(0.75))
-                                                    .lineLimit(1)
-                                            }
-                                        } else {
-                                            HStack(spacing: 4) {
-                                                Image(systemName: "wand.and.stars")
-                                                    .font(.subheadline)
-                                                    .foregroundStyle(
-                                                        LinearGradient(
-                                                            colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                                            startPoint: .topLeading,
-                                                            endPoint: .bottomTrailing
-                                                        )
-                                                    )
-                                            }
-                                        }
-                                    }
-                                    .disabled(isGeneratingCaption || isTranslatingCaption)
-                                }
-
-                                if let translate = onTranslateCaption {
-                                    Button {
-                                        runTranslateForCurrentPhoto(translate)
-                                    } label: {
-                                        if isTranslatingCaption {
-                                            HStack(spacing: 4) {
-                                                ProgressView()
-                                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                                    .scaleEffect(0.75)
-                                                Text("Translating…")
-                                                    .font(.subheadline)
-                                                    .foregroundColor(.white.opacity(0.75))
-                                                    .lineLimit(1)
-                                            }
-                                        } else {
-                                            HStack(spacing: 4) {
-                                                Image(systemName: "translate")
-                                                    .font(.subheadline)
-                                                    .foregroundColor(.white.opacity(0.75))
-                                            }
-                                        }
-                                    }
-                                    .disabled(isGeneratingCaption || isTranslatingCaption)
-                                }
                             }
                             .padding(.horizontal, 12)
                             .padding(.bottom, 8)
@@ -790,13 +734,16 @@ struct PlacePhotoModalView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background {
                         ZStack(alignment: .bottom) {
-                            // Solid fill extends seamlessly behind the keyboard
-                            Color.black.opacity(0.92)
-                                .frame(height: 1)
+                            // Material connects seamlessly with the keyboard (no gap at rounded corners)
+                            Rectangle()
+                                .fill(.ultraThinMaterial)
+                                .ignoresSafeArea(.keyboard, edges: .bottom)
+                            // Extra darkening for legibility over bright photos
+                            Color.black.opacity(0.45)
                                 .ignoresSafeArea(.keyboard, edges: .bottom)
                             // Gradient that fades up into the photo
                             LinearGradient(
-                                colors: [Color.black.opacity(0.92), Color.black.opacity(0.92), Color.black.opacity(0.75), Color.black.opacity(0.3), Color.clear],
+                                colors: [Color.clear, Color.black.opacity(0.2), Color.clear],
                                 startPoint: .bottom,
                                 endPoint: .top
                             )
@@ -857,62 +804,6 @@ struct PlacePhotoModalView: View {
                                             .foregroundColor(.white.opacity(0.75))
                                     }
                                 }
-
-                                if onGenerateCaption != nil, currentPhoto != nil {
-                                    Button {
-                                        showEnhanceStylePicker = true
-                                    } label: {
-                                        if isGeneratingCaption {
-                                            HStack(spacing: 4) {
-                                                ProgressView()
-                                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                                    .scaleEffect(0.75)
-                                                Text("Enhancing…")
-                                                    .font(.subheadline)
-                                                    .foregroundColor(.white.opacity(0.75))
-                                                    .lineLimit(1)
-                                            }
-                                        } else {
-                                            HStack(spacing: 4) {
-                                                Image(systemName: "wand.and.stars")
-                                                    .font(.subheadline)
-                                                    .foregroundStyle(
-                                                        LinearGradient(
-                                                            colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
-                                                            startPoint: .topLeading,
-                                                            endPoint: .bottomTrailing
-                                                        )
-                                                    )
-                                            }
-                                        }
-                                    }
-                                    .disabled(isGeneratingCaption || isTranslatingCaption)
-                                }
-
-                                if let translate = onTranslateCaption {
-                                    Button {
-                                        runTranslateForCurrentPhoto(translate)
-                                    } label: {
-                                        if isTranslatingCaption {
-                                            HStack(spacing: 4) {
-                                                ProgressView()
-                                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                                    .scaleEffect(0.75)
-                                                Text("Translating…")
-                                                    .font(.subheadline)
-                                                    .foregroundColor(.white.opacity(0.75))
-                                                    .lineLimit(1)
-                                            }
-                                        } else {
-                                            HStack(spacing: 4) {
-                                                Image(systemName: "translate")
-                                                    .font(.subheadline)
-                                                    .foregroundColor(.white.opacity(0.75))
-                                            }
-                                        }
-                                    }
-                                    .disabled(isGeneratingCaption || isTranslatingCaption)
-                                }
                             }
                             .padding(.horizontal, 12)
                             .padding(.bottom, 8)
@@ -925,13 +816,16 @@ struct PlacePhotoModalView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background {
                         ZStack(alignment: .bottom) {
-                            // Solid fill extends seamlessly behind the keyboard
-                            Color.black.opacity(0.92)
-                                .frame(height: 1)
+                            // Material connects seamlessly with the keyboard (no gap at rounded corners)
+                            Rectangle()
+                                .fill(.ultraThinMaterial)
+                                .ignoresSafeArea(.keyboard, edges: .bottom)
+                            // Extra darkening for legibility over bright photos
+                            Color.black.opacity(0.45)
                                 .ignoresSafeArea(.keyboard, edges: .bottom)
                             // Gradient that fades up into the photo
                             LinearGradient(
-                                colors: [Color.black.opacity(0.92), Color.black.opacity(0.92), Color.black.opacity(0.75), Color.black.opacity(0.3), Color.clear],
+                                colors: [Color.clear, Color.black.opacity(0.2), Color.clear],
                                 startPoint: .bottom,
                                 endPoint: .top
                             )
