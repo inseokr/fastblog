@@ -246,7 +246,9 @@ struct EditPlaceStopNameSheet: View {
 
     private func saveAndDismiss() {
         let trimmed = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        onSave(trimmed.isEmpty ? "Stop" : trimmed, selectedCoordinate, selectedCategory)
+        let finalName = trimmed.isEmpty ? "Stop" : trimmed
+        debugPrint("[Category] EditPlaceStopNameSheet saveAndDismiss: name='\(finalName)' category=\(selectedCategory ?? "nil") coord=\(selectedCoordinate.map { "\($0.latitude),\($0.longitude)" } ?? "nil")")
+        onSave(finalName, selectedCoordinate, selectedCategory)
         dismiss()
     }
 
@@ -476,7 +478,9 @@ struct EditPlaceStopNameSheet: View {
                                 editedTitle = suggestion.title
                                 searchViewModel.suggestions = []
                                 Task {
-                                    selectedCategory = await searchViewModel.fetchCategory(for: suggestion)
+                                    let cat = await searchViewModel.fetchCategory(for: suggestion)
+                                    debugPrint("[Category] autocomplete picked '\(suggestion.title)' → category=\(cat ?? "nil")")
+                                    selectedCategory = cat
                                 }
                             } label: {
                             VStack(alignment: .leading, spacing: 2) {

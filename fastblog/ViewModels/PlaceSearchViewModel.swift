@@ -72,8 +72,13 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         let request = MKLocalSearch.Request(completion: completion)
         let search = MKLocalSearch(request: request)
         guard let response = try? await search.start(),
-              let mapItem = response.mapItems.first else { return nil }
-        return mapItem.pointOfInterestCategory?.rawValue
+              let mapItem = response.mapItems.first else {
+            debugPrint("[Category] fetchCategory(autocomplete) '\(completion.title)' → nil (no mapItems)")
+            return nil
+        }
+        let raw = mapItem.pointOfInterestCategory?.rawValue
+        debugPrint("[Category] fetchCategory(autocomplete) '\(completion.title)' → \(raw ?? "nil")")
+        return raw
     }
 
     /// Resolves the specific POI at the given coordinate (e.g. restaurant inside a mall) by fetching
@@ -137,8 +142,13 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         request.resultTypes = [.pointOfInterest, .address]
         let search = MKLocalSearch(request: request)
         guard let response = try? await search.start(),
-              let mapItem = response.mapItems.first else { return nil }
-        return mapItem.pointOfInterestCategory?.rawValue
+              let mapItem = response.mapItems.first else {
+            debugPrint("[Category] fetchCategory(geocode fallback) '\(name)' → nil (no mapItems)")
+            return nil
+        }
+        let raw = mapItem.pointOfInterestCategory?.rawValue
+        debugPrint("[Category] fetchCategory(geocode fallback) '\(name)' → \(raw ?? "nil")")
+        return raw
     }
 }
 

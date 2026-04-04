@@ -3578,6 +3578,7 @@ Your blog remains private unless you choose to share it.
     }
 
     private func updatePlaceTitle(stopId: UUID, to title: String, category: String? = nil, coordinate: CLLocationCoordinate2D? = nil) {
+        debugPrint("[Category] updatePlaceTitle called: stopId=\(stopId) title='\(title)' category=\(category ?? "nil") coord=\(coordinate.map { "\($0.latitude),\($0.longitude)" } ?? "nil")")
         for i in draft.days.indices {
             if let j = draft.days[i].placeStops.firstIndex(where: { $0.id == stopId }) {
                 var day = draft.days[i]
@@ -3590,6 +3591,7 @@ Your blog remains private unless you choose to share it.
                 }
                 day.placeStops[j] = stop
                 draft.days[i] = day
+                debugPrint("[Category] updatePlaceTitle stored: placeTitle='\(stop.placeTitle)' placeCategory=\(stop.placeCategory ?? "nil")")
 
                 persistRecapBlogDetail()
                 if let placeKey = stop.visitedTimeDigitized {
@@ -3604,6 +3606,7 @@ Your blog remains private unless you choose to share it.
     }
 
     private func updatePlaceCategory(stopId: UUID, category: String?) {
+        debugPrint("[Category] updatePlaceCategory called: stopId=\(stopId) category=\(category ?? "nil")")
         for i in draft.days.indices {
             guard let j = draft.days[i].placeStops.firstIndex(where: { $0.id == stopId }) else { continue }
             var day = draft.days[i]
@@ -3611,6 +3614,7 @@ Your blog remains private unless you choose to share it.
             stop.placeCategory = category
             day.placeStops[j] = stop
             draft.days[i] = day
+            debugPrint("[Category] updatePlaceCategory stored: placeTitle='\(stop.placeTitle)' placeCategory=\(stop.placeCategory ?? "nil")")
             persistRecapBlogDetail()
             if let placeKey = stop.visitedTimeDigitized {
                 let categories = category.map { [$0] } ?? ["unknown"]

@@ -52,11 +52,11 @@ private enum PlaceDetailChromeLayout {
     static let horizontalPadding: CGFloat = 16
     static let actionStackSpacing: CGFloat = 14
     /// Fullscreen: inset header below the device safe top (status bar / Dynamic Island).
-    static let fullscreenPaddingBelowSafeAreaTop: CGFloat = 10
+    static let fullscreenPaddingBelowSafeAreaTop: CGFloat = 2
     static let sheetGrabberTopPadding: CGFloat = 10
     /// Inner padding for the header row (below grabber for sheet; below safe-area inset for fullscreen).
     static let sheetInnerTopPadding: CGFloat = 20
-    static let fullscreenInnerTopPadding: CGFloat = 14
+    static let fullscreenInnerTopPadding: CGFloat = 6
     /// Fullscreen top fade: safe area + this height.
     static let fullscreenTopGradientExtensionBelowSafeArea: CGFloat = 120
     static let circleActionSize: CGFloat = 44
@@ -578,6 +578,7 @@ struct PlacePhotoModalView: View {
                 onNavigate: { openNavigation() },
                 onLink: { openGoogleSearch() }
             )
+            .ignoresSafeArea(.all, edges: presentation.isSheet ? [] : .top)
             .allowsHitTesting(!isZoomMode)
             .opacity(isZoomMode ? 0 : 1)
             .animation(.easeInOut(duration: 0.25), value: isZoomMode)
@@ -602,6 +603,7 @@ struct PlacePhotoModalView: View {
                 location: photos.compactMap({ $0.location?.clCoordinate }).first,
                 photos: photos,
                 onSave: { newName, coord, category in
+                    debugPrint("[Category] PlacePhotoModal onSave: name='\(newName)' category=\(category ?? "nil") onSavePlaceName wired=\(onSavePlaceName != nil)")
                     placeTitle = newName
                     onSavePlaceName?(newName, category, coord)
                 }

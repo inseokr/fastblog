@@ -43,7 +43,7 @@ struct SentimentBadge: View {
             onChange(next)
         } label: {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(color)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
@@ -66,7 +66,7 @@ private struct OverallStoryTruncationKey: PreferenceKey {
 
 /// Shared pill for place POI category so read-only and edit mode align; interactive state adds a white ring (no extra bulk).
 private struct PlaceCategoryChip: View {
-    let symbol: String
+    let symbol: String?
     let label: String
     /// When true, draws a subtle white stroke so the control reads as tappable in edit flows.
     var showsInteractiveOutline: Bool
@@ -76,8 +76,10 @@ private struct PlaceCategoryChip: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: symbol)
-                .font(.caption2)
+            if let symbol {
+                Image(systemName: symbol)
+                    .font(.caption2)
+            }
             Text(label)
                 .font(.caption2)
                 .fontWeight(.medium)
@@ -352,54 +354,56 @@ struct PlaceStopRowView: View {
                             .font(.footnote)
                             .foregroundColor(.secondary)
                     }
-                    let cat = categoryInfo(for: stop.placeCategory)
-                    let hasResolvedPlaceName = day.isPlaceNamesResolved
-                        && !stop.placeTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    let hasCaptionText = !(overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        || stop.photos.contains(where: { !($0.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-                    let hasSubtitle = !(stop.placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-                    if cat != nil || hasCaptionText {
-                        HStack(alignment: .center, spacing: 12) {
-                            if let cat {
-                                if hasResolvedPlaceName, let pickCategory = onEditCategory {
-                                    Button {
-                                        pickCategory()
-                                    } label: {
-                                        PlaceCategoryChip(
-                                            symbol: cat.symbol,
-                                            label: cat.label,
-                                            showsInteractiveOutline: true,
-                                            verticalPadding: isEditMode ? 6 : 5
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("Change place category, \(cat.label)")
-                                } else {
-                                    PlaceCategoryChip(
-                                        symbol: cat.symbol,
-                                        label: cat.label,
-                                        showsInteractiveOutline: false,
-                                        verticalPadding: isEditMode ? 6 : 5
-                                    )
-                                }
-                            }
-                            Spacer(minLength: 0)
-                            if hasCaptionText {
-                                SentimentBadge(
-                                    sentiment: stop.sentiment,
-                                    isEditMode: isEditMode,
-                                    onChanged: onSentimentChanged
-                                )
-                            }
-                        }
-                        // Read mode: tighter under address. Edit mode: original rhythm for title → category → story.
-                        .padding(.top, isEditMode ? (hasSubtitle ? 12 : 8) : (hasSubtitle ? 8 : 5))
-                    }
                 }
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
-            .padding(.bottom, isEditMode ? 4 : 0)
+            .padding(.bottom, 4)
+
+            // Category chip + sentiment — aligned with photo section edges
+            let cat = categoryInfo(for: stop.placeCategory)
+            let hasResolvedPlaceName = day.isPlaceNamesResolved
+                && !stop.placeTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let hasCaptionText = !(overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                || stop.photos.contains(where: { !($0.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+            if cat != nil || hasCaptionText {
+                HStack(alignment: .center, spacing: 8) {
+                    if let cat {
+                        if hasResolvedPlaceName, let pickCategory = onEditCategory {
+                            Button {
+                                pickCategory()
+                            } label: {
+                                PlaceCategoryChip(
+                                    symbol: cat.symbol,
+                                    label: cat.label,
+                                    showsInteractiveOutline: true,
+                                    verticalPadding: isEditMode ? 6 : 5
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Change place category, \(cat.label)")
+                        } else {
+                            PlaceCategoryChip(
+                                symbol: cat.symbol,
+                                label: cat.label,
+                                showsInteractiveOutline: false,
+                                verticalPadding: isEditMode ? 6 : 5
+                            )
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    if hasCaptionText {
+                        SentimentBadge(
+                            sentiment: stop.sentiment,
+                            isEditMode: isEditMode,
+                            onChanged: onSentimentChanged
+                        )
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 10)
+            }
 
             // Place story: between place info and photos — creative placeholder to encourage writing
             placeStoryRow
@@ -1084,6 +1088,7 @@ struct PlaceStopRowView: View {
         case .marina:          return ("sailboat.fill", "Marina")
         case .stadium:         return ("sportscourt.fill", "Stadium")
         case .bank:            return ("banknote.fill", "Bank")
+        case _ where raw == "MKPOICategoryMusicVenue": return ("music.mic", "Music Venue")
         default:               return nil
         }
     }

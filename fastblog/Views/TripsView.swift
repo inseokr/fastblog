@@ -552,6 +552,10 @@ struct TripsView: View {
         .navigationTitle("Trips")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar(
+            (viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips || viewModel.scanState != .idle || showLoadMorePopup || showLoadNewerPopup) ? .hidden : .visible,
+            for: .navigationBar
+        )
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button {
