@@ -33,14 +33,14 @@ struct SplitBlogView: View {
 
     var body: some View {
         ZStack {
-            Color(uiColor: .systemGroupedBackground)
-                .ignoresSafeArea()
-
-            if selectedBlog == nil {
-                blogSelectionView
-            } else {
-                splitPointView
+            Group {
+                if selectedBlog == nil {
+                    blogSelectionView
+                } else {
+                    splitPointView
+                }
             }
+            .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
 
             // Undo banner — shown after a successful split
             if showUndoBanner {
@@ -150,6 +150,7 @@ struct SplitBlogView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 32)
                 }
+                .frame(maxWidth: .infinity)
                 .padding(.top, 28)
                 .padding(.bottom, 4)
 

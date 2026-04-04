@@ -111,7 +111,7 @@ struct PlaceCaptionEditSheet: View {
                 showIcon: false,
                 targetSize: CGSize(width: 200, height: 200)
             )
-            .frame(width: thumbnailSize, height: thumbnailSize)
+            .frame(width: thumbnailSize * 3, height: thumbnailSize * 3)
             .clipShape(RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous)
@@ -121,7 +121,7 @@ struct PlaceCaptionEditSheet: View {
         } else {
             RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous)
                 .fill(Color(uiColor: .tertiarySystemFill))
-                .frame(width: thumbnailSize, height: thumbnailSize)
+                .frame(width: thumbnailSize * 3, height: thumbnailSize * 3)
                 .overlay {
                     Image(systemName: "photo")
                         .foregroundStyle(.secondary)

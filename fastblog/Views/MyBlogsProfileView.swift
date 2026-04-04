@@ -259,6 +259,8 @@ struct MyBlogsProfileView: View {
                 }
             }
             .environmentObject(createdRecapStore)
+            .presentationDetents([.fraction(1)])
+            .presentationDragIndicator(.visible)
         }
         .onAppear {
             viewModel.loadUnsavedTrips()
@@ -714,8 +716,46 @@ private struct MyBlogsManageSheet: View {
                             }
                         }
 
-                        Spacer(minLength: 40)
+                        Spacer(minLength: 80)
                     }
+                }
+
+                // ── Bottom Action Bar ──────────────────────────────────
+                VStack {
+                    Spacer()
+                    HStack {
+                        Button {
+                            if countryNames.count == 1, let only = countryNames.first {
+                                selectedCountryForAction = only
+                                showSplitView = true
+                            } else if countryNames.count > 1 {
+                                showSplitCountrySelection = true
+                            }
+                        } label: {
+                            Image(systemName: "scissors")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .frame(width: 56, height: 56)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        }
+                        Spacer()
+                        Button {
+                            if countryNames.count == 1, let only = countryNames.first {
+                                selectedCountryForAction = only
+                                showMergeView = true
+                            } else if countryNames.count > 1 {
+                                showMergeCountrySelection = true
+                            }
+                        } label: {
+                            Image(systemName: "arrow.triangle.merge")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .frame(width: 56, height: 56)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 20)
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -725,46 +765,21 @@ private struct MyBlogsManageSheet: View {
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button {
-                            if countryNames.count == 1, let only = countryNames.first {
-                                selectedCountryForAction = only
-                                showMergeView = true
-                            } else if countryNames.count > 1 {
-                                showMergeCountrySelection = true
-                            }
-                        } label: {
-                            Label("Merge Blogs", systemImage: "arrow.triangle.merge")
-                        }
-                        
-                        Button {
-                            if countryNames.count == 1, let only = countryNames.first {
-                                selectedCountryForAction = only
-                                showSplitView = true
-                            } else if countryNames.count > 1 {
-                                showSplitCountrySelection = true
-                            }
-                        } label: {
-                            Label("Split Blog", systemImage: "scissors")
-                        }
-                    } label: {
-                        Image(systemName: "line.3.horizontal")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.primary)
+            }
+            .fullScreenCover(isPresented: $showMergeView) {
+                if let country = selectedCountryForAction {
+                    NavigationStack {
+                        MergeBlogsView(countryName: country)
+                            .environmentObject(createdRecapStore)
                     }
                 }
             }
-            .navigationDestination(isPresented: $showMergeView) {
+            .fullScreenCover(isPresented: $showSplitView) {
                 if let country = selectedCountryForAction {
-                    MergeBlogsView(countryName: country)
-                        .environmentObject(createdRecapStore)
-                }
-            }
-            .navigationDestination(isPresented: $showSplitView) {
-                if let country = selectedCountryForAction {
-                    SplitBlogView(countryName: country)
-                        .environmentObject(createdRecapStore)
+                    NavigationStack {
+                        SplitBlogView(countryName: country)
+                            .environmentObject(createdRecapStore)
+                    }
                 }
             }
             .alert(

@@ -44,7 +44,7 @@ struct CountryManageBlogsSheet: View {
             ZStack {
                 Color(uiColor: .systemGroupedBackground)
                     .ignoresSafeArea()
-                
+
                 ScrollView {
                     VStack(spacing: 24) {
 
@@ -85,8 +85,36 @@ struct CountryManageBlogsSheet: View {
                     }
                     .padding(.horizontal, 16)
 
-                    Spacer(minLength: 40)
+                    Spacer(minLength: 80)
                     }
+                }
+
+                // ── Bottom Action Bar ──────────────────────────────────
+                VStack {
+                    Spacer()
+                    HStack {
+                        Button {
+                            showSplitView = true
+                        } label: {
+                            Image(systemName: "scissors")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .frame(width: 56, height: 56)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        }
+                        Spacer()
+                        Button {
+                            showMergeView = true
+                        } label: {
+                            Image(systemName: "arrow.triangle.merge")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .frame(width: 56, height: 56)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 20)
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -96,32 +124,18 @@ struct CountryManageBlogsSheet: View {
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button {
-                            showMergeView = true
-                        } label: {
-                            Label("Merge Blogs", systemImage: "arrow.triangle.merge")
-                        }
-                        Button {
-                            showSplitView = true
-                        } label: {
-                            Label("Split Blog", systemImage: "scissors")
-                        }
-                    } label: {
-                        Image(systemName: "line.3.horizontal")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.primary)
-                    }
+            }
+            .fullScreenCover(isPresented: $showMergeView) {
+                NavigationStack {
+                    MergeBlogsView(countryName: countryName)
+                        .environmentObject(createdRecapStore)
                 }
             }
-            .navigationDestination(isPresented: $showMergeView) {
-                MergeBlogsView(countryName: countryName)
-                    .environmentObject(createdRecapStore)
-            }
-            .navigationDestination(isPresented: $showSplitView) {
-                SplitBlogView(countryName: countryName)
-                    .environmentObject(createdRecapStore)
+            .fullScreenCover(isPresented: $showSplitView) {
+                NavigationStack {
+                    SplitBlogView(countryName: countryName)
+                        .environmentObject(createdRecapStore)
+                }
             }
             // ── Remove Confirmation Alert ──────────────────────────────
             .alert(

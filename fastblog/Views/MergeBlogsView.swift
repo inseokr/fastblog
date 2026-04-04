@@ -79,61 +79,57 @@ struct MergeBlogsView: View {
     // MARK: - Body
 
     var body: some View {
-        ZStack {
-            Color(uiColor: .systemGroupedBackground)
-                .ignoresSafeArea()
+        ScrollView {
+            VStack(spacing: 24) {
+                // Header
+                VStack(spacing: 8) {
+                    Image(systemName: "arrow.triangle.merge")
+                        .font(.system(size: 38))
+                        .foregroundColor(.blue)
+                        .padding(.bottom, 4)
 
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Header
-                    VStack(spacing: 8) {
-                        Image(systemName: "arrow.triangle.merge")
-                            .font(.system(size: 38))
-                            .foregroundColor(.blue)
-                            .padding(.bottom, 4)
+                    Text("Merge Blogs")
+                        .font(.system(.title2, design: .serif).weight(.medium))
+                        .foregroundColor(.primary)
 
-                        Text("Merge Blogs")
-                            .font(.system(.title2, design: .serif).weight(.medium))
-                            .foregroundColor(.primary)
+                    Text("Combine two consecutive trips into one blog")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+                .padding(.top, 28)
+                .padding(.bottom, 4)
 
-                        Text("Combine two consecutive trips into one blog")
-                            .font(.subheadline)
+                // Pairs list
+                if eligiblePairs.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "tray")
+                            .font(.system(size: 32))
+                            .foregroundColor(.secondary)
+                        Text("No eligible merge pairs")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                        Text("Blogs must be consecutive in time and within the same area to merge.")
+                            .font(.caption)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 32)
+                            .padding(.horizontal, 40)
                     }
-                    .padding(.top, 28)
-                    .padding(.bottom, 4)
-
-                    // Pairs list
-                    if eligiblePairs.isEmpty {
-                        VStack(spacing: 12) {
-                            Image(systemName: "tray")
-                                .font(.system(size: 32))
-                                .foregroundColor(.secondary)
-                            Text("No eligible merge pairs")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                            Text("Blogs must be consecutive in time and within the same area to merge.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 40)
+                    .padding(.top, 40)
+                } else {
+                    LazyVStack(spacing: 16) {
+                        ForEach(eligiblePairs) { pair in
+                            mergePairRow(pair)
                         }
-                        .padding(.top, 40)
-                    } else {
-                        LazyVStack(spacing: 16) {
-                            ForEach(eligiblePairs) { pair in
-                                mergePairRow(pair)
-                            }
-                        }
-                        .padding(.horizontal, 16)
                     }
-
-                    Spacer(minLength: 40)
+                    .padding(.horizontal, 16)
                 }
+
+                Spacer(minLength: 40)
             }
         }
+        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbar {
@@ -196,6 +192,10 @@ struct MergeBlogsView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
+    private func photoCount(for blog: CreatedRecapBlog) -> Int {
+        createdRecapStore.getBlogDetail(blogId: blog.sourceTripId)?.allIncludedPhotos.count ?? 0
+    }
+
     private func blogMiniCard(_ blog: CreatedRecapBlog) -> some View {
         VStack(spacing: 4) {
             AssetPhotoView(
@@ -212,7 +212,8 @@ struct MergeBlogsView: View {
                 .lineLimit(1)
                 .frame(maxWidth: 70)
 
-            Text(blog.tripDateRangeText ?? "")
+            let count = photoCount(for: blog)
+            Text("\(blog.tripDateRangeText ?? "") · \(count) Photos")
                 .font(.system(size: 9))
                 .foregroundColor(.secondary)
                 .lineLimit(1)
