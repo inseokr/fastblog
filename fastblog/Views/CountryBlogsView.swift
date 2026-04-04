@@ -6,6 +6,18 @@
 //
 
 import SwiftUI
+import UIKit
+
+/// Unselected year pill on country header: grouped secondary fill blended ~15% toward white.
+private func countryYearFilterUnselectedFill() -> Color {
+    Color(uiColor: UIColor { traits in
+        let base = UIColor.secondarySystemGroupedBackground.resolvedColor(with: traits)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard base.getRed(&r, green: &g, blue: &b, alpha: &a) else { return base }
+        let t: CGFloat = 0.15
+        return UIColor(red: r * (1 - t) + t, green: g * (1 - t) + t, blue: b * (1 - t) + t, alpha: a)
+    })
+}
 
 /// PreferenceKey to report the first row's minY for "at top" detection (swipe-down-to-dismiss).
 private struct CountryListScrollOffsetKey: PreferenceKey {
@@ -112,8 +124,8 @@ struct CountryBlogsView: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             VStack(spacing: 0) {
-                // Year Filter Header
-                if availableYears.count > 1 {
+                // Year filter: show whenever any blog has a trip year (not only when 2+ years — device size is irrelevant).
+                if !availableYears.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             filterPill(label: "All", isSelected: selectedYear == nil) {
@@ -400,7 +412,7 @@ struct CountryBlogsView: View {
                 .foregroundColor(isSelected ? .white : .primary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(isSelected ? Color.blue : Color(uiColor: .secondarySystemGroupedBackground))
+                .background(isSelected ? Color.blue : countryYearFilterUnselectedFill())
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)

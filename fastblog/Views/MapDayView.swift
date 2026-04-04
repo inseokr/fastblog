@@ -5,6 +5,18 @@
 
 import MapKit
 import SwiftUI
+import UIKit
+
+/// Unselected category chip on map: `systemGray5` blended ~15% toward white.
+private func mapDayFilterChipUnselectedFill() -> Color {
+    Color(uiColor: UIColor { traits in
+        let base = UIColor.systemGray5.resolvedColor(with: traits)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard base.getRed(&r, green: &g, blue: &b, alpha: &a) else { return base }
+        let t: CGFloat = 0.15
+        return UIColor(red: r * (1 - t) + t, green: g * (1 - t) + t, blue: b * (1 - t) + t, alpha: a)
+    })
+}
 
 /// One marker per place: coordinate, first photo (for image), place title. Order preserved for route.
 struct PlaceMapMarker: Identifiable {
@@ -366,6 +378,33 @@ struct FullScreenMapView: View {
         }
     }
 
+    private func fullScreenMapHeaderGradientOverlay(safeTop: CGFloat) -> some View {
+        let chromeHeight: CGFloat = 152
+        let fadeTail: CGFloat = 110
+        let totalHeight = safeTop + chromeHeight + fadeTail
+
+        return VStack(spacing: 0) {
+            LinearGradient(
+                gradient: Gradient(stops: [
+                    .init(color: .black.opacity(0.5), location: 0),
+                    .init(color: .black.opacity(0.32), location: 0.24),
+                    .init(color: .black.opacity(0.16), location: 0.5),
+                    .init(color: .black.opacity(0.06), location: 0.76),
+                    .init(color: .black.opacity(0.015), location: 0.92),
+                    .init(color: .clear, location: 1)
+                ]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(maxWidth: .infinity)
+            .frame(height: totalHeight)
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .ignoresSafeArea(edges: .top)
+    }
+
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
@@ -381,6 +420,11 @@ struct FullScreenMapView: View {
                     hideStartEndMarkers: selectedCategory != nil
                 )
                 .ignoresSafeArea(edges: .all)
+
+                // Soft top scrim so back button, day title, and category chips stay readable on any map.
+                fullScreenMapHeaderGradientOverlay(safeTop: geo.safeAreaInsets.top)
+                .allowsHitTesting(false)
+                .zIndex(0.5)
 
                 // Top bar: Back button on left, Day info centered
                 HStack(alignment: .top) {
@@ -457,17 +501,15 @@ struct FullScreenMapView: View {
         .onAppear {
             applyInitialFocusIfNeeded()
         }
-        .sheet(isPresented: Binding(
-            get: { photoModalStop != nil },
-            set: { if !$0 { photoModalStop = nil } }
-        )) {
-            if let stop = photoModalStop, let initialId = photoModalInitialPhotoId {
+        .sheet(item: $photoModalStop) { stop in
+            if let initialId = photoModalInitialPhotoId {
                 PlacePhotoModalView(
                     placeTitle: .constant(stop.placeTitle),
                     placeSubtitle: stop.placeSubtitle,
                     photos: stop.includedPhotos,
                     initialPhotoId: initialId,
                     blogIsEditMode: false,
+                    showAssetTimeMetadata: false,
                     photoCaption: { id in
                         Binding(
                             get: { photoModalCaptions[id] ?? "" },
@@ -475,7 +517,7 @@ struct FullScreenMapView: View {
                         )
                     },
                     onDismiss: {
-                        // Flush caption changes before clearing the stop
+                        // Flush caption changes; sheet(item:) keeps stop visible during dismiss animation
                         flushCaptionChanges(stop: stop)
                         photoModalStop = nil
                     }
@@ -554,7 +596,7 @@ struct FullScreenMapView: View {
                 .foregroundColor(.white)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(isSelected ? Color.blue : Color(uiColor: .systemGray5).opacity(0.8))
+                .background(isSelected ? Color.blue : mapDayFilterChipUnselectedFill().opacity(0.88))
                 .clipShape(Capsule())
                 .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
         }
