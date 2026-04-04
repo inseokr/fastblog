@@ -5860,7 +5860,7 @@ private struct RecapMergePlacesSelectionSheet: View {
                     Text(candidate.position.label)
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    Text(candidate.placeTitle)
+                    Text(candidate.placeTitle.cleanedAsPlaceTitle)
                         .font(.body.weight(.medium))
                         .foregroundStyle(.primary)
                     Text(candidate.detailText)

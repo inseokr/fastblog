@@ -17,33 +17,72 @@ struct RemovedPlacesSheet: View {
     var onRestore: () -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.displayScale) private var displayScale
 
-    /// The currently selected item to show in the place pull-up modal.
-    @State private var placeModalItem: PlacePhotoModalItem?
+    /// The entry currently shown in the fullscreen place viewer.
+    @State private var selectedEntry: RemovedPlaceEntry?
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if draft.removedPlaceStops.isEmpty {
-                    emptyState
-                } else {
-                    removedList
+        ZStack {
+            NavigationStack {
+                Group {
+                    if draft.removedPlaceStops.isEmpty {
+                        emptyState
+                    } else {
+                        removedList
+                    }
                 }
-            }
-            .navigationTitle("Restore Places")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                .navigationTitle("Restore Places")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }
+                    }
                 }
+                .preferredColorScheme(.dark)
             }
-            .preferredColorScheme(.dark)
-            .sheet(item: $placeModalItem) { item in
-                placePhotoModalSheet(item: item)
+
+            // Full-screen place viewer — same overlay pattern as Places Visited.
+            if let entry = selectedEntry {
+                let stop = entry.stop
+                let photos = stop.photos.filter(\.isIncluded).isEmpty ? stop.photos : stop.photos.filter(\.isIncluded)
+                if let initialPhotoId = photos.first?.id {
+                    PlacePhotoModalView(
+                        placeTitle: Binding(
+                            get: { stop.cleanedPlaceTitle },
+                            set: { newTitle in
+                                if let idx = draft.removedPlaceStops.firstIndex(where: { $0.stop.id == stop.id }) {
+                                    draft.removedPlaceStops[idx].stop.placeTitle = newTitle
+                                }
+                            }
+                        ),
+                        placeSubtitle: stop.placeSubtitle,
+                        photos: photos,
+                        initialPhotoId: initialPhotoId,
+                        stopDigitizedTime: stop.visitedTimeDigitized,
+                        blogIsEditMode: false,
+                        showAssetTimeMetadata: false,
+                        presentation: .fullscreen(source: .placesVisited),
+                        photoCaption: { photoId in
+                            Binding(
+                                get: { stop.photos.first(where: { $0.id == photoId })?.caption ?? "" },
+                                set: { newCaption in
+                                    if let idx = draft.removedPlaceStops.firstIndex(where: { $0.stop.id == stop.id }),
+                                       let photoIdx = draft.removedPlaceStops[idx].stop.photos.firstIndex(where: { $0.id == photoId }) {
+                                        draft.removedPlaceStops[idx].stop.photos[photoIdx].caption = newCaption
+                                    }
+                                }
+                            )
+                        },
+                        onDismiss: { selectedEntry = nil }
+                    )
+                    .transition(.asymmetric(insertion: .opacity, removal: .identity))
+                    .zIndex(200)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea()
+                }
             }
         }
+        .animation(.easeInOut(duration: 0.38), value: selectedEntry?.id)
     }
 
     // MARK: - Empty State
@@ -95,207 +134,183 @@ struct RemovedPlacesSheet: View {
     }
 
     private var removedList: some View {
-        List {
-            ForEach(entriesByDay) { group in
-                Section {
-                    ForEach(group.entries) { entry in
-                        removedRow(entry: entry)
-                    }
-                } header: {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(entriesByDay) { group in
                     Text(group.header)
                         .textCase(nil)
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
+                        .padding(.top, 16)
+                        .padding(.bottom, 8)
+
+                    let pairs = stride(from: 0, to: group.entries.count, by: 2).map {
+                        Array(group.entries[$0 ..< min($0 + 2, group.entries.count)])
+                    }
+                    ForEach(pairs, id: \.first?.id) { pair in
+                        HStack(alignment: .top, spacing: 12) {
+                            ForEach(Array(pair.enumerated()), id: \.element.id) { _, entry in
+                                removedCard(entry: entry)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            if pair.count == 1 {
+                                Color.clear.frame(maxWidth: .infinity)
+                            }
+                        }
+                        .padding(.bottom, 12)
+                    }
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 40)
         }
         .background(Color(uiColor: .systemGroupedBackground))
     }
 
-    private func removedRow(entry: RemovedPlaceEntry) -> some View {
-        let thumb = restorePlacesThumbnailMetrics()
-        let pixelSize = CGSize(
-            width: max(thumb.width * displayScale, 1),
-            height: max(thumb.height * displayScale, 1)
-        )
+    private func removedCard(entry: RemovedPlaceEntry) -> some View {
+        let includedPhotos = entry.stop.photos.filter(\.isIncluded)
+        let heroPhoto = includedPhotos.first ?? entry.stop.photos.first
+        let previewThumbs = Array(includedPhotos.dropFirst().prefix(3))
+        let visitDate = heroPhoto?.timestamp ?? entry.stop.photos.first?.timestamp
 
-        return HStack(alignment: .top, spacing: 12) {
-            // Cover photo thumbnail (or placeholder) — height scales with Dynamic Type, clamped; portrait crop, no distortion.
-            Group {
-                if let coverPhoto = entry.stop.photos.first(where: { $0.isIncluded }) ?? entry.stop.photos.first {
-                    RecapPhotoThumbnail(
-                        photo: coverPhoto,
-                        cornerRadius: 10,
-                        showIcon: false,
-                        targetSize: pixelSize
-                    )
-                    .scaledToFill()
-                    .frame(width: thumb.width, height: thumb.height)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                } else {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color(white: 0.22))
-                        .frame(width: thumb.width, height: thumb.height)
-                        .overlay(
-                            Image(systemName: "mappin.circle.fill")
-                                .font(.system(size: min(32, thumb.height * 0.42)))
-                                .foregroundColor(.secondary)
+        let thumbSpacing: CGFloat = 8
+        let stripPadding: CGFloat = 10
+        let preferredThumbSize: CGFloat = 44
+
+        return VStack(alignment: .leading, spacing: 10) {
+            // Hero photo area
+            GeometryReader { geo in
+                let availableWidth = geo.size.width
+                let thumbCount = previewThumbs.count
+                let thumbSize: CGFloat = {
+                    guard thumbCount > 0 else { return preferredThumbSize }
+                    let gutters = stripPadding * 2 + CGFloat(thumbCount - 1) * thumbSpacing
+                    let raw = (availableWidth - gutters) / CGFloat(thumbCount)
+                    return min(preferredThumbSize, max(1, raw))
+                }()
+                let backingWidth = CGFloat(thumbCount) * thumbSize
+                    + CGFloat(thumbCount - 1) * thumbSpacing
+                    + stripPadding * 2
+
+                ZStack(alignment: .bottom) {
+                    // Hero image or placeholder
+                    if let hero = heroPhoto {
+                        RecapPhotoThumbnail(
+                            photo: hero,
+                            cornerRadius: 14,
+                            showIcon: false,
+                            targetSize: CGSize(width: 900, height: 600)
                         )
-                }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                openPlaceModal(for: entry)
-            }
+                        .frame(height: 150)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    } else {
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(white: 0.18))
+                            .frame(height: 150)
+                            .frame(maxWidth: .infinity)
+                            .overlay {
+                                Image(systemName: "mappin.circle.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(.secondary)
+                            }
+                    }
 
-            // Place info
-            VStack(alignment: .leading, spacing: 3) {
-                Text(entry.stop.placeTitle)
-                    .font(.body)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
+                    // Date badge — top left
+                    if let date = visitDate {
+                        VStack {
+                            HStack {
+                                Text(date.formatted(.dateTime.month(.abbreviated).day()))
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(.black.opacity(0.55))
+                                    .clipShape(Capsule())
+                                Spacer()
+                            }
+                            Spacer()
+                        }
+                        .padding(10)
+                    }
+
+                    // Extra photo strip — bottom overlay
+                    if !previewThumbs.isEmpty {
+                        HStack(spacing: thumbSpacing) {
+                            ForEach(Array(previewThumbs)) { photo in
+                                RecapPhotoThumbnail(
+                                    photo: photo,
+                                    cornerRadius: 10,
+                                    showIcon: false,
+                                    targetSize: CGSize(width: 200, height: 200)
+                                )
+                                .frame(width: thumbSize, height: thumbSize)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 2)
+                            }
+                        }
+                        .padding(stripPadding)
+                        .frame(width: min(backingWidth, availableWidth))
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(Color.black.opacity(0.35))
+                                .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 6)
+                        )
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { openPlaceModal(for: entry) }
+            }
+            .frame(height: 150)
+
+            // Text + restore button
+            VStack(alignment: .leading, spacing: 4) {
+                Text(entry.stop.cleanedPlaceTitle)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
 
                 if let subtitle = entry.stop.placeSubtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
 
-                if hasCaptions(entry: entry) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "text.bubble")
-                            .font(.caption2)
-                        Text("Captions preserved")
-                            .font(.caption2)
-                    }
-                    .foregroundColor(.blue.opacity(0.8))
-                    .padding(.top, 2)
+                Button {
+                    restore(entry: entry)
+                } label: {
+                    Text("Restore")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.blue)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(Color.blue.opacity(0.15))
+                        .clipShape(Capsule())
                 }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
             }
             .contentShape(Rectangle())
-            .onTapGesture {
-                openPlaceModal(for: entry)
-            }
-
-            Spacer()
-
-            // Restore button
-            Button {
-                restore(entry: entry)
-            } label: {
-                Text("Restore")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(Color.blue)
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
+            .onTapGesture { openPlaceModal(for: entry) }
         }
-        .padding(.vertical, 6)
-    }
-
-    /// Portrait tile: width derived from adaptive height (~3:4) for a balanced crop with `scaledToFill`.
-    private func restorePlacesThumbnailMetrics() -> (width: CGFloat, height: CGFloat) {
-        let height = Self.thumbnailHeight(for: dynamicTypeSize)
-        let width = (height * 0.76).rounded(.toNearestOrAwayFromZero)
-        return (width, height)
-    }
-
-    private static func thumbnailHeight(for size: DynamicTypeSize) -> CGFloat {
-        let minH: CGFloat = 72
-        let maxH: CGFloat = 136
-        let base: CGFloat
-        switch size {
-        case .xSmall, .small:
-            base = 72
-        case .medium:
-            base = 76
-        case .large:
-            base = 80
-        case .xLarge:
-            base = 88
-        case .xxLarge:
-            base = 96
-        case .xxxLarge:
-            base = 104
-        case .accessibility1:
-            base = 112
-        case .accessibility2:
-            base = 120
-        case .accessibility3:
-            base = 128
-        case .accessibility4:
-            base = 132
-        case .accessibility5:
-            base = 136
-        @unknown default:
-            base = 88
+        .padding(12)
+        .background(Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
         }
-        return min(max(base, minH), maxH)
     }
 
     // MARK: - Helpers
 
     private func openPlaceModal(for entry: RemovedPlaceEntry) {
-        let photos = entry.stop.photos.filter(\.isIncluded)
-        let initialPhotoId = photos.first?.id ?? entry.stop.photos.first?.id
-        
-        if let initialPhotoId = initialPhotoId {
-            placeModalItem = PlacePhotoModalItem(
-                dayId: entry.dayId,
-                stopId: entry.stop.id,
-                initialPhotoId: initialPhotoId
-            )
-        }
-    }
-
-    @ViewBuilder
-    private func placePhotoModalSheet(item: PlacePhotoModalItem) -> some View {
-        if let entry = draft.removedPlaceStops.first(where: { $0.stop.id == item.stopId && $0.dayId == item.dayId }) {
-            let stop = entry.stop
-            let includedPhotos = stop.photos.filter(\.isIncluded)
-            if !includedPhotos.isEmpty {
-                PlacePhotoModalView(
-                    placeTitle: Binding(
-                        get: { stop.placeTitle },
-                        set: { newTitle in
-                            if let idx = draft.removedPlaceStops.firstIndex(where: { $0.stop.id == stop.id }) {
-                                draft.removedPlaceStops[idx].stop.placeTitle = newTitle
-                            }
-                        }
-                    ),
-                    placeSubtitle: stop.placeSubtitle,
-                    photos: includedPhotos,
-                    initialPhotoId: includedPhotos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : includedPhotos[0].id,
-                    stopDigitizedTime: stop.visitedTimeDigitized,
-                    blogIsEditMode: true,
-                    presentation: .sheet,
-                    photoCaption: { photoId in
-                        Binding(
-                            get: { stop.photos.first(where: { $0.id == photoId })?.caption ?? "" },
-                            set: { newCaption in
-                                if let idx = draft.removedPlaceStops.firstIndex(where: { $0.stop.id == stop.id }),
-                                   let photoIdx = draft.removedPlaceStops[idx].stop.photos.firstIndex(where: { $0.id == photoId }) {
-                                    draft.removedPlaceStops[idx].stop.photos[photoIdx].caption = newCaption
-                                }
-                            }
-                        )
-                    },
-                    onDismiss: { placeModalItem = nil }
-                )
-                .presentationDetents([.large])
-                .presentationBackground(.clear)
-            } else {
-                Color.white.onAppear { placeModalItem = nil }
-            }
-        } else {
-            Color.white.onAppear { placeModalItem = nil }
-        }
+        guard entry.stop.photos.first(where: { $0.isIncluded }) != nil || !entry.stop.photos.isEmpty else { return }
+        selectedEntry = entry
     }
 
     private func hasCaptions(entry: RemovedPlaceEntry) -> Bool {

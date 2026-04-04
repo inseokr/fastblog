@@ -273,6 +273,10 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         case cloudPlaceIndex, visitedTimeDigitized, placeCategory, sentiment
     }
 
+    /// Display-ready place title. Cleans up raw system-generated highway names like
+    /// "near 119892 US-395" → "Near US-395". Falls through unchanged for normal place names.
+    var cleanedPlaceTitle: String { placeTitle.cleanedAsPlaceTitle }
+
     /// Derives the place-level sentiment from photo sentiments (photos with captions only)
     /// combined with the stored place-level sentiment.
     /// Returns nil when there are no captioned photos and no place caption has been analyzed yet.
@@ -367,5 +371,21 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, timestamp, location, imageName, isIncluded, localIdentifier
         case caption, qualityScore, cloudURL, captionIsManual, sentiment, digitizedTime
+    }
+}
+
+// MARK: - String + place title cleaning
+
+extension String {
+    /// Cleans up raw system-generated highway names like "near 119892 US-395" → "Near US-395".
+    /// Falls through unchanged for normal place names.
+    var cleanedAsPlaceTitle: String {
+        let pattern = #"^[Nn]ear\s+\d+\s+(.+)$"#
+        if let regex = try? NSRegularExpression(pattern: pattern),
+           let match = regex.firstMatch(in: self, range: NSRange(self.startIndex..., in: self)),
+           let routeRange = Range(match.range(at: 1), in: self) {
+            return "Near \(self[routeRange])"
+        }
+        return self
     }
 }

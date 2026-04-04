@@ -1314,9 +1314,9 @@ private struct PlaceDetailTopChrome: View {
                 }
                 .animation(.easeInOut(duration: 0.2), value: hasUnsavedChanges)
                 .padding(.horizontal, PlaceDetailChromeLayout.horizontalPadding)
-                .padding(.top, presentation.isSheet ? PlaceDetailChromeLayout.sheetInnerTopPadding : PlaceDetailChromeLayout.fullscreenInnerTopPadding)
+                .padding(.top, presentation.isSheet ? PlaceDetailChromeLayout.sheetInnerTopPadding : (presentation.fullscreenSource == .placesVisited ? 0 : PlaceDetailChromeLayout.fullscreenInnerTopPadding))
             }
-            .padding(.top, presentation.isSheet ? 0 : safeAreaTop + PlaceDetailChromeLayout.fullscreenPaddingBelowSafeAreaTop)
+            .padding(.top, presentation.isSheet ? 0 : safeAreaTop + (presentation.fullscreenSource == .placesVisited ? 0 : PlaceDetailChromeLayout.fullscreenPaddingBelowSafeAreaTop))
             .frame(maxWidth: .infinity, alignment: .top)
         }
     }

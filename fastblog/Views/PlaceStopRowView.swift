@@ -312,7 +312,7 @@ struct PlaceStopRowView: View {
                         if isEditMode {
                             HStack(alignment: .top, spacing: 10) {
                                 Button { onEditName?() } label: {
-                                    Text(stop.placeTitle)
+                                    Text(stop.cleanedPlaceTitle)
                                         .font(Font.blog(selectedBlogFont, size: 22, bold: true))
                                         .foregroundColor(rowTitle)
                                 }
@@ -334,7 +334,7 @@ struct PlaceStopRowView: View {
                             if let searchURL = StoryPlaceGoogleSearch.url(placeName: stop.placeTitle, placeSubtitle: stop.placeSubtitle) {
                                 Link(destination: searchURL) {
                                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                        Text(stop.placeTitle)
+                                        Text(stop.cleanedPlaceTitle)
                                             .font(.blog(selectedBlogFont, size: 22, bold: true))
                                             .foregroundColor(rowTitle)
                                         StoryPlaceExternalLinkIcon(
@@ -349,7 +349,7 @@ struct PlaceStopRowView: View {
                                 Button {
                                     onNavigate?()
                                 } label: {
-                                    Text(stop.placeTitle)
+                                    Text(stop.cleanedPlaceTitle)
                                         .font(.blog(selectedBlogFont, size: 22, bold: true))
                                         .foregroundColor(rowTitle)
                                 }
