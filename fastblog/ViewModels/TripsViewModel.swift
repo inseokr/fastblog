@@ -1363,11 +1363,19 @@ final class TripsViewModel: ObservableObject {
     /// and refreshes `dateRangeText` / `daysSeasonText`. Used when the user picks a place card span
     /// but the library scan merged a longer multi-day trip that only overlaps that span.
     private func trimTripDraftToPhotoTimestamps(_ trip: TripDraft, rangeStart: Date, rangeEnd: Date) -> TripDraft {
+        print("[TrimToDates] rangeStart=\(rangeStart) rangeEnd=\(rangeEnd)")
         var result = trip
         var newDays: [TripDay] = []
         for day in trip.days {
-            let kept = day.photos.filter { $0.timestamp >= rangeStart && $0.timestamp <= rangeEnd }
+            let kept = day.photos.filter { photo in
+                let pass = photo.timestamp >= rangeStart && photo.timestamp <= rangeEnd
+                if !pass {
+                    print("[TrimToDates] DROPPED photo ts=\(photo.timestamp) (before rangeStart or after rangeEnd)")
+                }
+                return pass
+            }
             guard !kept.isEmpty else { continue }
+            print("[TrimToDates] DAY kept=\(kept.count) photos, first=\(kept.first?.timestamp.description ?? "-") last=\(kept.last?.timestamp.description ?? "-")")
             var d = day
             d.photos = kept.sorted { $0.timestamp < $1.timestamp }
             newDays.append(d)
@@ -1824,16 +1832,32 @@ final class TripsViewModel: ObservableObject {
         let cal = Calendar.current
         let selectedStart = selected.map(\.startDate).min() ?? Date()
         let selectedEnd = selected.map(\.endDate).max() ?? selectedStart
-        let selectionDayStart = cal.startOfDay(for: selectedStart)
-        let selectionDayEnd = cal.startOfDay(for: selectedEnd)
-        let selectionSpanDays = (cal.dateComponents([.day], from: selectionDayStart, to: selectionDayEnd).day ?? 0) + 1
+
+        // Use the destination timezone from the trip so that "start of day" and "end of day"
+        // are computed at the travel location, not on the device.
+        // trip.startDate is already midnight in the destination TZ (set by VisitedCitiesService),
+        // but Calendar.current.startOfDay() would shift it to midnight in the DEVICE timezone —
+        // causing photos from the previous calendar day at the destination to slip through.
+        let destTzId = selected.compactMap(\.displayTimeZoneIdentifier).first
+        let destTz = destTzId.flatMap(TimeZone.init(identifier:)) ?? TimeZone.current
+        var destCal = Calendar(identifier: .gregorian)
+        destCal.timeZone = destTz
+
+        let selectionDayStart = destCal.startOfDay(for: selectedStart)
+        let selectionDayEnd = destCal.startOfDay(for: selectedEnd)
+        let selectionSpanDays = (destCal.dateComponents([.day], from: selectionDayStart, to: selectionDayEnd).day ?? 0) + 1
         // Multi-place selections are capped at 7 calendar days in the UI; single-place rows can exceed 7 days with a warning.
         if selectionSpanDays > 7, selected.count > 1 { return false }
 
         // Pad both edges to avoid clipping transit/arrival/departure moments.
-        let fetchStart = cal.date(byAdding: .day, value: -2, to: cal.startOfDay(for: selectedStart)) ?? selectedStart
-        let endOfSelectedDay = cal.date(bySettingHour: 23, minute: 59, second: 59, of: selectedEnd) ?? selectedEnd
+        let fetchStart = cal.date(byAdding: .day, value: -2, to: selectionDayStart) ?? selectedStart
+        let endOfSelectedDay = destCal.date(bySettingHour: 23, minute: 59, second: 59, of: selectedEnd) ?? selectedEnd
         let fetchEnd = cal.date(byAdding: .day, value: 2, to: endOfSelectedDay) ?? endOfSelectedDay
+
+        let deviceTz = TimeZone.current
+        print("[CreateBlog][TZ] device=\(deviceTz.identifier) dest=\(destTz.identifier)")
+        print("[CreateBlog][TZ] trip.startDate=\(selectedStart) selectionDayStart=\(selectionDayStart) endOfSelectedDay=\(endOfSelectedDay)")
+        print("[CreateBlog][TZ] fetchStart=\(fetchStart) fetchEnd=\(fetchEnd)")
 
         let scanned = await photoLibraryService.scanInDateRange(
             startDate: fetchStart,
