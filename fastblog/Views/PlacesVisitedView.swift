@@ -553,7 +553,7 @@ private struct PlaceVisitedPhotoModalWrapper: View {
                 stopDigitizedTime: nil,
                 blogIsEditMode: false,
                 showAssetTimeMetadata: false,
-                showsSheetDragHandle: false,
+                presentation: .fullscreen(source: .placesVisited),
                 photoCaption: { photoId in
                     Binding(
                         get: { liveCaptions[photoId] ?? photos.first(where: { $0.id == photoId })?.caption ?? "" },

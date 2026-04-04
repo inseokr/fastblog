@@ -2340,7 +2340,7 @@ struct RecapBlogPageView: View {
                         blogIsEditMode: isEditMode,
                         showAssetTimeMetadata: isEditMode,
                         autoFocusCaption: item.autoFocusCaption,
-                        showsSheetDragHandle: false,
+                        presentation: .fullscreen(source: .blogRecap),
                         photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
                         onDismiss: {
                             persistRecapBlogDetail()

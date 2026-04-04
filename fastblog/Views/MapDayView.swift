@@ -509,7 +509,7 @@ struct FullScreenMapView: View {
                     stopDigitizedTime: stop.visitedTimeDigitized,
                     blogIsEditMode: false,
                     showAssetTimeMetadata: false,
-                    showsSheetDragHandle: false,
+                    presentation: .fullscreen(source: .blogMap),
                     photoCaption: { id in
                         Binding(
                             get: { photoModalCaptions[id] ?? "" },
