@@ -21,14 +21,17 @@ struct VisitedCityTrip: Identifiable, Codable {
     let displayTimeZoneIdentifier: String?
 
     var displayTitle: String {
-        cityName.isEmpty ? (countryName.isEmpty ? "Trip" : countryName) : cityName
+        if cityName.isEmpty {
+            return countryName.isEmpty ? "Trip" : countryName
+        }
+        if countryName.isEmpty || countryName == cityName {
+            return cityName
+        }
+        return "\(cityName), \(countryName)"
     }
 
     var displaySubtitle: String {
-        var parts: [String] = []
-        if !countryName.isEmpty && countryName != cityName { parts.append(countryName) }
-        parts.append(dateRangeText)
-        return parts.joined(separator: " · ")
+        dateRangeText
     }
 
     /// Uses `displayTimeZoneIdentifier` when set (capture region); else device zone. Single calendar day → one string (not "Jan 5 – Jan 5").

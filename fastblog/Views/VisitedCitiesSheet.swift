@@ -731,13 +731,7 @@ private struct VisitedCityMomentPreviewSheet: View {
     }
 
     private var headingLine: String {
-        if trip.cityName.isEmpty {
-            return trip.countryName.isEmpty ? trip.displayTitle : trip.countryName
-        }
-        if trip.countryName.isEmpty || trip.cityName == trip.countryName {
-            return trip.cityName
-        }
-        return "\(trip.cityName), \(trip.countryName)"
+        trip.displayTitle
     }
 
     private var mapCoordinateForSelection: CLLocationCoordinate2D? {
