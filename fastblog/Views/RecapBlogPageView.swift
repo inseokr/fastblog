@@ -4539,7 +4539,7 @@ Your blog remains private unless you choose to share it.
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(recapChromeForeground)
-                    Text("Your recap blog is ready.")
+                    Text("Your blog is ready")
                         .font(.caption)
                         .foregroundColor(recapSecondaryOnChrome)
                 }
@@ -6199,12 +6199,33 @@ private struct NewMomentsReviewSheet: View {
         .ignoresSafeArea()
     }
 
+    @ViewBuilder
+    private func newMomentThumbnail(photo: MockPhoto, size: CGFloat, cornerRadius: CGFloat) -> some View {
+        Group {
+            if let lid = photo.localIdentifier {
+                AssetPhotoView(assetIdentifier: lid, cornerRadius: 0, targetSize: CGSize(width: 240, height: 240))
+            } else {
+                MockPhotoView(seed: photo.id.hashValue, cornerRadius: 0, showIcon: false, iconName: photo.imageName)
+            }
+        }
+        .aspectRatio(contentMode: .fill)
+        .frame(width: size, height: size)
+        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+
     private func newMomentPlaceCard(group: NewMomentPlaceGroup) -> some View {
         let isHidden = hiddenPlaceKeys.contains(group.placeKey)
         let thumbSize: CGFloat = 72
         let thumbSpacing: CGFloat = 8
+        let thumbCorner: CGFloat = 10
+        let contentSpacing: CGFloat = 12
         let displayedPhotos = Array(group.photos.prefix(3))
         let extraCount = group.photos.count - 3
+        let stripWidth: CGFloat = {
+            guard !displayedPhotos.isEmpty else { return 0 }
+            return CGFloat(displayedPhotos.count) * thumbSize + CGFloat(displayedPhotos.count - 1) * thumbSpacing
+        }()
         return Button {
             withAnimation(.easeInOut(duration: 0.2)) {
                 if isHidden {
@@ -6214,27 +6235,16 @@ private struct NewMomentsReviewSheet: View {
                 }
             }
         } label: {
-            HStack(alignment: .top, spacing: 0) {
-                // Photo strip: at most 3 thumbnails
+            HStack(alignment: .top, spacing: contentSpacing) {
+                // Photo strip: fixed row height so 1 vs 3 thumbs share the same top edge and scale.
                 HStack(spacing: thumbSpacing) {
                     ForEach(displayedPhotos) { photo in
-                        Group {
-                            if let lid = photo.localIdentifier {
-                                AssetPhotoView(assetIdentifier: lid, cornerRadius: 8, targetSize: CGSize(width: 200, height: 200))
-                                    .aspectRatio(contentMode: .fill)
-                            } else {
-                                MockPhotoView(seed: photo.id.hashValue, cornerRadius: 8, showIcon: false, iconName: photo.imageName)
-                                    .aspectRatio(contentMode: .fill)
-                            }
-                        }
-                        .frame(width: thumbSize, height: thumbSize)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        newMomentThumbnail(photo: photo, size: thumbSize, cornerRadius: thumbCorner)
                     }
                 }
-                .padding(.vertical, 4)
-                .frame(width: displayedPhotos.isEmpty ? 0 : CGFloat(displayedPhotos.count) * (thumbSize + thumbSpacing) - thumbSpacing)
+                .frame(width: stripWidth, height: thumbSize, alignment: .topLeading)
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(group.placeKey)
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(.primary)
@@ -6249,14 +6259,17 @@ private struct NewMomentsReviewSheet: View {
                     }
                     Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 12)
-                .padding(.top, 4)
+                .frame(maxWidth: .infinity, minHeight: thumbSize, alignment: .topLeading)
 
-                Image(systemName: isHidden ? "eye" : "eye.slash")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(isHidden ? .green : .secondary)
-                    .frame(width: 36, height: 36)
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    Image(systemName: isHidden ? "eye" : "eye.slash")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(isHidden ? .green : .secondary)
+                    Spacer(minLength: 0)
+                }
+                .frame(width: 36, height: thumbSize)
+                .contentShape(Rectangle())
             }
             .padding(12)
             .background(

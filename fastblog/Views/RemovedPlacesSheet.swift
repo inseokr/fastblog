@@ -17,7 +17,9 @@ struct RemovedPlacesSheet: View {
     var onRestore: () -> Void
 
     @Environment(\.dismiss) private var dismiss
-    
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.displayScale) private var displayScale
+
     /// The currently selected item to show in the place pull-up modal.
     @State private var placeModalItem: PlacePhotoModalItem?
 
@@ -112,27 +114,33 @@ struct RemovedPlacesSheet: View {
     }
 
     private func removedRow(entry: RemovedPlaceEntry) -> some View {
-        HStack(spacing: 12) {
-            // Cover photo thumbnail (or placeholder)
+        let thumb = restorePlacesThumbnailMetrics()
+        let pixelSize = CGSize(
+            width: max(thumb.width * displayScale, 1),
+            height: max(thumb.height * displayScale, 1)
+        )
+
+        return HStack(alignment: .top, spacing: 12) {
+            // Cover photo thumbnail (or placeholder) — height scales with Dynamic Type, clamped; portrait crop, no distortion.
             Group {
                 if let coverPhoto = entry.stop.photos.first(where: { $0.isIncluded }) ?? entry.stop.photos.first {
                     RecapPhotoThumbnail(
                         photo: coverPhoto,
                         cornerRadius: 10,
                         showIcon: false,
-                        targetSize: CGSize(width: 128, height: 128)
+                        targetSize: pixelSize
                     )
-                    .aspectRatio(1, contentMode: .fill)
-                    .frame(width: 64, height: 64)
+                    .scaledToFill()
+                    .frame(width: thumb.width, height: thumb.height)
                     .clipped()
-                    .cornerRadius(10)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
                 } else {
                     RoundedRectangle(cornerRadius: 10)
                         .fill(Color(white: 0.22))
-                        .frame(width: 64, height: 64)
+                        .frame(width: thumb.width, height: thumb.height)
                         .overlay(
                             Image(systemName: "mappin.circle.fill")
-                                .font(.system(size: 26))
+                                .font(.system(size: min(32, thumb.height * 0.42)))
                                 .foregroundColor(.secondary)
                         )
                 }
@@ -189,6 +197,46 @@ struct RemovedPlacesSheet: View {
             .buttonStyle(.plain)
         }
         .padding(.vertical, 6)
+    }
+
+    /// Portrait tile: width derived from adaptive height (~3:4) for a balanced crop with `scaledToFill`.
+    private func restorePlacesThumbnailMetrics() -> (width: CGFloat, height: CGFloat) {
+        let height = Self.thumbnailHeight(for: dynamicTypeSize)
+        let width = (height * 0.76).rounded(.toNearestOrAwayFromZero)
+        return (width, height)
+    }
+
+    private static func thumbnailHeight(for size: DynamicTypeSize) -> CGFloat {
+        let minH: CGFloat = 72
+        let maxH: CGFloat = 136
+        let base: CGFloat
+        switch size {
+        case .xSmall, .small:
+            base = 72
+        case .medium:
+            base = 76
+        case .large:
+            base = 80
+        case .xLarge:
+            base = 88
+        case .xxLarge:
+            base = 96
+        case .xxxLarge:
+            base = 104
+        case .accessibility1:
+            base = 112
+        case .accessibility2:
+            base = 120
+        case .accessibility3:
+            base = 128
+        case .accessibility4:
+            base = 132
+        case .accessibility5:
+            base = 136
+        @unknown default:
+            base = 88
+        }
+        return min(max(base, minH), maxH)
     }
 
     // MARK: - Helpers

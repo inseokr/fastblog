@@ -236,7 +236,7 @@ final class CreatedRecapBlogStore: ObservableObject {
     @Published private(set) var isLoading = false
     /// True while a cloud sync is in progress. Views can observe this to show a loading indicator.
     @Published private(set) var isSyncing = false
-    /// When true, landing shows "Recap Blog has been created!" banner; clear after 5-7 sec.
+    /// When true, landing shows the "Your blog is ready" banner; clear after 5-7 sec.
     @Published var showRecapCreatedBanner = false
     /// Set to true when a blog is created. Consumed by the view (TripsView) to trigger the banner at the appropriate time.
     @Published var pendingRecapCreated = false
@@ -488,7 +488,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         persistTripDrafts()
     }
 
-    /// Dismiss the "Recap Blog has been created!" banner.
+    /// Dismiss the "Your blog is ready" banner.
     func dismissRecapCreatedBanner() {
         showRecapCreatedBanner = false
     }

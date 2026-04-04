@@ -12,77 +12,74 @@ struct PrivacyPolicyView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Group {
                     sectionTitle("1. Information We Collect")
-                    bodyText("We collect information you provide directly to us, such as when you create an account, publish a blog post, or contact support. This includes your name, email address, and any content you create on our platform.")
-                    bodyText("We also collect usage data automatically, including your IP address, browser type, pages visited, and time spent on the platform. This helps us improve Bloggo and diagnose technical issues.")
+                    bodyText("We collect information you provide directly to us, such as when you create an account or contact support. This includes your name and email address.")
+                    bodyText("We may also collect limited usage data to help us diagnose technical issues and improve the app experience, such as crash reports and general usage patterns. This data does not include your blog content or photos.")
                 }
 
                 Group {
-                    sectionTitle("2. Photos & Cloud-Uploaded Content")
-                    bodyText("Bloggo allows you to upload photos and blog content from the iOS app or web editor to our cloud servers. Regarding this content:")
-                    bullet("Photos you upload are stored securely on our cloud infrastructure and are used solely to display your blog posts and generate AI-assisted travel blogs on your behalf.")
-                    bullet("Photos are not shared with third parties for advertising, training data sets, or any purpose other than operating and improving the Bloggo service.")
-                    bullet("AI blog generation may process your photos using on-device or cloud-based AI models to identify scenes and generate descriptive text; this processing is done solely to create your blog content.")
-                    bullet("EXIF metadata (such as GPS location embedded in photo files) may be read by our service to enrich your blog with location data if you choose to enable this feature; you can disable location enrichment in your app settings.")
-                    bullet("You may delete your uploaded photos and blogs at any time from within the app or web editor; deletions are processed within 30 days from our backup systems.")
+                    sectionTitle("2. Photos & Blog Content")
+                    bodyText("Bloggo is designed with your privacy in mind. Your photos and blog content are processed and stored locally on your device. Specifically:")
+                    bullet("Photos you use in your blogs are accessed from your device's photo library and are never uploaded to external servers.")
+                    bullet("AI-assisted blog generation is performed on-device or through on-device models; your photos are not sent to third-party services for this purpose.")
+                    bullet("EXIF metadata (such as GPS location embedded in photo files) may be read locally to enrich your blog with location context. You can disable this in your app settings.")
+                    bullet("Your blog content remains on your device unless you choose to export or share it using the available sharing features described below.")
                 }
 
                 Group {
-                    sectionTitle("3. Web Blog Editor Usage")
-                    bodyText("When you use the Bloggo web editor at bloggo.linkedspaces.com, we collect:")
-                    bullet("Session data: authentication tokens to verify your identity and keep you securely signed in.")
-                    bullet("Edit history: changes you make to blog posts are logged temporarily to support auto-save and conflict resolution across devices.")
-                    bullet("Browser and device information: browser type, operating system, and screen resolution to ensure the editor renders correctly for you.")
-                    bodyText("Content you write or edit in the web editor is saved to your cloud account and is subject to the same privacy protections as all other user content described in this policy.")
+                    sectionTitle("3. Sharing Your Blogs")
+                    bodyText("Bloggo provides two ways to share your blogs with others:")
+                    bullet("PDF Export: You may export any blog as a PDF file, which you can then share through any method available on your device (such as AirDrop, Messages, or email). Once exported, the PDF is subject to the privacy practices of whichever platform you use to send it.")
+                    bullet("QR Code Sharing: You may generate a QR code for a blog to share it in person with another Bloggo user. This is intended for direct, local sharing between individuals and does not publish your blog to the internet or make it accessible via a public link.")
+                    bodyText("Bloggo does not publish your blogs to the web or make them accessible via a public URL. All sharing is user-initiated and user-controlled.")
                 }
 
                 Group {
                     sectionTitle("4. How We Use Your Information")
-                    bodyText("We use your information to:")
-                    bullet("Provide, maintain, and improve our services.")
-                    bullet("Store and sync your blogs and photos across the iOS app and web platform.")
-                    bullet("Generate AI-powered blog posts from your uploaded travel photos.")
-                    bullet("Process transactions and send related information.")
-                    bullet("Send technical notices and support messages.")
-                    bullet("Respond to your comments and questions.")
-                    bullet("Monitor and analyze usage patterns to improve the platform.")
-                    bullet("Detect and prevent fraudulent or illegal activity.")
+                    bodyText("We use the information we collect to:")
+                    bullet("Provide, maintain, and improve the Bloggo app.")
+                    bullet("Authenticate your account and keep it secure.")
+                    bullet("Send important notices, updates, and support communications.")
+                    bullet("Respond to your questions and support requests.")
+                    bullet("Detect and prevent fraudulent or unauthorized activity.")
                 }
 
                 Group {
                     sectionTitle("5. Information Sharing")
-                    bodyText("We do not sell, trade, or rent your personal information or uploaded content to third parties. We may share your information with trusted service providers who assist us in operating our platform (such as cloud hosting providers), provided they agree to keep this information confidential and use it only for the purposes we specify.")
-                    bodyText("We may disclose your information if required by law or if we believe disclosure is necessary to protect our rights or the safety of others.")
+                    bodyText("We do not sell, trade, or rent your personal information to third parties. We may share limited account information with trusted service providers who assist in operating our service (such as authentication infrastructure), provided they are bound by confidentiality obligations and use the information only as we direct.")
+                    bodyText("We may disclose information if required by law or if we believe disclosure is necessary to protect our rights or the safety of our users.")
                 }
 
                 Group {
-                    sectionTitle("6. Sharing Content With Other Users")
-                    bodyText("Bloggo allows users to share their blogs with others using features such as QR code sharing or exported files.")
-                    bodyText("This sharing occurs only when initiated by the user and transfers only the blog content selected by the user.")
+                    sectionTitle("6. Guest and Registered User Access")
+                    bodyText("Bloggo offers two tiers of access:")
+                    bullet("Guest Users (no account): Guests may create and export one (1) blog. To save additional blogs or export more than one, guests are encouraged to create a free account.")
+                    bullet("Registered Users (free account): Users with a free Bloggo account can create and save as many blog drafts as they like and export as many blogs as they like. Account creation is free and requires only an email address.")
+                    bodyText("Creating an account does not change what data is stored or how your content is handled — all blog content continues to be stored locally on your device.")
                 }
 
                 Group {
                     sectionTitle("7. Data Retention")
-                    bodyText("We retain your personal information and cloud-stored content for as long as your account is active or as needed to provide services. You may request deletion of your account and all associated data, including uploaded photos and blog posts, at any time by contacting our support team. Data is removed from active systems promptly and from backups within 30 days.")
+                    bodyText("Because your blog content is stored locally on your device, you are in full control of your data. Deleting the app removes all locally stored blogs and drafts. For account-related information (such as your name and email), you may request deletion at any time by contacting our support team. Account data is removed from our systems within 30 days of a deletion request.")
                 }
 
                 Group {
                     sectionTitle("8. Data Security")
-                    bodyText("We implement industry-standard security measures to protect your personal information and uploaded content, including encrypted transmission (HTTPS/TLS) and encrypted storage for sensitive account data. However, no method of transmission over the internet is 100% secure, and we cannot guarantee absolute security. We encourage you to use a strong, unique password for your Bloggo account.")
+                    bodyText("We implement industry-standard security measures to protect your account information, including encrypted transmission (HTTPS/TLS) for any data communicated with our servers. Your blog content never leaves your device through our systems, which significantly limits exposure. We encourage you to use a strong, unique password for your Bloggo account and to keep your device secure.")
                 }
 
                 Group {
                     sectionTitle("9. Your Rights")
-                    bodyText("Depending on your location, you may have the right to access, correct, export, or delete your personal data and uploaded content. You may also have the right to object to or restrict certain processing of your data. To exercise these rights, please contact us at bloggo@linkedspaces.com.")
+                    bodyText("Depending on your location, you may have the right to access, correct, export, or delete your personal account data. To exercise these rights, please contact us at bloggo@linkedspaces.com. Because blog content is stored locally on your device, you can manage, export, or delete it directly from within the app at any time.")
                 }
 
                 Group {
                     sectionTitle("10. Changes to This Policy")
-                    bodyText("We may update this privacy policy from time to time. We will notify you of any material changes by posting the new policy on this page, and, where appropriate, sending a notification via email or within the app.")
+                    bodyText("We may update this privacy policy from time to time. We will notify you of any material changes by posting the new policy within the app and, where appropriate, by sending a notification to your registered email address.")
                 }
 
                 Group {
                     sectionTitle("11. Contact Us")
-                    bodyText("If you have questions about this privacy policy, please contact us at bloggo@linkedspaces.com.")
+                    bodyText("If you have questions or concerns about this privacy policy, please contact us at bloggo@linkedspaces.com.")
                 }
 
                 Spacer(minLength: 40)

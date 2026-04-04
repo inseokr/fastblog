@@ -12,87 +12,84 @@ struct TermsOfServiceView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Group {
                     sectionTitle("1. Acceptance of Terms")
-                    bodyText("By creating an account or using Bloggo, you agree to these Terms of Service and our Privacy Policy. If you do not agree, please do not use our service.")
+                    bodyText("By using Bloggo — whether as a guest or by creating an account — you agree to these Terms of Service and our Privacy Policy. If you do not agree, please do not use our service.")
                 }
 
                 Group {
                     sectionTitle("2. Description of Service")
-                    bodyText("Bloggo is a travel blogging platform that allows users to create, edit, publish, and share blog posts from both the Bloggo iOS mobile app and the Bloggo web platform. Our service includes:")
-                    bullet("AI-powered blog generation: automatically create blog posts from your travel photos using on-device or cloud-based AI")
-                    bullet("Cloud upload and sync: upload and store your locally created blogs to the cloud so they are accessible from any device")
-                    bullet("Web blog editor: edit, format, and publish your blog posts directly from a web browser at bloggo.linkedspaces.com")
-                    bullet("Public sharing: share your published blogs via a unique public link")
+                    bodyText("Bloggo is a travel journaling app that helps you create, edit, and share beautifully formatted blog posts from your travel experiences. Our service includes:")
+                    bullet("AI-assisted blog generation: automatically create blog posts from your travel photos using on-device AI.")
+                    bullet("Blog drafts: save and manage multiple blog drafts locally on your device.")
+                    bullet("PDF export: export any blog as a polished PDF to share however you choose.")
+                    bullet("QR code sharing: generate a QR code for any blog to share it in person with another Bloggo user.")
                     bodyText("We reserve the right to modify, suspend, or discontinue any aspect of the service at any time.")
                 }
 
                 Group {
-                    sectionTitle("3. User Accounts")
-                    bodyText("You are responsible for maintaining the confidentiality of your account credentials and for all activities that occur under your account. You must notify us immediately of any unauthorized use of your account.")
-                    bullet("You must be at least 13 years old to use Bloggo")
-                    bullet("You may not create more than one account per person")
-                    bullet("You must provide accurate and complete information")
-                    bullet("You are responsible for all content posted from your account")
+                    sectionTitle("3. Guest Users and Registered Accounts")
+                    bodyText("Bloggo can be used with or without a registered account:")
+                    bullet("Guest Users: Guests may create and export one (1) blog. Guest data is stored locally on the device and is not associated with any account.")
+                    bullet("Registered Users (free): Creating a free Bloggo account allows you to save and manage unlimited blog drafts and export as many blogs as you like. Registered accounts require a valid email address.")
+                    bodyText("Account creation is free and takes only a moment. Registered users enjoy the full Bloggo experience with no content restrictions.")
                 }
 
                 Group {
-                    sectionTitle("4. Cloud Storage & Uploads")
-                    bodyText("Bloggo offers the ability to upload locally created blogs and their associated photos to our cloud infrastructure. By using the cloud upload feature, you acknowledge and agree that:")
-                    bullet("Uploaded content (including blog text and photos) will be stored on Bloggo's servers and may be accessible from any device where you are signed in")
-                    bullet("You are solely responsible for ensuring you have the right to upload any photos or content you submit")
-                    bullet("We may compress or optimize photos during the upload process to ensure optimal performance")
-                    bullet("Bloggo is not responsible for data loss due to user-initiated deletion, account termination for Terms violations, or unforeseen technical failures, though we take reasonable precautions to protect your data")
+                    sectionTitle("4. User Accounts")
+                    bodyText("If you create an account, you are responsible for maintaining the confidentiality of your account credentials and for all activities that occur under your account. Please notify us immediately of any unauthorized use.")
+                    bullet("You must be at least 13 years old to create an account.")
+                    bullet("You may not create more than one account per person.")
+                    bullet("You must provide accurate and complete information during registration.")
+                    bullet("You are responsible for all content created or exported from your account.")
                 }
 
                 Group {
-                    sectionTitle("5. Web Blog Editor")
-                    bodyText("The Bloggo web platform provides a full-featured blog editor accessible at bloggo.linkedspaces.com. By using the web editor, you agree that:")
-                    bullet("Edits made in the web editor are saved to your cloud blog and will be reflected across all platforms where your blog is published")
-                    bullet("You are responsible for all content you create or modify using the web editor")
-                    bullet("The web editor is provided as-is and may be updated or modified at any time; we will make reasonable efforts to preserve your content during such updates")
-                    bullet("Auto-save functionality may be available; however, you should manually save your work regularly to avoid data loss in the event of a connectivity interruption")
+                    sectionTitle("5. Sharing Features")
+                    bodyText("Bloggo supports two sharing methods, both of which are entirely user-initiated:")
+                    bullet("PDF Export: You may export any blog as a PDF and share it through any channel available on your device. Once the PDF leaves your device, it is subject to the terms of whatever platform you use to transmit it.")
+                    bullet("QR Code Sharing: You may generate a QR code for a blog to share it in person with another Bloggo user. QR code sharing is intended for direct, local sharing and does not publish your blog to the internet or create a public link.")
+                    bodyText("Bloggo does not publish your blogs to a public website or make them accessible via a web URL. You remain in full control of your content and how it is shared.")
                 }
 
                 Group {
                     sectionTitle("6. Content Policy")
-                    bodyText("You retain ownership of the content you create on Bloggo. By posting content or uploading it to the cloud, you grant us a non-exclusive, worldwide license to store, display, distribute, and promote your content on our platform.")
-                    bodyText("Users are responsible for the content they choose to share with others through Bloggo's sharing features, including QR code sharing and exported files.")
-                    bodyText("You agree not to post or upload content that:")
-                    bullet("Is illegal, harmful, or violates others' rights")
-                    bullet("Contains spam, malware, or deceptive information")
-                    bullet("Infringes on intellectual property or privacy rights")
-                    bullet("Harasses, threatens, or intimidates others")
-                    bullet("Contains adult content without proper age-gating")
-                    bullet("Includes photos of individuals without their consent, especially minors")
+                    bodyText("You retain full ownership of the content you create in Bloggo. Your blogs and photos are stored locally on your device and are never uploaded to our servers as part of normal app operation.")
+                    bodyText("Regardless of how content is shared or exported, you agree not to create or distribute content that:")
+                    bullet("Is illegal, harmful, or violates the rights of others.")
+                    bullet("Contains spam, malware, or deliberately deceptive information.")
+                    bullet("Infringes on intellectual property or privacy rights.")
+                    bullet("Harasses, threatens, or intimidates any individual.")
+                    bullet("Contains adult content or material inappropriate for general audiences.")
+                    bullet("Includes photos or identifying information of individuals without their consent, particularly minors.")
                 }
 
                 Group {
                     sectionTitle("7. Intellectual Property")
-                    bodyText("Bloggo and its original content, features, and functionality are owned by Bloggo and are protected by international copyright, trademark, and other intellectual property laws.")
+                    bodyText("Bloggo and its original content, features, and functionality are owned by Bloggo and are protected by applicable copyright, trademark, and other intellectual property laws. You may not reproduce, modify, or distribute any part of the Bloggo app or its interface without our express written permission.")
                 }
 
                 Group {
-                    sectionTitle("9. Termination")
-                    bodyText("We may terminate or suspend your account at our sole discretion, without notice, for conduct that we believe violates these Terms or is harmful to other users, us, or third parties. Upon termination, your cloud-stored content may be deleted after a reasonable grace period.")
+                    sectionTitle("8. Termination")
+                    bodyText("We may terminate or suspend your account at our sole discretion, without prior notice, for conduct that we believe violates these Terms or is harmful to other users, us, or third parties. Because your blog content is stored locally on your device, termination of your account does not affect locally saved content on your device.")
                 }
 
                 Group {
-                    sectionTitle("10. Disclaimer of Warranties")
-                    bodyText("Bloggo is provided \"as is\" without warranties of any kind. We do not warrant that the service will be uninterrupted, error-free, or free of viruses or other harmful components. Cloud storage availability is subject to our infrastructure uptime and is not guaranteed to be 100% available at all times.")
+                    sectionTitle("9. Disclaimer of Warranties")
+                    bodyText("Bloggo is provided \"as is\" and \"as available\" without warranties of any kind, express or implied. We do not warrant that the service will be uninterrupted, error-free, or free from bugs or other issues. We are not responsible for any loss of locally stored content resulting from device failure, operating system changes, or user-initiated deletion.")
                 }
 
                 Group {
-                    sectionTitle("11. Limitation of Liability")
-                    bodyText("To the maximum extent permitted by law, Bloggo shall not be liable for any indirect, incidental, special, consequential, or punitive damages resulting from your use of or inability to use the service, including any loss of cloud-stored data.")
+                    sectionTitle("10. Limitation of Liability")
+                    bodyText("To the maximum extent permitted by applicable law, Bloggo and its affiliates shall not be liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of or inability to use the service, including any loss of locally stored content or exported files.")
                 }
 
                 Group {
-                    sectionTitle("12. Governing Law")
+                    sectionTitle("11. Governing Law")
                     bodyText("These Terms shall be governed by the laws of the State of California, without regard to its conflict of law provisions.")
                 }
 
                 Group {
-                    sectionTitle("13. Contact")
-                    bodyText("For questions about these Terms, contact us at bloggo@linkedspaces.com.")
+                    sectionTitle("12. Contact")
+                    bodyText("For questions about these Terms of Service, please contact us at bloggo@linkedspaces.com.")
                 }
 
                 Spacer(minLength: 40)

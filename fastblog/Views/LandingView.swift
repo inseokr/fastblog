@@ -311,7 +311,7 @@ struct LandingView: View {
                 )
                 .frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Your recap blog is ready!")
+                Text("Your blog is ready")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
