@@ -92,62 +92,6 @@ struct PlacesVisitedView: View {
         return Array(Set(cats)).sorted()
     }
 
-    private func categoryDisplayLabel(for rawValue: String) -> String {
-        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "" }
-
-        let cat = MKPointOfInterestCategory(rawValue: trimmed)
-        switch cat {
-        case .restaurant:      return "Restaurant"
-        case .cafe:            return "Café"
-        case .bakery:          return "Bakery"
-        case .winery:          return "Winery"
-        case .brewery:         return "Brewery"
-        case .nightlife:       return "Nightlife"
-        case .hotel:           return "Hotel"
-        case .campground:      return "Campground"
-        case .museum:          return "Museum"
-        case .movieTheater:    return "Movie Theater"
-        case .theater:         return "Theater"
-        case .amusementPark:   return "Amusement Park"
-        case .zoo:             return "Zoo"
-        case .aquarium:        return "Aquarium"
-        case .park:            return "Park"
-        case .beach:           return "Beach"
-        case .nationalPark:    return "National Park"
-        case .airport:         return "Airport"
-        case .publicTransport: return "Transit"
-        case .gasStation:      return "Gas Station"
-        case .hospital:        return "Hospital"
-        case .pharmacy:        return "Pharmacy"
-        case .fitnessCenter:   return "Fitness"
-        case .store:           return "Store"
-        case .foodMarket:      return "Market"
-        case .library:         return "Library"
-        case .school:          return "School"
-        case .university:      return "University"
-        case .marina:          return "Marina"
-        case .stadium:         return "Stadium"
-        case .bank:            return "Bank"
-        default:
-            break
-        }
-
-        if trimmed.hasPrefix("MKPOICategory") {
-            let remainder = String(trimmed.dropFirst("MKPOICategory".count))
-            if remainder.isEmpty { return trimmed }
-            let spaced = remainder
-                .replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression)
-            return spaced
-        }
-
-        if trimmed.count <= 4 {
-            return trimmed.uppercased()
-        }
-
-        return trimmed
-    }
-
     private var filteredPlaces: [VisitedPlaceSummary] {
         createdRecapStore.visitedPlaces
             .filter { place in
@@ -246,14 +190,11 @@ struct PlacesVisitedView: View {
                                         }
                                         ForEach(pairs, id: \.first?.id) { pair in
                                             HStack(alignment: .top, spacing: 12) {
-                                                ForEach(Array(pair.enumerated()), id: \.element.id) { colIdx, place in
-                                                    let partnerIdx = colIdx == 0 ? 1 : 0
-                                                    let partnerHasCaption = partnerIdx < pair.count && pair[partnerIdx].captionPreview != nil
-                                                    let showCaptionSpace = place.captionPreview != nil || partnerHasCaption
+                                                ForEach(Array(pair.enumerated()), id: \.element.id) { _, place in
                                                     Button {
                                                         selectedPlaceForModal = place
                                                     } label: {
-                                                        PlaceVisitedCard(place: place, showCaptionSpace: showCaptionSpace)
+                                                        PlaceVisitedCard(place: place)
                                                     }
                                                     .buttonStyle(.plain)
                                                     .frame(maxWidth: .infinity)
@@ -467,7 +408,7 @@ struct PlacesVisitedView: View {
                                 selectedCategory = nil
                             }
                             ForEach(availableCategories, id: \.self) { cat in
-                                chip(label: categoryDisplayLabel(for: cat), isSelected: selectedCategory == cat) {
+                                placesVisitedCategoryChip(raw: cat, isSelected: selectedCategory == cat) {
                                     selectedCategory = (selectedCategory == cat) ? nil : cat
                                 }
                             }
@@ -516,6 +457,31 @@ struct PlacesVisitedView: View {
                 .background(isSelected ? Color.blue : filterChipUnselectedFill())
                 .clipShape(Capsule())
                 .lineLimit(1)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func placesVisitedCategoryChip(raw: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        let p = PlacePOICategoryPresentation.presentation(forRaw: raw)
+        let label = PlacePOICategoryPresentation.displayLabel(forRaw: raw)
+        return Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: p.symbol)
+                    .font(.caption.weight(.semibold))
+                Text(label)
+                    .font(.subheadline)
+                    .fontWeight(isSelected ? .semibold : .regular)
+            }
+            .foregroundStyle(isSelected ? Color.white : p.color)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(isSelected ? p.color : p.color.opacity(0.14))
+            .clipShape(Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(p.color.opacity(isSelected ? 0.25 : 0.45), lineWidth: isSelected ? 0 : 1)
+            )
+            .lineLimit(1)
         }
         .buttonStyle(.plain)
     }
@@ -589,7 +555,6 @@ private struct PlaceVisitedPhotoModalWrapper: View {
 
 private struct PlaceVisitedCard: View {
     let place: VisitedPlaceSummary
-    var showCaptionSpace: Bool = true
 
     private let maxThumbs: Int = 3
     private let thumbSpacing: CGFloat = 8
@@ -687,25 +652,9 @@ private struct PlaceVisitedCard: View {
                         .lineLimit(1)
                 }
 
-                if showCaptionSpace {
-                    ZStack(alignment: .topLeading) {
-                        // Invisible 2-line spacer — reserves height only when row partner also has/needs caption
-                        Text(" \n ")
-                            .font(.subheadline)
-                            .lineLimit(2)
-                            .opacity(0)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                        // Real caption on top
-                        if let preview = place.captionPreview {
-                            Text(preview)
-                                .font(.subheadline)
-                                .foregroundStyle(.primary.opacity(0.9))
-                                .lineLimit(2)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                    .padding(.top, 2)
+                if let raw = place.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+                    PlacePOICategoryBadge(rawCategory: raw)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
@@ -760,62 +709,6 @@ private struct PlacesVisitedMapView: View {
             .compactMap { $0.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         return Array(Set(cats)).sorted()
-    }
-
-    private func categoryDisplayLabel(for rawValue: String) -> String {
-        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "" }
-
-        let cat = MKPointOfInterestCategory(rawValue: trimmed)
-        switch cat {
-        case .restaurant:      return "Restaurant"
-        case .cafe:            return "Café"
-        case .bakery:          return "Bakery"
-        case .winery:          return "Winery"
-        case .brewery:         return "Brewery"
-        case .nightlife:       return "Nightlife"
-        case .hotel:           return "Hotel"
-        case .campground:      return "Campground"
-        case .museum:          return "Museum"
-        case .movieTheater:    return "Movie Theater"
-        case .theater:         return "Theater"
-        case .amusementPark:   return "Amusement Park"
-        case .zoo:             return "Zoo"
-        case .aquarium:        return "Aquarium"
-        case .park:            return "Park"
-        case .beach:           return "Beach"
-        case .nationalPark:    return "National Park"
-        case .airport:         return "Airport"
-        case .publicTransport: return "Transit"
-        case .gasStation:      return "Gas Station"
-        case .hospital:        return "Hospital"
-        case .pharmacy:        return "Pharmacy"
-        case .fitnessCenter:   return "Fitness"
-        case .store:           return "Store"
-        case .foodMarket:      return "Market"
-        case .library:         return "Library"
-        case .school:          return "School"
-        case .university:      return "University"
-        case .marina:          return "Marina"
-        case .stadium:         return "Stadium"
-        case .bank:            return "Bank"
-        default:
-            break
-        }
-
-        if trimmed.hasPrefix("MKPOICategory") {
-            let remainder = String(trimmed.dropFirst("MKPOICategory".count))
-            if remainder.isEmpty { return trimmed }
-            let spaced = remainder
-                .replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression)
-            return spaced
-        }
-
-        if trimmed.count <= 4 {
-            return trimmed.uppercased()
-        }
-
-        return trimmed
     }
 
     private func coordinate(for place: VisitedPlaceSummary) -> CLLocationCoordinate2D? {
@@ -973,7 +866,7 @@ private struct PlacesVisitedMapView: View {
                                     selectedCategory = nil
                                 }
                                 ForEach(availableCategories, id: \.self) { cat in
-                                    chip(label: categoryDisplayLabel(for: cat), isSelected: selectedCategory == cat) {
+                                    placesVisitedMapCategoryChip(raw: cat, isSelected: selectedCategory == cat) {
                                         selectedCategory = (selectedCategory == cat) ? nil : cat
                                     }
                                 }
@@ -1071,14 +964,11 @@ private struct PlacesVisitedMapView: View {
                                             }
                                             ForEach(pairs, id: \.first?.id) { pair in
                                                 HStack(alignment: .top, spacing: 12) {
-                                                    ForEach(Array(pair.enumerated()), id: \.element.id) { colIdx, place in
-                                                        let partnerIdx = colIdx == 0 ? 1 : 0
-                                                        let partnerHasCaption = partnerIdx < pair.count && pair[partnerIdx].captionPreview != nil
-                                                        let showCaptionSpace = place.captionPreview != nil || partnerHasCaption
+                                                    ForEach(Array(pair.enumerated()), id: \.element.id) { _, place in
                                                         Button {
                                                             selectedPlaceForModal = place
                                                         } label: {
-                                                            PlaceVisitedCard(place: place, showCaptionSpace: showCaptionSpace)
+                                                            PlaceVisitedCard(place: place)
                                                         }
                                                         .buttonStyle(.plain)
                                                         .frame(maxWidth: .infinity)
@@ -1188,6 +1078,27 @@ private struct PlacesVisitedMapView: View {
         }
         .toolbar((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
         .toolbarBackground((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
+    }
+
+    private func placesVisitedMapCategoryChip(raw: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        let p = PlacePOICategoryPresentation.presentation(forRaw: raw)
+        let label = PlacePOICategoryPresentation.displayLabel(forRaw: raw)
+        return Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: p.symbol)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(label)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(isSelected ? p.color : p.color.opacity(0.35))
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(isSelected ? 0.4 : 0.2), lineWidth: 1))
+            .lineLimit(1)
+        }
+        .buttonStyle(.plain)
     }
 
     private func chip(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {

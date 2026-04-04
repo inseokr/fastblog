@@ -476,7 +476,7 @@ struct FullScreenMapView: View {
                                             withAnimation { selectedCategory = nil; selectedPlaceIndex = 0 }
                                         }
                                         ForEach(availableCategories, id: \.self) { cat in
-                                            chip(label: categoryDisplayLabel(for: cat), isSelected: selectedCategory == cat) {
+                                            mapCategoryFilterChip(categoryKey: cat, isSelected: selectedCategory == cat) {
                                                 withAnimation { selectedCategory = (selectedCategory == cat) ? nil : cat; selectedPlaceIndex = 0 }
                                             }
                                         }
@@ -544,53 +544,24 @@ struct FullScreenMapView: View {
         selectedPlaceIndex = index
     }
 
-    private func categoryDisplayLabel(for rawValue: String) -> String {
-        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || trimmed == "Others" { return "Others" }
-
-        let cat = MKPointOfInterestCategory(rawValue: trimmed)
-        switch cat {
-        case .restaurant:      return "Restaurant"
-        case .cafe:            return "Café"
-        case .bakery:          return "Bakery"
-        case .winery:          return "Winery"
-        case .brewery:         return "Brewery"
-        case .nightlife:       return "Nightlife"
-        case .hotel:           return "Hotel"
-        case .campground:      return "Campground"
-        case .museum:          return "Museum"
-        case .movieTheater:    return "Movie Theater"
-        case .theater:         return "Theater"
-        case .amusementPark:   return "Amusement Park"
-        case .zoo:             return "Zoo"
-        case .aquarium:        return "Aquarium"
-        case .park:            return "Park"
-        case .beach:           return "Beach"
-        case .nationalPark:    return "National Park"
-        case .airport:         return "Airport"
-        case .publicTransport: return "Transit"
-        case .gasStation:      return "Gas Station"
-        case .hospital:        return "Hospital"
-        case .pharmacy:        return "Pharmacy"
-        case .fitnessCenter:   return "Fitness"
-        case .store:           return "Store"
-        case .foodMarket:      return "Market"
-        case .library:         return "Library"
-        case .school:          return "School"
-        case .university:      return "University"
-        case .marina:          return "Marina"
-        case .stadium:         return "Stadium"
-        case .bank:            return "Bank"
-        default: break
+    private func mapCategoryFilterChip(categoryKey: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        let label = PlacePOICategoryPresentation.displayLabel(forRaw: categoryKey)
+        let p = PlacePOICategoryPresentation.presentation(forRaw: categoryKey)
+        return Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: p.symbol)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(label)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(isSelected ? p.color : p.color.opacity(0.35))
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(isSelected ? 0.4 : 0.2), lineWidth: 1))
         }
-
-        if trimmed.hasPrefix("MKPOICategory") {
-            let remainder = String(trimmed.dropFirst("MKPOICategory".count))
-            if remainder.isEmpty { return trimmed }
-            return remainder.replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression)
-        }
-        if trimmed.count <= 4 { return trimmed.uppercased() }
-        return trimmed
+        .buttonStyle(.plain)
     }
 
     private func chip(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
@@ -662,6 +633,22 @@ struct FullScreenMapView: View {
         .frame(height: cardHeight + 20)
     }
 }
+
+/// Category icon + label on map place cards (matches `PlacePOICategoryPresentation`).
+    private struct MapPlaceCategoryCaptionLine: View {
+        let categoryRaw: String
+
+        var body: some View {
+            let p = PlacePOICategoryPresentation.presentation(forRaw: categoryRaw)
+            HStack(spacing: 5) {
+                Image(systemName: p.symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(p.label)
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(p.color)
+        }
+    }
 
 /// Single place card for full-screen map bottom strip: Premium layout with image left, badge, and text right.
     private struct PlaceMapCardView: View {
@@ -739,6 +726,10 @@ struct FullScreenMapView: View {
                         .foregroundColor(.white)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
+
+                    if let raw = stop.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+                        MapPlaceCategoryCaptionLine(categoryRaw: raw)
+                    }
 
                     if let desc = descriptionText, !desc.isEmpty {
                         Text(desc)

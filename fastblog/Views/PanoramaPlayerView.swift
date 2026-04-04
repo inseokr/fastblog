@@ -2,6 +2,15 @@ import Photos
 import SwiftUI
 import UIKit
 
+// MARK: - Gallery scroll offset (for swipe-down dismiss when scrolled to top)
+
+private struct SlideshowGalleryScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 // MARK: - Photo entry (asset ID + optional caption)
 
 struct PanoramaPhotoEntry: Equatable {
@@ -75,6 +84,8 @@ struct PanoramaPlayerView: View {
     // MARK: - Gallery
     @State private var showGallery: Bool = false
     @State private var wasPlayingBeforeGallery: Bool = false
+    /// Top content offset in `slideshowGalleryScroll` space; near 0 when the gallery list is at the top.
+    @State private var galleryScrollContentMinY: CGFloat = 0
 
     // MARK: - Music
     @State private var showMusicPicker: Bool = false
@@ -268,10 +279,15 @@ struct PanoramaPlayerView: View {
         .gesture(
             DragGesture(minimumDistance: 40, coordinateSpace: .local)
                 .onEnded { value in
-                    guard !showGallery else { return }
+                    guard !showGallery, diptychExpandedHalf == nil else { return }
                     let dx = value.translation.width
                     let dy = value.translation.height
-                    // Only handle horizontal swipes (horizontal > vertical)
+                    // Swipe up: open gallery (vertical dominates, finger moved up → negative dy)
+                    if abs(dy) > abs(dx), dy < -56 {
+                        presentSlideshowGallery()
+                        return
+                    }
+                    // Horizontal: prev / next slide
                     guard abs(dx) > abs(dy) else { return }
                     if dx < 0 {
                         navigateToNextSlide()
@@ -554,14 +570,7 @@ struct PanoramaPlayerView: View {
         HStack(spacing: 0) {
             // Gallery button — bottom left
             Button {
-                wasPlayingBeforeGallery = isPlaying
-                stopTimer()
-                if isPlaying {
-                    Task { await slideshowMusic.pause() }
-                }
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
-                    showGallery = true
-                }
+                presentSlideshowGallery()
             } label: {
                 ZStack {
                     Circle().fill(.black.opacity(0.6))
@@ -607,6 +616,24 @@ struct PanoramaPlayerView: View {
     }
 
     // MARK: - Gallery overlay
+
+    private func presentSlideshowGallery() {
+        wasPlayingBeforeGallery = isPlaying
+        stopTimer()
+        if isPlaying {
+            Task { await slideshowMusic.pause() }
+        }
+        galleryScrollContentMinY = 0
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+            showGallery = true
+        }
+    }
+
+    private func dismissSlideshowGallery() {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+            showGallery = false
+        }
+    }
 
     /// Matches `RecapBlogPageView.coverPhotoHero` — full width, 55% of screen height.
     private static let coverHeroHeightFraction: CGFloat = 0.55
@@ -684,9 +711,7 @@ struct PanoramaPlayerView: View {
                                     .padding(.horizontal, 24)
 
                                 Button {
-                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
-                                        showGallery = false
-                                    }
+                                    dismissSlideshowGallery()
                                     isPlaying = true
                                     resumeSlideshowTimingIfPlaying()
                                     Task { await slideshowMusic.resume() }
@@ -737,9 +762,7 @@ struct PanoramaPlayerView: View {
                                 .aspectRatio(1, contentMode: .fit)
                                 .onTapGesture {
                                     jumpToPhoto(flatIndex: idx)
-                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
-                                        showGallery = false
-                                    }
+                                    dismissSlideshowGallery()
                                 }
                             }
                         }
@@ -748,13 +771,30 @@ struct PanoramaPlayerView: View {
                         Color.clear
                             .frame(height: geo.safeAreaInsets.bottom + 16)
                     }
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: SlideshowGalleryScrollOffsetKey.self,
+                                value: proxy.frame(in: .named("slideshowGalleryScroll")).minY
+                            )
+                        }
+                    )
                 }
+                .coordinateSpace(name: "slideshowGalleryScroll")
+                .onPreferenceChange(SlideshowGalleryScrollOffsetKey.self) { galleryScrollContentMinY = $0 }
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 24)
+                        .onEnded { value in
+                            guard galleryScrollContentMinY >= -8 else { return }
+                            if value.translation.height > 56 {
+                                dismissSlideshowGallery()
+                            }
+                        }
+                )
 
                 // Close gallery — same role as tapping the dimmed area in the old sheet
                 Button {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
-                        showGallery = false
-                    }
+                    dismissSlideshowGallery()
                 } label: {
                     Text("Close")
                         .font(.system(size: 17, weight: .semibold))

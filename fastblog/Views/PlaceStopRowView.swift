@@ -3,36 +3,78 @@
 //  Capper
 //
 
-import MapKit
 import SwiftUI
 import UIKit
 
-// MARK: - SentimentBadge
+// MARK: - UserSentimentPill
 
-/// A compact sentiment indicator showing 😊 / 😐 / 😞.
-/// In edit mode: tapping cycles through the three values.
-/// In read mode: non-interactive display only.
-/// Only shown when a sentiment has been meaningfully set (any value when place has caption text).
-struct SentimentBadge: View {
+/// Text pill for place sentiment: "Loved It" / "Neutral" / "Terrible" (values 3 / 2 / 1).
+/// "Loved It" uses the same green as the Park POI category accent.
+/// In edit mode: tapping cycles 1 → 2 → 3 → 1 and shows a white capsule outline.
+/// In read mode: display only. Shown when the row has caption text.
+private struct UserSentimentPill: View {
     let sentiment: Int
     var isEditMode: Bool = false
-    /// Called when user taps to change sentiment in edit mode. Receives the new value.
     var onChanged: ((Int) -> Void)? = nil
 
-    private var icon: String {
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// Matches `PlacePOICategoryPresentation` `.park` tone.
+    private static let lovedAccentColor = PlacePOICategoryPresentation.presentation(forRaw: "MKPOICategoryPark").color
+
+    private var label: String {
         switch sentiment {
-        case 1: return "hand.thumbsdown.fill"
-        case 3: return "hand.thumbsup.fill"
-        default: return "hand.raised.fill"
+        case 1: return "Terrible"
+        case 3: return "Loved It"
+        default: return "Neutral"
         }
     }
 
-    private var color: Color {
+    private var accentColor: Color {
         switch sentiment {
         case 1: return Color(uiColor: .systemRed)
-        case 3: return Color(uiColor: .systemGreen)
+        case 3: return Self.lovedAccentColor
         default: return Color(uiColor: .systemOrange)
         }
+    }
+
+    @ViewBuilder
+    private var sentimentThumbIcon: some View {
+        switch sentiment {
+        case 1:
+            Image(systemName: "hand.thumbsdown.fill")
+                .font(.caption2)
+        case 3:
+            Image(systemName: "hand.thumbsup.fill")
+                .font(.caption2)
+        default:
+            Image(systemName: "hand.thumbsup.fill")
+                .font(.caption2)
+                .rotationEffect(.degrees(90))
+        }
+    }
+
+    private var pill: some View {
+        HStack(alignment: .center, spacing: 5) {
+            sentimentThumbIcon
+                .frame(width: 18, height: 16)
+            Text(label)
+                .font(.caption2)
+                .fontWeight(.medium)
+        }
+        .foregroundStyle(accentColor)
+        .padding(.horizontal, 12)
+        .padding(.vertical, isEditMode ? 6 : 5)
+            .background(
+                Capsule()
+                    .fill(accentColor.opacity(colorScheme == .dark ? 0.22 : 0.14))
+            )
+            .overlay {
+                if isEditMode, onChanged != nil {
+                    Capsule()
+                        .strokeBorder(Color.white, lineWidth: 1)
+                }
+            }
     }
 
     var body: some View {
@@ -52,6 +94,17 @@ struct SentimentBadge: View {
         }
         .buttonStyle(.plain)
         .disabled(!isEditMode || onChanged == nil)
+        if isEditMode, let onChange = onChanged {
+            Button {
+                let next = sentiment >= 3 ? 1 : sentiment + 1
+                onChange(next)
+            } label: {
+                pill
+            }
+            .buttonStyle(.plain)
+        } else {
+            pill
+        }
     }
 }
 
@@ -64,12 +117,12 @@ private struct OverallStoryTruncationKey: PreferenceKey {
 
 // MARK: - Place category chip (read vs edit: same footprint, edit adds outline only)
 
-/// Shared pill for place POI category so read-only and edit mode align; interactive state adds a white ring (no extra bulk).
+/// Shared pill for place POI category so read-only and edit mode align; edit mode adds a white ring (matches sentiment pill).
 private struct PlaceCategoryChip: View {
     let symbol: String?
     let label: String
-    /// When true, draws a subtle white stroke so the control reads as tappable in edit flows.
-    var showsInteractiveOutline: Bool
+    let accentColor: Color
+    var isEditMode: Bool = false
     /// Read-only recap uses a slightly tighter pill; edit mode keeps more vertical breathing room.
     var verticalPadding: CGFloat = 6
     @Environment(\.colorScheme) private var colorScheme
@@ -84,31 +137,22 @@ private struct PlaceCategoryChip: View {
                 .font(.caption2)
                 .fontWeight(.medium)
         }
-        .foregroundStyle(.secondary)
+        .foregroundStyle(accentColor)
         .padding(.horizontal, Self.horizontalPadding)
         .padding(.vertical, verticalPadding)
         .background(
             Capsule()
-                .fill(pillFill)
+                .fill(accentColor.opacity(colorScheme == .dark ? 0.22 : 0.14))
         )
         .overlay {
-            if showsInteractiveOutline {
+            if isEditMode {
                 Capsule()
-                    .strokeBorder(outlineColor, lineWidth: 1)
+                    .strokeBorder(Color.white, lineWidth: 1)
             }
         }
     }
 
     private static let horizontalPadding: CGFloat = 12
-
-    /// Soft fill so both states share the same silhouette without edit mode feeling heavier.
-    private var pillFill: Color {
-        Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.055)
-    }
-
-    private var outlineColor: Color {
-        Color.white.opacity(colorScheme == .dark ? 0.48 : 0.36)
-    }
 }
 
 
@@ -159,7 +203,7 @@ struct PlaceStopRowView: View {
     var isGeneratingNarrative: Bool = false
     /// When set (and device is capable), shows a "Tell Story" button. Parent manages the async task.
     var onTellPlaceStory: (() -> Void)? = nil
-    /// Called when user taps the sentiment badge in edit mode. Receives the new sentiment value (1/2/3).
+    /// Called when user taps the sentiment pill in edit mode. Receives the new sentiment value (1/2/3).
     var onSentimentChanged: ((Int) -> Void)? = nil
 
     @FocusState private var focusedPlaceNote: Bool
@@ -404,6 +448,56 @@ struct PlaceStopRowView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 10)
             }
+                    let cat = categoryPresentation(for: stop.placeCategory)
+                    let hasResolvedPlaceName = day.isPlaceNamesResolved
+                        && !stop.placeTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    let hasCaptionText = !(overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        || stop.photos.contains(where: { !($0.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+                    let hasSubtitle = !(stop.placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+                    if cat != nil || hasCaptionText {
+                        HStack(alignment: .center, spacing: 8) {
+                            if let cat {
+                                if hasResolvedPlaceName, let pickCategory = onEditCategory {
+                                    Button {
+                                        pickCategory()
+                                    } label: {
+                                        PlaceCategoryChip(
+                                            symbol: cat.symbol,
+                                            label: cat.label,
+                                            accentColor: cat.accentColor,
+                                            isEditMode: isEditMode,
+                                            verticalPadding: isEditMode ? 6 : 5
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("Change place category, \(cat.label)")
+                                } else {
+                                    PlaceCategoryChip(
+                                        symbol: cat.symbol,
+                                        label: cat.label,
+                                        accentColor: cat.accentColor,
+                                        isEditMode: isEditMode,
+                                        verticalPadding: isEditMode ? 6 : 5
+                                    )
+                                }
+                            }
+                            if hasCaptionText {
+                                UserSentimentPill(
+                                    sentiment: stop.sentiment,
+                                    isEditMode: isEditMode,
+                                    onChanged: onSentimentChanged
+                                )
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        // Read mode: tighter under address. Edit mode: original rhythm for title → category → story.
+                        .padding(.top, isEditMode ? (hasSubtitle ? 12 : 8) : (hasSubtitle ? 8 : 5))
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, isEditMode ? 4 : 0)
 
             // Place story: between place info and photos — creative placeholder to encourage writing
             placeStoryRow
@@ -1091,6 +1185,10 @@ struct PlaceStopRowView: View {
         case _ where raw == "MKPOICategoryMusicVenue": return ("music.mic", "Music Venue")
         default:               return nil
         }
+    private func categoryPresentation(for rawValue: String?) -> (symbol: String, label: String, accentColor: Color)? {
+        guard let raw = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        let p = PlacePOICategoryPresentation.presentation(forRaw: raw)
+        return (p.symbol, p.label, p.color)
     }
 }
 

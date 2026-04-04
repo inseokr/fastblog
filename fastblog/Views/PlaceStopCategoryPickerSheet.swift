@@ -49,13 +49,19 @@ struct PlaceStopCategoryPickerSheet: View {
         NavigationStack {
             List {
                 ForEach(sortedPOIRows, id: \.raw) { item in
-                    row(label: item.label, isSelected: draftRaw == item.raw) {
-                        draftRaw = item.raw
-                    }
+                    categoryRow(
+                        raw: item.raw,
+                        label: item.label,
+                        isSelected: draftRaw == item.raw,
+                        select: { draftRaw = item.raw }
+                    )
                 }
-                row(label: "Others", isSelected: draftRaw.isEmpty) {
-                    draftRaw = ""
-                }
+                categoryRow(
+                    raw: "",
+                    label: "Others",
+                    isSelected: draftRaw.isEmpty,
+                    select: { draftRaw = "" }
+                )
             }
             .navigationTitle("Category")
             .navigationBarTitleDisplayMode(.inline)
@@ -79,20 +85,27 @@ struct PlaceStopCategoryPickerSheet: View {
         .presentationDragIndicator(.visible)
     }
 
-    private func row(label: String, isSelected: Bool, select: @escaping () -> Void) -> some View {
-        Button {
-            select()
-        } label: {
-            HStack {
+    /// Full row is tappable; icon + label use shared category color / symbol.
+    private func categoryRow(raw: String, label: String, isSelected: Bool, select: @escaping () -> Void) -> some View {
+        let p = PlacePOICategoryPresentation.presentation(forRaw: raw)
+        return Button(action: select) {
+            HStack(spacing: 12) {
+                Image(systemName: p.symbol)
+                    .font(.body)
+                    .foregroundStyle(p.color)
+                    .frame(width: 28, alignment: .center)
                 Text(label)
                     .foregroundStyle(.primary)
-                Spacer()
+                Spacer(minLength: 0)
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(.body.weight(.semibold))
                         .foregroundStyle(Color.accentColor)
                 }
             }
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -103,51 +116,6 @@ struct PlaceStopCategoryPickerSheet: View {
 
     /// Human-readable label for a stored category string (matches map / place row naming).
     static func displayLabel(forRaw rawValue: String) -> String {
-        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || trimmed == "Others" { return "Others" }
-
-        let cat = MKPointOfInterestCategory(rawValue: trimmed)
-        switch cat {
-        case .restaurant:      return "Restaurant"
-        case .cafe:            return "Café"
-        case .bakery:          return "Bakery"
-        case .winery:          return "Winery"
-        case .brewery:         return "Brewery"
-        case .nightlife:       return "Nightlife"
-        case .hotel:           return "Hotel"
-        case .campground:      return "Campground"
-        case .museum:          return "Museum"
-        case .movieTheater:    return "Movie Theater"
-        case .theater:         return "Theater"
-        case .amusementPark:   return "Amusement Park"
-        case .zoo:             return "Zoo"
-        case .aquarium:        return "Aquarium"
-        case .park:            return "Park"
-        case .beach:           return "Beach"
-        case .nationalPark:    return "National Park"
-        case .airport:         return "Airport"
-        case .publicTransport: return "Transit"
-        case .gasStation:      return "Gas Station"
-        case .hospital:        return "Hospital"
-        case .pharmacy:        return "Pharmacy"
-        case .fitnessCenter:   return "Fitness"
-        case .store:           return "Store"
-        case .foodMarket:      return "Market"
-        case .library:         return "Library"
-        case .school:          return "School"
-        case .university:      return "University"
-        case .marina:          return "Marina"
-        case .stadium:         return "Stadium"
-        case .bank:            return "Bank"
-        default: break
-        }
-
-        if trimmed.hasPrefix("MKPOICategory") {
-            let remainder = String(trimmed.dropFirst("MKPOICategory".count))
-            if remainder.isEmpty { return trimmed }
-            return remainder.replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression)
-        }
-        if trimmed.count <= 4 { return trimmed.uppercased() }
-        return trimmed
+        PlacePOICategoryPresentation.displayLabel(forRaw: rawValue)
     }
 }
