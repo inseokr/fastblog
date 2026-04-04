@@ -271,6 +271,17 @@ struct PlacePhotoModalView: View {
         photos.first { $0.id == effectiveDisplayedPhotoId } ?? photos.first
     }
 
+    /// Device-level safe area insets from UIKit — bypasses SwiftUI's navigation-stack-consumed safe area
+    /// so fullscreen overlays presented inside a NavigationStack get the correct top/bottom values.
+    private var deviceSafeAreaInsets: UIEdgeInsets {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }?
+            .keyWindow?
+            .safeAreaInsets
+            ?? UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0)
+    }
+
     /// Local vibe file URL for the current photo, if it was captured with the in-app camera and has a Vibe clip.
     private var currentVibeURL: URL? {
         guard let id = currentPhoto?.localIdentifier,
@@ -460,7 +471,7 @@ struct PlacePhotoModalView: View {
                         currentPhotoAssetMetadata = result
                     }
                     .overlay(alignment: .bottom) {
-                        let bottomInset = bottomPhotoChromeInset(safeBottom: geo.safeAreaInsets.bottom)
+                        let bottomInset = bottomPhotoChromeInset(safeBottom: deviceSafeAreaInsets.bottom)
                         VStack(spacing: 0) {
                             if !isEditing {
                                 BottomInfoOverlay(
@@ -526,7 +537,7 @@ struct PlacePhotoModalView: View {
 
             // 4. Shared top chrome (Close + actions): identical for every fullscreen source; sheet adds grabber.
             PlaceDetailTopChrome(
-                safeAreaTop: geo.safeAreaInsets.top,
+                safeAreaTop: deviceSafeAreaInsets.top,
                 presentation: presentation,
                 isEditing: isEditing,
                 blogIsEditMode: blogIsEditMode,

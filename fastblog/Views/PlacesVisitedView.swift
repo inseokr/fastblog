@@ -57,6 +57,7 @@ struct PlacesVisitedView: View {
     @State private var selectedCategory: String? = nil
 
     @State private var selectedPlaceForModal: VisitedPlaceSummary?
+    @State private var revealNavDuringModalDismiss: Bool = false
     @FocusState private var isSearchFocused: Bool
     @State private var isSearchActive: Bool = false
 
@@ -303,11 +304,16 @@ struct PlacesVisitedView: View {
             if let place = selectedPlaceForModal {
                 PlaceVisitedPhotoModalWrapper(
                     place: place,
-                    onDismiss: { selectedPlaceForModal = nil },
+                    onDismiss: {
+                        selectedPlaceForModal = nil
+                        revealNavDuringModalDismiss = false
+                    },
+                    onDismissSlideBegan: { revealNavDuringModalDismiss = true },
                     onViewBlog: {
                         guard let ref = place.relatedBlogs.first,
                               let recap = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == ref.blogId }) else { return }
                         selectedPlaceForModal = nil
+                        revealNavDuringModalDismiss = false
                         initialScrollToStopIdForRecap = ref.placeStopId
                         selectedCreatedRecap = recap
                     }
@@ -382,8 +388,8 @@ struct PlacesVisitedView: View {
                 }
             }
         }
-        .toolbar(selectedPlaceForModal != nil ? .hidden : .automatic, for: .navigationBar)
-        .toolbarBackground(selectedPlaceForModal != nil ? .hidden : .automatic, for: .navigationBar)
+        .toolbar((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
+        .toolbarBackground((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
         .onChange(of: selectedYear) { _, _ in
             // If the user switches years, drop any category that doesn't exist for the new year.
             if let selectedCategory,
@@ -525,6 +531,7 @@ private struct PlaceVisitedPhotoModalWrapper: View {
 
     let place: VisitedPlaceSummary
     var onDismiss: () -> Void
+    var onDismissSlideBegan: (() -> Void)? = nil
     var onViewBlog: (() -> Void)?
 
     /// Live caption state keyed by photo ID. Seeded from place.photos on appear.
@@ -564,6 +571,7 @@ private struct PlaceVisitedPhotoModalWrapper: View {
                     )
                 },
                 onDismiss: onDismiss,
+                onDismissSlideBegan: onDismissSlideBegan,
                 onViewBlog: place.relatedBlogs.isEmpty ? nil : onViewBlog,
                 onPhotoCaptionManuallyEdited: { photoId in
                     // updatePhotoCaption already called via the binding setter
@@ -725,6 +733,7 @@ private struct PlacesVisitedMapView: View {
 
     @State private var mapPosition: MapCameraPosition = .automatic
     @State private var selectedPlaceForModal: VisitedPlaceSummary?
+    @State private var revealNavDuringModalDismiss: Bool = false
     @State private var isSearchActive: Bool = false
     @FocusState private var isSearchFocused: Bool
 
@@ -1096,11 +1105,16 @@ private struct PlacesVisitedMapView: View {
             if let place = selectedPlaceForModal {
                 PlaceVisitedPhotoModalWrapper(
                     place: place,
-                    onDismiss: { selectedPlaceForModal = nil },
+                    onDismiss: {
+                        selectedPlaceForModal = nil
+                        revealNavDuringModalDismiss = false
+                    },
+                    onDismissSlideBegan: { revealNavDuringModalDismiss = true },
                     onViewBlog: {
                         guard let ref = place.relatedBlogs.first,
                               let recap = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == ref.blogId }) else { return }
                         selectedPlaceForModal = nil
+                        revealNavDuringModalDismiss = false
                         initialScrollToStopIdForRecap = ref.placeStopId
                         selectedCreatedRecap = recap
                     }
@@ -1172,8 +1186,8 @@ private struct PlacesVisitedMapView: View {
                 }
             }
         }
-        .toolbar(selectedPlaceForModal != nil ? .hidden : .automatic, for: .navigationBar)
-        .toolbarBackground(selectedPlaceForModal != nil ? .hidden : .automatic, for: .navigationBar)
+        .toolbar((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
+        .toolbarBackground((selectedPlaceForModal != nil && !revealNavDuringModalDismiss) ? .hidden : .automatic, for: .navigationBar)
     }
 
     private func chip(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
