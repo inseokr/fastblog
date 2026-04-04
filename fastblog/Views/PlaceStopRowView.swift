@@ -3,6 +3,7 @@
 //  Capper
 //
 
+import MapKit
 import SwiftUI
 import UIKit
 
@@ -78,24 +79,9 @@ private struct UserSentimentPill: View {
     }
 
     var body: some View {
-        Button {
-            guard isEditMode, let onChange = onChanged else { return }
-            // Cycle: 1 → 2 → 3 → 1
-            let next = sentiment >= 3 ? 1 : sentiment + 1
-            onChange(next)
-        } label: {
-            Image(systemName: icon)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(color)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(color.opacity(0.12))
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .disabled(!isEditMode || onChanged == nil)
         if isEditMode, let onChange = onChanged {
             Button {
+                // Cycle: 1 → 2 → 3 → 1
                 let next = sentiment >= 3 ? 1 : sentiment + 1
                 onChange(next)
             } label: {
@@ -410,6 +396,7 @@ struct PlaceStopRowView: View {
                 && !stop.placeTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let hasCaptionText = !(overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 || stop.photos.contains(where: { !($0.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+            let categoryAccent = PlacePOICategoryPresentation.presentation(forRaw: stop.placeCategory).color
             if cat != nil || hasCaptionText {
                 HStack(alignment: .center, spacing: 8) {
                     if let cat {
@@ -420,7 +407,8 @@ struct PlaceStopRowView: View {
                                 PlaceCategoryChip(
                                     symbol: cat.symbol,
                                     label: cat.label,
-                                    showsInteractiveOutline: true,
+                                    accentColor: categoryAccent,
+                                    isEditMode: isEditMode,
                                     verticalPadding: isEditMode ? 6 : 5
                                 )
                             }
@@ -430,14 +418,14 @@ struct PlaceStopRowView: View {
                             PlaceCategoryChip(
                                 symbol: cat.symbol,
                                 label: cat.label,
-                                showsInteractiveOutline: false,
+                                accentColor: categoryAccent,
+                                isEditMode: isEditMode,
                                 verticalPadding: isEditMode ? 6 : 5
                             )
                         }
                     }
-                    Spacer(minLength: 0)
                     if hasCaptionText {
-                        SentimentBadge(
+                        UserSentimentPill(
                             sentiment: stop.sentiment,
                             isEditMode: isEditMode,
                             onChanged: onSentimentChanged
@@ -448,56 +436,6 @@ struct PlaceStopRowView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 10)
             }
-                    let cat = categoryPresentation(for: stop.placeCategory)
-                    let hasResolvedPlaceName = day.isPlaceNamesResolved
-                        && !stop.placeTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    let hasCaptionText = !(overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        || stop.photos.contains(where: { !($0.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-                    let hasSubtitle = !(stop.placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-                    if cat != nil || hasCaptionText {
-                        HStack(alignment: .center, spacing: 8) {
-                            if let cat {
-                                if hasResolvedPlaceName, let pickCategory = onEditCategory {
-                                    Button {
-                                        pickCategory()
-                                    } label: {
-                                        PlaceCategoryChip(
-                                            symbol: cat.symbol,
-                                            label: cat.label,
-                                            accentColor: cat.accentColor,
-                                            isEditMode: isEditMode,
-                                            verticalPadding: isEditMode ? 6 : 5
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("Change place category, \(cat.label)")
-                                } else {
-                                    PlaceCategoryChip(
-                                        symbol: cat.symbol,
-                                        label: cat.label,
-                                        accentColor: cat.accentColor,
-                                        isEditMode: isEditMode,
-                                        verticalPadding: isEditMode ? 6 : 5
-                                    )
-                                }
-                            }
-                            if hasCaptionText {
-                                UserSentimentPill(
-                                    sentiment: stop.sentiment,
-                                    isEditMode: isEditMode,
-                                    onChanged: onSentimentChanged
-                                )
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        // Read mode: tighter under address. Edit mode: original rhythm for title → category → story.
-                        .padding(.top, isEditMode ? (hasSubtitle ? 12 : 8) : (hasSubtitle ? 8 : 5))
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, isEditMode ? 4 : 0)
 
             // Place story: between place info and photos — creative placeholder to encourage writing
             placeStoryRow
@@ -1185,10 +1123,6 @@ struct PlaceStopRowView: View {
         case _ where raw == "MKPOICategoryMusicVenue": return ("music.mic", "Music Venue")
         default:               return nil
         }
-    private func categoryPresentation(for rawValue: String?) -> (symbol: String, label: String, accentColor: Color)? {
-        guard let raw = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
-        let p = PlacePOICategoryPresentation.presentation(forRaw: raw)
-        return (p.symbol, p.label, p.color)
     }
 }
 
