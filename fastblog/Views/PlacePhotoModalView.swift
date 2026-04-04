@@ -1247,7 +1247,7 @@ private struct PlaceDetailTopChrome: View {
                                     Label("Edit Place Name", systemImage: "mappin.and.ellipse")
                                 }
                                 Button(action: onMenuBeginCaptionEdit) {
-                                    Label("Edit caption", systemImage: "pencil")
+                                    Label("Edit caption", systemImage: "text.alignleft")
                                 }
                                 Button(role: .destructive) {
                                     onMenuRemovePhoto(currentPhotoId)

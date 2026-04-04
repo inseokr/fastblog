@@ -70,12 +70,6 @@ private struct UserSentimentPill: View {
                 Capsule()
                     .fill(accentColor.opacity(colorScheme == .dark ? 0.22 : 0.14))
             )
-            .overlay {
-                if isEditMode, onChanged != nil {
-                    Capsule()
-                        .strokeBorder(Color.white, lineWidth: 1)
-                }
-            }
     }
 
     var body: some View {
@@ -130,12 +124,6 @@ private struct PlaceCategoryChip: View {
             Capsule()
                 .fill(accentColor.opacity(colorScheme == .dark ? 0.22 : 0.14))
         )
-        .overlay {
-            if isEditMode {
-                Capsule()
-                    .strokeBorder(Color.white, lineWidth: 1)
-            }
-        }
     }
 
     private static let horizontalPadding: CGFloat = 12

@@ -77,7 +77,7 @@ struct PlaceStopActionSheet: View {
 
             // Section 1: Editing Actions
             VStack(spacing: 0) {
-                actionRow(icon: "pencil", title: "Edit Place Name", action: {
+                actionRow(icon: "mappin.and.ellipse", title: "Edit Place Name", action: {
                     dismiss()
                     onEditName()
                 })
@@ -89,7 +89,7 @@ struct PlaceStopActionSheet: View {
                 })
                 Divider()
                     .background(Color(white: 0.3))
-                actionRow(icon: "text.alignleft", title: "Edit Caption & Details", action: {
+                actionRow(icon: "text.alignleft", title: "Edit Caption", action: {
                     dismiss()
                     onEditMode()
                 })
