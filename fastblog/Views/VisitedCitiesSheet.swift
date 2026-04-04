@@ -442,11 +442,11 @@ struct VisitedCitiesSheet: View {
             Image(systemName: "photo.on.rectangle.angled")
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
-            Text(searchText.isEmpty ? "No Places in \(String(viewModel.visitedCitiesYear))" : "No Results Across Years")
+            Text(searchText.isEmpty ? "No trips for \(String(viewModel.visitedCitiesYear))" : "No Results Across Years")
                 .font(.title3)
                 .fontWeight(.semibold)
             Text(searchText.isEmpty
-                 ? "No location-tagged photos from \(String(viewModel.visitedCitiesYear)) were found outside your home area."
+                 ? "We couldn't find any trips for this year. Choose a different year at the top to see your memories."
                  : "No places matching \"\(searchText)\" in the last four years.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)

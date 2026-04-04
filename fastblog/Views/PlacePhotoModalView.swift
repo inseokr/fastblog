@@ -233,6 +233,12 @@ struct PlacePhotoModalView: View {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Full-screen / blog overlay: inset bottom chrome from the home indicator and nudge it upward vs sheet layout.
+    private func bottomPhotoChromeInset(safeBottom: CGFloat) -> CGFloat {
+        if showsSheetDragHandle { return 0 }
+        return max(safeBottom, 10) + 6
+    }
+
     private var hasAnyChanges: Bool {
         trim(editedCaptionText) != trim(captionWhenEditingStarted) ||
         trim(editedPlaceTitle) != trim(titleWhenEditingStarted)
@@ -347,6 +353,7 @@ struct PlacePhotoModalView: View {
     }
 
     var body: some View {
+        GeometryReader { geo in
         ZStack {
                 // 1. Full screen media viewer — horizontal ScrollView with paging (not TabView) so the
                 // sheet’s drag-to-dismiss doesn’t steal horizontal swipes. Tap/double-tap to zoom (same flow as non-modal).
@@ -394,6 +401,7 @@ struct PlacePhotoModalView: View {
                         currentPhotoAssetMetadata = result
                     }
                     .overlay(alignment: .bottom) {
+                        let bottomInset = bottomPhotoChromeInset(safeBottom: geo.safeAreaInsets.bottom)
                         VStack(spacing: 0) {
                             if !isEditing {
                                 BottomInfoOverlay(
@@ -406,8 +414,10 @@ struct PlacePhotoModalView: View {
                                     isCaptionExpanded: $isReadOnlyCaptionExpanded,
                                     placeholder: "Leave a story for this photo...",
                                     blogIsEditMode: blogIsEditMode,
-                                    onViewBlog: onViewBlog,
+                                    contentVerticalPadding: showsSheetDragHandle ? 20 : 14,
+                                    contentHorizontalPadding: showsSheetDragHandle ? 20 : 16,
                                     onTitleTap: { openGoogleSearch() },
+                                    onViewBlog: blogIsEditMode ? nil : onViewBlog,
                                     onCommitCaption: { commitCaption() }
                                 )
                             }
@@ -422,7 +432,7 @@ struct PlacePhotoModalView: View {
                                     .disabled(isPhotoPagingLocked)
                                     .padding(.horizontal, 16)
                                     .padding(.top, 0)
-                                    .padding(.bottom, 8)
+                                    .padding(.bottom, showsSheetDragHandle ? 8 : 4)
                                 } else if let single = photos.first {
                                     HStack {
                                         RecapPhotoThumbnail(photo: single, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 160, height: 160))
@@ -436,11 +446,12 @@ struct PlacePhotoModalView: View {
                                         Spacer()
                                     }
                                     .padding(.horizontal, 16)
-                                    .padding(.bottom, 8)
+                                    .padding(.bottom, showsSheetDragHandle ? 8 : 4)
                                 }
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.bottom, bottomInset)
                         .background(
                             (isEditing || isZoomMode) ? nil :
                             LinearGradient(
@@ -448,7 +459,7 @@ struct PlacePhotoModalView: View {
                                 startPoint: .bottom,
                                 endPoint: .top
                             )
-                            .padding(.top, -120)
+                            .padding(.top, showsSheetDragHandle ? -120 : -100)
                         )
                         .opacity(isZoomMode ? 0 : 1)
                         .animation(.easeInOut(duration: 0.25), value: isZoomMode)
@@ -461,6 +472,27 @@ struct PlacePhotoModalView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
                     .allowsHitTesting(false)
+
+                // Full-screen overlay (blog, map, Places): scrim so host UI never shows through gaps beside the buttons.
+                if !showsSheetDragHandle {
+                    VStack(spacing: 0) {
+                        LinearGradient(
+                            colors: [
+                                Color.black.opacity(0.52),
+                                Color.black.opacity(0.28),
+                                Color.black.opacity(0.08),
+                                Color.clear
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: geo.safeAreaInsets.top + 120)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .allowsHitTesting(false)
+                }
+
                 if showsSheetDragHandle {
                     Capsule()
                         .fill(Color.white.opacity(0.4))
@@ -495,23 +527,29 @@ struct PlacePhotoModalView: View {
                                     .clipShape(Capsule())
                             }
                         } else {
-                            // Close button in top left when not editing
+                            // Close — translucent pill (Places Visited / overlay reference)
                             Button(action: handleUserRequestedDismiss) {
                                 Text("Close")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.system(size: 15, weight: .semibold))
                                     .foregroundColor(.white)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(Color.black.opacity(0.35))
-                                    .clipShape(Capsule())
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background {
+                                        Capsule()
+                                            .fill(.ultraThinMaterial)
+                                            .overlay {
+                                                Capsule().fill(Color.white.opacity(0.12))
+                                            }
+                                    }
                             }
+                            .buttonStyle(.plain)
                         }
 
                         Spacer()
                         
                         if !isEditing && !blogIsEditMode {
-                            // Kebab menu + action buttons stacked vertically in top right
-                            VStack(spacing: 18) {
+                            // Top right: kebab → (optional vibe) → navigate → link (matches full-screen reference)
+                            VStack(spacing: 14) {
                                 Menu {
                                     Button {
                                         showRenameSheet = true
@@ -537,10 +575,12 @@ struct PlacePhotoModalView: View {
                                     }
                                 } label: {
                                     Image(systemName: "ellipsis")
-                                        .font(.system(size: 22, weight: .bold))
+                                        .font(.system(size: 18, weight: .bold))
                                         .foregroundColor(.white)
                                         .frame(width: 44, height: 44)
-                                        .shadow(color: .black.opacity(0.5), radius: 3)
+                                        .background(Color.white.opacity(0.22))
+                                        .clipShape(Circle())
+                                        .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
                                 }
 
                                 // Vibe button — only shown when the current photo has a Vibe clip
@@ -555,7 +595,7 @@ struct PlacePhotoModalView: View {
                                         }
                                     } label: {
                                         AtmosphericWaveformView(isActive: isVibeEnabled)
-                                            .frame(width: 50, height: 50)
+                                            .frame(width: 44, height: 44)
                                             .background(.ultraThinMaterial)
                                             .background(isVibeEnabled ? Color.cyan.opacity(0.22) : Color.clear)
                                             .clipShape(Circle())
@@ -613,8 +653,9 @@ struct PlacePhotoModalView: View {
                     }
                     .animation(.easeInOut(duration: 0.2), value: hasUnsavedChanges)
                     .padding(.horizontal, 16)
-                    .padding(.top, 20)
+                    .padding(.top, showsSheetDragHandle ? 20 : 14)
                 }
+                .padding(.top, showsSheetDragHandle ? 0 : geo.safeAreaInsets.top + 10)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
             .allowsHitTesting(!isZoomMode)
@@ -626,6 +667,8 @@ struct PlacePhotoModalView: View {
                 zoomablePhotoOverlay(photo: photo)
             }
 
+        }
+        .frame(width: geo.size.width, height: geo.size.height)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
@@ -1225,7 +1268,7 @@ struct RightActionStack: View {
     var onNavigate: () -> Void
     var onLink: () -> Void
 
-    private let spacing: CGFloat = 20
+    private let spacing: CGFloat = 14
 
     var body: some View {
         VStack(spacing: spacing) {
@@ -1252,15 +1295,16 @@ struct RightActionStack: View {
 
             Button(action: onLink) {
                 Image(systemName: "link")
-                    .font(.system(size: 20))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(.white)
                     .frame(width: 44, height: 44)
-                    .background(Color.gray.opacity(0.85))
+                    .background(Color.white.opacity(0.22))
                     .clipShape(Circle())
+                    .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
             }
             .buttonStyle(.plain)
         }
-        .shadow(color: .black.opacity(0.3), radius: 2)
+        .shadow(color: .black.opacity(0.25), radius: 2)
     }
 }
 
@@ -1279,8 +1323,13 @@ struct BottomInfoOverlay: View {
     @Binding var isCaptionExpanded: Bool
     let placeholder: String
     var blogIsEditMode: Bool = false
-    var onViewBlog: (() -> Void)?
+    /// Tighter vertical padding when presented as full-screen overlay (not a sheet).
+    var contentVerticalPadding: CGFloat = 20
+    /// Matches top chrome / thumbnail strip (16 full-screen, 20 sheet).
+    var contentHorizontalPadding: CGFloat = 20
     var onTitleTap: (() -> Void)? = nil
+    /// Places Visited only: opens the source blog; trailing-aligned with the place title row.
+    var onViewBlog: (() -> Void)? = nil
     var onCommitCaption: () -> Void
 
     var body: some View {
@@ -1294,6 +1343,7 @@ struct BottomInfoOverlay: View {
                             .fontWeight(.bold)
                             .foregroundColor(.white)
                             .shadow(color: .black.opacity(0.4), radius: 2)
+                            .lineLimit(1)
                         if onTitleTap != nil {
                             Image(systemName: "arrow.up.right.square")
                                 .font(.system(size: 13, weight: .semibold))
@@ -1301,20 +1351,20 @@ struct BottomInfoOverlay: View {
                                 .shadow(color: .black.opacity(0.4), radius: 2)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
                 .disabled(onTitleTap == nil)
 
-                Spacer()
-
                 if let onViewBlog {
                     Button(action: onViewBlog) {
                         Image(systemName: "book.fill")
-                            .font(.system(size: 16, weight: .bold))
+                            .font(.system(size: 18, weight: .semibold))
                             .foregroundColor(.white)
-                            .frame(width: 36, height: 36)
-                            .background(Color.black.opacity(0.35))
+                            .frame(width: 44, height: 44)
+                            .background(Color.white.opacity(0.22))
                             .clipShape(Circle())
+                            .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("View blog")
@@ -1383,8 +1433,8 @@ struct BottomInfoOverlay: View {
                 }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 20)
+        .padding(.horizontal, contentHorizontalPadding)
+        .padding(.vertical, contentVerticalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 

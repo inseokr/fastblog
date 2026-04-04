@@ -26,6 +26,7 @@ struct ContentView: View {
     @State private var postCameraToastMessage: String?
     @State private var selectedCreatedRecap: CreatedRecapBlog?
     @State private var initialDayIndexForRecap: Int?
+    @State private var initialScrollToStopIdForRecap: UUID?
     /// Set from My Blogs country list "Edit Blog" so `RecapBlogPageView` opens in edit mode.
     @State private var openRecapInEditMode = false
     /// Set from My Blogs country list "Share Blog" so the Share Your Blog sheet opens on the recap.
@@ -248,6 +249,7 @@ struct ContentView: View {
                 NavigationStack {
                     PlacesVisitedStandaloneView(
                         selectedCreatedRecap: $selectedCreatedRecap,
+                        initialScrollToStopIdForRecap: $initialScrollToStopIdForRecap,
                         onDismiss: {
                             withAnimation(.easeInOut(duration: 0.18)) {
                                 showPlacesVisited = false
@@ -288,15 +290,19 @@ struct ContentView: View {
                         blogId: recap.sourceTripId,
                         initialTrip: createdRecapStore.tripDraft(for: recap.sourceTripId),
                         initialDayIndex: initialDayIndexForRecap,
+                        initialScrollToStopId: initialScrollToStopIdForRecap,
                         forceEditMode: openRecapInEditMode,
                         forcePresentShareYourBlogSheet: openRecapPresentShareYourBlogSheet,
                         onRequestDismiss: {
                             initialDayIndexForRecap = nil
+                            initialScrollToStopIdForRecap = nil
                             openRecapInEditMode = false
                             openRecapPresentShareYourBlogSheet = false
                             selectedCreatedRecap = nil
                         }
                     )
+                    // Fresh scroll/deep-link state per open; include stop id so repeat opens to another place work.
+                    .id("\(recap.sourceTripId.uuidString)-\(initialScrollToStopIdForRecap?.uuidString ?? "none")")
                     .environmentObject(createdRecapStore)
                 }
                 .transition(.opacity)

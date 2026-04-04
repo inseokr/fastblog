@@ -55,6 +55,8 @@ struct RecapBlogPageView: View {
     let initialTrip: TripDraft?
     /// When set (e.g. from new-moments "Add to blog"), open scrolled to this day (0-based).
     var initialDayIndex: Int? = nil
+    /// When set (e.g. from Places Visited "View blog"), select that day and scroll to this place row.
+    var initialScrollToStopId: UUID? = nil
     let forceEditMode: Bool
     /// When true (e.g. My Blogs country kebab "Share Blog"), present the Share Your Blog sheet after load.
     let forcePresentShareYourBlogSheet: Bool
@@ -150,6 +152,8 @@ struct RecapBlogPageView: View {
     @State private var showSaveTipAlert = false
     @State private var showFirstSaveBanner = false
     @State private var showNewBlogExitConfirmation = false
+    /// Overlay presentation (e.g. ContentView blog layer from Places visited): back with unsaved edits.
+    @State private var showOverlayDraftExitConfirmation = false
     @State private var showUploadPromptAlert = false
     @State private var showNavBarTitle = false
     @State private var hasFinishedInitialLoad = false
@@ -173,11 +177,14 @@ struct RecapBlogPageView: View {
     @State private var showUploadingFullScreen = false
     @State private var uploadingViewTitle = "Uploading Your Blog!"
     @State private var uploadingViewProgressDetail: String? = nil
+    /// Optional rotating subtitles for `UploadingBlogView`; nil uses default cloud-oriented copy.
+    @State private var uploadingViewStepCycleLabels: [String]? = nil
     @State private var uploadingViewAllowsCancel = true
     @State private var showUploadSuccessBanner = false
     @State private var showUploadErrorAlert = false
     @State private var uploadErrorMessage = ""
     @State private var showAuth = false
+    @State private var showGuestSecondSaveLimitModal = false
     @State private var pendingEarlyAccessAfterAuth = false
     @State private var pendingCloudUploadAfterAuth = false
     @State private var pendingExportAfterAuth = false
@@ -244,7 +251,8 @@ struct RecapBlogPageView: View {
     /// True if the user has saved this blog to the local device at least once (tap Save on recap page).
     /// We only show "X moments found" for blogs that have been saved; camera-originated trips that are still just trips use the timeline only.
     private var hasBlogBeenSavedToDevice: Bool {
-        createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt != nil
+        guard let r = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }) else { return false }
+        return r.hasCommittedRecapSave || r.lastEditedAt != nil
     }
 
     /// Number of unique places in new moments (for "N moments found").
@@ -288,10 +296,11 @@ struct RecapBlogPageView: View {
         }
     }
 
-    init(blogId: UUID, initialTrip: TripDraft?, initialDayIndex: Int? = nil, forceEditMode: Bool = false, forcePresentShareYourBlogSheet: Bool = false, onRequestDismiss: (() -> Void)? = nil) {
+    init(blogId: UUID, initialTrip: TripDraft?, initialDayIndex: Int? = nil, initialScrollToStopId: UUID? = nil, forceEditMode: Bool = false, forcePresentShareYourBlogSheet: Bool = false, onRequestDismiss: (() -> Void)? = nil) {
         self.blogId = blogId
         self.initialTrip = initialTrip
         self.initialDayIndex = initialDayIndex
+        self.initialScrollToStopId = initialScrollToStopId
         self.forceEditMode = forceEditMode
         self.forcePresentShareYourBlogSheet = forcePresentShareYourBlogSheet
         self.onRequestDismiss = onRequestDismiss
@@ -443,10 +452,21 @@ struct RecapBlogPageView: View {
         .onAppear {
             refreshMissingPhotosTooltipVisibility()
         }
+        .onDisappear {
+            // Overlay blogs dismiss entirely — do not mark "initial exit" or the next open will flip to
+            // read-only instead of dismissing back to Places visited (see toolbar back handling).
+            if onRequestDismiss == nil {
+                createdRecapStore.markInitialRecapEditorExit(for: blogId)
+            }
+        }
         .onChange(of: showStoryMode) { _, _ in refreshMissingPhotosTooltipVisibility() }
         .onChange(of: showPanorama) { _, _ in refreshMissingPhotosTooltipVisibility() }
         .onChange(of: isExportingPDF) { _, _ in refreshMissingPhotosTooltipVisibility() }
         .onChange(of: showAuth) { _, _ in refreshMissingPhotosTooltipVisibility() }
+        .onChange(of: showGuestSecondSaveLimitModal) { _, _ in refreshMissingPhotosTooltipVisibility() }
+        .onChange(of: createdRecapStore.guestSecondSaveBlockedSignal) { _, _ in
+            showGuestSecondSaveLimitModal = true
+        }
         .onChange(of: earlyAccessSheetPresented) { _, _ in refreshMissingPhotosTooltipVisibility() }
         .onChange(of: placePhotoModalItem?.id) { _, newId in
             if newId != nil {
@@ -458,7 +478,13 @@ struct RecapBlogPageView: View {
 
     private func bodyContent(screenHeight: CGFloat) -> some View {
         bodyContentBase(screenHeight: screenHeight)
-            .fullScreenCover(isPresented: $showAuth) {
+            .sheet(isPresented: $showAuth, onDismiss: {
+                if pendingEarlyAccessAfterAuth {
+                    earlyAccessSheetPresented = false
+                }
+                pendingWebLinkAfterAuth = false
+                pendingBloggoQRAfterAuth = false
+            }) {
                 AuthView(
                     onAuthenticated: {
                         if pendingEarlyAccessAfterAuth {
@@ -502,16 +528,13 @@ struct RecapBlogPageView: View {
                         }
                     },
                     onDismiss: {
-                        if pendingEarlyAccessAfterAuth {
-                            earlyAccessSheetPresented = false
-                        }
-                        pendingWebLinkAfterAuth = false
-                        pendingBloggoQRAfterAuth = false
                         showAuth = false
                     },
                     hostControlsDismiss: true
                 )
                 .environmentObject(authService)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showPDFPreview) {
                 if let url = pdfExportURL {
@@ -572,6 +595,74 @@ struct RecapBlogPageView: View {
                     .environmentObject(createdRecapStore)
                     .environmentObject(nearbyShare)
             }
+            .sheet(isPresented: $showGuestSecondSaveLimitModal) {
+                guestSecondSaveLimitModalContent
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
+                    .preferredColorScheme(.dark)
+            }
+    }
+
+    private var guestSecondSaveLimitModalContent: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 20) {
+                Image("SplashIcon")
+                    .resizable()
+                    .renderingMode(.template)
+                    .scaledToFit()
+                    .frame(width: 52, height: 52)
+                    .foregroundColor(.white)
+                    .padding(.top, 8)
+
+                VStack(spacing: 8) {
+                    Text("Create an Account")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+
+                    Text("Sign in to save and download unlimited blogs. Guest users can only save one blog to try Bloggo.")
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+
+            VStack(spacing: 12) {
+                Button {
+                    showGuestSecondSaveLimitModal = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showAuth = true
+                    }
+                } label: {
+                    Text("Sign In")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .cornerRadius(12)
+                }
+
+                Button {
+                    showGuestSecondSaveLimitModal = false
+                    createdRecapStore.saveBlogDetail(draft, asDraft: true)
+                    createdRecapStore.showDraftSavedToast = true
+                    performDismiss()
+                } label: {
+                    Text("Save as Draft")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+        .padding(.top, 24)
     }
 
     private func bodyContentBase(screenHeight: CGFloat) -> some View {
@@ -585,6 +676,7 @@ struct RecapBlogPageView: View {
                     uploadProgress: $uploadProgress,
                     title: uploadingViewTitle,
                     progressDetail: uploadingViewProgressDetail,
+                    stepCycleLabels: uploadingViewStepCycleLabels,
                     allowsCancel: uploadingViewAllowsCancel,
                     onCancel: cancelUpload
                 )
@@ -700,7 +792,14 @@ struct RecapBlogPageView: View {
                 if let updated = createdRecapStore.getBlogDetail(blogId: blogId),
                    !updated.days.isEmpty {
                     if isEditMode {
+                        let draftBeforeMerge = draft
+                        let snapshotBeforeMerge = draftSnapshot
                         mergeResolvedBlogDaysFromStore(updated: updated, into: &draft)
+                        // If the user hadn't changed anything since the snapshot, keep the snapshot aligned with
+                        // background geocode/cover updates so we don't show a false "Unsaved changes" prompt.
+                        if let snap = snapshotBeforeMerge, draftBeforeMerge == snap {
+                            draftSnapshot = draft
+                        }
                     } else if updated != draft {
                         draft = updated
                     }
@@ -802,10 +901,10 @@ struct RecapBlogPageView: View {
                     },
                     onRestore: {
                         // Persist after a place is restored from the Restore Places sheet
-                        createdRecapStore.saveBlogDetail(draft)
+                        persistRecapBlogDetail()
                         syncWithCloudIfNeeded()
                     },
-                    canShareNearby: blogHasBeenSaved,
+                    canShareNearby: hasBlogBeenSavedToDevice,
                     onCoverCloudUploadStateChanged: { starting in
                         if starting {
                             beginAuxiliaryCloudUploadOverlay(
@@ -821,14 +920,14 @@ struct RecapBlogPageView: View {
                 .environmentObject(nearbyShare)
             }
             .sheet(isPresented: $showTitleChange, onDismiss: {
-                createdRecapStore.saveBlogDetail(draft)
+                persistRecapBlogDetail()
             }) {
                 BlogTitleChangeSheet(title: $draft.title, blogKey: currentBlogKey) {
                     showTitleChange = false
                 }
             }
             .sheet(isPresented: $showCoverPhotoPicker, onDismiss: {
-                createdRecapStore.saveBlogDetail(draft)
+                persistRecapBlogDetail()
                 // Only push to cloud if the selection actually changed and the blog is published
                 if let blogKey = currentBlogKey,
                    let newId = draft.selectedCoverPhotoIdentifier,
@@ -847,7 +946,7 @@ struct RecapBlogPageView: View {
                             )
                             uploadProgress.current = 1
                             draft.setCloudURL(url, forLocalAssetIdentifier: newId)
-                            createdRecapStore.saveBlogDetail(draft)
+                            persistRecapBlogDetail()
                         } catch {
                             print("🚨 Cover photo cloud update failed: \(error)")
                         }
@@ -942,11 +1041,11 @@ struct RecapBlogPageView: View {
                 guard old != nil, new == nil else { return }
                 // Equivalent of onDismiss: save and sync after user navigates back.
                 print("📸 [ManagePhotos] dismissed — editInfo=\(managePhotosEditInfo != nil ? "set(stopId=\(managePhotosEditInfo!.stopId))" : "nil")")
-                createdRecapStore.saveBlogDetail(draft)
+                persistRecapBlogDetail()
                 syncPhotoChangesWithCloud()
             }
             .fullScreenCover(isPresented: $showEditPhotoFlow, onDismiss: {
-                createdRecapStore.saveBlogDetail(draft)
+                persistRecapBlogDetail()
             }) {
                 EditBlogPhotoFlowView(blogId: blogId, onDismiss: { showEditPhotoFlow = false })
                     .environmentObject(createdRecapStore)
@@ -958,13 +1057,13 @@ struct RecapBlogPageView: View {
                 }, onCaptionSaved: { stopId, photoId, newCaption in
                     // Write the edited caption back into the draft and persist it
                     bindingForPhotoCaption(dayId: day.id, stopId: stopId, photoId: photoId).wrappedValue = newCaption
-                    createdRecapStore.saveBlogDetail(draft)
+                    persistRecapBlogDetail()
                     syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: false, photoId: photoId)
                 }, initialFocusedPlaceId: fullScreenMapFocusedPlaceId)
             }
             .sheet(isPresented: $showRestorePlaces) {
                 RemovedPlacesSheet(draft: $draft, selectedDayIndex: $selectedDayIndex) {
-                    createdRecapStore.saveBlogDetail(draft)
+                    persistRecapBlogDetail()
                     syncWithCloudIfNeeded()
                 }
             }
@@ -1069,6 +1168,23 @@ struct RecapBlogPageView: View {
             } message: {
                 Text("Would you like to save this blog as a draft and finish it later?")
             }
+            .alert("Save as Draft?", isPresented: $showOverlayDraftExitConfirmation) {
+                Button("Save as Draft") {
+                    createdRecapStore.saveBlogDetail(draft, asDraft: true)
+                    createdRecapStore.showDraftSavedToast = true
+                    performDismiss()
+                }
+                Button("Discard changes", role: .destructive) {
+                    if let snapshot = draftSnapshot {
+                        draft = snapshot
+                    }
+                    _ = createdRecapStore.saveBlogDetail(draft, asDraft: true)
+                    performDismiss()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("You have unsaved changes. Save as a draft or discard changes before going back.")
+            }
     }
 
     private func coreContentAlertsAndLifecycleModifier() -> some ViewModifier {
@@ -1092,8 +1208,59 @@ struct RecapBlogPageView: View {
     @State private var scrollToStopId: UUID?
     /// When the user focuses a story/caption field we store the row id here and scroll when the keyboard actually appears (no fixed delay).
     @State private var pendingScrollToStopId: UUID?
+    /// Non-nil while jumping to a place from Places Visited — blocks read-only `selectedDayIndex` scroll-to-map, which hides the stop row.
+    @State private var pendingDeepLinkStopScrollId: UUID?
+    @State private var didApplyPlacesVisitedDeepLink = false
+    @State private var placesVisitedDeepLinkTask: Task<Void, Never>?
 
     private static let dayFilterApproxHeight: CGFloat = 52
+
+    /// Scroll timeline to `initialScrollToStopId` after the blog (and stop rows) are available.
+    private func schedulePlacesVisitedDeepLinkScroll(proxy: ScrollViewProxy) {
+        guard let targetStopId = initialScrollToStopId else { return }
+        guard hasFinishedInitialLoad else { return }
+        guard !didApplyPlacesVisitedDeepLink else { return }
+
+        placesVisitedDeepLinkTask?.cancel()
+        let snapshotDraft = draft
+        placesVisitedDeepLinkTask = Task { @MainActor in
+            defer { placesVisitedDeepLinkTask = nil }
+            for _ in 0..<40 {
+                guard !Task.isCancelled else { return }
+                let fromStore = createdRecapStore.getBlogDetail(blogId: blogId)
+                let effective = fromStore ?? snapshotDraft
+                guard let dayIdx = effective.days.firstIndex(where: { $0.placeStops.contains(where: { $0.id == targetStopId }) }) else {
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                    continue
+                }
+                    didApplyPlacesVisitedDeepLink = true
+                    pendingDeepLinkStopScrollId = targetStopId
+                    if draft != effective {
+                        draft = effective
+                    }
+                    selectedDayIndex = dayIdx
+                    try? await Task.sleep(nanoseconds: 180_000_000)
+                    guard !Task.isCancelled else {
+                        pendingDeepLinkStopScrollId = nil
+                        return
+                    }
+                    withAnimation(.easeOut(duration: 0.28)) {
+                        proxy.scrollTo(targetStopId, anchor: .top)
+                    }
+                    try? await Task.sleep(nanoseconds: 150_000_000)
+                    guard !Task.isCancelled else {
+                        pendingDeepLinkStopScrollId = nil
+                        return
+                    }
+                    withAnimation(.easeOut(duration: 0.22)) {
+                        proxy.scrollTo(targetStopId, anchor: .top)
+                    }
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    pendingDeepLinkStopScrollId = nil
+                    return
+            }
+        }
+    }
 
     private func mainContent(screenHeight: CGFloat) -> some View {
         ScrollViewReader { proxy in
@@ -1185,6 +1352,12 @@ struct RecapBlogPageView: View {
                     }
                 }
                 .onChange(of: selectedDayIndex) { _, newIndex in
+                    if pendingDeepLinkStopScrollId != nil {
+                        if isEditMode {
+                            visitedDayIndices.insert(newIndex)
+                        }
+                        return
+                    }
                     if isEditMode {
                         // In edit/draft mode, tapping a day pill should jump directly to that day's section.
                         if let day = day(at: newIndex) {
@@ -1200,17 +1373,27 @@ struct RecapBlogPageView: View {
                         }
                     }
                 }
+                .onChange(of: draft.days.count) { _, _ in
+                    schedulePlacesVisitedDeepLinkScroll(proxy: proxy)
+                }
                 .onChange(of: hasFinishedInitialLoad) { _, finished in
-                    if finished {
+                    guard finished else { return }
+                    if initialScrollToStopId == nil {
                         if let idx = initialDayIndex, draft.days.indices.contains(idx) {
                             selectedDayIndex = idx
                         }
-                        if isEditMode {
-                            withAnimation(.easeOut(duration: 0.3)) {
-                                proxy.scrollTo("page-top", anchor: .top)
-                            }
+                    }
+                    if isEditMode, initialScrollToStopId == nil {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            proxy.scrollTo("page-top", anchor: .top)
                         }
                     }
+                    schedulePlacesVisitedDeepLinkScroll(proxy: proxy)
+                }
+                .onDisappear {
+                    placesVisitedDeepLinkTask?.cancel()
+                    placesVisitedDeepLinkTask = nil
+                    pendingDeepLinkStopScrollId = nil
                 }
                 .onChange(of: isEditMode) { _, editing in
                     if editing {
@@ -1483,29 +1666,34 @@ struct RecapBlogPageView: View {
                     .transition(.opacity)
                 }
 
-                // Slideshow — top of cover, trailing inset matches nav bar gear so it sits under Blog Settings.
+                // Slideshow — top-trailing of cover, same column as nav gear (16pt inset, 44pt target); sits just below Blog Settings.
                 if !isEditMode, !isCoverPending, displayCoverId != nil, !isExportingPDF, !showStoryMode {
-                    VStack {
-                        HStack {
-                            Spacer()
+                    VStack(spacing: 0) {
+                        HStack(spacing: 0) {
+                            Spacer(minLength: 0)
                             Button {
                                 showPanorama = true
                             } label: {
-                                Image(systemName: "film")
-                                    .font(.body.weight(.semibold))
-                                    .foregroundStyle(.white)
-                                    .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
-                                    .frame(width: 44, height: 44)
-                                    .contentShape(Rectangle())
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.gray.opacity(0.55))
+                                        .frame(width: 36, height: 36)
+                                    Image(systemName: "film")
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(.white)
+                                        .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+                                }
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Slideshow")
-                            // 16pt matches typical nav bar trailing inset; 44pt frame matches bar button width so centers align with the gear.
                             .padding(.trailing, 16)
                         }
-                        Spacer()
+                        Spacer(minLength: 0)
                     }
-                    .padding(.top, 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 12)
                     .allowsHitTesting(true)
                 }
             }
@@ -2093,7 +2281,7 @@ struct RecapBlogPageView: View {
                         guard let dayIdx = draft.days.firstIndex(where: { $0.id == day.id }),
                               let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stop.id }) else { return }
                         draft.days[dayIdx].placeStops[stopIdx].sentiment = newValue
-                        createdRecapStore.saveBlogDetail(draft)
+                        persistRecapBlogDetail()
                         syncSentimentToCloudIfNeeded(dayId: day.id, stopId: stop.id)
                     }
                 )
@@ -2155,7 +2343,7 @@ struct RecapBlogPageView: View {
                         showsSheetDragHandle: false,
                         photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
                         onDismiss: {
-                            createdRecapStore.saveBlogDetail(draft)
+                            persistRecapBlogDetail()
                             placePhotoModalItem = nil
                         },
                         onDismissSlideBegan: {
@@ -2188,14 +2376,14 @@ struct RecapBlogPageView: View {
                 } else {
                     recapScreenBackground
                         .onAppear {
-                            createdRecapStore.saveBlogDetail(draft)
+                            persistRecapBlogDetail()
                             placePhotoModalItem = nil
                         }
                 }
             } else {
                 recapScreenBackground
                     .onAppear {
-                        createdRecapStore.saveBlogDetail(draft)
+                        persistRecapBlogDetail()
                         placePhotoModalItem = nil
                     }
             }
@@ -2347,6 +2535,7 @@ struct RecapBlogPageView: View {
         if let saved = createdRecapStore.getBlogDetail(blogId: blogId) {
             draft = saved
             hasFinishedInitialLoad = true
+            if draftSnapshot == nil { draftSnapshot = draft }
             // Process any remaining days in background (rate-limited geocoding).
             Task { @MainActor in await createdRecapStore.continueGeocodingDays(blogId: blogId) }
             // Check for new moments for this recent blog (if it passes the recency + cutoff checks).
@@ -2364,6 +2553,7 @@ struct RecapBlogPageView: View {
             createdRecapStore.saveBlogDetail(detail, asDraft: true)
             draft = detail
             hasFinishedInitialLoad = true
+            if draftSnapshot == nil { draftSnapshot = draft }
             // Process remaining days in background (rate limit: 50 geocode/min).
             await createdRecapStore.continueGeocodingDays(blogId: blogId)
             refreshMissingPhotosTooltipVisibility()
@@ -2372,7 +2562,7 @@ struct RecapBlogPageView: View {
 
     private func refreshMissingPhotosTooltipVisibility() {
         guard hasFinishedInitialLoad else { return }
-        let blockingChrome = showStoryMode || showPanorama || isExportingPDF || showAuth
+        let blockingChrome = showStoryMode || showPanorama || isExportingPDF || showAuth || showGuestSecondSaveLimitModal
             || placePhotoModalItem != nil || dayCaptionEditItem != nil || placeCaptionEditItem != nil
             || photoCaptionEditItem != nil || earlyAccessSheetPresented
         if blockingChrome {
@@ -3038,18 +3228,34 @@ Your blog remains private unless you choose to share it.
         }
     }
 
-    private func saveDraft() {
+    /// Anonymous guest recap that has never used toolbar Save — intermediate persists must use `asDraft: true` so only explicit Save runs the second-blog gate (`guestSecondSaveBlockedSignal`).
+    private var isGuestUncommittedRecapBlog: Bool {
+        guard AuthService.shared.currentUser == nil,
+              let r = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }) else { return false }
+        return r.ownerScope == .anonymous && !r.hasCommittedRecapSave
+    }
+
+    /// Persists local draft edits. For guest uncommitted recaps, uses draft-style save so place renames, captions, etc. do not show the "Create an Account" modal.
+    @discardableResult
+    private func persistRecapBlogDetail() -> Bool {
+        if isGuestUncommittedRecapBlog {
+            return createdRecapStore.saveBlogDetail(draft, asDraft: true)
+        }
+        return createdRecapStore.saveBlogDetail(draft)
+    }
+
+    @discardableResult
+    private func saveDraft() -> Bool {
         // Check if this is the first save before saving
         let isFirstSave = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
 
-        // Clear undo state
+// AutosaveManager.shared.cancelPending() — removed
+        guard createdRecapStore.saveBlogDetail(draft) else { return false }
+
         withAnimation {
             showUndoOverlay = false
             lastUndoAction = nil
         }
-
-// AutosaveManager.shared.cancelPending() — removed
-        createdRecapStore.saveBlogDetail(draft)
 
         if isFirstSave {
             withAnimation {
@@ -3066,6 +3272,7 @@ Your blog remains private unless you choose to share it.
         } else {
             // savedToast removed — user requested only the "Saved as draft" notification in TripsView
         }
+        return true
     }
 
     private func day(at index: Int) -> RecapBlogDay? {
@@ -3111,7 +3318,7 @@ Your blog remains private unless you choose to share it.
             draft.selectedCoverPhotoIdentifier = allIncludedPhotos.compactMap(\.localIdentifier).first
         }
         
-        createdRecapStore.saveBlogDetail(draft)
+        persistRecapBlogDetail()
     }
 
     private func removePhoto(dayId: UUID, stopId: UUID, photoId: UUID) {
@@ -3143,7 +3350,7 @@ Your blog remains private unless you choose to share it.
             draft.selectedCoverPhotoIdentifier = allIncludedPhotos.compactMap(\.localIdentifier).first
         }
 
-        createdRecapStore.saveBlogDetail(draft)
+        persistRecapBlogDetail()
         if let placeKey = stop.visitedTimeDigitized, photo.cloudURL != nil {
             Task { try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "delete") }
         }
@@ -3349,7 +3556,7 @@ Your blog remains private unless you choose to share it.
             showUndoOverlay = false
             lastUndoAction = nil
 
-            createdRecapStore.saveBlogDetail(draft)
+            persistRecapBlogDetail()
         }
     }
 
@@ -3367,7 +3574,7 @@ Your blog remains private unless you choose to share it.
                 day.placeStops[j] = stop
                 draft.days[i] = day
 
-                createdRecapStore.saveBlogDetail(draft)
+                persistRecapBlogDetail()
                 if let placeKey = stop.visitedTimeDigitized {
                     let categories = stop.placeCategory.map { [$0] }
                     Task { try? await APIManager.shared.updatePlaceName(visitedTimeDigitized: placeKey, placeName: title, categories: categories) }
@@ -3439,7 +3646,7 @@ Your blog remains private unless you choose to share it.
             caption: bindingForDayCaption(dayId: item.dayId),
             onSave: {
                 dayCaptionEditItem = nil
-                createdRecapStore.saveBlogDetail(draft)
+                persistRecapBlogDetail()
                 syncDayCaptionToCloudIfNeeded(dayId: item.dayId)
             },
             onCancel: {
@@ -3453,7 +3660,7 @@ Your blog remains private unless you choose to share it.
                 )
             } : nil,
             onEnhanceApplied: LocalLLMStoryCaptionGenerator.isCapable ? {
-                createdRecapStore.saveBlogDetail(draft)
+                persistRecapBlogDetail()
             } : nil,
             onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
                 await StoryCaptionService.shared.translateText(userText: userText)
@@ -3472,7 +3679,7 @@ Your blog remains private unless you choose to share it.
             onSave: {
                 placeCaptionEditItem = nil
                 markOverallStoryManual(dayId: item.dayId, stopId: item.stopId)
-                createdRecapStore.saveBlogDetail(draft)
+                persistRecapBlogDetail()
                 syncOverallStoryToCloudIfNeeded(dayId: item.dayId, stopId: item.stopId)
             },
             onCancel: {
@@ -3510,7 +3717,7 @@ Your blog remains private unless you choose to share it.
             onSave: {
                 photoCaptionEditItem = nil
                 markPhotoCaptionManual(dayId: item.dayId, stopId: item.stopId, photoId: item.photoId)
-                createdRecapStore.saveBlogDetail(draft)
+                persistRecapBlogDetail()
                 syncStoryToCloudIfNeeded(stopId: item.stopId, isPlaceNote: false, photoId: item.photoId)
                 triggerPhotoSentimentAnalysis(dayId: item.dayId, stopId: item.stopId, photoId: item.photoId)
             },
@@ -3585,7 +3792,7 @@ Your blog remains private unless you choose to share it.
                 guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
                       let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
                 draft.days[dayIdx].placeStops[stopIdx].sentiment = newValue
-                createdRecapStore.saveBlogDetail(draft)
+                persistRecapBlogDetail()
                 syncSentimentToCloudIfNeeded(dayId: dayId, stopId: stopId)
             }
         )
@@ -3749,7 +3956,7 @@ Your blog remains private unless you choose to share it.
                 let updatedStop = draft.days[dayIdx].placeStops[stopIdx]
                 let derived = updatedStop.computeDerivedSentiment(placeCaption: updatedStop.overallStory)
                 draft.days[dayIdx].placeStops[stopIdx].sentiment = derived
-                createdRecapStore.saveBlogDetail(draft)
+                persistRecapBlogDetail()
                 syncSentimentToCloudIfNeeded(dayId: dayId, stopId: stopId)
             }
         }
@@ -3774,7 +3981,7 @@ Your blog remains private unless you choose to share it.
                 let updatedStop = draft.days[dayIdx].placeStops[stopIdx]
                 let derived = updatedStop.computeDerivedSentiment(placeCaption: updatedStop.overallStory)
                 draft.days[dayIdx].placeStops[stopIdx].sentiment = derived
-                createdRecapStore.saveBlogDetail(draft)
+                persistRecapBlogDetail()
                 syncSentimentToCloudIfNeeded(dayId: dayId, stopId: stopId)
             }
         }
@@ -4007,7 +4214,7 @@ Your blog remains private unless you choose to share it.
               draft.days[dayIdx].placeStops.indices.contains(stopIdx),
               !draft.days[dayIdx].placeStops[stopIdx].overallStoryIsManual else { return }
         draft.days[dayIdx].placeStops[stopIdx].overallStory = story
-        createdRecapStore.saveBlogDetail(draft)
+        persistRecapBlogDetail()
     }
 
     // MARK: - AI Auto-Fill (Case 1: first blog creation, and when new photos are added)
@@ -4106,7 +4313,8 @@ Your blog remains private unless you choose to share it.
         guard !hasCheckedFirstTimeTip else { return }
         hasCheckedFirstTimeTip = true
         // If the blog has been saved before, start in View Mode (unless forced into edit).
-        if let existing = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }), existing.lastEditedAt != nil {
+        if let existing = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }),
+           existing.hasCommittedRecapSave || existing.lastEditedAt != nil {
             isEditMode = forceEditMode
         }
         // Photo grouping split/merge: show once (dedicated AppStorage), not tied to legacy save tip or draft state.
@@ -4139,7 +4347,7 @@ Your blog remains private unless you choose to share it.
     // MARK: - Extracted Body Helpers
 
     private var navTitle: String {
-        let hasBeenSaved = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt != nil
+        let hasBeenSaved = hasBlogBeenSavedToDevice
         if !hasBeenSaved {
             return "Draft"
         } else if isEditMode {
@@ -4165,27 +4373,56 @@ Your blog remains private unless you choose to share it.
             Button {
                 print("🔙 Back button tapped — isEditMode: \(isEditMode)")
                 if isEditMode {
-                    let isFirstCreation = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
-                    print("🔙 isFirstCreation: \(isFirstCreation)")
-
-                    if isFirstCreation {
+                    guard let recentEntry = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }) else {
+                        performDismiss()
+                        return
+                    }
+                    // Presented as root overlay (Places visited, map, etc.): always dismiss this layer — never
+                    // fall through to read-only, which would trap users until a second back tap.
+                    if onRequestDismiss != nil {
+                        if let snapshot = draftSnapshot, draft != snapshot {
+                            showSaveTipAlert = false
+                            DispatchQueue.main.async {
+                                guard createdRecapStore.recents.contains(where: { $0.sourceTripId == blogId }) else { return }
+                                showOverlayDraftExitConfirmation = true
+                            }
+                        } else {
+                            performDismiss()
+                        }
+                        return
+                    }
+                    // No edits since entering edit mode (or since last aligned snapshot): exit without prompts.
+                    if let snapshot = draftSnapshot, draft == snapshot {
+                        let firstLifecycleExitPending = !recentEntry.hasCompletedInitialRecapExit
+                        if firstLifecycleExitPending,
+                           !recentEntry.hasCommittedRecapSave,
+                           recentEntry.lastEditedAt == nil {
+                            print("🔙 No changes, first recap session — dismissing")
+                            performDismiss()
+                        } else {
+                            print("🔙 No changes, returning to read-only")
+                            isEditMode = false
+                        }
+                        return
+                    }
+                    // First recap session only: offer Save as Draft / Exit. After user has left the editor once,
+                    // draft-only blogs use the normal unsaved-changes flow (see `hasCompletedInitialRecapExit`).
+                    let needsNewBlogExitSheet = recentEntry.lastEditedAt == nil
+                        && !recentEntry.hasCommittedRecapSave
+                        && !recentEntry.hasCompletedInitialRecapExit
+                    if needsNewBlogExitSheet {
                         print("🔙 Setting showNewBlogExitConfirmation = true")
                         showSaveTipAlert = false
                         DispatchQueue.main.async {
-                            let stillUnsaved = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
-                            guard stillUnsaved else { return }
+                            guard let still = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }) else { return }
+                            guard still.lastEditedAt == nil,
+                                  !still.hasCommittedRecapSave,
+                                  !still.hasCompletedInitialRecapExit else { return }
                             showNewBlogExitConfirmation = true
                         }
                     } else {
-                        if draftSnapshot != nil && draft == draftSnapshot {
-                            // No changes made, leave uninterrupted
-                            print("🔙 No changes, returning to read-only")
-                            isEditMode = false
-                        } else {
-                            // Changes were made
-                            print("🔙 Changes detected, showing unsaved alert")
-                            showUnsavedChangesAlert = true
-                        }
+                        print("🔙 Changes detected, showing unsaved alert")
+                        showUnsavedChangesAlert = true
                     }
                 } else {
                     print("🔙 View mode, dismissing")
@@ -4208,8 +4445,9 @@ Your blog remains private unless you choose to share it.
         ToolbarItem(placement: .topBarTrailing) {
             if isEditMode {
                 Button {
-                    saveDraft()
-                    isEditMode = false
+                    if saveDraft() {
+                        isEditMode = false
+                    }
                 } label: {
                     Text("Save")
                         .font(.subheadline)
@@ -4672,6 +4910,7 @@ Your blog remains private unless you choose to share it.
     private func resetUploadingViewChrome() {
         uploadingViewTitle = "Uploading Your Blog!"
         uploadingViewProgressDetail = nil
+        uploadingViewStepCycleLabels = nil
         uploadingViewAllowsCancel = true
     }
 
@@ -4809,7 +5048,21 @@ Your blog remains private unless you choose to share it.
             }
 
             isUploading = true
-            uploadingViewTitle = "Syncing photos"
+            let onlyNewLocalAdds = steps.allSatisfy {
+                if case .uploadAndAdd = $0 { return true }
+                return false
+            }
+            if onlyNewLocalAdds {
+                uploadingViewTitle = "Adding New Photos"
+                uploadingViewStepCycleLabels = [
+                    "Preparing your photos…",
+                    "Adding to your blog…",
+                    "Almost there…"
+                ]
+            } else {
+                uploadingViewTitle = "Syncing photos"
+                uploadingViewStepCycleLabels = nil
+            }
             uploadingViewProgressDetail = nil
             uploadingViewAllowsCancel = true
             uploadProgress = (0, steps.count)
@@ -4900,7 +5153,7 @@ Your blog remains private unless you choose to share it.
                         if !usedDigitizedTime.isEmpty {
                             draft.days[dayIdx].placeStops[stopIdx].photos[photoIdx].digitizedTime = usedDigitizedTime
                         }
-                        createdRecapStore.saveBlogDetail(draft)
+                        persistRecapBlogDetail()
                     }
                 }
             }
@@ -4945,7 +5198,7 @@ Your blog remains private unless you choose to share it.
 
         stop.photos.sort { $0.timestamp < $1.timestamp }
         draft.days[dayIdx].placeStops[stopIdx] = stop
-        createdRecapStore.saveBlogDetail(draft)
+        persistRecapBlogDetail()
     }
 
     /// True if every included photo already has a cloud URL.
@@ -4959,11 +5212,6 @@ Your blog remains private unless you choose to share it.
             return true // If not found in recents, it's in the process of being created (draft)
         }
         return blog.cloudState == .localOnly
-    }
-
-    /// Nearby share is only offered after the user has saved the blog at least once.
-    private var blogHasBeenSaved: Bool {
-        createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt != nil
     }
 
     private var currentBlogKey: Int? {
@@ -5132,7 +5380,7 @@ Your blog remains private unless you choose to share it.
             }
 
             // Save updated draft with cloud URLs
-            createdRecapStore.saveBlogDetail(draft)
+            persistRecapBlogDetail()
 
             // Publish blog to server; keep the upload overlay visible until publish finishes.
             if failCount == 0 {
@@ -5279,7 +5527,7 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
     @Binding var isKeyboardVisible: Bool
     @Binding var isEditMode: Bool
     @Binding var draft: RecapBlogDetail
-    var saveDraft: () -> Void
+    var saveDraft: () -> Bool
     var loadDraftIfNeeded: () -> Void
     var checkFirstTimeTip: () -> Void
     var createdRecapStore: CreatedRecapBlogStore
@@ -5301,8 +5549,9 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
                 Color.clear
                     .alert("Unsaved Changes", isPresented: $showUnsavedChangesAlert) {
                         Button("Yes") {
-                            saveDraft()
-                            isEditMode = false
+                            if saveDraft() {
+                                isEditMode = false
+                            }
                         }
                         Button("No", role: .destructive) {
                             if let snapshot = draftSnapshot {

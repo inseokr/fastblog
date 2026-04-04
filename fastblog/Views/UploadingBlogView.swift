@@ -11,6 +11,8 @@ struct UploadingBlogView: View {
     var title: String = "Uploading Your Blog!"
     /// When set, shown instead of “n of m photos” (e.g. publishing or cover upload).
     var progressDetail: String? = nil
+    /// When set, replaces the rotating subtitle lines under the title (e.g. avoid “cloud” for local photo adds).
+    var stepCycleLabels: [String]? = nil
     var allowsCancel: Bool = true
     var onCancel: () -> Void
 
@@ -19,11 +21,15 @@ struct UploadingBlogView: View {
     @State private var pulseScale: CGFloat = 1
     @State private var stepLabelIndex: Int = 0
 
-    private let stepLabels = [
+    private let defaultStepLabels = [
         "Preparing your photos…",
         "Uploading to the cloud…",
         "Almost there…"
     ]
+
+    private var effectiveStepLabels: [String] {
+        stepCycleLabels ?? defaultStepLabels
+    }
 
     private var progressFraction: CGFloat {
         guard uploadProgress.total > 0 else { return 0 }
@@ -123,7 +129,7 @@ struct UploadingBlogView: View {
                 .foregroundColor(.primary)
                 .multilineTextAlignment(.center)
 
-            Text(stepLabels[stepLabelIndex])
+            Text(effectiveStepLabels[min(stepLabelIndex, max(effectiveStepLabels.count - 1, 0))])
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .animation(.easeInOut(duration: 0.3), value: stepLabelIndex)
@@ -166,7 +172,8 @@ struct UploadingBlogView: View {
         }
 
         // Cycle step labels
-        for idx in 1..<stepLabels.count {
+        let labels = effectiveStepLabels
+        for idx in 1..<labels.count {
             let delay = 0.6 + Double(idx) * 0.55
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 withAnimation(.easeInOut(duration: 0.25)) {

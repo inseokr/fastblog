@@ -21,6 +21,8 @@ struct VisitedPlaceSummary: Identifiable, Equatable {
         let blogId: UUID
         let blogTitle: String
         let blogDate: Date
+        /// The place row in the blog timeline; used to scroll there when opening from Places Visited.
+        let placeStopId: UUID
         var id: UUID { blogId }
     }
 
@@ -134,6 +136,10 @@ struct CreatedRecapBlog: Identifiable, Equatable, Hashable, Codable, Sendable {
     var syncStatus: SyncStatus
     /// Timestamp of the last autosave.
     var lastAutosaveAt: Date?
+    /// True after the user taps Save on the recap editor (`saveBlogDetail` with `asDraft: false`). Used for guest save limits; not set by autosave or caption-only patches.
+    var hasCommittedRecapSave: Bool
+    /// True after `RecapBlogPageView` has been dismissed at least once. Draft-only blogs keep `lastEditedAt == nil`; this avoids showing the first-visit "Save as Draft?" exit sheet on every reopen when nothing changed.
+    var hasCompletedInitialRecapExit: Bool
 
     init(
         id: UUID = UUID(),
@@ -157,7 +163,9 @@ struct CreatedRecapBlog: Identifiable, Equatable, Hashable, Codable, Sendable {
         cloudId: String? = nil,
         cloudState: CloudState = .localOnly,
         syncStatus: SyncStatus = .clean,
-        lastAutosaveAt: Date? = nil
+        lastAutosaveAt: Date? = nil,
+        hasCommittedRecapSave: Bool = false,
+        hasCompletedInitialRecapExit: Bool = false
     ) {
         self.id = id
         self.sourceTripId = sourceTripId
@@ -181,6 +189,8 @@ struct CreatedRecapBlog: Identifiable, Equatable, Hashable, Codable, Sendable {
         self.cloudState = cloudState
         self.syncStatus = syncStatus
         self.lastAutosaveAt = lastAutosaveAt
+        self.hasCommittedRecapSave = hasCommittedRecapSave
+        self.hasCompletedInitialRecapExit = hasCompletedInitialRecapExit
     }
 
     // MARK: - Codable with safe defaults for v1 → v2 migration
@@ -210,6 +220,8 @@ struct CreatedRecapBlog: Identifiable, Equatable, Hashable, Codable, Sendable {
         cloudState           = try c.decodeIfPresent(CloudState.self, forKey: .cloudState) ?? .localOnly
         syncStatus           = try c.decodeIfPresent(SyncStatus.self, forKey: .syncStatus) ?? .clean
         lastAutosaveAt       = try c.decodeIfPresent(Date.self, forKey: .lastAutosaveAt)
+        hasCommittedRecapSave = try c.decodeIfPresent(Bool.self, forKey: .hasCommittedRecapSave) ?? false
+        hasCompletedInitialRecapExit = try c.decodeIfPresent(Bool.self, forKey: .hasCompletedInitialRecapExit) ?? false
     }
 }
 
@@ -238,6 +250,8 @@ final class CreatedRecapBlogStore: ObservableObject {
     @Published var needsRescan: Bool = false
     /// Day index currently being processed (geocoding + scoring) for each blog; used by RecapBlogPageView for "processing" pill state.
     @Published private(set) var processingDayIndexByBlogId: [UUID: Int] = [:]
+    /// Incremented when a guest attempts a second recap Save (distinct blog); RecapBlogPageView presents the sign-in sheet.
+    @Published private(set) var guestSecondSaveBlockedSignal: UInt64 = 0
 
     /// Undo info for the last split operation (not persisted).
     struct SplitUndoInfo {
@@ -310,6 +324,16 @@ final class CreatedRecapBlogStore: ObservableObject {
             persistRecents()
             enforceArchiveRules()
         }
+
+        // Guest save limit: infer legacy "saved from recap" from lastEditedAt for anonymous blogs.
+        var didMigrateCommittedSave = false
+        for i in recents.indices where recents[i].ownerScope == .anonymous {
+            if !recents[i].hasCommittedRecapSave, recents[i].lastEditedAt != nil {
+                recents[i].hasCommittedRecapSave = true
+                didMigrateCommittedSave = true
+            }
+        }
+        if didMigrateCommittedSave { persistRecents() }
     }
 
     private func persistRecents() {
@@ -582,7 +606,9 @@ final class CreatedRecapBlogStore: ObservableObject {
                 caption: self.primaryCaption(from: detail),
                 blogKey: old.blogKey,
                 ownerScope: old.ownerScope,
-                ownerUserId: old.ownerUserId
+                ownerUserId: old.ownerUserId,
+                hasCommittedRecapSave: old.hasCommittedRecapSave,
+                hasCompletedInitialRecapExit: old.hasCompletedInitialRecapExit
             )
             persistRecents()
             persistTripDrafts()
@@ -851,10 +877,26 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Persist edited blog detail. Call when user taps Save on RecapBlogPageView. Updates the corresponding recents entry.
     /// - Parameter asDraft: If true, preserves the existing lastEditedAt (keeping it nil if it was a draft).
-    func saveBlogDetail(_ detail: RecapBlogDetail, asDraft: Bool = false) {
+    /// - Returns: `false` if a guest hit the second-blog save limit (nothing persisted); otherwise `true` unless the blog id is missing from recents after writing detail.
+    @discardableResult
+    func saveBlogDetail(_ detail: RecapBlogDetail, asDraft: Bool = false) -> Bool {
+        if !asDraft,
+           AuthService.shared.currentUser == nil,
+           let idx = recents.firstIndex(where: { $0.sourceTripId == detail.id }),
+           recents[idx].ownerScope == .anonymous,
+           !recents[idx].hasCommittedRecapSave {
+            let otherCommitted = recents.contains {
+                $0.ownerScope == .anonymous && $0.hasCommittedRecapSave && $0.sourceTripId != detail.id
+            }
+            if otherCommitted {
+                guestSecondSaveBlockedSignal += 1
+                return false
+            }
+        }
+
         blogDetailsBySourceId[detail.id] = detail
         syncAppCaptureCaptionsFromBlogDetail(detail)
-        guard let idx = recents.firstIndex(where: { $0.sourceTripId == detail.id }) else { return }
+        guard let idx = recents.firstIndex(where: { $0.sourceTripId == detail.id }) else { return false }
         let old = recents[idx]
         let country = (detail.countryName.flatMap { $0.isEmpty || $0 == "Unknown" ? nil : $0 }) ?? old.countryName
 
@@ -882,11 +924,14 @@ final class CreatedRecapBlogStore: ObservableObject {
             caption: primaryCaption(from: detail),
             blogKey: old.blogKey,
             ownerScope: old.ownerScope,
-            ownerUserId: old.ownerUserId
+            ownerUserId: old.ownerUserId,
+            hasCommittedRecapSave: asDraft ? old.hasCommittedRecapSave : true,
+            hasCompletedInitialRecapExit: old.hasCompletedInitialRecapExit
         )
         if !asDraft { AppAnalytics.shared.trackEvent(name: "blog_saved") }
         persistRecents()
         persistBlogDetails()
+        return true
     }
 
     /// Writes a cloud URL onto every stored photo row matching the asset id (e.g. after cover-only upload).
@@ -1113,6 +1158,14 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
     }
 
+    /// Persists that the recap editor was dismissed at least once for this blog (see `CreatedRecapBlog.hasCompletedInitialRecapExit`).
+    func markInitialRecapEditorExit(for sourceTripId: UUID) {
+        guard let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }) else { return }
+        guard !recents[idx].hasCompletedInitialRecapExit else { return }
+        recents[idx].hasCompletedInitialRecapExit = true
+        persistRecents()
+    }
+
     /// Deletes a created blog locally and from the cloud if it was published.
     func deleteBlog(sourceTripId: UUID) {
         if let key = recents.first(where: { $0.sourceTripId == sourceTripId })?.blogKey {
@@ -1211,6 +1264,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         recents[keepIdx].tripDateRangeText = Self.formatDateRange(start: newStart, end: newEnd)
         recents[keepIdx].lastEditedAt = Date()
         recents[keepIdx].syncStatus = .needsUpload
+        recents[keepIdx].hasCommittedRecapSave = keepOld.hasCommittedRecapSave || absorbOld?.hasCommittedRecapSave == true
 
         // 5. Best-effort merge TripDraft
         if var keepTrip = tripDraftsBySourceId[keepId],
@@ -1306,8 +1360,9 @@ final class CreatedRecapBlogStore: ObservableObject {
         recents[recentIdx].tripDurationDays = part1Days.count
         recents[recentIdx].selectedPhotoCount = photos1
         recents[recentIdx].tripDateRangeText = Self.formatDateRange(start: start1, end: end1)
-        recents[recentIdx].lastEditedAt = Date()
+        recents[recentIdx].lastEditedAt = oldRecent.hasCommittedRecapSave ? Date() : oldRecent.lastEditedAt
         recents[recentIdx].syncStatus = .needsUpload
+        recents[recentIdx].hasCommittedRecapSave = oldRecent.hasCommittedRecapSave
 
         // 7. Create Part 2 recents entry
         let start2 = part2Days.first?.date
@@ -1324,13 +1379,14 @@ final class CreatedRecapBlogStore: ObservableObject {
             selectedPhotoCount: photos2,
             countryName: oldRecent.countryName,
             tripDateRangeText: Self.formatDateRange(start: start2, end: end2),
-            lastEditedAt: Date(),
+            lastEditedAt: nil,
             tripStartDate: start2,
             tripEndDate: end2,
             totalPlaceVisitCount: places2,
             tripDurationDays: part2Days.count,
             ownerScope: oldRecent.ownerScope,
-            ownerUserId: oldRecent.ownerUserId
+            ownerUserId: oldRecent.ownerUserId,
+            hasCommittedRecapSave: false
         )
         recents.append(newRecent)
 
@@ -2391,6 +2447,12 @@ final class CreatedRecapBlogStore: ObservableObject {
     func scanForNewMoments(blogId: UUID) async -> [MockPhoto] {
         guard let detail = blogDetailsBySourceId[blogId] else { return [] }
 
+        // Trips → Create leaves `lastEditedAt` nil until the user taps Save on the recap.
+        // Do not prompt for New Moments on that first session; same rule as `hasBlogBeenSavedToDevice` on RecapBlogPageView.
+        if let recent = recents.first(where: { $0.sourceTripId == blogId }), recent.lastEditedAt == nil {
+            return []
+        }
+
         // Determine the blog's latest photo date.
         // allPhotos includes ALL photos in place groups regardless of isIncluded,
         // so the upper bound is based on every photo in the trip (selected or not).
@@ -2413,12 +2475,13 @@ final class CreatedRecapBlogStore: ObservableObject {
         let cutoff = ScanSessionStore.lastBlogNotifiedDate(for: blogId) ?? scanStart
 
         // Scan photo library from cutoff to upper bound.
-        // SPECIAL CASE: ignore the "home" exclusion here so continuation photos for this blog
-        // are still detected even if the user later set their home location to this area.
+        // Use the same home-radius exclusion as trip discovery (`TripPhotoFilter` / Set Home range).
+        // Otherwise iPhone Camera shots taken at home (still within the 24h continuation window) appear
+        // as "new moments" and inherit the scanned trip's place title, which mismatches GPS.
         let trips = await PhotoLibraryTripService.shared.scanInDateRange(
             startDate: cutoff,
             endDate: upperBound,
-            ignoreHomeExclusion: true
+            ignoreHomeExclusion: false
         )
 
         // Collect all photos from scanned trips.
@@ -2836,14 +2899,14 @@ final class CreatedRecapBlogStore: ObservableObject {
         for blog in blogs {
             guard let detail = blogDetailsBySourceId[blog.sourceTripId] else { continue }
             let country = (detail.countryName?.isEmpty == false ? detail.countryName : blog.countryName) ?? "Unknown"
-            let relatedRef = VisitedPlaceSummary.RelatedBlogRef(
-                blogId: blog.sourceTripId,
-                blogTitle: blog.title,
-                blogDate: blog.tripStartDate ?? blog.createdAt
-            )
-
             for day in detail.days {
                 for stop in day.placeStops {
+                    let relatedRef = VisitedPlaceSummary.RelatedBlogRef(
+                        blogId: blog.sourceTripId,
+                        blogTitle: blog.title,
+                        blogDate: blog.tripStartDate ?? blog.createdAt,
+                        placeStopId: stop.id
+                    )
                     let included = stop.photos.filter(\.isIncluded)
                     guard !included.isEmpty else { continue }
 
