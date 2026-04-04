@@ -228,17 +228,21 @@ struct BlogCoverPhotoPickerView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
+                    Spacer(minLength: 16)
+
                     Text("Select a cover photo for your blog")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                        .padding(.top, 12)
+                        .multilineTextAlignment(.center)
+
+                    Spacer(minLength: 16)
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         blogCoverGridContent
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 16)
-                    .frame(maxHeight: .infinity)
+
+                    Spacer(minLength: 0)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

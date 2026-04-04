@@ -698,20 +698,21 @@ struct PlacePhotoModalView: View {
                     .padding(.bottom, 34)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background {
-                        ZStack(alignment: .bottom) {
-                            // Material connects seamlessly with the keyboard (no gap at rounded corners)
-                            Rectangle()
-                                .fill(.ultraThinMaterial)
-                                .ignoresSafeArea(.keyboard, edges: .bottom)
-                            // Extra darkening for legibility over bright photos
-                            Color.black.opacity(0.45)
-                                .ignoresSafeArea(.keyboard, edges: .bottom)
-                            // Gradient that fades up into the photo
+                        if isCaptionFocused {
+                            ZStack(alignment: .bottom) {
+                                Rectangle()
+                                    .fill(.ultraThinMaterial)
+                                    .ignoresSafeArea(.keyboard, edges: .bottom)
+                                Color.black.opacity(0.45)
+                                    .ignoresSafeArea(.keyboard, edges: .bottom)
+                            }
+                        } else {
                             LinearGradient(
-                                colors: [Color.clear, Color.black.opacity(0.2), Color.clear],
+                                colors: [Color.black.opacity(0.9), Color.black.opacity(0.75), Color.black.opacity(0.45), Color.black.opacity(0.1), Color.clear],
                                 startPoint: .bottom,
                                 endPoint: .top
                             )
+                            .ignoresSafeArea(.keyboard, edges: .bottom)
                         }
                     }
                 } else {
