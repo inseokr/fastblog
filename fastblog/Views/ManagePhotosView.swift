@@ -36,10 +36,7 @@ struct ManagePhotosView: View {
     private var includedCount: Int { photos.filter(\.isIncluded).count }
 
     /// Inline nav bar: long `placeTitle` steals horizontal space from trailing Select + More. Keep title empty in browse mode; select mode uses the count string.
-    private var navigationBarTitle: String {
-        if isSelectMode { return "\(includedCount) of \(photos.count) selected" }
-        return ""
-    }
+    private var navigationBarTitle: String { "" }
 
     /// Split and add-from-library live in the trailing "…" menu; hide it when neither action exists.
     private var managePhotosOverflowMenuVisible: Bool {
@@ -64,6 +61,17 @@ struct ManagePhotosView: View {
                 )
                 .transition(.opacity)
                 .zIndex(10)
+            }
+
+            // Bottom-center selection count (select mode only)
+            if isSelectMode && fullScreenPhotoId == nil {
+                VStack {
+                    Spacer()
+                    Text("\(includedCount) of \(photos.count) Selected")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding(.bottom, 16)
+                }
             }
 
             // Bottom-corner action buttons (hidden in select mode and full-screen photo)
@@ -100,7 +108,7 @@ struct ManagePhotosView: View {
         }
         .navigationTitle(navigationBarTitle)
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(fullScreenPhotoId != nil)
+        .navigationBarBackButtonHidden(fullScreenPhotoId != nil || isSelectMode)
         .toolbar {
             if fullScreenPhotoId != nil {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -114,6 +122,14 @@ struct ManagePhotosView: View {
                 }
             }
             if fullScreenPhotoId == nil {
+                if isSelectMode {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Cancel") {
+                            withAnimation(.easeInOut(duration: 0.2)) { isSelectMode = false }
+                        }
+                        .foregroundColor(.white)
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(isSelectMode ? "Done" : "Select") {
                         if isSelectMode {
@@ -126,7 +142,6 @@ struct ManagePhotosView: View {
                     .frame(minWidth: isSelectMode ? 56 : 0, alignment: .center)
                     .foregroundColor(.white)
                 }
-
             }
         }
         .preferredColorScheme(.dark)

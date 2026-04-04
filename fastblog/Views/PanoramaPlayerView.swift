@@ -1,5 +1,6 @@
 import Photos
 import SwiftUI
+import UIKit
 
 // MARK: - Photo entry (asset ID + optional caption)
 
@@ -35,6 +36,8 @@ struct PanoramaPlayerView: View {
     let photoGroups: [[PanoramaPhotoEntry]]
     /// Used to persist the chosen slideshow track for this recap (`UserDefaults`, keyed by blog).
     let blogId: UUID
+    /// Shown centered on the gallery hero (matches recap cover title treatment).
+    let blogTitle: String
     var onDismiss: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -68,6 +71,10 @@ struct PanoramaPlayerView: View {
     // MARK: - Playback
     @State private var isPlaying: Bool = true
     @State private var timer: Timer?
+
+    // MARK: - Gallery
+    @State private var showGallery: Bool = false
+    @State private var wasPlayingBeforeGallery: Bool = false
 
     // MARK: - Music
     @State private var showMusicPicker: Bool = false
@@ -203,7 +210,15 @@ struct PanoramaPlayerView: View {
             .animation(nil, value: currentGroupIndex)
             .animation(nil, value: currentSlideOffset)
             .animation(nil, value: currentLayout)
+
+            // Gallery panel — slides up from bottom
+            if showGallery {
+                galleryOverlay
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(20)
+            }
         }
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showGallery)
         .sheet(isPresented: $showMusicPicker) {
             SlideshowBundledTrackPickerSheet(
                 tracks: SlideshowBundledMusicLibrary.tracksInAppBundle(),
@@ -253,6 +268,7 @@ struct PanoramaPlayerView: View {
         .gesture(
             DragGesture(minimumDistance: 40, coordinateSpace: .local)
                 .onEnded { value in
+                    guard !showGallery else { return }
                     let dx = value.translation.width
                     let dy = value.translation.height
                     // Only handle horizontal swipes (horizontal > vertical)
@@ -536,7 +552,29 @@ struct PanoramaPlayerView: View {
 
     private var bottomControls: some View {
         HStack(spacing: 0) {
-            Color.clear.frame(width: 56, height: 1)
+            // Gallery button — bottom left
+            Button {
+                wasPlayingBeforeGallery = isPlaying
+                stopTimer()
+                if isPlaying {
+                    Task { await slideshowMusic.pause() }
+                }
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                    showGallery = true
+                }
+            } label: {
+                ZStack {
+                    Circle().fill(.black.opacity(0.6))
+                    Circle().strokeBorder(.white.opacity(0.25), lineWidth: 0.5)
+                    Image(systemName: "square.grid.3x3.fill")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(.white)
+                }
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .frame(width: 56)
             Spacer()
 
             Button(action: togglePlayPause) {
@@ -564,6 +602,192 @@ struct PanoramaPlayerView: View {
                     .frame(width: 56, alignment: .trailing)
             } else {
                 Color.clear.frame(width: 56, height: 1)
+            }
+        }
+    }
+
+    // MARK: - Gallery overlay
+
+    /// Matches `RecapBlogPageView.coverPhotoHero` — full width, 55% of screen height.
+    private static let coverHeroHeightFraction: CGFloat = 0.55
+
+    /// Same column/spacing model as `ManagePhotosView.photoGrid`.
+    private static let galleryGridColumns = [
+        GridItem(.flexible(), spacing: 2),
+        GridItem(.flexible(), spacing: 2),
+        GridItem(.flexible(), spacing: 2)
+    ]
+
+    /// Gallery root ignores the safe area, so `GeometryReader.safeAreaInsets.top` is often 0 and the close control sits under the status bar. Match the main slideshow `topBar` (safe top + 2pt).
+    private static func galleryCloseButtonTopPadding() -> CGFloat {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+            return 47 + 2
+        }
+        let window = scene.windows.first { $0.isKeyWindow } ?? scene.windows.first
+        let top = window?.safeAreaInsets.top ?? 0
+        let resolvedTop = top > 0 ? top : 47
+        return resolvedTop + 2
+    }
+
+    private var galleryOverlay: some View {
+        GeometryReader { geo in
+            let coverHeight = geo.size.height * Self.coverHeroHeightFraction
+            let allPhotos = photoGroups.flatMap { $0 }
+            let heroPhotoId: String? = {
+                guard currentFlatIndex >= 0, currentFlatIndex < allPhotos.count else { return nil }
+                return allPhotos[currentFlatIndex].id
+            }()
+
+            ZStack(alignment: .topLeading) {
+                Color.black
+                    .ignoresSafeArea()
+
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Cover-sized hero: current slide + title + Play (scrolls with grid)
+                        ZStack {
+                            Group {
+                                if let heroPhotoId, let img = loadedImages[heroPhotoId] {
+                                    Image(uiImage: img)
+                                        .resizable()
+                                        .scaledToFill()
+                                } else if let heroPhotoId {
+                                    Color.gray.opacity(0.25)
+                                    ProgressView()
+                                        .tint(.white)
+                                } else {
+                                    Color.gray.opacity(0.35)
+                                }
+                            }
+                            .frame(width: geo.size.width, height: coverHeight)
+                            .clipped()
+
+                            Color.black.opacity(0.28)
+
+                            LinearGradient(
+                                colors: [
+                                    Color.black.opacity(0.55),
+                                    Color.black.opacity(0.12),
+                                    Color.black.opacity(0.4)
+                                ],
+                                startPoint: .bottom,
+                                endPoint: .top
+                            )
+
+                            VStack(spacing: 14) {
+                                Text(blogTitle)
+                                    .font(.system(size: 28, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(3)
+                                    .shadow(color: .black.opacity(0.45), radius: 4, y: 2)
+                                    .padding(.horizontal, 24)
+
+                                Button {
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                                        showGallery = false
+                                    }
+                                    isPlaying = true
+                                    resumeSlideshowTimingIfPlaying()
+                                    Task { await slideshowMusic.resume() }
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "play.fill")
+                                            .font(.system(size: 15, weight: .semibold))
+                                        Text("Play")
+                                            .font(.system(size: 16, weight: .semibold))
+                                    }
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 28)
+                                    .padding(.vertical, 12)
+                                    .background(Capsule().fill(Color.white.opacity(0.22)))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .frame(width: geo.size.width, height: coverHeight)
+                        }
+                        .frame(width: geo.size.width, height: coverHeight)
+                        .task(id: heroPhotoId) {
+                            guard let id = heroPhotoId, loadedImages[id] == nil else { return }
+                            let target = CGSize(width: geo.size.width * 2, height: coverHeight * 2)
+                            if let img = await ImageLoader.shared.loadImage(assetIdentifier: id, targetSize: target) {
+                                await MainActor.run { loadedImages[id] = img }
+                            }
+                        }
+                        .padding(.bottom, 16)
+
+                        Text("All Photos")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 18)
+                            .padding(.bottom, 10)
+
+                        LazyVGrid(columns: Self.galleryGridColumns, spacing: 2) {
+                            ForEach(allPhotos.indices, id: \.self) { idx in
+                                GeometryReader { cellGeo in
+                                    GalleryThumbCell(
+                                        entry: allPhotos[idx],
+                                        loadedImages: loadedImages,
+                                        isCurrentPhoto: idx == currentFlatIndex
+                                    )
+                                    .frame(width: cellGeo.size.width, height: cellGeo.size.width)
+                                    .clipped()
+                                }
+                                .aspectRatio(1, contentMode: .fit)
+                                .onTapGesture {
+                                    jumpToPhoto(flatIndex: idx)
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                                        showGallery = false
+                                    }
+                                }
+                            }
+                        }
+                        .padding(2)
+
+                        Color.clear
+                            .frame(height: geo.safeAreaInsets.bottom + 16)
+                    }
+                }
+
+                // Close gallery — same role as tapping the dimmed area in the old sheet
+                Button {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                        showGallery = false
+                    }
+                } label: {
+                    Text("Close")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 20)
+                .padding(.top, Self.galleryCloseButtonTopPadding())
+            }
+        }
+        .ignoresSafeArea()
+    }
+
+    // MARK: - Gallery navigation
+
+    private func jumpToPhoto(flatIndex: Int) {
+        var count = 0
+        for (gIdx, group) in photoGroups.enumerated() {
+            for pIdx in group.indices {
+                if count == flatIndex {
+                    let layout: SlideLayout = .solo
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        currentGroupIndex = gIdx
+                        currentSlideOffset = pIdx
+                        currentLayout = layout
+                    }
+                    soloElapsed = 0
+                    Task { await preloadAround(groupIndex: gIdx, offset: pIdx) }
+                    return
+                }
+                count += 1
             }
         }
     }
@@ -822,6 +1046,43 @@ private extension PanoramaPlayerView {
         f.dateFormat = "MMM d, yyyy  h:mm a"
         return f
     }()
+}
+
+// MARK: - Gallery thumb cell
+
+private struct GalleryThumbCell: View {
+    let entry: PanoramaPhotoEntry
+    let loadedImages: [String: UIImage]
+    let isCurrentPhoto: Bool
+    @State private var thumb: UIImage?
+
+    var body: some View {
+        let img = thumb ?? loadedImages[entry.id]
+        ZStack {
+            if let img {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Color.gray.opacity(0.25)
+                ProgressView().tint(.white).scaleEffect(0.7)
+            }
+        }
+        .clipped()
+        .overlay {
+            if isCurrentPhoto {
+                Rectangle()
+                    .strokeBorder(Color.white, lineWidth: 2.5)
+            }
+        }
+        .task(id: entry.id) {
+            guard thumb == nil, loadedImages[entry.id] == nil else { return }
+            thumb = await ImageLoader.shared.loadThumbnail(
+                assetIdentifier: entry.id,
+                targetSize: CGSize(width: 200, height: 200)
+            )
+        }
+    }
 }
 
 // MARK: - Comparable clamp

@@ -62,12 +62,6 @@ private struct OverallStoryTruncationKey: PreferenceKey {
     }
 }
 
-private struct PlaceTitleHeightPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
 
 struct PlaceStopRowView: View {
     let day: RecapBlogDay
@@ -126,7 +120,6 @@ struct PlaceStopRowView: View {
     @State private var expandedCaptionPhotoId: UUID? = nil
     @State private var isOverallStoryExpanded = false
     @State private var isOverallStoryTruncated = false
-    @State private var measuredPlaceTitleHeight: CGFloat = 0
     // Vibe playback for blog photo thumbnails
     @StateObject private var vibePlayer = VibePlayer()
     @State private var playingVibePhotoId: UUID? = nil
@@ -197,13 +190,6 @@ struct PlaceStopRowView: View {
 
     /// Photo size in strip — 80% of screen width so one photo is prominent and the next peeks on the right.
     private var thumbnailSize: CGFloat { UIScreen.main.bounds.width * 0.8 }
-    private var placeTitleSingleLineHeight: CGFloat {
-        UIFont.preferredFont(forTextStyle: .title2).lineHeight
-    }
-    private var isPlaceTitleTwoLines: Bool {
-        measuredPlaceTitleHeight > placeTitleSingleLineHeight * 1.35
-    }
-
     /// Returns the local vibe audio URL for a photo if it was captured with the in-app camera.
     private func vibeURL(for photo: RecapPhoto) -> URL? {
         guard let id = photo.localIdentifier,
@@ -224,20 +210,14 @@ struct PlaceStopRowView: View {
             // Row 1: badge + title, subtitle, time
             HStack(alignment: .top, spacing: 12) {
                 stopBadge
-                    .padding(.top, isPlaceTitleTwoLines ? max(0, (measuredPlaceTitleHeight - 28) / 2) : 0)
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack {
+                    HStack(alignment: .top) {
                         if isEditMode {
-                            HStack(alignment: .center, spacing: 10) {
+                            HStack(alignment: .top, spacing: 10) {
                                 Button { onEditName?() } label: {
                                     Text(stop.placeTitle)
                                         .font(Font.blog(selectedBlogFont, size: 22, bold: true))
                                         .foregroundColor(rowTitle)
-                                        .background(
-                                            GeometryReader { geo in
-                                                Color.clear.preference(key: PlaceTitleHeightPreferenceKey.self, value: geo.size.height)
-                                            }
-                                        )
                                 }
                                 .buttonStyle(.plain)
                                 Button { onEditName?() } label: {
@@ -260,11 +240,6 @@ struct PlaceStopRowView: View {
                                         Text(stop.placeTitle)
                                             .font(.blog(selectedBlogFont, size: 22, bold: true))
                                             .foregroundColor(rowTitle)
-                                            .background(
-                                                GeometryReader { geo in
-                                                    Color.clear.preference(key: PlaceTitleHeightPreferenceKey.self, value: geo.size.height)
-                                                }
-                                            )
                                         StoryPlaceExternalLinkIcon(
                                             titleFontSize: UIFont.preferredFont(forTextStyle: .title2).pointSize,
                                             foregroundColor: colorScheme == .dark ? .white.opacity(0.78) : Color.primary.opacity(0.55)
@@ -280,11 +255,6 @@ struct PlaceStopRowView: View {
                                     Text(stop.placeTitle)
                                         .font(.blog(selectedBlogFont, size: 22, bold: true))
                                         .foregroundColor(rowTitle)
-                                        .background(
-                                            GeometryReader { geo in
-                                                Color.clear.preference(key: PlaceTitleHeightPreferenceKey.self, value: geo.size.height)
-                                            }
-                                        )
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("Open place in Maps")
@@ -294,12 +264,13 @@ struct PlaceStopRowView: View {
                         if isEditMode {
                             Button(action: onDelete) {
                                 Image(systemName: "eye.slash")
-                                    .font(.body)
+                                    .font(.system(size: 14, weight: .semibold))
                                     .foregroundColor(.secondary)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
+                                    .frame(width: 28, height: 28)
                                     .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Hide place")
                         } else {
                             Button { onKebab?() } label: {
                                 Image(systemName: "ellipsis")
@@ -308,6 +279,7 @@ struct PlaceStopRowView: View {
                                     .padding(8)
                                     .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                     if let subtitle = stop.placeSubtitle, !subtitle.isEmpty {
@@ -358,7 +330,6 @@ struct PlaceStopRowView: View {
                     }
                 }
             }
-            .onPreferenceChange(PlaceTitleHeightPreferenceKey.self) { measuredPlaceTitleHeight = $0 }
             .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, 8)
@@ -425,17 +396,74 @@ struct PlaceStopRowView: View {
             let includedPhotos = stop.photos.filter(\.isIncluded)
             let shouldShowManagePhotosCard = isEditMode && !stop.photos.isEmpty
 
-            if includedPhotos.count == 1, let photo = includedPhotos.first, !isEditMode {
-                // --- CASE 2a: Single photo — full-width hero (view mode only). Edit mode uses the horizontal strip so “Manage Photos” is always first in the list.
-                VStack(alignment: .leading, spacing: 0) {
-                    ZStack(alignment: .topTrailing) {
+            if includedPhotos.count == 1, let photo = includedPhotos.first {
+                // --- CASE 2a: Single included photo — full-width hero (read and edit). Manage Photos bar sits above in edit mode.
+                VStack(alignment: .leading, spacing: 12) {
+                    if shouldShowManagePhotosCard {
+                        Button(action: onManagePhotos) {
+                            HStack(spacing: 14) {
+                                Image(systemName: "photo.on.rectangle")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [Color.white.opacity(0.92), Color.white.opacity(0.58)],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        )
+                                    )
+                                    .frame(width: 44, height: 44)
+                                    .background(rowSurface)
+                                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Manage Photos")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(.primary)
+                                    Text("\(stop.photos.count) \(stop.photos.count == 1 ? "Photo" : "Photos")")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundColor(.secondary)
+                                }
+
+                                Spacer(minLength: 0)
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.secondary.opacity(0.9))
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(rowInset)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Manage Photos, \(stop.photos.count) \(stop.photos.count == 1 ? "photo" : "photos")")
+                    }
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        ZStack(alignment: .topTrailing) {
                         RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 960, height: 640))
                             .frame(maxWidth: .infinity, maxHeight: 260)
                             .clipped()
                             .cornerRadius(10)
                             .contentShape(Rectangle())
                             .onTapGesture { onPhotoTapped?(photo) }
-                    }
+                        if isEditMode {
+                            Button {
+                                onRemovePhoto?(photo.id)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 30))
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(.white, Color.black.opacity(0.6))
+                            }
+                            .buttonStyle(.plain)
+                            .padding(6)
+                        }
+                        }
                     .overlay(alignment: .bottomLeading) {
                         if vibeURL(for: photo) != nil {
                             let isPlaying = playingVibePhotoId == photo.id && vibePlayer.isPlaying
@@ -490,8 +518,24 @@ struct PlaceStopRowView: View {
                         }
                     }
 
-                    // Caption below the hero photo (view mode only here)
-                    if !photoCaption(photo.id).wrappedValue.isEmpty {
+                    if isEditMode {
+                        Button {
+                            onCaptionTapped?(photo.id)
+                        } label: {
+                            let caption = photoCaption(photo.id).wrappedValue
+                            Text(caption.isEmpty ? "Leave a story for this photo" : caption)
+                                .font(.caption)
+                                .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : rowCaptionFilled)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(8)
+                                .background(rowInset)
+                                .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 8)
+                    } else if !photoCaption(photo.id).wrappedValue.isEmpty {
                         let isExpanded = expandedCaptionPhotoId == photo.id
                         Button {
                             withAnimation(.easeInOut(duration: 0.2)) {
@@ -509,12 +553,13 @@ struct PlaceStopRowView: View {
                         .buttonStyle(.plain)
                         .padding(.top, 8)
                     }
+                    }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 12)
-            } else if !includedPhotos.isEmpty || shouldShowManagePhotosCard {
-                // --- CASE 2b: Multiple photos (or edit mode with photo pool) — optional “Manage Photos” bar above the strip; thumbnails scroll horizontally only ---
+                .padding(.top, isEditMode ? 4 : 8)
+                .padding(.bottom, isEditMode ? 20 : 12)
+            } else if includedPhotos.count > 1 || (includedPhotos.isEmpty && shouldShowManagePhotosCard) {
+                // --- CASE 2b: Multiple included photos, or edit mode with none included but a pool to manage — Manage Photos bar + horizontal strip when applicable ---
                 VStack(alignment: .leading, spacing: 12) {
                     if shouldShowManagePhotosCard {
                         Button(action: onManagePhotos) {

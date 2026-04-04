@@ -1004,6 +1004,7 @@ struct RecapBlogPageView: View {
             PanoramaPlayerView(
                 photoGroups: photoGroups,
                 blogId: blogId,
+                blogTitle: draft.title,
                 onDismiss: { showPanorama = false }
             )
         }
@@ -1481,6 +1482,32 @@ struct RecapBlogPageView: View {
                     }
                     .transition(.opacity)
                 }
+
+                // Slideshow — top of cover, trailing inset matches nav bar gear so it sits under Blog Settings.
+                if !isEditMode, !isCoverPending, displayCoverId != nil, !isExportingPDF, !showStoryMode {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Button {
+                                showPanorama = true
+                            } label: {
+                                Image(systemName: "film")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Slideshow")
+                            // 16pt matches typical nav bar trailing inset; 44pt frame matches bar button width so centers align with the gear.
+                            .padding(.trailing, 16)
+                        }
+                        Spacer()
+                    }
+                    .padding(.top, 10)
+                    .allowsHitTesting(true)
+                }
             }
             .contentShape(Rectangle())
             .onTapGesture {
@@ -1714,7 +1741,7 @@ struct RecapBlogPageView: View {
     @ViewBuilder
     private var mapOrPreviewCard: some View {
         if let day = day(at: selectedDayIndex) {
-            ZStack(alignment: .bottomTrailing) {
+            ZStack(alignment: .topTrailing) {
                 MapDayView(
                     placeStops: day.placeStops,
                     onTap: {
@@ -4196,28 +4223,15 @@ Your blog remains private unless you choose to share it.
                 }
                 .buttonStyle(.plain)
             } else if !isExportingPDF && !showStoryMode {
-                HStack(spacing: 20) {
-                    if !isCoverPending, draft.selectedCoverPhotoIdentifier != nil {
-                        Button {
-                            showPanorama = true
-                        } label: {
-                            Image(systemName: "film")
-                                .font(.body.weight(.semibold))
-                                .foregroundColor(recapChromeForeground)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Slideshow")
-                    }
-                    Button {
-                        showBlogSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .font(.body.weight(.semibold))
-                            .foregroundColor(recapChromeForeground)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Blog Settings")
+                Button {
+                    showBlogSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(recapChromeForeground)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Blog Settings")
             }
         }
     }

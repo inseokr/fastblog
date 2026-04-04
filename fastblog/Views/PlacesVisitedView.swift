@@ -1,5 +1,17 @@
 import MapKit
 import SwiftUI
+import UIKit
+
+/// Unselected filter chip fill: `systemGray5` blended ~15% toward white (lighter tone).
+private func filterChipUnselectedFill() -> Color {
+    Color(uiColor: UIColor { traits in
+        let base = UIColor.systemGray5.resolvedColor(with: traits)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard base.getRed(&r, green: &g, blue: &b, alpha: &a) else { return base }
+        let t: CGFloat = 0.15
+        return UIColor(red: r * (1 - t) + t, green: g * (1 - t) + t, blue: b * (1 - t) + t, alpha: a)
+    })
+}
 
 // MARK: - Standalone full-screen Places Visited (from home icon)
 struct PlacesVisitedStandaloneView: View {
@@ -470,7 +482,7 @@ struct PlacesVisitedView: View {
                 .foregroundColor(isSelected ? .white : .primary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(isSelected ? Color.blue : Color(uiColor: .systemGray5))
+                .background(isSelected ? Color.blue : filterChipUnselectedFill())
                 .clipShape(Capsule())
                 .lineLimit(1)
         }
@@ -1153,7 +1165,7 @@ private struct PlacesVisitedMapView: View {
                 .foregroundColor(.white)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(isSelected ? Color.blue : Color.white.opacity(0.2))
+                .background(isSelected ? Color.blue : Color.white.opacity(0.23))
                 .clipShape(Capsule())
                 .lineLimit(1)
         }
