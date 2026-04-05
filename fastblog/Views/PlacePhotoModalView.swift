@@ -14,6 +14,8 @@ struct PlacePhotoModalItem: Identifiable {
     let stopId: UUID
     let initialPhotoId: UUID
     var autoFocusCaption: Bool = false
+    /// Open with the same inline caption chrome as blog edit (Cancel / Done, caption above keyboard), not read-only full photo.
+    var openInCaptionEditor: Bool = false
     var id: String { "\(dayId.uuidString)-\(stopId.uuidString)-\(initialPhotoId.uuidString)" }
 }
 
@@ -60,6 +62,9 @@ private enum PlaceDetailChromeLayout {
     /// Fullscreen top fade: safe area + this height.
     static let fullscreenTopGradientExtensionBelowSafeArea: CGFloat = 120
     static let circleActionSize: CGFloat = 44
+    /// Close / Cancel / Done / Save in `PlaceDetailTopChrome` — one font + pill size.
+    static let headerPillHorizontalPadding: CGFloat = 12
+    static let headerPillVerticalPadding: CGFloat = 6
 
     static func bottomContentVerticalPadding(sheet: Bool) -> CGFloat { sheet ? 20 : 14 }
     static func bottomContentHorizontalPadding(sheet: Bool) -> CGFloat { sheet ? 20 : horizontalPadding }
@@ -80,6 +85,8 @@ struct PlacePhotoModalView: View {
     /// Used to derive the capture location's timezone for correct photo time display.
     let stopDigitizedTime: String?
     var blogIsEditMode: Bool = false
+    /// When true, opens in the same caption-editing layout as blog edit (even if the recap timeline is not in edit mode).
+    var openInCaptionEditor: Bool = false
     /// When false, hide PHAsset "Created/Modified" metadata lines (useful for read-only presentation).
     var showAssetTimeMetadata: Bool = true
     var autoFocusCaption: Bool = false
@@ -227,6 +234,7 @@ struct PlacePhotoModalView: View {
         initialPhotoId: UUID,
         stopDigitizedTime: String? = nil,
         blogIsEditMode: Bool = false,
+        openInCaptionEditor: Bool = false,
         showAssetTimeMetadata: Bool = true,
         autoFocusCaption: Bool = false,
         presentation: PlaceDetailPresentation = .sheet,
@@ -248,6 +256,7 @@ struct PlacePhotoModalView: View {
         self.initialPhotoId = initialPhotoId
         self.stopDigitizedTime = stopDigitizedTime
         self.blogIsEditMode = blogIsEditMode
+        self.openInCaptionEditor = openInCaptionEditor
         self.showAssetTimeMetadata = showAssetTimeMetadata
         self.autoFocusCaption = autoFocusCaption
         self.presentation = presentation
@@ -263,8 +272,13 @@ struct PlacePhotoModalView: View {
         self.onSavePlaceName = onSavePlaceName
         self.onCaptionCommitted = onCaptionCommitted
         _currentPhotoId = State(initialValue: initialPhotoId)
-        // Blog edit: show caption editor from the first frame (no onAppear flip).
-        _isEditing = State(initialValue: blogIsEditMode)
+        // Blog edit or caption-sheet handoff: caption editor from the first frame (no onAppear flip).
+        _isEditing = State(initialValue: blogIsEditMode || openInCaptionEditor)
+    }
+
+    /// Inline caption panel + top chrome aligned with blog edit (`Cancel` / `Done`), including when opened from caption edit sheets.
+    private var usesInlineCaptionChrome: Bool {
+        blogIsEditMode || openInCaptionEditor
     }
 
     private var currentPhoto: RecapPhoto? {
@@ -335,7 +349,7 @@ struct PlacePhotoModalView: View {
     /// Close / Cancel / swipe-down share the same rules (including unsaved-changes alert).
     private func handleUserRequestedDismiss() {
         isCaptionFocused = false
-        if !isEditing && !blogIsEditMode {
+        if !isEditing && !usesInlineCaptionChrome {
             animateSwipeDismissCompletion { onDismiss() }
             return
         }
@@ -352,9 +366,9 @@ struct PlacePhotoModalView: View {
     /// Slides the modal the rest of the way off-screen, then runs `completion` (typically `onDismiss`).
     /// Uses a spring (not ease-in) so the finish matches system sheet / pull-modal dismiss: quick to start, smooth settle.
     private func animateSwipeDismissCompletion(_ completion: @escaping () -> Void) {
-        let response: CGFloat = blogIsEditMode ? 0.32 : 0.4
-        let damping: CGFloat = blogIsEditMode ? 0.9 : 0.93
-        let settleNanoseconds: UInt64 = blogIsEditMode ? 380_000_000 : 480_000_000
+        let response: CGFloat = usesInlineCaptionChrome ? 0.32 : 0.4
+        let damping: CGFloat = usesInlineCaptionChrome ? 0.9 : 0.93
+        let settleNanoseconds: UInt64 = usesInlineCaptionChrome ? 380_000_000 : 480_000_000
         onDismissSlideBegan?()
         dismissFrozenPhotoId = currentPhotoId
         isDismissExitAnimating = true
@@ -403,7 +417,7 @@ struct PlacePhotoModalView: View {
                 let predicted = value.predictedEndTranslation.height
                 let shouldDismiss = mostlyVertical && (dy > 115 || predicted > 220)
                 if shouldDismiss {
-                    let needsSaveAlert = (isEditing || blogIsEditMode) && hasAnyChanges
+                    let needsSaveAlert = (isEditing || usesInlineCaptionChrome) && hasAnyChanges
                     if needsSaveAlert {
                         dismissFrozenPhotoId = nil
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.86, blendDuration: 0)) {
@@ -483,7 +497,7 @@ struct PlacePhotoModalView: View {
                                     captionText: $editedCaptionText,
                                     isCaptionExpanded: $isReadOnlyCaptionExpanded,
                                     placeholder: "Leave a story for this photo...",
-                                    blogIsEditMode: blogIsEditMode,
+                                    blogIsEditMode: usesInlineCaptionChrome,
                                     contentVerticalPadding: PlaceDetailChromeLayout.bottomContentVerticalPadding(sheet: presentation.isSheet),
                                     contentHorizontalPadding: PlaceDetailChromeLayout.bottomContentHorizontalPadding(sheet: presentation.isSheet),
                                     onTitleTap: { openGoogleSearch() },
@@ -492,7 +506,7 @@ struct PlacePhotoModalView: View {
                                 )
                             }
 
-                            if !blogIsEditMode && !isEditing {
+                            if !usesInlineCaptionChrome && !isEditing {
                                 if photos.count > 1 {
                                     PlacePhotoThumbnailStrip(
                                         photos: photos,
@@ -541,6 +555,7 @@ struct PlacePhotoModalView: View {
                 presentation: presentation,
                 isEditing: isEditing,
                 blogIsEditMode: blogIsEditMode,
+                openInCaptionEditor: openInCaptionEditor,
                 hasUnsavedChanges: hasUnsavedChanges,
                 currentPhotoId: effectiveDisplayedPhotoId,
                 hasVibeClip: currentVibeURL != nil,
@@ -632,7 +647,7 @@ struct PlacePhotoModalView: View {
         // Editing panel anchors just above the keyboard via safeAreaInset
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if isEditing {
-                if blogIsEditMode {
+                if usesInlineCaptionChrome {
                     // ── Blog edit mode: caption TextField anchored above keyboard ──
                     VStack(alignment: .leading, spacing: 8) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -823,10 +838,10 @@ struct PlacePhotoModalView: View {
             isDismissExitAnimating = false
             editedCaptionText = currentCaption
             editedPlaceTitle = placeTitle
-            if blogIsEditMode {
+            if usesInlineCaptionChrome {
                 captionWhenEditingStarted = currentCaption
                 titleWhenEditingStarted = placeTitle
-                // `isEditing` is already true from init when `blogIsEditMode` (caption UI is on screen from frame 0).
+                // `isEditing` is already true from init when `blogIsEditMode` or `openInCaptionEditor`.
                 if autoFocusCaption {
                     // Caption row open: keyboard + inset are intended to be immediate, not a second-phase state change.
                     var t = Transaction()
@@ -1166,6 +1181,7 @@ private struct PlaceDetailTopChrome: View {
     let presentation: PlaceDetailPresentation
     let isEditing: Bool
     let blogIsEditMode: Bool
+    let openInCaptionEditor: Bool
     let hasUnsavedChanges: Bool
     let currentPhotoId: UUID
     let hasVibeClip: Bool
@@ -1216,31 +1232,15 @@ private struct PlaceDetailTopChrome: View {
 
             VStack(spacing: 0) {
                 HStack(alignment: .top) {
-                    if isEditing && !blogIsEditMode {
-                        capsuleButton(title: "Cancel", action: onLeadingPrimary)
-                    } else if blogIsEditMode {
+                    if isEditing || blogIsEditMode || openInCaptionEditor {
                         capsuleButton(title: "Cancel", action: onLeadingPrimary)
                     } else {
-                        Button(action: onLeadingPrimary) {
-                            Text("Close")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background {
-                                    Capsule()
-                                        .fill(.ultraThinMaterial)
-                                        .overlay {
-                                            Capsule().fill(Color.white.opacity(0.12))
-                                        }
-                                }
-                        }
-                        .buttonStyle(.plain)
+                        capsuleButton(title: "Close", action: onLeadingPrimary)
                     }
 
                     Spacer()
 
-                    if !isEditing && !blogIsEditMode {
+                    if !isEditing && !blogIsEditMode && !openInCaptionEditor {
                         VStack(spacing: PlaceDetailChromeLayout.actionStackSpacing) {
                             Menu {
                                 Button(action: onMenuEditPlaceName) {
@@ -1288,29 +1288,11 @@ private struct PlaceDetailTopChrome: View {
                                 onLink: onLink
                             )
                         }
-                    } else if isEditing && !blogIsEditMode {
-                        Button(action: onSaveCaptionAndDismiss) {
-                            Text("Save")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Color.blue)
-                                .clipShape(Capsule())
-                        }
-                    } else if blogIsEditMode {
-                        Button(action: onDoneBlogEdit) {
-                            Text("Done")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(Color.black.opacity(0.35))
-                                .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
+                    } else if isEditing && !blogIsEditMode && !openInCaptionEditor {
+                        accentHeaderPill(title: "Save", fill: Color.blue, action: onSaveCaptionAndDismiss)
+                    } else if blogIsEditMode || openInCaptionEditor {
+                        capsuleButton(title: "Done", action: onDoneBlogEdit)
+                            .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
                     }
                 }
                 .animation(.easeInOut(duration: 0.2), value: hasUnsavedChanges)
@@ -1323,16 +1305,21 @@ private struct PlaceDetailTopChrome: View {
     }
 
     private func capsuleButton(title: String, action: @escaping () -> Void) -> some View {
+        accentHeaderPill(title: title, fill: Color.black.opacity(0.35), action: action)
+    }
+
+    private func accentHeaderPill(title: String, fill: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
                 .font(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundColor(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color.black.opacity(0.35))
+                .padding(.horizontal, PlaceDetailChromeLayout.headerPillHorizontalPadding)
+                .padding(.vertical, PlaceDetailChromeLayout.headerPillVerticalPadding)
+                .background(fill)
                 .clipShape(Capsule())
         }
+        .buttonStyle(.plain)
     }
 }
 

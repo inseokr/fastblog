@@ -11,6 +11,19 @@ private struct SlideshowGalleryScrollOffsetKey: PreferenceKey {
     }
 }
 
+/// Gallery chrome ignores the safe area; match status-bar inset for close / full-screen photo bars.
+private enum SlideshowGalleryLayout {
+    static func chromeTopPadding() -> CGFloat {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+            return 47 + 2
+        }
+        let window = scene.windows.first { $0.isKeyWindow } ?? scene.windows.first
+        let top = window?.safeAreaInsets.top ?? 0
+        let resolvedTop = top > 0 ? top : 47
+        return resolvedTop + 2
+    }
+}
+
 // MARK: - Photo entry (asset ID + optional caption)
 
 struct PanoramaPhotoEntry: Equatable {
@@ -48,6 +61,8 @@ struct PanoramaPlayerView: View {
     /// Shown centered on the gallery hero (matches recap cover title treatment).
     let blogTitle: String
     var onDismiss: () -> Void
+    /// When the user deletes an in-app capture (`bloggo-capture:` id) from the slideshow gallery full-screen viewer.
+    var onAppCaptureDeletedFromSlideshow: ((String) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -86,6 +101,8 @@ struct PanoramaPlayerView: View {
     @State private var wasPlayingBeforeGallery: Bool = false
     /// Top content offset in `slideshowGalleryScroll` space; near 0 when the gallery list is at the top.
     @State private var galleryScrollContentMinY: CGFloat = 0
+    /// Full-screen photo paging within the gallery overlay (grid tap); `nil` = grid / hero visible.
+    @State private var galleryDetailPhotoId: String?
 
     // MARK: - Music
     @State private var showMusicPicker: Bool = false
@@ -230,6 +247,7 @@ struct PanoramaPlayerView: View {
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showGallery)
+        .animation(.easeInOut(duration: 0.28), value: galleryDetailPhotoId)
         .sheet(isPresented: $showMusicPicker) {
             SlideshowBundledTrackPickerSheet(
                 tracks: SlideshowBundledMusicLibrary.tracksInAppBundle(),
@@ -630,6 +648,7 @@ struct PanoramaPlayerView: View {
     }
 
     private func dismissSlideshowGallery() {
+        galleryDetailPhotoId = nil
         withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
             showGallery = false
         }
@@ -645,17 +664,7 @@ struct PanoramaPlayerView: View {
         GridItem(.flexible(), spacing: 2)
     ]
 
-    /// Gallery root ignores the safe area, so `GeometryReader.safeAreaInsets.top` is often 0 and the close control sits under the status bar. Match the main slideshow `topBar` (safe top + 2pt).
-    private static func galleryCloseButtonTopPadding() -> CGFloat {
-        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
-            return 47 + 2
-        }
-        let window = scene.windows.first { $0.isKeyWindow } ?? scene.windows.first
-        let top = window?.safeAreaInsets.top ?? 0
-        let resolvedTop = top > 0 ? top : 47
-        return resolvedTop + 2
-    }
-
+    /// Gallery ignores the safe area; top chrome uses `SlideshowGalleryLayout.chromeTopPadding()` so controls clear the status bar.
     private var galleryOverlay: some View {
         GeometryReader { geo in
             let coverHeight = geo.size.height * Self.coverHeroHeightFraction
@@ -669,6 +678,22 @@ struct PanoramaPlayerView: View {
                 Color.black
                     .ignoresSafeArea()
 
+                if let detailId = galleryDetailPhotoId {
+                    SlideshowGalleryPhotoDetailView(
+                        photos: allPhotos,
+                        initialPhotoId: detailId,
+                        cachedImages: loadedImages,
+                        onClose: {
+                            galleryDetailPhotoId = nil
+                        },
+                        onAppCaptureDeleted: { identifier in
+                            loadedImages.removeValue(forKey: identifier)
+                            onAppCaptureDeletedFromSlideshow?(identifier)
+                        }
+                    )
+                    .transition(.opacity)
+                } else {
+                    ZStack(alignment: .topLeading) {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
                         // Cover-sized hero: current slide + title + Play (scrolls with grid)
@@ -761,8 +786,7 @@ struct PanoramaPlayerView: View {
                                 }
                                 .aspectRatio(1, contentMode: .fit)
                                 .onTapGesture {
-                                    jumpToPhoto(flatIndex: idx)
-                                    dismissSlideshowGallery()
+                                    galleryDetailPhotoId = allPhotos[idx].id
                                 }
                             }
                         }
@@ -804,32 +828,12 @@ struct PanoramaPlayerView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.leading, 20)
-                .padding(.top, Self.galleryCloseButtonTopPadding())
+                .padding(.top, SlideshowGalleryLayout.chromeTopPadding())
+                    }
+                }
             }
         }
         .ignoresSafeArea()
-    }
-
-    // MARK: - Gallery navigation
-
-    private func jumpToPhoto(flatIndex: Int) {
-        var count = 0
-        for (gIdx, group) in photoGroups.enumerated() {
-            for pIdx in group.indices {
-                if count == flatIndex {
-                    let layout: SlideLayout = .solo
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        currentGroupIndex = gIdx
-                        currentSlideOffset = pIdx
-                        currentLayout = layout
-                    }
-                    soloElapsed = 0
-                    Task { await preloadAround(groupIndex: gIdx, offset: pIdx) }
-                    return
-                }
-                count += 1
-            }
-        }
     }
 
     // MARK: - Layout logic
@@ -1077,6 +1081,344 @@ struct PanoramaPlayerView: View {
         }
     }
 
+}
+
+// MARK: - Slideshow gallery full-screen photo (3×3 grid tap)
+
+/// Full-screen paging viewer inside the slideshow pull-up grid; matches Bloggo gallery chrome (download; delete only for `bloggo-capture:` assets).
+private struct SlideshowGalleryPhotoDetailView: View {
+    let photos: [PanoramaPhotoEntry]
+    let initialPhotoId: String
+    let cachedImages: [String: UIImage]
+    var onClose: () -> Void
+    var onAppCaptureDeleted: (String) -> Void
+
+    @State private var selectedPhotoId: String
+    @State private var showControls = true
+    @State private var showDeleteConfirm = false
+    @State private var downloadToast: String?
+
+    init(
+        photos: [PanoramaPhotoEntry],
+        initialPhotoId: String,
+        cachedImages: [String: UIImage],
+        onClose: @escaping () -> Void,
+        onAppCaptureDeleted: @escaping (String) -> Void
+    ) {
+        self.photos = photos
+        self.initialPhotoId = initialPhotoId
+        self.cachedImages = cachedImages
+        self.onClose = onClose
+        self.onAppCaptureDeleted = onAppCaptureDeleted
+        _selectedPhotoId = State(initialValue: initialPhotoId)
+    }
+
+    private static let detailDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "d MMM yyyy 'at' h:mm a"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    private var currentEntry: PanoramaPhotoEntry? {
+        photos.first { $0.id == selectedPhotoId }
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            if photos.isEmpty {
+                Text("No photos")
+                    .foregroundStyle(.white.opacity(0.6))
+            } else {
+                TabView(selection: $selectedPhotoId) {
+                    ForEach(photos, id: \.id) { entry in
+                        SlideshowGalleryDetailZoomPage(
+                            entry: entry,
+                            cached: cachedImages[entry.id]
+                        )
+                        .tag(entry.id)
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showControls.toggle()
+                            }
+                        }
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .ignoresSafeArea()
+
+                if showControls {
+                    VStack {
+                        topChrome
+                        Spacer()
+                        bottomChrome
+                    }
+                    .ignoresSafeArea(edges: .bottom)
+                }
+
+                if let downloadToast {
+                    VStack {
+                        Spacer()
+                        Text(downloadToast)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Capsule().fill(.black.opacity(0.7)))
+                            .padding(.bottom, 32)
+                    }
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .onAppear {
+            if !photos.contains(where: { $0.id == selectedPhotoId }), let first = photos.first {
+                selectedPhotoId = first.id
+            }
+        }
+        .onChange(of: photos) { oldList, newList in
+            if newList.isEmpty {
+                onClose()
+                return
+            }
+            guard !newList.contains(where: { $0.id == selectedPhotoId }) else { return }
+            let oldIndex = oldList.firstIndex { $0.id == selectedPhotoId } ?? 0
+            let idx = min(oldIndex, newList.count - 1)
+            selectedPhotoId = newList[idx].id
+        }
+        .confirmationDialog(
+            "Delete this photo?",
+            isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { confirmDeleteCurrent() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently remove the photo from your device.")
+        }
+    }
+
+    private var topChrome: some View {
+        VStack {
+            ZStack {
+                HStack(alignment: .top) {
+                    Button {
+                        onClose()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 36, height: 36)
+                            .background(Color.black.opacity(0.5))
+                            .clipShape(Circle())
+                    }
+
+                    Spacer(minLength: 0)
+
+                    // Top-trailing slot for Vibe (or other controls) when wired per-photo.
+                    Color.clear
+                        .frame(width: 36, height: 36)
+                }
+
+                if photos.count > 1, let idx = photos.firstIndex(where: { $0.id == selectedPhotoId }) {
+                    Text("\(idx + 1) / \(photos.count)")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.white)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, SlideshowGalleryLayout.chromeTopPadding())
+            Spacer()
+        }
+    }
+
+    private var bottomChrome: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let entry = currentEntry {
+                let placeTitle: String = {
+                    let n = entry.placeName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    return n.isEmpty ? "Unknown Place" : n
+                }()
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(placeTitle)
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .shadow(color: .black.opacity(0.4), radius: 2)
+
+                    if let ts = entry.timestamp {
+                        Text(Self.detailDateFormatter.string(from: ts))
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.8))
+                            .shadow(color: .black.opacity(0.3), radius: 1)
+                    }
+                }
+
+                if let cap = entry.caption?.trimmingCharacters(in: .whitespacesAndNewlines), !cap.isEmpty {
+                    Text(cap)
+                        .font(.body)
+                        .foregroundColor(.white)
+                        .lineLimit(4)
+                        .multilineTextAlignment(.leading)
+                        .padding(.top, 4)
+                }
+
+                HStack {
+                    Button {
+                        Task { await downloadCurrentPhoto() }
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 56, height: 56)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .accessibilityLabel("Download Photo")
+
+                    Spacer()
+
+                    if AppCapturePhotoService.uuid(from: entry.id) != nil {
+                        Button {
+                            showDeleteConfirm = true
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(width: 56, height: 56)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        }
+                        .accessibilityLabel("Delete Photo")
+                    }
+                }
+                .padding(.top, 6)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.top, 60)
+        .padding(.bottom, 40)
+        .background(
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.55), .black.opacity(0.88)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .bottom)
+        )
+    }
+
+    private func downloadCurrentPhoto() async {
+        guard let entry = currentEntry else { return }
+        let screen = UIScreen.main.bounds.size
+        let target = CGSize(width: screen.width * 3, height: screen.height * 3)
+        let image: UIImage?
+        if let cached = cachedImages[entry.id] ?? AppCapturePhotoService.shared.loadImage(identifier: entry.id) {
+            image = cached
+        } else {
+            image = await ImageLoader.shared.loadImage(assetIdentifier: entry.id, targetSize: target)
+        }
+        guard let image else {
+            await MainActor.run {
+                downloadToast = "Could not load photo"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { downloadToast = nil }
+            }
+            return
+        }
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.creationRequestForAsset(from: image)
+            } completionHandler: { success, _ in
+                DispatchQueue.main.async {
+                    if success {
+                        downloadToast = "1 photo saved to Photos"
+                    } else {
+                        downloadToast = "Could not save to Photos"
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { downloadToast = nil }
+                    cont.resume()
+                }
+            }
+        }
+    }
+
+    private func confirmDeleteCurrent() {
+        guard let id = currentEntry?.id, AppCapturePhotoService.uuid(from: id) != nil else { return }
+        onAppCaptureDeleted(id)
+        showDeleteConfirm = false
+    }
+}
+
+private struct SlideshowGalleryDetailZoomPage: View {
+    let entry: PanoramaPhotoEntry
+    let cached: UIImage?
+
+    @State private var scale: CGFloat = 1.0
+    @State private var offset: CGSize = .zero
+    @GestureState private var magnifyBy: CGFloat = 1.0
+    @State private var resolved: UIImage?
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                Color.black
+                if let image = resolved ?? cached {
+                    zoomableImage(geo: geo, image: image)
+                } else {
+                    ProgressView()
+                        .tint(.white)
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .task(id: entry.id) {
+            guard resolved == nil, cached == nil else { return }
+            let screen = UIScreen.main.bounds.size
+            let target = CGSize(width: screen.width * 2.5, height: screen.height * 2.5)
+            if let img = await ImageLoader.shared.loadImage(assetIdentifier: entry.id, targetSize: target) {
+                await MainActor.run { resolved = img }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func zoomableImage(geo: GeometryProxy, image: UIImage) -> some View {
+        let base = Image(uiImage: image)
+            .resizable()
+            .scaledToFit()
+            .frame(width: geo.size.width, height: geo.size.height)
+            .scaleEffect(scale * magnifyBy)
+            .offset(offset)
+            .gesture(
+                MagnificationGesture()
+                    .updating($magnifyBy) { value, state, _ in state = value }
+                    .onEnded { value in
+                        scale = max(1, scale * value)
+                        if scale <= 1 { offset = .zero }
+                    }
+            )
+            .onTapGesture(count: 2) {
+                withAnimation(.spring(response: 0.3)) {
+                    if scale > 1 { scale = 1; offset = .zero }
+                    else { scale = 2.5 }
+                }
+            }
+        if scale > 1 {
+            base.gesture(
+                DragGesture()
+                    .onChanged { value in
+                        offset = value.translation
+                    }
+            )
+        } else {
+            base
+        }
+    }
 }
 
 private extension PanoramaPlayerView {

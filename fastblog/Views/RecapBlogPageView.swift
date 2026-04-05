@@ -1124,7 +1124,10 @@ struct RecapBlogPageView: View {
                 photoGroups: photoGroups,
                 blogId: blogId,
                 blogTitle: draft.title,
-                onDismiss: { showPanorama = false }
+                onDismiss: { showPanorama = false },
+                onAppCaptureDeletedFromSlideshow: { identifier in
+                    removeAppCapturePhotoFromSlideshow(identifier: identifier)
+                }
             )
         }
     }
@@ -2360,6 +2363,7 @@ struct RecapBlogPageView: View {
                         initialPhotoId: includedPhotos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : includedPhotos[0].id,
                         stopDigitizedTime: stop.visitedTimeDigitized,
                         blogIsEditMode: isEditMode,
+                        openInCaptionEditor: item.openInCaptionEditor,
                         showAssetTimeMetadata: isEditMode,
                         autoFocusCaption: item.autoFocusCaption,
                         presentation: .fullscreen(source: .blogRecap),
@@ -3378,6 +3382,19 @@ Your blog remains private unless you choose to share it.
         }
     }
 
+    /// Removes an in-app camera capture from disk and excludes it from the recap (same as manage-photos delete).
+    private func removeAppCapturePhotoFromSlideshow(identifier: String) {
+        guard let captureUUID = AppCapturePhotoService.uuid(from: identifier) else { return }
+        AppCapturePhotoService.shared.deleteCapture(captureId: captureUUID)
+        for day in draft.days {
+            for stop in day.placeStops {
+                guard let photo = stop.photos.first(where: { $0.localIdentifier == identifier }) else { continue }
+                removePhoto(dayId: day.id, stopId: stop.id, photoId: photo.id)
+                return
+            }
+        }
+    }
+
     private func mergePlaceStops(dayId: UUID, firstStopId: UUID, secondStopId: UUID) {
         guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
               let firstIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == firstStopId }),
@@ -3762,7 +3779,12 @@ Your blog remains private unless you choose to share it.
                 await StoryCaptionService.shared.translateText(userText: userText)
             } : nil,
             onRequestFullPhotoView: { photoId in
-                placePhotoModalItem = PlacePhotoModalItem(dayId: item.dayId, stopId: item.stopId, initialPhotoId: photoId)
+                placePhotoModalItem = PlacePhotoModalItem(
+                    dayId: item.dayId,
+                    stopId: item.stopId,
+                    initialPhotoId: photoId,
+                    openInCaptionEditor: true
+                )
             },
             activePhotoModalToken: placePhotoModalItem?.id
         )
@@ -3799,7 +3821,12 @@ Your blog remains private unless you choose to share it.
                 await StoryCaptionService.shared.translateText(userText: userText)
             } : nil,
             onRequestFullPhotoView: {
-                placePhotoModalItem = PlacePhotoModalItem(dayId: item.dayId, stopId: item.stopId, initialPhotoId: item.photoId)
+                placePhotoModalItem = PlacePhotoModalItem(
+                    dayId: item.dayId,
+                    stopId: item.stopId,
+                    initialPhotoId: item.photoId,
+                    openInCaptionEditor: true
+                )
             },
             activePhotoModalToken: placePhotoModalItem?.id
         )
