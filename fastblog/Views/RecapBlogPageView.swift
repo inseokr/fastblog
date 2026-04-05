@@ -930,6 +930,7 @@ struct RecapBlogPageView: View {
                     }
                 )
                 .environmentObject(nearbyShare)
+                .environmentObject(createdRecapStore)
             }
             .sheet(isPresented: $showTitleChange, onDismiss: {
                 persistRecapBlogDetail()

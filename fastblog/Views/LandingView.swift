@@ -5,6 +5,7 @@
 
 import Combine
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct LandingView: View {
     @Binding var showTrips: Bool
@@ -208,6 +209,7 @@ struct LandingView: View {
             SettingsView()
             .environmentObject(authService)
             .environmentObject(photoAuth)
+            .environmentObject(createdRecapStore)
         }
         .alert(
             "New moments added to \"\(newMomentsAlertBlogTitle)\"",
@@ -561,6 +563,7 @@ private struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var authService: AuthService
     @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
+    @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @State private var showNeighborhoodFlow = false
     @State private var showAuth = false
     @State private var showDeleteAccountAlert = false
@@ -578,6 +581,17 @@ private struct SettingsView: View {
     @State private var cloudStorageError: String?
 
     @State private var tripExclusionRadius = NeighborhoodStore.tripExclusionRadiusMiles
+
+    @State private var showImportBackupPicker = false
+    @State private var isExportingAllBackups = false
+    @State private var isImportingBackup = false
+    @State private var backupFlowProgress: Double = 0
+    @State private var backupAllShareURL: URL?
+    @State private var showBackupAllShareSheet = false
+    @State private var backupFlowAlertTitle = ""
+    @State private var backupFlowAlertMessage = ""
+    @State private var showBackupFlowAlert = false
+    @AppStorage("bloggo.preferPhotoLibraryWhenImportingBackup") private var preferPhotoLibraryWhenImportingBackup = false
 
     private var travelStats: (countries: Int, cities: Int, places: Int) {
         let store = CreatedRecapBlogStore.shared
@@ -603,6 +617,12 @@ private struct SettingsView: View {
         .listRowSeparator(.hidden)
     }
 
+    private var hasAnyBackupableBlog: Bool {
+        createdRecapStore.visibleRecents.contains { blog in
+            blog.hasCommittedRecapSave && createdRecapStore.getBlogDetail(blogId: blog.sourceTripId) != nil
+        }
+    }
+
     private struct StatColumn: View {
         let value: Int
         let label: String
@@ -621,7 +641,8 @@ private struct SettingsView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        ZStack {
+            NavigationStack {
             List {
                 // Travel Stats
                 Section {
@@ -720,6 +741,35 @@ private struct SettingsView: View {
                     PhotoAccessRow()
                 } header: {
                     Text("Permissions")
+                }
+
+                Section {
+                    Toggle(isOn: $preferPhotoLibraryWhenImportingBackup) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Match Photo Library when importing")
+                            Text("Uses capture time and location from the backup to link to photos already on this device (e.g. from iCloud). If no match, the copy inside the ZIP is used.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Button {
+                        showImportBackupPicker = true
+                    } label: {
+                        Label("Import blog backup", systemImage: "arrow.down.doc")
+                    }
+                    .disabled(isImportingBackup)
+
+                    Button {
+                        Task { await exportAllBlogsBackupTapped() }
+                    } label: {
+                        Label("Export all saved blogs", systemImage: "square.and.arrow.up.on.square")
+                    }
+                    .disabled(isExportingAllBackups || !hasAnyBackupableBlog)
+                } header: {
+                    Text("Blog backup")
+                } footer: {
+                    Text("Export includes only blogs you’ve saved from the editor (not draft-only recaps). It packs them into a ZIP with text and JPEG images (compressed, not a full copy of every original camera file). Save that ZIP somewhere outside this phone—such as iCloud Drive, another cloud app, or a computer—if you want to recover after a lost device. Import adds new blogs here. With “Match Photo Library,” the blog references your existing library photos when possible (nothing new is saved to the library). Otherwise imported images are stored inside Bloggo only, not added to your Camera Roll.")
                 }
 
                 Section {
@@ -879,6 +929,130 @@ private struct SettingsView: View {
             .onChange(of: photoAuth.status) { _, _ in
                 tripExclusionRadius = NeighborhoodStore.tripExclusionRadiusMiles
             }
+            .fileImporter(
+                isPresented: $showImportBackupPicker,
+                allowedContentTypes: [.zip],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    Task { @MainActor in
+                        await importBlogBackup(from: url)
+                    }
+                case .failure(let error):
+                    backupFlowAlertTitle = "Import failed"
+                    backupFlowAlertMessage = error.localizedDescription
+                    showBackupFlowAlert = true
+                }
+            }
+            .sheet(isPresented: $showBackupAllShareSheet, onDismiss: {
+                if let u = backupAllShareURL {
+                    try? FileManager.default.removeItem(at: u)
+                    backupAllShareURL = nil
+                }
+            }) {
+                if let u = backupAllShareURL {
+                    ShareSheet(items: [u])
+                }
+            }
+            .alert(backupFlowAlertTitle, isPresented: $showBackupFlowAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(backupFlowAlertMessage)
+            }
+            }
+
+            if isImportingBackup || isExportingAllBackups {
+                Color.black.opacity(0.5)
+                    .ignoresSafeArea()
+                VStack(spacing: 16) {
+                    Text(isImportingBackup ? "Importing backup…" : "Exporting backups…")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                    ProgressView(value: backupFlowProgress, total: 1)
+                        .tint(.white)
+                        .frame(maxWidth: 220)
+                    Text("\(Int((backupFlowProgress * 100).rounded(.down)))%")
+                        .font(.title3.monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+                .padding(28)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isImportingBackup)
+        .animation(.easeInOut(duration: 0.2), value: isExportingAllBackups)
+    }
+
+    @MainActor
+    private func exportAllBlogsBackupTapped() async {
+        isExportingAllBackups = true
+        backupFlowProgress = 0
+        defer {
+            isExportingAllBackups = false
+            backupFlowProgress = 0
+        }
+        do {
+            let url = try await BlogBackupService.exportAllVisibleBlogsZip(
+                store: createdRecapStore,
+                progress: { frac in
+                    Task { @MainActor in
+                        backupFlowProgress = frac
+                    }
+                }
+            )
+            await Task.yield()
+            backupFlowProgress = 1
+            backupAllShareURL = url
+            showBackupAllShareSheet = true
+        } catch {
+            backupFlowAlertTitle = "Export failed"
+            backupFlowAlertMessage = error.localizedDescription
+            showBackupFlowAlert = true
+        }
+    }
+
+    @MainActor
+    private func importBlogBackup(from url: URL) async {
+        isImportingBackup = true
+        backupFlowProgress = 0
+        defer {
+            isImportingBackup = false
+            backupFlowProgress = 0
+        }
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessing { url.stopAccessingSecurityScopedResource() }
+        }
+        do {
+            if preferPhotoLibraryWhenImportingBackup, !photoAuth.isAuthorized {
+                await photoAuth.requestAccess()
+            }
+            let dest = FileManager.default.temporaryDirectory.appendingPathComponent("bloggo-import-\(UUID().uuidString).zip")
+            backupFlowProgress = 0.02
+            await Task.yield()
+            try FileManager.default.copyItem(at: url, to: dest)
+            backupFlowProgress = 0.06
+            await Task.yield()
+            defer { try? FileManager.default.removeItem(at: dest) }
+            let ids = try await BlogBackupService.importFromZip(
+                zipURL: dest,
+                store: createdRecapStore,
+                preferPhotoLibrary: preferPhotoLibraryWhenImportingBackup && photoAuth.isAuthorized,
+                progress: { frac in
+                    Task { @MainActor in
+                        backupFlowProgress = 0.06 + 0.94 * frac
+                    }
+                }
+            )
+            backupFlowAlertTitle = "Import complete"
+            backupFlowAlertMessage = ids.count == 1 ? "Added 1 blog." : "Added \(ids.count) blogs."
+            showBackupFlowAlert = true
+        } catch {
+            backupFlowAlertTitle = "Import failed"
+            backupFlowAlertMessage = error.localizedDescription
+            showBackupFlowAlert = true
         }
     }
 

@@ -442,6 +442,39 @@ final class CreatedRecapBlogStore: ObservableObject {
         return Array(captureIds.prefix(manifest.photos.count))
     }
 
+    /// Restores list metadata from `createdRecapBlog.json` after a ZIP backup import.
+    func applyBlogBackupCreatedRecapPayload(_ payload: BlogBackupCreatedRecapPayload, sourceTripId: UUID) {
+        guard let idx = recents.firstIndex(where: { $0.sourceTripId == sourceTripId }) else { return }
+        let old = recents[idx]
+        recents[idx] = CreatedRecapBlog(
+            id: old.id,
+            sourceTripId: old.sourceTripId,
+            title: payload.title,
+            createdAt: payload.createdAt,
+            coverImageName: payload.coverImageName,
+            coverAssetIdentifier: old.coverAssetIdentifier,
+            selectedPhotoCount: payload.selectedPhotoCount,
+            countryName: payload.countryName,
+            tripDateRangeText: payload.tripDateRangeText,
+            lastEditedAt: payload.lastEditedAt,
+            tripStartDate: payload.tripStartDate,
+            tripEndDate: payload.tripEndDate,
+            totalPlaceVisitCount: payload.totalPlaceVisitCount,
+            tripDurationDays: payload.tripDurationDays,
+            caption: payload.caption,
+            blogKey: nil,
+            ownerScope: old.ownerScope,
+            ownerUserId: old.ownerUserId,
+            cloudId: nil,
+            cloudState: .localOnly,
+            syncStatus: .localOnly,
+            lastAutosaveAt: old.lastAutosaveAt,
+            hasCommittedRecapSave: payload.hasCommittedRecapSave,
+            hasCompletedInitialRecapExit: payload.hasCompletedInitialRecapExit
+        )
+        persistRecents()
+    }
+
     /// Call when user completes the Create Blog sequence (before showing RecapSavedView).
     func addCreatedBlog(trip: TripDraft) {
         let startDate = trip.earliestDate
@@ -891,8 +924,9 @@ final class CreatedRecapBlogStore: ObservableObject {
     /// - Parameter asDraft: If true, preserves the existing lastEditedAt (keeping it nil if it was a draft).
     /// - Returns: `false` if a guest hit the second-blog save limit (nothing persisted); otherwise `true` unless the blog id is missing from recents after writing detail.
     @discardableResult
-    func saveBlogDetail(_ detail: RecapBlogDetail, asDraft: Bool = false) -> Bool {
-        if !asDraft,
+    func saveBlogDetail(_ detail: RecapBlogDetail, asDraft: Bool = false, skipGuestSecondSaveGuard: Bool = false) -> Bool {
+        if !skipGuestSecondSaveGuard,
+           !asDraft,
            AuthService.shared.currentUser == nil,
            let idx = recents.firstIndex(where: { $0.sourceTripId == detail.id }),
            recents[idx].ownerScope == .anonymous,

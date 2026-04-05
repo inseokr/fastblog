@@ -5,13 +5,39 @@
 
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
     var onComplete: ((Bool) -> Void)? = nil
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        let vc = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        // Raw file URLs in `activityItems` make Launch Services / ShareSheet probe UTIs and file-provider
+        // metadata heavily (noisy logs and noticeable delay), especially for zips in tmp. Item providers
+        // advertise type up front and behave better for on-disk files.
+        let activityItems: [Any] = items.map { item in
+            if let url = item as? URL, url.isFileURL {
+                if let provider = NSItemProvider(contentsOf: url) {
+                    return provider
+                }
+                if let inferred = UTType(filenameExtension: url.pathExtension),
+                   inferred != .data {
+                    let fallback = NSItemProvider()
+                    fallback.registerFileRepresentation(
+                        forTypeIdentifier: inferred.identifier,
+                        fileOptions: [],
+                        visibility: .all
+                    ) { completion in
+                        completion(url, true, nil)
+                        return nil
+                    }
+                    return fallback
+                }
+                return url
+            }
+            return item
+        }
+        let vc = UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
         vc.completionWithItemsHandler = { _, completed, _, _ in
             onComplete?(completed)
         }

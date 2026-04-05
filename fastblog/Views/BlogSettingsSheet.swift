@@ -64,6 +64,7 @@ struct BlogSettingsSheet: View {
     var onCoverCloudUploadStateChanged: ((Bool) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var nearbyShare: TripNearbyShareSessionController
+    @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @AppStorage(StoryWritingStyle.storageKey) private var writingStyle: String = ""
     @AppStorage(StoryWritingStyle.presetStorageKey) private var writingStylePresetId: String = ""
     @AppStorage(WeatherTemperatureUnit.storageKey) private var weatherTemperatureUnitRaw: String = WeatherTemperatureUnit.fahrenheit.rawValue
@@ -79,9 +80,28 @@ struct BlogSettingsSheet: View {
     @State private var showWritingStyle = false
     @State private var showNearbyShareHost = false
     @State private var showNearbyShareUnavailableAlert = false
+    @State private var isExportingBackup = false
+    @State private var backupExportProgress: Double = 0
+    @State private var backupShareURL: URL?
+    @State private var showBackupShareSheet = false
+    @State private var backupExportErrorMessage: String?
+    @State private var showBackupExportError = false
 
     private var hasCloudPhotos: Bool {
         draft.hasCloudPhotos
+    }
+
+    /// List row / backup uses the same blog as `draft.id` in the visible recents list.
+    private var backupListRecap: CreatedRecapBlog? {
+        createdRecapStore.visibleRecents.first { $0.sourceTripId == draft.id }
+    }
+
+    /// Export uses persisted data only; requires an explicit editor Save (`hasCommittedRecapSave`).
+    private var canExportSavedBackup: Bool {
+        guard let r = backupListRecap, r.hasCommittedRecapSave,
+              let detail = createdRecapStore.getBlogDetail(blogId: draft.id),
+              !detail.days.isEmpty else { return false }
+        return true
     }
 
     var body: some View {
@@ -104,6 +124,26 @@ struct BlogSettingsSheet: View {
                 .preferredColorScheme(.dark)
             }
 
+            if isExportingBackup {
+                Color.black.opacity(0.5)
+                    .ignoresSafeArea()
+                    .zIndex(15)
+                VStack(spacing: 16) {
+                    Text("Exporting backup…")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                    ProgressView(value: backupExportProgress, total: 1)
+                        .tint(.white)
+                        .frame(maxWidth: 220)
+                    Text("\(Int((backupExportProgress * 100).rounded(.down)))%")
+                        .font(.title3.monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+                .padding(28)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                .zIndex(16)
+            }
+
             if showNearbyShareHost {
                 TripNearbyShareHostBlogSettingsOverlay(recap: draft, controller: nearbyShare) {
                     showNearbyShareHost = false
@@ -113,10 +153,26 @@ struct BlogSettingsSheet: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: showNearbyShareHost)
+        .animation(.easeInOut(duration: 0.2), value: isExportingBackup)
         .alert("Can’t share this trip", isPresented: $showNearbyShareUnavailableAlert) {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Nearby sharing needs at least one included photo that is still on this device (or saved in Bloggo). Photos that exist only in the cloud aren’t sent peer-to-peer.")
+        }
+        .sheet(isPresented: $showBackupShareSheet, onDismiss: {
+            if let u = backupShareURL {
+                try? FileManager.default.removeItem(at: u)
+                backupShareURL = nil
+            }
+        }) {
+            if let u = backupShareURL {
+                ShareSheet(items: [u])
+            }
+        }
+        .alert("Couldn’t export backup", isPresented: $showBackupExportError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(backupExportErrorMessage ?? "")
         }
     }
 
@@ -124,6 +180,7 @@ struct BlogSettingsSheet: View {
         List {
             editAndRestoreSection
             titleAndCoverSection
+            backupSection
             unusedPhotosSection
             fontStyleSection
             weatherSection
@@ -199,6 +256,58 @@ struct BlogSettingsSheet: View {
             } label: {
                 Label("Change Cover Photo", systemImage: "photo")
             }
+        }
+    }
+
+    private var backupSection: some View {
+        Section {
+            Button {
+                Task { await exportBlogBackupTapped() }
+            } label: {
+                Label("Export Backup (ZIP)", systemImage: "arrow.up.doc")
+            }
+            .disabled(isExportingBackup || !canExportSavedBackup)
+        } footer: {
+            if canExportSavedBackup {
+                Text("Exports the last saved version of this blog (not unsaved edits in the editor). The ZIP includes text and JPEG photos (reduced size for backup, not necessarily full-resolution originals in Photos). Use Save to Files, iCloud Drive, or another app to keep a copy outside this phone—Bloggo doesn’t store this file for you. On a new device, enable “Match Photo Library when importing” under Settings → Blog backup so the app can reconnect to photos already synced from iCloud.")
+            } else {
+                Text("Save this blog from the editor first (toolbar Save). Export only includes saved blogs, not draft-only recaps.")
+            }
+        }
+    }
+
+    @MainActor
+    private func exportBlogBackupTapped() async {
+        isExportingBackup = true
+        backupExportProgress = 0
+        defer {
+            isExportingBackup = false
+            backupExportProgress = 0
+        }
+        do {
+            guard let persistedDetail = createdRecapStore.getBlogDetail(blogId: draft.id),
+                  let recap = backupListRecap, recap.hasCommittedRecapSave else {
+                backupExportErrorMessage = "Save this blog from the editor before exporting a backup."
+                showBackupExportError = true
+                return
+            }
+            let url = try await BlogBackupService.exportZip(
+                detail: persistedDetail,
+                createdRecapSnapshot: recap,
+                progress: { frac in
+                    Task { @MainActor in
+                        backupExportProgress = frac
+                    }
+                }
+            )
+            // Let any pending MainActor progress updates apply before presenting share.
+            await Task.yield()
+            backupExportProgress = 1
+            backupShareURL = url
+            showBackupShareSheet = true
+        } catch {
+            backupExportErrorMessage = error.localizedDescription
+            showBackupExportError = true
         }
     }
 
