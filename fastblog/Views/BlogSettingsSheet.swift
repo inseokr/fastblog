@@ -187,11 +187,13 @@ struct BlogSettingsSheet: View {
     private var titleAndCoverSection: some View {
         Section {
             Button {
+                AppAnalytics.trackEvent(name: "Blog-Change-BlogTitle")
                 showTitleChange = true
             } label: {
                 Label("Change Blog Title", systemImage: "textformat")
             }
             Button {
+                AppAnalytics.trackEvent(name: "Blog-Pick-CoverPhoto")
                 coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
                 showCoverChange = true
             } label: {

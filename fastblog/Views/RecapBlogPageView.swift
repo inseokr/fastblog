@@ -588,6 +588,7 @@ struct RecapBlogPageView: View {
                 if pendingStoryOpen {
                     pendingStoryOpen = false
                     showStoryMode = true
+                    AppAnalytics.track(.blogPlaySlideshow(blogId: blogId.uuidString))
                 }
             }) {
                 StoryModePDFOptionsSheet {
@@ -899,6 +900,7 @@ struct RecapBlogPageView: View {
                         }
                         : nil,
                     onDelete: {
+                        AppAnalytics.track(.blogDelete(blogId: blogId.uuidString))
                         createdRecapStore.deleteBlog(sourceTripId: blogId)
                         performDismiss()
                     },
@@ -980,7 +982,10 @@ struct RecapBlogPageView: View {
                 PlaceStopActionSheet(
                     placeTitle: item.stop.placeTitle,
                     placeSubtitle: item.stop.placeSubtitle,
-                    onEditName: { showEditNameForStop = item.stop },
+                    onEditName: {
+                        AppAnalytics.track(.blogPlaceChangeName(blogId: blogId.uuidString, placeId: item.stop.id.uuidString))
+                        showEditNameForStop = item.stop
+                    },
                     onManagePhotos: { openManagePhotos(dayId: item.dayId, stopId: item.stop.id) },
                     onEditMode: {
                         // Treat this as "Edit Caption" — open the full-screen place caption editor.
@@ -2047,6 +2052,7 @@ struct RecapBlogPageView: View {
     /// Inline card shown when new photos were detected for this recent blog.
     private var newMomentsCard: some View {
         Button {
+            AppAnalytics.track(.blogMoreMemories(blogId: blogId.uuidString))
             withAnimation(.easeInOut(duration: 0.3)) {
                 showNewMomentsReviewSheet = true
             }
@@ -2252,6 +2258,7 @@ struct RecapBlogPageView: View {
                         overflowStop = OverflowItem(dayId: day.id, stop: stop)
                     },
                     onManagePhotos: {
+                        AppAnalytics.track(.blogPlaceManagePhoto(blogId: blogId.uuidString, placeId: stop.id.uuidString))
                         openManagePhotos(dayId: day.id, stopId: stop.id)
                     },
                     onRemovePhoto: { photoId in
@@ -2262,7 +2269,10 @@ struct RecapBlogPageView: View {
                     },
                     onCaptionFocus: { focusId in scrollToStopId = focusId },
                     onNavigate: { openNavigation(for: stop) },
-                    onEditName: { showEditNameForStop = stop },
+                    onEditName: {
+                        AppAnalytics.track(.blogPlaceChangeName(blogId: blogId.uuidString, placeId: stop.id.uuidString))
+                        showEditNameForStop = stop
+                    },
                     onEditCategory: isEditMode ? { placeCategoryPickerTarget = PlaceCategoryPickerTarget(id: stop.id) } : nil,
                     onDoneEditingStory: { stopId, isPlaceNote, photoId in
                         syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: isPlaceNote, photoId: photoId)
@@ -2305,6 +2315,7 @@ struct RecapBlogPageView: View {
                     onSentimentChanged: { newValue in
                         guard let dayIdx = draft.days.firstIndex(where: { $0.id == day.id }),
                               let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stop.id }) else { return }
+                        AppAnalytics.track(.blogSentimentAdjustment(blogId: blogId.uuidString))
                         draft.days[dayIdx].placeStops[stopIdx].sentiment = newValue
                         persistRecapBlogDetail()
                         syncSentimentToCloudIfNeeded(dayId: day.id, stopId: stop.id)
@@ -2667,6 +2678,7 @@ struct RecapBlogPageView: View {
 
     private func addNewMomentsToBlog(_ selected: [MockPhoto]) {
         guard !selected.isEmpty else { return }
+        AppAnalytics.track(.blogMoreMemoriesCreateBlog(sourceBlogId: blogId.uuidString))
         createdRecapStore.injectPhotos(selected, intoSourceTripId: blogId)
         // Save cutoff so these photos don't resurface.
         if let maxDate = newMomentPhotos.map(\.timestamp).max() {
@@ -3228,6 +3240,7 @@ Your blog remains private unless you choose to share it.
         }
         .preferredColorScheme(.dark)
         .onAppear {
+            AppAnalytics.track(.blogShareNearby(blogId: blogId.uuidString))
             nearbyShare.startHosting(recapDetail: draft)
         }
         .onDisappear {
@@ -3278,6 +3291,7 @@ Your blog remains private unless you choose to share it.
 
 // AutosaveManager.shared.cancelPending() — removed
         guard createdRecapStore.saveBlogDetail(draft) else { return false }
+        AppAnalytics.track(.blogSave(blogId: blogId.uuidString))
 
         withAnimation {
             showUndoOverlay = false
@@ -3424,6 +3438,7 @@ Your blog remains private unless you choose to share it.
         day.placeStops.remove(at: secondIdx)
         for i in day.placeStops.indices { day.placeStops[i].orderIndex = i }
         draft.days[dayIdx] = day
+        AppAnalytics.track(.blogMerge(blogId: blogId.uuidString))
     }
 
     private func mergeCandidates(dayId: UUID, sourceStopId: UUID) -> [RecapMergePlaceCandidateItem] {
@@ -3713,6 +3728,7 @@ Your blog remains private unless you choose to share it.
             dateLine: item.dateLine,
             caption: bindingForDayCaption(dayId: item.dayId),
             onSave: {
+                AppAnalytics.track(.blogDayStory(blogId: blogId.uuidString, dayIndex: draft.days.firstIndex(where: { $0.id == item.dayId }) ?? 0))
                 dayCaptionEditItem = nil
                 persistRecapBlogDetail()
                 syncDayCaptionToCloudIfNeeded(dayId: item.dayId)
@@ -3728,6 +3744,7 @@ Your blog remains private unless you choose to share it.
                 )
             } : nil,
             onEnhanceApplied: LocalLLMStoryCaptionGenerator.isCapable ? {
+                AppAnalytics.track(.blogStoryAIStory(blogId: blogId.uuidString))
                 persistRecapBlogDetail()
             } : nil,
             onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
@@ -3748,11 +3765,13 @@ Your blog remains private unless you choose to share it.
             onSave: { placeCaptionChanged, changedPhotoIds in
                 placeCaptionEditItem = nil
                 if placeCaptionChanged {
+                    AppAnalytics.track(.blogPlaceStory(blogId: blogId.uuidString, placeId: item.stopId.uuidString))
                     markOverallStoryManual(dayId: item.dayId, stopId: item.stopId)
                     syncOverallStoryToCloudIfNeeded(dayId: item.dayId, stopId: item.stopId)
                     triggerSentimentAnalysis(dayId: item.dayId, stopId: item.stopId)
                 }
                 for photoId in changedPhotoIds {
+                    AppAnalytics.track(.blogPlacePhotoStory(blogId: blogId.uuidString, placeId: item.stopId.uuidString, photoId: photoId.uuidString))
                     markPhotoCaptionManual(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
                     syncStoryToCloudIfNeeded(stopId: item.stopId, isPlaceNote: false, photoId: photoId)
                     triggerPhotoSentimentAnalysis(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
@@ -3774,6 +3793,7 @@ Your blog remains private unless you choose to share it.
                 )
             } : nil,
             onEnhanceApplied: LocalLLMStoryCaptionGenerator.isCapable ? {
+                AppAnalytics.track(.blogStoryAIStory(blogId: blogId.uuidString))
                 markOverallStoryAI(dayId: item.dayId, stopId: item.stopId)
             } : nil,
             onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
@@ -4097,6 +4117,7 @@ Your blog remains private unless you choose to share it.
     // MARK: - Narrative Generation
 
     private func triggerPlaceNarrative(dayId: UUID, stopId: UUID, dayDate: Date) {
+        AppAnalytics.track(.blogPlaceStory(blogId: blogId.uuidString, placeId: stopId.uuidString))
         generatingNarrativeStopId = stopId
         Task {
             guard let currentStop = placeStop(dayId: dayId, stopId: stopId) else {
@@ -4118,6 +4139,7 @@ Your blog remains private unless you choose to share it.
     }
 
     private func triggerDayNarrative(day: RecapBlogDay) {
+        AppAnalytics.track(.blogDayStory(blogId: blogId.uuidString, dayIndex: draft.days.firstIndex(where: { $0.id == day.id }) ?? 0))
         generatingNarrativeDayId = day.id
         Task {
             guard let currentDay = draft.days.first(where: { $0.id == day.id }) else {
@@ -4229,6 +4251,7 @@ Your blog remains private unless you choose to share it.
     }
 
     private func triggerTripNarrative() {
+        AppAnalytics.track(.blogStory(blogId: blogId.uuidString))
         isGeneratingTripNarrative = true
         tripNarrativeExpanded = false
         Task {
@@ -4966,6 +4989,7 @@ Your blog remains private unless you choose to share it.
     }
 
     private func exportBlogToPDF(options: PDFExportOptions = PDFExportOptions()) {
+        AppAnalytics.track(.blogSharePDF(blogId: blogId.uuidString))
         isExportingPDF = true
         Task {
             do {
@@ -5373,8 +5397,9 @@ Your blog remains private unless you choose to share it.
     /// Splits a blog that has already been saved/created (Edit Mode).
     private func splitSavedBlog(afterDayIndex: Int) {
         // We just call the store's split functionality on the current blogId and afterDayIndex.
+        AppAnalytics.track(.blogSplit(blogId: blogId.uuidString))
         createdRecapStore.splitBlog(blogId: blogId, afterDayIndex: afterDayIndex)
-        
+
         // Since the current view is for `blogId`, which is now Part 1, we should refresh `draft`
         if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
             draft = updated
