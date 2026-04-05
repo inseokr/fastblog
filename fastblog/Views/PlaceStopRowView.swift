@@ -332,7 +332,7 @@ struct PlaceStopRowView: View {
                                     }
                                 }
                                 .buttonStyle(.plain)
-                                .accessibilityLabel("Search \(stop.placeTitle) on Google")
+                                .accessibilityLabel("Open \(stop.placeTitle) in browser")
                             } else {
                                 Button {
                                     onNavigate?()

@@ -476,28 +476,17 @@ struct CountryBlogRowView: View {
                 .frame(height: 250)
                 .frame(maxWidth: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(alignment: .center) {
+                .overlay(alignment: .bottomLeading) {
                     if isDraft {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.black.opacity(0.45))
-                            VStack(spacing: 6) {
-                                Image(systemName: "pencil.line")
-                                    .font(.system(size: 22, weight: .semibold))
-                                    .foregroundColor(.white)
-                                Text("DRAFT")
-                                    .font(.system(size: 15, weight: .heavy))
-                                    .foregroundColor(.white)
-                                    .tracking(2)
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 12)
-                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.white.opacity(0.25), lineWidth: 1)
-                            )
-                        }
+                        Text("Draft")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(.thinMaterial, in: Capsule())
+                            .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
+                            .padding(8)
                     }
                 }
 
@@ -512,10 +501,12 @@ struct CountryBlogRowView: View {
                     Spacer()
 
                     Menu {
-                        Button {
-                            onShareBlog()
-                        } label: {
-                            Label("Share Blog", systemImage: "square.and.arrow.up")
+                        if !isDraft {
+                            Button {
+                                onShareBlog()
+                            } label: {
+                                Label("Share Blog", systemImage: "square.and.arrow.up")
+                            }
                         }
 
                         Button {
@@ -535,12 +526,9 @@ struct CountryBlogRowView: View {
                         Button(role: .destructive) {
                             onDeleteBlog()
                         } label: {
-                            Label {
-                                Text("Delete Blog")
-                            } icon: {
-                                Image(systemName: "trash")
-                            }
-                            .foregroundStyle(.red)
+                            Label("Delete Blog", systemImage: "trash")
+                                .symbolRenderingMode(.monochrome)
+                                .foregroundStyle(Color.red)
                         }
                     } label: {
                         Image(systemName: "ellipsis")

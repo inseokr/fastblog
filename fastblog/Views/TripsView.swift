@@ -3646,7 +3646,7 @@ private struct InAppPhotoGalleryView: View {
                     isSelectMode = false
                 }
             } message: {
-                Text("\(selectedIds.count) photo\(selectedIds.count == 1 ? "" : "s") will be deleted from this gallery. They will not be removed from your device photo library or any blog.")
+                Text(selectedIds.count == 1 ? "This photo will be removed from Bloggo." : "These photos will be removed from Bloggo.")
             }
         }
         .interactiveDismissDisabled(isSelectMode)

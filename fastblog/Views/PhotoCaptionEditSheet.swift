@@ -43,144 +43,146 @@ struct PhotoCaptionEditSheet: View {
         editedText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Hero image for the editor; tappable when `onRequestFullPhotoView` is set.
-    private var mainEditorPhotoBase: some View {
-        RecapPhotoThumbnail(
-            photo: photo,
-            cornerRadius: 12,
-            showIcon: false,
-            targetSize: CGSize(width: 600, height: 400)
-        )
-        .frame(maxWidth: .infinity)
-        .frame(minHeight: 160, maxHeight: .infinity)
-        .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
     var body: some View {
         // No nested NavigationStack: RecapBlogPageView already lives in NavigationStack and hides the nav bar
         // while this overlay is up — inner `.toolbar` items can fail to show or receive taps.
-        VStack(spacing: 0) {
-            // Photo fills available space — before keyboard: full modal; after keyboard: shrinks naturally
-            Group {
-                if let openFull = onRequestFullPhotoView {
-                    Button {
-                        caption = editedText
-                        isFocused = false
-                        openFull()
-                    } label: {
-                        mainEditorPhotoBase
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("View full photo")
-                } else {
-                    mainEditorPhotoBase
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 14)
-
-            // Place title as context
-            VStack(alignment: .leading, spacing: 4) {
-                Text(placeTitle)
-                    .font(.title3.weight(.semibold))
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
-                if let placeSubtitle, !placeSubtitle.isEmpty {
-                    Text(placeSubtitle)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 16)
-
-            // Text editor
-            ZStack(alignment: .topLeading) {
-                TextEditor(text: $editedText)
-                    .focused($isFocused)
-                    .font(.body)
-                    .foregroundColor(.primary)
-                    .scrollContentBackground(.hidden)
-                    .padding(.horizontal, editorTextHorizontalPadding)
-                    .padding(.vertical, 14)
-                    .frame(minHeight: 140)
-                    .background(Color(uiColor: .secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .padding(.horizontal, 20)
-
-                if editedText.isEmpty {
-                    Text("Describe this moment...")
-                        .font(.body)
-                        .foregroundColor(Color(uiColor: .placeholderText))
-                        .padding(.leading, placeholderLeadingInset)
-                        .padding(.trailing, placeholderTrailingInset)
-                        .padding(.top, 22)
-                        .allowsHitTesting(false)
-                }
-            }
+        ZStack {
+            // Full-screen dimmed photo background
+            RecapPhotoThumbnail(
+                photo: photo,
+                cornerRadius: 0,
+                showIcon: false,
+                targetSize: CGSize(width: 600, height: 900)
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
-            .contentShape(Rectangle())
+            .ignoresSafeArea()
+            .overlay(Color.black.opacity(0.52).ignoresSafeArea())
+            .allowsHitTesting(onRequestFullPhotoView != nil)
+            .onTapGesture {
+                guard let openFull = onRequestFullPhotoView else { return }
+                caption = editedText
+                isFocused = false
+                openFull()
+            }
 
-            // Action bar
-            if !trimmedEditedText.isEmpty {
-                HStack(spacing: 16) {
-                    Button(role: .destructive) {
-                        withAnimation(.easeInOut(duration: 0.18)) {
-                            editedText = ""
-                            originalDraft = nil
-                        }
-                    } label: {
-                        Label("Clear", systemImage: "trash")
+            // Overlaid content (no opaque background)
+            VStack(spacing: 0) {
+                Spacer()
+
+                // Place title as context
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(placeTitle)
+                        .font(.title3.weight(.semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+                    if let placeSubtitle, !placeSubtitle.isEmpty {
+                        Text(placeSubtitle)
                             .font(.subheadline)
-                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.75))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
+
+                // Text editor
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: $editedText)
+                        .focused($isFocused)
+                        .font(.body)
+                        .foregroundColor(.primary)
+                        .scrollContentBackground(.hidden)
+                        .padding(.horizontal, editorTextHorizontalPadding)
+                        .padding(.vertical, 14)
+                        .frame(minHeight: 140)
+                        .background(Color(uiColor: .secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .padding(.horizontal, 20)
+
+                    if editedText.isEmpty {
+                        Text("Describe this moment...")
+                            .font(.body)
+                            .foregroundColor(Color(uiColor: .placeholderText))
+                            .padding(.leading, placeholderLeadingInset)
+                            .padding(.trailing, placeholderTrailingInset)
+                            .padding(.top, 22)
+                            .allowsHitTesting(false)
                     }
 
-                    Spacer()
+                    // Scroll indicator — signals the caption area is scrollable
+                    if !editedText.isEmpty {
+                        Capsule()
+                            .fill(Color(uiColor: .placeholderText).opacity(0.45))
+                            .frame(width: 3, height: 36)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                            .padding(.top, 20)
+                            .padding(.trailing, 26)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .clipped()
+                .contentShape(Rectangle())
 
-                    if let draft = originalDraft {
-                        Button {
+                // Action bar
+                if !trimmedEditedText.isEmpty {
+                    HStack(spacing: 16) {
+                        Button(role: .destructive) {
                             withAnimation(.easeInOut(duration: 0.18)) {
-                                editedText = draft
+                                editedText = ""
                                 originalDraft = nil
                             }
                         } label: {
-                            Label("", systemImage: "arrow.uturn.backward")
+                            Label("Clear", systemImage: "trash")
                                 .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .fontWeight(.medium)
                         }
-                    }
 
-                    if let translate = onTranslate {
-                        Button {
-                            runTranslate(translate)
-                        } label: {
-                            if isTranslating {
-                                HStack(spacing: 4) {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle())
-                                        .scaleEffect(0.75)
-                                    Text("Translating…")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
+                        Spacer()
+
+                        if let draft = originalDraft {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.18)) {
+                                    editedText = draft
+                                    originalDraft = nil
                                 }
-                            } else {
-                                Image(systemName: "translate")
+                            } label: {
+                                Label("", systemImage: "arrow.uturn.backward")
                                     .font(.subheadline)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(.white.opacity(0.7))
                             }
                         }
-                        .disabled(isEnhancing || isTranslating)
+
+                        if let translate = onTranslate {
+                            Button {
+                                runTranslate(translate)
+                            } label: {
+                                if isTranslating {
+                                    HStack(spacing: 4) {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle())
+                                            .scaleEffect(0.75)
+                                        Text("Translating…")
+                                            .font(.subheadline)
+                                            .foregroundColor(.white.opacity(0.7))
+                                    }
+                                } else {
+                                    Image(systemName: "translate")
+                                        .font(.subheadline)
+                                        .foregroundColor(.white.opacity(0.7))
+                                }
+                            }
+                            .disabled(isEnhancing || isTranslating)
+                        }
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(uiColor: .systemBackground).ignoresSafeArea())
+        .background(Color.black.ignoresSafeArea())
         .safeAreaInset(edge: .top, spacing: 0) {
             HStack(alignment: .center) {
                 Button("Cancel") {
@@ -189,7 +191,7 @@ struct PhotoCaptionEditSheet: View {
                 }
                 .font(.body)
                 .fontWeight(.semibold)
-                .foregroundStyle(Color.primary)
+                .foregroundStyle(Color.white)
                 .buttonStyle(.plain)
 
                 Spacer()
@@ -206,7 +208,7 @@ struct PhotoCaptionEditSheet: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
-            .background(Color(uiColor: .systemBackground))
+            .background(Color.clear)
         }
         .preferredColorScheme(.dark)
         .onAppear {
