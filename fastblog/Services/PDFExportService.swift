@@ -1,6 +1,5 @@
 import UIKit
 import MapKit
-import Photos
 
 // MARK: - PDF Export Options
 
@@ -731,12 +730,17 @@ class PDFExportService {
         }
 
         let allIncluded = draft.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded)
-        let coverID = draft.selectedCoverPhotoIdentifier ?? allIncluded.first?.localIdentifier
+        func normalizedLocalID(_ s: String?) -> String? {
+            guard let t = s?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
+            return t
+        }
+        let coverID = normalizedLocalID(draft.selectedCoverPhotoIdentifier)
+            ?? allIncluded.compactMap { normalizedLocalID($0.localIdentifier) }.first
 
         var idsToFetch = Set<String>()
         if let c = coverID { idsToFetch.insert(c) }
         for p in allIncluded {
-            if let id = p.localIdentifier { idsToFetch.insert(id) }
+            if let id = normalizedLocalID(p.localIdentifier) { idsToFetch.insert(id) }
         }
         guard !idsToFetch.isEmpty else { return result }
 
@@ -749,7 +753,7 @@ class PDFExportService {
             let image = AppCapturePhotoService.shared.loadImage(identifier: identifier)
             guard let image else { continue }
             if identifier == coverID { result.coverImage = image }
-            for p in allIncluded where p.localIdentifier == identifier {
+            for p in allIncluded where normalizedLocalID(p.localIdentifier) == identifier {
                 result.photos[p.id] = image
             }
         }
@@ -761,40 +765,25 @@ class PDFExportService {
             return result
         }
 
-        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: Array(phAssetIds), options: nil)
-        let manager = PHImageManager.default()
-        let opts = PHImageRequestOptions()
-        opts.isSynchronous = false
-        opts.deliveryMode = .highQualityFormat
-        opts.isNetworkAccessAllowed = true
-        opts.resizeMode = .exact
-
-        var phAssets: [PHAsset] = []
-        fetchResult.enumerateObjects { asset, _, _ in phAssets.append(asset) }
-
+        // Use the same loading path as the UI (`ImageLoader`): retries when the library is briefly
+        // empty, and accepts the image callback Photos actually delivers. The previous PDF-only
+        // `PHImageManager` path used `.exact` resize and ignored degraded previews, which could
+        // yield no image (or never resume) while thumbnails still appeared in the editor.
         await withTaskGroup(of: (String, UIImage?).self) { group in
-            for asset in phAssets {
+            for localId in phAssetIds {
                 group.addTask {
-                    await withCheckedContinuation { cont in
-                        manager.requestImage(
-                            for: asset,
-                            targetSize: CGSize(width: 1200, height: 1200),
-                            contentMode: .aspectFit,
-                            options: opts
-                        ) { image, info in
-                            let isDegraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
-                            if !isDegraded {
-                                cont.resume(returning: (asset.localIdentifier, image))
-                            }
-                        }
-                    }
+                    let image = await ImageLoader.shared.loadImage(
+                        assetIdentifier: localId,
+                        targetSize: CGSize(width: 1200, height: 1200)
+                    )
+                    return (localId, image)
                 }
             }
 
             for await (id, image) in group {
                 guard let image else { continue }
                 if id == coverID { result.coverImage = image }
-                for p in allIncluded where p.localIdentifier == id {
+                for p in allIncluded where normalizedLocalID(p.localIdentifier) == id {
                     result.photos[p.id] = image
                 }
             }
@@ -804,8 +793,8 @@ class PDFExportService {
             result.coverImage = result.photos[first.id]
         }
 
-        // Fetch cloud photos for any included photos that have no local asset.
-        let cloudPhotos = allIncluded.filter { $0.localIdentifier == nil && $0.cloudURL != nil }
+        // Fetch cloud photos for any included photos that have no usable on-device asset id.
+        let cloudPhotos = allIncluded.filter { normalizedLocalID($0.localIdentifier) == nil && $0.cloudURL != nil }
         if !cloudPhotos.isEmpty {
             await withTaskGroup(of: (UUID, UIImage?).self) { group in
                 for photo in cloudPhotos {

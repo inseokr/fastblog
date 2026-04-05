@@ -1,18 +1,17 @@
 // fastblog/Services/StoryBookBuilder.swift
 import UIKit
-import Photos
 
 enum StoryBookBuilder {
 
     /// Matches PDF export / recap blog hero: high-res cover decode (see `PDFExportService.preloadAssets`).
     private static let coverImagePixelSize = CGSize(width: 1200, height: 1200)
 
-    static func build(from detail: RecapBlogDetail) async throws -> StoryBookContent {
+    static func build(from detail: RecapBlogDetail) async -> StoryBookContent {
         let coverPhoto = await loadCoverPhoto(identifier: detail.selectedCoverPhotoIdentifier)
         let dateRange = dateRangeString(from: detail.days)
         let cover = CoverContent(title: detail.title, subtitle: dateRange, coverPhoto: coverPhoto)
         let overview = buildOverview(detail: detail, dateRange: dateRange, coverPhoto: coverPhoto)
-        let days = try await buildDays(detail)
+        let days = await buildDays(detail)
         return StoryBookContent(cover: cover, overview: overview, days: days)
     }
 
@@ -41,7 +40,7 @@ enum StoryBookBuilder {
     }
 
     // MARK: - Days
-    private static func buildDays(_ detail: RecapBlogDetail) async throws -> [StoryDay] {
+    private static func buildDays(_ detail: RecapBlogDetail) async -> [StoryDay] {
         var storyDays: [StoryDay] = []
         for (idx, day) in detail.days.enumerated() {
             let screenSize = await MainActor.run { UIScreen.main.bounds.size }
@@ -54,7 +53,7 @@ enum StoryBookBuilder {
                 )
             }
 
-            let places = buildPlaces(from: day.placeStops)
+            let places = await buildPlaces(from: day.placeStops, targetPixelSize: screenSize)
 
             storyDays.append(StoryDay(
                 dayNumber: idx + 1,
@@ -68,28 +67,40 @@ enum StoryBookBuilder {
     }
 
     // MARK: - Places
-    private static func buildPlaces(from stops: [PlaceStop]) -> [PlaceContent] {
-        stops.enumerated().map { idx, stop in
+    private static func buildPlaces(from stops: [PlaceStop], targetPixelSize: CGSize) async -> [PlaceContent] {
+        var out: [PlaceContent] = []
+        out.reserveCapacity(stops.count)
+        for (idx, stop) in stops.enumerated() {
             let caption = stop.overallStory ?? stop.noteText
             let captionIsLong = (caption?.count ?? 0) > 80
-            let photos = stop.photos
-                .filter { $0.isIncluded }
-                .compactMap { photo -> PhotoContent? in
-                    guard let identifier = photo.localIdentifier else { return nil }
-                    guard let image = loadAndDownsample(localIdentifier: identifier) else { return nil }
-                    let photoCaption = photo.caption
-                    return PhotoContent(
-                        image: image,
-                        caption: photoCaption,
-                        captionIsLong: (photoCaption?.count ?? 0) > 80
-                    )
+            let included = stop.photos.filter(\.isIncluded)
+            var idToImage: [UUID: UIImage] = [:]
+            await withTaskGroup(of: (UUID, UIImage?).self) { group in
+                for photo in included {
+                    group.addTask {
+                        let img = await loadImageForRecapPhoto(photo, targetPixelSize: targetPixelSize)
+                        return (photo.id, img)
+                    }
                 }
+                for await (photoId, image) in group {
+                    if let image { idToImage[photoId] = image }
+                }
+            }
+            let photos: [PhotoContent] = included.compactMap { photo in
+                guard let image = idToImage[photo.id] else { return nil }
+                let photoCaption = photo.caption
+                return PhotoContent(
+                    image: image,
+                    caption: photoCaption,
+                    captionIsLong: (photoCaption?.count ?? 0) > 80
+                )
+            }
             let markerType: PlaceMarkerType = {
                 if idx == 0 { return .start }
                 if idx == stops.count - 1 { return .end }
                 return .middle
             }()
-            return PlaceContent(
+            out.append(PlaceContent(
                 title: stop.placeTitle,
                 subtitle: stop.placeSubtitle,
                 markerNumber: idx + 1,
@@ -98,55 +109,42 @@ enum StoryBookBuilder {
                 caption: caption,
                 captionIsLong: captionIsLong,
                 photos: photos
-            )
+            ))
         }
+        return out
     }
 
     // MARK: - Helpers
-    private static func loadCoverPhoto(identifier: String?) async -> UIImage? {
-        guard let identifier else { return nil }
-        if identifier.hasPrefix(AppCapturePhotoService.prefix) {
-            return AppCapturePhotoService.shared.loadImage(identifier: identifier)
+    private static func normalizedLocalID(_ s: String?) -> String? {
+        guard let t = s?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
+        return t
+    }
+
+    /// Same resolution order as `PDFExportService.preloadAssets`: app capture → Photo Library (via `ImageLoader`) → signed cloud URL.
+    private static func loadImageForRecapPhoto(_ photo: RecapPhoto, targetPixelSize: CGSize) async -> UIImage? {
+        if let lid = normalizedLocalID(photo.localIdentifier) {
+            if lid.hasPrefix(AppCapturePhotoService.prefix) {
+                return AppCapturePhotoService.shared.loadImage(identifier: lid)
+            }
+            return await ImageLoader.shared.loadImage(assetIdentifier: lid, targetSize: targetPixelSize)
         }
-        return await Task.detached {
-            loadCoverPhotoFromPhotoLibrarySync(localIdentifier: identifier)
-        }.value
+        guard let permanentURL = photo.cloudURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !permanentURL.isEmpty else { return nil }
+        do {
+            let signedURL = try await APIManager.shared.fetchSignedPhotoURL(permanentURL: permanentURL)
+            let (data, _) = try await URLSession.shared.data(from: signedURL)
+            return UIImage(data: data)
+        } catch {
+            return nil
+        }
     }
 
-    /// Synchronous Photos load on a background thread (matches `PDFExportService` cover fetch).
-    private static func loadCoverPhotoFromPhotoLibrarySync(localIdentifier: String) -> UIImage? {
-        let result = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
-        guard let asset = result.firstObject else { return nil }
-        let reqOptions = PHImageRequestOptions()
-        reqOptions.isSynchronous = true
-        reqOptions.deliveryMode = .highQualityFormat
-        reqOptions.resizeMode = .exact
-        reqOptions.isNetworkAccessAllowed = true
-        var image: UIImage?
-        PHImageManager.default().requestImage(
-            for: asset,
-            targetSize: coverImagePixelSize,
-            contentMode: .aspectFit,
-            options: reqOptions
-        ) { img, _ in image = img }
-        return image
-    }
-
-    private static func loadAndDownsample(localIdentifier: String) -> UIImage? {
-        let result = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
-        guard let asset = result.firstObject else { return nil }
-        let targetSize = UIScreen.main.bounds.size
-        let reqOptions = PHImageRequestOptions()
-        reqOptions.isSynchronous = true
-        reqOptions.deliveryMode = .highQualityFormat
-        var image: UIImage?
-        PHImageManager.default().requestImage(
-            for: asset,
-            targetSize: targetSize,
-            contentMode: .aspectFit,
-            options: reqOptions
-        ) { img, _ in image = img }
-        return image
+    private static func loadCoverPhoto(identifier: String?) async -> UIImage? {
+        guard let lid = normalizedLocalID(identifier) else { return nil }
+        if lid.hasPrefix(AppCapturePhotoService.prefix) {
+            return AppCapturePhotoService.shared.loadImage(identifier: lid)
+        }
+        return await ImageLoader.shared.loadImage(assetIdentifier: lid, targetSize: coverImagePixelSize)
     }
 
     private static func formattedTimestamp(_ digitized: String?) -> String? {

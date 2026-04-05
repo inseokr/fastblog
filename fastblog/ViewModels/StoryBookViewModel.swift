@@ -16,15 +16,10 @@ final class StoryBookViewModel: ObservableObject {
         buildTask?.cancel()
         state = .loading
         buildTask = Task {
-            do {
-                let content = try await StoryBookBuilder.build(from: detail)
-                guard !Task.isCancelled else { return }
-                let pages = StoryPageLayout.buildPages(from: content, fontTheme: fontTheme)
-                state = .ready(pages)
-            } catch {
-                guard !Task.isCancelled else { return }
-                state = .failed(error)
-            }
+            let content = await StoryBookBuilder.build(from: detail)
+            guard !Task.isCancelled else { return }
+            let pages = StoryPageLayout.buildPages(from: content, fontTheme: fontTheme)
+            state = .ready(pages)
         }
     }
 
