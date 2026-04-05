@@ -81,7 +81,11 @@ struct AppCaptureDetailView: View {
                 photoPageView
                 if showControls && !isEditingCaption {
                     topBar
-                    bottomOverlay
+                    VStack {
+                        Spacer()
+                        galleryBottomChrome
+                    }
+                    .ignoresSafeArea(edges: .bottom)
                 }
                 if let downloadToast {
                     VStack {
@@ -92,7 +96,7 @@ struct AppCaptureDetailView: View {
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
                             .background(Capsule().fill(.black.opacity(0.7)))
-                            .padding(.bottom, 100)
+                            .padding(.bottom, 32)
                     }
                     .transition(.opacity)
                     .allowsHitTesting(false)
@@ -198,88 +202,65 @@ struct AppCaptureDetailView: View {
 
                     Spacer()
 
-                    // Right: Vibe toggle (when available) + kebab/ellipsis menu
-                    HStack(spacing: 10) {
-                        if currentItem?.localVibeURL != nil {
-                            let isPlaying = isVibeEnabled && vibePlayer.isPlaying
-                            Button {
-                                isVibeEnabled.toggle()
-                                if isVibeEnabled, let url = currentItem?.localVibeURL {
-                                    vibePlayer.play(url: url)
-                                } else {
-                                    vibePlayer.stop()
-                                }
-                            } label: {
-                                ZStack {
-                                    Circle()
-                                        .fill(
-                                            isPlaying
-                                                ? LinearGradient(
-                                                    colors: [.cyan, .green],
-                                                    startPoint: .top,
-                                                    endPoint: .bottom
-                                                )
-                                                : LinearGradient(
-                                                    colors: [Color.white.opacity(0.08)],
-                                                    startPoint: .top,
-                                                    endPoint: .bottom
-                                                )
-                                        )
-                                    AtmosphericWaveformView(isActive: isVibeEnabled)
-                                }
-                                .frame(width: 36, height: 36)
-                                .overlay(
-                                    Circle()
-                                        .stroke(
-                                            isPlaying
-                                                ? LinearGradient(
-                                                    colors: [.cyan, .green],
-                                                    startPoint: .top,
-                                                    endPoint: .bottom
-                                                )
-                                                : LinearGradient(
-                                                    colors: [Color.white.opacity(0.15)],
-                                                    startPoint: .top,
-                                                    endPoint: .bottom
-                                                ),
-                                            lineWidth: isPlaying ? 2 : 1
-                                        )
-                                )
-                                .shadow(color: isPlaying ? .cyan.opacity(0.55) : .clear, radius: isPlaying ? 10 : 0)
-                            }
-                            .accessibilityLabel(
-                                isPlaying ? "Vibe playing" : (isVibeEnabled ? "Vibe enabled" : "Vibe disabled")
-                            )
-                            // Slight extra clarity: show a tiny badge when actually playing.
-                            .overlay(alignment: .bottomTrailing) {
-                                if isPlaying {
-                                    Circle()
-                                        .fill(Color.white)
-                                        .frame(width: 7, height: 7)
-                                        .overlay(Circle().stroke(Color.cyan.opacity(0.9), lineWidth: 1))
-                                        .offset(x: -2, y: -2)
-                                }
-                            }
-                        }
-
-                        Menu {
-                            Button {
-                                downloadCurrentPhotoToPhotoLibrary()
-                            } label: {
-                                Label("Download Photo", systemImage: "square.and.arrow.down")
-                            }
-                            Button(role: .destructive) {
-                                showDeleteConfirm = true
-                            } label: {
-                                Label("Delete Photo", systemImage: "trash")
+                    // Right: Vibe toggle when available (download/delete live in bottom bar)
+                    if currentItem?.localVibeURL != nil {
+                        let isPlaying = isVibeEnabled && vibePlayer.isPlaying
+                        Button {
+                            isVibeEnabled.toggle()
+                            if isVibeEnabled, let url = currentItem?.localVibeURL {
+                                vibePlayer.play(url: url)
+                            } else {
+                                vibePlayer.stop()
                             }
                         } label: {
-                            Image(systemName: "ellipsis")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundColor(.white)
-                                .frame(width: 36, height: 36)
-                                .background(Color.black.opacity(0.5))
-                                .clipShape(Circle())
+                            ZStack {
+                                Circle()
+                                    .fill(
+                                        isPlaying
+                                            ? LinearGradient(
+                                                colors: [.cyan, .green],
+                                                startPoint: .top,
+                                                endPoint: .bottom
+                                            )
+                                            : LinearGradient(
+                                                colors: [Color.white.opacity(0.08)],
+                                                startPoint: .top,
+                                                endPoint: .bottom
+                                            )
+                                    )
+                                AtmosphericWaveformView(isActive: isVibeEnabled)
+                            }
+                            .frame(width: 36, height: 36)
+                            .overlay(
+                                Circle()
+                                    .stroke(
+                                        isPlaying
+                                            ? LinearGradient(
+                                                colors: [.cyan, .green],
+                                                startPoint: .top,
+                                                endPoint: .bottom
+                                            )
+                                            : LinearGradient(
+                                                colors: [Color.white.opacity(0.15)],
+                                                startPoint: .top,
+                                                endPoint: .bottom
+                                            ),
+                                        lineWidth: isPlaying ? 2 : 1
+                                    )
+                            )
+                            .shadow(color: isPlaying ? .cyan.opacity(0.55) : .clear, radius: isPlaying ? 10 : 0)
+                        }
+                        .accessibilityLabel(
+                            isPlaying ? "Vibe playing" : (isVibeEnabled ? "Vibe enabled" : "Vibe disabled")
+                        )
+                        .overlay(alignment: .bottomTrailing) {
+                            if isPlaying {
+                                Circle()
+                                    .fill(Color.white)
+                                    .frame(width: 7, height: 7)
+                                    .overlay(Circle().stroke(Color.cyan.opacity(0.9), lineWidth: 1))
+                                    .offset(x: -2, y: -2)
+                            }
                         }
                     }
                 }
@@ -297,113 +278,136 @@ struct AppCaptureDetailView: View {
         }
     }
 
-    // MARK: - Bottom overlay (place name + timestamp + caption preview)
-    private var bottomOverlay: some View {
-        VStack {
-            Spacer()
-            VStack(alignment: .leading, spacing: 8) {
-                if let item = currentItem {
-                    let placeTitle = resolvedPlaceTitle.isEmpty ? "Unknown Place" : resolvedPlaceTitle
+    // MARK: - Bottom chrome (flush under photo via safeAreaInset): metadata + square actions
+    private var galleryBottomChrome: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let item = currentItem {
+                let placeTitle = resolvedPlaceTitle.isEmpty ? "Unknown Place" : resolvedPlaceTitle
 
-                    // Place title + timestamp (AI wand only when caption is still empty)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(placeTitle)
-                            .font(.title3)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .shadow(color: .black.opacity(0.4), radius: 2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(placeTitle)
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .shadow(color: .black.opacity(0.4), radius: 2)
 
-                        HStack(alignment: .center, spacing: 12) {
-                            Text(Self.dateFormatter.string(from: item.timestamp))
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(.white.opacity(0.8))
-                                .shadow(color: .black.opacity(0.3), radius: 1)
+                    HStack(alignment: .center, spacing: 12) {
+                        Text(Self.dateFormatter.string(from: item.timestamp))
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.8))
+                            .shadow(color: .black.opacity(0.3), radius: 1)
 
-                            Spacer()
+                        Spacer(minLength: 0)
 
-                            if supportsFullScreenWritingAssist,
-                               (item.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                               let cgImage = (item.image ?? AppCapturePhotoService.shared.loadImage(captureId: item.id))?.cgImage {
-                                Button {
-                                    isGeneratingCaption = true
-                                    Task {
-                                        let text = await StoryCaptionService.shared.generateCaptionForImage(cgImage: cgImage)
-                                        await MainActor.run {
-                                            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                                            let newCaption: String? = trimmed.isEmpty ? nil : trimmed
-                                            try? AppCapturePhotoService.shared.updateCaption(captureId: item.id, caption: newCaption)
-                                            CreatedRecapBlogStore.shared.syncPhotoCaptionFromAppCapture(captureId: item.id, caption: newCaption)
-                                            items[currentIndex].caption = newCaption
-                                            onCaptionSaved(item.id, newCaption)
-                                            isGeneratingCaption = false
-                                        }
-                                    }
-                                } label: {
-                                    if isGeneratingCaption {
-                                        ProgressView()
-                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                            .scaleEffect(0.8)
-                                            .frame(width: 20, height: 20)
-                                    } else {
-                                        Image(systemName: "wand.and.stars")
-                                            .font(.caption)
-                                            .foregroundStyle(
-                                                LinearGradient(
-                                                    colors: [
-                                                        Color(red: 0.8, green: 0.5, blue: 1.0),
-                                                        Color(red: 0.4, green: 0.7, blue: 1.0)
-                                                    ],
-                                                    startPoint: .topLeading,
-                                                    endPoint: .bottomTrailing
-                                                )
-                                            )
+                        if supportsFullScreenWritingAssist,
+                           (item.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                           let cgImage = (item.image ?? AppCapturePhotoService.shared.loadImage(captureId: item.id))?.cgImage {
+                            Button {
+                                isGeneratingCaption = true
+                                Task {
+                                    let text = await StoryCaptionService.shared.generateCaptionForImage(cgImage: cgImage)
+                                    await MainActor.run {
+                                        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        let newCaption: String? = trimmed.isEmpty ? nil : trimmed
+                                        try? AppCapturePhotoService.shared.updateCaption(captureId: item.id, caption: newCaption)
+                                        CreatedRecapBlogStore.shared.syncPhotoCaptionFromAppCapture(captureId: item.id, caption: newCaption)
+                                        items[currentIndex].caption = newCaption
+                                        onCaptionSaved(item.id, newCaption)
+                                        isGeneratingCaption = false
                                     }
                                 }
-                                .disabled(isGeneratingCaption)
+                            } label: {
+                                if isGeneratingCaption {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                        .scaleEffect(0.8)
+                                        .frame(width: 20, height: 20)
+                                } else {
+                                    Image(systemName: "wand.and.stars")
+                                        .font(.caption)
+                                        .foregroundStyle(
+                                            LinearGradient(
+                                                colors: [
+                                                    Color(red: 0.8, green: 0.5, blue: 1.0),
+                                                    Color(red: 0.4, green: 0.7, blue: 1.0)
+                                                ],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                }
                             }
-                        }
-                    }
-
-                    // Caption (tap to edit) — matches the style of the Place pull-up editing panel.
-                    if let cap = item.caption, !cap.isEmpty {
-                        Text(cap)
-                            .font(.body)
-                            .foregroundColor(.white)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                            .onTapGesture {
-                                captionDraft = cap
-                                withAnimation { isEditingCaption = true }
-                                DispatchQueue.main.async { captionFocused = true }
-                            }
-                    } else {
-                        Button {
-                            captionDraft = ""
-                            withAnimation { isEditingCaption = true }
-                            DispatchQueue.main.async { captionFocused = true }
-                        } label: {
-                            Text("Leave a story for this photo...")
-                                .font(.body)
-                                .foregroundColor(.white.opacity(0.45))
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
+                            .disabled(isGeneratingCaption)
                         }
                     }
                 }
+
+                if let cap = item.caption, !cap.isEmpty {
+                    Text(cap)
+                        .font(.body)
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .onTapGesture {
+                            captionDraft = cap
+                            withAnimation { isEditingCaption = true }
+                            DispatchQueue.main.async { captionFocused = true }
+                        }
+                } else {
+                    Button {
+                        captionDraft = ""
+                        withAnimation { isEditingCaption = true }
+                        DispatchQueue.main.async { captionFocused = true }
+                    } label: {
+                        Text("Leave a story for this photo...")
+                            .font(.body)
+                            .foregroundColor(.white.opacity(0.45))
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
+
+                HStack {
+                    Button {
+                        downloadCurrentPhotoToPhotoLibrary()
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 56, height: 56)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .accessibilityLabel("Download Photo")
+
+                    Spacer()
+
+                    Button {
+                        showDeleteConfirm = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 56, height: 56)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .accessibilityLabel("Delete Photo")
+                }
+                .padding(.top, 6)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-            .background(
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.7)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
         }
-        .ignoresSafeArea(edges: .bottom)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.top, 60)
+        .padding(.bottom, 40)
+        .background(
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.55), .black.opacity(0.88)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: .bottom)
+        )
     }
 
     // MARK: - Caption editor (anchored above keyboard via safeAreaInset)

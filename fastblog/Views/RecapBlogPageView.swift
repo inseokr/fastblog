@@ -67,6 +67,8 @@ struct RecapBlogPageView: View {
     let forcePresentShareYourBlogSheet: Bool
     /// When set (e.g. when presented as overlay), called instead of environment dismiss to close the blog.
     var onRequestDismiss: (() -> Void)? = nil
+    /// When true (e.g. opening a day from Split Blog manage flow), skip the photo-grouping tip on appear — day picker stays visible so users can browse all days.
+    var suppressPhotoGroupingTipOnAppear: Bool = false
 
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @EnvironmentObject private var authService: AuthService
@@ -302,7 +304,7 @@ struct RecapBlogPageView: View {
         }
     }
 
-    init(blogId: UUID, initialTrip: TripDraft?, initialDayIndex: Int? = nil, initialScrollToStopId: UUID? = nil, forceEditMode: Bool = false, forcePresentShareYourBlogSheet: Bool = false, onRequestDismiss: (() -> Void)? = nil) {
+    init(blogId: UUID, initialTrip: TripDraft?, initialDayIndex: Int? = nil, initialScrollToStopId: UUID? = nil, forceEditMode: Bool = false, forcePresentShareYourBlogSheet: Bool = false, onRequestDismiss: (() -> Void)? = nil, suppressPhotoGroupingTipOnAppear: Bool = false) {
         self.blogId = blogId
         self.initialTrip = initialTrip
         self.initialDayIndex = initialDayIndex
@@ -310,6 +312,7 @@ struct RecapBlogPageView: View {
         self.forceEditMode = forceEditMode
         self.forcePresentShareYourBlogSheet = forcePresentShareYourBlogSheet
         self.onRequestDismiss = onRequestDismiss
+        self.suppressPhotoGroupingTipOnAppear = suppressPhotoGroupingTipOnAppear
         _draft = State(initialValue: RecapBlogDetail(id: blogId, title: "", days: [], coverTheme: "default"))
     }
 
@@ -407,7 +410,8 @@ struct RecapBlogPageView: View {
                 placePhotoModalOverlay(item: item)
                     // Clear under the sliding panel so the blog shows through during dismiss; instant removal avoids an extra fade on black.
                     .transition(.asymmetric(insertion: .opacity, removal: .identity))
-                    .zIndex(128)
+                    // Above place / single-photo caption editors (z 130 / 132) when opened from those flows.
+                    .zIndex((placeCaptionEditItem != nil || photoCaptionEditItem != nil) ? 135 : 128)
             }
 
             if let item = photoCaptionEditItem,
@@ -1441,7 +1445,7 @@ struct RecapBlogPageView: View {
                             HStack(spacing: 12) {
                                 Text("Blog split into two parts")
                                     .font(.subheadline.weight(.medium))
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(.primary)
 
                                 Spacer()
 
@@ -1460,10 +1464,11 @@ struct RecapBlogPageView: View {
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 14)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(Color(uiColor: .label).opacity(0.88))
-                            )
+                            .background {
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(.ultraThinMaterial)
+                                    .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                            }
                             .padding(.horizontal, 20)
                     }
                 }
@@ -3755,7 +3760,11 @@ Your blog remains private unless you choose to share it.
             } : nil,
             onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
                 await StoryCaptionService.shared.translateText(userText: userText)
-            } : nil
+            } : nil,
+            onRequestFullPhotoView: { photoId in
+                placePhotoModalItem = PlacePhotoModalItem(dayId: item.dayId, stopId: item.stopId, initialPhotoId: photoId)
+            },
+            activePhotoModalToken: placePhotoModalItem?.id
         )
     }
 
@@ -3788,7 +3797,11 @@ Your blog remains private unless you choose to share it.
             } : nil,
             onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
                 await StoryCaptionService.shared.translateText(userText: userText)
-            } : nil
+            } : nil,
+            onRequestFullPhotoView: {
+                placePhotoModalItem = PlacePhotoModalItem(dayId: item.dayId, stopId: item.stopId, initialPhotoId: item.photoId)
+            },
+            activePhotoModalToken: placePhotoModalItem?.id
         )
     }
 
@@ -4387,6 +4400,7 @@ Your blog remains private unless you choose to share it.
 
     @MainActor
     private func presentPhotoGroupingTipIfNeeded(afterNanoseconds delay: UInt64) {
+        guard !suppressPhotoGroupingTipOnAppear else { return }
         guard !hasSeenPhotoGroupingTip else { return }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: delay)

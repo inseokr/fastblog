@@ -10,6 +10,12 @@
 import SwiftUI
 
 struct SplitBlogView: View {
+    /// Pushed destination: open the full blog recap starting on this day (back returns to split-point list).
+    private struct DayPreviewRoute: Hashable {
+        let blogId: UUID
+        let dayIndex: Int
+    }
+
     let countryName: String
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Environment(\.dismiss) private var dismiss
@@ -19,6 +25,7 @@ struct SplitBlogView: View {
     @State private var selectedSplitIndex: Int?
     @State private var showSplitAlert = false
     @State private var showUndoBanner = false
+    @State private var dayPreviewRoute: DayPreviewRoute?
 
     // MARK: - Splittable Blogs
 
@@ -49,7 +56,7 @@ struct SplitBlogView: View {
                     HStack(spacing: 12) {
                         Text("Blog split into two parts")
                             .font(.subheadline.weight(.medium))
-                            .foregroundColor(.white)
+                            .foregroundStyle(.primary)
 
                         Spacer()
 
@@ -58,19 +65,17 @@ struct SplitBlogView: View {
                             withAnimation {
                                 showUndoBanner = false
                             }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                dismiss()
-                            }
                         }
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(.orange)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(Color(uiColor: .label).opacity(0.88))
-                    )
+                    .background {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                    }
                     .padding(.horizontal, 20)
                     .padding(.bottom, 24)
                 }
@@ -82,49 +87,43 @@ struct SplitBlogView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") {
+                Button {
                     if selectedBlog != nil {
                         withAnimation {
                             selectedBlog = nil
                             loadedDays = []
+                            selectedSplitIndex = nil
+                            dayPreviewRoute = nil
                         }
                     } else {
                         dismiss()
                     }
+                } label: {
+                    if selectedBlog != nil {
+                        Text("Cancel")
+                            .font(.body.weight(.semibold))
+                    } else {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 17, weight: .semibold))
+                    }
                 }
-                .fontWeight(.semibold)
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Done") { dismiss() }
-                    .fontWeight(.semibold)
+                .accessibilityLabel(selectedBlog != nil ? "Cancel" : "Close")
             }
         }
-        .alert(
-            "Split Blog?",
-            isPresented: $showSplitAlert
-        ) {
-            Button("Split") {
-                guard let blog = selectedBlog, let splitIdx = selectedSplitIndex else { return }
-                createdRecapStore.splitBlog(blogId: blog.sourceTripId, afterDayIndex: splitIdx)
-                let generator = UINotificationFeedbackGenerator()
-                generator.notificationOccurred(.success)
-                withAnimation {
-                    selectedBlog = nil
-                    loadedDays = []
-                    showUndoBanner = true
-                }
-            }
-            Button("Cancel", role: .cancel) {
-                selectedSplitIndex = nil
-            }
-        } message: {
-            if let splitIdx = selectedSplitIndex {
-                let part1Count = splitIdx + 1
-                let part2Count = loadedDays.count - part1Count
-                Text("This will create two separate blogs:\n\nPart 1: Day 1–\(part1Count) (\(part1Count) day\(part1Count == 1 ? "" : "s"))\nPart 2: Day \(part1Count + 1)–\(loadedDays.count) (\(part2Count) day\(part2Count == 1 ? "" : "s"))")
-            } else {
-                Text("Split this blog into two separate blogs.")
-            }
+        .navigationDestination(item: $dayPreviewRoute) { route in
+            RecapBlogPageView(
+                blogId: route.blogId,
+                initialTrip: nil,
+                initialDayIndex: route.dayIndex,
+                forceEditMode: false,
+                suppressPhotoGroupingTipOnAppear: true
+            )
+            .environmentObject(TripNearbyShareSessionController.shared)
+        }
+        .sheet(isPresented: $showSplitAlert) {
+            splitConfirmSheet
+                .presentationDetents([.height(220)])
+                .presentationDragIndicator(.visible)
         }
     }
 
@@ -244,8 +243,14 @@ struct SplitBlogView: View {
                 // Day cards with split dividers
                 VStack(spacing: 0) {
                     ForEach(Array(loadedDays.enumerated()), id: \.element.id) { index, day in
-                        daySummaryCard(day: day, dayNumber: index + 1)
-                            .padding(.horizontal, 16)
+                        Button {
+                            guard let blog = selectedBlog else { return }
+                            dayPreviewRoute = DayPreviewRoute(blogId: blog.sourceTripId, dayIndex: index)
+                        } label: {
+                            daySummaryCard(day: day, dayNumber: index + 1)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 16)
 
                         // Split divider between days (not after last)
                         if index < loadedDays.count - 1 {
@@ -284,6 +289,9 @@ struct SplitBlogView: View {
                 Spacer()
                 Text(day.shortDateText)
                     .font(.caption)
+                    .foregroundColor(.secondary)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.secondary)
             }
             Text("\(placeCount) place\(placeCount == 1 ? "" : "s") \u{2022} \(photoCount) photo\(photoCount == 1 ? "" : "s")")
@@ -328,6 +336,80 @@ struct SplitBlogView: View {
     }
 
     // MARK: - Helpers
+
+    private var splitConfirmSheet: some View {
+        VStack(spacing: 20) {
+            VStack(spacing: 6) {
+                Text("Split Blog?")
+                    .font(.headline)
+                if let splitIdx = selectedSplitIndex {
+                    let part1Count = splitIdx + 1
+                    let part2Count = loadedDays.count - part1Count
+                    let part1Days = Self.daySpanLabel(startDay: 1, endDay: part1Count)
+                    let part2Days = Self.daySpanLabel(startDay: part1Count + 1, endDay: loadedDays.count)
+                    Text("Part 1: \(part1Days) (\(part1Count) day\(part1Count == 1 ? "" : "s"))  •  Part 2: \(part2Days) (\(part2Count) day\(part2Count == 1 ? "" : "s"))")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                } else {
+                    Text("Split this blog into two separate blogs.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.top, 8)
+
+            VStack(spacing: 10) {
+                Button {
+                    guard let blog = selectedBlog, let splitIdx = selectedSplitIndex else { return }
+                    showSplitAlert = false
+                    createdRecapStore.splitBlog(blogId: blog.sourceTripId, afterDayIndex: splitIdx)
+                    let generator = UINotificationFeedbackGenerator()
+                    generator.notificationOccurred(.success)
+                    withAnimation {
+                        selectedBlog = nil
+                        loadedDays = []
+                        dayPreviewRoute = nil
+                        showUndoBanner = true
+                    }
+                } label: {
+                    Text("Split")
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.orange)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    selectedSplitIndex = nil
+                    showSplitAlert = false
+                } label: {
+                    Text("Cancel")
+                        .font(.body.weight(.medium))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 16)
+    }
+
+    /// Single day → `Day 3`; range → `Day 1–4` (avoids redundant `Day 1–1`).
+    private static func daySpanLabel(startDay: Int, endDay: Int) -> String {
+        if startDay == endDay {
+            "Day \(startDay)"
+        } else {
+            "Day \(startDay)–\(endDay)"
+        }
+    }
 
     private func selectBlog(_ blog: CreatedRecapBlog) {
         if let detail = createdRecapStore.getBlogDetail(blogId: blog.sourceTripId) {

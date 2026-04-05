@@ -18,6 +18,8 @@ struct CountryManageBlogsSheet: View {
 
     let countryName: String
     let blogs: [CreatedRecapBlog]
+    /// Opens the recap overlay; parent dismisses this sheet first and re-presents it when the recap closes.
+    var onOpenBlog: ((CreatedRecapBlog) -> Void)? = nil
 
     // Alert state
     @State private var blogPendingRemoval: CreatedRecapBlog?
@@ -75,11 +77,13 @@ struct CountryManageBlogsSheet: View {
                             CountryManageRow(
                                 blog: blog,
                                 isInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
+                                isDraft: createdRecapStore.getBlogDetail(blogId: blog.sourceTripId) == nil,
                                 isRemoved: removedBlogIDs.contains(blog.id),
                                 onRemove: {
                                     blogPendingRemoval = blog
                                     showRemoveAlert = true
-                                }
+                                },
+                                onOpenBlog: onOpenBlog.map { cb in { cb(blog) } }
                             )
                         }
                     }
@@ -125,17 +129,13 @@ struct CountryManageBlogsSheet: View {
                         .foregroundStyle(.primary)
                 }
             }
-            .fullScreenCover(isPresented: $showMergeView) {
-                NavigationStack {
-                    MergeBlogsView(countryName: countryName)
-                        .environmentObject(createdRecapStore)
-                }
+            .navigationDestination(isPresented: $showMergeView) {
+                MergeBlogsView(countryName: countryName)
+                    .environmentObject(createdRecapStore)
             }
-            .fullScreenCover(isPresented: $showSplitView) {
-                NavigationStack {
-                    SplitBlogView(countryName: countryName)
-                        .environmentObject(createdRecapStore)
-                }
+            .navigationDestination(isPresented: $showSplitView) {
+                SplitBlogView(countryName: countryName)
+                    .environmentObject(createdRecapStore)
             }
             // ── Remove Confirmation Alert ──────────────────────────────
             .alert(
@@ -150,7 +150,7 @@ struct CountryManageBlogsSheet: View {
                     blogPendingRemoval = nil
                 }
             } message: { _ in
-                Text("This removes the downloaded blog from local storage. Your cloud blog stays available.")
+                Text("This blog will be removed from your device.")
             }
             .tint(.primary)
         }
@@ -174,8 +174,11 @@ struct CountryManageBlogsSheet: View {
 struct CountryManageRow: View {
     let blog: CreatedRecapBlog
     let isInCloud: Bool
+    let isDraft: Bool
     let isRemoved: Bool
     let onRemove: () -> Void
+    /// Tap the card (outside remove) to open the blog.
+    var onOpenBlog: (() -> Void)? = nil
 
     /// Portrait (3:4) thumb so covers match My Blogs cards.
     /// Scales up on smaller iPhones and larger Dynamic Type to reduce
@@ -201,37 +204,60 @@ struct CountryManageRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            AssetPhotoView(
-                assetIdentifier: blog.coverAssetIdentifier ?? blog.coverImageName,
-                cornerRadius: 0,
-                targetSize: coverTargetSize
-            )
-            .aspectRatio(3 / 4, contentMode: .fill)
-            .frame(minWidth: thumbnailWidth, maxWidth: thumbnailWidth, minHeight: thumbnailHeight, maxHeight: .infinity)
-            .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            HStack(alignment: .top, spacing: 14) {
+                ZStack(alignment: .bottomLeading) {
+                    AssetPhotoView(
+                        assetIdentifier: blog.coverAssetIdentifier ?? blog.coverImageName,
+                        cornerRadius: 0,
+                        targetSize: coverTargetSize
+                    )
+                    .aspectRatio(3 / 4, contentMode: .fill)
+                    .frame(minWidth: thumbnailWidth, maxWidth: thumbnailWidth, minHeight: thumbnailHeight, maxHeight: .infinity)
+                    .clipped()
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text(blog.title)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text(blog.tripDateRangeText ?? "Unknown Date")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                Spacer(minLength: 4)
-
-                HStack(alignment: .center, spacing: 10) {
-                    cloudBadge
-                    Spacer(minLength: 8)
-                    removeControl
+                    if isDraft {
+                        Text("Draft")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(.thinMaterial, in: Capsule())
+                            .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
+                            .padding(5)
+                    }
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(blog.title)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(blog.tripDateRangeText ?? "Unknown Date")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Spacer(minLength: 4)
+
+                    cloudBadge
+                }
+                .frame(maxWidth: .infinity, minHeight: thumbnailHeight, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, minHeight: thumbnailHeight, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard !isRemoved else { return }
+                onOpenBlog?()
+            }
+
+            VStack {
+                Spacer(minLength: 0)
+                removeControl
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)

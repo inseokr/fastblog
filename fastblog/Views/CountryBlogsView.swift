@@ -44,6 +44,8 @@ struct CountryBlogsView: View {
     var onDismissSearchKeyboard: (() -> Void)? = nil
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @State private var showManageSheet = false
+    /// When true, reopen Manage Blogs after the recap overlay dismisses (opened blog from that sheet only).
+    @State private var reopenManageSheetAfterRecapDismiss = false
 
     // Cloud removal
     @State private var showRemoveCloudPopup = false
@@ -273,11 +275,23 @@ struct CountryBlogsView: View {
         .sheet(isPresented: $showManageSheet) {
             CountryManageBlogsSheet(
                 countryName: section.countryName,
-                blogs: section.blogs
+                blogs: section.blogs,
+                onOpenBlog: { blog in
+                    reopenManageSheetAfterRecapDismiss = true
+                    showManageSheet = false
+                    openRecapInEditMode = false
+                    openRecapPresentShareYourBlogSheet = false
+                    selectedBlog = blog
+                }
             )
             .environmentObject(createdRecapStore)
             .presentationDetents([.fraction(1)])
             .presentationDragIndicator(.visible)
+        }
+        .onChange(of: selectedBlog?.id) { oldValue, newValue in
+            guard reopenManageSheetAfterRecapDismiss, oldValue != nil, newValue == nil else { return }
+            reopenManageSheetAfterRecapDismiss = false
+            showManageSheet = true
         }
         .navigationDestination(isPresented: $showMap) {
             CountryMapView(

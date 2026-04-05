@@ -260,6 +260,18 @@ final class CreatedRecapBlogStore: ObservableObject {
         let originalTitle: String
     }
     @Published var lastSplitUndoInfo: SplitUndoInfo?
+
+    /// Snapshot to restore after the last merge-from-manage-flow (not persisted).
+    struct MergeUndoInfo {
+        let recentsSnapshot: [CreatedRecapBlog]
+        let keepId: UUID
+        let absorbId: UUID
+        let keepDetail: RecapBlogDetail
+        let absorbDetail: RecapBlogDetail
+        let keepTripDraft: TripDraft?
+        let absorbTripDraft: TripDraft?
+    }
+    @Published var lastMergeUndoInfo: MergeUndoInfo?
     private var tripDraftsBySourceId: [UUID: TripDraft] = [:]
     /// Persisted editable blog details; Save in RecapBlogPageView writes here.
     private var blogDetailsBySourceId: [UUID: RecapBlogDetail] = [:]
@@ -1199,14 +1211,36 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     // MARK: - Merge & Split
 
+    /// Removes trailing ` (Part N of M)` suffixes added by `splitBlog`, for display and merge naming.
+    static func titleByStrippingSplitPartSuffix(_ title: String) -> String {
+        title
+            .replacingOccurrences(of: " \\(Part \\d+ of \\d+\\)", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+    }
+
     /// Merges two blogs into one. The `keepId` blog absorbs all days from `absorbId`.
     /// Both IDs are `sourceTripId` values.
-    func mergeBlogs(keepId: UUID, absorbId: UUID) {
+    /// - Parameter mergedTitle: When set, updates the kept blog’s title in recaps, detail, and trip draft. Pass `nil` to leave the kept blog’s title unchanged.
+    /// - Parameter recordMergeUndo: When true (default), stores a snapshot for `undoMerge()`. Pass false for internal merges (e.g. `undoSplit`).
+    func mergeBlogs(keepId: UUID, absorbId: UUID, mergedTitle: String? = nil, recordMergeUndo: Bool = true) {
         guard var keepDetail = blogDetailsBySourceId[keepId],
               let absorbDetail = blogDetailsBySourceId[absorbId],
-              let keepIdx = recents.firstIndex(where: { $0.sourceTripId == keepId }) else {
+              let keepIdx = recents.firstIndex(where: { $0.sourceTripId == keepId }),
+              recents.contains(where: { $0.sourceTripId == absorbId }) else {
             return
         }
+
+        let mergeUndoSnapshot: MergeUndoInfo? = recordMergeUndo
+            ? MergeUndoInfo(
+                recentsSnapshot: recents,
+                keepId: keepId,
+                absorbId: absorbId,
+                keepDetail: keepDetail,
+                absorbDetail: absorbDetail,
+                keepTripDraft: tripDraftsBySourceId[keepId],
+                absorbTripDraft: tripDraftsBySourceId[absorbId]
+            )
+            : nil
 
         // 1. Combine days, merging same-date days
         var daysByDate: [String: RecapBlogDay] = [:]
@@ -1246,6 +1280,9 @@ final class CreatedRecapBlogStore: ObservableObject {
         // 3. Update detail
         keepDetail.days = allDays
         keepDetail.removedPlaceStops = mergedRemoved
+        if let mergedTitle, !mergedTitle.isEmpty {
+            keepDetail.title = mergedTitle
+        }
         blogDetailsBySourceId[keepId] = keepDetail
 
         // 4. Update recents metadata
@@ -1265,6 +1302,9 @@ final class CreatedRecapBlogStore: ObservableObject {
         recents[keepIdx].lastEditedAt = Date()
         recents[keepIdx].syncStatus = .needsUpload
         recents[keepIdx].hasCommittedRecapSave = keepOld.hasCommittedRecapSave || absorbOld?.hasCommittedRecapSave == true
+        if let mergedTitle, !mergedTitle.isEmpty {
+            recents[keepIdx].title = mergedTitle
+        }
 
         // 5. Best-effort merge TripDraft
         if var keepTrip = tripDraftsBySourceId[keepId],
@@ -1277,6 +1317,9 @@ final class CreatedRecapBlogStore: ObservableObject {
             }
             for i in combined.indices { combined[i].dayIndex = i + 1 }
             keepTrip.days = combined
+            if let mergedTitle, !mergedTitle.isEmpty {
+                keepTrip.title = mergedTitle
+            }
             tripDraftsBySourceId[keepId] = keepTrip
         }
 
@@ -1286,6 +1329,36 @@ final class CreatedRecapBlogStore: ObservableObject {
         tripDraftsBySourceId.removeValue(forKey: absorbId)
 
         // 7. Persist
+        persistRecents()
+        persistBlogDetails()
+        persistTripDrafts()
+        needsRescan = true
+
+        if let mergeUndoSnapshot {
+            lastMergeUndoInfo = mergeUndoSnapshot
+            lastSplitUndoInfo = nil
+        } else {
+            lastMergeUndoInfo = nil
+        }
+    }
+
+    /// Restores the two blogs and list order from before the last `mergeBlogs` that recorded undo.
+    func undoMerge() {
+        guard let info = lastMergeUndoInfo else { return }
+        recents = info.recentsSnapshot
+        blogDetailsBySourceId[info.keepId] = info.keepDetail
+        blogDetailsBySourceId[info.absorbId] = info.absorbDetail
+        if let d = info.keepTripDraft {
+            tripDraftsBySourceId[info.keepId] = d
+        } else {
+            tripDraftsBySourceId.removeValue(forKey: info.keepId)
+        }
+        if let d = info.absorbTripDraft {
+            tripDraftsBySourceId[info.absorbId] = d
+        } else {
+            tripDraftsBySourceId.removeValue(forKey: info.absorbId)
+        }
+        lastMergeUndoInfo = nil
         persistRecents()
         persistBlogDetails()
         persistTripDrafts()
@@ -1316,9 +1389,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         let part2Removed = detail.removedPlaceStops.filter { !part1DayIds.contains($0.dayId) }
 
         // 3. Generate titles
-        let baseTitle = detail.title
-            .replacingOccurrences(of: " \\(Part \\d+ of \\d+\\)", with: "", options: .regularExpression)
-            .trimmingCharacters(in: .whitespaces)
+        let baseTitle = Self.titleByStrippingSplitPartSuffix(detail.title)
         let title1 = "\(baseTitle) (Part 1 of 2)"
         let title2 = "\(baseTitle) (Part 2 of 2)"
 
@@ -1418,6 +1489,7 @@ final class CreatedRecapBlogStore: ObservableObject {
 
         // 9. Store undo info (in-memory only)
         lastSplitUndoInfo = SplitUndoInfo(keepId: blogId, newId: newBlogId, originalTitle: detail.title)
+        lastMergeUndoInfo = nil
 
         // 10. Persist
         blogDetailsBySourceId[blogId] = detail1
@@ -1443,9 +1515,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         for i in part1Days.indices { part1Days[i].dayIndex = i + 1 }
         for i in part2Days.indices { part2Days[i].dayIndex = i + 1 }
         
-        let baseTitle = trip.title
-            .replacingOccurrences(of: " \\(Part \\d+ of \\d+\\)", with: "", options: .regularExpression)
-            .trimmingCharacters(in: .whitespaces)
+        let baseTitle = Self.titleByStrippingSplitPartSuffix(trip.title)
         
         let title1 = "\(baseTitle) (Part 1 of 2)"
         let title2 = "\(baseTitle) (Part 2 of 2)"
@@ -1504,7 +1574,7 @@ final class CreatedRecapBlogStore: ObservableObject {
     func undoSplit() {
         guard let info = lastSplitUndoInfo else { return }
         // Merge Part 2 back into Part 1 (keepId absorbs newId)
-        mergeBlogs(keepId: info.keepId, absorbId: info.newId)
+        mergeBlogs(keepId: info.keepId, absorbId: info.newId, recordMergeUndo: false)
         // Restore original title on the merged blog
         if let idx = recents.firstIndex(where: { $0.sourceTripId == info.keepId }) {
             recents[idx].title = info.originalTitle

@@ -24,6 +24,7 @@ struct NeighborhoodSelectionView: View {
     @State private var resolvePlaceTask: Task<Void, Never>?
     @FocusState private var isFocused: Bool
     @State private var isMapRevealed = false
+    @ScaledMetric(relativeTo: .body) private var minFieldHeight: CGFloat = 44
     private var settingsBackground: Color {
         OnboardingConstants.Colors.background
     }
@@ -152,7 +153,10 @@ struct NeighborhoodSelectionView: View {
                         Text("Search for your city or neighborhood")
                             .font(.body)
                             .foregroundColor(Color(white: 0.45))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                             .padding(.leading, 16)
+                            .padding(.trailing, 12)
                     }
                     TextField("", text: $searchHelper.query)
                         .textFieldStyle(.plain)
@@ -190,6 +194,7 @@ struct NeighborhoodSelectionView: View {
                     .buttonStyle(.plain)
                 }
             }
+            .frame(minHeight: minFieldHeight)
             .background(OnboardingConstants.Colors.searchBackground)
             .cornerRadius(OnboardingConstants.Layout.searchCornerRadius)
             .accessibilityLabel("Select area on map")

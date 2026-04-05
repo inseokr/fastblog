@@ -15,7 +15,17 @@ struct MergeBlogsView: View {
 
     @State private var pairToMerge: MergePair?
     @State private var showMergeAlert = false
-    @State private var mergeCompleted = false
+    @State private var namePickPair: MergePair?
+    @State private var showMergeNameSheet = false
+    @State private var mergeNameSheetPhase: MergeNameSheetPhase = .choose
+    @State private var customMergeTitleText = ""
+    @State private var mergeNameSheetDetent: PresentationDetent = .medium
+    @State private var showMergeUndoBanner = false
+
+    private enum MergeNameSheetPhase {
+        case choose
+        case editCustom
+    }
 
     // MARK: - Eligible Pairs
 
@@ -79,81 +89,341 @@ struct MergeBlogsView: View {
     // MARK: - Body
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // Header
-                VStack(spacing: 8) {
-                    Image(systemName: "arrow.triangle.merge")
-                        .font(.system(size: 38))
-                        .foregroundColor(.blue)
-                        .padding(.bottom, 4)
+        ZStack {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Header
+                    VStack(spacing: 8) {
+                        Image(systemName: "arrow.triangle.merge")
+                            .font(.system(size: 38))
+                            .foregroundColor(.blue)
+                            .padding(.bottom, 4)
 
-                    Text("Merge Blogs")
-                        .font(.system(.title2, design: .serif).weight(.medium))
-                        .foregroundColor(.primary)
+                        Text("Merge Blogs")
+                            .font(.system(.title2, design: .serif).weight(.medium))
+                            .foregroundColor(.primary)
 
-                    Text("Combine two consecutive trips into one blog")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
-                }
-                .padding(.top, 28)
-                .padding(.bottom, 4)
-
-                // Pairs list
-                if eligiblePairs.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "tray")
-                            .font(.system(size: 32))
-                            .foregroundColor(.secondary)
-                        Text("No eligible merge pairs")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                        Text("Blogs must be consecutive in time and within the same area to merge.")
-                            .font(.caption)
+                        Text("Combine two consecutive trips into one blog")
+                            .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 40)
+                            .padding(.horizontal, 32)
                     }
-                    .padding(.top, 40)
-                } else {
-                    LazyVStack(spacing: 16) {
-                        ForEach(eligiblePairs) { pair in
-                            mergePairRow(pair)
+                    .padding(.top, 28)
+                    .padding(.bottom, 4)
+
+                    // Pairs list
+                    if eligiblePairs.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "tray")
+                                .font(.system(size: 32))
+                                .foregroundColor(.secondary)
+                            Text("No eligible merge pairs")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
                         }
+                        .padding(.top, 40)
+                    } else {
+                        LazyVStack(spacing: 16) {
+                            ForEach(eligiblePairs) { pair in
+                                mergePairRow(pair)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                    }
+
+                    Spacer(minLength: 40)
+                }
+            }
+
+            if showMergeUndoBanner {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 12) {
+                        Text("Blogs have been merged")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+
+                        Spacer()
+
+                        Button("Undo") {
+                            createdRecapStore.undoMerge()
+                            withAnimation {
+                                showMergeUndoBanner = false
+                            }
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.blue)
                     }
                     .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .background {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
                 }
-
-                Spacer(minLength: 40)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(10)
             }
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Done") { dismiss() }
-                    .fontWeight(.semibold)
+            ToolbarItem(placement: .cancellationAction) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .semibold))
+                }
+                .accessibilityLabel("Back")
             }
         }
-        .alert(
-            "Merge Blogs?",
-            isPresented: $showMergeAlert,
-            presenting: pairToMerge
-        ) { pair in
-            Button("Merge") {
-                createdRecapStore.mergeBlogs(keepId: pair.earlier.sourceTripId, absorbId: pair.later.sourceTripId)
-                let generator = UINotificationFeedbackGenerator()
-                generator.notificationOccurred(.success)
-                mergeCompleted = true
+        .sheet(isPresented: $showMergeAlert) {
+            mergeConfirmSheet
+                .presentationDetents([.height(200)])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showMergeNameSheet, onDismiss: {
+            namePickPair = nil
+            mergeNameSheetPhase = .choose
+            customMergeTitleText = ""
+            mergeNameSheetDetent = .medium
+        }) {
+            mergeBlogNameSheetContent
+                .presentationDetents([.medium, .large], selection: $mergeNameSheetDetent)
+                .presentationDragIndicator(.visible)
+                .presentationContentInteraction(.scrolls)
+                .preferredColorScheme(.dark)
+        }
+    }
+
+    private var mergeConfirmSheet: some View {
+        VStack(spacing: 20) {
+            VStack(spacing: 6) {
+                Text("Merge Blogs?")
+                    .font(.headline)
+                Text("This will combine these trips into a single blog.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
-            Button("Cancel", role: .cancel) {
-                pairToMerge = nil
+            .padding(.top, 8)
+
+            VStack(spacing: 10) {
+                Button {
+                    guard let pair = pairToMerge else { return }
+                    showMergeAlert = false
+                    pairToMerge = nil
+                    namePickPair = pair
+                    mergeNameSheetPhase = .choose
+                    mergeNameSheetDetent = .medium
+                    showMergeNameSheet = true
+                } label: {
+                    Text("Merge")
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.blue)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    pairToMerge = nil
+                    showMergeAlert = false
+                } label: {
+                    Text("Cancel")
+                        .font(.body.weight(.medium))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
             }
-        } message: { pair in
-            Text("This will combine these trips into a single blog.")
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 16)
+    }
+
+    @ViewBuilder
+    private var mergeBlogNameSheetContent: some View {
+        if let pair = namePickPair {
+            VStack(spacing: 0) {
+                switch mergeNameSheetPhase {
+                case .choose:
+                    mergeNameChoosePane(pair: pair)
+                case .editCustom:
+                    mergeNameEditPane(pair: pair)
+                }
+            }
+            .padding(.top, 24)
+        }
+    }
+
+    private func mergeNameChoosePane(pair: MergePair) -> some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 20) {
+                Image(systemName: "textformat")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 50, height: 50)
+                    .foregroundColor(.orange)
+                    .padding(.top, 8)
+
+                VStack(spacing: 8) {
+                    Text("Blog Name")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.primary)
+
+                    Text("Which name do you prefer, or do you want to give it a different name?")
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+
+            VStack(spacing: 12) {
+                mergeNameChoiceButton(title: pair.earlier.title) {
+                    completeMerge(pair: pair, pickedFullTitle: pair.earlier.title)
+                }
+                mergeNameChoiceButton(title: pair.later.title) {
+                    completeMerge(pair: pair, pickedFullTitle: pair.later.title)
+                }
+
+                Button {
+                    primeCustomMergeTitle(for: pair)
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        mergeNameSheetPhase = .editCustom
+                    }
+                    mergeNameSheetDetent = .large
+                } label: {
+                    Text("Edit Blog Title")
+                        .font(.headline)
+                        .foregroundColor(.blue)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .strokeBorder(Color.blue, lineWidth: 2)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+    }
+
+    private func mergeNameEditPane(pair: MergePair) -> some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 20) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        mergeNameSheetPhase = .choose
+                    }
+                    mergeNameSheetDetent = .medium
+                } label: {
+                    Text("Back")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.blue)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Custom title")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+
+                    Text("Enter a name for the merged blog.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                }
+
+                TextField("Blog title", text: $customMergeTitleText)
+                    .textFieldStyle(.roundedBorder)
+                    .textInputAutocapitalization(.words)
+                    .submitLabel(.done)
+                    .onSubmit {
+                        let t = customMergeTitleText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !t.isEmpty {
+                            completeMerge(pair: pair, pickedFullTitle: t)
+                        }
+                    }
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+
+            Button {
+                let t = customMergeTitleText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !t.isEmpty else { return }
+                completeMerge(pair: pair, pickedFullTitle: t)
+            } label: {
+                Text("Use this title")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+    }
+
+    private func mergeNameChoiceButton(title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.headline)
+                .foregroundColor(.white)
+                .multilineTextAlignment(.center)
+                .lineLimit(4)
+                .minimumScaleFactor(0.75)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.blue)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func primeCustomMergeTitle(for pair: MergePair) {
+        let a = CreatedRecapBlogStore.titleByStrippingSplitPartSuffix(pair.earlier.title)
+        customMergeTitleText = a.isEmpty ? pair.earlier.title : a
+    }
+
+    private func completeMerge(pair: MergePair, pickedFullTitle: String) {
+        var merged = CreatedRecapBlogStore.titleByStrippingSplitPartSuffix(pickedFullTitle)
+        if merged.isEmpty { merged = pickedFullTitle }
+        createdRecapStore.mergeBlogs(
+            keepId: pair.earlier.sourceTripId,
+            absorbId: pair.later.sourceTripId,
+            mergedTitle: merged
+        )
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+        pairToMerge = nil
+        namePickPair = nil
+        showMergeNameSheet = false
+        mergeNameSheetPhase = .choose
+        customMergeTitleText = ""
+        mergeNameSheetDetent = .medium
+        withAnimation {
+            showMergeUndoBanner = true
         }
     }
 
@@ -180,12 +450,16 @@ struct MergeBlogsView: View {
                 Text("Merge")
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .allowsTightening(true)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
                     .background(Color.blue)
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
+            .layoutPriority(1)
         }
         .padding(12)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
@@ -197,27 +471,37 @@ struct MergeBlogsView: View {
     }
 
     private func blogMiniCard(_ blog: CreatedRecapBlog) -> some View {
-        VStack(spacing: 4) {
+        let photoSide: CGFloat = 88
+        let textWidth = photoSide + 12
+        let photoCornerRadius: CGFloat = 16
+
+        return VStack(spacing: 6) {
             AssetPhotoView(
                 assetIdentifier: blog.coverAssetIdentifier ?? blog.coverImageName,
-                cornerRadius: 8,
-                targetSize: CGSize(width: 120, height: 120)
+                cornerRadius: 0,
+                targetSize: CGSize(width: photoSide * 2, height: photoSide * 2)
             )
-            .frame(width: 50, height: 50)
-            .clipped()
+            .frame(width: photoSide, height: photoSide)
+            .clipShape(RoundedRectangle(cornerRadius: photoCornerRadius, style: .continuous))
 
             Text(blog.title)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(.primary)
-                .lineLimit(1)
-                .frame(maxWidth: 70)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.88)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: textWidth)
 
             let count = photoCount(for: blog)
-            Text("\(blog.tripDateRangeText ?? "") · \(count) Photos")
-                .font(.system(size: 9))
+            Text("\(blog.tripDateRangeText ?? "") \(count) Photos")
+                .font(.system(size: 11))
                 .foregroundColor(.secondary)
-                .lineLimit(1)
-                .frame(maxWidth: 70)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: textWidth)
         }
     }
 }

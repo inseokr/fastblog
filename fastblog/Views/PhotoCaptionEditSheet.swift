@@ -20,6 +20,10 @@ struct PhotoCaptionEditSheet: View {
     var onEnhanceApplied: (() -> Void)? = nil
     /// Pure translation — no AI story generation.
     var onTranslate: ((String) async -> String)? = nil
+    /// Parent presents recap `PlacePhotoModalView` for this photo.
+    var onRequestFullPhotoView: (() -> Void)? = nil
+    /// Match `PlacePhotoModalItem.id` while that modal is presented; when it becomes nil, editor text reloads from the caption binding.
+    var activePhotoModalToken: String? = nil
 
     @State private var editedText: String = ""
     @State private var isEnhancing = false
@@ -31,12 +35,26 @@ struct PhotoCaptionEditSheet: View {
     @State private var originalDraft: String? = nil
     @FocusState private var isFocused: Bool
 
-    private let editorTextHorizontalPadding: CGFloat = 20
-    private let placeholderLeadingInset: CGFloat = 40
+    private let editorTextHorizontalPadding: CGFloat = 14
+    private let placeholderLeadingInset: CGFloat = 34
     private let placeholderTrailingInset: CGFloat = 20
 
     private var trimmedEditedText: String {
         editedText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Hero image for the editor; tappable when `onRequestFullPhotoView` is set.
+    private var mainEditorPhotoBase: some View {
+        RecapPhotoThumbnail(
+            photo: photo,
+            cornerRadius: 12,
+            showIcon: false,
+            targetSize: CGSize(width: 600, height: 400)
+        )
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: 160, maxHeight: .infinity)
+        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     var body: some View {
@@ -44,16 +62,21 @@ struct PhotoCaptionEditSheet: View {
         // while this overlay is up — inner `.toolbar` items can fail to show or receive taps.
         VStack(spacing: 0) {
             // Photo fills available space — before keyboard: full modal; after keyboard: shrinks naturally
-            RecapPhotoThumbnail(
-                photo: photo,
-                cornerRadius: 12,
-                showIcon: false,
-                targetSize: CGSize(width: 600, height: 400)
-            )
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: 160, maxHeight: .infinity)
-            .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            Group {
+                if let openFull = onRequestFullPhotoView {
+                    Button {
+                        caption = editedText
+                        isFocused = false
+                        openFull()
+                    } label: {
+                        mainEditorPhotoBase
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("View full photo")
+                } else {
+                    mainEditorPhotoBase
+                }
+            }
             .padding(.horizontal, 20)
             .padding(.bottom, 14)
 
@@ -88,7 +111,7 @@ struct PhotoCaptionEditSheet: View {
                     .padding(.horizontal, 20)
 
                 if editedText.isEmpty {
-                    Text("Write a caption for this photo…")
+                    Text("Describe this moment...")
                         .font(.body)
                         .foregroundColor(Color(uiColor: .placeholderText))
                         .padding(.leading, placeholderLeadingInset)
@@ -190,6 +213,11 @@ struct PhotoCaptionEditSheet: View {
             editedText = caption
             DispatchQueue.main.async {
                 isFocused = true
+            }
+        }
+        .onChange(of: activePhotoModalToken) { oldValue, newValue in
+            if oldValue != nil && newValue == nil {
+                editedText = caption
             }
         }
     }

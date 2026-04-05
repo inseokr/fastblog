@@ -364,7 +364,7 @@ struct BlogSettingsSheet: View {
     }
 
     private var deleteAlertMessage: some View {
-        Text("Are you sure you want to delete this blog? It will be removed from your profile, but the trip will be available in Trips to customize again.")
+        Text("This blog will be removed from your device. You can recreate it later.")
     }
 
     @ViewBuilder
@@ -395,6 +395,12 @@ struct BlogSettingsSheet: View {
                         
                         Text("\"\(draft.title)\"")
                             .font(.body)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+
+                        Text("This blog will be removed from your device. You can recreate it later.")
+                            .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)

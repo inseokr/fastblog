@@ -24,6 +24,10 @@ struct PlaceCaptionEditSheet: View {
     var onEnhanceApplied: (() -> Void)? = nil
     /// Pure translation — no AI story generation.
     var onTranslate: ((String) async -> String)? = nil
+    /// Parent presents recap `PlacePhotoModalView` for this photo id (e.g. sets `placePhotoModalItem`).
+    var onRequestFullPhotoView: ((UUID) -> Void)? = nil
+    /// Match `PlacePhotoModalItem.id` while that modal is presented; when it becomes nil, local drafts reload from bindings.
+    var activePhotoModalToken: String? = nil
     @State private var editedText: String = ""
     @State private var isEnhancing = false
     @State private var isTranslating = false
@@ -51,10 +55,10 @@ struct PlaceCaptionEditSheet: View {
     private let thumbnailCorner: CGFloat = 10
     private let thumbnailStroke: CGFloat = 2
 
-    /// Horizontal inset for typed text inside the rounded editor (both sides).
-    private let editorTextHorizontalPadding: CGFloat = 20
-    /// Placeholder is nudged further left to line up with the `TextEditor` caret; trailing must match so lines don’t hug the right edge.
-    private let placeholderLeadingInset: CGFloat = 40
+    /// Horizontal inset for typed text inside the rounded editor (both sides). Slightly tight so the caret sits a bit left of default.
+    private let editorTextHorizontalPadding: CGFloat = 14
+    /// Matches outer sheet padding + `editorTextHorizontalPadding` so placeholder lines up with the caret.
+    private let placeholderLeadingInset: CGFloat = 34
     private let placeholderTrailingInset: CGFloat = 20
 
     private var trimmedEditedText: String {
@@ -71,14 +75,14 @@ struct PlaceCaptionEditSheet: View {
         switch captionThumbnailSelection {
         case .placeCaption:
             if shouldUseTwoLineCaptionPlaceholder {
-                return "Write a caption for this\nplace..."
+                return "Describe this\nplace..."
             }
-            return "Write a caption for this place…"
+            return "Describe this place..."
         case .photo:
             if shouldUseTwoLineCaptionPlaceholder {
-                return "Photo selected, write a caption for\nthis photo..."
+                return "Describe this\nmoment..."
             }
-            return "Photo selected, write a caption for this photo..."
+            return "Describe this moment..."
         }
     }
 
@@ -101,6 +105,35 @@ struct PlaceCaptionEditSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// 12-hour clock from `RecapPhoto.timestamp` (matches `PlaceStopRowView` strip badges).
+    private static let headerPhotoTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    /// Parses EXIF-style `yyyy:MM:dd HH:mm:ss` into a 12-hour clock label (e.g. `3:42 PM`).
+    private static func formattedClockTime(fromDigitized digitized: String) -> String? {
+        let parts = digitized.split(separator: " ")
+        guard parts.count == 2 else { return nil }
+        let timeParts = parts[1].split(separator: ":")
+        guard timeParts.count >= 2,
+              let hours = Int(timeParts[0]),
+              let minutes = Int(timeParts[1]) else { return nil }
+        let period = hours >= 12 ? "PM" : "AM"
+        let h = hours == 0 ? 12 : (hours > 12 ? hours - 12 : hours)
+        return "\(h):\(String(format: "%02d", minutes)) \(period)"
+    }
+
+    private static func photoTimeDisplayText(for photo: RecapPhoto) -> String {
+        if let d = photo.digitizedTime,
+           let t = formattedClockTime(fromDigitized: d) {
+            return t
+        }
+        return headerPhotoTimeFormatter.string(from: photo.timestamp)
+    }
+
     /// Shown beside the place name only when a photo thumbnail is selected (place story uses title only).
     @ViewBuilder
     private func headerPhotoThumbnail(for photoId: UUID) -> some View {
@@ -113,6 +146,16 @@ struct PlaceCaptionEditSheet: View {
             )
             .frame(width: thumbnailSize * 3, height: thumbnailSize * 3)
             .clipShape(RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous))
+            .overlay(alignment: .topLeading) {
+                Text(Self.photoTimeDisplayText(for: photo))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3.5)
+                    .background(Color.black.opacity(0.6))
+                    .cornerRadius(6)
+                    .padding(6)
+            }
             .overlay {
                 RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous)
                     .strokeBorder(Color.white, lineWidth: thumbnailStroke)
@@ -135,7 +178,21 @@ struct PlaceCaptionEditSheet: View {
             Group {
                 if case .photo(let photoId) = captionThumbnailSelection {
                     HStack(alignment: .top, spacing: 12) {
-                        headerPhotoThumbnail(for: photoId)
+                        Group {
+                            if let openFull = onRequestFullPhotoView {
+                                Button {
+                                    syncDraftToUnderlyingBindings()
+                                    isFocused = false
+                                    openFull(photoId)
+                                } label: {
+                                    headerPhotoThumbnail(for: photoId)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("View full photo")
+                            } else {
+                                headerPhotoThumbnail(for: photoId)
+                            }
+                        }
                         placeTitleAndSubtitle
                     }
                 } else {
@@ -301,6 +358,34 @@ struct PlaceCaptionEditSheet: View {
             DispatchQueue.main.async {
                 isFocused = true
             }
+        }
+        .onChange(of: activePhotoModalToken) { oldValue, newValue in
+            if oldValue != nil && newValue == nil {
+                refreshDraftFromBindings()
+            }
+        }
+    }
+
+    /// Pushes in-memory drafts into the recap bindings so `PlacePhotoModalView` sees the latest text.
+    private func syncDraftToUnderlyingBindings() {
+        flushCurrentDraftFromEditor()
+        caption = draftPlaceCaption
+        for p in photos.prefix(3) {
+            photoCaption(p.id).wrappedValue = draftPhotoCaptions[p.id] ?? ""
+        }
+    }
+
+    /// After the full-screen photo viewer dismisses, pull caption text from bindings (modal may have edited them).
+    private func refreshDraftFromBindings() {
+        draftPlaceCaption = caption
+        for p in photos.prefix(3) {
+            draftPhotoCaptions[p.id] = photoCaption(p.id).wrappedValue
+        }
+        switch captionThumbnailSelection {
+        case .placeCaption:
+            editedText = draftPlaceCaption
+        case .photo(let id):
+            editedText = draftPhotoCaptions[id] ?? ""
         }
     }
 

@@ -48,6 +48,8 @@ struct MyBlogsProfileView: View {
     @State private var showMyMap = false
     @State private var showCountryMap: Bool = false
     @State private var showManage = false
+    /// When true, reopen Manage Blogs (all countries) after the recap overlay dismisses.
+    @State private var reopenManageSheetAfterRecapDismiss = false
     @State private var isSearchActive = false
     @FocusState private var isSearchFocused: Bool
     @State private var selectedUnsavedTripPhotos: TripDraft?
@@ -252,15 +254,20 @@ struct MyBlogsProfileView: View {
         }
         .sheet(isPresented: $showManage) {
             MyBlogsManageSheet { recap in
+                reopenManageSheetAfterRecapDismiss = true
                 showManage = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    openRecapInEditMode = false
-                    selectedCreatedRecap = recap
-                }
+                openRecapInEditMode = false
+                openRecapPresentShareYourBlogSheet = false
+                selectedCreatedRecap = recap
             }
             .environmentObject(createdRecapStore)
             .presentationDetents([.fraction(1)])
             .presentationDragIndicator(.visible)
+        }
+        .onChange(of: selectedCreatedRecap?.id) { oldValue, newValue in
+            guard reopenManageSheetAfterRecapDismiss, oldValue != nil, newValue == nil else { return }
+            reopenManageSheetAfterRecapDismiss = false
+            showManage = true
         }
         .onAppear {
             viewModel.loadUnsavedTrips()
@@ -639,10 +646,9 @@ private struct MyBlogsManageSheet: View {
     @State private var showRemoveAlert = false
     @State private var removedBlogIDs: Set<UUID> = []
 
-    // Merge / Split navigation
-    @State private var showMergeView = false
-    @State private var showSplitView = false
-    @State private var selectedCountryForAction: String?
+    // Merge / Split — push inside this sheet’s NavigationStack (same as CountryManageBlogsSheet).
+    @State private var mergeCountryNav: String?
+    @State private var splitCountryNav: String?
     @State private var showMergeCountrySelection = false
     @State private var showSplitCountrySelection = false
 
@@ -672,7 +678,7 @@ private struct MyBlogsManageSheet: View {
                                 .padding(.bottom, 4)
                             Text("Manage Blogs")
                                 .font(.system(.title2, design: .serif).weight(.medium))
-                            Text("Remove blog from your device")
+                            Text("Remove downloaded blogs from this device")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
@@ -695,20 +701,19 @@ private struct MyBlogsManageSheet: View {
 
                                     LazyVStack(spacing: 10) {
                                         ForEach(section.blogs) { blog in
-                                            Button {
-                                                onBlogSelected(blog)
-                                            } label: {
-                                                CountryManageRow(
-                                                    blog: blog,
-                                                    isInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
-                                                    isRemoved: removedBlogIDs.contains(blog.id),
-                                                    onRemove: {
-                                                        blogPendingRemoval = blog
-                                                        showRemoveAlert = true
-                                                    }
-                                                )
-                                            }
-                                            .buttonStyle(.plain)
+                                            CountryManageRow(
+                                                blog: blog,
+                                                isInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
+                                                isDraft: createdRecapStore.getBlogDetail(blogId: blog.sourceTripId) == nil,
+                                                isRemoved: removedBlogIDs.contains(blog.id),
+                                                onRemove: {
+                                                    blogPendingRemoval = blog
+                                                    showRemoveAlert = true
+                                                },
+                                                onOpenBlog: {
+                                                    onBlogSelected(blog)
+                                                }
+                                            )
                                         }
                                     }
                                     .padding(.horizontal, 16)
@@ -726,8 +731,7 @@ private struct MyBlogsManageSheet: View {
                     HStack {
                         Button {
                             if countryNames.count == 1, let only = countryNames.first {
-                                selectedCountryForAction = only
-                                showSplitView = true
+                                splitCountryNav = only
                             } else if countryNames.count > 1 {
                                 showSplitCountrySelection = true
                             }
@@ -741,8 +745,7 @@ private struct MyBlogsManageSheet: View {
                         Spacer()
                         Button {
                             if countryNames.count == 1, let only = countryNames.first {
-                                selectedCountryForAction = only
-                                showMergeView = true
+                                mergeCountryNav = only
                             } else if countryNames.count > 1 {
                                 showMergeCountrySelection = true
                             }
@@ -766,21 +769,13 @@ private struct MyBlogsManageSheet: View {
                         .foregroundStyle(.primary)
                 }
             }
-            .fullScreenCover(isPresented: $showMergeView) {
-                if let country = selectedCountryForAction {
-                    NavigationStack {
-                        MergeBlogsView(countryName: country)
-                            .environmentObject(createdRecapStore)
-                    }
-                }
+            .navigationDestination(item: $mergeCountryNav) { country in
+                MergeBlogsView(countryName: country)
+                    .environmentObject(createdRecapStore)
             }
-            .fullScreenCover(isPresented: $showSplitView) {
-                if let country = selectedCountryForAction {
-                    NavigationStack {
-                        SplitBlogView(countryName: country)
-                            .environmentObject(createdRecapStore)
-                    }
-                }
+            .navigationDestination(item: $splitCountryNav) { country in
+                SplitBlogView(countryName: country)
+                    .environmentObject(createdRecapStore)
             }
             .alert(
                 "Remove from this device?",
@@ -796,13 +791,12 @@ private struct MyBlogsManageSheet: View {
                 }
                 Button("Cancel", role: .cancel) { blogPendingRemoval = nil }
             } message: { _ in
-                Text("This removes the blog from local storage. Your cloud blog stays available.")
+                Text("This removes the blog from local storage.")
             }
             .confirmationDialog("Merge Blogs", isPresented: $showMergeCountrySelection, titleVisibility: .visible) {
                 ForEach(countryNames, id: \.self) { country in
                     Button(country) {
-                        selectedCountryForAction = country
-                        showMergeView = true
+                        mergeCountryNav = country
                     }
                 }
                 Button("Cancel", role: .cancel) {}
@@ -812,8 +806,7 @@ private struct MyBlogsManageSheet: View {
             .confirmationDialog("Split Blog", isPresented: $showSplitCountrySelection, titleVisibility: .visible) {
                 ForEach(countryNames, id: \.self) { country in
                     Button(country) {
-                        selectedCountryForAction = country
-                        showSplitView = true
+                        splitCountryNav = country
                     }
                 }
                 Button("Cancel", role: .cancel) {}
