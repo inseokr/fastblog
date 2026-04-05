@@ -820,18 +820,18 @@ struct PlacePhotoModalView: View {
         .simultaneousGesture(photoModalSwipeDismissGesture)
         // Avoid UIKit sheet dismiss + this view’s vertical offset both driving the same drag (jitter, uneven speed).
         .interactiveDismissDisabled(true)
-        .alert("Save changes?", isPresented: $showSaveConfirmationAlert) {
-            Button("Save") {
+        .alert("Update caption?", isPresented: $showSaveConfirmationAlert) {
+            Button("Update") {
                 commitCaption()
                 onDismiss()
             }
-            Button("Discard", role: .destructive) {
+            Button("Keep Editing", role: .cancel) { }
+            Button("Leave", role: .destructive) {
                 revertChanges()
                 onDismiss()
             }
-            Button("Keep Editing", role: .cancel) { }
         } message: {
-            Text("You have unsaved changes to your photo caption. Would you like to save them before leaving?")
+            Text("Your changes will be lost if you leave")
         }
         .onAppear {
             dismissFrozenPhotoId = nil
@@ -1232,7 +1232,10 @@ private struct PlaceDetailTopChrome: View {
 
             VStack(spacing: 0) {
                 HStack(alignment: .top) {
-                    if isEditing || blogIsEditMode || openInCaptionEditor {
+                    if openInCaptionEditor {
+                        // Handoff from place/photo caption edit sheet — reads as leaving the viewer, not aborting an edit.
+                        capsuleButton(title: "Close", action: onLeadingPrimary)
+                    } else if isEditing || blogIsEditMode {
                         capsuleButton(title: "Cancel", action: onLeadingPrimary)
                     } else {
                         capsuleButton(title: "Close", action: onLeadingPrimary)
