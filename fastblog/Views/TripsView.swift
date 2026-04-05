@@ -2107,6 +2107,7 @@ struct CameraCaptureView: View {
                 Button {
                     vibeEnabled.toggle()
                     if vibeEnabled {
+                        AppAnalytics.track(.appInAppCameraVibeON)
                         // Defer mic permission + recording until after the first-time tooltip is dismissed.
                         if hasSeenVibeTooltip {
                             vibeRecorder.start()
@@ -2649,6 +2650,7 @@ struct CameraCaptureView: View {
                 cameraController.capturePhoto { image, _ in
                     let timestamp = Date()
                     Task { @MainActor in
+                        AppAnalytics.track(.appInAppCameraPhotoTaken)
                         let vibeURL = await vibeTask.value
                         // Restart recording immediately so it's ready for the next shot (only if vibe is on)
                         if capturedVibeEnabled { vibeRecorder.start() }
@@ -4161,6 +4163,7 @@ extension TripsView {
     private var cameraOverlayButton: some View {
         HStack(spacing: 8) {
             Button {
+                AppAnalytics.track(.appInAppCameraOpen)
                 showCameraCapture = true
             } label: {
                 Image(systemName: "camera.fill")

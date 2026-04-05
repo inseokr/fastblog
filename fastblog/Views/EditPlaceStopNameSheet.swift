@@ -25,6 +25,8 @@ struct EditPlaceStopNameSheet: View {
     @State private var selectedCategory: String? = nil
     /// True only when the map tap resolved via `MKLocalPointsOfInterestRequest` (a POI), not reverse-geocode fallback.
     @State private var mapTapResolvedAsPOI: Bool = false
+    /// Set to true when the user picks a result from the autocomplete suggestions list.
+    @State private var pickedFromAutocomplete: Bool = false
     @State private var initialTitle: String = ""
     @State private var initialCoordinate: CLLocationCoordinate2D? = nil
     @State private var initialCategory: String? = nil
@@ -248,6 +250,13 @@ struct EditPlaceStopNameSheet: View {
         let trimmed = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalName = trimmed.isEmpty ? "Stop" : trimmed
         debugPrint("[Category] EditPlaceStopNameSheet saveAndDismiss: name='\(finalName)' category=\(selectedCategory ?? "nil") coord=\(selectedCoordinate.map { "\($0.latitude),\($0.longitude)" } ?? "nil")")
+        if mapTapResolvedAsPOI {
+            AppAnalytics.trackEvent(name: "Blog-Place-ChangeName-ClickPoi")
+        } else if pickedFromAutocomplete {
+            AppAnalytics.trackEvent(name: "Blog-Place-ChangeName-AutoComplete")
+        } else {
+            AppAnalytics.trackEvent(name: "Blog-Place-ChangeName-Custom")
+        }
         onSave(finalName, selectedCoordinate, selectedCategory)
         dismiss()
     }
@@ -476,6 +485,7 @@ struct EditPlaceStopNameSheet: View {
                                 showSuggestions = false
                                 isFocused = false
                                 editedTitle = suggestion.title
+                                pickedFromAutocomplete = true
                                 searchViewModel.suggestions = []
                                 Task {
                                     let cat = await searchViewModel.fetchCategory(for: suggestion)

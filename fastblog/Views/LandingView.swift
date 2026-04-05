@@ -265,7 +265,7 @@ struct LandingView: View {
             }
         }
         .onAppear {
-            AppAnalytics.shared.trackEvent(name: "app_opened")
+            AppAnalytics.track(.appOpen)
             avatarImageData = authService.profileImageData
             // If already past splash (e.g. navigating back), show everything immediately
             if splashManager.phase == .done {

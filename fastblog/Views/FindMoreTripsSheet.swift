@@ -332,6 +332,7 @@ struct FindMoreTripsSheet: View {
     private var ctaSection: some View {
         VStack(spacing: 12) {
             Button {
+                AppAnalytics.track(.blogScan)
                 viewModel.scanFindMoreTripsInRange()
             } label: {
                 Text("Find Trips")
