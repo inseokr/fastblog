@@ -36,6 +36,8 @@
 		719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */; };
 		75A557C81671BBFA4382AAA5 /* PageFooterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3FBC69125D4B22AEC596A03 /* PageFooterView.swift */; };
 		7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000061 /* GoogleSignIn */; };
+		BB0003D1 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = AA000063 /* ZIPFoundation */; };
+		BB0003D3 /* BlogBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003D2 /* BlogBackupService.swift */; };
 		7D19D079975A2110DB757EE7 /* BlogPDFView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E304D9246790A5FC17716A85 /* BlogPDFView.swift */; };
 		7FBD2FEB65535E4150C1E521 /* TOCPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F6DDE63772EF1F878EC3686 /* TOCPageView.swift */; };
 		A1B2C3D52F9E1000010002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D52F9E1000010001 /* PrivacyInfo.xcprivacy */; };
@@ -439,6 +441,7 @@
 		BB0003B2 /* VisitedCitiesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesSheet.swift; sourceTree = "<group>"; };
 		BB0003B4 /* WeatherEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherEditSheet.swift; sourceTree = "<group>"; };
 		BB0003C0 /* SplitPlaceStopView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitPlaceStopView.swift; sourceTree = "<group>"; };
+		BB0003D2 /* BlogBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogBackupService.swift; sourceTree = "<group>"; };
 		BB00A002 /* Analytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Analytics.swift; sourceTree = "<group>"; };
 		BB00AI02 /* AnalyticsIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsIdentity.swift; sourceTree = "<group>"; };
 		BB00AE02 /* AnalyticsEventType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsEventType.swift; sourceTree = "<group>"; };
@@ -471,6 +474,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */,
+				BB0003D1 /* ZIPFoundation in Frameworks */,
 				A1C4M3R12F9E1000010003 /* PhotosUI.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -714,6 +718,7 @@
 				BB0001F4 /* AuthService.swift */,
 				BB0001F6 /* AuthStateManager.swift */,
 				BB00017F /* CreatedRecapBlogStore.swift */,
+				BB0003D2 /* BlogBackupService.swift */,
 				BB000251 /* AppCapturePhotoService.swift */,
 				BB000261 /* VibeRecorder.swift */,
 				BB000263 /* VibePlayer.swift */,
@@ -820,6 +825,7 @@
 			name = Bloggo;
 			packageProductDependencies = (
 				AA000061 /* GoogleSignIn */,
+				AA000063 /* ZIPFoundation */,
 			);
 			productName = fastblog;
 			productReference = AA000003 /* Bloggo.app */;
@@ -846,6 +852,7 @@
 			mainGroup = BB0001AD /* main */;
 			packageReferences = (
 				AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+				AA000062 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
 			);
 			productRefGroup = BB0001AF /* Products */;
 			projectDirPath = "";
@@ -977,6 +984,7 @@
 				BB00017C /* OnboardingState.swift in Sources */,
 				BB00017E /* SplashView.swift in Sources */,
 				BB000180 /* CreatedRecapBlogStore.swift in Sources */,
+				BB0003D3 /* BlogBackupService.swift in Sources */,
 				BB000182 /* DayToTripGrouper.swift in Sources */,
 				BB000184 /* GeoDistanceHelper.swift in Sources */,
 				BB000186 /* GeocodingService.swift in Sources */,
@@ -1293,6 +1301,14 @@
 				minimumVersion = 9.0.0;
 			};
 		};
+		AA000062 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/weichsel/ZIPFoundation";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1300,6 +1316,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
 			productName = GoogleSignIn;
+		};
+		AA000063 /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000062 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
+			productName = ZIPFoundation;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
