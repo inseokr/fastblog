@@ -157,7 +157,7 @@ struct CountryBlogsView: View {
                             CountryBlogRowView(
                                 blog: blog,
                                 isBlogInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
-                                isDraft: createdRecapStore.getBlogDetail(blogId: blog.sourceTripId) == nil,
+                                isDraft: !blog.hasCommittedRecapSave,
                                 onRemoveFromCloud: {
                                     blogToRemove = blog
                                     showRemoveCloudPopup = true
@@ -458,6 +458,7 @@ private struct InteractivePopGestureDisabler: UIViewControllerRepresentable {
 struct CountryBlogRowView: View {
     let blog: CreatedRecapBlog
     let isBlogInCloud: Bool
+    /// Matches `!blog.hasCommittedRecapSave`: still a recap draft (incl. after “Save as draft”); hides Share Blog.
     let isDraft: Bool
     let onRemoveFromCloud: () -> Void
     let onShareBlog: () -> Void
@@ -527,8 +528,7 @@ struct CountryBlogRowView: View {
                             onDeleteBlog()
                         } label: {
                             Label("Delete Blog", systemImage: "trash")
-                                .symbolRenderingMode(.monochrome)
-                                .foregroundStyle(Color.red)
+                                .foregroundColor(.red)
                         }
                     } label: {
                         Image(systemName: "ellipsis")

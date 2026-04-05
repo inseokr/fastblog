@@ -144,7 +144,7 @@ struct MyBlogsProfileView: View {
                                         CountryBlogRowView(
                                             blog: blog,
                                             isBlogInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
-                                            isDraft: createdRecapStore.getBlogDetail(blogId: blog.sourceTripId) == nil,
+                                            isDraft: !blog.hasCommittedRecapSave,
                                             onRemoveFromCloud: {},
                                             onShareBlog: {},
                                             onEditBlog: {},
@@ -704,7 +704,7 @@ private struct MyBlogsManageSheet: View {
                                             CountryManageRow(
                                                 blog: blog,
                                                 isInCloud: createdRecapStore.isBlogInCloud(blogId: blog.sourceTripId),
-                                                isDraft: createdRecapStore.getBlogDetail(blogId: blog.sourceTripId) == nil,
+                                                isDraft: !blog.hasCommittedRecapSave,
                                                 isRemoved: removedBlogIDs.contains(blog.id),
                                                 onRemove: {
                                                     blogPendingRemoval = blog

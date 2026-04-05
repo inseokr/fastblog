@@ -1900,33 +1900,27 @@ private final class CameraPreviewContainer: UIView {
     }
 }
 
-/// Centers the preview in a 9:16 portrait frame (letterboxing when the screen is taller),
-/// matching the region used by `croppedToWidescreenAspect()` on portrait captures.
-private struct WidescreenFramedCameraPreview: View {
+/// Full-screen preview (`AVCaptureVideoPreviewLayer` uses `resizeAspectFill`).
+/// Saved stills are still center-cropped to 9:16 (portrait) via `croppedToWidescreenAspect()` — largest widescreen frame from the sensor.
+private struct FullScreenCameraPreview: View {
     let session: AVCaptureSession
 
     var body: some View {
         GeometryReader { geo in
-            widescreenFramedCameraPreviewContent(session: session, size: geo.size)
+            fullScreenCameraPreviewContent(session: session, size: geo.size)
         }
     }
 }
 
 /// Swift 5.0 `ViewBuilder` does not allow multiple `let` statements in the closure (each is `()`).
-private func widescreenFramedCameraPreviewContent(session: AVCaptureSession, size: CGSize) -> some View {
-    let maxW = size.width
-    let maxH = size.height
-    let heightIfFullWidth = maxW * 16.0 / 9.0
-    let useFullWidth = heightIfFullWidth <= maxH
-    let w = useFullWidth ? maxW : maxH * 9.0 / 16.0
-    let h = useFullWidth ? heightIfFullWidth : maxH
-    return ZStack {
+private func fullScreenCameraPreviewContent(session: AVCaptureSession, size: CGSize) -> some View {
+    ZStack {
         Color.black
         CameraPreviewView(session: session)
-            .frame(width: w, height: h)
+            .frame(width: size.width, height: size.height)
             .clipped()
     }
-    .frame(width: maxW, height: maxH)
+    .frame(width: size.width, height: size.height)
 }
 
 /// Camera UI that shows a live preview and session counter. Moment plumbing is added separately.
@@ -2003,7 +1997,7 @@ struct CameraCaptureView: View {
                     Color.black
                         .ignoresSafeArea()
                 } else if cameraController.isConfigured {
-                    WidescreenFramedCameraPreview(session: cameraController.session)
+                    FullScreenCameraPreview(session: cameraController.session)
                         .ignoresSafeArea()
                         .gesture(
                             MagnificationGesture()

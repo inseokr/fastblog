@@ -744,7 +744,7 @@ private struct UnusedPhotosSlideshowView: View {
                         } label: {
                             Image(systemName: "trash")
                                 .font(.system(size: 22, weight: .semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Color(red: 1.0, green: 0.27, blue: 0.23))
                                 .frame(width: 56, height: 56)
                                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                         }
