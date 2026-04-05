@@ -2364,6 +2364,7 @@ struct RecapBlogPageView: View {
                         stopDigitizedTime: stop.visitedTimeDigitized,
                         blogIsEditMode: isEditMode,
                         openInCaptionEditor: item.openInCaptionEditor,
+                        hideChromeDoneFromCaptionEditorSheet: item.hideChromeDoneFromCaptionEditorSheet,
                         showAssetTimeMetadata: isEditMode,
                         autoFocusCaption: item.autoFocusCaption,
                         presentation: .fullscreen(source: .blogRecap),
@@ -3783,7 +3784,8 @@ Your blog remains private unless you choose to share it.
                     dayId: item.dayId,
                     stopId: item.stopId,
                     initialPhotoId: photoId,
-                    openInCaptionEditor: true
+                    openInCaptionEditor: true,
+                    hideChromeDoneFromCaptionEditorSheet: true
                 )
             },
             activePhotoModalToken: placePhotoModalItem?.id
@@ -3825,7 +3827,8 @@ Your blog remains private unless you choose to share it.
                     dayId: item.dayId,
                     stopId: item.stopId,
                     initialPhotoId: item.photoId,
-                    openInCaptionEditor: true
+                    openInCaptionEditor: true,
+                    hideChromeDoneFromCaptionEditorSheet: true
                 )
             },
             activePhotoModalToken: placePhotoModalItem?.id

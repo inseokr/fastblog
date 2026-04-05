@@ -30,6 +30,7 @@
 		33A0384A2DEF7075550C1327 /* PhotoContinuationBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF27B8BE17452A92005EEECF /* PhotoContinuationBlockView.swift */; };
 		37FBA08B0004D6825EFD3370 /* DayMapPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C820592BA8137D8FF7F05AA /* DayMapPageView.swift */; };
 		3A9F2B1C4D8E5F7A2B0C6E91 /* PhotoCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C7D8E2F1A3B5C6D9E0F2A4B /* PhotoCaptionEditSheet.swift */; };
+		5FSCME02E5D40718293A4B6C /* ScrollMetricsReportingTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FSCME01E5D40718293A4B6C /* ScrollMetricsReportingTextEditor.swift */; };
 		43EA38F00CD64247BB84651D /* StoryBookViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8B39A532FFD631E0B9D8312 /* StoryBookViewModel.swift */; };
 		5050088081A6CE14C59511C2 /* DayContentPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A01A8A2A53646AA22C132E3 /* DayContentPageView.swift */; };
 		719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */; };
@@ -70,6 +71,7 @@
 		BB000136 /* LandingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000135 /* LandingView.swift */; };
 		BB000138 /* LoadingScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000137 /* LoadingScanView.swift */; };
 		BB00013A /* ManagePhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000139 /* ManagePhotosView.swift */; };
+		BB0002D1 /* StorageManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002D0 /* StorageManagementView.swift */; };
 		BB00013C /* MapDayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00013B /* MapDayView.swift */; };
 		BB00013E /* MockPhotoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00013D /* MockPhotoView.swift */; };
 		BB000140 /* MyBlogsProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00013F /* MyBlogsProfileView.swift */; };
@@ -255,6 +257,7 @@
 		30C7F49D9E66B6763CCCD7B9 /* PhotoCardView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PhotoCardView.swift; path = StoryBook/PhotoCardView.swift; sourceTree = "<group>"; };
 		3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhotoPermissionOnboardingView.swift; sourceTree = "<group>"; };
 		4C7D8E2F1A3B5C6D9E0F2A4B /* PhotoCaptionEditSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhotoCaptionEditSheet.swift; sourceTree = "<group>"; };
+		5FSCME01E5D40718293A4B6C /* ScrollMetricsReportingTextEditor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollMetricsReportingTextEditor.swift; sourceTree = "<group>"; };
 		4E34776F396319FBEE2FCECD /* StoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryCaptionGenerator.swift; sourceTree = "<group>"; };
 		67D919F737961D65785318BA /* StoryBookContent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryBookContent.swift; sourceTree = "<group>"; };
 		6ABC2F392F2EBDD1636DC399 /* StoryBookView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StoryBookView.swift; path = StoryBook/StoryBookView.swift; sourceTree = "<group>"; };
@@ -295,6 +298,7 @@
 		BB000135 /* LandingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandingView.swift; sourceTree = "<group>"; };
 		BB000137 /* LoadingScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingScanView.swift; sourceTree = "<group>"; };
 		BB000139 /* ManagePhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagePhotosView.swift; sourceTree = "<group>"; };
+		BB0002D0 /* StorageManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageManagementView.swift; sourceTree = "<group>"; };
 		BB00013B /* MapDayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapDayView.swift; sourceTree = "<group>"; };
 		BB00013D /* MockPhotoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockPhotoView.swift; sourceTree = "<group>"; };
 		BB00013F /* MyBlogsProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyBlogsProfileView.swift; sourceTree = "<group>"; };
@@ -641,6 +645,7 @@
 				BB00015D /* ScanningAnimationView.swift */,
 				BB00015F /* SelectPhotosIntroView.swift */,
 				BB000161 /* ShareSheet.swift */,
+				BB0002D0 /* StorageManagementView.swift */,
 				BB000230 /* PhotoAccessRow.swift */,
 				BB0001DC /* SubscriptionSettingsView.swift */,
 				BB000163 /* TermsOfServiceView.swift */,
@@ -662,6 +667,7 @@
 				2C198E17B0447F89CC98721F /* DayCaptionEditSheet.swift */,
 				B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */,
 				4C7D8E2F1A3B5C6D9E0F2A4B /* PhotoCaptionEditSheet.swift */,
+				5FSCME01E5D40718293A4B6C /* ScrollMetricsReportingTextEditor.swift */,
 				BB0002A2 /* StoryWritingStyleSheet.swift */,
 				BB0003A2 /* PDFExportOptionsSheet.swift */,
 				E304D9246790A5FC17716A85 /* BlogPDFView.swift */,
@@ -945,6 +951,7 @@
 				BB00015E /* ScanningAnimationView.swift in Sources */,
 				BB000160 /* SelectPhotosIntroView.swift in Sources */,
 				BB000162 /* ShareSheet.swift in Sources */,
+				BB0002D1 /* StorageManagementView.swift in Sources */,
 				BB000164 /* TermsOfServiceView.swift in Sources */,
 				BB000166 /* TitleInputView.swift in Sources */,
 				BB000168 /* TripDayPickerView.swift in Sources */,
@@ -1053,6 +1060,7 @@
 				315C7029393A82205980943C /* DayCaptionEditSheet.swift in Sources */,
 				719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */,
 				3A9F2B1C4D8E5F7A2B0C6E91 /* PhotoCaptionEditSheet.swift in Sources */,
+				5FSCME02E5D40718293A4B6C /* ScrollMetricsReportingTextEditor.swift in Sources */,
 				BB0002A1 /* StoryWritingStyleSheet.swift in Sources */,
 				BB0003A1 /* PDFExportOptionsSheet.swift in Sources */,
 				BB0003B1 /* VisitedCitiesService.swift in Sources */,

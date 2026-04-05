@@ -124,6 +124,7 @@ struct BlogSettingsSheet: View {
         List {
             editAndRestoreSection
             titleAndCoverSection
+            unusedPhotosSection
             fontStyleSection
             weatherSection
             cloudSection
@@ -163,6 +164,21 @@ struct BlogSettingsSheet: View {
                     dismiss()
                 } label: {
                     Label("Rescan All Moments", systemImage: "arrow.clockwise.circle")
+                }
+            }
+        }
+    }
+
+    private var unusedPhotosSection: some View {
+        Section {
+            NavigationLink {
+                StorageManagementView(draft: $draft, onSave: onSave)
+            } label: {
+                Label {
+                    Text("Unused Photos")
+                } icon: {
+                    Image(systemName: "photo.stack")
+                        .foregroundStyle(.white)
                 }
             }
         }

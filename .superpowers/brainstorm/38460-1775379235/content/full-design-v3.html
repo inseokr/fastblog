@@ -1,0 +1,186 @@
+<h2>Storage Management — Overlay Layout</h2>
+<p class="subtitle">Filter floats over grid · Bottom buttons float over scrolling photos</p>
+
+<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin-top:8px">
+
+  <!-- SCREEN 1: Normal mode -->
+  <div style="flex:1;min-width:180px;max-width:220px">
+    <p class="label" style="text-align:center;margin-bottom:8px">Normal Mode</p>
+    <div style="background:#000;border-radius:16px;overflow:hidden;border:1px solid #333;position:relative">
+      <div style="background:#111;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #222;position:relative;z-index:2">
+        <span style="color:#0a84ff;font-size:20px;font-weight:300;line-height:1">‹</span>
+        <span style="color:#fff;font-size:12px;font-weight:600">Unused Photos</span>
+        <span style="color:#0a84ff;font-size:13px;font-weight:500">Select</span>
+      </div>
+      <!-- Grid fills full height, photos go under bottom buttons -->
+      <div style="position:relative">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:2px">
+          <div style="aspect-ratio:1;background:#2a2a2a"></div>
+          <div style="aspect-ratio:1;background:#1e3a2f"></div>
+          <div style="aspect-ratio:1;background:#2a1e3a"></div>
+          <div style="aspect-ratio:1;background:#3a2a1e"></div>
+          <div style="aspect-ratio:1;background:#1e2a3a"></div>
+          <div style="aspect-ratio:1;background:#2a3a1e"></div>
+          <div style="aspect-ratio:1;background:#3a1e2a"></div>
+          <div style="aspect-ratio:1;background:#2a2a1e"></div>
+          <div style="aspect-ratio:1;background:#1e3a3a"></div>
+          <div style="aspect-ratio:1;background:#2a1e1e"></div>
+          <div style="aspect-ratio:1;background:#1e2a1e"></div>
+          <div style="aspect-ratio:1;background:#3a3a2a"></div>
+        </div>
+        <!-- Bottom buttons float OVER the grid -->
+        <div style="position:absolute;bottom:0;left:0;right:0;padding:10px 14px 10px;display:flex;justify-content:space-between;align-items:center;background:linear-gradient(to top,rgba(0,0,0,0.0),rgba(0,0,0,0.0))">
+        </div>
+      </div>
+    </div>
+    <p style="color:#666;font-size:11px;text-align:center;margin-top:6px">No bottom bar — Select not active</p>
+  </div>
+
+  <!-- SCREEN 2: Select mode — buttons float over grid -->
+  <div style="flex:1;min-width:180px;max-width:220px">
+    <p class="label" style="text-align:center;margin-bottom:8px">Select Mode</p>
+    <div style="background:#000;border-radius:16px;overflow:hidden;border:1px solid #333;position:relative">
+      <div style="background:#111;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #222;position:relative;z-index:2">
+        <span style="color:#0a84ff;font-size:13px;font-weight:500">Cancel</span>
+        <span style="color:#aaa;font-size:11px;font-weight:600">4 selected</span>
+        <span style="color:#0a84ff;font-size:13px;font-weight:500">Select All</span>
+      </div>
+      <div style="position:relative">
+        <!-- Grid — extends behind the floating buttons -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:2px">
+          <div style="aspect-ratio:1;background:#2a2a2a;position:relative">
+            <div style="position:absolute;bottom:3px;right:3px;width:16px;height:16px;background:#0a84ff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:700">✓</div>
+          </div>
+          <div style="aspect-ratio:1;background:#1e3a2f;opacity:0.4;position:relative">
+            <div style="position:absolute;bottom:3px;right:3px;width:16px;height:16px;border:1.5px solid rgba(255,255,255,0.6);border-radius:50%"></div>
+          </div>
+          <div style="aspect-ratio:1;background:#2a1e3a;position:relative">
+            <div style="position:absolute;bottom:3px;right:3px;width:16px;height:16px;background:#0a84ff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:700">✓</div>
+          </div>
+          <div style="aspect-ratio:1;background:#3a2a1e;opacity:0.4;position:relative">
+            <div style="position:absolute;bottom:3px;right:3px;width:16px;height:16px;border:1.5px solid rgba(255,255,255,0.6);border-radius:50%"></div>
+          </div>
+          <div style="aspect-ratio:1;background:#1e2a3a;position:relative">
+            <div style="position:absolute;bottom:3px;right:3px;width:16px;height:16px;background:#0a84ff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:700">✓</div>
+          </div>
+          <div style="aspect-ratio:1;background:#2a3a1e;opacity:0.4;position:relative">
+            <div style="position:absolute;bottom:3px;right:3px;width:16px;height:16px;border:1.5px solid rgba(255,255,255,0.6);border-radius:50%"></div>
+          </div>
+          <!-- Bottom row — partially obscured by floating buttons -->
+          <div style="aspect-ratio:1;background:#3a1e2a;position:relative">
+            <div style="position:absolute;bottom:3px;right:3px;width:16px;height:16px;background:#0a84ff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:700">✓</div>
+          </div>
+          <div style="aspect-ratio:1;background:#2a2a1e;opacity:0.4;position:relative">
+            <div style="position:absolute;bottom:3px;right:3px;width:16px;height:16px;border:1.5px solid rgba(255,255,255,0.6);border-radius:50%"></div>
+          </div>
+          <div style="aspect-ratio:1;background:#1e3a3a;opacity:0.4;position:relative">
+            <div style="position:absolute;bottom:3px;right:3px;width:16px;height:16px;border:1.5px solid rgba(255,255,255,0.6);border-radius:50%"></div>
+          </div>
+          <div style="aspect-ratio:1;background:#2a1e1e;opacity:0.4;position:relative">
+            <div style="position:absolute;bottom:3px;right:3px;width:16px;height:16px;border:1.5px solid rgba(255,255,255,0.6);border-radius:50%"></div>
+          </div>
+          <div style="aspect-ratio:1;background:#1e2a1e;opacity:0.4;position:relative">
+            <div style="position:absolute;bottom:3px;right:3px;width:16px;height:16px;border:1.5px solid rgba(255,255,255,0.6);border-radius:50%"></div>
+          </div>
+          <div style="aspect-ratio:1;background:#3a3a2a;opacity:0.4;position:relative">
+            <div style="position:absolute;bottom:3px;right:3px;width:16px;height:16px;border:1.5px solid rgba(255,255,255,0.6);border-radius:50%"></div>
+          </div>
+        </div>
+        <!-- Floating bottom buttons — overlaid on top of grid -->
+        <div style="position:absolute;bottom:0;left:0;right:0;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;z-index:3">
+          <div style="width:44px;height:44px;background:rgba(30,30,30,0.85);backdrop-filter:blur(8px);border-radius:10px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,0.08)">
+            <svg width="22" height="22" viewBox="0 0 26 26" fill="none">
+              <circle cx="13" cy="13" r="11" stroke="white" stroke-width="1.6"/>
+              <line x1="7" y1="9" x2="19" y2="9" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+              <line x1="9" y1="13" x2="19" y2="13" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+              <line x1="11" y1="17" x2="19" y2="17" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+              <circle cx="8" cy="13" r="1.4" fill="white"/>
+            </svg>
+          </div>
+          <div style="width:44px;height:44px;background:rgba(60,15,15,0.85);backdrop-filter:blur(8px);border-radius:10px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,59,48,0.2)">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="#ff453a" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+              <line x1="10" y1="11" x2="10" y2="17" stroke="#ff453a" stroke-width="1.7" stroke-linecap="round"/>
+              <line x1="14" y1="11" x2="14" y2="17" stroke="#ff453a" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p style="color:#666;font-size:11px;text-align:center;margin-top:6px">Buttons float over grid (blur backdrop)</p>
+  </div>
+
+  <!-- SCREEN 3: Filter overlay -->
+  <div style="flex:1;min-width:180px;max-width:220px">
+    <p class="label" style="text-align:center;margin-bottom:8px">Filter Open (overlay)</p>
+    <div style="background:#000;border-radius:16px;overflow:hidden;border:1px solid #333;position:relative">
+      <div style="background:#111;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #222;position:relative;z-index:2">
+        <span style="color:#0a84ff;font-size:13px;font-weight:500">Cancel</span>
+        <span style="color:#aaa;font-size:11px;font-weight:600">0 selected</span>
+        <span style="color:#0a84ff;font-size:13px;font-weight:500">Select All</span>
+      </div>
+      <div style="position:relative">
+        <!-- Grid visible underneath, unaffected layout -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:2px">
+          <div style="aspect-ratio:1;background:#2a2a2a"></div>
+          <div style="aspect-ratio:1;background:#1e3a2f"></div>
+          <div style="aspect-ratio:1;background:#2a1e3a"></div>
+          <div style="aspect-ratio:1;background:#3a2a1e"></div>
+          <div style="aspect-ratio:1;background:#1e2a3a"></div>
+          <div style="aspect-ratio:1;background:#2a3a1e"></div>
+          <div style="aspect-ratio:1;background:#3a1e2a"></div>
+          <div style="aspect-ratio:1;background:#2a2a1e"></div>
+          <div style="aspect-ratio:1;background:#1e3a3a"></div>
+          <div style="aspect-ratio:1;background:#2a1e1e"></div>
+          <div style="aspect-ratio:1;background:#1e2a1e"></div>
+          <div style="aspect-ratio:1;background:#3a3a2a"></div>
+        </div>
+
+        <!-- Filter dropdown: absolute overlay, anchored to bottom-left button -->
+        <div style="position:absolute;bottom:64px;left:8px;background:rgba(28,28,30,0.96);backdrop-filter:blur(16px);border-radius:14px;padding:12px;width:160px;z-index:10;border:1px solid rgba(255,255,255,0.08);box-shadow:0 8px 24px rgba(0,0,0,0.6)">
+          <p style="color:#888;font-size:10px;font-weight:600;letter-spacing:0.8px;margin-bottom:8px">FILTER BY DAY</p>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <div style="display:flex;align-items:center;gap:7px;padding:7px 8px;background:#0a84ff1a;border-radius:8px;border:1px solid #0a84ff33">
+              <div style="width:6px;height:6px;background:#0a84ff;border-radius:50%;flex-shrink:0"></div>
+              <span style="color:#fff;font-size:11px;font-weight:500">Day 1</span>
+              <span style="color:#555;font-size:10px">Mar 15</span>
+              <span style="color:#0a84ff;font-size:10px;margin-left:auto">✓</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:7px;padding:7px 8px;background:rgba(255,255,255,0.06);border-radius:8px">
+              <div style="width:6px;height:6px;background:#444;border-radius:50%;flex-shrink:0"></div>
+              <span style="color:#fff;font-size:11px;font-weight:500">Day 2</span>
+              <span style="color:#555;font-size:10px">Mar 16</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:7px;padding:7px 8px;background:rgba(255,255,255,0.06);border-radius:8px">
+              <div style="width:6px;height:6px;background:#444;border-radius:50%;flex-shrink:0"></div>
+              <span style="color:#fff;font-size:11px;font-weight:500">Day 3</span>
+              <span style="color:#555;font-size:10px">Mar 17</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Floating bottom buttons — filter icon tinted blue (active) -->
+        <div style="position:absolute;bottom:0;left:0;right:0;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;z-index:5">
+          <div style="width:44px;height:44px;background:rgba(10,132,255,0.2);backdrop-filter:blur(8px);border-radius:10px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(10,132,255,0.4)">
+            <svg width="22" height="22" viewBox="0 0 26 26" fill="none">
+              <circle cx="13" cy="13" r="11" stroke="#0a84ff" stroke-width="1.6"/>
+              <line x1="7" y1="9" x2="19" y2="9" stroke="#0a84ff" stroke-width="1.5" stroke-linecap="round"/>
+              <line x1="9" y1="13" x2="19" y2="13" stroke="#0a84ff" stroke-width="1.5" stroke-linecap="round"/>
+              <line x1="11" y1="17" x2="19" y2="17" stroke="#0a84ff" stroke-width="1.5" stroke-linecap="round"/>
+              <circle cx="8" cy="13" r="1.4" fill="#0a84ff"/>
+            </svg>
+          </div>
+          <div style="width:44px;height:44px;background:rgba(60,15,15,0.85);backdrop-filter:blur(8px);border-radius:10px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,59,48,0.2)">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="#ff453a" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+              <line x1="10" y1="11" x2="10" y2="17" stroke="#ff453a" stroke-width="1.7" stroke-linecap="round"/>
+              <line x1="14" y1="11" x2="14" y2="17" stroke="#ff453a" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p style="color:#666;font-size:11px;text-align:center;margin-top:6px">Dropdown anchors above filter button</p>
+  </div>
+
+</div>

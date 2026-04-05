@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct PhotoCaptionEditSheet: View {
     let photo: RecapPhoto
@@ -33,7 +34,10 @@ struct PhotoCaptionEditSheet: View {
     @AppStorage(StoryWritingStyle.presetStorageKey) private var stylePresetId: String = ""
     /// Captures the user's own text before the first AI run, enabling "Revert to original".
     @State private var originalDraft: String? = nil
-    @FocusState private var isFocused: Bool
+    @State private var wantsCaptionKeyboardFocus = false
+    @State private var captionScrollContentHeight: CGFloat = 0
+    @State private var captionScrollVisibleHeight: CGFloat = 0
+    @State private var captionScrollOffsetY: CGFloat = 0
 
     private let editorTextHorizontalPadding: CGFloat = 14
     private let placeholderLeadingInset: CGFloat = 34
@@ -62,7 +66,7 @@ struct PhotoCaptionEditSheet: View {
             .onTapGesture {
                 guard let openFull = onRequestFullPhotoView else { return }
                 caption = editedText
-                isFocused = false
+                wantsCaptionKeyboardFocus = false
                 openFull()
             }
 
@@ -88,17 +92,35 @@ struct PhotoCaptionEditSheet: View {
 
                 // Text editor
                 ZStack(alignment: .topLeading) {
-                    TextEditor(text: $editedText)
-                        .focused($isFocused)
-                        .font(.body)
-                        .foregroundColor(.primary)
-                        .scrollContentBackground(.hidden)
-                        .padding(.horizontal, editorTextHorizontalPadding)
-                        .padding(.vertical, 14)
-                        .frame(minHeight: 140)
-                        .background(Color(uiColor: .secondarySystemBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .padding(.horizontal, 20)
+                    ScrollMetricsReportingTextEditor(
+                        text: $editedText,
+                        contentHeight: $captionScrollContentHeight,
+                        visibleViewportHeight: $captionScrollVisibleHeight,
+                        scrollOffsetY: $captionScrollOffsetY,
+                        wantsKeyboardFocus: $wantsCaptionKeyboardFocus,
+                        textInsets: UIEdgeInsets(
+                            top: 14,
+                            left: editorTextHorizontalPadding,
+                            bottom: 14,
+                            right: editorTextHorizontalPadding
+                        )
+                    )
+                    .frame(minHeight: 140)
+                    .background(Color(uiColor: .secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .padding(.horizontal, 20)
+                    .overlay(alignment: .topTrailing) {
+                        GeometryReader { geo in
+                            CaptionEditorVerticalScrollThumb(
+                                contentHeight: captionScrollContentHeight,
+                                visibleHeight: captionScrollVisibleHeight,
+                                scrollOffsetY: captionScrollOffsetY,
+                                trackLength: geo.size.height
+                            )
+                            .padding(.trailing, 26)
+                        }
+                        .allowsHitTesting(false)
+                    }
 
                     if editedText.isEmpty {
                         Text("Describe this moment...")
@@ -107,17 +129,6 @@ struct PhotoCaptionEditSheet: View {
                             .padding(.leading, placeholderLeadingInset)
                             .padding(.trailing, placeholderTrailingInset)
                             .padding(.top, 22)
-                            .allowsHitTesting(false)
-                    }
-
-                    // Scroll indicator — signals the caption area is scrollable
-                    if !editedText.isEmpty {
-                        Capsule()
-                            .fill(Color(uiColor: .placeholderText).opacity(0.45))
-                            .frame(width: 3, height: 36)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                            .padding(.top, 20)
-                            .padding(.trailing, 26)
                             .allowsHitTesting(false)
                     }
                 }
@@ -186,7 +197,7 @@ struct PhotoCaptionEditSheet: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             HStack(alignment: .center) {
                 Button("Cancel") {
-                    isFocused = false
+                    wantsCaptionKeyboardFocus = false
                     onCancel()
                 }
                 .font(.body)
@@ -198,7 +209,7 @@ struct PhotoCaptionEditSheet: View {
 
                 Button("Done") {
                     caption = editedText
-                    isFocused = false
+                    wantsCaptionKeyboardFocus = false
                     onSave()
                 }
                 .font(.body)
@@ -214,7 +225,7 @@ struct PhotoCaptionEditSheet: View {
         .onAppear {
             editedText = caption
             DispatchQueue.main.async {
-                isFocused = true
+                wantsCaptionKeyboardFocus = true
             }
         }
         .onChange(of: activePhotoModalToken) { oldValue, newValue in

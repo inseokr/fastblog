@@ -37,6 +37,8 @@ struct PlacePhotoModalItem: Identifiable {
     var autoFocusCaption: Bool = false
     /// Open with the same inline caption chrome as blog edit (Cancel / Done, caption above keyboard), not read-only full photo.
     var openInCaptionEditor: Bool = false
+    /// With `openInCaptionEditor`, omit top-bar Done — the parent caption edit overlay already has Done.
+    var hideChromeDoneFromCaptionEditorSheet: Bool = false
     var id: String { "\(dayId.uuidString)-\(stopId.uuidString)-\(initialPhotoId.uuidString)" }
 }
 
@@ -108,6 +110,8 @@ struct PlacePhotoModalView: View {
     var blogIsEditMode: Bool = false
     /// When true, opens in the same caption-editing layout as blog edit (even if the recap timeline is not in edit mode).
     var openInCaptionEditor: Bool = false
+    /// With `openInCaptionEditor`, hide top-trailing Done (parent `PlaceCaptionEditSheet` / `PhotoCaptionEditSheet` already has Done).
+    var hideChromeDoneFromCaptionEditorSheet: Bool = false
     /// When false, hide PHAsset "Created/Modified" metadata lines (useful for read-only presentation).
     var showAssetTimeMetadata: Bool = true
     var autoFocusCaption: Bool = false
@@ -168,6 +172,8 @@ struct PlacePhotoModalView: View {
     @State private var embeddedSearchCurrentURL: URL?
     /// Captured on touch-down for search chrome gestures so we can restore the caption field after dismiss.
     @State private var keyboardUpAtSearchChromeGesture = false
+    /// Open embedded search only after caption field unfocuses (never show the web while the keyboard is up).
+    @State private var pendingOpenPlaceSearchAfterKeyboardDismiss = false
     /// Read-only bottom overlay: multi-line captions start collapsed; user can expand.
     @State private var isReadOnlyCaptionExpanded = false
     /// Vertical drag for swipe-down dismiss (blog overlay & sheets without a drag indicator).
@@ -262,6 +268,7 @@ struct PlacePhotoModalView: View {
         stopDigitizedTime: String? = nil,
         blogIsEditMode: Bool = false,
         openInCaptionEditor: Bool = false,
+        hideChromeDoneFromCaptionEditorSheet: Bool = false,
         showAssetTimeMetadata: Bool = true,
         autoFocusCaption: Bool = false,
         presentation: PlaceDetailPresentation = .sheet,
@@ -284,6 +291,7 @@ struct PlacePhotoModalView: View {
         self.stopDigitizedTime = stopDigitizedTime
         self.blogIsEditMode = blogIsEditMode
         self.openInCaptionEditor = openInCaptionEditor
+        self.hideChromeDoneFromCaptionEditorSheet = hideChromeDoneFromCaptionEditorSheet
         self.showAssetTimeMetadata = showAssetTimeMetadata
         self.autoFocusCaption = autoFocusCaption
         self.presentation = presentation
@@ -391,7 +399,15 @@ struct PlacePhotoModalView: View {
             return
         }
         if hasAnyChanges {
-            showSaveConfirmationAlert = true
+            if openInCaptionEditor {
+                // Nested full-screen viewer from caption edit: closing should save like Done, no confirmation.
+                animateSwipeDismissCompletion {
+                    commitCaption()
+                    onDismiss()
+                }
+            } else {
+                showSaveConfirmationAlert = true
+            }
         } else {
             animateSwipeDismissCompletion {
                 revertChanges()
@@ -454,7 +470,7 @@ struct PlacePhotoModalView: View {
                 let predicted = value.predictedEndTranslation.height
                 let shouldDismiss = mostlyVertical && (dy > 115 || predicted > 220)
                 if shouldDismiss {
-                    let needsSaveAlert = (isEditing || usesInlineCaptionChrome) && hasAnyChanges
+                    let needsSaveAlert = (isEditing || usesInlineCaptionChrome) && hasAnyChanges && !openInCaptionEditor
                     if needsSaveAlert {
                         dismissFrozenPhotoId = nil
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.86, blendDuration: 0)) {
@@ -601,6 +617,7 @@ struct PlacePhotoModalView: View {
                 isEditing: isEditing,
                 blogIsEditMode: blogIsEditMode,
                 openInCaptionEditor: openInCaptionEditor,
+                hideChromeDoneFromCaptionEditorSheet: hideChromeDoneFromCaptionEditorSheet,
                 hasUnsavedChanges: hasUnsavedChanges,
                 currentPhotoId: effectiveDisplayedPhotoId,
                 hasVibeClip: currentVibeURL != nil,
@@ -753,6 +770,7 @@ struct PlacePhotoModalView: View {
             guard !isDismissExitAnimating, dismissFrozenPhotoId == nil else { return }
             isReadOnlyCaptionExpanded = false
             interactiveDismissDragOffset = 0
+            pendingOpenPlaceSearchAfterKeyboardDismiss = false
             showPlaceSearchWebPanel = false
             editedCaptionText = currentCaption
             if isEditing {
@@ -762,7 +780,15 @@ struct PlacePhotoModalView: View {
         }
         .onChange(of: isCaptionFocused) { _, focused in
             if focused {
+                pendingOpenPlaceSearchAfterKeyboardDismiss = false
                 closeEmbeddedSearchForCaptionInteraction()
+            } else if pendingOpenPlaceSearchAfterKeyboardDismiss {
+                pendingOpenPlaceSearchAfterKeyboardDismiss = false
+                var t = Transaction()
+                t.animation = nil
+                withTransaction(t) {
+                    showPlaceSearchWebPanel = true
+                }
             }
         }
         .onChange(of: editedCaptionText) { _, newValue in
@@ -1350,13 +1376,26 @@ struct PlacePhotoModalView: View {
         let name = editedPlaceTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, googleSearchURL(placeName: name) != nil else { return }
         let wasOpen = showPlaceSearchWebPanel
+        if !wasOpen {
+            if isCaptionFocused {
+                pendingOpenPlaceSearchAfterKeyboardDismiss = true
+                isCaptionFocused = false
+                return
+            }
+            var t = Transaction()
+            t.animation = nil
+            withTransaction(t) {
+                showPlaceSearchWebPanel = true
+            }
+            return
+        }
         let restoreKeyboard = keyboardUpAtSearchChromeGesture
         var t = Transaction()
         t.animation = nil
         withTransaction(t) {
-            showPlaceSearchWebPanel.toggle()
+            showPlaceSearchWebPanel = false
         }
-        if wasOpen && restoreKeyboard {
+        if restoreKeyboard {
             DispatchQueue.main.async {
                 isCaptionFocused = true
             }
@@ -1458,6 +1497,7 @@ private struct PlaceDetailTopChrome: View {
     let isEditing: Bool
     let blogIsEditMode: Bool
     let openInCaptionEditor: Bool
+    let hideChromeDoneFromCaptionEditorSheet: Bool
     let hasUnsavedChanges: Bool
     let currentPhotoId: UUID
     let hasVibeClip: Bool
@@ -1569,7 +1609,8 @@ private struct PlaceDetailTopChrome: View {
                         }
                     } else if isEditing && !blogIsEditMode && !openInCaptionEditor {
                         accentHeaderPill(title: "Save", fill: Color.blue, action: onSaveCaptionAndDismiss)
-                    } else if blogIsEditMode || openInCaptionEditor {
+                    } else if (blogIsEditMode || openInCaptionEditor)
+                        && !(openInCaptionEditor && hideChromeDoneFromCaptionEditorSheet) {
                         capsuleButton(title: "Done", action: onDoneBlogEdit)
                             .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
                     }

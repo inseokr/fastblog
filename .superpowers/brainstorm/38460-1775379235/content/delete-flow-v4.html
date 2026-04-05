@@ -1,0 +1,67 @@
+<h2>Delete Flow — Final</h2>
+<p class="subtitle">Single photo vs batch delete</p>
+
+<div style="display:flex;gap:32px;flex-wrap:wrap;margin-top:20px">
+
+  <!-- In-app camera -->
+  <div style="flex:1;min-width:220px">
+    <div style="background:#1c3a2a;border:1px solid #2a5a3a;border-radius:10px;padding:10px 14px;margin-bottom:12px;text-align:center">
+      <p style="color:#4cd964;font-size:12px;font-weight:600;letter-spacing:0.5px">IN-APP CAMERA PHOTO</p>
+    </div>
+    <div style="background:#1c1c1e;border-radius:14px;padding:20px;text-align:center">
+      <p style="color:#fff;font-weight:700;font-size:15px;margin-bottom:6px">Delete Photo From Bloggo?</p>
+      <p style="color:#888;font-size:13px;margin-bottom:16px">Removes from Bloggo gallery.</p>
+      <div style="display:flex;gap:8px">
+        <div style="background:#333;color:#fff;padding:10px 0;border-radius:10px;font-size:14px;flex:1;text-align:center">No</div>
+        <div style="background:#ff3b30;color:#fff;padding:10px 0;border-radius:10px;font-size:14px;font-weight:600;flex:1;text-align:center">Delete</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Divider -->
+  <div style="width:1px;background:#333;align-self:stretch"></div>
+
+  <!-- iPhone library -->
+  <div style="flex:1;min-width:220px">
+    <div style="background:#1a2a3a;border:1px solid #2a4a6a;border-radius:10px;padding:10px 14px;margin-bottom:12px;text-align:center">
+      <p style="color:#0a84ff;font-size:12px;font-weight:600;letter-spacing:0.5px">IPHONE LIBRARY PHOTO</p>
+    </div>
+    <div style="background:#1c1c1e;border-radius:14px;padding:20px;text-align:center">
+      <p style="color:#fff;font-weight:700;font-size:15px;margin-bottom:6px">Delete Photo From Phone?</p>
+      <p style="color:#888;font-size:13px;margin-bottom:16px">Removes from your phone.</p>
+      <div style="display:flex;gap:8px">
+        <div style="background:#333;color:#fff;padding:10px 0;border-radius:10px;font-size:14px;flex:1;text-align:center">No</div>
+        <div style="background:#ff3b30;color:#fff;padding:10px 0;border-radius:10px;font-size:14px;font-weight:600;flex:1;text-align:center">Delete</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Batch delete -->
+<div class="section" style="margin-top:28px">
+  <h3 style="margin-bottom:12px">Batch Delete (mixed selection)</h3>
+  <p style="color:#888;font-size:13px;margin-bottom:16px">When selection contains both types, show one confirmation per source type in sequence.</p>
+  <div style="display:flex;gap:12px;flex-wrap:wrap">
+    <div style="background:#1c1c1e;border-radius:14px;padding:18px;flex:1;min-width:180px;text-align:center">
+      <p style="color:#aaa;font-size:11px;font-weight:600;letter-spacing:0.5px;margin-bottom:6px">IF BLOGGO PHOTOS SELECTED</p>
+      <p style="color:#fff;font-weight:700;font-size:14px;margin-bottom:4px">Delete 3 Photos From Bloggo?</p>
+      <p style="color:#888;font-size:12px;margin-bottom:12px">Removes from Bloggo gallery.</p>
+      <div style="display:flex;gap:8px">
+        <div style="background:#333;color:#fff;padding:8px 0;border-radius:8px;font-size:13px;flex:1;text-align:center">No</div>
+        <div style="background:#ff3b30;color:#fff;padding:8px 0;border-radius:8px;font-size:13px;font-weight:600;flex:1;text-align:center">Delete</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;color:#555;font-size:18px">→</div>
+    <div style="background:#1c1c1e;border-radius:14px;padding:18px;flex:1;min-width:180px;text-align:center">
+      <p style="color:#aaa;font-size:11px;font-weight:600;letter-spacing:0.5px;margin-bottom:6px">IF PHONE PHOTOS SELECTED</p>
+      <p style="color:#fff;font-weight:700;font-size:14px;margin-bottom:4px">Delete 5 Photos From Phone?</p>
+      <p style="color:#888;font-size:12px;margin-bottom:12px">Removes from your phone.</p>
+      <div style="display:flex;gap:8px">
+        <div style="background:#333;color:#fff;padding:8px 0;border-radius:8px;font-size:13px;flex:1;text-align:center">No</div>
+        <div style="background:#ff3b30;color:#fff;padding:9px 0;border-radius:8px;font-size:13px;font-weight:600;flex:1;text-align:center">Delete</div>
+      </div>
+    </div>
+  </div>
+  <p style="color:#555;font-size:12px;margin-top:10px">Each dialog only appears if that photo type is present in the selection.</p>
+</div>

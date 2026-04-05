@@ -90,6 +90,46 @@ struct PlaceCaptionEditSheet: View {
         captionThumbnailSelection == .placeCaption ? 2 : 3
     }
 
+    /// Caption editor uses a **fixed** height (scrolls inside). It must not expand with spare vertical space,
+    /// or the thumbnail strip can end up under the keyboard on small phones at large Dynamic Type sizes.
+    private var captionTextEditorFixedHeight: CGFloat {
+        let w = UIScreen.main.bounds.width
+        let narrowPhone = w < 400
+        let belowLargePhoneWidth = w < 428
+
+        if dynamicTypeSize >= .accessibility5 {
+            return narrowPhone ? 92 : 104
+        }
+        if dynamicTypeSize >= .accessibility3 {
+            return narrowPhone ? 104 : 116
+        }
+        if dynamicTypeSize >= .xxxLarge {
+            return belowLargePhoneWidth ? 118 : 132
+        }
+        if dynamicTypeSize >= .xxLarge {
+            return belowLargePhoneWidth ? 132 : 144
+        }
+        return 152
+    }
+
+    @ViewBuilder
+    private var captionThumbnailStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                placeCaptionThumbnailCell
+                ForEach(photos.prefix(3)) { photo in
+                    photoThumbnailCell(photo)
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+        .frame(height: thumbnailSize)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
+        .frame(maxWidth: .infinity)
+        .background(Color(uiColor: .systemBackground))
+    }
+
     private var placeTitleAndSubtitle: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(placeTitle)
@@ -211,10 +251,9 @@ struct PlaceCaptionEditSheet: View {
                     .scrollContentBackground(.hidden)
                     .padding(.horizontal, editorTextHorizontalPadding)
                     .padding(.vertical, 14)
-                    .frame(minHeight: 152)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .background(Color(uiColor: .secondarySystemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .padding(.horizontal, 20)
 
                 if editedText.isEmpty {
                     Text(captionPlaceholderText)
@@ -229,7 +268,8 @@ struct PlaceCaptionEditSheet: View {
                         .allowsHitTesting(false)
                 }
             }
-            .frame(maxHeight: .infinity, alignment: .top)
+            .frame(height: captionTextEditorFixedHeight)
+            .padding(.horizontal, 20)
 
             if !trimmedEditedText.isEmpty {
                 HStack(spacing: 16) {
@@ -288,24 +328,15 @@ struct PlaceCaptionEditSheet: View {
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
-            if !photos.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        placeCaptionThumbnailCell
-                        ForEach(photos.prefix(3)) { photo in
-                            photoThumbnailCell(photo)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                }
-                .frame(height: thumbnailSize)
-                .padding(.top, 8)
-                .padding(.bottom, 10)
-                .background(Color(uiColor: .systemBackground))
-            }
+            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(uiColor: .systemBackground).ignoresSafeArea())
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !photos.isEmpty {
+                captionThumbnailStrip
+            }
+        }
         .safeAreaInset(edge: .top, spacing: 0) {
             HStack(alignment: .center) {
                 Button("Cancel") {

@@ -1599,7 +1599,10 @@ fileprivate extension UIImage {
         guard let cg = img.cgImage else { return self }
         let w = CGFloat(cg.width)
         let h = CGFloat(cg.height)
-        let targetWoverH: CGFloat = h > w ? (9.0 / 16.0) : (16.0 / 9.0)
+        // Prefer display-oriented dimensions: raw cg width/height can disagree with
+        // UIImage.size on some captures, which mis-picked 16:9 vs 9:16 on smaller phones.
+        let isPortrait = img.size.height >= img.size.width
+        let targetWoverH: CGFloat = isPortrait ? (9.0 / 16.0) : (16.0 / 9.0)
         let current = w / h
         let rect: CGRect
         if current > targetWoverH {
@@ -1897,6 +1900,35 @@ private final class CameraPreviewContainer: UIView {
     }
 }
 
+/// Centers the preview in a 9:16 portrait frame (letterboxing when the screen is taller),
+/// matching the region used by `croppedToWidescreenAspect()` on portrait captures.
+private struct WidescreenFramedCameraPreview: View {
+    let session: AVCaptureSession
+
+    var body: some View {
+        GeometryReader { geo in
+            widescreenFramedCameraPreviewContent(session: session, size: geo.size)
+        }
+    }
+}
+
+/// Swift 5.0 `ViewBuilder` does not allow multiple `let` statements in the closure (each is `()`).
+private func widescreenFramedCameraPreviewContent(session: AVCaptureSession, size: CGSize) -> some View {
+    let maxW = size.width
+    let maxH = size.height
+    let heightIfFullWidth = maxW * 16.0 / 9.0
+    let useFullWidth = heightIfFullWidth <= maxH
+    let w = useFullWidth ? maxW : maxH * 9.0 / 16.0
+    let h = useFullWidth ? heightIfFullWidth : maxH
+    return ZStack {
+        Color.black
+        CameraPreviewView(session: session)
+            .frame(width: w, height: h)
+            .clipped()
+    }
+    .frame(width: maxW, height: maxH)
+}
+
 /// Camera UI that shows a live preview and session counter. Moment plumbing is added separately.
 struct CameraCaptureView: View {
     @ObservedObject var tripsViewModel: TripsViewModel
@@ -1971,7 +2003,7 @@ struct CameraCaptureView: View {
                     Color.black
                         .ignoresSafeArea()
                 } else if cameraController.isConfigured {
-                    CameraPreviewView(session: cameraController.session)
+                    WidescreenFramedCameraPreview(session: cameraController.session)
                         .ignoresSafeArea()
                         .gesture(
                             MagnificationGesture()

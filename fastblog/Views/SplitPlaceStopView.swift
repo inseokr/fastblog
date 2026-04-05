@@ -31,6 +31,7 @@ struct SplitPlaceStopView: View {
 
                 if let idx = splitAfterIndex {
                     splitPreview(afterIndex: idx)
+                        .padding(.horizontal, 20)
                         .padding(.top, 20)
                 }
 
@@ -85,12 +86,12 @@ struct SplitPlaceStopView: View {
             Text(placeTitle)
                 .font(.subheadline.weight(.semibold))
                 .foregroundColor(.white)
-            Text("Tap the divider between two photos to set the split point.")
+
+            Text(photos.count == 1 ? "1 Photo" : "\(photos.count) Photos")
                 .font(.footnote)
                 .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
         }
+        .padding(.horizontal, 20)
         .padding(.top, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -112,7 +113,7 @@ struct SplitPlaceStopView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 20)
         }
         .frame(height: thumbSize)
     }
@@ -147,29 +148,42 @@ struct SplitPlaceStopView: View {
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
     }
 
-    @ViewBuilder
+    /// Not `@ViewBuilder`: Swift 5.0 treats `if` branches here as views; assignment-only branches are `()`.
     private func splitPreview(afterIndex idx: Int) -> some View {
         let firstCount = idx + 1
         let secondCount = photos.count - firstCount
+        // Split toward the left → smaller Group 1 (orange); toward the right → smaller Group 2 (orange).
+        let group1TitleColor: Color
+        let group2TitleColor: Color
+        if firstCount < secondCount {
+            group1TitleColor = .orange
+            group2TitleColor = .white
+        } else if secondCount < firstCount {
+            group1TitleColor = .white
+            group2TitleColor = .orange
+        } else {
+            group1TitleColor = .white
+            group2TitleColor = .white
+        }
 
-        HStack(spacing: 16) {
-            groupLabel(title: "Group 1", photoCount: firstCount, color: .orange)
+        return HStack(spacing: 16) {
+            groupLabel(title: "Group 1", photoCount: firstCount, titleColor: group1TitleColor)
             Image(systemName: "scissors")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundColor(.orange)
-            groupLabel(title: "Group 2", photoCount: secondCount, color: .primary)
+            groupLabel(title: "Group 2", photoCount: secondCount, titleColor: group2TitleColor)
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, 20)
         .padding(.vertical, 10)
         .background(Color(uiColor: .secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    private func groupLabel(title: String, photoCount: Int, color: Color) -> some View {
+    private func groupLabel(title: String, photoCount: Int, titleColor: Color) -> some View {
         VStack(spacing: 2) {
             Text(title)
                 .font(.caption.weight(.semibold))
-                .foregroundColor(color)
+                .foregroundColor(titleColor)
             Text("\(photoCount) Photos")
                 .font(.caption2)
                 .foregroundColor(.secondary)
