@@ -126,8 +126,6 @@ struct StoryBookView: View {
                         .ignoresSafeArea()
                     }
 
-                    storyDaysMenuBottomTrailingOverlay(pages: pages)
-                        .preferredColorScheme(.dark)
                 }
                 .task(id: pages.count) {
                     selectedPageIndex = min(max(0, selectedPageIndex), max(0, pages.count - 1))
@@ -268,122 +266,70 @@ struct StoryBookView: View {
 
     @ViewBuilder
     private var storyModeBottomBar: some View {
-        // Page number badge — always visible while content is ready
-        Group {
-            if case .ready(let pages) = viewModel.state {
-                StoryBookPageNumberBadge(
-                    currentPage: selectedPageIndex + 1,
-                    totalPages: max(1, pages.count)
-                )
-            }
-        }
-        .allowsHitTesting(false)
-        .padding(.bottom, 18)
-    }
+        let isDark = savedOptions.colorStyle == .black
+        let fg: Color = isDark ? .white : Color(white: 0.13)
+        let barBg: Color = isDark ? Color.black.opacity(0.72) : Color.white.opacity(0.94)
+        let bottomPad =
+            StoryRenderMetrics.windowSafeAreaInsets.bottom + StoryPageLayout.storyModeBottomBarInnerBottomPadding
+        let gradH = StoryPageLayout.storyModeBottomGradientHeight
+        let rowH = StoryPageLayout.storyModeBottomBarRowHeight
 
-    /// Concatenates TOC slices from all table-of-contents pages (order matches the book).
-    private static func tocEntries(from pages: [StoryPage]) -> [TOCEntry] {
-        pages.flatMap { page -> [TOCEntry] in
-            if case .tableOfContents(let entries, _, _, _) = page {
-                return entries
-            }
-            return []
-        }
-    }
-
-    /// `TOCEntry.date` uses full weekday (e.g. "Saturday Jan-18"); menu rows use Mon–Sun.
-    private static func dayMenuRowLabel(dayNumber: Int, dateLine: String) -> String {
-        let weekdayAbbrev: [String: String] = [
-            "Monday": "Mon",
-            "Tuesday": "Tue",
-            "Wednesday": "Wed",
-            "Thursday": "Thu",
-            "Friday": "Fri",
-            "Saturday": "Sat",
-            "Sunday": "Sun"
-        ]
-        let parts = dateLine.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
-        let rest: String
-        let dayPart: String
-        if parts.count == 2, let abbr = weekdayAbbrev[String(parts[0])] {
-            dayPart = abbr
-            rest = String(parts[1])
-        } else {
-            return "Day \(dayNumber) | \(dateLine)"
-        }
-        return "Day \(dayNumber) | \(dayPart) \(rest)"
-    }
-
-    @ViewBuilder
-    private func storyDaysMenuBottomTrailingOverlay(pages: [StoryPage]) -> some View {
-        let entries = Self.tocEntries(from: pages)
-        if !entries.isEmpty {
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    storyDaysMenu(entries: entries, pages: pages)
-                }
-                .padding(.bottom, 18)
-                .padding(.trailing, 16)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-
-    private func storyDaysMenu(entries: [TOCEntry], pages: [StoryPage]) -> some View {
-        Menu {
-            ForEach(entries, id: \.dayNumber) { entry in
-                Button {
-                    let idx = entry.dayStartPageNumber - 1
-                    if pages.indices.contains(idx) {
-                        selectedPageIndex = idx
-                    }
-                } label: {
-                    Text(Self.dayMenuRowLabel(dayNumber: entry.dayNumber, dateLine: entry.date))
-                }
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "calendar")
-                    .font(.subheadline.weight(.semibold))
-                Text("Days")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-            }
-            .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.black.opacity(0.68))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.white.opacity(0.20), lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.30), radius: 10, x: 0, y: 4)
-        }
-        .accessibilityLabel("Days")
-        .accessibilityHint("Jump to a day in this story")
-    }
-}
-
-/// Bottom bar page indicator (1-based index / total pages).
-private struct StoryBookPageNumberBadge: View {
-    let currentPage: Int
-    let totalPages: Int
-
-    var body: some View {
-        Text("\(currentPage) / \(totalPages)")
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundColor(.white)
-            .shadow(color: .black.opacity(0.45), radius: 3, x: 0, y: 1)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(Color.black.opacity(0.45))
+        VStack(spacing: 0) {
+            LinearGradient(
+                colors: isDark
+                    ? [Color.clear, Color.black.opacity(0.72)]
+                    : [Color.clear, Color.white.opacity(0.94)],
+                startPoint: .top,
+                endPoint: .bottom
             )
+            .frame(height: gradH)
+            .allowsHitTesting(false)
+
+            ZStack {
+                HStack(spacing: 0) {
+                    Button {
+                        if let od = onDismiss { od() } else { dismiss() }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(fg)
+                            .frame(width: 56, height: rowH)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer(minLength: 0)
+
+                    Button {
+                        Task { await exportStoryModePDFAndShare() }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.up.doc")
+                                .font(.subheadline.weight(.semibold))
+                            Text("Export")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .foregroundStyle(fg)
+                        .frame(height: rowH)
+                        .padding(.trailing, 16)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .opacity(isContentReady ? 1 : 0.35)
+                    .disabled(!isContentReady)
+                }
+
+                if case .ready(let pages) = viewModel.state {
+                    Text("\(selectedPageIndex + 1) / \(max(1, pages.count))")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(fg.opacity(0.6))
+                        .monospacedDigit()
+                        .allowsHitTesting(false)
+                }
+            }
+            .frame(height: rowH)
+            .padding(.bottom, bottomPad)
+            .background(barBg)
+        }
     }
 }

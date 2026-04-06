@@ -52,9 +52,16 @@ enum StoryPageLayout {
 
     // MARK: - Slot heights (points)
     static let footerHeight: CGFloat = 40
-    /// Reserve space above the floating Cancel/Share bar in `StoryBookView` so slots/footer aren’t covered.
-    /// Kept in sync with `storyModeBottomBar`’s bottom padding + button row height (~56–58pt to bar top).
-    static let storyChromeBottomOverlayHeight: CGFloat = 64
+    // MARK: StoryBookView bottom bar (must stay in sync with `StoryBookView.storyModeBottomBar`)
+    /// Fade above the Close / page index / Export row.
+    static let storyModeBottomGradientHeight: CGFloat = 6
+    /// Primary tap row height (compact; bar still clears the home indicator via `storyModeBottomBarInnerBottomPadding`).
+    static let storyModeBottomBarRowHeight: CGFloat = 34
+    /// Padding between the button row and the home indicator (bar’s inner padding; safe area is added in the view).
+    static let storyModeBottomBarInnerBottomPadding: CGFloat = 2
+    /// Reserve space above the bottom of the story viewport so page content clears the bar (`DayContentPageView`, TOC, layout engine).
+    static let storyChromeBottomOverlayHeight: CGFloat =
+        storyModeBottomGradientHeight + storyModeBottomBarRowHeight + storyModeBottomBarInnerBottomPadding
     // DayContentPageView structure:
     // - header HStack fixed height: 44
     // - VStack spacing (8) between header and Divider
@@ -2310,16 +2317,18 @@ enum StoryRenderMetrics {
         return window.safeAreaInsets
     }
 
-    // MARK: Recap editor Story Mode overlay (close + export) — must match `RecapBlogPageView` chrome layout
+    // MARK: Recap editor Story Mode — extra top padding for day pages (`DayContentPageView`)
 
-    /// Gap between system status bar and the close/export row.
-    static let recapStoryChromeGapBelowStatusBar: CGFloat = 8
-    /// Vertical space for the close + Export tap targets.
-    static let recapStoryChromeButtonRowHeight: CGFloat = 40
+    /// Small gap below the status bar / notch. Do **not** add `windowSafeAreaInsets.top` here: `TabView` pages
+    /// already lay out within the safe area when Story mode is embedded from `RecapBlogPageView`, and including
+    /// the full safe inset again was doubling the space above the “Day n” header.
+    static let recapStoryChromeGapBelowStatusBar: CGFloat = 4
+    /// Reserved for a future top chrome row (e.g. buttons); keep 0 while controls live in the bottom bar.
+    static let recapStoryChromeButtonRowHeight: CGFloat = 0
 
-    /// Inset from the **physical top** of the screen to the first row of in-book UI (e.g. “Day 1”), so it clears recap overlay chrome.
+    /// Extra top padding passed as `storyRecapTopContentInset` (in addition to any default `DayContentPageView` padding).
     static var recapStoryContentTopInset: CGFloat {
-        windowSafeAreaInsets.top + recapStoryChromeGapBelowStatusBar + recapStoryChromeButtonRowHeight
+        recapStoryChromeGapBelowStatusBar + recapStoryChromeButtonRowHeight
     }
 
     /// Matches `TabView` when it does **not** use `ignoresSafeArea()`: full screen minus top/bottom safe insets.

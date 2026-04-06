@@ -175,12 +175,43 @@ struct PhotoCaptionEditSheet: View {
                 openFull()
             }
 
-            // Overlaid content (no opaque background)
+            // Overlaid content (no opaque background). Cancel/Done live in the scroll stack so they sit in the
+            // safe area below the status bar — `safeAreaInset(edge: .top)` fought overlay layout and hid Done.
             VStack(spacing: 0) {
-                Spacer()
+                if !showPlaceSearchWebPanel {
+                    HStack(alignment: .center) {
+                        Button("Cancel") {
+                            wantsCaptionKeyboardFocus = false
+                            onCancel()
+                        }
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.white)
+                        .buttonStyle(.plain)
+
+                        Spacer()
+
+                        Button("Done") {
+                            caption = editedText
+                            wantsCaptionKeyboardFocus = false
+                            onSave()
+                        }
+                        .font(.body)
+                        .fontWeight(.bold)
+                        .foregroundStyle(Color(uiColor: .systemBlue))
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
+                    .padding(.bottom, 10)
+                    .background(.ultraThinMaterial)
+
+                    Spacer(minLength: 0)
+                }
 
                 photoCaptionEmbeddedSearchBlock
                     .padding(.horizontal, 20)
+                    .padding(.top, showPlaceSearchWebPanel ? 8 : 0)
 
                 VStack(alignment: .leading, spacing: 4) {
                     photoCaptionPlaceTitleRow
@@ -299,33 +330,6 @@ struct PhotoCaptionEditSheet: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Color.black.ignoresSafeArea())
-        .safeAreaInset(edge: .top, spacing: 0) {
-            HStack(alignment: .center) {
-                Button("Cancel") {
-                    wantsCaptionKeyboardFocus = false
-                    onCancel()
-                }
-                .font(.body)
-                .fontWeight(.semibold)
-                .foregroundStyle(Color.white)
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                Button("Done") {
-                    caption = editedText
-                    wantsCaptionKeyboardFocus = false
-                    onSave()
-                }
-                .font(.body)
-                .fontWeight(.bold)
-                .foregroundStyle(Color(uiColor: .systemBlue))
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .background(Color.clear)
-        }
         .preferredColorScheme(.dark)
         .onAppear {
             editedText = caption

@@ -53,7 +53,8 @@ struct DayContentPageView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12 + recapTopContentInset)
+        // Default `recapTopContentInset` is 0 (standalone); Recap story mode passes a few pt — not full safe area (see `StoryRenderMetrics`).
+        .padding(.top, (recapTopContentInset > 0 ? 0 : 2) + recapTopContentInset)
         .padding(.bottom, StoryPageLayout.storyChromeBottomOverlayHeight)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(bgColor.ignoresSafeArea())

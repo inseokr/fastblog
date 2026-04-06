@@ -53,7 +53,7 @@ struct CoverPageView: View {
                     .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 56)
+            .padding(.bottom, StoryPageLayout.storyChromeBottomOverlayHeight)
         }
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .background(Color.black)

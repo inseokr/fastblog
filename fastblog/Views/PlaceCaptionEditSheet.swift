@@ -117,7 +117,8 @@ struct PlaceCaptionEditSheet: View {
         if dynamicTypeSize >= .xxLarge {
             return belowLargePhoneWidth ? 132 : 144
         }
-        return 152
+        // Slightly taller default now that the header no longer shows a large photo preview.
+        return 168
     }
 
     @ViewBuilder
@@ -225,6 +226,8 @@ struct PlaceCaptionEditSheet: View {
                             .accessibilityLabel("Close search")
                             .accessibilityAddTraits(.isButton)
                     }
+                    // Keeps this row below Cancel/Done; avoids visual overlap with the main header bar.
+                    .padding(.vertical, 6)
                     GoogleSearchEmbeddedWebView(url: searchURL, currentPageURL: $embeddedSearchCurrentURL)
                         .frame(height: placeCaptionEmbeddedSearchWebHeight(
                             layoutHeight: referenceScreenBoundsHeight,
@@ -239,115 +242,80 @@ struct PlaceCaptionEditSheet: View {
                         )
                         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
                 }
+                .padding(.top, 4)
                 .padding(.bottom, 4)
-                .transition(.move(edge: .top))
+                // Moving from the top animates into the same band as Cancel/Done and reads as overlap.
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
-            Group {
-                if case .photo(let photoId) = captionThumbnailSelection {
-                    HStack(alignment: .top, spacing: 12) {
-                        Group {
-                            if let openFull = onRequestFullPhotoView {
-                                Button {
-                                    syncDraftToUnderlyingBindings()
-                                    restoreCaptionKeyboardAfterPhotoModal = isFocused
-                                    isFocused = false
-                                    openFull(photoId)
-                                } label: {
-                                    headerPhotoThumbnail(for: photoId)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("View full photo")
-                            } else {
-                                headerPhotoThumbnail(for: photoId)
-                            }
-                        }
-                        VStack(alignment: .leading, spacing: 4) {
-                            placeTitleRowWithSearchButton
-                            placeSubtitleIfAny
-                        }
+            // Photo vs place caption is indicated by the thumbnail strip; no large preview (redundant, wastes vertical space).
+            VStack(alignment: .leading, spacing: 4) {
+                placeTitleRowWithSearchButton
+                placeSubtitleIfAny
+                if case .photo(let photoId) = captionThumbnailSelection, let openFull = onRequestFullPhotoView {
+                    Button {
+                        syncDraftToUnderlyingBindings()
+                        restoreCaptionKeyboardAfterPhotoModal = isFocused
+                        isFocused = false
+                        openFull(photoId)
+                    } label: {
+                        Text("View full-size photo")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color(uiColor: .systemBlue))
                     }
-                } else {
-                    VStack(alignment: .leading, spacing: 4) {
-                        placeTitleRowWithSearchButton
-                        placeSubtitleIfAny
-                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 2)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// 12-hour clock from `RecapPhoto.timestamp` (matches `PlaceStopRowView` strip badges).
-    private static let headerPhotoTimeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "h:mm a"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
-
-    /// Parses EXIF-style `yyyy:MM:dd HH:mm:ss` into a 12-hour clock label (e.g. `3:42 PM`).
-    private static func formattedClockTime(fromDigitized digitized: String) -> String? {
-        let parts = digitized.split(separator: " ")
-        guard parts.count == 2 else { return nil }
-        let timeParts = parts[1].split(separator: ":")
-        guard timeParts.count >= 2,
-              let hours = Int(timeParts[0]),
-              let minutes = Int(timeParts[1]) else { return nil }
-        let period = hours >= 12 ? "PM" : "AM"
-        let h = hours == 0 ? 12 : (hours > 12 ? hours - 12 : hours)
-        return "\(h):\(String(format: "%02d", minutes)) \(period)"
-    }
-
-    private static func photoTimeDisplayText(for photo: RecapPhoto) -> String {
-        if let d = photo.digitizedTime,
-           let t = formattedClockTime(fromDigitized: d) {
-            return t
-        }
-        return headerPhotoTimeFormatter.string(from: photo.timestamp)
-    }
-
-    /// Shown beside the place name only when a photo thumbnail is selected (place story uses title only).
-    @ViewBuilder
-    private func headerPhotoThumbnail(for photoId: UUID) -> some View {
-        if let photo = photos.first(where: { $0.id == photoId }) {
-            RecapPhotoThumbnail(
-                photo: photo,
-                cornerRadius: thumbnailCorner,
-                showIcon: false,
-                targetSize: CGSize(width: 200, height: 200)
-            )
-            .frame(width: thumbnailSize * 3, height: thumbnailSize * 3)
-            .clipShape(RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous))
-            .overlay(alignment: .topLeading) {
-                Text(Self.photoTimeDisplayText(for: photo))
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3.5)
-                    .background(Color.black.opacity(0.6))
-                    .cornerRadius(6)
-                    .padding(6)
+    private var captionEditTopBar: some View {
+        HStack(alignment: .center) {
+            Button("Cancel") {
+                isFocused = false
+                onCancel()
             }
-            .overlay {
-                RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous)
-                    .strokeBorder(Color.white, lineWidth: thumbnailStroke)
-            }
-            .accessibilityLabel("Editing caption for selected photo")
-        } else {
-            RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous)
-                .fill(Color(uiColor: .tertiarySystemFill))
-                .frame(width: thumbnailSize * 3, height: thumbnailSize * 3)
-                .overlay {
-                    Image(systemName: "photo")
-                        .foregroundStyle(.secondary)
+            .font(.body)
+            .fontWeight(.semibold)
+            .foregroundStyle(Color.primary)
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Button("Done") {
+                flushCurrentDraftFromEditor()
+                caption = draftPlaceCaption
+                for p in photos.prefix(3) {
+                    photoCaption(p.id).wrappedValue = draftPhotoCaptions[p.id] ?? ""
                 }
-                .accessibilityLabel("Photo")
+                let placeChanged = draftPlaceCaption != initialPlaceCaption
+                let changedPhotoIds = Set(
+                    photos.prefix(3).map(\.id).filter { id in
+                        (draftPhotoCaptions[id] ?? "") != (initialPhotoCaptions[id] ?? "")
+                    }
+                )
+                isFocused = false
+                onSave(placeChanged, changedPhotoIds)
+            }
+            .font(.body)
+            .fontWeight(.bold)
+            .foregroundStyle(Color(uiColor: .systemBlue))
+            .buttonStyle(.plain)
         }
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
+        .background(Color(uiColor: .systemBackground))
     }
 
     var body: some View {
         VStack(spacing: 0) {
+            if !showPlaceSearchWebPanel {
+                captionEditTopBar
+            }
+
             placeCaptionSearchAndTitleHeader
                 .padding(.horizontal, 20)
                 .padding(.top, 10)
@@ -448,43 +416,6 @@ struct PlaceCaptionEditSheet: View {
             if !photos.isEmpty {
                 captionThumbnailStrip
             }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            HStack(alignment: .center) {
-                Button("Cancel") {
-                    isFocused = false
-                    onCancel()
-                }
-                .font(.body)
-                .fontWeight(.semibold)
-                .foregroundStyle(Color.primary)
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                Button("Done") {
-                    flushCurrentDraftFromEditor()
-                    caption = draftPlaceCaption
-                    for p in photos.prefix(3) {
-                        photoCaption(p.id).wrappedValue = draftPhotoCaptions[p.id] ?? ""
-                    }
-                    let placeChanged = draftPlaceCaption != initialPlaceCaption
-                    let changedPhotoIds = Set(
-                        photos.prefix(3).map(\.id).filter { id in
-                            (draftPhotoCaptions[id] ?? "") != (initialPhotoCaptions[id] ?? "")
-                        }
-                    )
-                    isFocused = false
-                    onSave(placeChanged, changedPhotoIds)
-                }
-                .font(.body)
-                .fontWeight(.bold)
-                .foregroundStyle(Color(uiColor: .systemBlue))
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .background(Color(uiColor: .systemBackground))
         }
         .preferredColorScheme(.dark)
         .onAppear {

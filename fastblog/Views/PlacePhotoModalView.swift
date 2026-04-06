@@ -667,9 +667,11 @@ struct PlacePhotoModalView: View {
                 onLink: { openGoogleSearch() }
             )
             .ignoresSafeArea(.all, edges: presentation.isSheet ? [] : .top)
-            .allowsHitTesting(!isZoomMode)
-            .opacity(isZoomMode ? 0 : 1)
+            // Embedded Google search has its own chrome ("Open in browser" / close); hide Close/Cancel/Done so they never stack with it.
+            .allowsHitTesting(!isZoomMode && !showPlaceSearchWebPanel)
+            .opacity((isZoomMode || showPlaceSearchWebPanel) ? 0 : 1)
             .animation(.easeInOut(duration: 0.25), value: isZoomMode)
+            .animation(.easeInOut(duration: 0.2), value: showPlaceSearchWebPanel)
 
             // 5. Zoom mode overlay — appears when user taps the photo
             if isZoomMode, let photo = currentPhoto {

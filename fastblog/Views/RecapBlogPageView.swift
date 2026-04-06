@@ -371,64 +371,6 @@ struct RecapBlogPageView: View {
                         .environment(\.storyRecapTopContentInset, StoryRenderMetrics.recapStoryContentTopInset)
                         .ignoresSafeArea()
 
-                    // Custom chrome: close + share, below status bar. `GeometryReader` + ignoresSafeArea often reports `safeAreaInsets.top == 0`, so use key-window insets (see `StoryRenderMetrics`).
-                    GeometryReader { geo in
-                        let topSafe = max(geo.safeAreaInsets.top, StoryRenderMetrics.windowSafeAreaInsets.top)
-                        let gap = StoryRenderMetrics.recapStoryChromeGapBelowStatusBar
-                        let scrimHeight = topSafe + gap + 44
-                        ZStack(alignment: .top) {
-                            LinearGradient(
-                                colors: pdfExportOptions.colorStyle == .black
-                                    ? [Color.black.opacity(0.62), Color.black.opacity(0.28), Color.clear]
-                                    : [Color.white.opacity(0.98), Color.white.opacity(0.86), Color.white.opacity(0.35), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                            .frame(height: scrimHeight)
-                            .frame(maxWidth: .infinity)
-                            .allowsHitTesting(false)
-
-                            VStack(spacing: 0) {
-                                HStack {
-                                    Button {
-                                        showStoryMode = false
-                                        storyContentReady = false
-                                        storyChromeVisible = true
-                                    } label: {
-                                        Image(systemName: "xmark")
-                                            .font(.body.weight(.semibold))
-                                            .foregroundStyle(storyChromeForegroundColor)
-                                            .shadow(color: storyChromeGlyphShadowColor, radius: 2, x: 0, y: 1)
-                                            .frame(width: 36, height: 36)
-                                            .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.plain)
-
-                                    Spacer()
-
-                                    if storyContentReady {
-                                        Button {
-                                            storyShareTrigger = true
-                                        } label: {
-                                            HStack(spacing: 5) {
-                                                Image(systemName: "arrow.up.doc")
-                                                    .font(.subheadline.weight(.semibold))
-                                                Text("Export")
-                                                    .font(.subheadline.weight(.semibold))
-                                            }
-                                            .foregroundStyle(storyChromeForegroundColor)
-                                            .shadow(color: storyChromeGlyphShadowColor, radius: 2, x: 0, y: 1)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.top, topSafe + gap)
-                                Spacer()
-                            }
-                        }
-                    }
-                    .ignoresSafeArea(edges: .top)
                 }
                 .overlay(
                     StatusBarStyleApplier(style: storyUIKitStatusBarStyle)

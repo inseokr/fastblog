@@ -15,7 +15,7 @@ private struct StoryRasterizesForExportKey: EnvironmentKey {
     static let defaultValue: Bool = false
 }
 
-/// Extra top padding for day (and similar) pages when Story Mode is shown from the recap editor, so in-book headers clear the close/export overlay.
+/// Extra top padding for day pages when Story Mode is embedded from the recap editor (see `StoryRenderMetrics.recapStoryContentTopInset`).
 private struct StoryRecapTopContentInsetKey: EnvironmentKey {
     static let defaultValue: CGFloat = 0
 }
