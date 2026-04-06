@@ -13,6 +13,9 @@ final class VibePlayer: NSObject, ObservableObject {
 
     @Published private(set) var isPlaying = false
 
+    /// Increments only when a clip reaches the end (not when `stop()` is called). Observe to reset “playing” UI after a single full play.
+    @Published private(set) var naturalFinishCount: UInt = 0
+
     private var player: AVAudioPlayer?
 
     // MARK: - Public API
@@ -60,6 +63,7 @@ extension VibePlayer: AVAudioPlayerDelegate {
         DispatchQueue.main.async {
             self.isPlaying = false
             self.player = nil
+            self.naturalFinishCount += 1
         }
     }
 }

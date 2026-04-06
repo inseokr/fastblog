@@ -35,8 +35,10 @@ struct ManagePhotosView: View {
 
     private var includedCount: Int { photos.filter(\.isIncluded).count }
 
-    /// Inline nav bar: long `placeTitle` steals horizontal space from trailing Select + More. Keep title empty in browse mode; select mode uses the count string.
-    private var navigationBarTitle: String { "" }
+    /// Centered inline title; hidden while viewing a full-screen photo so the bar stays minimal.
+    private var navigationBarTitle: String {
+        fullScreenPhotoId == nil ? "Manage Photos" : ""
+    }
 
     /// Split and add-from-library live in the trailing "…" menu; hide it when neither action exists.
     private var managePhotosOverflowMenuVisible: Bool {
@@ -131,7 +133,7 @@ struct ManagePhotosView: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(isSelectMode ? "Done" : "Select") {
+                    Button(isSelectMode ? "Save" : "Select") {
                         if isSelectMode {
                             withAnimation(.easeInOut(duration: 0.2)) { isSelectMode = false }
                             dismiss()

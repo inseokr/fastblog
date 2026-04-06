@@ -35,6 +35,13 @@ struct PhotoCaptionEditSheet: View {
     /// Captures the user's own text before the first AI run, enabling "Revert to original".
     @State private var originalDraft: String? = nil
     @State private var wantsCaptionKeyboardFocus = false
+    @State private var showPlaceSearchWebPanel = false
+    @State private var embeddedSearchCurrentURL: URL?
+    @State private var pendingOpenPlaceSearchAfterKeyboardDismiss = false
+    /// True when embedded search was opened while the caption editor had keyboard focus (keyboard is dismissed while search is visible).
+    @State private var restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
+    /// Restore caption focus after full-screen photo modal dismisses if it was focused before open.
+    @State private var restoreCaptionKeyboardAfterPhotoModal = false
     @State private var captionScrollContentHeight: CGFloat = 0
     @State private var captionScrollVisibleHeight: CGFloat = 0
     @State private var captionScrollOffsetY: CGFloat = 0
@@ -45,6 +52,103 @@ struct PhotoCaptionEditSheet: View {
 
     private var trimmedEditedText: String {
         editedText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var deviceSafeAreaInsets: UIEdgeInsets {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }?
+            .keyWindow?
+            .safeAreaInsets
+            ?? UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0)
+    }
+
+    private var referenceScreenBoundsHeight: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first(where: { $0.activationState == .foregroundActive })?
+            .screen.bounds.height
+            ?? UIScreen.main.bounds.height
+    }
+
+    private var photoCaptionPlaceTitleRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(placeTitle)
+                .font(.title3.weight(.semibold))
+                .foregroundColor(.white)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+            Image(systemName: showPlaceSearchWebPanel ? "chevron.down.circle.fill" : "magnifyingglass.circle.fill")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(.white.opacity(0.85))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onLongPressGesture(
+            minimumDuration: 0,
+            maximumDistance: .infinity,
+            perform: { commitEmbeddedPlaceSearchToggleFromPhotoCaptionSheet() }
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("\(placeTitle), place")
+        .accessibilityHint(showPlaceSearchWebPanel ? "Hides search panel above" : "Shows search in browser above while you write")
+    }
+
+    @ViewBuilder
+    private var photoCaptionEmbeddedSearchBlock: some View {
+        if showPlaceSearchWebPanel,
+           let searchURL = StoryPlaceGoogleSearch.url(placeName: placeTitle, placeSubtitle: placeSubtitle) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .center) {
+                    Button {
+                        openEmbeddedPlaceSearchInDefaultBrowser()
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 5) {
+                            Text("Open in browser")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                                .shadow(color: .black.opacity(0.35), radius: 2)
+                            StoryPlaceExternalLinkIcon(titleFontSize: 16, foregroundColor: .white)
+                                .shadow(color: .black.opacity(0.35), radius: 2)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Open in browser")
+                    Spacer()
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 22))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, .white.opacity(0.35))
+                        .contentShape(Rectangle())
+                        .padding(4)
+                        .onLongPressGesture(
+                            minimumDuration: 0,
+                            maximumDistance: 64,
+                            perform: { dismissEmbeddedPlaceSearchFromChromePhotoSheet() }
+                        )
+                        .accessibilityLabel("Close search")
+                        .accessibilityAddTraits(.isButton)
+                }
+                GoogleSearchEmbeddedWebView(url: searchURL, currentPageURL: $embeddedSearchCurrentURL)
+                    .frame(height: photoCaptionSheetEmbeddedSearchWebHeight(
+                        layoutHeight: referenceScreenBoundsHeight,
+                        safeTopInset: deviceSafeAreaInsets.top,
+                        captionFieldFocused: wantsCaptionKeyboardFocus
+                    ))
+                    .animation(nil, value: wantsCaptionKeyboardFocus)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+                    )
+                    .shadow(color: .black.opacity(0.45), radius: 14, y: 6)
+            }
+            .padding(.bottom, 8)
+            .transition(.move(edge: .top))
+        }
     }
 
     var body: some View {
@@ -66,6 +170,7 @@ struct PhotoCaptionEditSheet: View {
             .onTapGesture {
                 guard let openFull = onRequestFullPhotoView else { return }
                 caption = editedText
+                restoreCaptionKeyboardAfterPhotoModal = wantsCaptionKeyboardFocus
                 wantsCaptionKeyboardFocus = false
                 openFull()
             }
@@ -74,12 +179,11 @@ struct PhotoCaptionEditSheet: View {
             VStack(spacing: 0) {
                 Spacer()
 
-                // Place title as context
+                photoCaptionEmbeddedSearchBlock
+                    .padding(.horizontal, 20)
+
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(placeTitle)
-                        .font(.title3.weight(.semibold))
-                        .foregroundColor(.white)
-                        .lineLimit(2)
+                    photoCaptionPlaceTitleRow
                     if let placeSubtitle, !placeSubtitle.isEmpty {
                         Text(placeSubtitle)
                             .font(.subheadline)
@@ -88,7 +192,7 @@ struct PhotoCaptionEditSheet: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 20)
-                .padding(.bottom, 16)
+                .padding(.bottom, 10)
 
                 // Text editor
                 ZStack(alignment: .topLeading) {
@@ -103,7 +207,8 @@ struct PhotoCaptionEditSheet: View {
                             left: editorTextHorizontalPadding,
                             bottom: 14,
                             right: editorTextHorizontalPadding
-                        )
+                        ),
+                        caretTint: .white
                     )
                     .frame(minHeight: 140)
                     .background(Color(uiColor: .secondarySystemBackground))
@@ -128,7 +233,7 @@ struct PhotoCaptionEditSheet: View {
                             .foregroundColor(Color(uiColor: .placeholderText))
                             .padding(.leading, placeholderLeadingInset)
                             .padding(.trailing, placeholderTrailingInset)
-                            .padding(.top, 22)
+                            .padding(.top, 14)
                             .allowsHitTesting(false)
                     }
                 }
@@ -225,12 +330,119 @@ struct PhotoCaptionEditSheet: View {
         .onAppear {
             editedText = caption
             DispatchQueue.main.async {
-                wantsCaptionKeyboardFocus = true
+                if !showPlaceSearchWebPanel {
+                    wantsCaptionKeyboardFocus = true
+                }
             }
         }
         .onChange(of: activePhotoModalToken) { oldValue, newValue in
             if oldValue != nil && newValue == nil {
                 editedText = caption
+                if restoreCaptionKeyboardAfterPhotoModal {
+                    restoreCaptionKeyboardAfterPhotoModal = false
+                    DispatchQueue.main.async {
+                        wantsCaptionKeyboardFocus = true
+                    }
+                }
+            }
+        }
+        .onChange(of: wantsCaptionKeyboardFocus) { _, focused in
+            if focused {
+                pendingOpenPlaceSearchAfterKeyboardDismiss = false
+                closeEmbeddedSearchForPhotoCaptionSheet()
+            } else if pendingOpenPlaceSearchAfterKeyboardDismiss {
+                pendingOpenPlaceSearchAfterKeyboardDismiss = false
+                var t = Transaction()
+                t.animation = nil
+                withTransaction(t) {
+                    showPlaceSearchWebPanel = true
+                }
+            }
+        }
+        .onChange(of: editedText) { _, _ in
+            if showPlaceSearchWebPanel {
+                closeEmbeddedSearchForPhotoCaptionSheet()
+            }
+        }
+        .onChange(of: showPlaceSearchWebPanel) { _, isShown in
+            if !isShown {
+                embeddedSearchCurrentURL = nil
+            }
+        }
+    }
+
+    private func photoCaptionSheetEmbeddedSearchWebHeight(layoutHeight: CGFloat, safeTopInset: CGFloat, captionFieldFocused: Bool) -> CGFloat {
+        let compactHeight: CGFloat = 220
+        guard !captionFieldFocused else { return compactHeight }
+        let topBarChrome = safeTopInset + 56
+        let bottomReserve: CGFloat = 300
+        let verticalBreathingRoom: CGFloat = 36
+        let available = layoutHeight - topBarChrome - bottomReserve - verticalBreathingRoom
+        return max(compactHeight, available)
+    }
+
+    private func openEmbeddedPlaceSearchInDefaultBrowser() {
+        let fallback = StoryPlaceGoogleSearch.url(placeName: placeTitle, placeSubtitle: placeSubtitle)
+        guard let url = embeddedSearchCurrentURL ?? fallback else { return }
+        UIApplication.shared.open(url)
+    }
+
+    private func dismissEmbeddedPlaceSearchFromChromePhotoSheet() {
+        guard showPlaceSearchWebPanel else { return }
+        let restoreKeyboard = restoreCaptionKeyboardWhenEmbeddedSearchCloses
+        restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
+        var t = Transaction()
+        t.animation = nil
+        withTransaction(t) {
+            showPlaceSearchWebPanel = false
+        }
+        if restoreKeyboard {
+            DispatchQueue.main.async {
+                wantsCaptionKeyboardFocus = true
+            }
+        }
+    }
+
+    private func closeEmbeddedSearchForPhotoCaptionSheet() {
+        guard showPlaceSearchWebPanel else { return }
+        restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
+        var t = Transaction()
+        t.animation = nil
+        withTransaction(t) {
+            showPlaceSearchWebPanel = false
+        }
+    }
+
+    private func commitEmbeddedPlaceSearchToggleFromPhotoCaptionSheet() {
+        let name = placeTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty,
+              StoryPlaceGoogleSearch.url(placeName: name, placeSubtitle: placeSubtitle) != nil else { return }
+        let wasOpen = showPlaceSearchWebPanel
+        if !wasOpen {
+            if wantsCaptionKeyboardFocus {
+                restoreCaptionKeyboardWhenEmbeddedSearchCloses = true
+                pendingOpenPlaceSearchAfterKeyboardDismiss = true
+                wantsCaptionKeyboardFocus = false
+                return
+            }
+            restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
+            var t = Transaction()
+            t.animation = nil
+            withTransaction(t) {
+                showPlaceSearchWebPanel = true
+            }
+            return
+        }
+        let restoreKeyboard = restoreCaptionKeyboardWhenEmbeddedSearchCloses
+        restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
+        var t = Transaction()
+        t.animation = nil
+        withTransaction(t) {
+            showPlaceSearchWebPanel = false
+        }
+        if restoreKeyboard {
+            DispatchQueue.main.async {
+                wantsCaptionKeyboardFocus = true
             }
         }
     }

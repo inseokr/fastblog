@@ -35,6 +35,7 @@
 		43EA38F00CD64247BB84651D /* StoryBookViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8B39A532FFD631E0B9D8312 /* StoryBookViewModel.swift */; };
 		5050088081A6CE14C59511C2 /* DayContentPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A01A8A2A53646AA22C132E3 /* DayContentPageView.swift */; };
 		719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */; };
+		BB0003E1 /* GoogleSearchEmbeddedWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E0 /* GoogleSearchEmbeddedWebView.swift */; };
 		75A557C81671BBFA4382AAA5 /* PageFooterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3FBC69125D4B22AEC596A03 /* PageFooterView.swift */; };
 		7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000061 /* GoogleSignIn */; };
 		BB0003D1 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = AA000063 /* ZIPFoundation */; };
@@ -275,6 +276,7 @@
 		A8B39A532FFD631E0B9D8312 /* StoryBookViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryBookViewModel.swift; sourceTree = "<group>"; };
 		AA000003 /* Bloggo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Bloggo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PlaceCaptionEditSheet.swift; sourceTree = "<group>"; };
+		BB0003E0 /* GoogleSearchEmbeddedWebView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoogleSearchEmbeddedWebView.swift; sourceTree = "<group>"; };
 		BB000101 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		BB000103 /* fastblogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = fastblogApp.swift; sourceTree = "<group>"; };
 		BB000105 /* MyBlogsProfileViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyBlogsProfileViewModel.swift; sourceTree = "<group>"; };
@@ -674,6 +676,7 @@
 				BB0001CB /* Components */,
 				2C198E17B0447F89CC98721F /* DayCaptionEditSheet.swift */,
 				B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */,
+				BB0003E0 /* GoogleSearchEmbeddedWebView.swift */,
 				4C7D8E2F1A3B5C6D9E0F2A4B /* PhotoCaptionEditSheet.swift */,
 				5FSCME01E5D40718293A4B6C /* ScrollMetricsReportingTextEditor.swift */,
 				BB0002A2 /* StoryWritingStyleSheet.swift */,
@@ -1075,6 +1078,7 @@
 				BB000309 /* TripDistanceFromHomeOnboardingView.swift in Sources */,
 				315C7029393A82205980943C /* DayCaptionEditSheet.swift in Sources */,
 				719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */,
+				BB0003E1 /* GoogleSearchEmbeddedWebView.swift in Sources */,
 				3A9F2B1C4D8E5F7A2B0C6E91 /* PhotoCaptionEditSheet.swift in Sources */,
 				5FSCME02E5D40718293A4B6C /* ScrollMetricsReportingTextEditor.swift in Sources */,
 				BB0002A1 /* StoryWritingStyleSheet.swift in Sources */,

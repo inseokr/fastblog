@@ -39,6 +39,14 @@ struct PlaceCaptionEditSheet: View {
     @FocusState private var isFocused: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    @State private var showPlaceSearchWebPanel = false
+    @State private var embeddedSearchCurrentURL: URL?
+    @State private var pendingOpenPlaceSearchAfterKeyboardDismiss = false
+    /// True when embedded search was opened while the caption editor had keyboard focus.
+    @State private var restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
+    /// Restore caption focus after full-screen photo modal dismisses if it was focused before open.
+    @State private var restoreCaptionKeyboardAfterPhotoModal = false
+
     /// Matches kebab `PlaceStopActionSheet` “Edit Caption & Details” row (`text.alignleft`).
     private enum CaptionThumbnailSelection: Equatable {
         case placeCaption
@@ -57,8 +65,8 @@ struct PlaceCaptionEditSheet: View {
 
     /// Horizontal inset for typed text inside the rounded editor (both sides). Slightly tight so the caret sits a bit left of default.
     private let editorTextHorizontalPadding: CGFloat = 14
-    /// Matches outer sheet padding + `editorTextHorizontalPadding` so placeholder lines up with the caret.
-    private let placeholderLeadingInset: CGFloat = 34
+    /// Matches `editorTextHorizontalPadding` so placeholder lines up with the caret (outer sheet padding is on the ZStack, not inside it).
+    private let placeholderLeadingInset: CGFloat = 14
     private let placeholderTrailingInset: CGFloat = 20
 
     private var trimmedEditedText: String {
@@ -130,16 +138,141 @@ struct PlaceCaptionEditSheet: View {
         .background(Color(uiColor: .systemBackground))
     }
 
-    private var placeTitleAndSubtitle: some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private var deviceSafeAreaInsets: UIEdgeInsets {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }?
+            .keyWindow?
+            .safeAreaInsets
+            ?? UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0)
+    }
+
+    private var referenceScreenBoundsHeight: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first(where: { $0.activationState == .foregroundActive })?
+            .screen.bounds.height
+            ?? UIScreen.main.bounds.height
+    }
+
+    private var placeTitleRowWithSearchButton: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(placeTitle)
                 .font(.title3.weight(.semibold))
                 .foregroundColor(.primary)
                 .lineLimit(2)
-            if let placeSubtitle, !placeSubtitle.isEmpty {
-                Text(placeSubtitle)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                .multilineTextAlignment(.leading)
+            Image(systemName: showPlaceSearchWebPanel ? "chevron.down.circle.fill" : "magnifyingglass.circle.fill")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(.primary.opacity(0.85))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onLongPressGesture(
+            minimumDuration: 0,
+            maximumDistance: .infinity,
+            perform: { commitEmbeddedPlaceSearchToggleFromTitleRow() }
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("\(placeTitle), place")
+        .accessibilityHint(showPlaceSearchWebPanel ? "Hides search panel above" : "Shows search in browser above while you write")
+    }
+
+    @ViewBuilder
+    private var placeSubtitleIfAny: some View {
+        if let placeSubtitle, !placeSubtitle.isEmpty {
+            Text(placeSubtitle)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var placeCaptionSearchAndTitleHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if showPlaceSearchWebPanel,
+               let searchURL = StoryPlaceGoogleSearch.url(placeName: placeTitle, placeSubtitle: placeSubtitle) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .center) {
+                        Button {
+                            openEmbeddedPlaceSearchInDefaultBrowser()
+                        } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                                Text("Open in browser")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.primary)
+                                StoryPlaceExternalLinkIcon(titleFontSize: 16, foregroundColor: .primary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Open in browser")
+                        .accessibilityHint("Opens this page in your default browser")
+                        Spacer()
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 22))
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.primary, Color.primary.opacity(0.35))
+                            .contentShape(Rectangle())
+                            .padding(4)
+                            .onLongPressGesture(
+                                minimumDuration: 0,
+                                maximumDistance: 64,
+                                perform: { dismissEmbeddedPlaceSearchFromChrome() }
+                            )
+                            .accessibilityLabel("Close search")
+                            .accessibilityAddTraits(.isButton)
+                    }
+                    GoogleSearchEmbeddedWebView(url: searchURL, currentPageURL: $embeddedSearchCurrentURL)
+                        .frame(height: placeCaptionEmbeddedSearchWebHeight(
+                            layoutHeight: referenceScreenBoundsHeight,
+                            safeTopInset: deviceSafeAreaInsets.top,
+                            captionFieldFocused: isFocused
+                        ))
+                        .animation(nil, value: isFocused)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
+                        )
+                        .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
+                }
+                .padding(.bottom, 4)
+                .transition(.move(edge: .top))
+            }
+
+            Group {
+                if case .photo(let photoId) = captionThumbnailSelection {
+                    HStack(alignment: .top, spacing: 12) {
+                        Group {
+                            if let openFull = onRequestFullPhotoView {
+                                Button {
+                                    syncDraftToUnderlyingBindings()
+                                    restoreCaptionKeyboardAfterPhotoModal = isFocused
+                                    isFocused = false
+                                    openFull(photoId)
+                                } label: {
+                                    headerPhotoThumbnail(for: photoId)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("View full photo")
+                            } else {
+                                headerPhotoThumbnail(for: photoId)
+                            }
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            placeTitleRowWithSearchButton
+                            placeSubtitleIfAny
+                        }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 4) {
+                        placeTitleRowWithSearchButton
+                        placeSubtitleIfAny
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -215,40 +348,19 @@ struct PlaceCaptionEditSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Group {
-                if case .photo(let photoId) = captionThumbnailSelection {
-                    HStack(alignment: .top, spacing: 12) {
-                        Group {
-                            if let openFull = onRequestFullPhotoView {
-                                Button {
-                                    syncDraftToUnderlyingBindings()
-                                    isFocused = false
-                                    openFull(photoId)
-                                } label: {
-                                    headerPhotoThumbnail(for: photoId)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("View full photo")
-                            } else {
-                                headerPhotoThumbnail(for: photoId)
-                            }
-                        }
-                        placeTitleAndSubtitle
-                    }
-                } else {
-                    placeTitleAndSubtitle
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 10)
-            .padding(.bottom, 14)
+            placeCaptionSearchAndTitleHeader
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+                .padding(.bottom, 10)
 
             ZStack(alignment: .topLeading) {
                 TextEditor(text: $editedText)
                     .focused($isFocused)
                     .font(.body)
                     .foregroundColor(.primary)
+                    .tint(Color(white: 0.92))
                     .scrollContentBackground(.hidden)
+                    .scrollIndicators(.never)
                     .padding(.horizontal, editorTextHorizontalPadding)
                     .padding(.vertical, 14)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -264,7 +376,7 @@ struct PlaceCaptionEditSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.leading, placeholderLeadingInset)
                         .padding(.trailing, placeholderTrailingInset)
-                        .padding(.top, 22)
+                        .padding(.top, 14)
                         .allowsHitTesting(false)
                 }
             }
@@ -387,12 +499,121 @@ struct PlaceCaptionEditSheet: View {
             editedText = draftPlaceCaption
             captionThumbnailSelection = .placeCaption
             DispatchQueue.main.async {
-                isFocused = true
+                if !showPlaceSearchWebPanel {
+                    isFocused = true
+                }
             }
         }
         .onChange(of: activePhotoModalToken) { oldValue, newValue in
             if oldValue != nil && newValue == nil {
                 refreshDraftFromBindings()
+                if restoreCaptionKeyboardAfterPhotoModal {
+                    restoreCaptionKeyboardAfterPhotoModal = false
+                    DispatchQueue.main.async {
+                        isFocused = true
+                    }
+                }
+            }
+        }
+        .onChange(of: isFocused) { _, focused in
+            if focused {
+                pendingOpenPlaceSearchAfterKeyboardDismiss = false
+                closeEmbeddedSearchForCaptionInteraction()
+            } else if pendingOpenPlaceSearchAfterKeyboardDismiss {
+                pendingOpenPlaceSearchAfterKeyboardDismiss = false
+                var t = Transaction()
+                t.animation = nil
+                withTransaction(t) {
+                    showPlaceSearchWebPanel = true
+                }
+            }
+        }
+        .onChange(of: editedText) { _, _ in
+            if showPlaceSearchWebPanel {
+                closeEmbeddedSearchForCaptionInteraction()
+            }
+        }
+        .onChange(of: showPlaceSearchWebPanel) { _, isShown in
+            if !isShown {
+                embeddedSearchCurrentURL = nil
+            }
+        }
+    }
+
+    private func placeCaptionEmbeddedSearchWebHeight(layoutHeight: CGFloat, safeTopInset: CGFloat, captionFieldFocused: Bool) -> CGFloat {
+        let compactHeight: CGFloat = 240
+        guard !captionFieldFocused else { return compactHeight }
+        let topBarChrome = safeTopInset + 56
+        let titleAndSpacing: CGFloat = 72
+        let thumbStripReserve: CGFloat = photos.isEmpty ? 0 : (thumbnailSize + 8 + 10 + 12 + 20)
+        let bottomReserve: CGFloat = captionTextEditorFixedHeight + titleAndSpacing + thumbStripReserve + 100
+        let verticalBreathingRoom: CGFloat = 40
+        let available = layoutHeight - topBarChrome - bottomReserve - verticalBreathingRoom
+        return max(compactHeight, available)
+    }
+
+    private func openEmbeddedPlaceSearchInDefaultBrowser() {
+        let fallback = StoryPlaceGoogleSearch.url(placeName: placeTitle, placeSubtitle: placeSubtitle)
+        guard let url = embeddedSearchCurrentURL ?? fallback else { return }
+        UIApplication.shared.open(url)
+    }
+
+    private func dismissEmbeddedPlaceSearchFromChrome() {
+        guard showPlaceSearchWebPanel else { return }
+        let restoreKeyboard = restoreCaptionKeyboardWhenEmbeddedSearchCloses
+        restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
+        var t = Transaction()
+        t.animation = nil
+        withTransaction(t) {
+            showPlaceSearchWebPanel = false
+        }
+        if restoreKeyboard {
+            DispatchQueue.main.async {
+                isFocused = true
+            }
+        }
+    }
+
+    private func closeEmbeddedSearchForCaptionInteraction() {
+        guard showPlaceSearchWebPanel else { return }
+        restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
+        var t = Transaction()
+        t.animation = nil
+        withTransaction(t) {
+            showPlaceSearchWebPanel = false
+        }
+    }
+
+    private func commitEmbeddedPlaceSearchToggleFromTitleRow() {
+        let name = placeTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty,
+              StoryPlaceGoogleSearch.url(placeName: name, placeSubtitle: placeSubtitle) != nil else { return }
+        let wasOpen = showPlaceSearchWebPanel
+        if !wasOpen {
+            if isFocused {
+                restoreCaptionKeyboardWhenEmbeddedSearchCloses = true
+                pendingOpenPlaceSearchAfterKeyboardDismiss = true
+                isFocused = false
+                return
+            }
+            restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
+            var t = Transaction()
+            t.animation = nil
+            withTransaction(t) {
+                showPlaceSearchWebPanel = true
+            }
+            return
+        }
+        let restoreKeyboard = restoreCaptionKeyboardWhenEmbeddedSearchCloses
+        restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
+        var t = Transaction()
+        t.animation = nil
+        withTransaction(t) {
+            showPlaceSearchWebPanel = false
+        }
+        if restoreKeyboard {
+            DispatchQueue.main.async {
+                isFocused = true
             }
         }
     }
@@ -432,6 +653,18 @@ struct PlaceCaptionEditSheet: View {
     private func selectThumbnail(_ newSelection: CaptionThumbnailSelection) {
         guard newSelection != captionThumbnailSelection else { return }
         flushCurrentDraftFromEditor()
+        pendingOpenPlaceSearchAfterKeyboardDismiss = false
+        let restoreAfterSearch = restoreCaptionKeyboardWhenEmbeddedSearchCloses
+        restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
+        var t = Transaction()
+        t.animation = nil
+        withTransaction(t) {
+            showPlaceSearchWebPanel = false
+        }
+        embeddedSearchCurrentURL = nil
+        if restoreAfterSearch {
+            DispatchQueue.main.async { isFocused = true }
+        }
         captionThumbnailSelection = newSelection
         switch newSelection {
         case .placeCaption:

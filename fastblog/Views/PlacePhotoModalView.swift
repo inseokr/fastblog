@@ -7,8 +7,6 @@ import SwiftUI
 import CoreLocation
 import Photos
 import UIKit
-import WebKit
-
 /// Typed + prompt styling for “Leave a story for this photo…” (full opacity, softer than pure white).
 private enum PlacePhotoStoryCaptionFieldColor {
     static let text = Color(white: 0.88)
@@ -148,6 +146,8 @@ struct PlacePhotoModalView: View {
     // Vibe
     @StateObject private var vibePlayer = VibePlayer()
     @State private var isVibeEnabled: Bool = false
+    /// Drives the cyan dot pulse on the top-center “Playing Vibe” pill (same rhythm as camera “Capturing Vibe”).
+    @State private var playingVibePulse: Bool = false
     /// Stores the user's original caption text per photo before AI first enhances it, enabling "Revert to original".
     @State private var captionOriginalDraftByPhotoId: [UUID: String] = [:]
     @State private var isZoomMode = false
@@ -170,10 +170,10 @@ struct PlacePhotoModalView: View {
     @State private var showPlaceSearchWebPanel = false
     /// Live URL from the embedded WKWebView (for “Open in browser”); reset when the panel closes.
     @State private var embeddedSearchCurrentURL: URL?
-    /// Captured on touch-down for search chrome gestures so we can restore the caption field after dismiss.
-    @State private var keyboardUpAtSearchChromeGesture = false
     /// Open embedded search only after caption field unfocuses (never show the web while the keyboard is up).
     @State private var pendingOpenPlaceSearchAfterKeyboardDismiss = false
+    /// True when embedded search was opened while the caption field had focus (keyboard dismissed while panel is visible).
+    @State private var restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
     /// Read-only bottom overlay: multi-line captions start collapsed; user can expand.
     @State private var isReadOnlyCaptionExpanded = false
     /// Vertical drag for swipe-down dismiss (blog overlay & sheets without a drag indicator).
@@ -312,8 +312,9 @@ struct PlacePhotoModalView: View {
     }
 
     /// Inline caption panel + top chrome aligned with blog edit (`Cancel` / `Done`), including when opened from caption edit sheets.
+    /// When true, caption editing uses the same keyboard panel and photo dimming as blog edit mode (not the frosted read-path bar).
     private var usesInlineCaptionChrome: Bool {
-        blogIsEditMode || openInCaptionEditor
+        blogIsEditMode || openInCaptionEditor || isEditing
     }
 
     private var currentPhoto: RecapPhoto? {
@@ -505,11 +506,19 @@ struct PlacePhotoModalView: View {
                         }
                     )
                     .task(id: currentPhotoId) {
-                        // Stop any playing Vibe and auto-play the new photo's Vibe if enabled.
+                        // Stop any playing Vibe; when the header vibe control is available, auto-play once per landed photo.
                         vibePlayer.stop()
-                        if isVibeEnabled, let url = currentVibeURL {
+                        let canUseVibeChrome = !isEditing && !blogIsEditMode && !openInCaptionEditor
+                        if canUseVibeChrome, let url = currentVibeURL {
+                            isVibeEnabled = true
                             vibePlayer.play(url: url)
+                        } else {
+                            isVibeEnabled = false
                         }
+                    }
+                    .onChange(of: vibePlayer.naturalFinishCount) { _, _ in
+                        // After one full play, return to idle so the waveform reads inactive; user can tap to replay.
+                        isVibeEnabled = false
                     }
                     .task(id: currentPhotoId) {
                         // Resolve timezone per photo so every photo (not just the first) shows correct local time.
@@ -604,7 +613,8 @@ struct PlacePhotoModalView: View {
 
             // Dim the photo while editing or while the embedded browser is open so the Chrome and
             // panel content read clearly against a consistently darkened background.
-            if usesInlineCaptionChrome && (isCaptionFocused || showPlaceSearchWebPanel) {
+            // Applies to blog edit-mode chrome and read-only-blog “Edit caption” (Save) flow alike.
+            if isEditing && (isCaptionFocused || showPlaceSearchWebPanel) {
                 Color.black.opacity(0.68)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
@@ -623,6 +633,7 @@ struct PlacePhotoModalView: View {
                 hasVibeClip: currentVibeURL != nil,
                 isVibeEnabled: isVibeEnabled,
                 isVibePlaying: isVibeEnabled && vibePlayer.isPlaying,
+                playingVibePulse: playingVibePulse,
                 onLeadingPrimary: { handleUserRequestedDismiss() },
                 onSaveCaptionAndDismiss: {
                     commitCaption()
@@ -675,6 +686,19 @@ struct PlacePhotoModalView: View {
         // outer container when embedded search closes restructures the tree and flashes the `TabView` photo layer.
         // `safeAreaInset` content (WKWebView) is outside this stack, so vertical scroll in search is unaffected.
         .simultaneousGesture(photoModalSwipeDismissGesture)
+        .onChange(of: vibePlayer.isPlaying) { _, playing in
+            if playing {
+                playingVibePulse = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    guard vibePlayer.isPlaying else { return }
+                    withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                        playingVibePulse = true
+                    }
+                }
+            } else {
+                playingVibePulse = false
+            }
+        }
     }
 
     var body: some View {
@@ -818,19 +842,15 @@ struct PlacePhotoModalView: View {
         }
     }
 
-    /// Caption editor above the keyboard (blog inline edit vs. read-path edit).
+    /// Caption editor above the keyboard — same layout for blog edit mode and read-only “Edit caption” (⋯ menu).
     @ViewBuilder
     private var photoModalCaptionEditingInset: some View {
         if isEditing {
-            if usesInlineCaptionChrome {
-                photoModalBlogInlineCaptionEditingPanel
-            } else {
-                photoModalReadPathCaptionEditingPanel
-            }
+            photoModalBlogInlineCaptionEditingPanel
         }
     }
 
-    /// Blog edit mode: caption field + optional embedded search.
+    /// Caption field + optional embedded search (blog edit mode and read-only ⋯ → Edit caption).
     @ViewBuilder
     private var photoModalBlogInlineCaptionEditingPanel: some View {
                     VStack(alignment: .leading, spacing: 8) {
@@ -864,9 +884,6 @@ struct PlacePhotoModalView: View {
                                         .onLongPressGesture(
                                             minimumDuration: 0,
                                             maximumDistance: 64,
-                                            pressing: { pressing in
-                                                if pressing { keyboardUpAtSearchChromeGesture = isCaptionFocused }
-                                            },
                                             perform: { dismissEmbeddedGoogleSearchFromChrome() }
                                         )
                                         .accessibilityLabel("Close search")
@@ -906,9 +923,6 @@ struct PlacePhotoModalView: View {
                             .onLongPressGesture(
                                 minimumDuration: 0,
                                 maximumDistance: .infinity,
-                                pressing: { pressing in
-                                    if pressing { keyboardUpAtSearchChromeGesture = isCaptionFocused }
-                                },
                                 perform: { commitEmbeddedSearchToggleFromPlaceRow() }
                             )
                             .accessibilityElement(children: .combine)
@@ -934,6 +948,7 @@ struct PlacePhotoModalView: View {
                         )
                             .focused($isCaptionFocused)
                             .textFieldStyle(.plain)
+                            .tint(PlacePhotoStoryCaptionFieldColor.text)
                             .font(.body)
                             .foregroundColor(PlacePhotoStoryCaptionFieldColor.text)
                             .lineLimit(2...6)
@@ -999,107 +1014,6 @@ struct PlacePhotoModalView: View {
                                 endPoint: .top
                             )
                             .ignoresSafeArea(.all, edges: .bottom)
-                        }
-                    }
-    }
-
-    /// Read-path edit (Save): caption field over material panel.
-    @ViewBuilder
-    private var photoModalReadPathCaptionEditingPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(editedPlaceTitle)
-                                .font(.title3)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-
-                            if !dateTimeTextForCurrentPhoto.isEmpty {
-                                Text(dateTimeTextForCurrentPhoto)
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.white.opacity(0.8))
-                            }
-                        }
-                        .padding(.bottom, 4)
-
-                        TextField(
-                            "",
-                            text: $editedCaptionText,
-                            prompt: Text("Leave a story for this photo...")
-                                .foregroundColor(PlacePhotoStoryCaptionFieldColor.placeholder),
-                            axis: .vertical
-                        )
-                            .focused($isCaptionFocused)
-                            .textFieldStyle(.plain)
-                            .font(.body)
-                            .foregroundColor(PlacePhotoStoryCaptionFieldColor.text)
-                            .lineLimit(2...6)
-                            .padding(12)
-                            .overlay(alignment: .trailing) {
-                                // Scroll indicator — signals caption area is scrollable when text overflows
-                                if !editedCaptionText.isEmpty {
-                                    Capsule()
-                                        .fill(Color.white.opacity(0.3))
-                                        .frame(width: 3, height: 32)
-                                        .padding(.trailing, 4)
-                                        .allowsHitTesting(false)
-                                }
-                            }
-
-                        // Action bar — mirrors place story sheet layout
-                        let trimmed = editedCaptionText.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !trimmed.isEmpty {
-                            HStack(spacing: 16) {
-                                Button(role: .destructive) {
-                                    withAnimation(.easeInOut(duration: 0.18)) {
-                                        editedCaptionText = ""
-                                        captionOriginalDraftByPhotoId.removeValue(forKey: currentPhotoId)
-                                    }
-                                } label: {
-                                    Label("Clear", systemImage: "trash")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                }
-
-                                Spacer()
-
-                                if let originalDraft = captionOriginalDraftByPhotoId[currentPhotoId] {
-                                    Button {
-                                        withAnimation(.easeInOut(duration: 0.18)) {
-                                            editedCaptionText = originalDraft
-                                            captionOriginalDraftByPhotoId.removeValue(forKey: currentPhotoId)
-                                        }
-                                    } label: {
-                                        Label("", systemImage: "arrow.uturn.backward")
-                                            .font(.subheadline)
-                                            .foregroundColor(.white.opacity(0.75))
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 8)
-                            .transition(.opacity.combined(with: .move(edge: .bottom)))
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 24)
-                    .padding(.bottom, 34)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background {
-                        ZStack(alignment: .bottom) {
-                            // Material connects seamlessly with the keyboard (no gap at rounded corners)
-                            Rectangle()
-                                .fill(.ultraThinMaterial)
-                                .ignoresSafeArea(.keyboard, edges: .bottom)
-                            // Extra darkening for legibility over bright photos
-                            Color.black.opacity(0.45)
-                                .ignoresSafeArea(.keyboard, edges: .bottom)
-                            // Gradient that fades up into the photo
-                            LinearGradient(
-                                colors: [Color.clear, Color.black.opacity(0.2), Color.clear],
-                                startPoint: .bottom,
-                                endPoint: .top
-                            )
                         }
                     }
     }
@@ -1349,7 +1263,8 @@ struct PlacePhotoModalView: View {
 
     private func dismissEmbeddedGoogleSearchFromChrome() {
         guard showPlaceSearchWebPanel else { return }
-        let restoreKeyboard = keyboardUpAtSearchChromeGesture
+        let restoreKeyboard = restoreCaptionKeyboardWhenEmbeddedSearchCloses
+        restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
         var t = Transaction()
         t.animation = nil
         withTransaction(t) {
@@ -1365,6 +1280,7 @@ struct PlacePhotoModalView: View {
     /// Hides the embedded browser while the user works in the caption field (typing or focus).
     private func closeEmbeddedSearchForCaptionInteraction() {
         guard showPlaceSearchWebPanel else { return }
+        restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
         var t = Transaction()
         t.animation = nil
         withTransaction(t) {
@@ -1378,10 +1294,12 @@ struct PlacePhotoModalView: View {
         let wasOpen = showPlaceSearchWebPanel
         if !wasOpen {
             if isCaptionFocused {
+                restoreCaptionKeyboardWhenEmbeddedSearchCloses = true
                 pendingOpenPlaceSearchAfterKeyboardDismiss = true
                 isCaptionFocused = false
                 return
             }
+            restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
             var t = Transaction()
             t.animation = nil
             withTransaction(t) {
@@ -1389,7 +1307,8 @@ struct PlacePhotoModalView: View {
             }
             return
         }
-        let restoreKeyboard = keyboardUpAtSearchChromeGesture
+        let restoreKeyboard = restoreCaptionKeyboardWhenEmbeddedSearchCloses
+        restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
         var t = Transaction()
         t.animation = nil
         withTransaction(t) {
@@ -1488,6 +1407,39 @@ struct PlacePhotoModalView: View {
     }
 }
 
+// MARK: - Playing Vibe header pill (in-app camera “Capturing Vibe” styling)
+
+private struct PlayingVibeHeaderPill: View {
+    var pulse: Bool
+
+    var body: some View {
+        HStack(spacing: 7) {
+            ZStack {
+                Circle()
+                    .fill(Color.cyan.opacity(pulse ? 0 : 0.45))
+                    .frame(width: 9, height: 9)
+                    .scaleEffect(pulse ? 1.5 : 1.0)
+                Circle()
+                    .fill(Color.cyan)
+                    .frame(width: 6, height: 6)
+            }
+            Text("Playing Vibe")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.white.opacity(0.9))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(.ultraThinMaterial)
+        .background(Color.cyan.opacity(0.22))
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(Color.cyan.opacity(0.5), lineWidth: 1))
+        .shadow(color: .cyan.opacity(0.25), radius: 8)
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Playing vibe")
+    }
+}
+
 // MARK: - Shared fullscreen / sheet top chrome
 
 /// Single implementation of the place detail header: safe-area-aware insets, grabber (sheet only), Close / Cancel / Done, and the vertical action stack.
@@ -1503,6 +1455,7 @@ private struct PlaceDetailTopChrome: View {
     let hasVibeClip: Bool
     let isVibeEnabled: Bool
     let isVibePlaying: Bool
+    let playingVibePulse: Bool
     let onLeadingPrimary: () -> Void
     let onSaveCaptionAndDismiss: () -> Void
     let onDoneBlogEdit: () -> Void
@@ -1561,6 +1514,31 @@ private struct PlaceDetailTopChrome: View {
 
                     if !isEditing && !blogIsEditMode && !openInCaptionEditor {
                         VStack(spacing: PlaceDetailChromeLayout.actionStackSpacing) {
+                            if hasVibeClip {
+                                HStack(alignment: .center, spacing: 8) {
+                                    if isVibePlaying {
+                                        PlayingVibeHeaderPill(pulse: playingVibePulse)
+                                            .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .trailing)))
+                                    }
+                                    Button(action: onToggleVibe) {
+                                        AtmosphericWaveformView(isActive: isVibeEnabled)
+                                            .frame(width: PlaceDetailChromeLayout.circleActionSize, height: PlaceDetailChromeLayout.circleActionSize)
+                                            .background(.ultraThinMaterial)
+                                            .background(isVibeEnabled ? Color.cyan.opacity(0.22) : Color.clear)
+                                            .clipShape(Circle())
+                                            .overlay(
+                                                Circle().stroke(
+                                                    isVibeEnabled ? Color.cyan.opacity(0.5) : Color.clear,
+                                                    lineWidth: 1
+                                                )
+                                            )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(isVibePlaying ? "Vibe playing" : "Play vibe")
+                                }
+                                .animation(.easeInOut(duration: 0.25), value: isVibePlaying)
+                            }
+
                             Menu {
                                 Button(action: onMenuEditPlaceName) {
                                     Label("Edit Place Name", systemImage: "mappin.and.ellipse")
@@ -1581,24 +1559,6 @@ private struct PlaceDetailTopChrome: View {
                                     .background(Color.white.opacity(0.22))
                                     .clipShape(Circle())
                                     .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
-                            }
-
-                            if hasVibeClip {
-                                Button(action: onToggleVibe) {
-                                    AtmosphericWaveformView(isActive: isVibeEnabled)
-                                        .frame(width: PlaceDetailChromeLayout.circleActionSize, height: PlaceDetailChromeLayout.circleActionSize)
-                                        .background(.ultraThinMaterial)
-                                        .background(isVibeEnabled ? Color.cyan.opacity(0.22) : Color.clear)
-                                        .clipShape(Circle())
-                                        .overlay(
-                                            Circle().stroke(
-                                                isVibeEnabled ? Color.cyan.opacity(0.5) : Color.clear,
-                                                lineWidth: 1
-                                            )
-                                        )
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel(isVibePlaying ? "Vibe playing" : "Play vibe")
                             }
 
                             RightActionStack(
@@ -1998,52 +1958,6 @@ private struct EditPlaceNameSheet: View {
         guard !trimmed.isEmpty else { return }
         onSave(trimmed)
         dismiss()
-    }
-}
-
-// MARK: - Embedded Google search (blog edit caption panel)
-
-private struct GoogleSearchEmbeddedWebView: UIViewRepresentable {
-    let url: URL
-    @Binding var currentPageURL: URL?
-
-    final class Coordinator: NSObject, WKNavigationDelegate {
-        var lastRequestedURL: URL?
-        var currentPageURLBinding: Binding<URL?> = .constant(nil)
-
-        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-            DispatchQueue.main.async {
-                self.currentPageURLBinding.wrappedValue = webView.url
-            }
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            DispatchQueue.main.async {
-                self.currentPageURLBinding.wrappedValue = webView.url
-            }
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        let webView = WKWebView(frame: .zero, configuration: config)
-        webView.backgroundColor = .black
-        webView.isOpaque = true
-        webView.scrollView.indicatorStyle = .white
-        webView.navigationDelegate = context.coordinator
-        return webView
-    }
-
-    func updateUIView(_ webView: WKWebView, context: Context) {
-        context.coordinator.currentPageURLBinding = $currentPageURL
-        guard context.coordinator.lastRequestedURL != url else { return }
-        context.coordinator.lastRequestedURL = url
-        currentPageURL = nil
-        webView.load(URLRequest(url: url))
     }
 }
 
