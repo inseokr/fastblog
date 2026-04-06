@@ -23,6 +23,7 @@
 		03B8B6602F7CD9D90088C39F /* all_season.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 03B8B6582F7CD9D90088C39F /* all_season.mp3 */; };
 		03B8B6612F7CD9D90088C39F /* let_you_go.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 03B8B65B2F7CD9D90088C39F /* let_you_go.mp3 */; };
 		0B1189F592CFDEDAF3305FAB /* PhotoPermissionOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */; };
+		BB000309 /* TripDistanceFromHomeOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000308 /* TripDistanceFromHomeOnboardingView.swift */; };
 		0C30D67375CF715A0AE52995 /* MapSnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A586130A3384B2A62AC27350 /* MapSnapshotHelper.swift */; };
 		285D83E64056D6DBF8E9894F /* StoryPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E27CCA2B392AD6D7D60A651A /* StoryPage.swift */; };
 		315C7029393A82205980943C /* DayCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C198E17B0447F89CC98721F /* DayCaptionEditSheet.swift */; };
@@ -259,6 +260,7 @@
 		2F6DDE63772EF1F878EC3686 /* TOCPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TOCPageView.swift; path = StoryBook/TOCPageView.swift; sourceTree = "<group>"; };
 		30C7F49D9E66B6763CCCD7B9 /* PhotoCardView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PhotoCardView.swift; path = StoryBook/PhotoCardView.swift; sourceTree = "<group>"; };
 		3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhotoPermissionOnboardingView.swift; sourceTree = "<group>"; };
+		BB000308 /* TripDistanceFromHomeOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDistanceFromHomeOnboardingView.swift; sourceTree = "<group>"; };
 		4C7D8E2F1A3B5C6D9E0F2A4B /* PhotoCaptionEditSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhotoCaptionEditSheet.swift; sourceTree = "<group>"; };
 		5FSCME01E5D40718293A4B6C /* ScrollMetricsReportingTextEditor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollMetricsReportingTextEditor.swift; sourceTree = "<group>"; };
 		4E34776F396319FBEE2FCECD /* StoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryCaptionGenerator.swift; sourceTree = "<group>"; };
@@ -703,6 +705,7 @@
 				BB00017B /* OnboardingState.swift */,
 				BB00017D /* SplashView.swift */,
 				3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */,
+				BB000308 /* TripDistanceFromHomeOnboardingView.swift */,
 			);
 			path = Onboarding;
 			sourceTree = "<group>";
@@ -1069,6 +1072,7 @@
 				BB00022C /* SplashStateManager.swift in Sources */,
 				BB000231 /* PhotoAccessRow.swift in Sources */,
 				0B1189F592CFDEDAF3305FAB /* PhotoPermissionOnboardingView.swift in Sources */,
+				BB000309 /* TripDistanceFromHomeOnboardingView.swift in Sources */,
 				315C7029393A82205980943C /* DayCaptionEditSheet.swift in Sources */,
 				719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */,
 				3A9F2B1C4D8E5F7A2B0C6E91 /* PhotoCaptionEditSheet.swift in Sources */,

@@ -120,3 +120,9 @@ enum NeighborhoodStore {
         return "\(lat),\(lon)"
     }
 }
+
+extension Notification.Name {
+    /// Posted when the user releases the “distance from home” slider in Settings (full library access only).
+    /// `TripsViewModel` listens and runs a full trip scan so the list matches the new exclusion radius.
+    static let blogifyTripExclusionRadiusDidFinishAdjusting = Notification.Name("blogifyTripExclusionRadiusDidFinishAdjusting")
+}

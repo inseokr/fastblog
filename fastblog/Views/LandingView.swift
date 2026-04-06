@@ -809,7 +809,15 @@ private struct SettingsView: View {
                                     }
                                 ),
                                 in: 5...200,
-                                step: 1
+                                step: 1,
+                                onEditingChanged: { isEditing in
+                                    if !isEditing {
+                                        NotificationCenter.default.post(
+                                            name: .blogifyTripExclusionRadiusDidFinishAdjusting,
+                                            object: nil
+                                        )
+                                    }
+                                }
                             )
                         }
                     }
@@ -819,7 +827,7 @@ private struct SettingsView: View {
                     if photoAuth.status == .limited {
                         Text("Home sets where nearby photos are measured from. With limited photo access, trip scans use the default distance from home for your neighborhood.")
                     } else {
-                        Text("Please adjust it to a smaller value if you want to blog about activities around your neighborhood.")
+                        Text("Please adjust it to a smaller value if you want to blog about activities around your neighborhood. Changing this distance only affects your trip list after a full library scan—when you release the slider, Bloggo starts one automatically if it can. If your trips still look wrong afterward, quit the app completely and reopen, then open Trips.")
                     }
                 }
 

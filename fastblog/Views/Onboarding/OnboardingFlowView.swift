@@ -12,6 +12,7 @@ enum OnboardingStep {
     case neighborhoodIntro
     case neighborhood
     case photoPermissionOnboarding
+    case tripDistanceFromHome
     case photoPermissionDenied
 }
 
@@ -48,7 +49,9 @@ struct OnboardingFlowView: View {
                 PhotoPermissionOnboardingView(
                     photoAuth: photoAuth,
                     onResult: { resultStatus in
-                        if resultStatus == .authorized || resultStatus == .limited {
+                        if resultStatus == .authorized {
+                            step = .tripDistanceFromHome
+                        } else if resultStatus == .limited {
                             OnboardingStore.hasCompletedOnboarding = true
                             onComplete()
                         } else if resultStatus == .denied || resultStatus == .restricted {
@@ -57,6 +60,16 @@ struct OnboardingFlowView: View {
                     },
                     onBack: {
                         step = .neighborhood
+                    }
+                )
+            } else if step == .tripDistanceFromHome {
+                TripDistanceFromHomeOnboardingView(
+                    onContinue: {
+                        OnboardingStore.hasCompletedOnboarding = true
+                        onComplete()
+                    },
+                    onBack: {
+                        step = .photoPermissionOnboarding
                     }
                 )
             } else {
@@ -70,14 +83,19 @@ struct OnboardingFlowView: View {
                 )
             }
         }
+        /// Only the denied screen needs status observation: returning from Settings does not call `onResult`.
+        /// Avoid handling `.limited` / `.authorized` here while on the permission step — `onResult` already does, and
+        /// duplicating would invoke `onComplete()` twice.
         .onChange(of: photoAuth.status) { _, newStatus in
-            if step == .photoPermissionOnboarding || step == .photoPermissionDenied {
-                if newStatus == .authorized || newStatus == .limited {
-                    OnboardingStore.hasCompletedOnboarding = true
-                    onComplete()
-                } else if newStatus == .denied || newStatus == .restricted {
-                    step = .photoPermissionDenied
-                }
+            guard step == .photoPermissionDenied else { return }
+            switch newStatus {
+            case .authorized:
+                step = .tripDistanceFromHome
+            case .limited:
+                OnboardingStore.hasCompletedOnboarding = true
+                onComplete()
+            default:
+                break
             }
         }
     }

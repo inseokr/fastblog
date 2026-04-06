@@ -698,6 +698,15 @@ final class TripsViewModel: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .blogifyTripExclusionRadiusDidFinishAdjusting)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                guard scanState == .idle else { return }
+                startDefaultScan(forceFullScan: true)
+            }
+            .store(in: &cancellables)
     }
 
     func onAppear() {
