@@ -213,43 +213,35 @@ struct AppCaptureDetailView: View {
                                 vibePlayer.stop()
                             }
                         } label: {
-                            ZStack {
-                                Circle()
-                                    .fill(
-                                        isPlaying
-                                            ? LinearGradient(
-                                                colors: [.cyan, .green],
-                                                startPoint: .top,
-                                                endPoint: .bottom
-                                            )
-                                            : LinearGradient(
-                                                colors: [Color.white.opacity(0.08)],
-                                                startPoint: .top,
-                                                endPoint: .bottom
-                                            )
-                                    )
-                                AtmosphericWaveformView(isActive: isVibeEnabled)
-                            }
-                            .frame(width: 36, height: 36)
-                            .overlay(
-                                Circle()
-                                    .stroke(
-                                        isPlaying
-                                            ? LinearGradient(
-                                                colors: [.cyan, .green],
-                                                startPoint: .top,
-                                                endPoint: .bottom
-                                            )
-                                            : LinearGradient(
-                                                colors: [Color.white.opacity(0.15)],
-                                                startPoint: .top,
-                                                endPoint: .bottom
-                                            ),
-                                        lineWidth: isPlaying ? 2 : 1
-                                    )
-                            )
-                            .shadow(color: isPlaying ? .cyan.opacity(0.55) : .clear, radius: isPlaying ? 10 : 0)
+                            // Match in-app camera Vibe control (TripsView): 44pt, material, clipped circle — not a
+                            // solid gradient disk (that hid the waveform) or 36pt (bars wider than the circle).
+                            AtmosphericWaveformView(isActive: isVibeEnabled)
+                                .frame(width: 44, height: 44)
+                                .background(.ultraThinMaterial)
+                                .background(isVibeEnabled ? Color.cyan.opacity(isPlaying ? 0.32 : 0.22) : Color.clear)
+                                .clipShape(Circle())
+                                .overlay(
+                                    Circle()
+                                        .stroke(
+                                            isPlaying
+                                                ? LinearGradient(
+                                                    colors: [.cyan, .green],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                )
+                                                : LinearGradient(
+                                                    colors: isVibeEnabled
+                                                        ? [Color.cyan.opacity(0.5)]
+                                                        : [Color.white.opacity(0.15)],
+                                                    startPoint: .top,
+                                                    endPoint: .bottom
+                                                ),
+                                            lineWidth: isPlaying ? 2 : 1
+                                        )
+                                )
+                                .shadow(color: isPlaying ? .cyan.opacity(0.55) : .clear, radius: isPlaying ? 10 : 0)
                         }
+                        .buttonStyle(.plain)
                         .accessibilityLabel(
                             isPlaying ? "Vibe playing" : (isVibeEnabled ? "Vibe enabled" : "Vibe disabled")
                         )

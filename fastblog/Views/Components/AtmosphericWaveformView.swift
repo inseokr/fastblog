@@ -20,7 +20,8 @@ struct AtmosphericWaveformView: View {
     @State private var animating = false
 
     var body: some View {
-        HStack(spacing: 1.5) {
+        // 12×2pt bars + 11×1pt spacing = 35pt wide so the shape fits 36–44pt circular buttons without clipping.
+        HStack(spacing: 1) {
             ForEach(0..<heights.count, id: \.self) { i in
                 RoundedRectangle(cornerRadius: 1)
                     .fill(
@@ -31,7 +32,7 @@ struct AtmosphericWaveformView: View {
                         )
                     )
                     .frame(width: 2, height: heights[i])
-                    .scaleEffect(y: animating ? 1 : 0.35, anchor: .center)
+                    .scaleEffect(y: animating ? 1 : 0.42, anchor: .center)
                     .animation(
                         animating
                             ? .easeInOut(duration: 0.65 + Double(i % 4) * 0.12)
@@ -42,8 +43,8 @@ struct AtmosphericWaveformView: View {
                     )
             }
         }
-        .frame(width: 26, height: 26)
-        .shadow(color: animating ? .cyan.opacity(0.5) : .clear, radius: 4)
+        .frame(width: 36, height: 26)
+        .shadow(color: animating ? .cyan.opacity(0.55) : .clear, radius: animating ? 5 : 0)
         .onAppear {
             Task { @MainActor in
                 animating = isActive
