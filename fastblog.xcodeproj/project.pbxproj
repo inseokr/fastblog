@@ -220,6 +220,7 @@
 		BB00F004 /* PlaceVisitedDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F003 /* PlaceVisitedDetailView.swift */; };
 		BB00M001 /* BackendDashboardAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00M002 /* BackendDashboardAnalytics.swift */; };
 		C7E087F6AACF99F475844343 /* StoryBookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ABC2F392F2EBDD1636DC399 /* StoryBookView.swift */; };
+		SB00SB02 /* StatusBarStyleApplier.swift in Sources */ = {isa = PBXBuildFile; fileRef = SB00SB01 /* StatusBarStyleApplier.swift */; };
 		D2F8D3AF63FAE7358C61872A /* PhotoCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30C7F49D9E66B6763CCCD7B9 /* PhotoCardView.swift */; };
 		DCB9D1AF4FAB8889D866BC40 /* PlaceBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D31200382275E7A7520CD4F /* PlaceBlockView.swift */; };
 		EA00EA02 /* EarlyAccessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA00EA01 /* EarlyAccessManager.swift */; };
@@ -267,6 +268,7 @@
 		4E34776F396319FBEE2FCECD /* StoryCaptionGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryCaptionGenerator.swift; sourceTree = "<group>"; };
 		67D919F737961D65785318BA /* StoryBookContent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryBookContent.swift; sourceTree = "<group>"; };
 		6ABC2F392F2EBDD1636DC399 /* StoryBookView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StoryBookView.swift; path = StoryBook/StoryBookView.swift; sourceTree = "<group>"; };
+		SB00SB01 /* StatusBarStyleApplier.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StatusBarStyleApplier.swift; path = StoryBook/StatusBarStyleApplier.swift; sourceTree = "<group>"; };
 		72929F115FE37110FB2BE7BF /* CoverPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CoverPageView.swift; path = StoryBook/CoverPageView.swift; sourceTree = "<group>"; };
 		7A01A8A2A53646AA22C132E3 /* DayContentPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DayContentPageView.swift; path = StoryBook/DayContentPageView.swift; sourceTree = "<group>"; };
 		7EE07F9D5505A841A5CD7CAE /* StoryPageLayout.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryPageLayout.swift; sourceTree = "<group>"; };
@@ -507,6 +509,7 @@
 				7A01A8A2A53646AA22C132E3 /* DayContentPageView.swift */,
 				0733072C4EA957FE04A03752 /* StoryPageView.swift */,
 				6ABC2F392F2EBDD1636DC399 /* StoryBookView.swift */,
+				SB00SB01 /* StatusBarStyleApplier.swift */,
 				SM00SM01 /* StoryModePDFOptionsSheet.swift */,
 			);
 			name = StoryBook;
@@ -1108,6 +1111,7 @@
 				5050088081A6CE14C59511C2 /* DayContentPageView.swift in Sources */,
 				ACC2FF7BA930277126E43C96 /* StoryPageView.swift in Sources */,
 				C7E087F6AACF99F475844343 /* StoryBookView.swift in Sources */,
+				SB00SB02 /* StatusBarStyleApplier.swift in Sources */,
 				SM00SM02 /* StoryModePDFOptionsSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1229,7 +1233,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Bloggo uses your location to identify your trips outside of your home.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Allow access so Bloggo can organize your trips by place and day.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "We access your photos locally to detect trip dates and locations and organize them into travel blogs. Your photos and metadata are processed on device only";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -1261,7 +1265,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Bloggo uses your location to identify your trips outside of your home.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Allow access so Bloggo can organize your trips by place and day.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "We access your photos locally to detect trip dates and locations and organize them into travel blogs. Your photos and metadata are processed on device only";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

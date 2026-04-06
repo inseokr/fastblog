@@ -225,6 +225,8 @@ struct RecapBlogPageView: View {
     @State private var storyShareTrigger = false
     @State private var storyContentReady = false
     @State private var storyChromeVisible = true
+    /// Matches `StoryBookView` loading / PDF light-dark so the system status bar uses dark or light content.
+    @State private var storyStatusBarColorScheme: ColorScheme = .dark
     @State private var pendingStoryOpen = false
     @AppStorage("pdfExportOptions") private var pdfExportOptionsData: Data = (try? JSONEncoder().encode(PDFExportOptions())) ?? Data()
     @State private var showProfileManagement = false
@@ -268,13 +270,30 @@ struct RecapBlogPageView: View {
         Set(newMomentPhotos.map { $0.locationName ?? "Moment" }).count
     }
 
+    private var pdfExportOptions: PDFExportOptions {
+        (try? JSONDecoder().decode(PDFExportOptions.self, from: pdfExportOptionsData)) ?? PDFExportOptions()
+    }
+
     /// Matches story book backdrop so the recap page never flashes the wrong color behind Story mode.
     private var storyPresentationUnderlayColor: Color {
-        let opts = (try? JSONDecoder().decode(PDFExportOptions.self, from: pdfExportOptionsData)) ?? PDFExportOptions()
-        return opts.colorStyle == .black ? Color.black : Color.white
+        pdfExportOptions.colorStyle == .black ? Color.black : Color.white
     }
-    /// Extra top offset for Story Mode close/share chrome relative to safe area.
-    private let storyChromeTopOffset: CGFloat = 40
+
+    /// Close / Export in Story Mode: must contrast with both the story backdrop and the inner gradient.
+    private var storyChromeForegroundColor: Color {
+        pdfExportOptions.colorStyle == .black ? Color.white : Color(white: 0.13)
+    }
+
+    private var storyChromeGlyphShadowColor: Color {
+        pdfExportOptions.colorStyle == .black
+            ? Color.black.opacity(0.55)
+            : Color.white.opacity(0.92)
+    }
+
+    /// UIKit status bar content: dark glyphs on light story, light glyphs on dark story.
+    private var storyUIKitStatusBarStyle: UIStatusBarStyle {
+        storyStatusBarColorScheme == .light ? .darkContent : .lightContent
+    }
 
     // MARK: - Split Blog Properties
     @State private var showSplitActionSheet = false
@@ -341,50 +360,81 @@ struct RecapBlogPageView: View {
                 ZStack {
                     storyPresentationUnderlayColor
                         .ignoresSafeArea()
-                    StoryBookView(detail: draft, onDismiss: { showStoryMode = false; storyContentReady = false; storyChromeVisible = true }, triggerShare: $storyShareTrigger, contentReady: $storyContentReady, showChrome: $storyChromeVisible)
+                    StoryBookView(
+                        detail: draft,
+                        onDismiss: { showStoryMode = false; storyContentReady = false; storyChromeVisible = true },
+                        triggerShare: $storyShareTrigger,
+                        contentReady: $storyContentReady,
+                        showChrome: $storyChromeVisible,
+                        statusBarColorScheme: $storyStatusBarColorScheme
+                    )
+                        .environment(\.storyRecapTopContentInset, StoryRenderMetrics.recapStoryContentTopInset)
                         .ignoresSafeArea()
 
-                    // Custom chrome: close + share, snapped below status bar, hidden in read mode.
+                    // Custom chrome: close + share, below status bar. `GeometryReader` + ignoresSafeArea often reports `safeAreaInsets.top == 0`, so use key-window insets (see `StoryRenderMetrics`).
                     GeometryReader { geo in
-                        VStack(spacing: 0) {
-                            HStack {
-                                Button {
-                                    showStoryMode = false
-                                    storyContentReady = false
-                                    storyChromeVisible = true
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.body.weight(.semibold))
-                                        .foregroundColor(.white)
-                                        .frame(width: 36, height: 36)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
+                        let topSafe = max(geo.safeAreaInsets.top, StoryRenderMetrics.windowSafeAreaInsets.top)
+                        let gap = StoryRenderMetrics.recapStoryChromeGapBelowStatusBar
+                        let scrimHeight = topSafe + gap + 44
+                        ZStack(alignment: .top) {
+                            LinearGradient(
+                                colors: pdfExportOptions.colorStyle == .black
+                                    ? [Color.black.opacity(0.62), Color.black.opacity(0.28), Color.clear]
+                                    : [Color.white.opacity(0.98), Color.white.opacity(0.86), Color.white.opacity(0.35), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(height: scrimHeight)
+                            .frame(maxWidth: .infinity)
+                            .allowsHitTesting(false)
 
-                                Spacer()
-
-                                if storyContentReady {
+                            VStack(spacing: 0) {
+                                HStack {
                                     Button {
-                                        storyShareTrigger = true
+                                        showStoryMode = false
+                                        storyContentReady = false
+                                        storyChromeVisible = true
                                     } label: {
-                                        HStack(spacing: 5) {
-                                            Image(systemName: "arrow.up.doc")
-                                                .font(.subheadline.weight(.semibold))
-                                            Text("Export")
-                                                .font(.subheadline.weight(.semibold))
-                                        }
-                                        .foregroundColor(.white)
+                                        Image(systemName: "xmark")
+                                            .font(.body.weight(.semibold))
+                                            .foregroundStyle(storyChromeForegroundColor)
+                                            .shadow(color: storyChromeGlyphShadowColor, radius: 2, x: 0, y: 1)
+                                            .frame(width: 36, height: 36)
+                                            .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
+
+                                    Spacer()
+
+                                    if storyContentReady {
+                                        Button {
+                                            storyShareTrigger = true
+                                        } label: {
+                                            HStack(spacing: 5) {
+                                                Image(systemName: "arrow.up.doc")
+                                                    .font(.subheadline.weight(.semibold))
+                                                Text("Export")
+                                                    .font(.subheadline.weight(.semibold))
+                                            }
+                                            .foregroundStyle(storyChromeForegroundColor)
+                                            .shadow(color: storyChromeGlyphShadowColor, radius: 2, x: 0, y: 1)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
                                 }
+                                .padding(.horizontal, 16)
+                                .padding(.top, topSafe + gap)
+                                Spacer()
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.top, geo.safeAreaInsets.top + storyChromeTopOffset)
-                            Spacer()
                         }
                     }
                     .ignoresSafeArea(edges: .top)
                 }
+                .overlay(
+                    StatusBarStyleApplier(style: storyUIKitStatusBarStyle)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .allowsHitTesting(false)
+                )
                 .zIndex(200)
             }
 
@@ -449,7 +499,8 @@ struct RecapBlogPageView: View {
             }
 
         }
-        .preferredColorScheme(nil)
+        // When Story Mode is open, drive the entire hierarchy’s color scheme (including status bar) from the story.
+        .preferredColorScheme(showStoryMode ? storyStatusBarColorScheme : nil)
         .animation(.easeInOut(duration: 0.35), value: isExportingPDF)
         .animation(.easeOut(duration: 0.22), value: placeCaptionEditItem?.id)
         .animation(.easeOut(duration: 0.22), value: dayCaptionEditItem?.id)
@@ -1245,7 +1296,7 @@ struct RecapBlogPageView: View {
     private static let dayFilterApproxHeight: CGFloat = 52
 
     /// Scroll timeline to `initialScrollToStopId` after the blog (and stop rows) are available.
-    private func schedulePlacesVisitedDeepLinkScroll(proxy: ScrollViewProxy) {
+    private func schedulePlacesVisitedDeepLinkScroll() {
         guard let targetStopId = initialScrollToStopId else { return }
         guard hasFinishedInitialLoad else { return }
         guard !didApplyPlacesVisitedDeepLink else { return }
@@ -1262,46 +1313,132 @@ struct RecapBlogPageView: View {
                     try? await Task.sleep(nanoseconds: 100_000_000)
                     continue
                 }
-                    didApplyPlacesVisitedDeepLink = true
-                    pendingDeepLinkStopScrollId = targetStopId
-                    if draft != effective {
-                        draft = effective
-                    }
-                    selectedDayIndex = dayIdx
-                    try? await Task.sleep(nanoseconds: 180_000_000)
-                    guard !Task.isCancelled else {
-                        pendingDeepLinkStopScrollId = nil
-                        return
-                    }
-                    withAnimation(.easeOut(duration: 0.28)) {
-                        proxy.scrollTo(targetStopId, anchor: .top)
-                    }
-                    try? await Task.sleep(nanoseconds: 150_000_000)
-                    guard !Task.isCancelled else {
-                        pendingDeepLinkStopScrollId = nil
-                        return
-                    }
-                    withAnimation(.easeOut(duration: 0.22)) {
-                        proxy.scrollTo(targetStopId, anchor: .top)
-                    }
-                    try? await Task.sleep(nanoseconds: 400_000_000)
-                    pendingDeepLinkStopScrollId = nil
-                    return
+                didApplyPlacesVisitedDeepLink = true
+                if draft != effective {
+                    draft = effective
+                }
+                selectedDayIndex = dayIdx
+                // Set pendingDeepLinkStopScrollId — the day page's ScrollViewReader will handle the actual scroll.
+                pendingDeepLinkStopScrollId = targetStopId
+                return
             }
         }
     }
 
     private func mainContent(screenHeight: CGFloat) -> some View {
+        ZStack(alignment: .bottom) {
+            recapScreenBackground.ignoresSafeArea()
+
+            // Horizontal day pager — each page is one day's full scrollable content.
+            if draft.days.isEmpty {
+                emptyDayPage(screenHeight: screenHeight)
+            } else {
+                TabView(selection: $selectedDayIndex) {
+                    ForEach(Array(draft.days.enumerated()), id: \.element.id) { index, day in
+                        dayPageView(day: day, index: index, screenHeight: screenHeight)
+                            .tag(index)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+
+            // Undo Overlay (Banner or Button)
+            if showUndoOverlay {
+                UndoOverlayView(
+                    text: lastUndoAction?.text ?? "Item hidden",
+                    isMinimized: $isUndoMinimized,
+                    onUndo: { performUndo() },
+                    onDismiss: {
+                        withAnimation {
+                            showUndoOverlay = false
+                            lastUndoAction = nil
+                        }
+                    }
+                )
+                .padding(.bottom, Self.dayFilterApproxHeight + 10)
+                .zIndex(20)
+            } else if showSplitUndoBanner {
+                // Special banner for "Undo Split" in edit mode
+                VStack {
+                    Spacer()
+                    HStack(spacing: 12) {
+                        Text("Blog split into two parts")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+
+                        Spacer()
+
+                        Button("Undo") {
+                            createdRecapStore.undoSplit()
+                            withAnimation { showSplitUndoBanner = false }
+                            if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
+                                draft = updated
+                            }
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.orange)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .background {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                    }
+                    .padding(.horizontal, 20)
+                }
+            }
+
+            if !isKeyboardVisible {
+                dayFilterSection
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .ignoresSafeArea(.keyboard)
+        .background(recapScreenBackground)
+        .onChange(of: selectedDayIndex) { _, newIndex in
+            visitedDayIndices.insert(newIndex)
+            // For non-first pages there is no cover photo; always show the nav bar title.
+            if newIndex > 0 {
+                showNavBarTitle = true
+            }
+        }
+        .onChange(of: draft.days.count) { _, _ in
+            schedulePlacesVisitedDeepLinkScroll()
+        }
+        .onChange(of: hasFinishedInitialLoad) { _, finished in
+            guard finished else { return }
+            if initialScrollToStopId == nil {
+                if let idx = initialDayIndex, draft.days.indices.contains(idx) {
+                    selectedDayIndex = idx
+                }
+            }
+            schedulePlacesVisitedDeepLinkScroll()
+        }
+        .onDisappear {
+            placesVisitedDeepLinkTask?.cancel()
+            placesVisitedDeepLinkTask = nil
+            pendingDeepLinkStopScrollId = nil
+        }
+        .onChange(of: isEditMode) { _, editing in
+            if editing {
+                visitedDayIndices = [selectedDayIndex]
+            }
+        }
+    }
+
+    // MARK: - Day Page Views
+
+    /// A single horizontally-paged day view: contains the blog header (Day 1 only) + map + places.
+    private func dayPageView(day: RecapBlogDay, index: Int, screenHeight: CGFloat) -> some View {
         ScrollViewReader { proxy in
-            ZStack(alignment: .bottom) {
-                recapScreenBackground.ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Blog header — shown only on the first day's page.
+                    if index == 0 {
+                        Color.clear.frame(height: 0).id("page-top")
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Color.clear.frame(height: 0)
-                            .id("page-top")
-
-                        // Limited access users: photo library access control, shown above cover in Edit mode.
                         if isEditMode && photoAuth.status == .limited {
                             photoLibraryAccessBanner
                                 .padding(.horizontal, 16)
@@ -1313,184 +1450,112 @@ struct RecapBlogPageView: View {
                         } else {
                             blogTitleView
                         }
-                        // Restore card sits right under the cover photo/title in edit mode
+
                         if isEditMode && !draft.removedPlaceStops.isEmpty {
                             restoreRemovedPlacesCard
                                 .padding(.horizontal, 16)
                                 .padding(.top, 8)
                                 .padding(.bottom, 12)
                         }
-                        // New moments card — shown when a scan found new photos for this blog.
+
                         if newMomentsPlaceCount > 0 {
                             newMomentsCard
                                 .padding(.horizontal, 16)
                                 .padding(.top, 8)
                                 .padding(.bottom, 12)
                         }
-                        if !isEditMode {
-                            mapOrPreviewCard
-                                .id("map-anchor")
-                        }
+
                         tripNarrativeCard
                             .padding(.bottom, 12)
-                        timelineContent
-
-                        if draft.days.isEmpty && hasFinishedInitialLoad {
-                            Text("All places are hidden.")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .padding(.top, 40)
-                                .padding(.bottom, 60)
-                        }
-
-                        // Spacer for bottom filter + Undo button
-                        Color.clear
-                            .frame(height: Self.dayFilterApproxHeight + 80)
                     }
-                    .background(recapScreenBackground)
-                }
-                .coordinateSpace(name: "scroll")
-                .onPreferenceChange(TitleMinYPreferenceKey.self) { minY in
-                    let shouldShow = minY < 0
-                    if shouldShow != showNavBarTitle {
-                        showNavBarTitle = shouldShow
+
+                    if !isEditMode {
+                        mapCard(for: day)
                     }
+
+                    VStack(alignment: .leading, spacing: 16) {
+                        daySection(day: day)
+                            .id("day-section-\(day.id)")
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 32)
+
+                    Color.clear.frame(height: Self.dayFilterApproxHeight + 80)
                 }
                 .background(recapScreenBackground)
-                .ignoresSafeArea(edges: isKeyboardVisible ? [] : .bottom)
-                .onChange(of: scrollToStopId) { _, newId in
-                    guard let id = newId else { return }
-                    scrollToStopId = nil
-                    if isKeyboardVisible {
-                        // Keyboard already up (e.g. switched to another field); scroll immediately.
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            proxy.scrollTo(id, anchor: .top)
-                        }
-                    } else {
-                        pendingScrollToStopId = id
-                    }
-                }
-                .onChange(of: isKeyboardVisible) { _, visible in
-                    if visible, let id = pendingScrollToStopId {
-                        pendingScrollToStopId = nil
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            // Anchor .top so the row sits at the top of the visible area and the text field stays well above the keyboard.
-                            proxy.scrollTo(id, anchor: .top)
-                        }
-                    }
-                }
-                .onChange(of: selectedDayIndex) { _, newIndex in
-                    if pendingDeepLinkStopScrollId != nil {
-                        if isEditMode {
-                            visitedDayIndices.insert(newIndex)
-                        }
-                        return
-                    }
-                    if isEditMode {
-                        // In edit/draft mode, tapping a day pill should jump directly to that day's section.
-                        if let day = day(at: newIndex) {
-                            withAnimation(.easeOut(duration: 0.3)) {
-                                proxy.scrollTo("day-section-\(day.id)", anchor: .top)
-                            }
-                        }
-                        visitedDayIndices.insert(newIndex)
-                    } else {
-                        // Read-only mode: keep existing behavior (cover + map at top for the selected day).
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            proxy.scrollTo("map-anchor", anchor: .top)
-                        }
-                    }
-                }
-                .onChange(of: draft.days.count) { _, _ in
-                    schedulePlacesVisitedDeepLinkScroll(proxy: proxy)
-                }
-                .onChange(of: hasFinishedInitialLoad) { _, finished in
-                    guard finished else { return }
-                    if initialScrollToStopId == nil {
-                        if let idx = initialDayIndex, draft.days.indices.contains(idx) {
-                            selectedDayIndex = idx
-                        }
-                    }
-                    if isEditMode, initialScrollToStopId == nil {
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            proxy.scrollTo("page-top", anchor: .top)
-                        }
-                    }
-                    schedulePlacesVisitedDeepLinkScroll(proxy: proxy)
-                }
-                .onDisappear {
-                    placesVisitedDeepLinkTask?.cancel()
-                    placesVisitedDeepLinkTask = nil
-                    pendingDeepLinkStopScrollId = nil
-                }
-                .onChange(of: isEditMode) { _, editing in
-                    if editing {
-                        visitedDayIndices = [selectedDayIndex]
-                    }
-                }
-                
-                // Undo Overlay (Banner or Button)
-                if showUndoOverlay {
-                    UndoOverlayView(
-                        text: lastUndoAction?.text ?? "Item hidden",
-                        isMinimized: $isUndoMinimized,
-                        onUndo: {
-                            performUndo()
-                        },
-                        onDismiss: {
-                            withAnimation {
-                                showUndoOverlay = false
-                                lastUndoAction = nil
-                            }
-                        }
-                    )
-                    .padding(.bottom, Self.dayFilterApproxHeight + 10)
-                    .zIndex(20)
-                } else if showSplitUndoBanner {
-                        // Special banner for "Undo Split" in edit mode
-                        VStack {
-                            Spacer()
-                            HStack(spacing: 12) {
-                                Text("Blog split into two parts")
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(.primary)
-
-                                Spacer()
-
-                                Button("Undo") {
-                                    createdRecapStore.undoSplit()
-                                    withAnimation {
-                                        showSplitUndoBanner = false
-                                    }
-                                    // Optionally re-fetch draft since we merged back
-                                    if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
-                                        draft = updated
-                                    }
-                                }
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundColor(.orange)
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 14)
-                            .background {
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(.ultraThinMaterial)
-                                    .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
-                            }
-                            .padding(.horizontal, 20)
-                    }
-                }
-
-                if !isKeyboardVisible {
-                    // Day Filter fixed at bottom
-                    dayFilterSection
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            .coordinateSpace(name: "scroll")
+            .onPreferenceChange(TitleMinYPreferenceKey.self) { minY in
+                guard index == selectedDayIndex else { return }
+                let shouldShow = minY < 0
+                if shouldShow != showNavBarTitle {
+                    showNavBarTitle = shouldShow
                 }
             }
-            .ignoresSafeArea(.keyboard)
+            .background(recapScreenBackground)
+            .ignoresSafeArea(edges: isKeyboardVisible ? [] : .bottom)
+            .onChange(of: scrollToStopId) { _, newId in
+                guard let id = newId, selectedDayIndex == index else { return }
+                scrollToStopId = nil
+                if isKeyboardVisible {
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        proxy.scrollTo(id, anchor: .top)
+                    }
+                } else {
+                    pendingScrollToStopId = id
+                }
+            }
+            .onChange(of: isKeyboardVisible) { _, visible in
+                guard selectedDayIndex == index else { return }
+                if visible, let id = pendingScrollToStopId {
+                    pendingScrollToStopId = nil
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        proxy.scrollTo(id, anchor: .top)
+                    }
+                }
+            }
+            .onChange(of: pendingDeepLinkStopScrollId) { _, stopId in
+                guard let id = stopId, selectedDayIndex == index else { return }
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 180_000_000)
+                    withAnimation(.easeOut(duration: 0.28)) {
+                        proxy.scrollTo(id, anchor: .top)
+                    }
+                    try? await Task.sleep(nanoseconds: 150_000_000)
+                    withAnimation(.easeOut(duration: 0.22)) {
+                        proxy.scrollTo(id, anchor: .top)
+                    }
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    pendingDeepLinkStopScrollId = nil
+                }
+            }
+        }
+    }
+
+    /// Shown when `draft.days` is empty (all places hidden).
+    private func emptyDayPage(screenHeight: CGFloat) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                if draft.selectedCoverPhotoIdentifier != nil {
+                    coverPhotoHero(screenHeight: screenHeight)
+                } else {
+                    blogTitleView
+                }
+                tripNarrativeCard.padding(.bottom, 12)
+                if hasFinishedInitialLoad {
+                    Text("All places are hidden.")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 40)
+                        .padding(.bottom, 60)
+                }
+                Color.clear.frame(height: Self.dayFilterApproxHeight + 80)
+            }
             .background(recapScreenBackground)
         }
+        .background(recapScreenBackground)
+        .ignoresSafeArea(edges: .bottom)
     }
 
     private var blogTitleView: some View {
@@ -1900,24 +1965,33 @@ struct RecapBlogPageView: View {
     /// Day filter fixed at top; scrollable content (map + timeline) sits below it.
     private var dayFilterSection: some View {
         let processingIndex = createdRecapStore.processingDayIndexByBlogId[blogId]
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(Array(draft.days.enumerated()), id: \.element.id) { index, day in
-                    dayPill(title: "Day \(day.dayIndex)", index: index, day: day, processingIndex: processingIndex)
-                        .id(day.id)
+        return ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(draft.days.enumerated()), id: \.element.id) { index, day in
+                        dayPill(title: "Day \(day.dayIndex)", index: index, day: day, processingIndex: processingIndex)
+                            .id(day.id)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 2)
+            }
+            .frame(maxWidth: .infinity)
+            .background {
+                Rectangle()
+                    .fill(.ultraThinMaterial.opacity(0.75))
+                    .ignoresSafeArea(edges: .bottom)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .onChange(of: selectedDayIndex) { _, newIndex in
+                guard let day = day(at: newIndex) else { return }
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    // anchor: nil = minimum scroll to make the item visible; no-op if already visible.
+                    proxy.scrollTo(day.id, anchor: nil)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 2)
         }
-        .frame(maxWidth: .infinity)
-        .background {
-            Rectangle()
-                .fill(.ultraThinMaterial.opacity(0.75))
-                .ignoresSafeArea(edges: .bottom)
-        }
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func dayPill(title: String, index: Int, day: RecapBlogDay, processingIndex: Int?) -> some View {
@@ -1957,50 +2031,36 @@ struct RecapBlogPageView: View {
     }
 
     @ViewBuilder
-    private var mapOrPreviewCard: some View {
-        if let day = day(at: selectedDayIndex) {
-            ZStack(alignment: .topTrailing) {
-                MapDayView(
-                    placeStops: day.placeStops,
-                    onTap: {
-                        fullScreenMapFocusedPlaceId = nil
-                        fullScreenMapDay = day
-                    },
-                    onAnnotationTap: { stopId in
-                        fullScreenMapFocusedPlaceId = stopId
-                        fullScreenMapDay = day
-                    }
-                )
-                Button {
+    private func mapCard(for day: RecapBlogDay) -> some View {
+        ZStack(alignment: .topTrailing) {
+            MapDayView(
+                placeStops: day.placeStops,
+                onTap: {
                     fullScreenMapFocusedPlaceId = nil
                     fullScreenMapDay = day
-                } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white)
-                        .frame(width: 36, height: 36)
-                        .background(recapMapExpandBackground)
-                        .clipShape(Circle())
+                },
+                onAnnotationTap: { stopId in
+                    fullScreenMapFocusedPlaceId = stopId
+                    fullScreenMapDay = day
                 }
-                .buttonStyle(.plain)
-                .padding(12)
+            )
+            Button {
+                fullScreenMapFocusedPlaceId = nil
+                fullScreenMapDay = day
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(width: 36, height: 36)
+                    .background(recapMapExpandBackground)
+                    .clipShape(Circle())
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
+            .buttonStyle(.plain)
+            .padding(12)
         }
-    }
-
-    @ViewBuilder
-    private var timelineContent: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            if let day = day(at: selectedDayIndex) {
-                daySection(day: day)
-                    .id("day-section-\(day.id)")
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.bottom, 32)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
     }
 
     /// Inline card that shows how many places have been removed and lets the user jump to the restore sheet.

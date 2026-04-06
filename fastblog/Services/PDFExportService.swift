@@ -77,10 +77,10 @@ enum PhotoShape: String, CaseIterable, Codable {
     }
 }
 
-/// Per-position photo shapes for the 2-column PDF grid.
-/// - `leftShape`   — left column in a paired row
-/// - `rightShape`  — right column in a paired row
-/// - `singleShape` — a photo that occupies its row alone (only 1 total, or last odd photo)
+/// Per-position photo shapes for the recap PDF photo rows.
+/// - `leftShape`   — left column when two photos share a row
+/// - `rightShape`  — right column when two photos share a row
+/// - `singleShape` — one photo spanning the full card width
 struct PDFPhotoShapeOptions: Codable, Equatable {
     var leftShape:   PhotoShape = .rounded
     var rightShape:  PhotoShape = .rounded
@@ -139,7 +139,10 @@ class PDFExportService {
     // Card interior = contentW - cardPadding*2 = 508
     static let cardInteriorW: CGFloat = contentW - cardPadding * 2 // 508
     static let photoGap: CGFloat = 10 // app's HStack spacing between photos
+    /// Half-column width when two photos sit in one row (also the square row height).
     static let photoSize: CGFloat = (cardInteriorW - photoGap) / 2 // ~249pt per photo
+    /// Never place more than this many photos on a single PDF page within one place card.
+    private static let maxPhotosPerPDFPage = 2
 
     // MARK: - Font Helper
 
@@ -323,6 +326,86 @@ class PDFExportService {
         return url
     }
 
+    // MARK: - Photo row layout (1 full-width or up to 2 half-width; max 2 photos per page)
+
+    private enum PDFPhotoRowLayout {
+        case single(Int)
+        case pair(Int, Int)
+
+        var photoCount: Int {
+            switch self {
+            case .single: return 1
+            case .pair: return 2
+            }
+        }
+    }
+
+    /// Caps caption height the same way drawing does (two lines max in practice).
+    private static func pdfCaptionDisplayHeight(_ caption: String?, font: UIFont, width: CGFloat) -> CGFloat {
+        guard let c = caption, !c.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return 0 }
+        return min(estimateTextHeight(c, font: font, width: width), 32)
+    }
+
+    /// Long place stories get more vertical breathing room: prefer one photo per row at full width.
+    private static func pdfStoryIsLongForPairing(_ story: String?, bodyFont: UIFont, cardContentW: CGFloat) -> Bool {
+        guard let s = story?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return false }
+        return estimateTextHeight(s, font: bodyFont, width: cardContentW) > 88
+    }
+
+    /// Builds rows of either one full-width photo or two side-by-side, from caption length and story size.
+    private static func buildPDFPhotoRows(
+        photosWithImages: [(RecapPhoto, UIImage)],
+        overallStory: String?,
+        bodyFont: UIFont,
+        captionFont: UIFont,
+        cardContentW: CGFloat,
+        photoGap: CGFloat
+    ) -> [PDFPhotoRowLayout] {
+        let halfW = (cardContentW - photoGap) / 2
+        let storyLong = pdfStoryIsLongForPairing(overallStory, bodyFont: bodyFont, cardContentW: cardContentW)
+        var rows: [PDFPhotoRowLayout] = []
+        var i = 0
+        let n = photosWithImages.count
+        while i < n {
+            if storyLong || i + 1 >= n {
+                rows.append(.single(i))
+                i += 1
+                continue
+            }
+            let h0 = pdfCaptionDisplayHeight(photosWithImages[i].0.caption, font: captionFont, width: halfW)
+            let h1 = pdfCaptionDisplayHeight(photosWithImages[i + 1].0.caption, font: captionFont, width: halfW)
+            // Pair when both captions stay short in a half column; otherwise give each more width.
+            if max(h0, h1) <= 30 {
+                rows.append(.pair(i, i + 1))
+                i += 2
+            } else {
+                rows.append(.single(i))
+                i += 1
+            }
+        }
+        return rows
+    }
+
+    private static func pdfHeightOfPhotoRow(
+        _ row: PDFPhotoRowLayout,
+        photosWithImages: [(RecapPhoto, UIImage)],
+        captionFont: UIFont,
+        cardContentW: CGFloat,
+        photoSize: CGFloat
+    ) -> CGFloat {
+        switch row {
+        case .single(let idx):
+            let h = pdfCaptionDisplayHeight(photosWithImages[idx].0.caption, font: captionFont, width: cardContentW)
+            return photoSize + (h > 0 ? 3 + h : 0)
+        case .pair(let a, let b):
+            let h0 = pdfCaptionDisplayHeight(photosWithImages[a].0.caption, font: captionFont, width: photoSize)
+            let h1 = pdfCaptionDisplayHeight(photosWithImages[b].0.caption, font: captionFont, width: photoSize)
+            let b0 = h0 > 0 ? 3 + h0 : 0
+            let b1 = h1 > 0 ? 3 + h1 : 0
+            return photoSize + max(b0, b1)
+        }
+    }
+
     // MARK: - Place Stop Card Drawing
 
     private static func drawPlaceStopCard(
@@ -351,6 +434,15 @@ class PDFExportService {
         let bodyFont15 = Self.font(for: options.fontTheme, size: 15)
         let captionFont = Self.font(for: options.fontTheme, size: 12)
 
+        let photoRows = buildPDFPhotoRows(
+            photosWithImages: photosWithImages,
+            overallStory: stop.overallStory,
+            bodyFont: bodyFont15,
+            captionFont: captionFont,
+            cardContentW: cardContentW,
+            photoGap: photoGap
+        )
+
         // ── Pre-compute card height for background and cohesion ──
         let estTitleH = max(badgeSize, estimateTextHeight(stop.placeTitle, font: titleFont, width: titleW))
         var estContentH: CGFloat = estTitleH
@@ -362,28 +454,29 @@ class PDFExportService {
         }
         if !photosWithImages.isEmpty {
             estContentH += 8
-            let rowCount = (photosWithImages.count + 1) / 2
-            for ri in 0..<rowCount {
-                estContentH += photoSize + 10
-                let li = ri * 2
-                var capH: CGFloat = 0
-                if li < photosWithImages.count,
-                   let c = photosWithImages[li].0.caption,
-                   !c.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    capH = 6 + min(estimateTextHeight(c, font: captionFont, width: photoSize), 32)
-                }
-                if li + 1 < photosWithImages.count,
-                   let c = photosWithImages[li + 1].0.caption,
-                   !c.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    capH = max(capH, 3 + min(estimateTextHeight(c, font: captionFont, width: photoSize), 32))
-                }
-                estContentH += capH
+            for row in photoRows {
+                estContentH += pdfHeightOfPhotoRow(
+                    row,
+                    photosWithImages: photosWithImages,
+                    captionFont: captionFont,
+                    cardContentW: cardContentW,
+                    photoSize: photoSize
+                ) + 10
             }
         }
         let totalCardH = cardPadding + estContentH + cardPadding
 
         // Cohesion: keep header + first photo row on the same page
-        let firstPhotoH: CGFloat = photosWithImages.isEmpty ? 0 : 8 + photoSize
+        let firstPhotoH: CGFloat = {
+            guard !photosWithImages.isEmpty, let first = photoRows.first else { return 0 }
+            return 8 + pdfHeightOfPhotoRow(
+                first,
+                photosWithImages: photosWithImages,
+                captionFont: captionFont,
+                cardContentW: cardContentW,
+                photoSize: photoSize
+            )
+        }()
         let storySnippetH: CGFloat = hasStory
             ? min(8 + estimateTextHeight(stop.overallStory ?? "", font: bodyFont15, width: cardContentW), 68)
             : 0
@@ -509,14 +602,29 @@ class PDFExportService {
             pen.y += storySize.height
         }
 
-        // ── Photos — 2-column grid (app: 240x240 square, HStack spacing 10) ──
+        // ── Photos — one full-width or two half-width per row; max 2 photos per PDF page
         if !photosWithImages.isEmpty {
+            let colW = photoSize
+            let colH = photoSize
+
+            func estimatedRemainingPhotoHeights(from startIdx: Int) -> CGFloat {
+                var h: CGFloat = 0
+                for j in startIdx..<photoRows.count {
+                    h += pdfHeightOfPhotoRow(
+                        photoRows[j],
+                        photosWithImages: photosWithImages,
+                        captionFont: captionFont,
+                        cardContentW: cardContentW,
+                        photoSize: photoSize
+                    ) + 10
+                }
+                return h + cardPadding + 8
+            }
+
             let pageBeforePhotos = pen.pageNumber
             pen.skip(8) // app: photo strip top padding 8
-            // If skipping pushed us to a new page, fill continuation background
             if pen.pageNumber != pageBeforePhotos {
-                let rowCount = (photosWithImages.count + 1) / 2
-                let estRemaining = CGFloat(rowCount) * (photoSize + 45) + cardPadding + 8
+                let estRemaining = estimatedRemainingPhotoHeights(from: 0)
                 let contH = min(estRemaining, pen.maxY - pen.y)
                 if let gc = UIGraphicsGetCurrentContext(), contH > 0 {
                     gc.saveGState()
@@ -525,18 +633,15 @@ class PDFExportService {
                     gc.restoreGState()
                 }
             }
-            let colW = photoSize
-            let colH = photoSize
 
-            for row in stride(from: 0, to: photosWithImages.count, by: 2) {
-                let pageBeforeEnsure = pen.pageNumber
-                // Ensure room for at least one photo row
-                pen.ensureRoom(colH + 40)
-
-                // If a page break occurred inside the card, draw continuation background
-                if pen.pageNumber != pageBeforeEnsure {
-                    let rowsLeft = (photosWithImages.count - row + 1) / 2
-                    let estRemaining = CGFloat(rowsLeft) * (colH + 45) + cardPadding + 8
+            var photosOnPage = 0
+            var rowIndex = 0
+            for row in photoRows {
+                let need = row.photoCount
+                if photosOnPage + need > maxPhotosPerPDFPage {
+                    pen.newPage()
+                    photosOnPage = 0
+                    let estRemaining = estimatedRemainingPhotoHeights(from: rowIndex)
                     let contH = min(estRemaining, pen.maxY - pen.y)
                     if let gc = UIGraphicsGetCurrentContext(), contH > 0 {
                         gc.saveGState()
@@ -546,48 +651,91 @@ class PDFExportService {
                     }
                 }
 
-                let (leftPhoto, leftImg) = photosWithImages[row]
-                let leftRect = CGRect(x: cardLeft, y: pen.y, width: colW, height: colH)
-                let hasPair = row + 1 < photosWithImages.count
-                let leftShape = hasPair
-                    ? options.photoShapeOptions.leftShape
-                    : options.photoShapeOptions.singleShape
-                drawPhoto(leftImg, in: leftRect, shape: leftShape)
+                let rowH = pdfHeightOfPhotoRow(
+                    row,
+                    photosWithImages: photosWithImages,
+                    captionFont: captionFont,
+                    cardContentW: cardContentW,
+                    photoSize: photoSize
+                )
+                let pageBeforeEnsure = pen.pageNumber
+                pen.ensureRoom(rowH + 4)
 
-                if hasPair {
-                    let (_, rightImg) = photosWithImages[row + 1]
+                if pen.pageNumber != pageBeforeEnsure {
+                    let estRemaining = estimatedRemainingPhotoHeights(from: rowIndex)
+                    let contH = min(estRemaining, pen.maxY - pen.y)
+                    if let gc = UIGraphicsGetCurrentContext(), contH > 0 {
+                        gc.saveGState()
+                        gc.setFillColor(options.cardBackgroundColor.cgColor)
+                        gc.fill(CGRect(x: pen.margin, y: pen.y, width: contentW, height: contH))
+                        gc.restoreGState()
+                    }
+                    photosOnPage = 0
+                }
+
+                let captionColor = options.secondaryTextColor
+
+                switch row {
+                case .single(let idx):
+                    let (photo, img) = photosWithImages[idx]
+                    let rect = CGRect(x: cardLeft, y: pen.y, width: cardContentW, height: colH)
+                    drawPhoto(img, in: rect, shape: options.photoShapeOptions.singleShape)
+                    pen.y += colH
+
+                    var captionH: CGFloat = 0
+                    if let cap = photo.caption,
+                       !cap.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        pen.skip(3)
+                        let capAttrs: [NSAttributedString.Key: Any] = [
+                            .font: captionFont, .foregroundColor: captionColor
+                        ]
+                        let capSize = cap.boundingRect(
+                            with: CGSize(width: cardContentW, height: 32),
+                            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                            attributes: capAttrs, context: nil
+                        )
+                        let h = min(capSize.height, 32)
+                        cap.draw(
+                            with: CGRect(x: cardLeft, y: pen.y, width: cardContentW, height: h),
+                            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                            attributes: capAttrs, context: nil
+                        )
+                        captionH = h + 3
+                    }
+                    pen.y += captionH
+
+                case .pair(let a, let b):
+                    let (leftPhoto, leftImg) = photosWithImages[a]
+                    let (_, rightImg) = photosWithImages[b]
+                    let leftRect = CGRect(x: cardLeft, y: pen.y, width: colW, height: colH)
                     let rightRect = CGRect(x: cardLeft + colW + photoGap, y: pen.y,
                                            width: colW, height: colH)
+                    drawPhoto(leftImg, in: leftRect, shape: options.photoShapeOptions.leftShape)
                     drawPhoto(rightImg, in: rightRect, shape: options.photoShapeOptions.rightShape)
-                }
-                pen.y += colH
+                    pen.y += colH
 
-                // Captions (app: .caption, 2 line limit)
-                let captionColor = options.secondaryTextColor
-                var captionH: CGFloat = 0
+                    var captionH: CGFloat = 0
+                    if let cap = leftPhoto.caption,
+                       !cap.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        pen.skip(3)
+                        let capAttrs: [NSAttributedString.Key: Any] = [
+                            .font: captionFont, .foregroundColor: captionColor
+                        ]
+                        let capSize = cap.boundingRect(
+                            with: CGSize(width: colW, height: 32),
+                            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                            attributes: capAttrs, context: nil
+                        )
+                        let h = min(capSize.height, 32)
+                        cap.draw(
+                            with: CGRect(x: cardLeft, y: pen.y, width: colW, height: h),
+                            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                            attributes: capAttrs, context: nil
+                        )
+                        captionH = max(captionH, h + 3)
+                    }
 
-                if let cap = leftPhoto.caption,
-                   !cap.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    pen.skip(3)
-                    let capAttrs: [NSAttributedString.Key: Any] = [
-                        .font: captionFont, .foregroundColor: captionColor
-                    ]
-                    let capSize = cap.boundingRect(
-                        with: CGSize(width: colW, height: 32),
-                        options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-                        attributes: capAttrs, context: nil
-                    )
-                    let h = min(capSize.height, 32)
-                    cap.draw(
-                        with: CGRect(x: cardLeft, y: pen.y, width: colW, height: h),
-                        options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-                        attributes: capAttrs, context: nil
-                    )
-                    captionH = max(captionH, h + 3)
-                }
-
-                if row + 1 < photosWithImages.count {
-                    let (rightPhoto, _) = photosWithImages[row + 1]
+                    let (rightPhoto, _) = photosWithImages[b]
                     if let cap = rightPhoto.caption,
                        !cap.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         let capAttrs: [NSAttributedString.Key: Any] = [
@@ -607,10 +755,13 @@ class PDFExportService {
                         )
                         captionH = max(captionH, h + 3)
                     }
+
+                    pen.y += captionH
                 }
 
-                pen.y += captionH
-                pen.skip(10) // gap between photo rows
+                pen.skip(10)
+                photosOnPage += need
+                rowIndex += 1
             }
         }
 

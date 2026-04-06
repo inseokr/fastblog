@@ -89,6 +89,8 @@ enum StoryPageLayout {
     static let dayStoryBoxTextPaddingTop: CGFloat = 10
     static let dayStoryBoxTextPaddingBottom: CGFloat = 10
     static let placeTitleHeight: CGFloat = 32
+    /// Story Mode day pages: never show more than this many photos at once (matches recap PDF pacing).
+    static let maxPhotosPerStoryDayPage: Int = 2
     static let placeCaptionShort: CGFloat = 48
     static let placeCaptionLong: CGFloat = 72
     /// Place story body above photos; keep layout estimates aligned with `PlaceBlockView`.
@@ -1818,6 +1820,26 @@ enum StoryPageLayout {
         }
     }
 
+    /// Photos rendered in a content slot (place block or overflow continuation).
+    private static func photoCountInContentSlot(_ slot: ContentSlot) -> Int {
+        switch slot {
+        case .placeBlock(let place, let slice, _, _, _, _):
+            guard !place.photos.isEmpty else { return 0 }
+            let lo = slice.lowerBound
+            let hi = min(slice.upperBound, place.photos.count - 1)
+            guard lo <= hi else { return 0 }
+            return hi - lo + 1
+        case .photoOverflowContinuation(_, let place, let slice, _, _, _):
+            guard !place.photos.isEmpty else { return 0 }
+            let lo = slice.lowerBound
+            let hi = min(slice.upperBound, place.photos.count - 1)
+            guard lo <= hi else { return 0 }
+            return hi - lo + 1
+        case .dayCaption, .photoCaptionContinuation, .placeStoryContinuation:
+            return 0
+        }
+    }
+
     private static func packSlots(
         _ slots: [ContentSlot],
         day: StoryDay,
@@ -1838,6 +1860,22 @@ enum StoryPageLayout {
         while slotIdx < slots.count {
             let slot = slots[slotIdx]
             let h = slotHeight(slot, metrics: metrics, fontTheme: fontTheme, layoutMode: layoutMode)
+            let slotPhotos = photoCountInContentSlot(slot)
+            let photosOnPage = currentSlots.reduce(0) { $0 + photoCountInContentSlot($1) }
+
+            if photosOnPage + slotPhotos > maxPhotosPerStoryDayPage && !currentSlots.isEmpty {
+                pages.append(DayContentPage(
+                    day: day,
+                    isFirstPage: isFirstPage,
+                    slots: currentSlots,
+                    isLastPageOfDay: false,
+                    isLastPageOfTrip: false,
+                    nextDayName: nil
+                ))
+                currentSlots = []
+                usedHeight = dayHeaderHeight
+                isFirstPage = false
+            }
 
             if usedHeight + h > pageContentHeight && !currentSlots.isEmpty {
                 pages.append(DayContentPage(
@@ -1874,7 +1912,10 @@ enum StoryPageLayout {
                     // Ensure the next page has room for at least two minimal place blocks.
                     let minNextPageHeight: CGFloat = (placeTitleHeight + metrics.minSinglePhotoImageHeight) * 2
                     let remainingAfterBorrow = pageContentHeight - borrowedHeight
-                    if remainingAfterBorrow >= minNextPageHeight {
+                    let photosNow = currentSlots.reduce(0) { $0 + photoCountInContentSlot($1) }
+                    let borrowPhotos = borrowed.reduce(0) { $0 + photoCountInContentSlot($1) }
+                    if photosNow + borrowPhotos <= maxPhotosPerStoryDayPage,
+                       remainingAfterBorrow >= minNextPageHeight {
                         currentSlots.append(contentsOf: borrowed)
                         usedHeight += borrowedHeight
                         didBorrowOnFirstPage = true
@@ -2267,6 +2308,18 @@ enum StoryRenderMetrics {
             return .zero
         }
         return window.safeAreaInsets
+    }
+
+    // MARK: Recap editor Story Mode overlay (close + export) — must match `RecapBlogPageView` chrome layout
+
+    /// Gap between system status bar and the close/export row.
+    static let recapStoryChromeGapBelowStatusBar: CGFloat = 8
+    /// Vertical space for the close + Export tap targets.
+    static let recapStoryChromeButtonRowHeight: CGFloat = 40
+
+    /// Inset from the **physical top** of the screen to the first row of in-book UI (e.g. “Day 1”), so it clears recap overlay chrome.
+    static var recapStoryContentTopInset: CGFloat {
+        windowSafeAreaInsets.top + recapStoryChromeGapBelowStatusBar + recapStoryChromeButtonRowHeight
     }
 
     /// Matches `TabView` when it does **not** use `ignoresSafeArea()`: full screen minus top/bottom safe insets.

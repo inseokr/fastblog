@@ -1,5 +1,6 @@
 // fastblog/Views/StoryBook/StoryBookView.swift
 import SwiftUI
+import Combine
 
 struct StoryBookView: View {
     let detail: RecapBlogDetail
@@ -7,14 +8,24 @@ struct StoryBookView: View {
     @Binding var triggerShare: Bool
     @Binding var contentReady: Bool
     @Binding var showChrome: Bool
+    /// Drives `preferredColorScheme` on the full-screen Story overlay (including status bar); must match loading / PDF light-dark.
+    @Binding var statusBarColorScheme: ColorScheme
     @StateObject private var viewModel = StoryBookViewModel()
 
-    init(detail: RecapBlogDetail, onDismiss: (() -> Void)? = nil, triggerShare: Binding<Bool> = .constant(false), contentReady: Binding<Bool> = .constant(false), showChrome: Binding<Bool> = .constant(true)) {
+    init(
+        detail: RecapBlogDetail,
+        onDismiss: (() -> Void)? = nil,
+        triggerShare: Binding<Bool> = .constant(false),
+        contentReady: Binding<Bool> = .constant(false),
+        showChrome: Binding<Bool> = .constant(true),
+        statusBarColorScheme: Binding<ColorScheme> = .constant(.dark)
+    ) {
         self.detail = detail
         self.onDismiss = onDismiss
         self._triggerShare = triggerShare
         self._contentReady = contentReady
         self._showChrome = showChrome
+        self._statusBarColorScheme = statusBarColorScheme
     }
     @State private var selectedPageIndex: Int = 0
     @State private var showShareSheet = false
@@ -26,6 +37,10 @@ struct StoryBookView: View {
     /// Same key as `RecapBlogPageView` so Story Share matches Export → PDF Settings.
     @AppStorage("pdfExportOptions") private var pdfExportOptionsData: Data = (try? JSONEncoder().encode(PDFExportOptions())) ?? Data()
     @Environment(\.dismiss) private var dismiss
+
+    private var stateChangePublisher: AnyPublisher<Void, Never> {
+        viewModel.$state.map { _ in () }.eraseToAnyPublisher()
+    }
 
     private var savedOptions: PDFExportOptions {
         (try? JSONDecoder().decode(PDFExportOptions.self, from: pdfExportOptionsData)) ?? PDFExportOptions()
@@ -110,7 +125,6 @@ struct StoryBookView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .ignoresSafeArea()
                     }
-                    .preferredColorScheme(savedOptions.colorStyle == .black ? .dark : .light)
 
                     storyDaysMenuBottomTrailingOverlay(pages: pages)
                         .preferredColorScheme(.dark)
@@ -135,13 +149,15 @@ struct StoryBookView: View {
                 .background(Color.white)
             }
 
-            // Soft top gradient for nav bar contrast — hides with chrome
+            // Soft top gradient for status/title contrast (with read-mode chrome hidden). Strength follows PDF light/dark.
             LinearGradient(
-                colors: [Color.black.opacity(0.45), Color.clear],
+                colors: savedOptions.colorStyle == .black
+                    ? [Color.black.opacity(0.48), Color.black.opacity(0.12), Color.clear]
+                    : [Color.black.opacity(0.14), Color.black.opacity(0.05), Color.clear],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 110)
+            .frame(height: savedOptions.colorStyle == .black ? 120 : 132)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .allowsHitTesting(false)
             .ignoresSafeArea()
@@ -195,6 +211,22 @@ struct StoryBookView: View {
         }
         .onChange(of: isContentReady) { ready in
             contentReady = ready
+        }
+        .onAppear { syncStoryStatusBarColorScheme() }
+        .onReceive(stateChangePublisher) { _ in
+            syncStoryStatusBarColorScheme()
+        }
+        .onChange(of: pdfExportOptionsData) { _, _ in syncStoryStatusBarColorScheme() }
+    }
+
+    private func syncStoryStatusBarColorScheme() {
+        switch viewModel.state {
+        case .loading:
+            statusBarColorScheme = .dark
+        case .failed:
+            statusBarColorScheme = .light
+        case .ready:
+            statusBarColorScheme = savedOptions.colorStyle == .black ? .dark : .light
         }
     }
 

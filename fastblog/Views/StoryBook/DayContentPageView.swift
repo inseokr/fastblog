@@ -5,6 +5,7 @@ struct DayContentPageView: View {
     let page: DayContentPage
     @Environment(\.storyFontTheme) private var fontTheme
     @Environment(\.storyBlogColor) private var blogColor
+    @Environment(\.storyRecapTopContentInset) private var recapTopContentInset
     private var primaryColor: Color { blogColor == .black ? .white : .black }
     private var bgColor: Color { blogColor == .black ? .black : .white }
 
@@ -52,7 +53,7 @@ struct DayContentPageView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.top, 12 + recapTopContentInset)
         .padding(.bottom, StoryPageLayout.storyChromeBottomOverlayHeight)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(bgColor.ignoresSafeArea())
