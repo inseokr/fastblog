@@ -204,7 +204,9 @@ struct AppCaptureDetailView: View {
 
                     // Right: Vibe toggle when available (download/delete live in bottom bar)
                     if currentItem?.localVibeURL != nil {
-                        let isPlaying = isVibeEnabled && vibePlayer.isPlaying
+                        let audioPlaying = vibePlayer.isPlaying
+                        /// Vibe clips do not loop; after `audioPlayerDidFinishPlaying`, `audioPlaying` is false while `isVibeEnabled` may stay true (e.g. auto-play on swipe).
+                        let vibeArmedIdle = isVibeEnabled && !audioPlaying
                         Button {
                             isVibeEnabled.toggle()
                             if isVibeEnabled, let url = currentItem?.localVibeURL {
@@ -213,17 +215,19 @@ struct AppCaptureDetailView: View {
                                 vibePlayer.stop()
                             }
                         } label: {
-                            // Match in-app camera Vibe control (TripsView): 44pt, material, clipped circle — not a
-                            // solid gradient disk (that hid the waveform) or 36pt (bars wider than the circle).
-                            AtmosphericWaveformView(isActive: isVibeEnabled)
+                            // Match in-app camera: 44pt material circle. Waveform animates only while audio is actually playing.
+                            AtmosphericWaveformView(isActive: audioPlaying)
                                 .frame(width: 44, height: 44)
                                 .background(.ultraThinMaterial)
-                                .background(isVibeEnabled ? Color.cyan.opacity(isPlaying ? 0.32 : 0.22) : Color.clear)
+                                .background(
+                                    audioPlaying ? Color.cyan.opacity(0.32)
+                                        : isVibeEnabled ? Color.white.opacity(0.06) : Color.clear
+                                )
                                 .clipShape(Circle())
                                 .overlay(
                                     Circle()
                                         .stroke(
-                                            isPlaying
+                                            audioPlaying
                                                 ? LinearGradient(
                                                     colors: [.cyan, .green],
                                                     startPoint: .topLeading,
@@ -231,29 +235,24 @@ struct AppCaptureDetailView: View {
                                                 )
                                                 : LinearGradient(
                                                     colors: isVibeEnabled
-                                                        ? [Color.cyan.opacity(0.5)]
+                                                        ? [Color.white.opacity(0.28)]
                                                         : [Color.white.opacity(0.15)],
                                                     startPoint: .top,
                                                     endPoint: .bottom
                                                 ),
-                                            lineWidth: isPlaying ? 2 : 1
+                                            lineWidth: audioPlaying ? 2 : 1
                                         )
                                 )
-                                .shadow(color: isPlaying ? .cyan.opacity(0.55) : .clear, radius: isPlaying ? 10 : 0)
+                                .shadow(color: audioPlaying ? .cyan.opacity(0.55) : .clear, radius: audioPlaying ? 10 : 0)
+                                .opacity(vibeArmedIdle ? 0.52 : 1)
+                                .grayscale(vibeArmedIdle ? 0.85 : 0)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(
-                            isPlaying ? "Vibe playing" : (isVibeEnabled ? "Vibe enabled" : "Vibe disabled")
+                            audioPlaying ? "Vibe playing"
+                                : isVibeEnabled ? "Vibe idle, tap to turn off"
+                                : "Vibe off, tap to play"
                         )
-                        .overlay(alignment: .bottomTrailing) {
-                            if isPlaying {
-                                Circle()
-                                    .fill(Color.white)
-                                    .frame(width: 7, height: 7)
-                                    .overlay(Circle().stroke(Color.cyan.opacity(0.9), lineWidth: 1))
-                                    .offset(x: -2, y: -2)
-                            }
-                        }
                     }
                 }
 
