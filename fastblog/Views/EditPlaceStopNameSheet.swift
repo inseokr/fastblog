@@ -96,7 +96,9 @@ struct EditPlaceStopNameSheet: View {
                         HStack(alignment: .bottom, spacing: 0) {
                             mapZoomControlsColumn
                                 .padding(.leading, 16)
+                            // Let pan/pinch hit the map in the rest of this row (gradient was stealing touches).
                             Spacer(minLength: 0)
+                                .allowsHitTesting(false)
                         }
                         .padding(.bottom, 8)
 
@@ -115,7 +117,9 @@ struct EditPlaceStopNameSheet: View {
                             .padding(.bottom, 12)
                         }
                         // Spacer so the strip clears the "Tap a place…" hint capsule pinned at the bottom
-                        Spacer().frame(height: 56)
+                        Spacer()
+                            .frame(height: 56)
+                            .allowsHitTesting(false)
                     }
                     .background(
                         LinearGradient(
@@ -123,6 +127,8 @@ struct EditPlaceStopNameSheet: View {
                             startPoint: .bottom,
                             endPoint: .top
                         )
+                        // Full-width fade sat behind thumbnails; without this it blocked map gestures beside the strip.
+                        .allowsHitTesting(false)
                     )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
