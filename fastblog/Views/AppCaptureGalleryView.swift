@@ -104,7 +104,7 @@ struct AppCaptureGalleryView: View {
                                 .font(.system(size: 22, weight: .semibold))
                                 .foregroundColor(selectedIds.isEmpty ? .gray : .white)
                                 .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                         }
                         .disabled(selectedIds.isEmpty)
                         .accessibilityLabel("Save selected to Photos")
@@ -124,7 +124,7 @@ struct AppCaptureGalleryView: View {
                                 .font(.system(size: 22, weight: .semibold))
                                 .foregroundColor(selectedIds.isEmpty ? .gray : .red)
                                 .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                         }
                         .disabled(selectedIds.isEmpty)
                         .accessibilityLabel("Remove selected from gallery")
@@ -376,11 +376,14 @@ struct AppCaptureGalleryView: View {
     }
 
     private func removeSelectedCaptures() {
+        let toRemove = selectedIds
         let service = AppCapturePhotoService.shared
-        for id in selectedIds {
+        for id in toRemove {
             service.deleteCapture(captureId: id)
         }
-        items.removeAll { selectedIds.contains($0.id) }
+        CreatedRecapBlogStore.shared.excludeAppCapturesFromBlogs(captureIds: toRemove)
+        InAppCameraPhotoStore.shared.removePhotos(ids: toRemove)
+        items.removeAll { toRemove.contains($0.id) }
         selectedIds = []
         isSelectMode = false
     }

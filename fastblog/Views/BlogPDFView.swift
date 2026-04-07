@@ -37,7 +37,7 @@ struct BlogPDFView: View {
         let pageWidth = contentWidth + 72 // negate 36pt padding on each side
         let pageHeight = pageWidth * 1.3
 
-        ZStack(alignment: .bottom) {
+        ZStack(alignment: .topLeading) {
             if let img = coverImage {
                 Image(uiImage: img)
                     .resizable()
@@ -50,29 +50,30 @@ struct BlogPDFView: View {
                     .frame(width: pageWidth, height: pageHeight)
             }
 
-            // Gradient scrim
+            // Top scrim for title legibility (matches PDF export)
             LinearGradient(
-                colors: [.clear, .black.opacity(0.75)],
-                startPoint: .center,
+                colors: [.black.opacity(0.38), .clear],
+                startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(width: pageWidth, height: pageHeight * 0.55)
+            .frame(width: pageWidth, height: min(pageHeight * 0.38, 280))
 
-            // Overlaid title
+            // Title + trip dates (top-left)
             VStack(alignment: .leading, spacing: 6) {
                 Text(draft.title)
                     .font(Font.custom("Georgia-Bold", size: 44))
                     .foregroundColor(.white)
-                    .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                    .shadow(color: .black.opacity(0.55), radius: 5, x: 0, y: 1.5)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(tripDurationText)
                     .font(Font.custom("Georgia", size: 15))
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(.white.opacity(0.92))
+                    .shadow(color: .black.opacity(0.55), radius: 5, x: 0, y: 1.5)
             }
             .frame(width: pageWidth, alignment: .leading)
             .padding(.horizontal, 44)
-            .padding(.bottom, 48)
+            .padding(.top, 36)
         }
         .padding(.horizontal, -36) // bleed beyond margin
     }
@@ -88,25 +89,27 @@ struct BlogPDFView: View {
                 .frame(height: 3)
                 .padding(.top, 48)
 
-            // Day header with watermark number (Option C)
-            ZStack(alignment: .leading) {
-                Text("\(dayIndex)")
-                    .font(.system(size: 110, weight: .heavy))
-                    .foregroundColor(accentColor.opacity(0.07))
-                    .offset(x: -8, y: -8)
+            if mapSnapshots[day.id] == nil {
+                // Day header when there is no map (watermark + titles on page)
+                ZStack(alignment: .leading) {
+                    Text("\(dayIndex)")
+                        .font(.system(size: 110, weight: .heavy))
+                        .foregroundColor(accentColor.opacity(0.07))
+                        .offset(x: -8, y: -8)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("DAY \(dayIndex)")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(accentColor)
-                        .tracking(2.5)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("DAY \(dayIndex)")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(accentColor)
+                            .tracking(2.5)
 
-                    Text(day.shortDateText)
-                        .font(Font.custom("Georgia-Bold", size: 26))
-                        .foregroundColor(.black)
+                        Text(day.shortDateText)
+                            .font(Font.custom("Georgia-Bold", size: 26))
+                            .foregroundColor(.black)
+                    }
                 }
+                .frame(height: 56)
             }
-            .frame(height: 56)
 
             if let caption = day.dayCaption, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(caption)
@@ -115,13 +118,38 @@ struct BlogPDFView: View {
                     .lineSpacing(7)
             }
 
-            // Map Snapshot
+            // Map — day + date overlaid top-left (matches PDF export)
             if let mapImage = mapSnapshots[day.id] {
-                Image(uiImage: mapImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: contentWidth)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                ZStack(alignment: .topLeading) {
+                    Image(uiImage: mapImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: contentWidth)
+
+                    LinearGradient(
+                        colors: [.black.opacity(0.38), .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(width: contentWidth, height: 76)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("DAY \(dayIndex)")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.white)
+                            .tracking(1.2)
+                            .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 1)
+
+                        Text(day.shortDateText)
+                            .font(Font.custom("Georgia-Bold", size: 18))
+                            .foregroundColor(.white)
+                            .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 1)
+                    }
+                    .padding(.leading, 14)
+                    .padding(.top, 12)
+                }
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
             }
 
             // Place stops
@@ -143,7 +171,7 @@ struct BlogPDFView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Place badge + title
             HStack(spacing: 10) {
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(appChromeBaseRadius: 6)
                     .fill(accentColor)
                     .frame(width: 26, height: 26)
                     .overlay(
@@ -174,7 +202,7 @@ struct BlogPDFView: View {
                                 .resizable()
                                 .scaledToFill()
                                 .frame(width: photoWidth, height: photoWidth * 0.85)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .clipShape(RoundedRectangle(appChromeBaseRadius: 8))
                                 .clipped()
                         }
                         if let caption = includedPhotos[0].caption,
@@ -219,7 +247,7 @@ struct BlogPDFView: View {
                                 .resizable()
                                 .scaledToFit()
                                 .frame(maxWidth: contentWidth - cardPadding * 2)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .clipShape(RoundedRectangle(appChromeBaseRadius: 8))
                         }
                         if let caption = photo.caption,
                            !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -236,7 +264,7 @@ struct BlogPDFView: View {
             }
         }
         .background(cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
         .padding(.top, 20)
     }
 

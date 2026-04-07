@@ -115,7 +115,7 @@ struct TripDistanceFromHomeOnboardingView: View {
                 }
                 .padding(20)
                 .background(Color.white.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 16, style: .continuous))
                 .padding(.horizontal, OnboardingConstants.Layout.horizontalPadding)
                 .opacity(showControls ? 1 : 0)
                 .offset(y: showControls ? 0 : 10)

@@ -33,7 +33,7 @@ struct PlaceVisitedDetailView: View {
             ForEach(place.photos) { photo in
                 RecapPhotoThumbnail(photo: photo, cornerRadius: 14, showIcon: false, targetSize: CGSize(width: 500, height: 500))
                     .frame(height: 160)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
             }
         }
     }
@@ -87,7 +87,7 @@ struct PlaceVisitedDetailView: View {
                 }
                 .padding(12)
                 .background(Color(uiColor: .secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
             }
 
             if !place.photoCaptions.isEmpty {
@@ -132,7 +132,7 @@ struct PlaceVisitedDetailView: View {
                     }
                     .padding(12)
                     .background(Color(uiColor: .secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
                 }
             }
         }

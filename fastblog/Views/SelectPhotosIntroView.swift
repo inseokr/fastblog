@@ -53,7 +53,7 @@ struct SelectPhotosIntroView: View {
                             .padding(.vertical, 16)
                     }
                     .background(Color.blue)
-                    .cornerRadius(12)
+                    .appChromeCornerRadius(12)
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 40)

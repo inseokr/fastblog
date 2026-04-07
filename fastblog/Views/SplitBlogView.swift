@@ -72,7 +72,7 @@ struct SplitBlogView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
                     .background {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        RoundedRectangle(appChromeBaseRadius: 14, style: .continuous)
                             .fill(.ultraThinMaterial)
                             .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
                     }
@@ -219,7 +219,7 @@ struct SplitBlogView: View {
         }
         .padding(12)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
     }
 
     // MARK: - Step 2: Split Point Selection
@@ -300,7 +300,7 @@ struct SplitBlogView: View {
         }
         .padding(12)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
     }
 
     private func splitDivider(afterIndex: Int) -> some View {

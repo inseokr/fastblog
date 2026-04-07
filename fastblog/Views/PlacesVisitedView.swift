@@ -441,7 +441,7 @@ struct PlacesVisitedView: View {
         }
         .padding(.horizontal, 16)
         .frame(height: searchBarHeight)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
         .padding(.horizontal, bottomBarHorizontalPadding)
         .padding(.bottom, 12)
     }
@@ -589,12 +589,12 @@ private struct PlaceVisitedCard: View {
                         RecapPhotoThumbnail(photo: hero, cornerRadius: 14, showIcon: false, targetSize: CGSize(width: 900, height: 600))
                             .frame(height: 150)
                             .frame(maxWidth: .infinity)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
                     } else {
                         Color.clear
                             .frame(height: 150)
                             .frame(maxWidth: .infinity)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
                             .overlay {
                                 Image(systemName: "photo")
                                     .font(.title2)
@@ -623,14 +623,14 @@ private struct PlaceVisitedCard: View {
                             ForEach(Array(previewThumbs)) { photo in
                                 RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 200, height: 200))
                                     .frame(width: thumbSize, height: thumbSize)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .clipShape(RoundedRectangle(appChromeBaseRadius: 10))
                                     .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 2)
                             }
                         }
                         .padding(stripPadding)
                         .frame(width: min(backingWidth, availableWidth))
                         .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(appChromeBaseRadius: 14, style: .continuous)
                                 .fill(Color.black.opacity(0.35))
                                 .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 6)
                         )
@@ -660,9 +660,9 @@ private struct PlaceVisitedCard: View {
         }
         .padding(12)
         .background(Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 18, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(appChromeBaseRadius: 18, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
         }
     }
@@ -915,7 +915,7 @@ private struct PlacesVisitedMapView: View {
                     .padding(.horizontal, 16)
                     .frame(height: 56)
                     .background(
-                        RoundedRectangle(cornerRadius: 14)
+                        RoundedRectangle(appChromeBaseRadius: 14)
                             .fill(Color.white.opacity(0.12))
                     )
                     .padding(.horizontal, 16)

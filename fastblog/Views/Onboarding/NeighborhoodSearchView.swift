@@ -96,7 +96,7 @@ struct NeighborhoodSearchView: View {
                 }
                 .padding(12)
                 .background(Color.white.opacity(0.1))
-                .cornerRadius(12)
+                .appChromeCornerRadius(12)
                 .padding(.horizontal)
                 .padding(.top, 10)
 
@@ -171,7 +171,7 @@ struct NeighborhoodSearchView: View {
                             }
                             .padding()
                             .background(Color.white.opacity(0.05))
-                            .cornerRadius(16)
+                            .appChromeCornerRadius(16)
                         }
                         .padding(.horizontal)
 
@@ -195,7 +195,7 @@ struct NeighborhoodSearchView: View {
                                         }
                                         .padding()
                                         .background(Color.white.opacity(0.05))
-                                        .cornerRadius(12)
+                                        .appChromeCornerRadius(12)
                                     }
                                     .padding(.horizontal)
                                 }
@@ -226,7 +226,7 @@ struct NeighborhoodSearchView: View {
                 }
                 .padding(40)
                 .background(.ultraThinMaterial)
-                .cornerRadius(20)
+                .appChromeCornerRadius(20)
                 .transition(.scale.combined(with: .opacity))
             }
         }

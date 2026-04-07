@@ -29,8 +29,8 @@ struct TermsOfServiceView: View {
                     sectionTitle("3. Guest Users and Registered Accounts")
                     bodyText("Bloggo can be used with or without a registered account:")
                     bullet("Guest Users: Guests may create and export one (1) blog. Guest data is stored locally on the device and is not associated with any account.")
-                    bullet("Registered Users (free): Creating a free Bloggo account allows you to save and manage unlimited blog drafts and export as many blogs as you like. Registered accounts require a valid email address.")
-                    bodyText("Account creation is free and takes only a moment. Registered users enjoy the full Bloggo experience with no content restrictions.")
+                    bullet("Registered Users: Creating a Bloggo account allows you to save and manage unlimited blog drafts and export as many blogs as you like. Registered accounts require a valid email address.")
+                    bodyText("Account creation takes only a moment. Registered users enjoy the full Bloggo experience with no content restrictions.")
                 }
 
                 Group {

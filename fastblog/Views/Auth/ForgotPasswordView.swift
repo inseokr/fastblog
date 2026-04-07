@@ -84,10 +84,10 @@ struct ForgotPasswordView: View {
                 .padding()
                 .background(Color.white.opacity(0.1))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(appChromeBaseRadius: 12)
                         .stroke(Color.white.opacity(0.2), lineWidth: 1)
                 )
-                .cornerRadius(12)
+                .appChromeCornerRadius(12)
                 .foregroundColor(.white)
                 .tint(.white)
 
@@ -99,10 +99,10 @@ struct ForgotPasswordView: View {
                 .padding()
                 .background(Color.white.opacity(0.1))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(appChromeBaseRadius: 12)
                         .stroke(Color.white.opacity(0.2), lineWidth: 1)
                 )
-                .cornerRadius(12)
+                .appChromeCornerRadius(12)
                 .foregroundColor(.white)
                 .tint(.white)
         }
@@ -188,7 +188,7 @@ struct ForgotPasswordView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 54)
             .background(Color.white)
-            .cornerRadius(14)
+            .appChromeCornerRadius(14)
             .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
         }
         .buttonStyle(.plain)

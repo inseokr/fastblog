@@ -39,12 +39,12 @@ struct RecallCard: View {
                     ForEach(recall.thumbnailAssets, id: \.localIdentifier) { asset in
                         AssetPhotoView(assetIdentifier: asset.localIdentifier, cornerRadius: 8, targetSize: CGSize(width: 200, height: 200))
                             .frame(width: 80, height: 80)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .clipShape(RoundedRectangle(appChromeBaseRadius: 8))
                     }
                     
                     if recall.photoCount > 3 {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(appChromeBaseRadius: 8)
                                 .fill(Color.white.opacity(0.1))
                                 .frame(width: 80, height: 80)
                             Text("+\(recall.photoCount - 3)")
@@ -67,12 +67,12 @@ struct RecallCard: View {
             }
             .padding(16)
             .background(
-                RoundedRectangle(cornerRadius: 20)
+                RoundedRectangle(appChromeBaseRadius: 20)
                     .fill(Color(white: 0.1))
                     .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 20)
+                RoundedRectangle(appChromeBaseRadius: 20)
                     .stroke(Color.white.opacity(0.1), lineWidth: 1)
             )
         }

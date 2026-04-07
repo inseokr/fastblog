@@ -140,7 +140,7 @@ struct BlogSettingsSheet: View {
                         .foregroundStyle(.white.opacity(0.9))
                 }
                 .padding(28)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 16))
                 .zIndex(16)
             }
 
@@ -425,7 +425,7 @@ struct BlogSettingsSheet: View {
                 .frame(maxWidth: .infinity)
                 .padding()
                 .background(Color(uiColor: .secondarySystemGroupedBackground))
-                .cornerRadius(12)
+                .appChromeCornerRadius(12)
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 16)
@@ -511,7 +511,7 @@ struct BlogSettingsSheet: View {
                         .resizable()
                         .scaledToFit()
                         .frame(width: 60, height: 60)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
                         .padding(.top, 8)
                     
                     VStack(spacing: 8) {
@@ -545,7 +545,7 @@ struct BlogSettingsSheet: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
                                 .background(Color.red)
-                                .cornerRadius(12)
+                                .appChromeCornerRadius(12)
                         }
                         
                         Button {
@@ -559,7 +559,7 @@ struct BlogSettingsSheet: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
                                 .background(Color(white: 0.2))
-                                .cornerRadius(12)
+                                .appChromeCornerRadius(12)
                         }
                         
                         Button {
@@ -577,7 +577,7 @@ struct BlogSettingsSheet: View {
                 }
                 .padding(24)
                 .background(Color(uiColor: .secondarySystemGroupedBackground))
-                .cornerRadius(24)
+                .appChromeCornerRadius(24)
                 .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
                 .padding(.horizontal, 32)
                 .transition(.scale(scale: 0.8).combined(with: .opacity))
@@ -632,7 +632,7 @@ struct BlogTitleChangeSheet: View {
                 TextField("Blog title", text: $tempTitle)
                     .padding(16)
                     .background(Color(uiColor: .secondarySystemGroupedBackground))
-                    .cornerRadius(16)
+                    .appChromeCornerRadius(16)
                     .padding()
                     .focused($isFocused)
             }
@@ -694,7 +694,7 @@ struct BlogCoverChangeSheet: View {
                             HStack {
                                 TripCoverImage(theme: theme.id)
                                     .frame(width: 80, height: 50)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .clipShape(RoundedRectangle(appChromeBaseRadius: 8))
                                 Text(theme.label)
                                     .foregroundColor(.primary)
                                 Spacer()
@@ -706,7 +706,7 @@ struct BlogCoverChangeSheet: View {
                             .padding(.vertical, 8)
                             .padding(.horizontal, 12)
                             .background(Color(uiColor: .secondarySystemGroupedBackground))
-                            .cornerRadius(12)
+                            .appChromeCornerRadius(12)
                         }
                         .buttonStyle(.plain)
                     }

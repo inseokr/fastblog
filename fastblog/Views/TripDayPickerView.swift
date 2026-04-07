@@ -66,10 +66,10 @@ struct TripDayPickerView: View {
                 .padding(.bottom, 10)
                 .background(.ultraThinMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 20)
+                    RoundedRectangle(appChromeBaseRadius: 20)
                         .stroke(Color.white.opacity(0.25), lineWidth: 1)
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 20))
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 20))
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
         }
@@ -115,7 +115,7 @@ struct TripDayPickerView: View {
                 .padding(.vertical, 16)
         }
         .background(viewModel.canCreateBlog ? Color.orange : Color(white: 0.35))
-        .cornerRadius(12)
+        .appChromeCornerRadius(12)
         .padding(.horizontal, 16)
         .padding(.bottom, 28)
         .padding(.top, 8)

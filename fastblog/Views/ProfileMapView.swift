@@ -184,7 +184,7 @@ struct ProfileMapView: View {
                 }
                 .padding(.horizontal, 16)
                 .frame(height: 56)
-                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
                 
@@ -341,9 +341,9 @@ private struct ProfileMapCardView: View {
             .padding(.trailing, 12)
             .frame(height: 104)
             .background(.ultraThinMaterial)
-            .cornerRadius(20)
+            .appChromeCornerRadius(20)
             .overlay(
-                RoundedRectangle(cornerRadius: 20)
+                RoundedRectangle(appChromeBaseRadius: 20)
                     .stroke(isSelected ? Color.blue.opacity(0.5) : Color.white.opacity(0.12), lineWidth: isSelected ? 2 : 1)
             )
             .shadow(color: .black.opacity(isSelected ? 0.3 : 0.1), radius: 10, x: 0, y: 5)
@@ -358,7 +358,7 @@ private struct ProfileMapCardView: View {
             targetSize: CGSize(width: 200, height: 200)
         )
         .frame(width: 104, height: 104)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 20, style: .continuous))
         .clipped()
     }
 
@@ -421,9 +421,9 @@ struct TripAnnotationView: View {
                 targetSize: CGSize(width: 104, height: 144)
             )
             .frame(width: Self.width, height: Self.height)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(appChromeBaseRadius: 8))
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(appChromeBaseRadius: 8)
                     .stroke(isSelected ? Color.white : Color.white.opacity(0.6), lineWidth: isSelected ? 3 : 1.5)
             )
             .shadow(color: Color.black.opacity(0.4), radius: 3, x: 0, y: 2)
@@ -653,7 +653,7 @@ struct CountryMapView: View {
                 }
                 .padding(.horizontal, 16)
                 .frame(height: 56)
-                .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(Color.white.opacity(0.09), in: RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
 

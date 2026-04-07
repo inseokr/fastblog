@@ -59,7 +59,7 @@ struct BlogPreviewView: View {
                     .padding(.vertical, 16)
             }
             .background(Color.blue)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
             .padding(.horizontal)
         }
         .navigationDestination(isPresented: $showSavedScreen) {

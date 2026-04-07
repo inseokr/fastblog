@@ -23,7 +23,7 @@ struct AtmosphericWaveformView: View {
         // 12×2pt bars + 11×1pt spacing = 35pt wide so the shape fits 36–44pt circular buttons without clipping.
         HStack(spacing: 1) {
             ForEach(0..<heights.count, id: \.self) { i in
-                RoundedRectangle(cornerRadius: 1)
+                RoundedRectangle(appChromeBaseRadius: 1)
                     .fill(
                         LinearGradient(
                             colors: animating ? [.cyan, .green] : [Color.white.opacity(0.45), Color.white.opacity(0.45)],

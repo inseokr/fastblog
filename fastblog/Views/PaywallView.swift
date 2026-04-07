@@ -135,7 +135,7 @@ struct PaywallView: View {
             }
             .padding(20)
             .background(cardBackgroundColor.opacity(0.5))
-            .cornerRadius(16)
+            .appChromeCornerRadius(16)
             
             VStack(alignment: .leading, spacing: 12) {
                 Text("Free Plan:")
@@ -147,7 +147,7 @@ struct PaywallView: View {
             }
             .padding(20)
             .background(cardBackgroundColor.opacity(0.3))
-            .cornerRadius(16)
+            .appChromeCornerRadius(16)
         }
         .padding(.horizontal, 20)
     }
@@ -183,7 +183,7 @@ struct PaywallView: View {
                     .background(
                         LinearGradient(colors: [Color.blue, Color.blue.opacity(0.8)], startPoint: .top, endPoint: .bottom)
                     )
-                    .cornerRadius(28)
+                    .appChromeCornerRadius(28)
                     .shadow(color: Color.blue.opacity(0.4), radius: 10, y: 5)
                     .scaleEffect(isAnimatingCTA ? 1.02 : 1.0)
             }
@@ -299,9 +299,9 @@ private struct PricingCard: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
             .background(Color(red: 0.1, green: 0.14, blue: 0.25))
-            .cornerRadius(16)
+            .appChromeCornerRadius(16)
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(appChromeBaseRadius: 16)
                     .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
             )
             .scaleEffect(isSelected ? 1.02 : 1.0)

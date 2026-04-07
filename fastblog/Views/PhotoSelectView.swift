@@ -393,12 +393,12 @@ struct ThumbnailCell: View {
                 }
                 if shouldDim {
                     Color.black.opacity(0.2)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .clipShape(RoundedRectangle(appChromeBaseRadius: 8))
                         .allowsHitTesting(false)
                 }
             }
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(appChromeBaseRadius: 8)
                     .stroke(isCurrent ? Color.white : Color.clear, lineWidth: 3)
             )
         }

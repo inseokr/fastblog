@@ -52,8 +52,8 @@ struct PrivacyPolicyView: View {
                 Group {
                     sectionTitle("6. Guest and Registered User Access")
                     bodyText("Bloggo offers two tiers of access:")
-                    bullet("Guest Users (no account): Guests may create and export one (1) blog. To save additional blogs or export more than one, guests are encouraged to create a free account.")
-                    bullet("Registered Users (free account): Users with a free Bloggo account can create and save as many blog drafts as they like and export as many blogs as they like. Account creation is free and requires only an email address.")
+                    bullet("Guest Users (no account): Guests may create and export one (1) blog. To save additional blogs or export more than one, guests are encouraged to create an account.")
+                    bullet("Registered Users: Users with a Bloggo account can create and save as many blog drafts as they like and export as many blogs as they like. Account creation requires only an email address.")
                     bodyText("Creating an account does not change what data is stored or how your content is handled — all blog content continues to be stored locally on your device.")
                 }
 

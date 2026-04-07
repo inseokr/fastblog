@@ -166,7 +166,7 @@ struct LoadingScanView: View {
                         endPoint: .trailing
                     )
                 )
-                .cornerRadius(12)
+                .appChromeCornerRadius(12)
                 .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
             }
         } else if let onCancel {
@@ -180,7 +180,7 @@ struct LoadingScanView: View {
                     .padding(.horizontal, 32)
                     .padding(.vertical, 10)
                     .background(Color.white.opacity(0.12))
-                    .cornerRadius(10)
+                    .appChromeCornerRadius(10)
             }
         }
     }

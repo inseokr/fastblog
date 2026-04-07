@@ -117,7 +117,7 @@ struct NewlyScannedPhotosSheet: View {
             }
             .frame(maxHeight: .infinity)
             .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .clipShape(UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 20, style: .continuous))
+            .clipShape(AppChromeShapes.pullUpTopSurface(topBase: 20))
             .offset(y: max(dragOffset, 0))
             .gesture(
                 DragGesture()
@@ -146,7 +146,7 @@ struct NewlyScannedPhotosSheet: View {
             TripCoverImage(theme: themeName, coverAssetIdentifier: coverAssetId)
                 .frame(height: 250)
                 .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
                 .overlay(alignment: .bottomLeading) {
                     HStack(spacing: 5) {
                         Image(systemName: "sparkles")
@@ -212,11 +212,11 @@ struct NewlyScannedPhotosSheet: View {
                             }
                         }
                         .frame(width: 70, height: 70)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .clipShape(RoundedRectangle(appChromeBaseRadius: 8))
                     }
                     if photos.count > 4 {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(appChromeBaseRadius: 8)
                                 .fill(newMomentsCardBg)
                                 .frame(width: 70, height: 70)
                             Text("+\(photos.count - 4)")
@@ -244,7 +244,7 @@ struct NewlyScannedPhotosSheet: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
                     .background(Color.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 13))
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 13))
                 }
             } else if matchedTrip != nil {
                 Button(action: { onGoToTrip?() }) {
@@ -257,7 +257,7 @@ struct NewlyScannedPhotosSheet: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
                     .background(Color.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 13))
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 13))
                 }
             }
 
@@ -268,7 +268,7 @@ struct NewlyScannedPhotosSheet: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .background(Color.white.opacity(0.18))
-                    .clipShape(RoundedRectangle(cornerRadius: 13))
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 13))
             }
         }
     }

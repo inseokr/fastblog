@@ -26,7 +26,7 @@ struct BottomSheetView<Content: View>: View {
     }
 
     private var indicator: some View {
-        RoundedRectangle(cornerRadius: 2.5)
+        RoundedRectangle(appChromeBaseRadius: 2.5)
             .fill(Color.white.opacity(0.4))
             .frame(width: 36, height: 5)
             .padding(.top, 8)
@@ -48,7 +48,7 @@ struct BottomSheetView<Content: View>: View {
                 }
             }
             .background(Color.black)
-            .cornerRadius(20)
+            .appChromeCornerRadius(20)
             .frame(height: maxHeight, alignment: .top)
             .frame(maxHeight: .infinity, alignment: .bottom)
             .offset(y: max(0, offset))
@@ -108,7 +108,7 @@ struct BottomSheetView_Previews: PreviewProvider {
                             .frame(maxWidth: .infinity)
                             .padding()
                             .background(Color.white.opacity(0.1))
-                            .cornerRadius(8)
+                            .appChromeCornerRadius(8)
                     }
                 }
                 .padding()

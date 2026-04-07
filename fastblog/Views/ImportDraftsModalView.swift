@@ -126,7 +126,7 @@ struct ImportDraftsModalView: View {
                                     endPoint: .trailing
                                 )
                             )
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
                         }
                         .buttonStyle(.plain)
 
@@ -140,7 +140,7 @@ struct ImportDraftsModalView: View {
                                 .frame(height: 52)
                                 .foregroundColor(.primary)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 14)
+                                    RoundedRectangle(appChromeBaseRadius: 14)
                                         .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
                                 )
                         }
@@ -197,7 +197,7 @@ private struct DraftReviewRow: View {
                 targetSize: CGSize(width: 160, height: 160)
             )
             .frame(width: 60, height: 60)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(appChromeBaseRadius: 10, style: .continuous))
 
             // Info
             VStack(alignment: .leading, spacing: 4) {
@@ -252,7 +252,7 @@ private struct DraftReviewRow: View {
         }
         .padding(14)
         .background(Color(.secondarySystemBackground))
-        .cornerRadius(14)
+        .appChromeCornerRadius(14)
     }
 
     private func formattedDate(_ date: Date) -> String {

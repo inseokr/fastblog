@@ -91,7 +91,7 @@ struct MapDayView: View {
             }
         }
         .frame(height: height)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
         .contentShape(Rectangle())
         .onTapGesture {
             onTap?()
@@ -259,7 +259,7 @@ private struct PlaceMarkerView: View {
                 .padding(.vertical, 4)
                 .background(.ultraThinMaterial)
                 .background(Color.black.opacity(0.75))
-                .cornerRadius(6)
+                .appChromeCornerRadius(6)
                 .frame(maxWidth: 90)
 
             Text(orderLabel)
@@ -675,16 +675,16 @@ struct FullScreenMapView: View {
                             RecapPhotoThumbnail(photo: photo, cornerRadius: 12, showIcon: false, targetSize: CGSize(width: 200, height: 200))
                                 .frame(width: 96, height: 96)
                                 .clipped()
-                                .cornerRadius(12)
+                                .appChromeCornerRadius(12)
                         } else {
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(appChromeBaseRadius: 12)
                                 .fill(Color.white.opacity(0.1))
                                 .frame(width: 96, height: 96)
                                 .overlay(Image(systemName: "photo").foregroundStyle(.white.opacity(0.5)))
                         }
                     }
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(appChromeBaseRadius: 12)
                             .stroke(borderColor, lineWidth: (isFirst || isLast) ? 3 : 1.5)
                     )
                     .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
@@ -752,9 +752,9 @@ struct FullScreenMapView: View {
             }
             .padding(12)
             .background(.ultraThinMaterial)
-            .cornerRadius(20)
+            .appChromeCornerRadius(20)
             .overlay(
-                RoundedRectangle(cornerRadius: 20)
+                RoundedRectangle(appChromeBaseRadius: 20)
                     .stroke(isSelected ? Color.blue.opacity(0.5) : Color.white.opacity(0.12), lineWidth: isSelected ? 2 : 1)
             )
             .shadow(color: .black.opacity(isSelected ? 0.3 : 0.1), radius: 10, x: 0, y: 5)

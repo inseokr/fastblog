@@ -43,7 +43,7 @@ struct PhotosPermissionView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(Color.white)
-                        .cornerRadius(12)
+                        .appChromeCornerRadius(12)
                 }
                 .padding(.horizontal, 32)
                 .padding(.top, 8)
@@ -57,7 +57,7 @@ struct PhotosPermissionView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(appChromeBaseRadius: 12)
                                 .stroke(Color.white.opacity(0.2), lineWidth: 1)
                         )
                 }

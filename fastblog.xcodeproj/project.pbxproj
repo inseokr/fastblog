@@ -48,6 +48,7 @@
 		AC413CC9DFEB2B2939B89DA5 /* StoryBookContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67D919F737961D65785318BA /* StoryBookContent.swift */; };
 		ACC2FF7BA930277126E43C96 /* StoryPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0733072C4EA957FE04A03752 /* StoryPageView.swift */; };
 		BB000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000101 /* ContentView.swift */; };
+		BB0003C5 /* AppChromeMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003C4 /* AppChromeMetrics.swift */; };
 		BB000104 /* fastblogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000103 /* fastblogApp.swift */; };
 		BB000106 /* MyBlogsProfileViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000105 /* MyBlogsProfileViewModel.swift */; };
 		BB000108 /* ProfileMapViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000107 /* ProfileMapViewModel.swift */; };
@@ -280,6 +281,7 @@
 		B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PlaceCaptionEditSheet.swift; sourceTree = "<group>"; };
 		BB0003E0 /* GoogleSearchEmbeddedWebView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoogleSearchEmbeddedWebView.swift; sourceTree = "<group>"; };
 		BB000101 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		BB0003C4 /* AppChromeMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppChromeMetrics.swift; sourceTree = "<group>"; };
 		BB000103 /* fastblogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = fastblogApp.swift; sourceTree = "<group>"; };
 		BB000105 /* MyBlogsProfileViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyBlogsProfileViewModel.swift; sourceTree = "<group>"; };
 		BB000107 /* ProfileMapViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileMapViewModel.swift; sourceTree = "<group>"; };
@@ -544,6 +546,7 @@
 			isa = PBXGroup;
 			children = (
 				BB000101 /* ContentView.swift */,
+				BB0003C4 /* AppChromeMetrics.swift */,
 				BB000103 /* fastblogApp.swift */,
 				BB00022D /* SplashStateManager.swift */,
 				BB0001EF /* Info.plist */,
@@ -910,6 +913,7 @@
 				BB000301 /* AdminAnalyticsDashboardView.swift in Sources */,
 				BB000303 /* MyStatsView.swift in Sources */,
 				BB000102 /* ContentView.swift in Sources */,
+				BB0003C5 /* AppChromeMetrics.swift in Sources */,
 				BB000104 /* fastblogApp.swift in Sources */,
 				BB00F002 /* PlacesVisitedView.swift in Sources */,
 				BB00F004 /* PlaceVisitedDetailView.swift in Sources */,

@@ -158,7 +158,7 @@ struct AuthView: View {
             }
             .signInWithAppleButtonStyle(.white)
             .frame(height: 54)
-            .cornerRadius(14)
+            .appChromeCornerRadius(14)
             .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
 
             // Google Sign In
@@ -175,7 +175,7 @@ struct AuthView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 54)
                 .background(Color.white)
-                .cornerRadius(14)
+                .appChromeCornerRadius(14)
                 .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
             }
             .buttonStyle(.plain)
@@ -210,10 +210,10 @@ struct AuthView: View {
                 .frame(height: 54)
                 .background(Color.white.opacity(0.12))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14)
+                    RoundedRectangle(appChromeBaseRadius: 14)
                         .stroke(Color.white.opacity(0.25), lineWidth: 1)
                 )
-                .cornerRadius(14)
+                .appChromeCornerRadius(14)
             }
             .buttonStyle(.plain)
         }

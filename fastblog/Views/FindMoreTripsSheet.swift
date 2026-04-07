@@ -137,9 +137,9 @@ struct FindMoreTripsSheet: View {
             }
             .padding(14)
             .background(
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(appChromeBaseRadius: 14)
                     .fill(chatInputBackground)
-                    .overlay(RoundedRectangle(cornerRadius: 14)
+                    .overlay(RoundedRectangle(appChromeBaseRadius: 14)
                         .stroke(Color.orange.opacity(0.35), lineWidth: 1))
             )
         }
@@ -190,7 +190,7 @@ struct FindMoreTripsSheet: View {
             }
             .padding()
             .background(chatInputBackground)
-            .cornerRadius(12)
+            .appChromeCornerRadius(12)
             .onReceive(timer) { _ in
                 if viewModel.findMoreChatInput.isEmpty {
                     withAnimation(.easeInOut(duration: 0.5)) {
@@ -217,7 +217,7 @@ struct FindMoreTripsSheet: View {
                         .padding(.vertical, 6)
                         .background(Color(red: 0, green: 122/255, blue: 1))
                         .foregroundColor(.white)
-                        .cornerRadius(6)
+                        .appChromeCornerRadius(6)
                     }
                 }
                 .padding(.horizontal, 4)
@@ -272,7 +272,7 @@ struct FindMoreTripsSheet: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
                 .background(Color.white.opacity(0.1))
-                .cornerRadius(12)
+                .appChromeCornerRadius(12)
 
                 Picker("Month", selection: month) {
                     ForEach(1...12, id: \.self) { m in
@@ -285,7 +285,7 @@ struct FindMoreTripsSheet: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
                 .background(Color.white.opacity(0.1))
-                .cornerRadius(12)
+                .appChromeCornerRadius(12)
             }
         }
     }
@@ -316,10 +316,10 @@ struct FindMoreTripsSheet: View {
             .padding(.horizontal, 20)
             .frame(maxWidth: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(appChromeBaseRadius: 16)
                     .fill(Color.white.opacity(0.06))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(appChromeBaseRadius: 16)
                             .stroke(Color.white.opacity(0.08), lineWidth: 1)
                     )
             )
@@ -343,7 +343,7 @@ struct FindMoreTripsSheet: View {
             }
             .background(Color(red: 0, green: 122/255, blue: 1)
                 .opacity(viewModel.isDateRangeValid ? 1 : 0.4))
-            .cornerRadius(12)
+            .appChromeCornerRadius(12)
             .disabled(viewModel.isFindMoreScanning || !viewModel.isDateRangeValid)
         }
         .padding(.bottom, 28)

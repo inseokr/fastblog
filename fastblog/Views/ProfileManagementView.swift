@@ -448,7 +448,7 @@ struct ProfileManagementRow: View {
                         .padding(.horizontal, 5)
                         .padding(.vertical, 3)
                         .background(Color.orange)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .clipShape(RoundedRectangle(appChromeBaseRadius: 4))
                         .offset(x: -4, y: -4)
                 }
             }
@@ -507,7 +507,7 @@ struct ProfileManagementRow: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(appChromeBaseRadius: 8)
                         .fill(isDraft ? Color.orange.opacity(0.1) : (isPublished ? Color.green.opacity(0.1) : Color.blue.opacity(0.1)))
                 )
             }
@@ -516,7 +516,7 @@ struct ProfileManagementRow: View {
         }
         .padding(12)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
         .opacity(isDraft ? 0.85 : 1.0)
     }
 }

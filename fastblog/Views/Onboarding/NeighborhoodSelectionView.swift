@@ -196,7 +196,7 @@ struct NeighborhoodSelectionView: View {
             }
             .frame(minHeight: minFieldHeight)
             .background(OnboardingConstants.Colors.searchBackground)
-            .cornerRadius(OnboardingConstants.Layout.searchCornerRadius)
+            .appChromeCornerRadius(OnboardingConstants.Layout.searchCornerRadius)
             .accessibilityLabel("Select area on map")
             .accessibilityHint("Type to see suggestions, or pan the map and tap Select to choose an area")
 
@@ -238,9 +238,9 @@ struct NeighborhoodSelectionView: View {
                 }
             }
             .background(OnboardingConstants.Colors.background)
-            .cornerRadius(OnboardingConstants.Layout.searchCornerRadius)
+            .appChromeCornerRadius(OnboardingConstants.Layout.searchCornerRadius)
             .overlay(
-                RoundedRectangle(cornerRadius: OnboardingConstants.Layout.searchCornerRadius)
+                RoundedRectangle(appChromeBaseRadius: OnboardingConstants.Layout.searchCornerRadius)
                     .stroke(Color.white.opacity(0.2), lineWidth: 1)
             )
         }
@@ -333,7 +333,7 @@ struct NeighborhoodSelectionView: View {
             }
             .padding()
             .background(Color.white.opacity(0.05))
-            .cornerRadius(16)
+            .appChromeCornerRadius(16)
         }
         .padding(.top, 4)
     }

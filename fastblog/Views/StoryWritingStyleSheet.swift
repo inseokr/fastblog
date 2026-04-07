@@ -69,7 +69,7 @@ struct StoryWritingStyleSheet: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .cornerRadius(12)
+        .appChromeCornerRadius(12)
     }
 
     private var presetCard: some View {
@@ -103,7 +103,7 @@ struct StoryWritingStyleSheet: View {
                     }
                     .padding(12)
                     .background(Color(uiColor: .secondarySystemGroupedBackground))
-                    .cornerRadius(10)
+                    .appChromeCornerRadius(10)
                 }
                 .buttonStyle(.plain)
             }
@@ -148,7 +148,7 @@ struct StoryWritingStyleSheet: View {
             }
             .padding(12)
             .background(Color(uiColor: .tertiarySystemGroupedBackground))
-            .cornerRadius(10)
+            .appChromeCornerRadius(10)
             .onTapGesture {
                 guard useCustomPrompt else { return }
                 isFocused = true

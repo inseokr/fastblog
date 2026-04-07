@@ -81,7 +81,7 @@ private struct TripDraftMapAnnotationView: View {
         VStack(spacing: 5) {
             ZStack {
                 // Glow ring behind selected marker
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(appChromeBaseRadius: 10)
                     .fill(Color.white.opacity(0.15))
                     .frame(width: Self.thumbSize + 12, height: Self.thumbSize + 12)
                     .scaleEffect(isPulsing ? 1.15 : 1.0)
@@ -97,9 +97,9 @@ private struct TripDraftMapAnnotationView: View {
                     targetSize: CGSize(width: 200, height: 200)
                 )
                 .frame(width: Self.thumbSize, height: Self.thumbSize)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 10))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(appChromeBaseRadius: 10)
                         .stroke(Color.white, lineWidth: 2.5)
                 )
                 .shadow(color: Color.white.opacity(0.35), radius: 10)

@@ -269,7 +269,7 @@ struct PlaceStopRowView: View {
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3.5)
                 .background(Color.black.opacity(0.6))
-                .cornerRadius(6)
+                .appChromeCornerRadius(6)
         }
     }
 
@@ -288,6 +288,11 @@ struct PlaceStopRowView: View {
         if focusedOverallStory { return !overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         if let id = focusedPhotoId { return !photoCaption(id).wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         return false
+    }
+
+    /// Included photos that still resolve to real pixels (omits deleted library assets / missing app captures).
+    private var displayableIncludedPhotos: [RecapPhoto] {
+        stop.photos.filter(\.isIncluded).filter(\.hasDisplayableLocalBacking)
     }
 
     var body: some View {
@@ -319,43 +324,53 @@ struct PlaceStopRowView: View {
                                 .accessibilityLabel("Edit place name")
                             }
                         } else {
-                            if let searchURL = StoryPlaceGoogleSearch.url(placeName: stop.placeTitle, placeSubtitle: stop.placeSubtitle) {
-                                Link(destination: searchURL) {
-                                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            HStack(alignment: .top, spacing: 10) {
+                                Group {
+                                    if let searchURL = StoryPlaceGoogleSearch.url(placeName: stop.placeTitle, placeSubtitle: stop.placeSubtitle) {
+                                        Link(destination: searchURL) {
+                                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                                Text(stop.cleanedPlaceTitle)
+                                                    .font(.blog(selectedBlogFont, size: 22, bold: true))
+                                                    .foregroundColor(rowTitle)
+                                                StoryPlaceExternalLinkIcon(
+                                                    titleFontSize: UIFont.preferredFont(forTextStyle: .title2).pointSize,
+                                                    foregroundColor: colorScheme == .dark ? .white.opacity(0.78) : Color.primary.opacity(0.55)
+                                                )
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel("Open \(stop.placeTitle) in browser")
+                                    } else if let navigate = onNavigate {
+                                        Button {
+                                            navigate()
+                                        } label: {
+                                            Text(stop.cleanedPlaceTitle)
+                                                .font(.blog(selectedBlogFont, size: 22, bold: true))
+                                                .foregroundColor(rowTitle)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel("Open place in Maps")
+                                    } else {
                                         Text(stop.cleanedPlaceTitle)
                                             .font(.blog(selectedBlogFont, size: 22, bold: true))
                                             .foregroundColor(rowTitle)
-                                        StoryPlaceExternalLinkIcon(
-                                            titleFontSize: UIFont.preferredFont(forTextStyle: .title2).pointSize,
-                                            foregroundColor: colorScheme == .dark ? .white.opacity(0.78) : Color.primary.opacity(0.55)
-                                        )
                                     }
                                 }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Open \(stop.placeTitle) in browser")
-                            } else {
-                                Button {
-                                    onNavigate?()
-                                } label: {
-                                    Text(stop.cleanedPlaceTitle)
-                                        .font(.blog(selectedBlogFont, size: 22, bold: true))
-                                        .foregroundColor(rowTitle)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Open place in Maps")
                             }
                         }
                         Spacer()
                         if isEditMode {
-                            Button(action: onDelete) {
-                                Image(systemName: "eye.slash")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 28, height: 28)
-                                    .contentShape(Rectangle())
+                            HStack(spacing: 0) {
+                                Button(action: onDelete) {
+                                    Image(systemName: "eye.slash")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.secondary)
+                                        .frame(width: 28, height: 28)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Hide place")
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Hide place")
                         } else {
                             Button { onKebab?() } label: {
                                 Image(systemName: "ellipsis")
@@ -436,7 +451,7 @@ struct PlaceStopRowView: View {
             //             .frame(minHeight: 44)
             //             .foregroundColor(.white)
             //             .background(Color(white: 0.08))
-            //             .cornerRadius(8)
+            //             .appChromeCornerRadius(8)
             //             .overlay(alignment: .topLeading) {
             //                 if placeNote.isEmpty {
             //                     Text("Leave a note for your future self")
@@ -484,10 +499,9 @@ struct PlaceStopRowView: View {
             // }
 
             // Photo strip: large thumbnails; one full photo visible + peek of next so users know they can scroll
-            let includedPhotos = stop.photos.filter(\.isIncluded)
-            let shouldShowManagePhotosCard = isEditMode && !stop.photos.isEmpty
+            let shouldShowManagePhotosCard = isEditMode
 
-            if includedPhotos.count == 1, let photo = includedPhotos.first {
+            if displayableIncludedPhotos.count == 1, let photo = displayableIncludedPhotos.first {
                 // --- CASE 2a: Single included photo — full-width hero (read and edit). Manage Photos bar sits above in edit mode.
                 VStack(alignment: .leading, spacing: 12) {
                     if shouldShowManagePhotosCard {
@@ -504,7 +518,7 @@ struct PlaceStopRowView: View {
                                     )
                                     .frame(width: 44, height: 44)
                                     .background(rowSurface)
-                                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                                    .clipShape(RoundedRectangle(appChromeBaseRadius: 11, style: .continuous))
 
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text("Manage Photos")
@@ -524,9 +538,9 @@ struct PlaceStopRowView: View {
                             .padding(.horizontal, 14)
                             .padding(.vertical, 12)
                             .background(rowInset)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .clipShape(RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                RoundedRectangle(appChromeBaseRadius: 12, style: .continuous)
                                     .stroke(Color.primary.opacity(0.08), lineWidth: 1)
                             )
                         }
@@ -538,7 +552,7 @@ struct PlaceStopRowView: View {
                         RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 960, height: 640))
                             .frame(maxWidth: .infinity, maxHeight: 260)
                             .clipped()
-                            .cornerRadius(10)
+                            .appChromeCornerRadius(10)
                             .overlay(alignment: .topLeading) {
                                 photoTimestampBadge(for: photo)
                                     .padding(.leading, 8)
@@ -627,7 +641,7 @@ struct PlaceStopRowView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(8)
                                 .background(rowInset)
-                                .cornerRadius(6)
+                                .appChromeCornerRadius(6)
                         }
                         .buttonStyle(.plain)
                         .padding(.top, 8)
@@ -654,7 +668,7 @@ struct PlaceStopRowView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, isEditMode ? 4 : 0)
                 .padding(.bottom, isEditMode ? 20 : 12)
-            } else if includedPhotos.count > 1 || (includedPhotos.isEmpty && shouldShowManagePhotosCard) {
+            } else if displayableIncludedPhotos.count > 1 || (displayableIncludedPhotos.isEmpty && shouldShowManagePhotosCard) {
                 // --- CASE 2b: Multiple included photos, or edit mode with none included but a pool to manage — Manage Photos bar + horizontal strip when applicable ---
                 VStack(alignment: .leading, spacing: 12) {
                     if shouldShowManagePhotosCard {
@@ -671,7 +685,7 @@ struct PlaceStopRowView: View {
                                     )
                                     .frame(width: 44, height: 44)
                                     .background(rowSurface)
-                                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                                    .clipShape(RoundedRectangle(appChromeBaseRadius: 11, style: .continuous))
 
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text("Manage Photos")
@@ -691,9 +705,9 @@ struct PlaceStopRowView: View {
                             .padding(.horizontal, 14)
                             .padding(.vertical, 12)
                             .background(rowInset)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .clipShape(RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                RoundedRectangle(appChromeBaseRadius: 12, style: .continuous)
                                     .stroke(Color.primary.opacity(0.08), lineWidth: 1)
                             )
                         }
@@ -701,16 +715,16 @@ struct PlaceStopRowView: View {
                         .accessibilityLabel("Manage Photos, \(stop.photos.count) \(stop.photos.count == 1 ? "photo" : "photos")")
                     }
 
-                    if !includedPhotos.isEmpty {
+                    if !displayableIncludedPhotos.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(alignment: .top, spacing: 10) {
-                                ForEach(includedPhotos) { photo in
+                                ForEach(displayableIncludedPhotos) { photo in
                                     VStack(alignment: .leading, spacing: 6) {
                                         RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 480, height: 480))
                                             .aspectRatio(1, contentMode: .fill)
                                             .frame(width: thumbnailSize, height: thumbnailSize)
                                             .clipped()
-                                            .cornerRadius(8)
+                                            .appChromeCornerRadius(8)
                                             .overlay(alignment: .topLeading) {
                                                 photoTimestampBadge(for: photo)
                                                     .padding(.leading, 8)
@@ -801,7 +815,7 @@ struct PlaceStopRowView: View {
                                                     .frame(maxWidth: .infinity, alignment: .leading)
                                                     .padding(8)
                                                     .background(rowInset)
-                                                    .cornerRadius(6)
+                                                    .appChromeCornerRadius(6)
                                             }
                                             .frame(width: thumbnailSize)
                                             .buttonStyle(.plain)
@@ -840,7 +854,7 @@ struct PlaceStopRowView: View {
             // timelineLine removed per user request
         }
         .background(rowSurface)
-        .cornerRadius(16)
+        .appChromeCornerRadius(16)
         .toolbar {
             if focusedPlaceNote || focusedOverallStory || focusedPhotoId != nil {
                 ToolbarItemGroup(placement: .keyboard) {
@@ -912,7 +926,7 @@ struct PlaceStopRowView: View {
                         }
                         .padding(12)
                         .background(rowInset)
-                        .cornerRadius(10)
+                        .appChromeCornerRadius(10)
                     }
                     .buttonStyle(.plain)
                 }

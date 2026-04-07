@@ -2,7 +2,7 @@
 //  ScrollMetricsReportingTextEditor.swift
 //  fastblog
 //
-//  UITextView wrapper that reports scroll metrics so SwiftUI can draw a proportional vertical thumb.
+//  UITextView wrapper; optionally reports scroll metrics for a custom overlay thumb.
 //
 
 import SwiftUI
@@ -10,14 +10,18 @@ import UIKit
 
 struct ScrollMetricsReportingTextEditor: UIViewRepresentable {
     @Binding var text: String
-    @Binding var contentHeight: CGFloat
-    @Binding var visibleViewportHeight: CGFloat
-    @Binding var scrollOffsetY: CGFloat
     @Binding var wantsKeyboardFocus: Bool
+    var contentHeight: Binding<CGFloat>? = nil
+    var visibleViewportHeight: Binding<CGFloat>? = nil
+    var scrollOffsetY: Binding<CGFloat>? = nil
 
     var textInsets: UIEdgeInsets = UIEdgeInsets(top: 14, left: 14, bottom: 14, right: 14)
     /// Cursor and selection tint; avoids system blue flashing on dark caption chrome during rapid relayout.
     var caretTint: UIColor = .label
+
+    private var usesCustomScrollMetrics: Bool {
+        contentHeight != nil && visibleViewportHeight != nil && scrollOffsetY != nil
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -35,7 +39,7 @@ struct ScrollMetricsReportingTextEditor: UIViewRepresentable {
         tv.textColor = .label
         tv.tintColor = caretTint
         tv.keyboardDismissMode = .interactive
-        tv.showsVerticalScrollIndicator = false
+        tv.showsVerticalScrollIndicator = !usesCustomScrollMetrics
         tv.text = text
         tv.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         tv.setContentHuggingPriority(.defaultLow, for: .vertical)
@@ -47,7 +51,7 @@ struct ScrollMetricsReportingTextEditor: UIViewRepresentable {
         uiView.textContainerInset = textInsets
         uiView.font = UIFont.preferredFont(forTextStyle: .body)
         uiView.tintColor = caretTint
-        uiView.showsVerticalScrollIndicator = false
+        uiView.showsVerticalScrollIndicator = !usesCustomScrollMetrics
         if uiView.text != text {
             uiView.text = text
         }
@@ -90,6 +94,11 @@ struct ScrollMetricsReportingTextEditor: UIViewRepresentable {
         }
 
         func publishMetrics(from scrollView: UIScrollView, force: Bool) {
+            guard let contentBinding = parent.contentHeight,
+                  let visibleBinding = parent.visibleViewportHeight,
+                  let offsetBinding = parent.scrollOffsetY else {
+                return
+            }
             let visible = scrollView.bounds.height
                 - scrollView.adjustedContentInset.top
                 - scrollView.adjustedContentInset.bottom
@@ -109,60 +118,16 @@ struct ScrollMetricsReportingTextEditor: UIViewRepresentable {
             lastPublishedOffset = offset
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                let p = self.parent
-                if abs(p.visibleViewportHeight - visible) > 0.25 {
-                    self.parent.visibleViewportHeight = visible
+                if abs(visibleBinding.wrappedValue - visible) > 0.25 {
+                    visibleBinding.wrappedValue = visible
                 }
-                if abs(p.contentHeight - content) > 0.25 {
-                    self.parent.contentHeight = content
+                if abs(contentBinding.wrappedValue - content) > 0.25 {
+                    contentBinding.wrappedValue = content
                 }
-                if abs(p.scrollOffsetY - offset) > 0.25 {
-                    self.parent.scrollOffsetY = offset
+                if abs(offsetBinding.wrappedValue - offset) > 0.25 {
+                    offsetBinding.wrappedValue = offset
                 }
             }
         }
-    }
-}
-
-/// Windows-style vertical scroll thumb aligned to the trailing edge of the editor.
-struct CaptionEditorVerticalScrollThumb: View {
-    let contentHeight: CGFloat
-    let visibleHeight: CGFloat
-    let scrollOffsetY: CGFloat
-    let trackLength: CGFloat
-    var trackTopInset: CGFloat = 20
-    var trackBottomInset: CGFloat = 14
-    var thumbWidth: CGFloat = 3
-    var minThumbLength: CGFloat = 28
-    var thumbColor: Color = Color(uiColor: .placeholderText).opacity(0.45)
-
-    private var needsScrollIndicator: Bool {
-        contentHeight > visibleHeight + 0.5 && visibleHeight > 1 && trackLength > minThumbLength
-    }
-
-    var body: some View {
-        Group {
-            if needsScrollIndicator {
-                thumbView()
-            }
-        }
-    }
-
-    private func thumbView() -> some View {
-        let innerTrack = max(0, trackLength - trackTopInset - trackBottomInset)
-        let maxScrollY = max(0, contentHeight - visibleHeight)
-        let thumbLength = max(
-            minThumbLength,
-            min(innerTrack, (visibleHeight / contentHeight) * innerTrack)
-        )
-        let travel = max(0, innerTrack - thumbLength)
-        let progress = maxScrollY > 0 ? min(1, max(0, scrollOffsetY / maxScrollY)) : 0
-        let thumbY = trackTopInset + progress * travel
-
-        return Capsule()
-            .fill(thumbColor)
-            .frame(width: thumbWidth, height: thumbLength)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .padding(.top, thumbY)
     }
 }

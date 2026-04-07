@@ -174,10 +174,10 @@ struct LandingView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
                     .background(
-                        RoundedRectangle(cornerRadius: 14)
+                        RoundedRectangle(appChromeBaseRadius: 14)
                             .fill(.ultraThinMaterial)
                             .overlay(
-                                RoundedRectangle(cornerRadius: 14)
+                                RoundedRectangle(appChromeBaseRadius: 14)
                                     .stroke(Color.white.opacity(0.12), lineWidth: 1)
                             )
                     )
@@ -334,10 +334,10 @@ struct LandingView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .background(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(appChromeBaseRadius: 14)
                 .fill(.ultraThinMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14)
+                    RoundedRectangle(appChromeBaseRadius: 14)
                         .stroke(Color.white.opacity(0.12), lineWidth: 1)
                 )
         )
@@ -515,7 +515,7 @@ struct CreatedRecapCard: View {
             ZStack(alignment: .bottomLeading) {
                 TripCoverImage(theme: recap.coverImageName, coverAssetIdentifier: recap.coverAssetIdentifier)
                     .frame(width: 80, height: 80)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 10))
                 if recap.lastEditedAt == nil {
                     Text("Draft")
                         .font(.caption2)
@@ -524,7 +524,7 @@ struct CreatedRecapCard: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Color.black.opacity(0.6))
-                        .cornerRadius(4)
+                        .appChromeCornerRadius(4)
                         .padding(4)
                 }
             }
@@ -549,7 +549,7 @@ struct CreatedRecapCard: View {
         .frame(width: 260)
         .padding(10)
         .background(Color.white.opacity(0.1))
-        .cornerRadius(12)
+        .appChromeCornerRadius(12)
     }
 
     private var lastEditedText: String {
@@ -986,7 +986,7 @@ private struct SettingsView: View {
                         .foregroundStyle(.white.opacity(0.9))
                 }
                 .padding(28)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 16))
             }
         }
         .animation(.easeInOut(duration: 0.2), value: isImportingBackup)
@@ -1123,7 +1123,7 @@ struct AllRecentsSheet: View {
                             ZStack(alignment: .bottomLeading) {
                                 TripCoverImage(theme: recap.coverImageName, coverAssetIdentifier: recap.coverAssetIdentifier)
                                     .frame(width: 60, height: 60)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .clipShape(RoundedRectangle(appChromeBaseRadius: 8))
                                 if recap.lastEditedAt == nil {
                                     Text("Draft")
                                         .font(.caption2)
@@ -1132,7 +1132,7 @@ struct AllRecentsSheet: View {
                                         .padding(.horizontal, 5)
                                         .padding(.vertical, 2)
                                         .background(Color.black.opacity(0.6))
-                                        .cornerRadius(4)
+                                        .appChromeCornerRadius(4)
                                         .padding(3)
                                 }
                             }

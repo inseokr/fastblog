@@ -476,7 +476,7 @@ struct CountryBlogRowView: View {
             TripCoverImage(theme: blog.coverImageName, coverAssetIdentifier: blog.coverAssetIdentifier)
                 .frame(height: 250)
                 .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
                 .overlay(alignment: .bottomLeading) {
                     if isDraft {
                         Text("Draft")

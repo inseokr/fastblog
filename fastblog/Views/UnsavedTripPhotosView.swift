@@ -70,7 +70,7 @@ struct UnsavedTripPhotosView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(Color.blue)
-                        .cornerRadius(12)
+                        .appChromeCornerRadius(12)
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
