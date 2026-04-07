@@ -72,8 +72,7 @@ struct EmailSignUpView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
+        ZStack {
                 backgroundGradient.ignoresSafeArea()
 
                 VStack(spacing: 0) {
@@ -137,7 +136,6 @@ struct EmailSignUpView: View {
             .sheet(isPresented: $showTermsOfService) {
                 TermsOfServiceView()
             }
-        }
     }
 
     // MARK: - Steps

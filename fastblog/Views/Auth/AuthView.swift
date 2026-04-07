@@ -27,6 +27,7 @@ struct AuthView: View {
     // MARK: - Body
 
     var body: some View {
+        NavigationStack {
         ZStack {
             // Deep gradient background
             backgroundGradient
@@ -74,6 +75,7 @@ struct AuthView: View {
                 loadingOverlay
             }
         }
+        .toolbar(.hidden, for: .navigationBar)
         .preferredColorScheme(.dark)
         .alert("Error", isPresented: Binding(
             get: { authService.errorMessage != nil },
@@ -83,11 +85,7 @@ struct AuthView: View {
         } message: {
             Text(authService.errorMessage ?? "")
         }
-        .sheet(isPresented: $showEmailSignUp, onDismiss: {
-            if authService.currentUser == nil {
-                withAnimation(.easeOut(duration: 0.06)) { mainContentVisible = true }
-            }
-        }) {
+        .navigationDestination(isPresented: $showEmailSignUp) {
             EmailSignUpView(onAuthenticated: {
                 if !hostControlsDismiss { mainContentVisible = true }
                 showEmailSignUp = false
@@ -96,11 +94,7 @@ struct AuthView: View {
             })
             .environmentObject(authService)
         }
-        .sheet(isPresented: $showEmailLogin, onDismiss: {
-            if authService.currentUser == nil {
-                withAnimation(.easeOut(duration: 0.06)) { mainContentVisible = true }
-            }
-        }) {
+        .navigationDestination(isPresented: $showEmailLogin) {
             EmailLoginView(onAuthenticated: {
                 if !hostControlsDismiss { mainContentVisible = true }
                 showEmailLogin = false
@@ -108,6 +102,16 @@ struct AuthView: View {
                 if !hostControlsDismiss { dismiss() }
             })
             .environmentObject(authService)
+        }
+        .onChange(of: showEmailSignUp) { _, showing in
+            if !showing && authService.currentUser == nil {
+                withAnimation(.easeOut(duration: 0.06)) { mainContentVisible = true }
+            }
+        }
+        .onChange(of: showEmailLogin) { _, showing in
+            if !showing && authService.currentUser == nil {
+                withAnimation(.easeOut(duration: 0.06)) { mainContentVisible = true }
+            }
         }
         .onChange(of: authService.currentUser) { _, user in
             if user != nil {
@@ -121,6 +125,7 @@ struct AuthView: View {
         .onAppear {
             AuthService.Analytics.track(.authCreateAccountTapped)
         }
+        } // NavigationStack
     }
 
     // MARK: - Subviews

@@ -11,6 +11,8 @@ enum DraftReminderNotificationManager {
     static let pendingDeviceTokenKey = "bloggo.pendingDeviceToken"
     /// True when the user allowed notifications before having a JWT (e.g. system prompt during onboarding).
     private static let notificationsGrantedPreLoginKey = "bloggo.notificationsGrantedPreLogin"
+    /// True when the user ticked "Do not show this again" on the push-permission prompt.
+    static let doNotShowPushPromptKey = "bloggo.pushPermission.doNotShowAgain"
 
     /// Call when notification permission is granted while logged out (e.g. onboarding). Ensures post-login registration runs.
     static func recordPreLoginNotificationPermissionGrant() {
@@ -76,7 +78,11 @@ enum DraftReminderNotificationManager {
         default:
             UserDefaults.standard.removeObject(forKey: notificationsGrantedPreLoginKey)
             print("[Push] Permission denied — user should open Settings")
-            // Denied — caller should prompt the user to open Settings.
+            // If the user previously opted out of this prompt, respect that choice.
+            if UserDefaults.standard.bool(forKey: doNotShowPushPromptKey) {
+                print("[Push] User opted out of push-permission re-prompt — skipping")
+                return false
+            }
             return true
         }
     }

@@ -102,7 +102,7 @@ struct fastblogApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var isAppReady = false
     @State private var pendingResetToken: String?
-    @State private var showNotificationDeniedAlert = false
+    @State private var showPushPermissionPrompt = false
 
     #if DEBUG
         /// Flip to `true` to skip splash + onboarding and land directly on ManagePhotosView.
@@ -158,7 +158,7 @@ struct fastblogApp: App {
                         // Register any pending APNs token now that the user has an account.
                         Task {
                             let isDenied = await DraftReminderNotificationManager.handlePostLoginSetup()
-                            if isDenied { showNotificationDeniedAlert = true }
+                            if isDenied { showPushPermissionPrompt = true }
                         }
                     }
                 }
@@ -167,14 +167,11 @@ struct fastblogApp: App {
                     guard completed, authStateManager.isLoggedIn else { return }
                     Task {
                         let isDenied = await DraftReminderNotificationManager.handlePostLoginSetup()
-                        if isDenied { showNotificationDeniedAlert = true }
+                        if isDenied { showPushPermissionPrompt = true }
                     }
                 }
-                .alert("Enable Notifications", isPresented: $showNotificationDeniedAlert) {
-                    Button("Open Settings") { openSettings() }
-                    Button("Not Now", role: .cancel) {}
-                } message: {
-                    Text("Turn on notifications to get updates about your blogs. You can enable them in Settings.")
+                .sheet(isPresented: $showPushPermissionPrompt) {
+                    PushPermissionPromptView(isPresented: $showPushPermissionPrompt)
                 }
         }
     }

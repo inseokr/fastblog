@@ -26,11 +26,10 @@ struct EmailLoginView: View {
     @FocusState private var passwordFocused: Bool
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                backgroundGradient.ignoresSafeArea()
+        ZStack {
+            backgroundGradient.ignoresSafeArea()
 
-                VStack(spacing: 24) {
+            VStack(spacing: 24) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Welcome Back")
                             .font(.system(size: 26, weight: .bold, design: .rounded))
@@ -116,7 +115,6 @@ struct EmailLoginView: View {
                 ForgotPasswordView(initialUsername: email.trimmingCharacters(in: .whitespaces).isEmpty ? nil : email.trimmingCharacters(in: .whitespaces))
                     .environmentObject(authService)
             }
-        }
     }
 
     private func performLogin() {
