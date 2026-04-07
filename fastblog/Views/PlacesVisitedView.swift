@@ -681,6 +681,12 @@ private struct PlacesVisitedMapView: View {
     @Binding var initialScrollToStopIdForRecap: UUID?
 
     @State private var mapPosition: MapCameraPosition = .automatic
+    /// Kept in sync via `onMapCameraChange` for screen-space overlap detection when zooming stacked markers.
+    @State private var mapRegion: MKCoordinateRegion = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
+        span: MKCoordinateSpan(latitudeDelta: 0.6, longitudeDelta: 0.6)
+    )
+    @State private var mapViewSize: CGSize = CGSize(width: 400, height: 800)
     @State private var selectedPlaceForModal: VisitedPlaceSummary?
     @State private var revealNavDuringModalDismiss: Bool = false
     @State private var isSearchActive: Bool = false
@@ -755,19 +761,110 @@ private struct PlacesVisitedMapView: View {
 
     private func recenterToLatestPlace() {
         if let latest = placesWithCoordinates.first?.coordinate {
+            let region = MKCoordinateRegion(
+                center: latest,
+                span: MKCoordinateSpan(latitudeDelta: 0.25, longitudeDelta: 0.25)
+            )
+            mapRegion = region
             withAnimation {
-                mapPosition = .region(
-                    MKCoordinateRegion(
-                        center: latest,
-                        span: MKCoordinateSpan(latitudeDelta: 0.25, longitudeDelta: 0.25)
-                    )
-                )
+                mapPosition = .region(region)
             }
         } else {
+            mapRegion = defaultRegion
             withAnimation {
                 mapPosition = .region(defaultRegion)
             }
         }
+    }
+
+    // MARK: - Overlapping markers → zoom in until separable (My Places map)
+
+    /// How close (pt) two marker centers can be on screen and still count as “stacked.”
+    private static let clusterRadiusPixels: CGFloat = 68
+    /// Minimum center-to-center distance (pt) before we open the place sheet instead of zooming again.
+    private static let separationThresholdPixels: CGFloat = 58
+    /// ~street-level floor — beyond this, identical coordinates cannot be separated by zoom.
+    private static let minZoomSpanLat: CLLocationDegrees = 0.00014
+    private static let minZoomSpanLon: CLLocationDegrees = 0.00014
+
+    private func screenPoint(for coordinate: CLLocationCoordinate2D) -> CGPoint {
+        let r = mapRegion
+        let size = mapViewSize
+        guard size.width > 1, size.height > 1, r.span.latitudeDelta > 0, r.span.longitudeDelta > 0 else {
+            return .zero
+        }
+        let minLon = r.center.longitude - r.span.longitudeDelta / 2
+        let maxLat = r.center.latitude + r.span.latitudeDelta / 2
+        let x = (coordinate.longitude - minLon) / r.span.longitudeDelta * size.width
+        let y = (maxLat - coordinate.latitude) / r.span.latitudeDelta * size.height
+        return CGPoint(x: x, y: y)
+    }
+
+    private func placesInScreenCluster(near place: VisitedPlaceSummary) -> [VisitedPlaceSummary] {
+        guard let refCoord = coordinate(for: place) else { return [place] }
+        let refPt = screenPoint(for: refCoord)
+        return placesWithCoordinates.compactMap { item -> VisitedPlaceSummary? in
+            guard let c = coordinate(for: item.place) else { return nil }
+            let p = screenPoint(for: c)
+            let d = hypot(p.x - refPt.x, p.y - refPt.y)
+            return d <= Self.clusterRadiusPixels ? item.place : nil
+        }
+    }
+
+    private func minPairwiseScreenDistance(_ places: [VisitedPlaceSummary]) -> CGFloat {
+        let coords = places.compactMap { coordinate(for: $0) }
+        guard coords.count >= 2 else { return .greatestFiniteMagnitude }
+        var minD: CGFloat = .greatestFiniteMagnitude
+        for i in 0..<coords.count {
+            for j in (i + 1)..<coords.count {
+                let p = screenPoint(for: coords[i])
+                let q = screenPoint(for: coords[j])
+                minD = min(minD, hypot(p.x - q.x, p.y - q.y))
+            }
+        }
+        return minD
+    }
+
+    private var isAtMinZoomForOverlapResolution: Bool {
+        mapRegion.span.latitudeDelta <= Self.minZoomSpanLat * 1.08
+            && mapRegion.span.longitudeDelta <= Self.minZoomSpanLon * 1.08
+    }
+
+    private func zoomToSeparateCluster(_ cluster: [VisitedPlaceSummary]) {
+        let coords = cluster.compactMap { coordinate(for: $0) }
+        guard !coords.isEmpty else { return }
+        let center = CLLocationCoordinate2D(
+            latitude: coords.map(\.latitude).reduce(0, +) / Double(coords.count),
+            longitude: coords.map(\.longitude).reduce(0, +) / Double(coords.count)
+        )
+        let newLat = max(mapRegion.span.latitudeDelta * 0.48, Self.minZoomSpanLat)
+        let newLon = max(mapRegion.span.longitudeDelta * 0.48, Self.minZoomSpanLon)
+        let region = MKCoordinateRegion(
+            center: center,
+            span: MKCoordinateSpan(latitudeDelta: newLat, longitudeDelta: newLon)
+        )
+        mapRegion = region
+        withAnimation(.spring(response: 0.48, dampingFraction: 0.82)) {
+            mapPosition = .region(region)
+        }
+    }
+
+    private func handleMarkerTap(_ place: VisitedPlaceSummary) {
+        let cluster = placesInScreenCluster(near: place)
+        guard cluster.count >= 2 else {
+            selectedPlaceForModal = place
+            return
+        }
+        let minDist = minPairwiseScreenDistance(cluster)
+        if minDist >= Self.separationThresholdPixels {
+            selectedPlaceForModal = place
+            return
+        }
+        if isAtMinZoomForOverlapResolution {
+            selectedPlaceForModal = place
+            return
+        }
+        zoomToSeparateCluster(cluster)
     }
 
     private func openLocationSettings() {
@@ -784,24 +881,24 @@ private struct PlacesVisitedMapView: View {
         switch locationHelper.authorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse:
             locationHelper.requestCurrentLocation { coordinate in
+                let region = MKCoordinateRegion(
+                    center: coordinate,
+                    span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+                )
+                mapRegion = region
                 withAnimation {
-                    mapPosition = .region(
-                        MKCoordinateRegion(
-                            center: coordinate,
-                            span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
-                        )
-                    )
+                    mapPosition = .region(region)
                 }
             }
         case .notDetermined:
             locationHelper.requestAuthorizationAndCenter { coordinate in
+                let region = MKCoordinateRegion(
+                    center: coordinate,
+                    span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+                )
+                mapRegion = region
                 withAnimation {
-                    mapPosition = .region(
-                        MKCoordinateRegion(
-                            center: coordinate,
-                            span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
-                        )
-                    )
+                    mapPosition = .region(region)
                 }
             }
         case .restricted, .denied:
@@ -846,21 +943,31 @@ private struct PlacesVisitedMapView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            Map(position: $mapPosition) {
-                ForEach(placesWithCoordinates, id: \.place.id) { item in
-                    Annotation("", coordinate: item.coordinate) {
-                        PlacesVisitedMapMarker(place: item.place)
-                            .onTapGesture {
-                                selectedPlaceForModal = item.place
-                            }
+            GeometryReader { geo in
+                Map(position: $mapPosition) {
+                    ForEach(placesWithCoordinates, id: \.place.id) { item in
+                        Annotation("", coordinate: item.coordinate) {
+                            PlacesVisitedMapMarker(place: item.place)
+                                .onTapGesture {
+                                    handleMarkerTap(item.place)
+                                }
+                        }
                     }
                 }
+                .mapStyle(.standard(elevation: .realistic))
+                .onMapCameraChange(frequency: .onEnd) { context in
+                    mapRegion = context.region
+                }
+                .onAppear {
+                    mapViewSize = geo.size
+                    recenterToLatestPlace()
+                }
+                .onChange(of: geo.size) { _, new in
+                    mapViewSize = new
+                }
+                .ignoresSafeArea(.container, edges: .bottom)
             }
-            .mapStyle(.standard(elevation: .realistic))
-            .ignoresSafeArea(.container, edges: .bottom)
-            .onAppear {
-                recenterToLatestPlace()
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onChange(of: selectedYear) { _, _ in
                 // If the user switches years, drop any category that doesn't exist for the new year.
                 if let selectedCategory,
