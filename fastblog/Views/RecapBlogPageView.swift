@@ -6031,36 +6031,40 @@ private struct RecapMergePlacesSelectionSheet: View {
     let onSelectCandidate: (RecapMergePlaceCandidateItem) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    
+    @ScaledMetric(relativeTo: .body) private var photoThumbSize: CGFloat = 52
+
     private var previousCandidate: RecapMergePlaceCandidateItem? {
         candidates.first(where: { $0.position == .previous })
     }
-    
+
     private var nextCandidate: RecapMergePlaceCandidateItem? {
         candidates.first(where: { $0.position == .next })
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-                RoundedRectangle(appChromeBaseRadius: 3)
-                    .fill(Color.secondary.opacity(0.45))
-                    .frame(width: 38, height: 5)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 10)
-
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
                 Image(systemName: "arrow.triangle.merge")
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(.title2.weight(.semibold))
+                    .imageScale(.large)
                     .foregroundStyle(.orange)
-                    .padding(.top, 6)
+                    .accessibilityHidden(true)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 4)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Merge this place with another")
                         .font(.title3.weight(.semibold))
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text("Choose the place you want to combine with this one.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.top, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 if candidates.isEmpty {
                     currentPlaceCard
@@ -6068,6 +6072,8 @@ private struct RecapMergePlacesSelectionSheet: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.vertical, 20)
                 } else {
                     VStack(spacing: 10) {
@@ -6082,25 +6088,31 @@ private struct RecapMergePlacesSelectionSheet: View {
                         }
                     }
                 }
-
-                Spacer(minLength: 0)
             }
             .padding(16)
-        .presentationDetents([.medium])
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .presentationContentInteraction(.scrolls)
     }
     
     private var currentPlaceCard: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
                 photoPreview(photo: sourcePreviewPhoto)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Current place")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                            Text(sourcePlaceTitle)
-                                .font(.body.weight(.medium))
-                                .foregroundStyle(.primary)
-                        }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Current place")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(sourcePlaceTitle)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .padding(12)
@@ -6123,17 +6135,23 @@ private struct RecapMergePlacesSelectionSheet: View {
                     Text(candidate.position.label)
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(candidate.placeTitle.cleanedAsPlaceTitle)
                         .font(.body.weight(.medium))
                         .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(candidate.detailText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer()
+                Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
+                    .padding(.top, 2)
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -6157,12 +6175,12 @@ private struct RecapMergePlacesSelectionSheet: View {
     private func photoPreview(photo: RecapPhoto?) -> some View {
         if let photo {
             RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 200, height: 200))
-                .frame(width: 52, height: 52)
+                .frame(width: photoThumbSize, height: photoThumbSize)
                 .clipShape(RoundedRectangle(appChromeBaseRadius: 8))
         } else {
             RoundedRectangle(appChromeBaseRadius: 8)
                 .fill(Color.secondary.opacity(0.2))
-                .frame(width: 52, height: 52)
+                .frame(width: photoThumbSize, height: photoThumbSize)
                 .overlay(
                     Image(systemName: "photo")
                         .font(.caption)
