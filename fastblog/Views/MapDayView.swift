@@ -327,6 +327,7 @@ struct FullScreenMapView: View {
     
     @State private var selectedCategory: String? = nil
     @State private var scrolledPlaceID: UUID?
+    @State private var editablePlaceStops: [PlaceStop]
 
     init(
         day: RecapBlogDay,
@@ -340,10 +341,11 @@ struct FullScreenMapView: View {
         self.onCaptionSaved = onCaptionSaved
         self.onPlaceNameSaved = onPlaceNameSaved
         self.initialFocusedPlaceId = initialFocusedPlaceId
+        _editablePlaceStops = State(initialValue: day.placeStops)
     }
 
     private var availableCategories: [String] {
-        let cats = day.placeStops
+        let cats = editablePlaceStops
             .compactMap {
                 let cat = $0.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 return cat.isEmpty ? "Others" : cat
@@ -352,8 +354,8 @@ struct FullScreenMapView: View {
     }
 
     private var filteredStops: [PlaceStop] {
-        guard let cat = selectedCategory else { return day.placeStops }
-        return day.placeStops.filter { stop in
+        guard let cat = selectedCategory else { return editablePlaceStops }
+        return editablePlaceStops.filter { stop in
             let rawCat = (stop.placeCategory ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let actualCat = rawCat.isEmpty ? "Others" : rawCat
             return actualCat.caseInsensitiveCompare(cat) == .orderedSame
@@ -361,8 +363,8 @@ struct FullScreenMapView: View {
     }
 
     private var focusedPlaceId: UUID? {
-        guard day.placeStops.indices.contains(selectedPlaceIndex) else { return nil }
-        return day.placeStops[selectedPlaceIndex].id
+        guard filteredStops.indices.contains(selectedPlaceIndex) else { return nil }
+        return filteredStops[selectedPlaceIndex].id
     }
 
     private func openPhotoModal(for stop: PlaceStop) {
@@ -546,6 +548,9 @@ struct FullScreenMapView: View {
                         let trimmedSubtitle = subtitleLine.trimmingCharacters(in: .whitespacesAndNewlines)
                         updated.placeSubtitle = trimmedSubtitle.isEmpty ? nil : trimmedSubtitle
                         photoModalStop = updated
+                        if let idx = editablePlaceStops.firstIndex(where: { $0.id == updated.id }) {
+                            editablePlaceStops[idx] = updated
+                        }
                         onPlaceNameSaved?(updated.id, name, category, coord, subtitleLine)
                     }
                 )
@@ -568,7 +573,7 @@ struct FullScreenMapView: View {
         guard !didApplyInitialFocus else { return }
         didApplyInitialFocus = true
         guard let placeId = initialFocusedPlaceId,
-              let index = day.placeStops.firstIndex(where: { $0.id == placeId }) else { return }
+              let index = filteredStops.firstIndex(where: { $0.id == placeId }) else { return }
         selectedPlaceIndex = index
     }
 
