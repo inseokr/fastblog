@@ -9,6 +9,14 @@ import UserNotifications
 enum DraftReminderNotificationManager {
     private static let categoryIdentifier = "DRAFT_REMINDER"
     static let pendingDeviceTokenKey = "bloggo.pendingDeviceToken"
+    /// True when the user allowed notifications before having a JWT (e.g. system prompt during onboarding).
+    private static let notificationsGrantedPreLoginKey = "bloggo.notificationsGrantedPreLogin"
+
+    /// Call when notification permission is granted while logged out (e.g. onboarding). Ensures post-login registration runs.
+    static func recordPreLoginNotificationPermissionGrant() {
+        guard AuthService.shared.currentJwtToken == nil else { return }
+        UserDefaults.standard.set(true, forKey: notificationsGrantedPreLoginKey)
+    }
 
     static func requestPermissionIfNeeded() {
         let center = UNUserNotificationCenter.current()
@@ -17,6 +25,7 @@ enum DraftReminderNotificationManager {
             center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
                 if granted {
                     DispatchQueue.main.async {
+                        recordPreLoginNotificationPermissionGrant()
                         UIApplication.shared.registerForRemoteNotifications()
                     }
                 }
@@ -33,20 +42,31 @@ enum DraftReminderNotificationManager {
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
 
+        print("[Push] handlePostLoginSetup — authorizationStatus: \(settings.authorizationStatus.rawValue)")
+
         switch settings.authorizationStatus {
         case .authorized, .provisional:
-            // Already approved — ensure we're registered and flush any pending token.
+            // User allowed notifications before login (onboarding) or earlier — register with APNs and flush token.
+            UserDefaults.standard.removeObject(forKey: notificationsGrantedPreLoginKey)
+            print("[Push] Permission already granted — calling registerForRemoteNotifications()")
             await MainActor.run { UIApplication.shared.registerForRemoteNotifications() }
             if let token = UserDefaults.standard.string(forKey: pendingDeviceTokenKey) {
+                print("[Push] Flushing pending device token to backend: \(token)")
                 await APIManager.shared.registerDeviceToken(token)
+            } else {
+                print("[Push] No pending device token found in UserDefaults — APNs callback not yet received")
             }
             return false
 
         case .notDetermined:
+            UserDefaults.standard.removeObject(forKey: notificationsGrantedPreLoginKey)
+            print("[Push] Permission not determined — requesting authorization now")
             // Permission not yet requested (or reset). Ask once more now that an account exists.
             center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+                print("[Push] Authorization prompt result — granted: \(granted)")
                 if granted {
                     DispatchQueue.main.async {
+                        print("[Push] Calling registerForRemoteNotifications() after prompt")
                         UIApplication.shared.registerForRemoteNotifications()
                     }
                 }
@@ -54,6 +74,8 @@ enum DraftReminderNotificationManager {
             return false
 
         default:
+            UserDefaults.standard.removeObject(forKey: notificationsGrantedPreLoginKey)
+            print("[Push] Permission denied — user should open Settings")
             // Denied — caller should prompt the user to open Settings.
             return true
         }

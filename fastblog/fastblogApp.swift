@@ -44,14 +44,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
-        print("[APNs] Device token: \(token)")
+        print("[Push] APNs token received: \(token)")
         // Persist the token so it can be sent to the backend once the user has an account.
         UserDefaults.standard.set(token, forKey: DraftReminderNotificationManager.pendingDeviceTokenKey)
+        print("[Push] Token saved to UserDefaults key '\(DraftReminderNotificationManager.pendingDeviceTokenKey)'")
         // Only register with the backend if the user is already logged in.
         guard AuthService.shared.currentJwtToken != nil else {
-            print("[APNs] No auth token — device token saved for post-login registration")
+            print("[Push] No JWT — token will be flushed to backend after login")
             return
         }
+        print("[Push] Already logged in — sending token to backend immediately")
         Task { await APIManager.shared.registerDeviceToken(token) }
     }
 
@@ -160,6 +162,14 @@ struct fastblogApp: App {
                         }
                     }
                 }
+                // If the user was already logged in, finishing onboarding does not change authState — still register for push.
+                .onChange(of: hasCompletedOnboarding) { _, completed in
+                    guard completed, authStateManager.isLoggedIn else { return }
+                    Task {
+                        let isDenied = await DraftReminderNotificationManager.handlePostLoginSetup()
+                        if isDenied { showNotificationDeniedAlert = true }
+                    }
+                }
                 .alert("Enable Notifications", isPresented: $showNotificationDeniedAlert) {
                     Button("Open Settings") { openSettings() }
                     Button("Not Now", role: .cancel) {}
@@ -244,7 +254,6 @@ struct fastblogApp: App {
         }
         .ignoresSafeArea()
         .onAppear {
-            DraftReminderNotificationManager.requestPermissionIfNeeded()
             GoogleAuthManager.shared.restorePreviousSignIn()
             Task {
                 await EntitlementManager.shared.refreshEntitlements()

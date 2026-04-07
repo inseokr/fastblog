@@ -10,6 +10,7 @@ private struct AnalyticsEventPayload: Codable {
     let sessionId:   String
     let platform:    String
     let appVersion:  String
+    let timezone:    String       // IANA timezone identifier, e.g. "America/New_York"
     let context:     AnalyticsContext
     let properties:  [String: String]
     let timestamp:   String       // ISO 8601
@@ -89,13 +90,18 @@ final class AppAnalytics {
 
     /// Legacy string-based entry point — kept for call sites not yet migrated.
     static func trackEvent(name: String, properties: [String: Any] = [:]) {
-        shared.trackEvent(name: name, properties: properties)
+        shared.trackEvent(name: name, properties: properties, context: .empty)
     }
 
-    func trackEvent(name: String, properties: [String: Any] = [:]) {
+    /// Structured analytics with optional `context` (blog/place ids) for backend rules and dashboards.
+    static func trackEvent(name: String, properties: [String: Any] = [:], context: AnalyticsContext) {
+        shared.trackEvent(name: name, properties: properties, context: context)
+    }
+
+    func trackEvent(name: String, properties: [String: Any] = [:], context: AnalyticsContext = .empty) {
         incrementCounter(name)
         let stringProps = properties.reduce(into: [String: String]()) { $0[$1.key] = "\($1.value)" }
-        enqueueEvent(name: name, context: .empty, properties: stringProps)
+        enqueueEvent(name: name, context: context, properties: stringProps)
         #if DEBUG
         print("📊 \(name)")
         #endif
@@ -141,6 +147,7 @@ final class AppAnalytics {
             sessionId:   sessionId,
             platform:    "ios",
             appVersion:  appVersion,
+            timezone:    TimeZone.current.identifier,
             context:     context,
             properties:  properties,
             timestamp:   isoFormatter.string(from: Date())

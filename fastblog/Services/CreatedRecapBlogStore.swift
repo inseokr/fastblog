@@ -528,7 +528,17 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
         recents.insert(blog, at: 0)
         pendingRecapCreated = true
-        AppAnalytics.shared.trackEvent(name: "blog_created")
+        let locationLabel = tempDetail.days.first?.placeStops.first?.placeTitle ?? ""
+        AppAnalytics.shared.trackEvent(
+            name: "blog_created",
+            properties: [
+                "sourceTripId": trip.id.uuidString,
+                "blogTitle": trip.title,
+                "countryName": trip.primaryCountryDisplayName ?? "",
+                "locationLabel": locationLabel,
+            ],
+            context: AnalyticsContext(blogId: trip.id.uuidString)
+        )
         persistRecents()
         persistTripDrafts()
     }
@@ -974,7 +984,19 @@ final class CreatedRecapBlogStore: ObservableObject {
             hasCommittedRecapSave: asDraft ? old.hasCommittedRecapSave : true,
             hasCompletedInitialRecapExit: old.hasCompletedInitialRecapExit
         )
-        if !asDraft { AppAnalytics.shared.trackEvent(name: "blog_saved") }
+        if !asDraft {
+            let locationLabel = detail.days.first?.placeStops.first?.placeTitle ?? ""
+            AppAnalytics.shared.trackEvent(
+                name: "blog_saved",
+                properties: [
+                    "sourceTripId": detail.id.uuidString,
+                    "blogTitle": detail.title,
+                    "countryName": detail.countryName ?? "",
+                    "locationLabel": locationLabel,
+                ],
+                context: AnalyticsContext(blogId: detail.id.uuidString)
+            )
+        }
         persistRecents()
         persistBlogDetails()
         return true

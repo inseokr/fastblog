@@ -60,10 +60,12 @@ final class APIManager {
     func registerDeviceToken(_ token: String) async {
         struct TokenBody: Encodable { let deviceToken: String }
         struct TokenResponse: Decodable { let result: String? }
+        print("[Push] Sending device token to backend: \(token)")
         do {
-            let _: TokenResponse = try await post(endpoint: "/bloggo/device-token", body: TokenBody(deviceToken: token))
+            let response: TokenResponse = try await post(endpoint: "/bloggo/device-token", body: TokenBody(deviceToken: token))
+            print("[Push] Backend registration succeeded — result: \(response.result ?? "nil")")
         } catch {
-            print("[APNs] Failed to register device token: \(error)")
+            print("[Push] Backend registration failed: \(error)")
         }
     }
 

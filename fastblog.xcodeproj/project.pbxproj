@@ -239,7 +239,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		0354AFB52F6737A300C41BAA /* Bloggo.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Bloggo.entitlements; sourceTree = "<group>"; };
+		0354AFB52F6737A300C41BAA /* Bloggo.Debug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Bloggo.Debug.entitlements; sourceTree = "<group>"; };
+		0354AFB72F6737A300C41BAA /* Bloggo.Release.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Bloggo.Release.entitlements; sourceTree = "<group>"; };
 		037E251E2F70FACD00C7E8B8 /* burtysounds-happy-124917.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "burtysounds-happy-124917.mp3"; sourceTree = "<group>"; };
 		037E25202F70FD0600C7E8B8 /* alexgrohl-travel-478797.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "alexgrohl-travel-478797.mp3"; sourceTree = "<group>"; };
 		037E25212F70FD0600C7E8B8 /* burtysounds-happy-124917 2.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "burtysounds-happy-124917 2.mp3"; sourceTree = "<group>"; };
@@ -532,7 +533,8 @@
 				037E25262F70FD0600C7E8B8 /* paulyudin-travel-159836.mp3 */,
 				037E25272F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf */,
 				037E251E2F70FACD00C7E8B8 /* burtysounds-happy-124917.mp3 */,
-				0354AFB52F6737A300C41BAA /* Bloggo.entitlements */,
+				0354AFB52F6737A300C41BAA /* Bloggo.Debug.entitlements */,
+				0354AFB72F6737A300C41BAA /* Bloggo.Release.entitlements */,
 				BB0001AE /* fastblog */,
 				BB0001AF /* Products */,
 				03B8B6572F7CA2EB0088C39F /* Recovered References */,
@@ -1225,7 +1227,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
-				CODE_SIGN_ENTITLEMENTS = Bloggo.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Bloggo.Debug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -1257,7 +1259,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
-				CODE_SIGN_ENTITLEMENTS = Bloggo.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Bloggo.Release.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;

@@ -1985,6 +1985,8 @@ struct CameraCaptureView: View {
     @AppStorage("bloggo.hasSeenVibeTooltip") private var hasSeenVibeTooltip = false
     @State private var showVibeTooltip = false
     @State private var vibeTooltipPage = 0
+    /// Per presentation of the camera sheet — used to correlate delayed push rules on the server.
+    @State private var cameraSessionId = UUID()
 
     private static let nearHomeAlertSuppressedKey = "bloggo.nearHomeAlertSuppressed"
     private static let nearHomeSuppressedPreferKeepKey = "bloggo.nearHomeSuppressedPreferKeep"
@@ -2214,6 +2216,7 @@ struct CameraCaptureView: View {
             // Pause music/podcasts from other apps so they don't clash with Vibe capture.
             InAppCameraAudioSession.activateForCamera()
             // Fresh session each time camera is opened.
+            cameraSessionId = UUID()
             sessionMoments = []
             sessionCapturesForDisplay = []
             photosCapturedThisSession = 0
@@ -2243,6 +2246,17 @@ struct CameraCaptureView: View {
             }
         }
         .onDisappear {
+            if photosCapturedThisSession > 0 {
+                var props: [String: Any] = [
+                    "cameraSessionId": cameraSessionId.uuidString,
+                    "captureCount": "\(photosCapturedThisSession)",
+                ]
+                if let loc = cameraController.currentLocation {
+                    props["latitude"] = "\(loc.coordinate.latitude)"
+                    props["longitude"] = "\(loc.coordinate.longitude)"
+                }
+                AppAnalytics.shared.trackEvent(name: "in_app_camera_used", properties: props)
+            }
             pendingCameraTooltipTask?.cancel()
             pendingCameraTooltipTask = nil
             cameraController.stopRunning()
