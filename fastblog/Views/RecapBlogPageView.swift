@@ -154,6 +154,8 @@ struct RecapBlogPageView: View {
     @State private var cyclingCoverPhotoId: String? = nil
     /// Stabilizes cover hero sizing so transient share/QR layout changes don't stretch the cover.
     @State private var coverHeroBaseScreenHeight: CGFloat? = nil
+    /// Prevents transient hero metadata overlap when switching edit → view after Save.
+    @State private var showHeroMetadata = true
     /// Snapshot of the draft when edit mode was entered; compared to detect changes.
     @State private var draftSnapshot: RecapBlogDetail?
     /// Independent of the legacy "tap Save" tip — many users dismissed that key; split/merge onboarding uses its own flag.
@@ -1386,6 +1388,19 @@ struct RecapBlogPageView: View {
         .onChange(of: isEditMode) { _, editing in
             if editing {
                 visitedDayIndices = [selectedDayIndex]
+                showHeroMetadata = true
+            } else {
+                // When tapping Save, the hero header can briefly re-layout while the day pager/nav updates.
+                // Delay metadata so multi-line titles never collide with duration/moment captions.
+                showHeroMetadata = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+                    // Only re-enable if we're still in view mode.
+                    if !isEditMode {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            showHeroMetadata = true
+                        }
+                    }
+                }
             }
         }
     }
@@ -1674,49 +1689,24 @@ struct RecapBlogPageView: View {
                     )
                 }
 
-                // Title + duration overlay at center
-                VStack(spacing: 12) {
-                    if isEditMode {
-                        Button { showTitleChange = true } label: {
-                            HStack(spacing: 10) {
+                // Title is pinned to a stable position (center of hero).
+                // Edit/view-only controls render below with a fixed offset so tapping Save
+                // cannot shift the title (or briefly overlap differing layouts).
+                ZStack {
+                    // Title layer (always centered, always same font/position).
+                    Group {
+                        if isEditMode {
+                            Button { showTitleChange = true } label: {
                                 Text(draft.title)
-                                    .font(.blog(selectedBlogFont, size: 26, bold: true))
+                                    .font(.blog(selectedBlogFont, size: 30, bold: true))
                                     .foregroundColor(.white)
                                     .lineLimit(2)
                                     .multilineTextAlignment(.center)
-                                Image(systemName: "pencil")
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundStyle(.white)
-                                    .padding(9)
-                                    .background(Circle().fill(Color.white.opacity(0.25)))
+                                    .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
+                                    .frame(maxWidth: .infinity)
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(
-                                RoundedRectangle(appChromeBaseRadius: 10)
-                                    .stroke(Color.white.opacity(0.5), lineWidth: 1.5)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
-                        
-                        Button {
-                            coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
-                            showCoverPhotoPicker = true
-                        } label: {
-                            Text("Change Cover")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
-                    } else {
-                        VStack(spacing: 6) {
+                            .buttonStyle(.plain)
+                        } else {
                             Text(draft.title)
                                 .font(.blog(selectedBlogFont, size: 30, bold: true))
                                 .foregroundColor(.white)
@@ -1731,43 +1721,91 @@ struct RecapBlogPageView: View {
                                         )
                                     }
                                 )
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .offset(y: -18)
+                    .id("hero-title-\(isEditMode ? "edit" : "view")")
 
-                            Text(tripDurationText)
-                                .font(.callout)
-                                .foregroundColor(.white.opacity(0.92))
-                                .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                    // Edit affordance (kept out of the title's text bounds to avoid overlap).
+                    if isEditMode {
+                        Button { showTitleChange = true } label: {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(10)
+                                .background(Circle().fill(Color.white.opacity(0.22)))
+                        }
+                        .buttonStyle(.plain)
+                        .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .padding(.trailing, 18)
+                        .padding(.top, 18)
+                        .id("hero-title-pencil")
+                    }
 
-                            let placeCount = draft.days.flatMap(\.placeStops).count
-                            if placeCount > 0 {
-                                Text("\(placeCount) moment\(placeCount == 1 ? "" : "s")")
+                    // Controls layer (fixed offset below center so title never moves).
+                    VStack(spacing: 6) {
+                        if isEditMode {
+                            Button {
+                                coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
+                                showCoverPhotoPicker = true
+                            } label: {
+                                Text("Change Cover")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(.ultraThinMaterial)
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
+                        } else {
+                            if showHeroMetadata {
+                                Text(tripDurationText)
                                     .font(.callout)
                                     .foregroundColor(.white.opacity(0.92))
                                     .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
-                            }
 
-                            Button {
-                                showShareYourBlogSheet = true
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "book.pages")
-                                        .font(.system(size: 14, weight: .medium))
-                                    Text("Share Your Blog")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
+                                let placeCount = draft.days.flatMap(\.placeStops).count
+                                if placeCount > 0 {
+                                    Text("\(placeCount) moment\(placeCount == 1 ? "" : "s")")
+                                        .font(.callout)
+                                        .foregroundColor(.white.opacity(0.92))
+                                        .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
                                 }
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .background(Color.white.opacity(0.15).background(.ultraThinMaterial))
-                                .clipShape(Capsule())
-                                .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+
+                                Button {
+                                    showShareYourBlogSheet = true
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "book.pages")
+                                            .font(.system(size: 14, weight: .medium))
+                                        Text("Share Your Blog")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                    .background(Color.white.opacity(0.15).background(.ultraThinMaterial))
+                                    .clipShape(Capsule())
+                                    .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.top, 4)
+                                .transition(.opacity)
                             }
-                            .buttonStyle(.plain)
-                            .padding(.top, 4)
                         }
                     }
+                    .padding(.horizontal, 24)
+                    .offset(y: 78)
+                    .id("hero-controls-\(isEditMode ? "edit" : "view")")
                 }
-                .padding(.horizontal, 24)
 
                 // Badge shown while cover selection is still in progress
                 if isCoverPending {
