@@ -34,6 +34,6 @@ struct UndoToastView: View {
 #Preview {
     ZStack {
         Color.black.ignoresSafeArea()
-        UndoToastView(text: "Place hidden")
+        UndoToastView(text: "Place restored")
     }
 }

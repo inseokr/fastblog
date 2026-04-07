@@ -18,6 +18,8 @@ struct RemovedPlaceEntry: Identifiable, Equatable, Codable, Sendable {
     var dayDate: Date? = nil
     /// Full stop including `noteText` and per-photo `caption` fields.
     var stop: PlaceStop
+    /// Blog cover asset id before this stop was hidden; used when restoring so the hero matches pre-removal (nil for older saved entries).
+    var coverPhotoIdentifierBeforeRemoval: String? = nil
 }
 
 /// Created blog content ready to display and edit. Editable draft; Save writes back to store.

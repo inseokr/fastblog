@@ -47,6 +47,12 @@ private struct PlaceCategoryPickerTarget: Identifiable {
 }
 
 struct RecapBlogPageView: View {
+    /// Stable `ScrollViewReader` targets (strings can be unreliable across `TabView` layout passes).
+    private enum RecapBlogScrollAnchor: Hashable {
+        case pageTop
+        case mapForDay(UUID)
+    }
+
     private enum ShareYourBlogSheetPhase: Equatable {
         case menu
         case guestWebLinkCloudBackup
@@ -311,15 +317,23 @@ struct RecapBlogPageView: View {
     @State private var splitPlaceStopItem: SplitPlaceStopItem?
 
     private enum UndoAction {
-        case deletePlace(dayId: UUID, stop: PlaceStop, index: Int)
+        /// `dayBeforeRemoval` is the full day (including the removed stop) before hide; `dayIndexInDraft` is its index in `draft.days` at that moment — needed when removing the last stop deletes the whole day.
+        /// `coverPhotoIdentifierBeforeRemoval` is ``draft.selectedCoverPhotoIdentifier`` before hide; restored on undo so multi-day blogs keep the same cover after restoring a removed day.
+        case deletePlace(
+            dayBeforeRemoval: RecapBlogDay,
+            removedStopIndex: Int,
+            dayIndexInDraft: Int,
+            coverPhotoIdentifierBeforeRemoval: String?
+        )
         case deletePhoto(dayId: UUID, stopId: UUID, photo: RecapPhoto, index: Int)
         case mergePlaceStops(dayId: UUID, originalFirst: PlaceStop, originalSecond: PlaceStop, firstIndex: Int)
 
-        var text: String {
+        /// Message for the toast after the user taps Undo (describes what was reversed, not the original action).
+        var messageAfterUndo: String {
             switch self {
-            case .deletePlace: return "Place hidden"
-            case .deletePhoto: return "Photo removed"
-            case .mergePlaceStops: return "Places merged"
+            case .deletePlace: return "Place restored"
+            case .deletePhoto: return "Photo restored"
+            case .mergePlaceStops: return "Merge Undo"
             }
         }
     }
@@ -1334,10 +1348,6 @@ struct RecapBlogPageView: View {
         .background(recapScreenBackground)
         .onChange(of: selectedDayIndex) { _, newIndex in
             visitedDayIndices.insert(newIndex)
-            // For non-first pages there is no cover photo; always show the nav bar title.
-            if newIndex > 0 {
-                showNavBarTitle = true
-            }
         }
         .onChange(of: draft.days.count) { _, _ in
             schedulePlacesVisitedDeepLinkScroll()
@@ -1365,7 +1375,7 @@ struct RecapBlogPageView: View {
 
     // MARK: - Day Page Views
 
-    /// A single horizontally-paged day view: contains the blog header (Day 1 only) + map + places.
+    /// A single horizontally-paged day view: shared trip header (cover, narrative) + per-day map + places.
     private func dayPageView(blogDay: RecapBlogDay, index: Int, screenHeight: CGFloat) -> some View {
         ScrollViewReader { proxy in
             dayPageScrollView(blogDay: blogDay, index: index, screenHeight: screenHeight, proxy: proxy)
@@ -1375,22 +1385,25 @@ struct RecapBlogPageView: View {
     @ViewBuilder
     private func dayPageScrollInner(blogDay: RecapBlogDay, index: Int, screenHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Blog header — shown only on the first day's page.
-            if index == 0 {
-                Color.clear.frame(height: 0).id("page-top")
+            Color.clear.frame(height: 0).id(RecapBlogScrollAnchor.pageTop)
 
+            // Trip-level edit affordances stay on day 1 so they are not repeated on every tab.
+            if index == 0 {
                 if isEditMode && photoAuth.status == .limited {
                     photoLibraryAccessBanner
                         .padding(.horizontal, 16)
                         .padding(.bottom, 8)
                 }
+            }
 
-                if draft.selectedCoverPhotoIdentifier != nil {
-                    coverPhotoHero(screenHeight: screenHeight)
-                } else {
-                    blogTitleView
-                }
+            // Cover / title + trip narrative: same for every day so paging the day filter still matches day 1.
+            if draft.selectedCoverPhotoIdentifier != nil {
+                coverPhotoHero(screenHeight: screenHeight)
+            } else {
+                blogTitleView
+            }
 
+            if index == 0 {
                 if isEditMode && !draft.removedPlaceStops.isEmpty {
                     restoreRemovedPlacesCard
                         .padding(.horizontal, 16)
@@ -1404,10 +1417,10 @@ struct RecapBlogPageView: View {
                         .padding(.top, 8)
                         .padding(.bottom, 12)
                 }
-
-                tripNarrativeCard
-                    .padding(.bottom, 12)
             }
+
+            tripNarrativeCard
+                .padding(.bottom, 12)
 
             if !isEditMode {
                 mapCard(for: blogDay)
@@ -1425,6 +1438,26 @@ struct RecapBlogPageView: View {
         .background(recapScreenBackground)
     }
 
+    /// Read-only days 2+: align the scroll view so the map is at the top (cover stays above). `ScrollViewReader.scrollTo` often runs before `TabView` finishes laying out the selected page, and the page transition can reset scroll after an early `scrollTo`, so we only scroll after short delays and retry (same idea as the Places Visited deep link).
+    private func scheduleReadOnlyScrollToMap(proxy: ScrollViewProxy, blogDay: RecapBlogDay, dayPageIndex: Int) {
+        guard !isEditMode, dayPageIndex > 0 else { return }
+        guard selectedDayIndex == dayPageIndex, pendingDeepLinkStopScrollId == nil else { return }
+        let mapAnchor = RecapBlogScrollAnchor.mapForDay(blogDay.id)
+        let scroll: () -> Void = {
+            guard selectedDayIndex == dayPageIndex, !isEditMode, pendingDeepLinkStopScrollId == nil else { return }
+            withAnimation(.easeOut(duration: 0.3)) {
+                proxy.scrollTo(mapAnchor, anchor: .top)
+            }
+        }
+        Task { @MainActor in
+            // Stagger after tab transition / layout; repeats beat a one-shot that lands on offset 0.
+            for delayMs in [120, 120, 140, 180, 220] {
+                try? await Task.sleep(nanoseconds: UInt64(delayMs) * 1_000_000)
+                scroll()
+            }
+        }
+    }
+
     private func dayPageScrollView(blogDay: RecapBlogDay, index: Int, screenHeight: CGFloat, proxy: ScrollViewProxy) -> some View {
         ScrollView {
             dayPageScrollInner(blogDay: blogDay, index: index, screenHeight: screenHeight)
@@ -1439,6 +1472,11 @@ struct RecapBlogPageView: View {
         }
         .background(recapScreenBackground)
         .ignoresSafeArea(edges: isKeyboardVisible ? [] : .bottom)
+        .onAppear {
+            // TabView swipe/pill can finish layout after `onChange`; re-apply map alignment when this page is visible.
+            guard !isEditMode, index > 0, selectedDayIndex == index, pendingDeepLinkStopScrollId == nil else { return }
+            scheduleReadOnlyScrollToMap(proxy: proxy, blogDay: blogDay, dayPageIndex: index)
+        }
         .onChange(of: scrollToStopId) { _, newId in
             guard let id = newId, selectedDayIndex == index else { return }
             scrollToStopId = nil
@@ -1463,23 +1501,34 @@ struct RecapBlogPageView: View {
             guard newIndex == index else { return }
             if pendingDeepLinkStopScrollId != nil { return }
             if isEditMode {
-                if let d = day(at: newIndex) {
-                    withAnimation(.easeOut(duration: 0.3)) {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    if newIndex == 0 {
+                        // Day 1: hero + trip chrome at top of the scroll view.
+                        proxy.scrollTo(RecapBlogScrollAnchor.pageTop, anchor: .top)
+                    } else if let d = day(at: newIndex) {
                         proxy.scrollTo("day-section-\(d.id)", anchor: .top)
                     }
                 }
             } else {
-                withAnimation(.easeOut(duration: 0.3)) {
-                    proxy.scrollTo("map-anchor", anchor: .top)
+                if newIndex == 0 {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        proxy.scrollTo(RecapBlogScrollAnchor.pageTop, anchor: .top)
+                    }
+                } else {
+                    scheduleReadOnlyScrollToMap(proxy: proxy, blogDay: blogDay, dayPageIndex: index)
                 }
             }
         }
         .onChange(of: hasFinishedInitialLoad) { _, finished in
-            guard finished, index == 0 else { return }
-            if isEditMode, initialScrollToStopId == nil {
-                withAnimation(.easeOut(duration: 0.3)) {
-                    proxy.scrollTo("page-top", anchor: .top)
+            guard finished else { return }
+            if index == 0 {
+                if isEditMode, initialScrollToStopId == nil {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        proxy.scrollTo(RecapBlogScrollAnchor.pageTop, anchor: .top)
+                    }
                 }
+            } else if !isEditMode, selectedDayIndex == index, initialScrollToStopId == nil {
+                scheduleReadOnlyScrollToMap(proxy: proxy, blogDay: blogDay, dayPageIndex: index)
             }
         }
         .onChange(of: pendingDeepLinkStopScrollId) { _, stopId in
@@ -2028,7 +2077,7 @@ struct RecapBlogPageView: View {
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 8)
-        .id("map-anchor")
+        .id(RecapBlogScrollAnchor.mapForDay(day.id))
     }
 
     /// Inline card that shows how many places have been removed and lets the user jump to the restore sheet.
@@ -3356,16 +3405,29 @@ Your blog remains private unless you choose to share it.
     private func removePlaceStop(dayId: UUID, stopId: UUID) {
         guard let dayIndex = draft.days.firstIndex(where: { $0.id == dayId }),
               let stopIndex = draft.days[dayIndex].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
-        
+
+        let coverPhotoIdentifierBeforeRemoval = draft.selectedCoverPhotoIdentifier
+
         // Prepare Undo
         let day = draft.days[dayIndex]
         let stop = day.placeStops[stopIndex]
         withAnimation {
-            lastUndoAction = .deletePlace(dayId: dayId, stop: stop, index: stopIndex)
+            lastUndoAction = .deletePlace(
+                dayBeforeRemoval: day,
+                removedStopIndex: stopIndex,
+                dayIndexInDraft: dayIndex,
+                coverPhotoIdentifierBeforeRemoval: coverPhotoIdentifierBeforeRemoval
+            )
         }
         
         // Soft-delete: preserve stop in removedPlaceStops so it can be restored later
-        let removedEntry = RemovedPlaceEntry(dayId: dayId, dayIndex: day.dayIndex, dayDate: day.date, stop: stop)
+        let removedEntry = RemovedPlaceEntry(
+            dayId: dayId,
+            dayIndex: day.dayIndex,
+            dayDate: day.date,
+            stop: stop,
+            coverPhotoIdentifierBeforeRemoval: coverPhotoIdentifierBeforeRemoval
+        )
         draft.removedPlaceStops.append(removedEntry)
         
         // Perform Deletion
@@ -3590,16 +3652,31 @@ Your blog remains private unless you choose to share it.
 
         withAnimation {
             switch action {
-            case .deletePlace(let dayId, let stop, let index):
-                if let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }) {
+            case .deletePlace(
+                let dayBeforeRemoval,
+                let removedStopIndex,
+                let dayIndexInDraft,
+                let coverPhotoIdentifierBeforeRemoval
+            ):
+                let removedStop = dayBeforeRemoval.placeStops[removedStopIndex]
+                if let dayIdx = draft.days.firstIndex(where: { $0.id == dayBeforeRemoval.id }) {
                     var day = draft.days[dayIdx]
-                    if index <= day.placeStops.count {
-                        day.placeStops.insert(stop, at: index)
+                    if !day.placeStops.contains(where: { $0.id == removedStop.id }) {
+                        let insertAt = min(removedStopIndex, day.placeStops.count)
+                        day.placeStops.insert(removedStop, at: insertAt)
+                        for i in day.placeStops.indices { day.placeStops[i].orderIndex = i }
                         draft.days[dayIdx] = day
                     }
+                } else {
+                    // Last place on that day was removed, so the day row was dropped — restore the full day.
+                    let insertAt = min(dayIndexInDraft, draft.days.count)
+                    draft.days.insert(dayBeforeRemoval, at: insertAt)
+                    selectedDayIndex = min(insertAt, max(0, draft.days.count - 1))
                 }
+                // Put cover back to what it was before hide (removePlaceStop may have reassigned when the cover asset was on the removed day).
+                draft.selectedCoverPhotoIdentifier = coverPhotoIdentifierBeforeRemoval
                 // Remove from the soft-deleted list since user chose to undo (not just restore later)
-                draft.removedPlaceStops.removeAll { $0.stop.id == stop.id }
+                draft.removedPlaceStops.removeAll { $0.stop.id == removedStop.id }
 
             case .deletePhoto(let dayId, let stopId, let photo, _):
                 if let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
@@ -3640,7 +3717,7 @@ Your blog remains private unless you choose to share it.
         }
 
         // Show toast confirming what was undone (`action` is still in scope from the guard let above)
-        undoToastText = action.text
+        undoToastText = action.messageAfterUndo
         undoToastTask?.cancel()
         withAnimation {
             showUndoToast = true

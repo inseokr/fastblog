@@ -366,18 +366,18 @@ struct RemovedPlacesSheet: View {
             }
         }
 
-        // If the blog was empty (no cover photo) before this restore, auto-assign the best photo
-        // from the newly restored place as the cover photo.
-        if currentCover == nil && draft.selectedCoverPhotoIdentifier == nil {
+        // Prefer the cover from before this stop was hidden (matches undo); older entries omit this field.
+        if let priorCover = entry.coverPhotoIdentifierBeforeRemoval {
+            draft.selectedCoverPhotoIdentifier = priorCover
+        } else if currentCover == nil && draft.selectedCoverPhotoIdentifier == nil {
+            // Legacy: blog had no cover before this restore — pick from the restored stop.
             let includedPhotos = entry.stop.photos.filter(\.isIncluded)
-            // Pick highest quality score, falling back to the first included photo
             let bestPhoto = includedPhotos.max(by: { ($0.qualityScore?.totalScore ?? 0) < ($1.qualityScore?.totalScore ?? 0) })
                 ?? includedPhotos.first
             if let identifier = bestPhoto?.localIdentifier {
                 draft.selectedCoverPhotoIdentifier = identifier
             }
         } else {
-            // Restore cover photo to what it was before
             draft.selectedCoverPhotoIdentifier = currentCover
         }
 

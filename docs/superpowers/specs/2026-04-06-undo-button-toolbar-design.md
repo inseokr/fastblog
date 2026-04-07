@@ -53,7 +53,7 @@ When the Undo button is tapped:
 
 - The `if showUndoOverlay { UndoOverlayView(...) }` block is removed from `RecapBlogPageView`'s overlay stack in edit mode
 - `isUndoMinimized` state variable can be removed
-- `UndoOverlayView` (the original component) can be deleted once `UndoToastView` replaces its only usage in `RecapBlogPageView`
+- `UndoOverlayView` (the original component) remains for `CountryBlogsView` and `SplitBlogView` — only its usage in `RecapBlogPageView` is replaced by `UndoToastView`
 
 ---
 

@@ -1364,7 +1364,9 @@ private struct PlaceDetailTopChrome: View {
                     Spacer()
 
                     if !isEditing && !blogIsEditMode && !openInCaptionEditor {
-                        VStack(spacing: PlaceDetailChromeLayout.actionStackSpacing) {
+                        // Trailing alignment keeps the waveform + ⋯ + nav/link column fixed when "Playing Vibe"
+                        // appears; default center alignment re-centers a wider top row and shifts buttons.
+                        VStack(alignment: .trailing, spacing: PlaceDetailChromeLayout.actionStackSpacing) {
                             if hasVibeClip {
                                 HStack(alignment: .center, spacing: 8) {
                                     if isVibePlaying {
