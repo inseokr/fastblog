@@ -79,7 +79,7 @@ struct NeighborhoodMapRefinementView: View {
                 }
                 .padding()
                 .background(.regularMaterial)
-                .cornerRadius(12)
+                .appChromeCornerRadius(12)
                 .shadow(radius: 4)
                 .padding(.top, 60) // Space for status bar/safe area
                 
@@ -103,7 +103,7 @@ struct NeighborhoodMapRefinementView: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color.blue)
-                        .cornerRadius(16)
+                        .appChromeCornerRadius(16)
                     }
                     .disabled(isResolvingPlace)
                     
@@ -142,7 +142,7 @@ struct NeighborhoodMapRefinementView: View {
                 }
                 .padding(40)
                 .background(.ultraThinMaterial)
-                .cornerRadius(20)
+                .appChromeCornerRadius(20)
                 .transition(.scale.combined(with: .opacity))
             }
         }

@@ -21,7 +21,7 @@ struct PhotoCardView: View {
                 .scaledToFill()
                 .frame(width: width, height: imageHeight)
                 .clipped()
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
 
             if let caption = photo.caption?.trimmingCharacters(in: .whitespacesAndNewlines), !caption.isEmpty {
                 Text(caption)

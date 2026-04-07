@@ -122,9 +122,9 @@ struct PlaceCardView: View {
             resolvedTimeZoneFromLocation = await GeocodingService.shared.timeZone(for: cl)
         }
         .frame(width: style == .voyage ? 300 : nil, height: style == .voyage ? 160 : 140)
-        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 24))
         .overlay(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(appChromeBaseRadius: 24)
                 .stroke(isSelected ? Color.blue : Color.white.opacity(0.12), lineWidth: isSelected ? 3 : 1)
         )
         .shadow(color: .black.opacity(0.25), radius: 12, x: 0, y: 6)
@@ -135,7 +135,7 @@ struct PlaceCardView: View {
     private var voyageStyle: some View {
         ZStack(alignment: .leading) {
             // Glassmorphic Background
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(appChromeBaseRadius: 24)
                 .fill(.ultraThinMaterial)
             
             HStack(spacing: 0) {
@@ -193,7 +193,7 @@ struct PlaceCardView: View {
                     RecapPhotoThumbnail(photo: photo, cornerRadius: 18, showIcon: false, targetSize: CGSize(width: 400, height: 400))
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 110, height: 130)
-                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                        .clipShape(RoundedRectangle(appChromeBaseRadius: 18))
                         .padding(.trailing, 10)
                         .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
                 }

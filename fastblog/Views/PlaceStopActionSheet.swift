@@ -9,9 +9,11 @@ import UIKit
 struct PlaceStopActionSheet: View {
     let placeTitle: String
     let placeSubtitle: String?
-    var onEditName: () -> Void
+    /// Omit to hide "Edit Place Name". When the recap is read-only, the parent should open the name editor without toggling blog edit mode.
+    var onEditPlaceName: (() -> Void)? = nil
     var onManagePhotos: () -> Void
-    var onEditMode: () -> Void
+    /// Omit to hide "Edit Caption". When the recap is read-only, the parent should open the caption editor without toggling blog edit mode.
+    var onEditCaption: (() -> Void)? = nil
     /// Non-nil when there is at least one adjacent stop eligible for merge.
     var onMergePlaces: (() -> Void)?
     /// Non-nil when the stop has more than one photo and can be split.
@@ -24,7 +26,8 @@ struct PlaceStopActionSheet: View {
     private static let placeTitleHeaderCharLimitNarrowLargestType = 40
 
     private var sheetHeight: CGFloat {
-        var base: CGFloat = 380
+        let missingEditRows = (onEditPlaceName == nil ? 1 : 0) + (onEditCaption == nil ? 1 : 0)
+        var base: CGFloat = 380 - CGFloat(missingEditRows) * 52
         if onMergePlaces != nil { base += 52 }
         if onSplit != nil { base += 52 }
         return base
@@ -50,7 +53,7 @@ struct PlaceStopActionSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             // Drag Handle
-            RoundedRectangle(cornerRadius: 3)
+            RoundedRectangle(appChromeBaseRadius: 3)
                 .fill(Color.secondary.opacity(0.4))
                 .frame(width: 40, height: 5)
                 .padding(.top, 12)
@@ -77,25 +80,29 @@ struct PlaceStopActionSheet: View {
 
             // Section 1: Editing Actions
             VStack(spacing: 0) {
-                actionRow(icon: "mappin.and.ellipse", title: "Edit Place Name", action: {
-                    dismiss()
-                    onEditName()
-                })
-                Divider()
-                    .background(Color(white: 0.3))
+                if let onEditPlaceName {
+                    actionRow(icon: "mappin.and.ellipse", title: "Edit Place Name", action: {
+                        dismiss()
+                        onEditPlaceName()
+                    })
+                    Divider()
+                        .background(Color(white: 0.3))
+                }
                 actionRow(icon: "photo.on.rectangle", title: "Manage Photos", action: {
                     dismiss()
                     onManagePhotos()
                 })
-                Divider()
-                    .background(Color(white: 0.3))
-                actionRow(icon: "text.alignleft", title: "Edit Caption", action: {
-                    dismiss()
-                    onEditMode()
-                })
+                if let onEditCaption {
+                    Divider()
+                        .background(Color(white: 0.3))
+                    actionRow(icon: "text.alignleft", title: "Edit Caption", action: {
+                        dismiss()
+                        onEditCaption()
+                    })
+                }
             }
             .background(Color(white: 0.15))
-            .cornerRadius(12)
+            .appChromeCornerRadius(12)
             .padding(.horizontal, 16)
             .padding(.bottom, onMergePlaces != nil || onSplit != nil ? 12 : 24)
 
@@ -119,7 +126,7 @@ struct PlaceStopActionSheet: View {
                     }
                 }
                 .background(Color(white: 0.15))
-                .cornerRadius(12)
+                .appChromeCornerRadius(12)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
             }
@@ -139,7 +146,7 @@ struct PlaceStopActionSheet: View {
                 .buttonStyle(.plain)
             }
             .background(Color(white: 0.15))
-            .cornerRadius(12)
+            .appChromeCornerRadius(12)
             .padding(.horizontal, 16)
 
             Spacer()
@@ -186,9 +193,9 @@ struct PlaceStopActionSheet: View {
     PlaceStopActionSheet(
         placeTitle: "Golden Gate Bridge",
         placeSubtitle: "San Francisco",
-        onEditName: {},
+        onEditPlaceName: {},
         onManagePhotos: {},
-        onEditMode: {},
+        onEditCaption: {},
         onMergePlaces: {},
         onSplit: {},
         onRemoveFromBlog: {}

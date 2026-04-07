@@ -31,7 +31,7 @@ struct CoverPhotoSelectView: View {
                 .aspectRatio(16/10, contentMode: .fill)
                 .frame(maxWidth: .infinity)
                 .frame(height: 300)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
 
             Button {
                 showCoverPicker = true
@@ -53,7 +53,7 @@ struct CoverPhotoSelectView: View {
                     .padding(.vertical, 16)
             }
             .background(Color.blue)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
             .padding(.bottom, 32)
         }
         .padding(.horizontal, 24)
@@ -97,7 +97,7 @@ struct CoverPhotoPickerView: View {
                         if let id = displayIdentifier {
                             AssetPhotoView(assetIdentifier: id, cornerRadius: 12, targetSize: CGSize(width: 800, height: 800))
                         } else {
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(appChromeBaseRadius: 12)
                                 .fill(Color(white: 0.2))
                                 .overlay(Image(systemName: "photo").font(.largeTitle).foregroundColor(.secondary))
                         }
@@ -105,7 +105,7 @@ struct CoverPhotoPickerView: View {
                     .id(displayIdentifier ?? "")
                     .frame(width: previewWidth, height: topHeight)
                     .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
@@ -173,9 +173,9 @@ struct CoverPhotoPickerView: View {
                             } label: {
                                 MockPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false)
                                     .frame(width: itemSize, height: itemSize)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .clipShape(RoundedRectangle(appChromeBaseRadius: 8))
                                     .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
+                                        RoundedRectangle(appChromeBaseRadius: 8)
                                             .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 3)
                                     )
                             }
@@ -216,7 +216,7 @@ struct BlogCoverPhotoPickerView: View {
                         if let id = displayIdentifier {
                             AssetPhotoView(assetIdentifier: id, cornerRadius: 12, targetSize: CGSize(width: 800, height: 800))
                         } else {
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(appChromeBaseRadius: 12)
                                 .fill(Color(white: 0.2))
                                 .overlay(Image(systemName: "photo").font(.largeTitle).foregroundColor(.secondary))
                         }
@@ -224,7 +224,7 @@ struct BlogCoverPhotoPickerView: View {
                     .id(displayIdentifier ?? "")
                     .frame(width: previewWidth, height: topHeight)
                     .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
@@ -292,9 +292,9 @@ struct BlogCoverPhotoPickerView: View {
                             } label: {
                                 RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false)
                                     .frame(width: itemSize, height: itemSize)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .clipShape(RoundedRectangle(appChromeBaseRadius: 8))
                                     .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
+                                        RoundedRectangle(appChromeBaseRadius: 8)
                                             .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 3)
                                     )
                             }

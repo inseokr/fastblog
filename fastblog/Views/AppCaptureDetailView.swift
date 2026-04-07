@@ -367,7 +367,7 @@ struct AppCaptureDetailView: View {
                             .font(.system(size: 22, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(width: 56, height: 56)
-                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                     }
                     .accessibilityLabel("Download Photo")
 
@@ -380,7 +380,7 @@ struct AppCaptureDetailView: View {
                             .font(.system(size: 22, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(width: 56, height: 56)
-                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                     }
                     .accessibilityLabel("Delete Photo")
                 }
@@ -544,6 +544,8 @@ struct AppCaptureDetailView: View {
         guard let item = currentItem else { return }
         vibePlayer.stop()
         AppCapturePhotoService.shared.deleteCapture(captureId: item.id)
+        CreatedRecapBlogStore.shared.excludeAppCapturesFromBlogs(captureIds: [item.id])
+        InAppCameraPhotoStore.shared.removePhotos(ids: [item.id])
         onDelete(item.id)
 
         // Navigate to adjacent item or dismiss if last

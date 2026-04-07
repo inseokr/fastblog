@@ -879,7 +879,7 @@ struct TripsView: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color.blue)
-                        .cornerRadius(12)
+                        .appChromeCornerRadius(12)
                 }
             }
             .padding(.horizontal, 24)
@@ -1054,7 +1054,7 @@ struct TripsView: View {
         .padding(.vertical, 22)
         .frame(maxWidth: .infinity)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
         .padding(.horizontal, 24)
         .simultaneousGesture(
             DragGesture(minimumDistance: 30)
@@ -1140,9 +1140,9 @@ struct TripsView: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(appChromeBaseRadius: 16)
                 .fill(.ultraThinMaterial)
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(tripsMaterialHairline, lineWidth: 1))
+                .overlay(RoundedRectangle(appChromeBaseRadius: 16).stroke(tripsMaterialHairline, lineWidth: 1))
         )
         .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
         .padding(.horizontal, 24)
@@ -1209,10 +1209,10 @@ struct TripsView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .background(
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(appChromeBaseRadius: 14)
                     .fill(.ultraThinMaterial)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 14)
+                        RoundedRectangle(appChromeBaseRadius: 14)
                             .stroke(tripsMaterialHairline, lineWidth: 1)
                     )
         )
@@ -1261,7 +1261,7 @@ struct TripsView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                             .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color(uiColor: .tertiarySystemFill))
-                            .cornerRadius(10)
+                            .appChromeCornerRadius(10)
                     }
 
                     Button {
@@ -1276,17 +1276,17 @@ struct TripsView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                             .background(Color.blue)
-                            .cornerRadius(10)
+                            .appChromeCornerRadius(10)
                     }
                 }
                 .padding(.horizontal)
             }
             .padding(.vertical, 24)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(appChromeBaseRadius: 16)
                     .fill(.ultraThinMaterial)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(appChromeBaseRadius: 16)
                             .stroke(tripsMaterialHairline, lineWidth: 1)
                     )
             )
@@ -1349,7 +1349,7 @@ struct TripsView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
                                 .background(Color.blue)
-                                .cornerRadius(10)
+                                .appChromeCornerRadius(10)
                         }
 
                         Button {
@@ -1366,7 +1366,7 @@ struct TripsView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                             .background(Color.white.opacity(0.15))
-                            .cornerRadius(10)
+                            .appChromeCornerRadius(10)
                         }
                     } else {
                         // Full access — one tap starts the scan automatically
@@ -1380,7 +1380,7 @@ struct TripsView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
                                 .background(Color.blue)
-                                .cornerRadius(10)
+                                .appChromeCornerRadius(10)
                         }
                         // Disable while a scan result is already displayed (user should dismiss first)
                         .disabled(viewModel.olderTripsResult == .empty)
@@ -1395,7 +1395,7 @@ struct TripsView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                             .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color(uiColor: .tertiarySystemFill))
-                            .cornerRadius(10)
+                            .appChromeCornerRadius(10)
                     }
                 }
                 .padding(.horizontal)
@@ -1403,10 +1403,10 @@ struct TripsView: View {
             }
             .padding(.vertical, 24)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(appChromeBaseRadius: 16)
                     .fill(.ultraThinMaterial)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(appChromeBaseRadius: 16)
                             .stroke(tripsMaterialHairline, lineWidth: 1)
                     )
             )
@@ -1474,7 +1474,7 @@ struct TripsView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
                                 .background(Color.blue)
-                                .cornerRadius(10)
+                                .appChromeCornerRadius(10)
                         }
 
                         Button {
@@ -1491,7 +1491,7 @@ struct TripsView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                             .background(Color.white.opacity(0.15))
-                            .cornerRadius(10)
+                            .appChromeCornerRadius(10)
                         }
                     } else {
                         Button {
@@ -1504,7 +1504,7 @@ struct TripsView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
                                 .background(Color.blue)
-                                .cornerRadius(10)
+                                .appChromeCornerRadius(10)
                         }
                         .disabled(viewModel.newerTripsResult == .empty)
                     }
@@ -1518,7 +1518,7 @@ struct TripsView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                             .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color(uiColor: .tertiarySystemFill))
-                            .cornerRadius(10)
+                            .appChromeCornerRadius(10)
                     }
                 }
                 .padding(.horizontal)
@@ -1526,10 +1526,10 @@ struct TripsView: View {
             }
             .padding(.vertical, 24)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(appChromeBaseRadius: 16)
                     .fill(.ultraThinMaterial)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(appChromeBaseRadius: 16)
                             .stroke(tripsMaterialHairline, lineWidth: 1)
                     )
             )
@@ -1546,7 +1546,7 @@ struct TripsView: View {
 /// One captured photo in the current camera session.
 struct CapturedMoment: Identifiable {
     let id: UUID
-    let localIdentifier: String?
+    var localIdentifier: String?
     let timestamp: Date
     var caption: String?
     /// In-memory preview image used only for the in-app camera session.
@@ -2324,7 +2324,7 @@ struct CameraCaptureView: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color.blue)
-                        .cornerRadius(12)
+                        .appChromeCornerRadius(12)
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
@@ -2434,10 +2434,10 @@ struct CameraCaptureView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .background(
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(appChromeBaseRadius: 14)
                     .fill(.ultraThinMaterial)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 14)
+                        RoundedRectangle(appChromeBaseRadius: 14)
                             .stroke(Color.white.opacity(0.12), lineWidth: 1)
                     )
             )
@@ -2479,18 +2479,18 @@ struct CameraCaptureView: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color.blue, in: RoundedRectangle(cornerRadius: 10))
+                    .background(Color.blue, in: RoundedRectangle(appChromeBaseRadius: 10))
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 24)
             }
             .frame(maxWidth: 300)
             .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(appChromeBaseRadius: 20, style: .continuous)
                     .fill(.ultraThinMaterial)
                     .environment(\.colorScheme, .dark)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipShape(RoundedRectangle(appChromeBaseRadius: 20, style: .continuous))
             .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
             .padding(.horizontal, 36)
         }
@@ -2547,18 +2547,18 @@ struct CameraCaptureView: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color.blue, in: RoundedRectangle(cornerRadius: 10))
+                    .background(Color.blue, in: RoundedRectangle(appChromeBaseRadius: 10))
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 24)
             }
             .frame(maxWidth: 300)
             .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(appChromeBaseRadius: 20, style: .continuous)
                     .fill(.ultraThinMaterial)
                     .environment(\.colorScheme, .dark)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipShape(RoundedRectangle(appChromeBaseRadius: 20, style: .continuous))
             .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
             .padding(.horizontal, 36)
         }
@@ -2651,7 +2651,7 @@ struct CameraCaptureView: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color.blue)
-                        .cornerRadius(12)
+                        .appChromeCornerRadius(12)
                 }
 
                 if vibeTooltipPage == 0 {
@@ -2785,7 +2785,7 @@ struct CameraCaptureView: View {
     private var shutterBarGalleryIcon: some View {
         let size: CGFloat = 56
         return ZStack {
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(appChromeBaseRadius: 10)
                 .fill(Color.white.opacity(0.2))
                 .frame(width: size, height: size)
             Image(systemName: "photo.stack.fill")
@@ -2879,21 +2879,48 @@ private func momentCount(from moments: [CapturedMoment]) -> Int {
 // MARK: - CameraCaptureView helpers
 
 extension CameraCaptureView {
+    /// Saves pixels once to app capture storage and mirrors the same UUID into the Bloggo gallery grid so gallery deletes stay in sync with blog references.
+    private func persistInAppCameraCapture(image: UIImage, timestamp: Date, vibeURL: URL?) -> String? {
+        let location = cameraController.currentLocation
+        guard let captureId = try? AppCapturePhotoService.shared.saveCapture(
+            image: image, timestamp: timestamp, location: location
+        ) else { return nil }
+        if let url = vibeURL {
+            try? AppCapturePhotoService.shared.saveVibe(captureId: captureId, from: url)
+            try? FileManager.default.removeItem(at: url)
+        }
+        InAppCameraPhotoStore.shared.addPhoto(id: captureId, image: image, timestamp: timestamp)
+        return AppCapturePhotoService.identifier(for: captureId)
+    }
+
+    /// Resolves `bloggo-capture:` id for a moment, saving first only when the shutter pass did not already persist (legacy paths).
+    private func resolvedCaptureLocalIdentifier(for moment: CapturedMoment, fallbackVibeURL: URL?) -> String? {
+        if let lid = moment.localIdentifier, lid.hasPrefix(AppCapturePhotoService.prefix) {
+            return lid
+        }
+        guard let image = moment.previewImage else { return nil }
+        let vibe = moment.vibeURL ?? fallbackVibeURL
+        return persistInAppCameraCapture(image: image, timestamp: moment.timestamp, vibeURL: vibe)
+    }
+
     /// Adds the captured photo to the session and routes it (active blog, matching blog, camera draft, or start-blog prompt).
     /// Used after capture when not near home, and when user taps "Keep" on the near-home confirmation.
     /// Only adds to sessionMoments and shows "You are capturing a moment" when it's truly a new trip (no existing blog or draft for this capture).
     private func applyCapturedPhoto(image: UIImage?, timestamp: Date, vibeURL: URL? = nil) {
-        if let image = image {
-            InAppCameraPhotoStore.shared.addPhoto(id: UUID(), image: image, timestamp: timestamp)
+        var persistedLocalId: String?
+        var remainingVibeURL = vibeURL
+        if let image = image, let lid = persistInAppCameraCapture(image: image, timestamp: timestamp, vibeURL: vibeURL) {
+            persistedLocalId = lid
+            remainingVibeURL = nil
         }
         let location = cameraController.currentLocation.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
         let displayMoment = CapturedMoment(
-            localIdentifier: nil,
+            localIdentifier: persistedLocalId,
             timestamp: timestamp,
             caption: nil,
             previewImage: image,
             location: location,
-            vibeURL: vibeURL
+            vibeURL: remainingVibeURL
         )
         if let activeSourceTripId = activeBlogIdIfCapturedImageHandled(image, at: timestamp) {
             sessionSourceTripId = activeSourceTripId
@@ -2923,9 +2950,6 @@ extension CameraCaptureView {
                 hasOfferedStartBlogThisSession = true
                 startNewOnTheGoBlogFromSession()
             }
-            // Save vibe for new-session moments (routed later when blog/draft is created)
-            // The vibe will be persisted once the image is saved to AppCapturePhotoService
-            _ = vibeURL // stored with the image below via startNewOnTheGoBlog which calls saveCapture
         }
     }
 
@@ -2960,27 +2984,26 @@ extension CameraCaptureView {
         return nil
     }
 
-    /// Saves the image to app storage and injects it into the given blog. Updates the moment's injectedPhotoId when done so removal from modal can remove from blog.
+    /// Injects an already-persisted app capture into the blog (no second save). Updates the moment's injectedPhotoId when done so removal from modal can remove from blog.
     private func injectCapturedImageIntoBlog(_ image: UIImage?, at timestamp: Date, sourceTripId: UUID, momentId: UUID, vibeURL: URL? = nil) {
-        guard let image = image else { return }
-        let location = cameraController.currentLocation
-        guard let captureId = try? AppCapturePhotoService.shared.saveCapture(
-            image: image, timestamp: timestamp, location: location
-        ) else {
+        guard let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == momentId }) else { return }
+        var moment = sessionCapturesForDisplay[idx]
+        guard let localId = resolvedCaptureLocalIdentifier(for: moment, fallbackVibeURL: vibeURL) else {
             if let url = vibeURL { try? FileManager.default.removeItem(at: url) }
             return
         }
-        if let url = vibeURL {
-            try? AppCapturePhotoService.shared.saveVibe(captureId: captureId, from: url)
-            try? FileManager.default.removeItem(at: url)
+        if moment.localIdentifier == nil {
+            moment.localIdentifier = localId
+            moment.vibeURL = nil
+            sessionCapturesForDisplay[idx] = moment
         }
-        let localId = AppCapturePhotoService.identifier(for: captureId)
-        let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
+        let photoLocation = moment.location ?? cameraController.currentLocation.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
+        let geoForPlace = cameraController.currentLocation
         Task { @MainActor in
             var locationName: String? = nil
             var countryName: String? = nil
-            if let location {
-                let place = await GeocodingService.shared.place(for: location)
+            if let geo = geoForPlace {
+                let place = await GeocodingService.shared.place(for: geo)
                 locationName = place.cityName != "Unknown Place" ? place.cityName : place.bestPlaceLabel
                 countryName = place.countryName != "Unknown" ? place.countryName : nil
             }
@@ -3006,27 +3029,26 @@ extension CameraCaptureView {
         }
     }
 
-    /// Saves the image to app storage and appends it to the given camera trip draft. Updates the moment's injectedPhotoId when done so removal from modal can remove from draft.
+    /// Appends an already-persisted app capture to the camera trip draft (no second save). Updates the moment's injectedPhotoId when done so removal from modal can remove from draft.
     private func injectCapturedPhotoIntoCameraDraft(_ image: UIImage?, at timestamp: Date, tripId: UUID, momentId: UUID, vibeURL: URL? = nil) {
-        guard let image = image else { return }
-        let location = cameraController.currentLocation
-        guard let captureId = try? AppCapturePhotoService.shared.saveCapture(
-            image: image, timestamp: timestamp, location: location
-        ) else {
+        guard let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == momentId }) else { return }
+        var moment = sessionCapturesForDisplay[idx]
+        guard let localId = resolvedCaptureLocalIdentifier(for: moment, fallbackVibeURL: vibeURL) else {
             if let url = vibeURL { try? FileManager.default.removeItem(at: url) }
             return
         }
-        if let url = vibeURL {
-            try? AppCapturePhotoService.shared.saveVibe(captureId: captureId, from: url)
-            try? FileManager.default.removeItem(at: url)
+        if moment.localIdentifier == nil {
+            moment.localIdentifier = localId
+            moment.vibeURL = nil
+            sessionCapturesForDisplay[idx] = moment
         }
-        let localId = AppCapturePhotoService.identifier(for: captureId)
-        let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
+        let photoLocation = moment.location ?? cameraController.currentLocation.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
+        let geoForPlace = cameraController.currentLocation
         Task { @MainActor in
             var locationName = "Captured Moment"
             var countryName: String? = nil
-            if let location {
-                let place = await GeocodingService.shared.place(for: location)
+            if let geo = geoForPlace {
+                let place = await GeocodingService.shared.place(for: geo)
                 locationName = place.cityName != "Unknown Place" ? place.cityName : place.bestPlaceLabel
                 countryName = place.countryName != "Unknown" ? place.countryName : nil
             }
@@ -3178,23 +3200,7 @@ extension CameraCaptureView {
                 countryName = place.countryName != "Unknown" ? place.countryName : nil
             }
             let photos: [MockPhoto] = momentsWithImages.compactMap { moment in
-                guard let image = moment.previewImage,
-                      let captureId = try? AppCapturePhotoService.shared.saveCapture(
-                          image: image, timestamp: moment.timestamp, location: location
-                      ) else { return nil }
-
-                // Persist the vibe clip alongside the saved photo.
-                if let vibeURL = moment.vibeURL {
-                    do {
-                        try AppCapturePhotoService.shared.saveVibe(captureId: captureId, from: vibeURL)
-                        // Remove the temporary trimmed file after copying into the capture folder.
-                        try FileManager.default.removeItem(at: vibeURL)
-                    } catch {
-                        // Ignore persistence failures; the vibe will simply be missing.
-                    }
-                }
-
-                let localId = AppCapturePhotoService.identifier(for: captureId)
+                guard let localId = resolvedCaptureLocalIdentifier(for: moment, fallbackVibeURL: nil) else { return nil }
                 return MockPhoto(
                     id: moment.id,
                     imageName: "camera.fill",
@@ -3235,23 +3241,7 @@ extension CameraCaptureView {
                 countryName = place.countryName != "Unknown" ? place.countryName : nil
             }
             let photos: [MockPhoto] = momentsWithImages.compactMap { moment in
-                guard let image = moment.previewImage,
-                      let captureId = try? AppCapturePhotoService.shared.saveCapture(
-                          image: image, timestamp: moment.timestamp, location: location
-                      ) else { return nil }
-
-                // Persist the vibe clip alongside the saved photo.
-                if let vibeURL = moment.vibeURL {
-                    do {
-                        try AppCapturePhotoService.shared.saveVibe(captureId: captureId, from: vibeURL)
-                        // Remove the temporary trimmed file after copying into the capture folder.
-                        try FileManager.default.removeItem(at: vibeURL)
-                    } catch {
-                        // Ignore persistence failures; the vibe will simply be missing.
-                    }
-                }
-
-                let localId = AppCapturePhotoService.identifier(for: captureId)
+                guard let localId = resolvedCaptureLocalIdentifier(for: moment, fallbackVibeURL: nil) else { return nil }
                 return MockPhoto(
                     id: moment.id,
                     imageName: "camera.fill",
@@ -3347,23 +3337,7 @@ extension CameraCaptureView {
                 countryName = place.countryName != "Unknown" ? place.countryName : nil
             }
             let photos: [MockPhoto] = momentsWithImages.compactMap { moment in
-                guard let image = moment.previewImage,
-                      let captureId = try? AppCapturePhotoService.shared.saveCapture(
-                          image: image, timestamp: moment.timestamp, location: location
-                      ) else { return nil }
-
-                // Persist the vibe clip alongside the saved photo.
-                if let vibeURL = moment.vibeURL {
-                    do {
-                        try AppCapturePhotoService.shared.saveVibe(captureId: captureId, from: vibeURL)
-                        // Remove the temporary trimmed file after copying into the capture folder.
-                        try FileManager.default.removeItem(at: vibeURL)
-                    } catch {
-                        // Ignore persistence failures; the vibe will simply be missing.
-                    }
-                }
-
-                let localId = AppCapturePhotoService.identifier(for: captureId)
+                guard let localId = resolvedCaptureLocalIdentifier(for: moment, fallbackVibeURL: nil) else { return nil }
                 return MockPhoto(
                     id: moment.id,
                     imageName: "camera.fill",
@@ -3641,7 +3615,7 @@ private struct InAppPhotoGalleryView: View {
                                 .font(.system(size: 22, weight: .semibold))
                                 .foregroundColor(selectedIds.isEmpty ? .gray : .white)
                                 .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                         }
                         .disabled(selectedIds.isEmpty)
                         .accessibilityLabel("Save selected to Photos")
@@ -3661,7 +3635,7 @@ private struct InAppPhotoGalleryView: View {
                                 .font(.system(size: 22, weight: .semibold))
                                 .foregroundColor(selectedIds.isEmpty ? .gray : .red)
                                 .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                         }
                         .disabled(selectedIds.isEmpty)
                         .accessibilityLabel("Remove selected from gallery")
@@ -3989,7 +3963,7 @@ private struct SessionGalleryView: View {
                                         .scaledToFill()
                                         .frame(width: 70, height: rowHeight)
                                         .clipped()
-                                        .cornerRadius(8)
+                                        .appChromeCornerRadius(8)
                                     // Vibe badge — static green waveform, bottom-left
                                     if moment.vibeURL != nil {
                                         Image(systemName: "waveform")
@@ -4006,7 +3980,7 @@ private struct SessionGalleryView: View {
                                 .frame(width: 70, height: rowHeight)
                             } else {
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 8)
+                                    RoundedRectangle(appChromeBaseRadius: 8)
                                         .fill(Color.gray.opacity(0.3))
                                     Image(systemName: "photo")
                                         .foregroundColor(.white.opacity(0.8))
@@ -4046,7 +4020,7 @@ private struct SessionGalleryView: View {
                                 .padding(.bottom, 10)
                                 .frame(maxWidth: .infinity, minHeight: 72, maxHeight: .infinity)
                                 .background(Color(uiColor: .secondarySystemFill))
-                                .cornerRadius(8)
+                                .appChromeCornerRadius(8)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .frame(height: rowHeight)
@@ -4067,7 +4041,7 @@ private struct SessionGalleryView: View {
                                         .scaledToFill()
                                         .frame(width: 70, height: rowHeight)
                                         .clipped()
-                                        .cornerRadius(8)
+                                        .appChromeCornerRadius(8)
                                     // Vibe badge — static green waveform, bottom-left
                                     if moment.vibeURL != nil {
                                         Image(systemName: "waveform")
@@ -4084,7 +4058,7 @@ private struct SessionGalleryView: View {
                                 .frame(width: 70, height: rowHeight)
                             } else {
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 8)
+                                    RoundedRectangle(appChromeBaseRadius: 8)
                                         .fill(Color.gray.opacity(0.3))
                                     Image(systemName: "photo")
                                         .foregroundColor(.white.opacity(0.8))
@@ -4124,7 +4098,7 @@ private struct SessionGalleryView: View {
                                 .padding(.bottom, 10)
                                 .frame(maxWidth: .infinity, minHeight: 72, maxHeight: .infinity)
                                 .background(Color(uiColor: .secondarySystemFill))
-                                .cornerRadius(8)
+                                .appChromeCornerRadius(8)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .frame(height: rowHeight)
@@ -4335,13 +4309,13 @@ struct TripCarouselCard: View {
             }
             // Selection ring
             .overlay {
-                RoundedRectangle(cornerRadius: Self.cornerRadius)
+                RoundedRectangle(appChromeBaseRadius: Self.cornerRadius)
                     .stroke(Color.white.opacity(isSelected ? 0.8 : 0), lineWidth: 2)
                     .animation(.easeInOut(duration: 0.2), value: isSelected)
             }
-            .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+            .clipShape(RoundedRectangle(appChromeBaseRadius: Self.cornerRadius))
             .shadow(color: .black.opacity(0.4), radius: 12, y: 6)
-            .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+            .contentShape(RoundedRectangle(appChromeBaseRadius: Self.cornerRadius))
             .onTapGesture(perform: onTap)
     }
 }

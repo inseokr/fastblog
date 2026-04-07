@@ -89,7 +89,7 @@ struct DayCaptionEditSheet: View {
                         .padding(.vertical, 14)
                         .frame(minHeight: 180)
                         .background(Color(uiColor: .secondarySystemBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .clipShape(RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
                         .padding(.horizontal, 20)
 
                     if editedText.isEmpty {

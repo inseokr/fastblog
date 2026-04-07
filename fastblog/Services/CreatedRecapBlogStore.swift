@@ -1194,6 +1194,36 @@ final class CreatedRecapBlogStore: ObservableObject {
         }
     }
 
+    /// Sets `isIncluded = false` for photos whose `localIdentifier` matches these app-capture UUIDs (after files were deleted from the Bloggo gallery).
+    func excludeAppCapturesFromBlogs(captureIds: Set<UUID>) {
+        guard !captureIds.isEmpty else { return }
+        let identifiers = Set(captureIds.map { AppCapturePhotoService.identifier(for: $0) })
+        var changed = false
+        for key in blogDetailsBySourceId.keys {
+            guard var detail = blogDetailsBySourceId[key] else { continue }
+            var detailChanged = false
+            for dayIdx in detail.days.indices {
+                for stopIdx in detail.days[dayIdx].placeStops.indices {
+                    for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
+                        if let lid = detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].localIdentifier,
+                           identifiers.contains(lid) {
+                            detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isIncluded = false
+                            detailChanged = true
+                        }
+                    }
+                }
+            }
+            if detailChanged {
+                blogDetailsBySourceId[key] = detail
+                changed = true
+            }
+        }
+        if changed {
+            persistBlogDetails()
+            objectWillChange.send()
+        }
+    }
+
     /// Syncs user-entered captions from the camera session into the blog detail.
     /// Called when the camera is dismissed so captions typed after real-time injection are preserved.
     func syncCaptions(_ captions: [(photoId: UUID, caption: String)]) {
@@ -1838,8 +1868,8 @@ final class CreatedRecapBlogStore: ObservableObject {
                                     if let vtd = serverPlace.visitedTimeDigitized {
                                         detail.days[dayIdx].placeStops[stopIdx].visitedTimeDigitized = vtd
                                     }
-                                    // Place name
-                                    if let name = serverPlace.placeName, !name.isEmpty {
+                                    // Place name (do not clobber user-edited titles; matches geocode + import behavior)
+                                    if let name = serverPlace.placeName, !name.isEmpty, !stop.placeTitleIsManual {
                                         detail.days[dayIdx].placeStops[stopIdx].placeTitle = name
                                     }
                                     // Place category (POI type from create payload or server)
@@ -3152,9 +3182,13 @@ final class CreatedRecapBlogStore: ObservableObject {
                             ? existing.placeCaption
                             : newSummary.placeCaption
 
+                        let mergedName = newSummary.latestVisitDate > existing.latestVisitDate
+                            ? newSummary.placeName
+                            : existing.placeName
+
                         existing = VisitedPlaceSummary(
                             placeId: existing.placeId,
-                            placeName: existing.placeName,
+                            placeName: mergedName,
                             city: existing.city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? newSummary.city : existing.city,
                             country: existing.country,
                             categoryRawValue: existing.categoryRawValue ?? newSummary.categoryRawValue,

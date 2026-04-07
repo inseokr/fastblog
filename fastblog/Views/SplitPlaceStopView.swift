@@ -43,7 +43,6 @@ struct SplitPlaceStopView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black.ignoresSafeArea())
-            .navigationTitle("Split Photo Group")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -100,11 +99,16 @@ struct SplitPlaceStopView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
                 ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
-                    RecapPhotoThumbnail(photo: photo, cornerRadius: 6, showIcon: false)
+                    RecapPhotoThumbnail(
+                        photo: photo,
+                        cornerRadius: 6,
+                        showIcon: false,
+                        targetSize: CGSize(width: thumbSize * 2, height: thumbSize * 2)
+                    )
                         .frame(width: thumbSize, height: thumbSize)
                         .clipped()
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6)
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
                                 .stroke(Color.secondary.opacity(0.35), lineWidth: 1)
                         )
 
@@ -176,7 +180,7 @@ struct SplitPlaceStopView: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
         .background(Color(uiColor: .secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func groupLabel(title: String, photoCount: Int, titleColor: Color) -> some View {
@@ -203,7 +207,7 @@ struct SplitPlaceStopView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .background(splitAfterIndex == nil ? Color(uiColor: .secondarySystemBackground) : Color.orange)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(splitAfterIndex == nil)

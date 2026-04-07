@@ -341,7 +341,7 @@ struct StorageManagementView: View {
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(filterActive ? Color(red: 0.04, green: 0.52, blue: 1.0) : .white)
                     .frame(width: 56, height: 56)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
             }
             .accessibilityLabel("Filter by day")
 
@@ -361,7 +361,7 @@ struct StorageManagementView: View {
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(selectedPhotoIds.isEmpty ? .gray : Color(red: 1.0, green: 0.27, blue: 0.23))
                         .frame(width: 56, height: 56)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                 }
                 .disabled(selectedPhotoIds.isEmpty)
                 .accessibilityLabel("Delete selected photos")
@@ -518,7 +518,7 @@ struct StorageManagementView: View {
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(appChromeBaseRadius: 14)
                 .fill(Color(red: 0.11, green: 0.11, blue: 0.12).opacity(0.97))
                 .shadow(color: .black.opacity(0.5), radius: 16, x: 0, y: 4)
         )
@@ -699,7 +699,7 @@ private struct UnusedPhotosSlideshowView: View {
                                         .frame(width: 56, height: 56)
                                         .clipped()
                                         .overlay(
-                                            RoundedRectangle(cornerRadius: 8)
+                                            RoundedRectangle(appChromeBaseRadius: 8)
                                                 .stroke(isCurrent ? Color.white : Color.clear, lineWidth: 2)
                                         )
                                     }
@@ -732,7 +732,7 @@ private struct UnusedPhotosSlideshowView: View {
                                     .font(.system(size: 22, weight: .semibold))
                                     .foregroundStyle(.white)
                                     .frame(width: 56, height: 56)
-                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                             }
                             .accessibilityLabel("Download Photo")
                         }
@@ -746,7 +746,7 @@ private struct UnusedPhotosSlideshowView: View {
                                 .font(.system(size: 22, weight: .semibold))
                                 .foregroundStyle(Color(red: 1.0, green: 0.27, blue: 0.23))
                                 .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                         }
                         .accessibilityLabel("Delete Photo")
                     }

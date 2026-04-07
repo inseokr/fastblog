@@ -439,6 +439,14 @@ extension AuthService {
         let response: UsernameCheckResponse = try await APIManager.shared.get(endpoint: endpoint, requiresAuth: false)
         return response.result?.uppercased() == "YES"
     }
+
+    /// Returns `true` if the email is available for sign-up (same `/user/availability` contract as username).
+    func checkEmailAvailability(email: String) async throws -> Bool {
+        let encoded = email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? email
+        let endpoint = "/user/availability?email=\(encoded)"
+        let response: UsernameCheckResponse = try await APIManager.shared.get(endpoint: endpoint, requiresAuth: false)
+        return response.result?.uppercased() == "YES"
+    }
     
     func signup(username: String, email: String, password: String) async throws {
         guard isValidEmail(email) else { throw AuthError.invalidEmail }

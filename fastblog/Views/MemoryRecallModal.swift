@@ -64,7 +64,7 @@ struct MemoryRecallModal: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(Color.blue.opacity(0.1))
-                    .cornerRadius(4)
+                    .appChromeCornerRadius(4)
             }
             
             Text(recall.title)
@@ -89,7 +89,7 @@ struct MemoryRecallModal: View {
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(Color.blue)
-                    .cornerRadius(14)
+                    .appChromeCornerRadius(14)
                     .shadow(radius: 5)
             }
             .padding(20)

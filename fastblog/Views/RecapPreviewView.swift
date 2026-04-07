@@ -100,7 +100,7 @@ private struct ClusterPreviewThumb: View {
         }
         .aspectRatio(1, contentMode: .fill)
         .clipped()
-        .cornerRadius(4)
+        .appChromeCornerRadius(4)
         .task {
             image = await imageLoader.loadThumbnail(assetIdentifier: id, targetSize: CGSize(width: 200, height: 200))
         }

@@ -42,7 +42,7 @@ struct DayContentPageView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 28, height: 28)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 8, style: .continuous))
             }
             .frame(height: 44, alignment: .center)
             Divider()
@@ -275,7 +275,7 @@ private struct StoryDayCaptionCallout: View {
             .padding(.top, StoryPageLayout.dayStoryBoxTextPaddingTop)
             .padding(.bottom, StoryPageLayout.dayStoryBoxTextPaddingBottom)
             .background(
-                RoundedRectangle(cornerRadius: r, style: .continuous)
+                RoundedRectangle(appChromeBaseRadius: r, style: .continuous)
                     .fill(fillColor)
             )
             .overlay(alignment: .leading) {

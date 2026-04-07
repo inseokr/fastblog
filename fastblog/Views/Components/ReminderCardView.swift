@@ -44,16 +44,16 @@ struct ReminderCardView: View {
                     ForEach(reminder.assets.prefix(3), id: \.localIdentifier) { asset in
                         AssetPhotoView(assetIdentifier: asset.localIdentifier, cornerRadius: 12, targetSize: CGSize(width: 300, height: 300))
                             .frame(width: 100, height: 100)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 12)
+                                RoundedRectangle(appChromeBaseRadius: 12)
                                     .stroke(Color.white.opacity(0.1), lineWidth: 1)
                             )
                     }
                     
                     if reminder.assets.count > 3 {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(appChromeBaseRadius: 12)
                                 .fill(Color.white.opacity(0.05))
                                 .frame(width: 100, height: 100)
                             VStack(spacing: 4) {
@@ -104,12 +104,12 @@ struct ReminderCardView: View {
             }
             .padding(20)
             .background(
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(appChromeBaseRadius: 24)
                     .fill(.ultraThinMaterial)
                     .shadow(color: .black.opacity(0.2), radius: 15, x: 0, y: 10)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(appChromeBaseRadius: 24)
                     .stroke(Color.white.opacity(0.1), lineWidth: 1)
             )
             

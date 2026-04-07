@@ -153,7 +153,7 @@ struct AdminAnalyticsDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
     }
 
     private func overviewSection(stats: BackendDashboardAnalytics) -> some View {
@@ -174,7 +174,7 @@ struct AdminAnalyticsDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
     }
 
     private func apiCostsSection(stats: BackendDashboardAnalytics) -> some View {
@@ -198,7 +198,7 @@ struct AdminAnalyticsDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
     }
 
     private func activationFunnelSection(stats: BackendDashboardAnalytics) -> some View {
@@ -234,7 +234,7 @@ struct AdminAnalyticsDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
     }
 
     private func retentionSection(stats: BackendDashboardAnalytics) -> some View {
@@ -264,7 +264,7 @@ struct AdminAnalyticsDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
     }
 
     private func featureUsageSection(stats: BackendDashboardAnalytics) -> some View {
@@ -297,7 +297,7 @@ struct AdminAnalyticsDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
     }
 
     private func poiAccuracySection(stats: BackendDashboardAnalytics) -> some View {
@@ -321,7 +321,7 @@ struct AdminAnalyticsDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
     }
 
     private func metricCard(title: String, value: Int) -> some View {
@@ -340,7 +340,7 @@ struct AdminAnalyticsDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
     }
 
 
@@ -356,7 +356,7 @@ struct AdminAnalyticsDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
     }
 
     private var systemHealthSection: some View {
@@ -406,7 +406,7 @@ struct AdminAnalyticsDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
         .onAppear { refreshCounters() }
     }
 
@@ -434,7 +434,7 @@ struct AdminAnalyticsDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
     }
 
     private var funnelSection: some View {
@@ -480,7 +480,7 @@ struct AdminAnalyticsDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
     }
 
     private var captionAnalyticsSection: some View {
@@ -503,7 +503,7 @@ struct AdminAnalyticsDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
     }
 
     private var eventCountersSection: some View {
@@ -542,7 +542,7 @@ struct AdminAnalyticsDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
     }
 }
 

@@ -20,7 +20,9 @@ private extension View {
     @ViewBuilder
     func placePhotoModalIgnoreKeyboardSafeAreaForPhotoLayer(_ active: Bool) -> some View {
         if active {
-            self.ignoresSafeArea(.all, edges: .bottom)
+            // Ignore only the container safe area. Keeping keyboard safe-area behavior allows
+            // the caption editor inset (place name + text field) to stay above the keyboard.
+            self.ignoresSafeArea(.container, edges: .bottom)
         } else {
             self
         }
@@ -35,7 +37,7 @@ struct PlacePhotoModalItem: Identifiable {
     var autoFocusCaption: Bool = false
     /// Open with the same inline caption chrome as blog edit (Cancel / Done, caption above keyboard), not read-only full photo.
     var openInCaptionEditor: Bool = false
-    /// With `openInCaptionEditor`, omit top-bar Done — the parent caption edit overlay already has Done.
+    /// With `openInCaptionEditor`, omit top-bar Done — the parent caption edit overlay already has Save.
     var hideChromeDoneFromCaptionEditorSheet: Bool = false
     var id: String { "\(dayId.uuidString)-\(stopId.uuidString)-\(initialPhotoId.uuidString)" }
 }
@@ -98,6 +100,14 @@ private enum PlaceDetailChromeLayout {
 /// **Fullscreen (blog timeline, blog map, Places Visited):** use `presentation: .fullscreen(source:)` so top chrome
 /// matches across entry points. **Sheet (e.g. removed places):** use `presentation: .sheet` (default).
 struct PlacePhotoModalView: View {
+    private enum NavigationMapAppPreference: String {
+        case apple
+        case google
+    }
+
+    private static let navigationChooserSuppressedKey = "placePhotoNavigationChooserSuppressed"
+    private static let navigationChooserPreferredAppKey = "placePhotoNavigationChooserPreferredApp"
+
     @Binding var placeTitle: String
     let placeSubtitle: String?
     let photos: [RecapPhoto]
@@ -106,9 +116,11 @@ struct PlacePhotoModalView: View {
     /// Used to derive the capture location's timezone for correct photo time display.
     let stopDigitizedTime: String?
     var blogIsEditMode: Bool = false
+    /// When true (recap timeline not in edit mode), hides Edit Place Name / Edit caption in the ⋯ menu and inline place-title rename in the caption panel. Other fullscreen entry points (Places Visited, map) keep `false`.
+    var recapBlogIsReadOnly: Bool = false
     /// When true, opens in the same caption-editing layout as blog edit (even if the recap timeline is not in edit mode).
     var openInCaptionEditor: Bool = false
-    /// With `openInCaptionEditor`, hide top-trailing Done (parent `PlaceCaptionEditSheet` / `PhotoCaptionEditSheet` already has Done).
+    /// With `openInCaptionEditor`, hide top-trailing Done (parent `PlaceCaptionEditSheet` / `PhotoCaptionEditSheet` already has Save).
     var hideChromeDoneFromCaptionEditorSheet: Bool = false
     /// When false, hide PHAsset "Created/Modified" metadata lines (useful for read-only presentation).
     var showAssetTimeMetadata: Bool = true
@@ -132,8 +144,8 @@ struct PlacePhotoModalView: View {
     /// Called when the user chooses "Remove photo" from the kebab menu.
     var onRemovePhoto: ((UUID) -> Void)?
     /// Called when the user saves a place name edit from within this modal.
-    /// Provides (newName, category, coordinate) so the caller can update the store and regenerate captions.
-    var onSavePlaceName: ((String, String?, CLLocationCoordinate2D?) -> Void)?
+    /// Provides (newName, category, coordinate, subtitleLine) so the caller can update the store; subtitle is trimmed (empty clears).
+    var onSavePlaceName: ((String, String?, CLLocationCoordinate2D?, String) -> Void)?
     /// Called when the user commits the caption (Done/Save). Use to sync story to cloud.
     var onCaptionCommitted: ((UUID) -> Void)? = nil
 
@@ -166,14 +178,12 @@ struct PlacePhotoModalView: View {
     @State private var resolvedTimeZoneByPhotoId: [UUID: TimeZone] = [:]
     @FocusState private var isCaptionFocused: Bool
     @State private var showRenameSheet = false
-    /// Blog / caption-editor flow: embedded Google results above the place title while writing.
-    @State private var showPlaceSearchWebPanel = false
-    /// Live URL from the embedded WKWebView (for “Open in browser”); reset when the panel closes.
-    @State private var embeddedSearchCurrentURL: URL?
-    /// Open embedded search only after caption field unfocuses (never show the web while the keyboard is up).
-    @State private var pendingOpenPlaceSearchAfterKeyboardDismiss = false
-    /// True when embedded search was opened while the caption field had focus (keyboard dismissed while panel is visible).
-    @State private var restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
+    @State private var showNavigationAppChooser = false
+    @State private var navigationDoNotShowAgain = false
+    @AppStorage(Self.navigationChooserSuppressedKey) private var navigationChooserSuppressed = false
+    @AppStorage(Self.navigationChooserPreferredAppKey) private var navigationChooserPreferredAppRaw = ""
+    /// When non-nil, replaces `placeSubtitle` for display after an in-modal rename (empty clears the line).
+    @State private var subtitleOverride: String? = nil
     /// Read-only bottom overlay: multi-line captions start collapsed; user can expand.
     @State private var isReadOnlyCaptionExpanded = false
     /// Vertical drag for swipe-down dismiss (blog overlay & sheets without a drag indicator).
@@ -249,6 +259,15 @@ struct PlacePhotoModalView: View {
         return abbr
     }
 
+    /// Subtitle for search / AI / rename seed; reflects in-modal edits before the parent reloads.
+    private var effectivePlaceSubtitle: String? {
+        if let override = subtitleOverride {
+            let t = override.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+        return placeSubtitle
+    }
+
     /// Earliest photo in this stop by timestamp (same as used for place stop visit time).
     private var earliestPhoto: RecapPhoto? {
         photos.min(by: { $0.timestamp < $1.timestamp })
@@ -267,6 +286,7 @@ struct PlacePhotoModalView: View {
         initialPhotoId: UUID,
         stopDigitizedTime: String? = nil,
         blogIsEditMode: Bool = false,
+        recapBlogIsReadOnly: Bool = false,
         openInCaptionEditor: Bool = false,
         hideChromeDoneFromCaptionEditorSheet: Bool = false,
         showAssetTimeMetadata: Bool = true,
@@ -281,7 +301,7 @@ struct PlacePhotoModalView: View {
         onAICaptionApplied: ((UUID) -> Void)? = nil,
         onPhotoCaptionManuallyEdited: ((UUID) -> Void)? = nil,
         onRemovePhoto: ((UUID) -> Void)? = nil,
-        onSavePlaceName: ((String, String?, CLLocationCoordinate2D?) -> Void)? = nil,
+        onSavePlaceName: ((String, String?, CLLocationCoordinate2D?, String) -> Void)? = nil,
         onCaptionCommitted: ((UUID) -> Void)? = nil
     ) {
         self._placeTitle = placeTitle
@@ -290,6 +310,7 @@ struct PlacePhotoModalView: View {
         self.initialPhotoId = initialPhotoId
         self.stopDigitizedTime = stopDigitizedTime
         self.blogIsEditMode = blogIsEditMode
+        self.recapBlogIsReadOnly = recapBlogIsReadOnly
         self.openInCaptionEditor = openInCaptionEditor
         self.hideChromeDoneFromCaptionEditorSheet = hideChromeDoneFromCaptionEditorSheet
         self.showAssetTimeMetadata = showAssetTimeMetadata
@@ -374,9 +395,8 @@ struct PlacePhotoModalView: View {
     }
 
     /// Whether an interactive swipe-down should move / dismiss the modal (not while zoomed or a child sheet is up).
-    /// While the embedded Google panel is open, vertical drags must scroll the web view — not pull the modal.
     private var swipeToDismissEnabled: Bool {
-        !isZoomMode && !showRenameSheet && !isDismissExitAnimating && !showPlaceSearchWebPanel
+        !isZoomMode && !showRenameSheet && !isDismissExitAnimating
     }
 
     private var dismissDragOverlayOpacity: Double {
@@ -584,9 +604,9 @@ struct PlacePhotoModalView: View {
                                         RecapPhotoThumbnail(photo: single, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 160, height: 160))
                                             .frame(width: 56, height: 56)
                                             .clipped()
-                                            .cornerRadius(8)
+                                            .appChromeCornerRadius(8)
                                             .overlay(
-                                                RoundedRectangle(cornerRadius: 8)
+                                                RoundedRectangle(appChromeBaseRadius: 8)
                                                     .stroke(Color.white.opacity(0.6), lineWidth: 1)
                                             )
                                         Spacer()
@@ -611,10 +631,9 @@ struct PlacePhotoModalView: View {
                         .animation(.easeInOut(duration: 0.25), value: isZoomMode)
                     }
 
-            // Dim the photo while editing or while the embedded browser is open so the Chrome and
-            // panel content read clearly against a consistently darkened background.
-            // Applies to blog edit-mode chrome and read-only-blog “Edit caption” (Save) flow alike.
-            if isEditing && (isCaptionFocused || showPlaceSearchWebPanel) {
+            // Dim the photo while editing with the caption field focused so the panel reads clearly.
+            // Applies to blog edit-mode chrome and non–recap-read-only caption edit (e.g. Places Visited) alike.
+            if isEditing && isCaptionFocused {
                 Color.black.opacity(0.68)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
@@ -626,6 +645,7 @@ struct PlacePhotoModalView: View {
                 presentation: presentation,
                 isEditing: isEditing,
                 blogIsEditMode: blogIsEditMode,
+                recapBlogIsReadOnly: recapBlogIsReadOnly,
                 openInCaptionEditor: openInCaptionEditor,
                 hideChromeDoneFromCaptionEditorSheet: hideChromeDoneFromCaptionEditorSheet,
                 hasUnsavedChanges: hasUnsavedChanges,
@@ -634,10 +654,18 @@ struct PlacePhotoModalView: View {
                 isVibeEnabled: isVibeEnabled,
                 isVibePlaying: isVibeEnabled && vibePlayer.isPlaying,
                 playingVibePulse: playingVibePulse,
-                onLeadingPrimary: { handleUserRequestedDismiss() },
+                onLeadingPrimary: {
+                    // Caption edit from kebab menu: "Cancel" should leave edit mode and
+                    // return to read-only in the same full-screen viewer.
+                    if isEditing && !blogIsEditMode && !openInCaptionEditor {
+                        isCaptionFocused = false
+                        revertChanges()
+                    } else {
+                        handleUserRequestedDismiss()
+                    }
+                },
                 onSaveCaptionAndDismiss: {
                     commitCaption()
-                    onDismiss()
                 },
                 onDoneBlogEdit: {
                     if hasUnsavedChanges {
@@ -663,15 +691,14 @@ struct PlacePhotoModalView: View {
                         vibePlayer.stop()
                     }
                 },
-                onNavigate: { openNavigation() },
+                onNavigate: { handleNavigationTap() },
                 onLink: { openGoogleSearch() }
             )
             .ignoresSafeArea(.all, edges: presentation.isSheet ? [] : .top)
-            // Embedded Google search has its own chrome ("Open in browser" / close); hide Close/Cancel/Done so they never stack with it.
-            .allowsHitTesting(!isZoomMode && !showPlaceSearchWebPanel)
-            .opacity((isZoomMode || showPlaceSearchWebPanel) ? 0 : 1)
+            // Hide top chrome while zoomed so it doesn’t compete with the full-screen photo overlay.
+            .allowsHitTesting(!isZoomMode)
+            .opacity(isZoomMode ? 0 : 1)
             .animation(.easeInOut(duration: 0.25), value: isZoomMode)
-            .animation(.easeInOut(duration: 0.2), value: showPlaceSearchWebPanel)
 
             // 5. Zoom mode overlay — appears when user taps the photo
             if isZoomMode, let photo = currentPhoto {
@@ -679,14 +706,11 @@ struct PlacePhotoModalView: View {
             }
 
         }
-        // In blog-edit mode the safeAreaInset panel (caption + embedded browser) can shrink geo.size.height
-        // dramatically, which shifts Cancel/Done down. Always use the full screen height so the Chrome
-        // stays anchored regardless of the panel size; `ignoresSafeArea(.all, .bottom)` makes it render there.
+        // In blog-edit mode the caption `safeAreaInset` can shrink `geo.size.height`, which shifts top chrome.
+        // Use full window height for the photo layer so chrome stays anchored; `ignoresSafeArea(.all, .bottom)` pins it.
         .frame(width: geo.size.width, height: usesInlineCaptionChrome ? referenceScreenBoundsHeight : geo.size.height)
         .placePhotoModalIgnoreKeyboardSafeAreaForPhotoLayer(usesInlineCaptionChrome)
-        // Keep this on the photo/chrome `ZStack` only (always attached). Toggling a conditional gesture on the
-        // outer container when embedded search closes restructures the tree and flashes the `TabView` photo layer.
-        // `safeAreaInset` content (WKWebView) is outside this stack, so vertical scroll in search is unaffected.
+        // Keep dismiss gesture on this stack only so structure stays stable (avoids TabView flash).
         .simultaneousGesture(photoModalSwipeDismissGesture)
         .onChange(of: vibePlayer.isPlaying) { _, playing in
             if playing {
@@ -710,18 +734,26 @@ struct PlacePhotoModalView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
         .statusBar(hidden: false)
+        .overlay {
+            if showNavigationAppChooser {
+                navigationAppChooserOverlay
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
+        }
         .onDisappear {
             vibePlayer.stop()
         }
         .sheet(isPresented: $showRenameSheet) {
             EditPlaceStopNameSheet(
                 placeTitle: $placeTitle,
+                initialPlaceSubtitle: effectivePlaceSubtitle,
                 location: photos.compactMap({ $0.location?.clCoordinate }).first,
                 photos: photos,
-                onSave: { newName, coord, category in
-                    debugPrint("[Category] PlacePhotoModal onSave: name='\(newName)' category=\(category ?? "nil") onSavePlaceName wired=\(onSavePlaceName != nil)")
+                onSave: { newName, coord, category, subtitleLine in
+                    debugPrint("[Category] PlacePhotoModal onSave: name='\(newName)' category=\(category ?? "nil") subtitle='\(subtitleLine)' onSavePlaceName wired=\(onSavePlaceName != nil)")
                     placeTitle = newName
-                    onSavePlaceName?(newName, category, coord)
+                    subtitleOverride = subtitleLine
+                    onSavePlaceName?(newName, category, coord, subtitleLine)
                 }
             )
             // Root photo modal disables UIKit sheet dismiss; nested sheets must stay interactively dismissible.
@@ -796,32 +828,14 @@ struct PlacePhotoModalView: View {
             guard !isDismissExitAnimating, dismissFrozenPhotoId == nil else { return }
             isReadOnlyCaptionExpanded = false
             interactiveDismissDragOffset = 0
-            pendingOpenPlaceSearchAfterKeyboardDismiss = false
-            showPlaceSearchWebPanel = false
             editedCaptionText = currentCaption
             if isEditing {
                 captionWhenEditingStarted = currentCaption
                 // Place Title is same for all photos in this modal
             }
         }
-        .onChange(of: isCaptionFocused) { _, focused in
-            if focused {
-                pendingOpenPlaceSearchAfterKeyboardDismiss = false
-                closeEmbeddedSearchForCaptionInteraction()
-            } else if pendingOpenPlaceSearchAfterKeyboardDismiss {
-                pendingOpenPlaceSearchAfterKeyboardDismiss = false
-                var t = Transaction()
-                t.animation = nil
-                withTransaction(t) {
-                    showPlaceSearchWebPanel = true
-                }
-            }
-        }
         .onChange(of: editedCaptionText) { _, newValue in
             guard isEditing else { return }
-            if showPlaceSearchWebPanel {
-                closeEmbeddedSearchForCaptionInteraction()
-            }
             debounceTask?.cancel()
             debounceTask = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 400_000_000)
@@ -832,19 +846,100 @@ struct PlacePhotoModalView: View {
                 }
             }
         }
-        .onChange(of: showPlaceSearchWebPanel) { _, isShown in
-            if !isShown {
-                embeddedSearchCurrentURL = nil
-                return
+    }
+
+    private var navigationAppChooserOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    showNavigationAppChooser = false
+                }
+
+            VStack(spacing: 14) {
+                Image(systemName: "arrow.triangle.turn.up.right.circle.fill")
+                    .font(.system(size: 44))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, Color.green)
+                    .padding(.top, 4)
+
+                Text("Navigate")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+
+                Text("Pick your preferred map app to start directions instantly.")
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.88))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 6)
+
+                Toggle(isOn: $navigationDoNotShowAgain) {
+                    Text("Do not show again")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+                .tint(.green)
+                .padding(.top, 2)
+
+                VStack(spacing: 10) {
+                    Button(action: { chooseNavigationApp(.apple) }) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "apple.logo")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("Apple Maps")
+                                .font(.body.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 13)
+                        .padding(.horizontal, 14)
+                        .background(Color.gray.opacity(0.42), in: RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: { chooseNavigationApp(.google) }) {
+                        HStack(spacing: 10) {
+                            googleMapsLogoBadge
+                            Text("Google Maps")
+                                .font(.body.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 13)
+                        .padding(.horizontal, 14)
+                        .background(Color.gray.opacity(0.42), in: RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 2)
             }
-            dismissFrozenPhotoId = nil
-            if interactiveDismissDragOffset > 0.5 {
-                interactiveDismissDragOffset = 0
-            }
+            .padding(22)
+            .background(
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 12)
+            .padding(.horizontal, 26)
         }
     }
 
-    /// Caption editor above the keyboard — same layout for blog edit mode and read-only “Edit caption” (⋯ menu).
+    private var googleMapsLogoBadge: some View {
+        ZStack {
+            Circle()
+                .fill(Color.white)
+            Text("G")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(Color(red: 0.26, green: 0.52, blue: 0.96))
+        }
+        .frame(width: 18, height: 18)
+    }
+
+    /// Caption editor above the keyboard — blog edit mode, caption-sheet handoff, or other fullscreen contexts that allow caption editing.
     @ViewBuilder
     private var photoModalCaptionEditingInset: some View {
         if isEditing {
@@ -852,85 +947,51 @@ struct PlacePhotoModalView: View {
         }
     }
 
-    /// Caption field + optional embedded search (blog edit mode and read-only ⋯ → Edit caption).
+    /// Caption field + place title (matches blog edit-mode place row: tap name or pencil to rename).
     @ViewBuilder
     private var photoModalBlogInlineCaptionEditingPanel: some View {
                     VStack(alignment: .leading, spacing: 8) {
-                        if showPlaceSearchWebPanel, let searchURL = googleSearchURL(placeName: editedPlaceTitle) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(alignment: .center) {
-                                    Button {
-                                        openEmbeddedSearchInDefaultBrowser()
-                                    } label: {
-                                        HStack(alignment: .firstTextBaseline, spacing: 5) {
-                                            Text("Open in browser")
-                                                .font(.caption)
-                                                .fontWeight(.semibold)
-                                                .foregroundColor(.white)
-                                                .shadow(color: .black.opacity(0.4), radius: 2)
-                                            StoryPlaceExternalLinkIcon(titleFontSize: 16, foregroundColor: .white)
-                                                .shadow(color: .black.opacity(0.4), radius: 2)
-                                        }
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityElement(children: .combine)
-                                    .accessibilityLabel("Open in browser")
-                                    .accessibilityHint("Opens this page in your default browser")
-                                    Spacer()
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 22))
-                                        .symbolRenderingMode(.palette)
-                                        .foregroundStyle(.white, .white.opacity(0.35))
-                                        .contentShape(Rectangle())
-                                        .padding(4)
-                                        .onLongPressGesture(
-                                            minimumDuration: 0,
-                                            maximumDistance: 64,
-                                            perform: { dismissEmbeddedGoogleSearchFromChrome() }
-                                        )
-                                        .accessibilityLabel("Close search")
-                                        .accessibilityAddTraits(.isButton)
-                                }
-                                GoogleSearchEmbeddedWebView(url: searchURL, currentPageURL: $embeddedSearchCurrentURL)
-                                    .frame(height: embeddedGoogleSearchWebHeight(
-                                        layoutHeight: referenceScreenBoundsHeight,
-                                        safeTopInset: deviceSafeAreaInsets.top,
-                                        captionFieldFocused: isCaptionFocused
-                                    ))
-                                    .animation(nil, value: isCaptionFocused)
-                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                            .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
-                                    )
-                                    .shadow(color: .black.opacity(0.45), radius: 14, y: 6)
-                            }
-                            .padding(.bottom, 4)
-                            .transition(.move(edge: .top))
-                        }
-
                         VStack(alignment: .leading, spacing: 4) {
-                            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                Text(editedPlaceTitle)
-                                    .font(.title3)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.white)
-                                    .multilineTextAlignment(.leading)
-                                Image(systemName: showPlaceSearchWebPanel ? "chevron.down.circle.fill" : "magnifyingglass.circle.fill")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundColor(.white.opacity(0.85))
+                            Group {
+                                if recapBlogIsReadOnly {
+                                    Text(editedPlaceTitle)
+                                        .font(.title3)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.white)
+                                        .multilineTextAlignment(.leading)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                } else {
+                                    HStack(alignment: .top, spacing: 10) {
+                                        Button {
+                                            isCaptionFocused = false
+                                            showRenameSheet = true
+                                        } label: {
+                                            Text(editedPlaceTitle)
+                                                .font(.title3)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(.white)
+                                                .multilineTextAlignment(.leading)
+                                        }
+                                        .buttonStyle(.plain)
+                                        Button {
+                                            isCaptionFocused = false
+                                            showRenameSheet = true
+                                        } label: {
+                                            ZStack {
+                                                Circle()
+                                                    .fill(Color.white.opacity(0.22))
+                                                Image(systemName: "square.and.pencil")
+                                                    .font(.system(size: 14, weight: .semibold))
+                                                    .foregroundStyle(.white)
+                                            }
+                                            .frame(width: 28, height: 28)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel("Edit place name")
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                }
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                            .onLongPressGesture(
-                                minimumDuration: 0,
-                                maximumDistance: .infinity,
-                                perform: { commitEmbeddedSearchToggleFromPlaceRow() }
-                            )
-                            .accessibilityElement(children: .combine)
-                            .accessibilityAddTraits(.isButton)
-                            .accessibilityLabel("\(editedPlaceTitle), place")
-                            .accessibilityHint(showPlaceSearchWebPanel ? "Hides search panel above" : "Shows search in browser above while you write")
 
                             if !dateTimeTextForCurrentPhoto.isEmpty {
                                 Text(dateTimeTextForCurrentPhoto)
@@ -1006,10 +1067,8 @@ struct PlacePhotoModalView: View {
                     .padding(.bottom, 34)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background {
-                        // Browser-open state: gradient to fade into the web panel above.
-                        // Focused state: transparent — text sits directly on the dimmed photo (dim overlay
-                        // on the photo layer handles readability; no separate material "card" needed).
-                        if !isCaptionFocused || showPlaceSearchWebPanel {
+                        // When the caption field is focused, transparent — dim overlay on the photo handles readability.
+                        if !isCaptionFocused {
                             LinearGradient(
                                 colors: [Color.black.opacity(0.9), Color.black.opacity(0.75), Color.black.opacity(0.45), Color.black.opacity(0.1), Color.clear],
                                 startPoint: .bottom,
@@ -1128,9 +1187,10 @@ struct PlacePhotoModalView: View {
                     .font(.system(size: 28))
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(.white, Color.black.opacity(0.5))
-                    .padding(16)
             }
             .buttonStyle(.plain)
+            .padding(.leading, 12)
+            .padding(.top, max(8, deviceSafeAreaInsets.top - 2))
         }
     }
 
@@ -1202,14 +1262,52 @@ struct PlacePhotoModalView: View {
         return lines
     }
 
-    private func openNavigation() {
+    private var preferredNavigationApp: NavigationMapAppPreference? {
+        NavigationMapAppPreference(rawValue: navigationChooserPreferredAppRaw)
+    }
+
+    private func handleNavigationTap() {
+        guard currentPhoto?.location != nil else { return }
+        if navigationChooserSuppressed, let preferredNavigationApp {
+            openNavigation(with: preferredNavigationApp)
+            return
+        }
+        navigationDoNotShowAgain = false
+        showNavigationAppChooser = true
+    }
+
+    private func chooseNavigationApp(_ app: NavigationMapAppPreference) {
+        if navigationDoNotShowAgain {
+            navigationChooserSuppressed = true
+            navigationChooserPreferredAppRaw = app.rawValue
+        } else {
+            navigationChooserSuppressed = false
+        }
+        showNavigationAppChooser = false
+        openNavigation(with: app)
+    }
+
+    private func openNavigation(with app: NavigationMapAppPreference) {
         guard let location = currentPhoto?.location else { return }
         let lat = location.latitude
         let lon = location.longitude
-        // Open Apple Maps navigation to this coordinate
-        let urlString = "http://maps.apple.com/?daddr=\(lat),\(lon)"
-        if let url = URL(string: urlString) {
-            UIApplication.shared.open(url)
+
+        switch app {
+        case .apple:
+            let urlString = "http://maps.apple.com/?daddr=\(lat),\(lon)"
+            if let url = URL(string: urlString) {
+                UIApplication.shared.open(url)
+            }
+        case .google:
+            let nativeURL = URL(string: "comgooglemaps://?daddr=\(lat),\(lon)&directionsmode=driving")
+            if let nativeURL, UIApplication.shared.canOpenURL(nativeURL) {
+                UIApplication.shared.open(nativeURL)
+                return
+            }
+            let webURL = URL(string: "https://www.google.com/maps/dir/?api=1&destination=\(lat),\(lon)")
+            if let webURL {
+                UIApplication.shared.open(webURL)
+            }
         }
     }
     
@@ -1218,16 +1316,9 @@ struct PlacePhotoModalView: View {
         UIApplication.shared.open(url)
     }
 
-    /// Opens whatever the embedded search web view is showing (or the place search URL if not loaded yet).
-    private func openEmbeddedSearchInDefaultBrowser() {
-        let fallback = googleSearchURL(placeName: editedPlaceTitle)
-        guard let url = embeddedSearchCurrentURL ?? fallback else { return }
-        UIApplication.shared.open(url)
-    }
-
     /// Builds `https://www.google.com/search?q=…` for a place title plus optional subtitle (e.g. city).
     private func googleSearchURL(placeName: String) -> URL? {
-        let parts = [placeName, placeSubtitle]
+        let parts = [placeName, effectivePlaceSubtitle]
             .compactMap { $0 }
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
@@ -1236,91 +1327,6 @@ struct PlacePhotoModalView: View {
         var components = URLComponents(string: "https://www.google.com/search")
         components?.queryItems = [URLQueryItem(name: "q", value: query)]
         return components?.url
-    }
-
-    /// Height for embedded Google: nearly full chrome when browsing; compact when the caption field is focused.
-    private func embeddedGoogleSearchWebHeight(layoutHeight: CGFloat, safeTopInset: CGFloat, captionFieldFocused: Bool) -> CGFloat {
-        let compactHeight: CGFloat = 240
-        guard !captionFieldFocused else { return compactHeight }
-        let headerChrome: CGFloat
-        if presentation.isSheet {
-            headerChrome = safeTopInset
-                + PlaceDetailChromeLayout.sheetGrabberTopPadding
-                + PlaceDetailChromeLayout.sheetInnerTopPadding
-                + PlaceDetailChromeLayout.circleActionSize
-                + 20
-        } else {
-            headerChrome = safeTopInset
-                + PlaceDetailChromeLayout.fullscreenPaddingBelowSafeAreaTop
-                + PlaceDetailChromeLayout.fullscreenInnerTopPadding
-                + PlaceDetailChromeLayout.circleActionSize
-                + 16
-        }
-        // Room for place title, date, caption field, paddings, and a little air above the keyboard.
-        let bottomReserve: CGFloat = 198
-        let verticalBreathingRoom: CGFloat = 52
-        let available = layoutHeight - headerChrome - bottomReserve - verticalBreathingRoom
-        return max(compactHeight, available)
-    }
-
-    private func dismissEmbeddedGoogleSearchFromChrome() {
-        guard showPlaceSearchWebPanel else { return }
-        let restoreKeyboard = restoreCaptionKeyboardWhenEmbeddedSearchCloses
-        restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
-        var t = Transaction()
-        t.animation = nil
-        withTransaction(t) {
-            showPlaceSearchWebPanel = false
-        }
-        if restoreKeyboard {
-            DispatchQueue.main.async {
-                isCaptionFocused = true
-            }
-        }
-    }
-
-    /// Hides the embedded browser while the user works in the caption field (typing or focus).
-    private func closeEmbeddedSearchForCaptionInteraction() {
-        guard showPlaceSearchWebPanel else { return }
-        restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
-        var t = Transaction()
-        t.animation = nil
-        withTransaction(t) {
-            showPlaceSearchWebPanel = false
-        }
-    }
-
-    private func commitEmbeddedSearchToggleFromPlaceRow() {
-        let name = editedPlaceTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, googleSearchURL(placeName: name) != nil else { return }
-        let wasOpen = showPlaceSearchWebPanel
-        if !wasOpen {
-            if isCaptionFocused {
-                restoreCaptionKeyboardWhenEmbeddedSearchCloses = true
-                pendingOpenPlaceSearchAfterKeyboardDismiss = true
-                isCaptionFocused = false
-                return
-            }
-            restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
-            var t = Transaction()
-            t.animation = nil
-            withTransaction(t) {
-                showPlaceSearchWebPanel = true
-            }
-            return
-        }
-        let restoreKeyboard = restoreCaptionKeyboardWhenEmbeddedSearchCloses
-        restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
-        var t = Transaction()
-        t.animation = nil
-        withTransaction(t) {
-            showPlaceSearchWebPanel = false
-        }
-        if restoreKeyboard {
-            DispatchQueue.main.async {
-                isCaptionFocused = true
-            }
-        }
     }
 
     /// After `isEditing` becomes true, the caption `TextField` only exists inside `safeAreaInset`.
@@ -1362,7 +1368,7 @@ struct PlacePhotoModalView: View {
         isGeneratingCaption = true
         let userText = editedCaptionText
         Task {
-            let text = await generate(photo, editedPlaceTitle, placeSubtitle, userText)
+            let text = await generate(photo, editedPlaceTitle, effectivePlaceSubtitle, userText)
             await MainActor.run {
                 editedCaptionText = text
                 photoCaption(photoId).wrappedValue = text
@@ -1450,6 +1456,7 @@ private struct PlaceDetailTopChrome: View {
     let presentation: PlaceDetailPresentation
     let isEditing: Bool
     let blogIsEditMode: Bool
+    let recapBlogIsReadOnly: Bool
     let openInCaptionEditor: Bool
     let hideChromeDoneFromCaptionEditorSheet: Bool
     let hasUnsavedChanges: Bool
@@ -1515,7 +1522,9 @@ private struct PlaceDetailTopChrome: View {
                     Spacer()
 
                     if !isEditing && !blogIsEditMode && !openInCaptionEditor {
-                        VStack(spacing: PlaceDetailChromeLayout.actionStackSpacing) {
+                        // Trailing alignment keeps the waveform + ⋯ + nav/link column fixed when "Playing Vibe"
+                        // appears; default center alignment re-centers a wider top row and shifts buttons.
+                        VStack(alignment: .trailing, spacing: PlaceDetailChromeLayout.actionStackSpacing) {
                             if hasVibeClip {
                                 HStack(alignment: .center, spacing: 8) {
                                     if isVibePlaying {
@@ -1542,11 +1551,13 @@ private struct PlaceDetailTopChrome: View {
                             }
 
                             Menu {
-                                Button(action: onMenuEditPlaceName) {
-                                    Label("Edit Place Name", systemImage: "mappin.and.ellipse")
-                                }
-                                Button(action: onMenuBeginCaptionEdit) {
-                                    Label("Edit caption", systemImage: "text.alignleft")
+                                if !recapBlogIsReadOnly {
+                                    Button(action: onMenuEditPlaceName) {
+                                        Label("Edit Place Name", systemImage: "mappin.and.ellipse")
+                                    }
+                                    Button(action: onMenuBeginCaptionEdit) {
+                                        Label("Edit caption", systemImage: "text.alignleft")
+                                    }
                                 }
                                 Button(role: .destructive) {
                                     onMenuRemovePhoto(currentPhotoId)
@@ -1562,12 +1573,14 @@ private struct PlaceDetailTopChrome: View {
                                     .clipShape(Circle())
                                     .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
                             }
+                            .frame(width: PlaceDetailChromeLayout.circleActionSize, alignment: .center)
 
                             RightActionStack(
                                 onSparkles: { },
                                 onNavigate: onNavigate,
                                 onLink: onLink
                             )
+                            .frame(width: PlaceDetailChromeLayout.circleActionSize, alignment: .center)
                         }
                     } else if isEditing && !blogIsEditMode && !openInCaptionEditor {
                         accentHeaderPill(title: "Save", fill: Color.blue, action: onSaveCaptionAndDismiss)
@@ -1838,9 +1851,9 @@ struct PlacePhotoThumbnailStrip: View {
                             RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 300, height: 300))
                                 .frame(width: 56, height: 56)
                                 .clipped()
-                                .cornerRadius(8)
+                                .appChromeCornerRadius(8)
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
+                                    RoundedRectangle(appChromeBaseRadius: 8)
                                         .stroke(photo.id == currentPhotoId ? Color.white : Color.white.opacity(0.35), lineWidth: photo.id == currentPhotoId ? 2 : 1)
                                 )
                             // AI rank badge on thumbnails
@@ -1856,7 +1869,7 @@ struct PlacePhotoThumbnailStrip: View {
                                 .padding(.horizontal, 3)
                                 .padding(.vertical, 2)
                                 .background(Color.black.opacity(0.72))
-                                .cornerRadius(3)
+                                .appChromeCornerRadius(3)
                                 .padding(3)
                             }
                         }
@@ -1884,9 +1897,9 @@ struct ThumbnailPreview: View {
                 RecapPhotoThumbnail(photo: current, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 160, height: 160))
                     .frame(width: 56, height: 56)
                     .clipped()
-                    .cornerRadius(8)
+                    .appChromeCornerRadius(8)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(appChromeBaseRadius: 8)
                             .stroke(Color.white.opacity(0.6), lineWidth: 1)
                     )
             }
@@ -1944,7 +1957,7 @@ private struct EditPlaceNameSheet: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .background(nameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.blue)
-                    .cornerRadius(12)
+                    .appChromeCornerRadius(12)
             }
             .disabled(nameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }

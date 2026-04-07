@@ -190,6 +190,7 @@ class PDFExportService {
             pen.newPage()
 
             let coverH = contentW * 1.1
+            let coverTopY = pen.y
             if let cover = assets.coverImage {
                 pen.drawImageFill(cover, width: contentW, height: coverH, cornerRadius: 16)
             } else {
@@ -205,85 +206,100 @@ class PDFExportService {
                 pen.y += coverH
             }
 
-            // Draw title, duration, stats OVER the cover photo (bottom-center)
+            let coverRect = CGRect(x: margin, y: coverTopY, width: contentW, height: coverH)
+            Self.drawPDFTopEdgeGradientOverlay(in: coverRect, maxHeight: min(112, coverH * 0.42))
+
+            // Title, duration, stats over the cover (top-left) with subtle shadow for legibility
             let placeCount = draft.days.flatMap(\.placeStops).count
             let durationStr = Self.durationText(draft)
             let statsStr = "\(placeCount) place\(placeCount == 1 ? "" : "s")"
 
             let shadow = NSShadow()
-            shadow.shadowColor = UIColor.black.withAlphaComponent(0.7)
-            shadow.shadowBlurRadius = 6
-            shadow.shadowOffset = CGSize(width: 0, height: 2)
+            shadow.shadowColor = UIColor.black.withAlphaComponent(0.55)
+            shadow.shadowBlurRadius = 5
+            shadow.shadowOffset = CGSize(width: 0, height: 1.5)
 
             let titleFont = Self.font(for: options.fontTheme, size: 28, weight: .bold)
             let subFont = Self.font(for: options.fontTheme, size: 15, weight: .medium)
 
+            let leftStyle = NSMutableParagraphStyle()
+            leftStyle.alignment = .left
+
             let titleAttrs: [NSAttributedString.Key: Any] = [
-                .font: titleFont, .foregroundColor: UIColor.white, .shadow: shadow
+                .font: titleFont,
+                .foregroundColor: UIColor.white,
+                .shadow: shadow,
+                .paragraphStyle: leftStyle
             ]
             let subAttrs: [NSAttributedString.Key: Any] = [
-                .font: subFont, .foregroundColor: UIColor.white.withAlphaComponent(0.92), .shadow: shadow
+                .font: subFont,
+                .foregroundColor: UIColor.white.withAlphaComponent(0.92),
+                .shadow: shadow,
+                .paragraphStyle: leftStyle
             ]
 
-            let centerStyle = NSMutableParagraphStyle()
-            centerStyle.alignment = .center
-            var titleAttrsC = titleAttrs
-            titleAttrsC[.paragraphStyle] = centerStyle
-            var subAttrsC = subAttrs
-            subAttrsC[.paragraphStyle] = centerStyle
+            let textInset: CGFloat = 20
+            let textWidth = contentW - textInset * 2
 
-            // Measure text heights
             let titleH = draft.title.boundingRect(
-                with: CGSize(width: contentW - 32, height: .greatestFiniteMagnitude),
+                with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin],
-                attributes: titleAttrsC, context: nil
+                attributes: titleAttrs, context: nil
             ).height
             let durationH = durationStr.boundingRect(
-                with: CGSize(width: contentW - 32, height: .greatestFiniteMagnitude),
+                with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin],
-                attributes: subAttrsC, context: nil
+                attributes: subAttrs, context: nil
             ).height
             let statsH = statsStr.boundingRect(
-                with: CGSize(width: contentW - 32, height: .greatestFiniteMagnitude),
+                with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin],
-                attributes: subAttrsC, context: nil
+                attributes: subAttrs, context: nil
             ).height
 
-            // Position text block 24pt from bottom of cover, centered
-            let textBlockH = titleH + 4 + durationH + 2 + statsH
-            var textY = pen.y - 24 - textBlockH
+            var textY = coverTopY + textInset
 
             draft.title.draw(
-                with: CGRect(x: margin + 16, y: textY, width: contentW - 32, height: titleH),
+                with: CGRect(x: margin + textInset, y: textY, width: textWidth, height: titleH),
                 options: [.usesLineFragmentOrigin],
-                attributes: titleAttrsC, context: nil
+                attributes: titleAttrs, context: nil
             )
             textY += titleH + 4
 
             durationStr.draw(
-                with: CGRect(x: margin + 16, y: textY, width: contentW - 32, height: durationH),
+                with: CGRect(x: margin + textInset, y: textY, width: textWidth, height: durationH),
                 options: [.usesLineFragmentOrigin],
-                attributes: subAttrsC, context: nil
+                attributes: subAttrs, context: nil
             )
             textY += durationH + 2
 
             statsStr.draw(
-                with: CGRect(x: margin + 16, y: textY, width: contentW - 32, height: statsH),
+                with: CGRect(x: margin + textInset, y: textY, width: textWidth, height: statsH),
                 options: [.usesLineFragmentOrigin],
-                attributes: subAttrsC, context: nil
+                attributes: subAttrs, context: nil
             )
 
             pen.skip(12)
 
             // ── Day Sections — each day starts on a fresh page ─────────
-            for day in draft.days {
+            for (dayIndex, day) in draft.days.enumerated() {
+                let dayNumber = dayIndex + 1
                 // Always start a new page for each day
                 pen.newPage()
                 pen.drawLogoTopRight(size: 24, cornerRadius: 6)
 
-                // Day header — at the top of the page
-                pen.drawLeft(day.shortDateText,
-                             font: Self.font(for: options.fontTheme, size: 20, weight: .bold), color: options.primaryTextColor)
+                let hasMap = assets.maps[day.id] != nil
+
+                // When there is no map, keep a conventional day header above the body text.
+                if !hasMap {
+                    let dayLine = "DAY \(dayNumber)"
+                    pen.drawLeft(dayLine,
+                                 font: Self.font(for: options.fontTheme, size: 11, weight: .semibold),
+                                 color: options.primaryTextColor)
+                    pen.skip(2)
+                    pen.drawLeft(day.shortDateText,
+                                 font: Self.font(for: options.fontTheme, size: 20, weight: .bold), color: options.primaryTextColor)
+                }
 
                 // Day caption
                 if let caption = day.dayCaption,
@@ -297,10 +313,18 @@ class PDFExportService {
                     pen.skip(8)
                 }
 
-                // Map snapshot — right below day header
+                // Map snapshot — day label + date overlaid at top-left (with top scrim + text shadow)
                 if let mapImg = assets.maps[day.id] {
                     let mapH = min(contentW * (mapImg.size.height / mapImg.size.width), 280)
+                    let mapOriginY = pen.y
                     pen.drawImageFit(mapImg, width: contentW, height: mapH, cornerRadius: 12)
+                    let mapFrame = CGRect(x: margin, y: mapOriginY, width: contentW, height: mapH)
+                    Self.drawPDFMapDayHeaderOverlay(
+                        mapFrame: mapFrame,
+                        dayNumber: dayNumber,
+                        dateText: day.shortDateText,
+                        fontTheme: options.fontTheme
+                    )
                     pen.skip(8)
                 }
 
@@ -849,6 +873,102 @@ class PDFExportService {
         }
         image.draw(in: drawRect)
         gc.restoreGState()
+    }
+
+    // MARK: - Cover / map overlays (legibility on photos & map tiles)
+
+    /// Top-down gradient so white header text reads on bright imagery.
+    private static func drawPDFTopEdgeGradientOverlay(in rect: CGRect, maxHeight: CGFloat) {
+        guard let gc = UIGraphicsGetCurrentContext() else { return }
+        let h = min(maxHeight, rect.height)
+        guard h > 1 else { return }
+        let strip = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: h)
+        gc.saveGState()
+        gc.clip(to: strip)
+        let colors = [
+            UIColor.black.withAlphaComponent(0.38).cgColor,
+            UIColor.black.withAlphaComponent(0.0).cgColor
+        ] as CFArray
+        let locs: [CGFloat] = [0, 1]
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let gradient = CGGradient(colorsSpace: space, colors: colors, locations: locs) else {
+            gc.restoreGState()
+            return
+        }
+        gc.drawLinearGradient(
+            gradient,
+            start: CGPoint(x: strip.midX, y: strip.minY),
+            end: CGPoint(x: strip.midX, y: strip.maxY),
+            options: []
+        )
+        gc.restoreGState()
+    }
+
+    private static func drawPDFMapDayHeaderOverlay(
+        mapFrame: CGRect,
+        dayNumber: Int,
+        dateText: String,
+        fontTheme: FontTheme
+    ) {
+        let scrimH = min(76, mapFrame.height * 0.34)
+        drawPDFTopEdgeGradientOverlay(
+            in: CGRect(x: mapFrame.minX, y: mapFrame.minY, width: mapFrame.width, height: scrimH),
+            maxHeight: scrimH
+        )
+
+        let shadow = NSShadow()
+        shadow.shadowColor = UIColor.black.withAlphaComponent(0.6)
+        shadow.shadowBlurRadius = 4
+        shadow.shadowOffset = CGSize(width: 0, height: 1)
+
+        let dayLabel = "DAY \(dayNumber)"
+        let dayFont = font(for: fontTheme, size: 11, weight: .semibold)
+        let dateFont = font(for: fontTheme, size: 18, weight: .bold)
+
+        let left = NSMutableParagraphStyle()
+        left.alignment = .left
+
+        let dayAttrs: [NSAttributedString.Key: Any] = [
+            .font: dayFont,
+            .foregroundColor: UIColor.white,
+            .shadow: shadow,
+            .paragraphStyle: left,
+            .kern: 1.2
+        ]
+        let dateAttrs: [NSAttributedString.Key: Any] = [
+            .font: dateFont,
+            .foregroundColor: UIColor.white,
+            .shadow: shadow,
+            .paragraphStyle: left
+        ]
+
+        let padX: CGFloat = 14
+        let padY: CGFloat = 12
+        let textWidth = mapFrame.width - padX * 2
+
+        let dayH = dayLabel.boundingRect(
+            with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: dayAttrs, context: nil
+        ).height
+        let dateH = dateText.boundingRect(
+            with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: dateAttrs, context: nil
+        ).height
+
+        var textY = mapFrame.minY + padY
+        dayLabel.draw(
+            with: CGRect(x: mapFrame.minX + padX, y: textY, width: textWidth, height: dayH),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: dayAttrs, context: nil
+        )
+        textY += dayH + 3
+        dateText.draw(
+            with: CGRect(x: mapFrame.minX + padX, y: textY, width: textWidth, height: dateH),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: dateAttrs, context: nil
+        )
     }
 
     // MARK: - Height Estimation

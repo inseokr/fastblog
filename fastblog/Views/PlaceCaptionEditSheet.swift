@@ -13,7 +13,7 @@ struct PlaceCaptionEditSheet: View {
     let placeSubtitle: String?
     let photos: [RecapPhoto]
     @Binding var caption: String
-    /// Bindings for per-photo captions (only the first three thumbnails are shown).
+    /// Bindings for per-photo captions (only the first three displayable thumbnails are shown in the strip).
     var photoCaption: (UUID) -> Binding<String>
     /// `placeCaptionChanged` / `changedPhotoIds` reflect edits vs. values when the sheet opened.
     var onSave: (_ placeCaptionChanged: Bool, _ changedPhotoIds: Set<UUID>) -> Void
@@ -28,6 +28,8 @@ struct PlaceCaptionEditSheet: View {
     var onRequestFullPhotoView: ((UUID) -> Void)? = nil
     /// Match `PlacePhotoModalItem.id` while that modal is presented; when it becomes nil, local drafts reload from bindings.
     var activePhotoModalToken: String? = nil
+    /// Parent presents `EditPlaceStopNameSheet` (same as blog edit-mode place row).
+    var onRequestEditPlaceName: (() -> Void)? = nil
     @State private var editedText: String = ""
     @State private var isEnhancing = false
     @State private var isTranslating = false
@@ -38,12 +40,8 @@ struct PlaceCaptionEditSheet: View {
     @State private var originalDraft: String? = nil
     @FocusState private var isFocused: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.colorScheme) private var colorScheme
 
-    @State private var showPlaceSearchWebPanel = false
-    @State private var embeddedSearchCurrentURL: URL?
-    @State private var pendingOpenPlaceSearchAfterKeyboardDismiss = false
-    /// True when embedded search was opened while the caption editor had keyboard focus.
-    @State private var restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
     /// Restore caption focus after full-screen photo modal dismisses if it was focused before open.
     @State private var restoreCaptionKeyboardAfterPhotoModal = false
 
@@ -63,6 +61,11 @@ struct PlaceCaptionEditSheet: View {
     private let thumbnailCorner: CGFloat = 10
     private let thumbnailStroke: CGFloat = 2
 
+    /// Up to three photos that still resolve to real pixels (omits removed / missing library assets so the strip never shows gradient placeholders).
+    private var captionStripPhotos: [RecapPhoto] {
+        Array(photos.filter(\.hasDisplayableLocalBacking).prefix(3))
+    }
+
     /// Horizontal inset for typed text inside the rounded editor (both sides). Slightly tight so the caret sits a bit left of default.
     private let editorTextHorizontalPadding: CGFloat = 14
     /// Matches `editorTextHorizontalPadding` so placeholder lines up with the caret (outer sheet padding is on the ZStack, not inside it).
@@ -76,6 +79,11 @@ struct PlaceCaptionEditSheet: View {
     /// Matches other blog sheets: non‑Max width + xxxLarge Dynamic Type so long placeholders don’t clip awkwardly.
     private var shouldUseTwoLineCaptionPlaceholder: Bool {
         UIScreen.main.bounds.width < 428 && dynamicTypeSize >= .xxxLarge
+    }
+
+    /// Standard-width phones and smaller: skip the large header preview; use “View Full Photo” + re-tap thumbnail instead.
+    private var useCompactPhotoCaptionHeader: Bool {
+        UIScreen.main.bounds.width < 428
     }
 
     /// Single line by default; explicit newline on narrow phones at largest content sizes.
@@ -126,7 +134,7 @@ struct PlaceCaptionEditSheet: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 placeCaptionThumbnailCell
-                ForEach(photos.prefix(3)) { photo in
+                ForEach(captionStripPhotos) { photo in
                     photoThumbnailCell(photo)
                 }
             }
@@ -139,45 +147,53 @@ struct PlaceCaptionEditSheet: View {
         .background(Color(uiColor: .systemBackground))
     }
 
-    private var deviceSafeAreaInsets: UIEdgeInsets {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first { $0.activationState == .foregroundActive }?
-            .keyWindow?
-            .safeAreaInsets
-            ?? UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0)
+    private var titleAndEditIconForeground: Color {
+        colorScheme == .dark ? .white : .primary
     }
 
-    private var referenceScreenBoundsHeight: CGFloat {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first(where: { $0.activationState == .foregroundActive })?
-            .screen.bounds.height
-            ?? UIScreen.main.bounds.height
+    private var editPlaceNamePillFill: Color {
+        colorScheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.08)
     }
 
-    private var placeTitleRowWithSearchButton: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+    /// Matches `PlaceStopRowView` edit-mode place title + pencil circle.
+    @ViewBuilder
+    private var placeTitleRowWithEditNameControl: some View {
+        if let onEdit = onRequestEditPlaceName {
+            HStack(alignment: .top, spacing: 10) {
+                Button {
+                    requestEditPlaceName(openEditor: onEdit)
+                } label: {
+                    Text(placeTitle)
+                        .font(.title3.weight(.semibold))
+                        .foregroundColor(titleAndEditIconForeground)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+                .buttonStyle(.plain)
+                Button {
+                    requestEditPlaceName(openEditor: onEdit)
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(editPlaceNamePillFill)
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(titleAndEditIconForeground)
+                    }
+                    .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Edit place name")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
             Text(placeTitle)
                 .font(.title3.weight(.semibold))
                 .foregroundColor(.primary)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
-            Image(systemName: showPlaceSearchWebPanel ? "chevron.down.circle.fill" : "magnifyingglass.circle.fill")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(.primary.opacity(0.85))
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .onLongPressGesture(
-            minimumDuration: 0,
-            maximumDistance: .infinity,
-            perform: { commitEmbeddedPlaceSearchToggleFromTitleRow() }
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel("\(placeTitle), place")
-        .accessibilityHint(showPlaceSearchWebPanel ? "Hides search panel above" : "Shows search in browser above while you write")
     }
 
     @ViewBuilder
@@ -190,133 +206,129 @@ struct PlaceCaptionEditSheet: View {
     }
 
     @ViewBuilder
-    private var placeCaptionSearchAndTitleHeader: some View {
+    private var placeCaptionTitleHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if showPlaceSearchWebPanel,
-               let searchURL = StoryPlaceGoogleSearch.url(placeName: placeTitle, placeSubtitle: placeSubtitle) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .center) {
-                        Button {
-                            openEmbeddedPlaceSearchInDefaultBrowser()
-                        } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                                Text("Open in browser")
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.primary)
-                                StoryPlaceExternalLinkIcon(titleFontSize: 16, foregroundColor: .primary)
+            Group {
+                if case .photo(let photoId) = captionThumbnailSelection {
+                    if useCompactPhotoCaptionHeader {
+                        VStack(alignment: .leading, spacing: 4) {
+                            placeTitleRowWithEditNameControl
+                            placeSubtitleIfAny
+                            if onRequestFullPhotoView != nil {
+                                Button {
+                                    presentFullPhotoViewer(for: photoId)
+                                } label: {
+                                    Text("View Full Photo")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(Color(uiColor: .systemBlue))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("View full photo")
                             }
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel("Open in browser")
-                        .accessibilityHint("Opens this page in your default browser")
-                        Spacer()
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 22))
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(.primary, Color.primary.opacity(0.35))
-                            .contentShape(Rectangle())
-                            .padding(4)
-                            .onLongPressGesture(
-                                minimumDuration: 0,
-                                maximumDistance: 64,
-                                perform: { dismissEmbeddedPlaceSearchFromChrome() }
-                            )
-                            .accessibilityLabel("Close search")
-                            .accessibilityAddTraits(.isButton)
+                    } else {
+                        HStack(alignment: .top, spacing: 12) {
+                            Group {
+                                if onRequestFullPhotoView != nil {
+                                    Button {
+                                        presentFullPhotoViewer(for: photoId)
+                                    } label: {
+                                        headerPhotoThumbnail(for: photoId)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("View full photo")
+                                } else {
+                                    headerPhotoThumbnail(for: photoId)
+                                }
+                            }
+                            VStack(alignment: .leading, spacing: 4) {
+                                placeTitleRowWithEditNameControl
+                                placeSubtitleIfAny
+                            }
+                        }
                     }
-                    // Keeps this row below Cancel/Done; avoids visual overlap with the main header bar.
-                    .padding(.vertical, 6)
-                    GoogleSearchEmbeddedWebView(url: searchURL, currentPageURL: $embeddedSearchCurrentURL)
-                        .frame(height: placeCaptionEmbeddedSearchWebHeight(
-                            layoutHeight: referenceScreenBoundsHeight,
-                            safeTopInset: deviceSafeAreaInsets.top,
-                            captionFieldFocused: isFocused
-                        ))
-                        .animation(nil, value: isFocused)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
-                        )
-                        .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
-                }
-                .padding(.top, 4)
-                .padding(.bottom, 4)
-                // Moving from the top animates into the same band as Cancel/Done and reads as overlap.
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
-
-            // Photo vs place caption is indicated by the thumbnail strip; no large preview (redundant, wastes vertical space).
-            VStack(alignment: .leading, spacing: 4) {
-                placeTitleRowWithSearchButton
-                placeSubtitleIfAny
-                if case .photo(let photoId) = captionThumbnailSelection, let openFull = onRequestFullPhotoView {
-                    Button {
-                        syncDraftToUnderlyingBindings()
-                        restoreCaptionKeyboardAfterPhotoModal = isFocused
-                        isFocused = false
-                        openFull(photoId)
-                    } label: {
-                        Text("View full-size photo")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color(uiColor: .systemBlue))
+                } else {
+                    VStack(alignment: .leading, spacing: 4) {
+                        placeTitleRowWithEditNameControl
+                        placeSubtitleIfAny
                     }
-                    .buttonStyle(.plain)
-                    .padding(.top, 2)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var captionEditTopBar: some View {
-        HStack(alignment: .center) {
-            Button("Cancel") {
-                isFocused = false
-                onCancel()
-            }
-            .font(.body)
-            .fontWeight(.semibold)
-            .foregroundStyle(Color.primary)
-            .buttonStyle(.plain)
+    /// 12-hour clock from `RecapPhoto.timestamp` (matches `PlaceStopRowView` strip badges).
+    private static let headerPhotoTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
 
-            Spacer()
+    /// Parses EXIF-style `yyyy:MM:dd HH:mm:ss` into a 12-hour clock label (e.g. `3:42 PM`).
+    private static func formattedClockTime(fromDigitized digitized: String) -> String? {
+        let parts = digitized.split(separator: " ")
+        guard parts.count == 2 else { return nil }
+        let timeParts = parts[1].split(separator: ":")
+        guard timeParts.count >= 2,
+              let hours = Int(timeParts[0]),
+              let minutes = Int(timeParts[1]) else { return nil }
+        let period = hours >= 12 ? "PM" : "AM"
+        let h = hours == 0 ? 12 : (hours > 12 ? hours - 12 : hours)
+        return "\(h):\(String(format: "%02d", minutes)) \(period)"
+    }
 
-            Button("Done") {
-                flushCurrentDraftFromEditor()
-                caption = draftPlaceCaption
-                for p in photos.prefix(3) {
-                    photoCaption(p.id).wrappedValue = draftPhotoCaptions[p.id] ?? ""
-                }
-                let placeChanged = draftPlaceCaption != initialPlaceCaption
-                let changedPhotoIds = Set(
-                    photos.prefix(3).map(\.id).filter { id in
-                        (draftPhotoCaptions[id] ?? "") != (initialPhotoCaptions[id] ?? "")
-                    }
-                )
-                isFocused = false
-                onSave(placeChanged, changedPhotoIds)
-            }
-            .font(.body)
-            .fontWeight(.bold)
-            .foregroundStyle(Color(uiColor: .systemBlue))
-            .buttonStyle(.plain)
+    private static func photoTimeDisplayText(for photo: RecapPhoto) -> String {
+        if let d = photo.digitizedTime,
+           let t = formattedClockTime(fromDigitized: d) {
+            return t
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-        .background(Color(uiColor: .systemBackground))
+        return headerPhotoTimeFormatter.string(from: photo.timestamp)
+    }
+
+    /// Shown beside the place name only when a photo thumbnail is selected (place story uses title only).
+    @ViewBuilder
+    private func headerPhotoThumbnail(for photoId: UUID) -> some View {
+        if let photo = photos.first(where: { $0.id == photoId }) {
+            RecapPhotoThumbnail(
+                photo: photo,
+                cornerRadius: thumbnailCorner,
+                showIcon: false,
+                targetSize: CGSize(width: 200, height: 200)
+            )
+            .frame(width: thumbnailSize * 3, height: thumbnailSize * 3)
+            .clipShape(RoundedRectangle(appChromeBaseRadius: thumbnailCorner, style: .continuous))
+            .overlay(alignment: .topLeading) {
+                Text(Self.photoTimeDisplayText(for: photo))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3.5)
+                    .background(Color.black.opacity(0.6))
+                    .appChromeCornerRadius(6)
+                    .padding(6)
+            }
+            .overlay {
+                RoundedRectangle(appChromeBaseRadius: thumbnailCorner, style: .continuous)
+                    .strokeBorder(Color.white, lineWidth: thumbnailStroke)
+            }
+            .accessibilityLabel("Editing caption for selected photo")
+        } else {
+            RoundedRectangle(appChromeBaseRadius: thumbnailCorner, style: .continuous)
+                .fill(Color(uiColor: .tertiarySystemFill))
+                .frame(width: thumbnailSize * 3, height: thumbnailSize * 3)
+                .overlay {
+                    Image(systemName: "photo")
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityLabel("Photo")
+        }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if !showPlaceSearchWebPanel {
-                captionEditTopBar
-            }
-
-            placeCaptionSearchAndTitleHeader
+            placeCaptionTitleHeader
                 .padding(.horizontal, 20)
                 .padding(.top, 10)
                 .padding(.bottom, 10)
@@ -333,7 +345,7 @@ struct PlaceCaptionEditSheet: View {
                     .padding(.vertical, 14)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .background(Color(uiColor: .secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
 
                 if editedText.isEmpty {
                     Text(captionPlaceholderText)
@@ -417,12 +429,49 @@ struct PlaceCaptionEditSheet: View {
                 captionThumbnailStrip
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            HStack(alignment: .center) {
+                Button("Cancel") {
+                    isFocused = false
+                    onCancel()
+                }
+                .font(.body)
+                .fontWeight(.semibold)
+                .foregroundStyle(Color.primary)
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button("Save") {
+                    flushCurrentDraftFromEditor()
+                    caption = draftPlaceCaption
+                    for p in captionStripPhotos {
+                        photoCaption(p.id).wrappedValue = draftPhotoCaptions[p.id] ?? ""
+                    }
+                    let placeChanged = draftPlaceCaption != initialPlaceCaption
+                    let changedPhotoIds = Set(
+                        captionStripPhotos.map(\.id).filter { id in
+                            (draftPhotoCaptions[id] ?? "") != (initialPhotoCaptions[id] ?? "")
+                        }
+                    )
+                    isFocused = false
+                    onSave(placeChanged, changedPhotoIds)
+                }
+                .font(.body)
+                .fontWeight(.bold)
+                .foregroundStyle(Color(uiColor: .systemBlue))
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(Color(uiColor: .systemBackground))
+        }
         .preferredColorScheme(.dark)
         .onAppear {
             initialPlaceCaption = caption
             draftPlaceCaption = caption
             var photoMap: [UUID: String] = [:]
-            for p in photos.prefix(3) {
+            for p in captionStripPhotos {
                 photoMap[p.id] = p.caption ?? ""
             }
             initialPhotoCaptions = photoMap
@@ -430,9 +479,7 @@ struct PlaceCaptionEditSheet: View {
             editedText = draftPlaceCaption
             captionThumbnailSelection = .placeCaption
             DispatchQueue.main.async {
-                if !showPlaceSearchWebPanel {
-                    isFocused = true
-                }
+                isFocused = true
             }
         }
         .onChange(of: activePhotoModalToken) { oldValue, newValue in
@@ -446,114 +493,19 @@ struct PlaceCaptionEditSheet: View {
                 }
             }
         }
-        .onChange(of: isFocused) { _, focused in
-            if focused {
-                pendingOpenPlaceSearchAfterKeyboardDismiss = false
-                closeEmbeddedSearchForCaptionInteraction()
-            } else if pendingOpenPlaceSearchAfterKeyboardDismiss {
-                pendingOpenPlaceSearchAfterKeyboardDismiss = false
-                var t = Transaction()
-                t.animation = nil
-                withTransaction(t) {
-                    showPlaceSearchWebPanel = true
-                }
-            }
-        }
-        .onChange(of: editedText) { _, _ in
-            if showPlaceSearchWebPanel {
-                closeEmbeddedSearchForCaptionInteraction()
-            }
-        }
-        .onChange(of: showPlaceSearchWebPanel) { _, isShown in
-            if !isShown {
-                embeddedSearchCurrentURL = nil
-            }
-        }
     }
 
-    private func placeCaptionEmbeddedSearchWebHeight(layoutHeight: CGFloat, safeTopInset: CGFloat, captionFieldFocused: Bool) -> CGFloat {
-        let compactHeight: CGFloat = 240
-        guard !captionFieldFocused else { return compactHeight }
-        let topBarChrome = safeTopInset + 56
-        let titleAndSpacing: CGFloat = 72
-        let thumbStripReserve: CGFloat = photos.isEmpty ? 0 : (thumbnailSize + 8 + 10 + 12 + 20)
-        let bottomReserve: CGFloat = captionTextEditorFixedHeight + titleAndSpacing + thumbStripReserve + 100
-        let verticalBreathingRoom: CGFloat = 40
-        let available = layoutHeight - topBarChrome - bottomReserve - verticalBreathingRoom
-        return max(compactHeight, available)
-    }
-
-    private func openEmbeddedPlaceSearchInDefaultBrowser() {
-        let fallback = StoryPlaceGoogleSearch.url(placeName: placeTitle, placeSubtitle: placeSubtitle)
-        guard let url = embeddedSearchCurrentURL ?? fallback else { return }
-        UIApplication.shared.open(url)
-    }
-
-    private func dismissEmbeddedPlaceSearchFromChrome() {
-        guard showPlaceSearchWebPanel else { return }
-        let restoreKeyboard = restoreCaptionKeyboardWhenEmbeddedSearchCloses
-        restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
-        var t = Transaction()
-        t.animation = nil
-        withTransaction(t) {
-            showPlaceSearchWebPanel = false
-        }
-        if restoreKeyboard {
-            DispatchQueue.main.async {
-                isFocused = true
-            }
-        }
-    }
-
-    private func closeEmbeddedSearchForCaptionInteraction() {
-        guard showPlaceSearchWebPanel else { return }
-        restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
-        var t = Transaction()
-        t.animation = nil
-        withTransaction(t) {
-            showPlaceSearchWebPanel = false
-        }
-    }
-
-    private func commitEmbeddedPlaceSearchToggleFromTitleRow() {
-        let name = placeTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty,
-              StoryPlaceGoogleSearch.url(placeName: name, placeSubtitle: placeSubtitle) != nil else { return }
-        let wasOpen = showPlaceSearchWebPanel
-        if !wasOpen {
-            if isFocused {
-                restoreCaptionKeyboardWhenEmbeddedSearchCloses = true
-                pendingOpenPlaceSearchAfterKeyboardDismiss = true
-                isFocused = false
-                return
-            }
-            restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
-            var t = Transaction()
-            t.animation = nil
-            withTransaction(t) {
-                showPlaceSearchWebPanel = true
-            }
-            return
-        }
-        let restoreKeyboard = restoreCaptionKeyboardWhenEmbeddedSearchCloses
-        restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
-        var t = Transaction()
-        t.animation = nil
-        withTransaction(t) {
-            showPlaceSearchWebPanel = false
-        }
-        if restoreKeyboard {
-            DispatchQueue.main.async {
-                isFocused = true
-            }
-        }
+    private func requestEditPlaceName(openEditor: @escaping () -> Void) {
+        syncDraftToUnderlyingBindings()
+        isFocused = false
+        openEditor()
     }
 
     /// Pushes in-memory drafts into the recap bindings so `PlacePhotoModalView` sees the latest text.
     private func syncDraftToUnderlyingBindings() {
         flushCurrentDraftFromEditor()
         caption = draftPlaceCaption
-        for p in photos.prefix(3) {
+        for p in captionStripPhotos {
             photoCaption(p.id).wrappedValue = draftPhotoCaptions[p.id] ?? ""
         }
     }
@@ -561,8 +513,12 @@ struct PlaceCaptionEditSheet: View {
     /// After the full-screen photo viewer dismisses, pull caption text from bindings (modal may have edited them).
     private func refreshDraftFromBindings() {
         draftPlaceCaption = caption
-        for p in photos.prefix(3) {
+        for p in captionStripPhotos {
             draftPhotoCaptions[p.id] = photoCaption(p.id).wrappedValue
+        }
+        if case .photo(let id) = captionThumbnailSelection,
+           !captionStripPhotos.contains(where: { $0.id == id }) {
+            captionThumbnailSelection = .placeCaption
         }
         switch captionThumbnailSelection {
         case .placeCaption:
@@ -581,21 +537,22 @@ struct PlaceCaptionEditSheet: View {
         }
     }
 
+    private func presentFullPhotoViewer(for photoId: UUID) {
+        guard let openFull = onRequestFullPhotoView else { return }
+        syncDraftToUnderlyingBindings()
+        restoreCaptionKeyboardAfterPhotoModal = isFocused
+        isFocused = false
+        openFull(photoId)
+    }
+
     private func selectThumbnail(_ newSelection: CaptionThumbnailSelection) {
-        guard newSelection != captionThumbnailSelection else { return }
+        if newSelection == captionThumbnailSelection {
+            if useCompactPhotoCaptionHeader, case .photo(let photoId) = newSelection {
+                presentFullPhotoViewer(for: photoId)
+            }
+            return
+        }
         flushCurrentDraftFromEditor()
-        pendingOpenPlaceSearchAfterKeyboardDismiss = false
-        let restoreAfterSearch = restoreCaptionKeyboardWhenEmbeddedSearchCloses
-        restoreCaptionKeyboardWhenEmbeddedSearchCloses = false
-        var t = Transaction()
-        t.animation = nil
-        withTransaction(t) {
-            showPlaceSearchWebPanel = false
-        }
-        embeddedSearchCurrentURL = nil
-        if restoreAfterSearch {
-            DispatchQueue.main.async { isFocused = true }
-        }
         captionThumbnailSelection = newSelection
         switch newSelection {
         case .placeCaption:
@@ -611,7 +568,7 @@ struct PlaceCaptionEditSheet: View {
             selectThumbnail(.placeCaption)
         } label: {
             ZStack {
-                RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous)
+                RoundedRectangle(appChromeBaseRadius: thumbnailCorner, style: .continuous)
                     .fill(placeSelected ? Color.white : Color.clear)
                 Image(systemName: "text.alignleft")
                     .font(.system(size: 22, weight: .medium))
@@ -620,7 +577,7 @@ struct PlaceCaptionEditSheet: View {
             .frame(width: thumbnailSize, height: thumbnailSize)
             .opacity(placeSelected ? 1 : 0.6)
             .overlay {
-                RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous)
+                RoundedRectangle(appChromeBaseRadius: thumbnailCorner, style: .continuous)
                     .strokeBorder(Color.white, lineWidth: thumbnailStroke)
             }
         }
@@ -640,9 +597,9 @@ struct PlaceCaptionEditSheet: View {
                 targetSize: CGSize(width: 200, height: 200)
             )
             .frame(width: thumbnailSize, height: thumbnailSize)
-            .clipShape(RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous))
+            .clipShape(RoundedRectangle(appChromeBaseRadius: thumbnailCorner, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: thumbnailCorner, style: .continuous)
+                RoundedRectangle(appChromeBaseRadius: thumbnailCorner, style: .continuous)
                     .strokeBorder(Color.white, lineWidth: photoSelected ? thumbnailStroke : 0)
             }
             .opacity(photoSelected ? 1 : (captionThumbnailSelection == .placeCaption ? 1 : 0.6))

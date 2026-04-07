@@ -9,9 +9,13 @@ import SwiftUI
 
 struct EditPlaceStopNameSheet: View {
     @Binding var placeTitle: String
+    /// City / country line under the title; editable even when there is no map or photos.
+    var initialPlaceSubtitle: String? = nil
     var location: CLLocationCoordinate2D?
+    /// All stop photos; the bottom thumbnail strip shows only `isIncluded` (blog-visible) shots.
     var photos: [RecapPhoto] = []
-    var onSave: (String, CLLocationCoordinate2D?, String?) -> Void
+    /// Title, coordinate, POI category raw value, trimmed subtitle (empty clears subtitle).
+    var onSave: (String, CLLocationCoordinate2D?, String?, String) -> Void
     @Environment(\.dismiss) private var dismiss
 
     @StateObject private var searchViewModel = PlaceSearchViewModel()
@@ -28,6 +32,8 @@ struct EditPlaceStopNameSheet: View {
     /// Set to true when the user picks a result from the autocomplete suggestions list.
     @State private var pickedFromAutocomplete: Bool = false
     @State private var initialTitle: String = ""
+    @State private var editedSubtitle: String = ""
+    @State private var initialSubtitle: String = ""
     @State private var initialCoordinate: CLLocationCoordinate2D? = nil
     @State private var initialCategory: String? = nil
     @State private var showSaveConfirmationAlert = false
@@ -36,6 +42,10 @@ struct EditPlaceStopNameSheet: View {
     @State private var mapZoomOutTrigger = 0
     /// Square cell size for the stacked map zoom control (compact, map-style).
     private let mapZoomControlSide: CGFloat = 34
+
+    private var stripPhotos: [RecapPhoto] {
+        photos.filter(\.isIncluded).filter(\.hasDisplayableLocalBacking)
+    }
 
     var body: some View {
         NavigationStack {
@@ -71,14 +81,17 @@ struct EditPlaceStopNameSheet: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 0) {
                     autocompleteBar
-                    
+                    // Only when there is no map: subtitle is the second line of place context (not a second “place name” row).
+                    if location == nil {
+                        subtitleField
+                    }
                     if isFocused, showSuggestions, !searchViewModel.suggestions.isEmpty {
                         suggestionsListContent
                     }
                 }
             }
             .overlay(alignment: .bottom) {
-                if !photos.isEmpty && !isFocused {
+                if !stripPhotos.isEmpty && !isFocused {
                     VStack(spacing: 0) {
                         HStack(alignment: .bottom, spacing: 0) {
                             mapZoomControlsColumn
@@ -89,11 +102,11 @@ struct EditPlaceStopNameSheet: View {
 
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
-                                ForEach(photos) { photo in
+                                ForEach(stripPhotos) { photo in
                                     RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 200, height: 200))
                                         .frame(width: 90, height: 90)
                                         .clipped()
-                                        .cornerRadius(10)
+                                        .appChromeCornerRadius(10)
                                         .shadow(color: .black.opacity(0.3), radius: 3)
                                 }
                             }
@@ -125,13 +138,15 @@ struct EditPlaceStopNameSheet: View {
                             dismiss()
                         }
                     }
+                    .foregroundStyle(.white)
                 }
                 ToolbarItem(placement: .confirmationAction) {
+                    let canSave = !editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     Button("Save") {
                         saveAndDismiss()
                     }
-                    .disabled(editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .foregroundStyle(hasChanges ? .blue : .primary)
+                    .disabled(!canSave)
+                    .foregroundStyle(canSave ? Color(uiColor: .systemBlue) : Color.white.opacity(0.35))
                 }
             }
             .interactiveDismissDisabled(hasChanges)
@@ -144,17 +159,25 @@ struct EditPlaceStopNameSheet: View {
                 }
                 Button("Keep Editing", role: .cancel) { }
             } message: {
-                Text("You have unsaved changes to the place name or location. Would you like to save them before leaving?")
+                Text(
+                    location == nil
+                        ? "You have unsaved changes to the place name, city or country, or location. Would you like to save them before leaving?"
+                        : "You have unsaved changes to the place name or location. Would you like to save them before leaving?"
+                )
             }
             .onAppear {
                 let initialValue = placeTitle.hasPrefix("Near ") ? String(placeTitle.dropFirst(5)) : placeTitle
                 editedTitle = initialValue
                 initialTitle = initialValue
+                let subSeed = initialPlaceSubtitle ?? ""
+                editedSubtitle = subSeed
+                initialSubtitle = subSeed
                 selectedCoordinate = nil
                 initialCoordinate = nil
                 selectedCategory = nil
                 initialCategory = nil
                 mapTapResolvedAsPOI = false
+                pickedFromAutocomplete = false
                 searchViewModel.setBiasLocation(location)
             }
             .overlay(alignment: .bottom) {
@@ -178,7 +201,7 @@ struct EditPlaceStopNameSheet: View {
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
                             .background(Color.white)
-                            .cornerRadius(24)
+                            .appChromeCornerRadius(24)
                             .shadow(color: .black.opacity(0.2), radius: 5, x: 0, y: 2)
                         }
                         .padding(.bottom, 16)
@@ -200,8 +223,12 @@ struct EditPlaceStopNameSheet: View {
     private var hasChanges: Bool {
         let trimmedCurrent = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedInitial = initialTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        
+        let subCurrent = editedSubtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let subInitial = initialSubtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let subtitleDiffers = (location == nil) && (subCurrent != subInitial)
+
         return trimmedCurrent != trimmedInitial ||
+               subtitleDiffers ||
                selectedCoordinate?.latitude != initialCoordinate?.latitude ||
                selectedCoordinate?.longitude != initialCoordinate?.longitude ||
                selectedCategory != initialCategory
@@ -238,9 +265,9 @@ struct EditPlaceStopNameSheet: View {
             .accessibilityLabel("Zoom out")
         }
         .background(Color.black.opacity(0.55))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 10, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(appChromeBaseRadius: 10, style: .continuous)
                 .stroke(Color.white.opacity(0.18), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
@@ -257,8 +284,40 @@ struct EditPlaceStopNameSheet: View {
         } else {
             AppAnalytics.trackEvent(name: "Blog-Place-ChangeName-Custom")
         }
-        onSave(finalName, selectedCoordinate, selectedCategory)
+        let subTrimmed: String = {
+            if location == nil {
+                return editedSubtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            return initialSubtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        }()
+        onSave(finalName, selectedCoordinate, selectedCategory, subTrimmed)
         dismiss()
+    }
+
+    /// City / country (or any subtitle); always available so users can fix metadata without photos or map.
+    private var subtitleField: some View {
+        HStack {
+            TextField("City, country", text: $editedSubtitle)
+                .autocorrectionDisabled()
+                .foregroundColor(.primary)
+            if !editedSubtitle.isEmpty {
+                Button {
+                    editedSubtitle = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color(white: 0.18))
+        .appChromeCornerRadius(12)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+        .background(Color(white: 0.12))
     }
 
     // MARK: - Autocomplete bar (compact, minimal top padding)
@@ -297,7 +356,7 @@ struct EditPlaceStopNameSheet: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(Color(white: 0.18))
-            .cornerRadius(12)
+            .appChromeCornerRadius(12)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -521,7 +580,8 @@ struct EditPlaceStopNameSheet: View {
 #Preview {
     EditPlaceStopNameSheet(
         placeTitle: .constant("Iceland Ring Road"),
+        initialPlaceSubtitle: "Reykjavík, Iceland",
         location: CLLocationCoordinate2D(latitude: 64.15, longitude: -21.95),
-        onSave: { _, _, _ in }
+        onSave: { _, _, _, _ in }
     )
 }

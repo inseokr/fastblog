@@ -88,7 +88,7 @@ struct TOCPageView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 28, height: 28)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 6, style: .continuous))
             }
             .padding(.top, 8)
 

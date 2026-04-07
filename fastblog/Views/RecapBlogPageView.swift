@@ -47,6 +47,12 @@ private struct PlaceCategoryPickerTarget: Identifiable {
 }
 
 struct RecapBlogPageView: View {
+    /// Stable `ScrollViewReader` targets (strings can be unreliable across `TabView` layout passes).
+    private enum RecapBlogScrollAnchor: Hashable {
+        case pageTop
+        case mapForDay(UUID)
+    }
+
     private enum ShareYourBlogSheetPhase: Equatable {
         case menu
         case guestWebLinkCloudBackup
@@ -172,8 +178,9 @@ struct RecapBlogPageView: View {
 
     // Undo State
     @State private var lastUndoAction: UndoAction?
-    @State private var showUndoOverlay = false
-    @State private var isUndoMinimized = false
+    @State private var showUndoToast = false
+    @State private var undoToastText = ""
+    @State private var undoToastTask: Task<Void, Never>?
     @State private var isKeyboardVisible = false
     @State private var cancellables = Set<AnyCancellable>()
     @State private var visitedDayIndices: Set<Int> = [0]
@@ -193,6 +200,7 @@ struct RecapBlogPageView: View {
     @State private var uploadErrorMessage = ""
     @State private var showAuth = false
     @State private var showGuestSecondSaveLimitModal = false
+    @State private var pendingSecondSaveCommitAfterAuth = false
     @State private var pendingEarlyAccessAfterAuth = false
     @State private var pendingCloudUploadAfterAuth = false
     @State private var pendingExportAfterAuth = false
@@ -310,15 +318,23 @@ struct RecapBlogPageView: View {
     @State private var splitPlaceStopItem: SplitPlaceStopItem?
 
     private enum UndoAction {
-        case deletePlace(dayId: UUID, stop: PlaceStop, index: Int)
+        /// `dayBeforeRemoval` is the full day (including the removed stop) before hide; `dayIndexInDraft` is its index in `draft.days` at that moment — needed when removing the last stop deletes the whole day.
+        /// `coverPhotoIdentifierBeforeRemoval` is ``draft.selectedCoverPhotoIdentifier`` before hide; restored on undo so multi-day blogs keep the same cover after restoring a removed day.
+        case deletePlace(
+            dayBeforeRemoval: RecapBlogDay,
+            removedStopIndex: Int,
+            dayIndexInDraft: Int,
+            coverPhotoIdentifierBeforeRemoval: String?
+        )
         case deletePhoto(dayId: UUID, stopId: UUID, photo: RecapPhoto, index: Int)
         case mergePlaceStops(dayId: UUID, originalFirst: PlaceStop, originalSecond: PlaceStop, firstIndex: Int)
 
-        var text: String {
+        /// Message for the toast after the user taps Undo (describes what was reversed, not the original action).
+        var messageAfterUndo: String {
             switch self {
-            case .deletePlace: return "Place hidden"
-            case .deletePhoto: return "Photo removed"
-            case .mergePlaceStops: return "Places merged"
+            case .deletePlace: return "Place restored"
+            case .deletePhoto: return "Photo restored"
+            case .mergePlaceStops: return "Merge Undo"
             }
         }
     }
@@ -487,10 +503,17 @@ struct RecapBlogPageView: View {
                 }
                 pendingWebLinkAfterAuth = false
                 pendingBloggoQRAfterAuth = false
+                pendingSecondSaveCommitAfterAuth = false
             }) {
                 AuthView(
                     onAuthenticated: {
-                        if pendingEarlyAccessAfterAuth {
+                        if pendingSecondSaveCommitAfterAuth {
+                            pendingSecondSaveCommitAfterAuth = false
+                            showAuth = false
+                            if saveDraft() {
+                                performDismiss()
+                            }
+                        } else if pendingEarlyAccessAfterAuth {
                             // Immediately return to the blog with the confirmation pull-up; register via API in the background.
                             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                             pendingEarlyAccessAfterAuth = false
@@ -639,6 +662,7 @@ struct RecapBlogPageView: View {
             VStack(spacing: 12) {
                 Button {
                     showGuestSecondSaveLimitModal = false
+                    pendingSecondSaveCommitAfterAuth = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         showAuth = true
                     }
@@ -649,7 +673,7 @@ struct RecapBlogPageView: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color.blue)
-                        .cornerRadius(12)
+                        .appChromeCornerRadius(12)
                 }
 
                 Button {
@@ -973,22 +997,22 @@ struct RecapBlogPageView: View {
     private func applySecondarySheetModifiers<Content: View>(to content: Content) -> some View {
         content
             .sheet(item: $overflowStop) { item in
+                let displayablePhotoCount = item.stop.photos.filter(\.hasDisplayableLocalBacking).count
                 PlaceStopActionSheet(
                     placeTitle: item.stop.placeTitle,
                     placeSubtitle: item.stop.placeSubtitle,
-                    onEditName: {
+                    onEditPlaceName: {
                         AppAnalytics.track(.blogPlaceChangeName(blogId: blogId.uuidString, placeId: item.stop.id.uuidString))
                         showEditNameForStop = item.stop
                     },
                     onManagePhotos: { openManagePhotos(dayId: item.dayId, stopId: item.stop.id) },
-                    onEditMode: {
-                        // Treat this as "Edit Caption" — open the full-screen place caption editor.
+                    onEditCaption: {
                         placeCaptionEditItem = PlaceCaptionEditItem(dayId: item.dayId, stopId: item.stop.id)
                     },
                     onMergePlaces: mergeCandidates(dayId: item.dayId, sourceStopId: item.stop.id).isEmpty ? nil : {
                         mergeSelectionItem = MergeSelectionItem(dayId: item.dayId, sourceStopId: item.stop.id)
                     },
-                    onSplit: item.stop.photos.count > 1 ? {
+                    onSplit: displayablePhotoCount > 1 ? {
                         presentSplitPlaceStopSheet(dayId: item.dayId, stop: item.stop)
                     } : nil,
                     onRemoveFromBlog: { removePlaceStop(dayId: item.dayId, stopId: item.stop.id) }
@@ -1019,10 +1043,11 @@ struct RecapBlogPageView: View {
             .sheet(item: $showEditNameForStop) { stop in
                 EditPlaceStopNameSheet(
                     placeTitle: bindingForPlaceTitle(stopId: stop.id),
+                    initialPlaceSubtitle: stop.placeSubtitle,
                     location: stop.representativeLocation?.clCoordinate ?? stop.photos.first?.location?.clCoordinate,
                     photos: stop.includedPhotos,
-                    onSave: { newTitle, newCoordinate, newCategory in
-                        updatePlaceTitle(stopId: stop.id, to: newTitle, category: newCategory, coordinate: newCoordinate)
+                    onSave: { newTitle, newCoordinate, newCategory, subtitleLine in
+                        updatePlaceTitle(stopId: stop.id, to: newTitle, category: newCategory, coordinate: newCoordinate, placeSubtitleLine: subtitleLine)
                     }
                 )
             }
@@ -1078,6 +1103,14 @@ struct RecapBlogPageView: View {
                     bindingForPhotoCaption(dayId: day.id, stopId: stopId, photoId: photoId).wrappedValue = newCaption
                     persistRecapBlogDetail()
                     syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: false, photoId: photoId)
+                }, onPlaceNameSaved: { stopId, name, category, coordinate, subtitleLine in
+                    updatePlaceTitle(
+                        stopId: stopId,
+                        to: name,
+                        category: category,
+                        coordinate: coordinate,
+                        placeSubtitleLine: subtitleLine
+                    )
                 }, initialFocusedPlaceId: fullScreenMapFocusedPlaceId)
             }
             .sheet(isPresented: $showRestorePlaces) {
@@ -1277,7 +1310,7 @@ struct RecapBlogPageView: View {
             } else {
                 TabView(selection: $selectedDayIndex) {
                     ForEach(Array(draft.days.enumerated()), id: \.element.id) { index, day in
-                        dayPageView(day: day, index: index, screenHeight: screenHeight)
+                        dayPageView(blogDay: day, index: index, screenHeight: screenHeight)
                             .tag(index)
                     }
                 }
@@ -1285,21 +1318,12 @@ struct RecapBlogPageView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            // Undo Overlay (Banner or Button)
-            if showUndoOverlay {
-                UndoOverlayView(
-                    text: lastUndoAction?.text ?? "Item hidden",
-                    isMinimized: $isUndoMinimized,
-                    onUndo: { performUndo() },
-                    onDismiss: {
-                        withAnimation {
-                            showUndoOverlay = false
-                            lastUndoAction = nil
-                        }
-                    }
-                )
-                .padding(.bottom, Self.dayFilterApproxHeight + 10)
-                .zIndex(20)
+            // Undo Toast (appears for 3s after undo is performed)
+            if showUndoToast {
+                UndoToastView(text: undoToastText)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, Self.dayFilterApproxHeight + 10)
+                    .zIndex(20)
             } else if showSplitUndoBanner {
                 // Special banner for "Undo Split" in edit mode
                 VStack {
@@ -1341,10 +1365,6 @@ struct RecapBlogPageView: View {
         .background(recapScreenBackground)
         .onChange(of: selectedDayIndex) { _, newIndex in
             visitedDayIndices.insert(newIndex)
-            // For non-first pages there is no cover photo; always show the nav bar title.
-            if newIndex > 0 {
-                showNavBarTitle = true
-            }
         }
         .onChange(of: draft.days.count) { _, _ in
             schedulePlacesVisitedDeepLinkScroll()
@@ -1372,104 +1392,175 @@ struct RecapBlogPageView: View {
 
     // MARK: - Day Page Views
 
-    /// A single horizontally-paged day view: contains the blog header (Day 1 only) + map + places.
-    private func dayPageView(day: RecapBlogDay, index: Int, screenHeight: CGFloat) -> some View {
+    /// A single horizontally-paged day view: shared trip header (cover, narrative) + per-day map + places.
+    private func dayPageView(blogDay: RecapBlogDay, index: Int, screenHeight: CGFloat) -> some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Blog header — shown only on the first day's page.
-                    if index == 0 {
-                        Color.clear.frame(height: 0).id("page-top")
+            dayPageScrollView(blogDay: blogDay, index: index, screenHeight: screenHeight, proxy: proxy)
+        }
+    }
 
-                        if isEditMode && photoAuth.status == .limited {
-                            photoLibraryAccessBanner
-                                .padding(.horizontal, 16)
-                                .padding(.bottom, 8)
-                        }
+    @ViewBuilder
+    private func dayPageScrollInner(blogDay: RecapBlogDay, index: Int, screenHeight: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Color.clear.frame(height: 0).id(RecapBlogScrollAnchor.pageTop)
 
-                        if draft.selectedCoverPhotoIdentifier != nil {
-                            coverPhotoHero(screenHeight: screenHeight)
-                        } else {
-                            blogTitleView
-                        }
-
-                        if isEditMode && !draft.removedPlaceStops.isEmpty {
-                            restoreRemovedPlacesCard
-                                .padding(.horizontal, 16)
-                                .padding(.top, 8)
-                                .padding(.bottom, 12)
-                        }
-
-                        if newMomentsPlaceCount > 0 {
-                            newMomentsCard
-                                .padding(.horizontal, 16)
-                                .padding(.top, 8)
-                                .padding(.bottom, 12)
-                        }
-
-                        tripNarrativeCard
-                            .padding(.bottom, 12)
-                    }
-
-                    if !isEditMode {
-                        mapCard(for: day)
-                    }
-
-                    VStack(alignment: .leading, spacing: 16) {
-                        daySection(day: day)
-                            .id("day-section-\(day.id)")
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 32)
-
-                    Color.clear.frame(height: Self.dayFilterApproxHeight + 80)
-                }
-                .background(recapScreenBackground)
-            }
-            .coordinateSpace(name: "scroll")
-            .onPreferenceChange(TitleMinYPreferenceKey.self) { minY in
-                guard index == selectedDayIndex else { return }
-                let shouldShow = minY < 0
-                if shouldShow != showNavBarTitle {
-                    showNavBarTitle = shouldShow
+            // Trip-level edit affordances stay on day 1 so they are not repeated on every tab.
+            if index == 0 {
+                if isEditMode && photoAuth.status == .limited {
+                    photoLibraryAccessBanner
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
                 }
             }
-            .background(recapScreenBackground)
-            .ignoresSafeArea(edges: isKeyboardVisible ? [] : .bottom)
-            .onChange(of: scrollToStopId) { _, newId in
-                guard let id = newId, selectedDayIndex == index else { return }
-                scrollToStopId = nil
-                if isKeyboardVisible {
-                    withAnimation(.easeOut(duration: 0.25)) {
-                        proxy.scrollTo(id, anchor: .top)
+
+            // Cover / title + trip narrative: same for every day so paging the day filter still matches day 1.
+            if draft.selectedCoverPhotoIdentifier != nil {
+                coverPhotoHero(screenHeight: screenHeight)
+            } else {
+                blogTitleView
+            }
+
+            if index == 0 {
+                if isEditMode && !draft.removedPlaceStops.isEmpty {
+                    restoreRemovedPlacesCard
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 12)
+                }
+
+                if newMomentsPlaceCount > 0 {
+                    newMomentsCard
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 12)
+                }
+            }
+
+            tripNarrativeCard
+                .padding(.bottom, 12)
+
+            if !isEditMode {
+                mapCard(for: blogDay)
+            }
+
+            VStack(alignment: .leading, spacing: 16) {
+                daySection(day: blogDay)
+                    .id("day-section-\(blogDay.id)")
+            }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 32)
+
+            Color.clear.frame(height: Self.dayFilterApproxHeight + 80)
+        }
+        .background(recapScreenBackground)
+    }
+
+    /// Read-only days 2+: align the scroll view so the map is at the top (cover stays above). `ScrollViewReader.scrollTo` often runs before `TabView` finishes laying out the selected page, and the page transition can reset scroll after an early `scrollTo`, so we only scroll after short delays and retry (same idea as the Places Visited deep link).
+    private func scheduleReadOnlyScrollToMap(proxy: ScrollViewProxy, blogDay: RecapBlogDay, dayPageIndex: Int) {
+        guard !isEditMode, dayPageIndex > 0 else { return }
+        guard selectedDayIndex == dayPageIndex, pendingDeepLinkStopScrollId == nil else { return }
+        let mapAnchor = RecapBlogScrollAnchor.mapForDay(blogDay.id)
+        let scroll: () -> Void = {
+            guard selectedDayIndex == dayPageIndex, !isEditMode, pendingDeepLinkStopScrollId == nil else { return }
+            withAnimation(.easeOut(duration: 0.3)) {
+                proxy.scrollTo(mapAnchor, anchor: .top)
+            }
+        }
+        Task { @MainActor in
+            // Stagger after tab transition / layout; repeats beat a one-shot that lands on offset 0.
+            for delayMs in [120, 120, 140, 180, 220] {
+                try? await Task.sleep(nanoseconds: UInt64(delayMs) * 1_000_000)
+                scroll()
+            }
+        }
+    }
+
+    private func dayPageScrollView(blogDay: RecapBlogDay, index: Int, screenHeight: CGFloat, proxy: ScrollViewProxy) -> some View {
+        ScrollView {
+            dayPageScrollInner(blogDay: blogDay, index: index, screenHeight: screenHeight)
+        }
+        .coordinateSpace(name: "scroll")
+        .onPreferenceChange(TitleMinYPreferenceKey.self) { minY in
+            guard index == selectedDayIndex else { return }
+            let shouldShow = minY < 0
+            if shouldShow != showNavBarTitle {
+                showNavBarTitle = shouldShow
+            }
+        }
+        .background(recapScreenBackground)
+        .ignoresSafeArea(edges: isKeyboardVisible ? [] : .bottom)
+        .onAppear {
+            // TabView swipe/pill can finish layout after `onChange`; re-apply map alignment when this page is visible.
+            guard !isEditMode, index > 0, selectedDayIndex == index, pendingDeepLinkStopScrollId == nil else { return }
+            scheduleReadOnlyScrollToMap(proxy: proxy, blogDay: blogDay, dayPageIndex: index)
+        }
+        .onChange(of: scrollToStopId) { _, newId in
+            guard let id = newId, selectedDayIndex == index else { return }
+            scrollToStopId = nil
+            if isKeyboardVisible {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    proxy.scrollTo(id, anchor: .top)
+                }
+            } else {
+                pendingScrollToStopId = id
+            }
+        }
+        .onChange(of: isKeyboardVisible) { _, visible in
+            guard selectedDayIndex == index else { return }
+            if visible, let id = pendingScrollToStopId {
+                pendingScrollToStopId = nil
+                withAnimation(.easeOut(duration: 0.25)) {
+                    proxy.scrollTo(id, anchor: .top)
+                }
+            }
+        }
+        .onChange(of: selectedDayIndex) { _, newIndex in
+            guard newIndex == index else { return }
+            if pendingDeepLinkStopScrollId != nil { return }
+            if isEditMode {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    if newIndex == 0 {
+                        // Day 1: hero + trip chrome at top of the scroll view.
+                        proxy.scrollTo(RecapBlogScrollAnchor.pageTop, anchor: .top)
+                    } else if let d = day(at: newIndex) {
+                        proxy.scrollTo("day-section-\(d.id)", anchor: .top)
+                    }
+                }
+            } else {
+                if newIndex == 0 {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        proxy.scrollTo(RecapBlogScrollAnchor.pageTop, anchor: .top)
                     }
                 } else {
-                    pendingScrollToStopId = id
+                    scheduleReadOnlyScrollToMap(proxy: proxy, blogDay: blogDay, dayPageIndex: index)
                 }
             }
-            .onChange(of: isKeyboardVisible) { _, visible in
-                guard selectedDayIndex == index else { return }
-                if visible, let id = pendingScrollToStopId {
-                    pendingScrollToStopId = nil
-                    withAnimation(.easeOut(duration: 0.25)) {
-                        proxy.scrollTo(id, anchor: .top)
+        }
+        .onChange(of: hasFinishedInitialLoad) { _, finished in
+            guard finished else { return }
+            if index == 0 {
+                if isEditMode, initialScrollToStopId == nil {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        proxy.scrollTo(RecapBlogScrollAnchor.pageTop, anchor: .top)
                     }
                 }
+            } else if !isEditMode, selectedDayIndex == index, initialScrollToStopId == nil {
+                scheduleReadOnlyScrollToMap(proxy: proxy, blogDay: blogDay, dayPageIndex: index)
             }
-            .onChange(of: pendingDeepLinkStopScrollId) { _, stopId in
-                guard let id = stopId, selectedDayIndex == index else { return }
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 180_000_000)
-                    withAnimation(.easeOut(duration: 0.28)) {
-                        proxy.scrollTo(id, anchor: .top)
-                    }
-                    try? await Task.sleep(nanoseconds: 150_000_000)
-                    withAnimation(.easeOut(duration: 0.22)) {
-                        proxy.scrollTo(id, anchor: .top)
-                    }
-                    try? await Task.sleep(nanoseconds: 400_000_000)
-                    pendingDeepLinkStopScrollId = nil
+        }
+        .onChange(of: pendingDeepLinkStopScrollId) { _, stopId in
+            guard let id = stopId, selectedDayIndex == index else { return }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 180_000_000)
+                withAnimation(.easeOut(duration: 0.28)) {
+                    proxy.scrollTo(id, anchor: .top)
                 }
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                withAnimation(.easeOut(duration: 0.22)) {
+                    proxy.scrollTo(id, anchor: .top)
+                }
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                pendingDeepLinkStopScrollId = nil
             }
         }
     }
@@ -1602,7 +1693,7 @@ struct RecapBlogPageView: View {
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
                             .background(
-                                RoundedRectangle(cornerRadius: 10)
+                                RoundedRectangle(appChromeBaseRadius: 10)
                                     .stroke(Color.white.opacity(0.5), lineWidth: 1.5)
                             )
                         }
@@ -1811,7 +1902,7 @@ struct RecapBlogPageView: View {
                 Color.blue.opacity(0.75)
                     .background(.ultraThinMaterial)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -2003,6 +2094,7 @@ struct RecapBlogPageView: View {
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 8)
+        .id(RecapBlogScrollAnchor.mapForDay(day.id))
     }
 
     /// Inline card that shows how many places have been removed and lets the user jump to the restore sheet.
@@ -2043,9 +2135,9 @@ struct RecapBlogPageView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .background(recapCardBackground)
-            .cornerRadius(12)
+            .appChromeCornerRadius(12)
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(appChromeBaseRadius: 12)
                     .stroke(Color.blue.opacity(0.25), lineWidth: 1)
             )
         }
@@ -2093,9 +2185,9 @@ struct RecapBlogPageView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background(recapCardBackground)
-        .cornerRadius(12)
+        .appChromeCornerRadius(12)
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(appChromeBaseRadius: 12)
                 .stroke(Color.green.opacity(0.25), lineWidth: 1)
         )
     }
@@ -2377,6 +2469,7 @@ struct RecapBlogPageView: View {
                         initialPhotoId: includedPhotos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : includedPhotos[0].id,
                         stopDigitizedTime: stop.visitedTimeDigitized,
                         blogIsEditMode: isEditMode,
+                        recapBlogIsReadOnly: false,
                         openInCaptionEditor: item.openInCaptionEditor,
                         hideChromeDoneFromCaptionEditorSheet: item.hideChromeDoneFromCaptionEditorSheet,
                         showAssetTimeMetadata: isEditMode,
@@ -2409,6 +2502,9 @@ struct RecapBlogPageView: View {
                         },
                         onRemovePhoto: { photoId in
                             removePhoto(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
+                        },
+                        onSavePlaceName: { name, category, coord, subtitleLine in
+                            updatePlaceTitle(stopId: item.stopId, to: name, category: category, coordinate: coord, placeSubtitleLine: subtitleLine)
                         },
                         onCaptionCommitted: { photoId in
                             syncStoryToCloudIfNeeded(stopId: item.stopId, isPlaceNote: false, photoId: photoId)
@@ -2498,7 +2594,7 @@ struct RecapBlogPageView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                     .background(Color(.secondarySystemBackground))
-                    .cornerRadius(12)
+                    .appChromeCornerRadius(12)
                 }
                 .buttonStyle(.plain)
 
@@ -2525,7 +2621,7 @@ struct RecapBlogPageView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                     .background(Color(.secondarySystemBackground))
-                    .cornerRadius(12)
+                    .appChromeCornerRadius(12)
                 }
                 .buttonStyle(.plain)
 
@@ -2542,7 +2638,7 @@ struct RecapBlogPageView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                         .background(Color(.secondarySystemBackground))
-                        .cornerRadius(12)
+                        .appChromeCornerRadius(12)
                 }
                 .buttonStyle(.plain)
             }
@@ -2858,7 +2954,7 @@ struct RecapBlogPageView: View {
                 .opacity(!authService.isSignedIn ? 0.4 : 1)
             }
             .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .cornerRadius(14)
+            .appChromeCornerRadius(14)
             .padding(.horizontal, 20)
 
             Spacer(minLength: 18)
@@ -2917,7 +3013,7 @@ Your blog remains private unless you choose to share it.
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 15)
                         .background(Color.blue)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .clipShape(RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
                 }
 
                 Button {
@@ -2979,7 +3075,7 @@ Your blog remains private unless you choose to share it.
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 15)
                         .background(Color.blue)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .clipShape(RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
                 }
 
                 Button {
@@ -3135,7 +3231,7 @@ Your blog remains private unless you choose to share it.
                                     .frame(width: 180, height: 180)
                                     .padding(16)
                                     .background(Color.white)
-                                    .cornerRadius(14)
+                                    .appChromeCornerRadius(14)
                                     .frame(maxWidth: .infinity)
                             } else {
                                 Text("Could not build QR")
@@ -3199,7 +3295,7 @@ Your blog remains private unless you choose to share it.
                     }
                     .buttonStyle(.plain)
                     .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(appChromeBaseRadius: 12, style: .continuous)
                             .fill(Color.white.opacity(0.12))
                     )
                     .padding(.top, 8)
@@ -3210,14 +3306,14 @@ Your blog remains private unless you choose to share it.
             .frame(maxWidth: 400)
             .frame(maxHeight: 620)
             .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(appChromeBaseRadius: 24, style: .continuous)
                     .fill(.ultraThinMaterial)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        RoundedRectangle(appChromeBaseRadius: 24, style: .continuous)
                             .stroke(Color.white.opacity(0.1), lineWidth: 1)
                     )
             )
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .clipShape(RoundedRectangle(appChromeBaseRadius: 24, style: .continuous))
             .shadow(color: .black.opacity(0.45), radius: 30, y: 10)
             .padding(.horizontal, 24)
             .overlay {
@@ -3297,7 +3393,6 @@ Your blog remains private unless you choose to share it.
         AppAnalytics.track(.blogSave(blogId: blogId.uuidString))
 
         withAnimation {
-            showUndoOverlay = false
             lastUndoAction = nil
         }
 
@@ -3327,18 +3422,29 @@ Your blog remains private unless you choose to share it.
     private func removePlaceStop(dayId: UUID, stopId: UUID) {
         guard let dayIndex = draft.days.firstIndex(where: { $0.id == dayId }),
               let stopIndex = draft.days[dayIndex].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
-        
+
+        let coverPhotoIdentifierBeforeRemoval = draft.selectedCoverPhotoIdentifier
+
         // Prepare Undo
         let day = draft.days[dayIndex]
         let stop = day.placeStops[stopIndex]
         withAnimation {
-            lastUndoAction = .deletePlace(dayId: dayId, stop: stop, index: stopIndex)
-            showUndoOverlay = true
-            isUndoMinimized = false
+            lastUndoAction = .deletePlace(
+                dayBeforeRemoval: day,
+                removedStopIndex: stopIndex,
+                dayIndexInDraft: dayIndex,
+                coverPhotoIdentifierBeforeRemoval: coverPhotoIdentifierBeforeRemoval
+            )
         }
         
         // Soft-delete: preserve stop in removedPlaceStops so it can be restored later
-        let removedEntry = RemovedPlaceEntry(dayId: dayId, dayIndex: day.dayIndex, dayDate: day.date, stop: stop)
+        let removedEntry = RemovedPlaceEntry(
+            dayId: dayId,
+            dayIndex: day.dayIndex,
+            dayDate: day.date,
+            stop: stop,
+            coverPhotoIdentifierBeforeRemoval: coverPhotoIdentifierBeforeRemoval
+        )
         draft.removedPlaceStops.append(removedEntry)
         
         // Perform Deletion
@@ -3377,8 +3483,6 @@ Your blog remains private unless you choose to share it.
         
         withAnimation {
             lastUndoAction = .deletePhoto(dayId: dayId, stopId: stopId, photo: photo, index: photoIdx)
-            showUndoOverlay = true
-            isUndoMinimized = false
         }
         
         // Perform Deletion
@@ -3425,8 +3529,6 @@ Your blog remains private unless you choose to share it.
 
         withAnimation {
             lastUndoAction = .mergePlaceStops(dayId: dayId, originalFirst: first, originalSecond: second, firstIndex: firstIdx)
-            showUndoOverlay = true
-            isUndoMinimized = false
         }
 
         var merged = first
@@ -3567,16 +3669,31 @@ Your blog remains private unless you choose to share it.
 
         withAnimation {
             switch action {
-            case .deletePlace(let dayId, let stop, let index):
-                if let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }) {
+            case .deletePlace(
+                let dayBeforeRemoval,
+                let removedStopIndex,
+                let dayIndexInDraft,
+                let coverPhotoIdentifierBeforeRemoval
+            ):
+                let removedStop = dayBeforeRemoval.placeStops[removedStopIndex]
+                if let dayIdx = draft.days.firstIndex(where: { $0.id == dayBeforeRemoval.id }) {
                     var day = draft.days[dayIdx]
-                    if index <= day.placeStops.count {
-                        day.placeStops.insert(stop, at: index)
+                    if !day.placeStops.contains(where: { $0.id == removedStop.id }) {
+                        let insertAt = min(removedStopIndex, day.placeStops.count)
+                        day.placeStops.insert(removedStop, at: insertAt)
+                        for i in day.placeStops.indices { day.placeStops[i].orderIndex = i }
                         draft.days[dayIdx] = day
                     }
+                } else {
+                    // Last place on that day was removed, so the day row was dropped — restore the full day.
+                    let insertAt = min(dayIndexInDraft, draft.days.count)
+                    draft.days.insert(dayBeforeRemoval, at: insertAt)
+                    selectedDayIndex = min(insertAt, max(0, draft.days.count - 1))
                 }
+                // Put cover back to what it was before hide (removePlaceStop may have reassigned when the cover asset was on the removed day).
+                draft.selectedCoverPhotoIdentifier = coverPhotoIdentifierBeforeRemoval
                 // Remove from the soft-deleted list since user chose to undo (not just restore later)
-                draft.removedPlaceStops.removeAll { $0.stop.id == stop.id }
+                draft.removedPlaceStops.removeAll { $0.stop.id == removedStop.id }
 
             case .deletePhoto(let dayId, let stopId, let photo, _):
                 if let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
@@ -3611,28 +3728,45 @@ Your blog remains private unless you choose to share it.
                 }
             }
 
-            showUndoOverlay = false
             lastUndoAction = nil
 
             persistRecapBlogDetail()
         }
+
+        // Show toast confirming what was undone (`action` is still in scope from the guard let above)
+        undoToastText = action.messageAfterUndo
+        undoToastTask?.cancel()
+        withAnimation {
+            showUndoToast = true
+        }
+        undoToastTask = Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation {
+                    showUndoToast = false
+                }
+            }
+        }
     }
 
-    private func updatePlaceTitle(stopId: UUID, to title: String, category: String? = nil, coordinate: CLLocationCoordinate2D? = nil) {
-        debugPrint("[Category] updatePlaceTitle called: stopId=\(stopId) title='\(title)' category=\(category ?? "nil") coord=\(coordinate.map { "\($0.latitude),\($0.longitude)" } ?? "nil")")
+    private func updatePlaceTitle(stopId: UUID, to title: String, category: String? = nil, coordinate: CLLocationCoordinate2D? = nil, placeSubtitleLine: String = "") {
+        let subTrimmed = placeSubtitleLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        debugPrint("[Category] updatePlaceTitle called: stopId=\(stopId) title='\(title)' category=\(category ?? "nil") coord=\(coordinate.map { "\($0.latitude),\($0.longitude)" } ?? "nil") subtitle='\(subTrimmed)'")
         for i in draft.days.indices {
             if let j = draft.days[i].placeStops.firstIndex(where: { $0.id == stopId }) {
                 var day = draft.days[i]
                 var stop = day.placeStops[j]
                 stop.placeTitle = title
                 stop.placeTitleIsManual = true
+                stop.placeSubtitle = subTrimmed.isEmpty ? nil : subTrimmed
                 if let category { stop.placeCategory = category }
                 if let coordinate {
                     stop.representativeLocation = PhotoCoordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
                 }
                 day.placeStops[j] = stop
                 draft.days[i] = day
-                debugPrint("[Category] updatePlaceTitle stored: placeTitle='\(stop.placeTitle)' placeCategory=\(stop.placeCategory ?? "nil")")
+                debugPrint("[Category] updatePlaceTitle stored: placeTitle='\(stop.placeTitle)' placeSubtitle=\(stop.placeSubtitle ?? "nil") placeCategory=\(stop.placeCategory ?? "nil")")
 
                 persistRecapBlogDetail()
                 if let placeKey = stop.visitedTimeDigitized {
@@ -3811,7 +3945,10 @@ Your blog remains private unless you choose to share it.
                     hideChromeDoneFromCaptionEditorSheet: true
                 )
             },
-            activePhotoModalToken: placePhotoModalItem?.id
+            activePhotoModalToken: placePhotoModalItem?.id,
+            onRequestEditPlaceName: {
+                showEditNameForStop = stop
+            }
         )
     }
 
@@ -3854,7 +3991,10 @@ Your blog remains private unless you choose to share it.
                     hideChromeDoneFromCaptionEditorSheet: true
                 )
             },
-            activePhotoModalToken: placePhotoModalItem?.id
+            activePhotoModalToken: placePhotoModalItem?.id,
+            onRequestEditPlaceName: {
+                showEditNameForStop = stop
+            }
         )
     }
 
@@ -3949,7 +4089,7 @@ Your blog remains private unless you choose to share it.
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
                         .background(Color(white: 0.1))
-                        .cornerRadius(10)
+                        .appChromeCornerRadius(10)
                 }
                 .buttonStyle(.plain)
             }
@@ -4196,7 +4336,7 @@ Your blog remains private unless you choose to share it.
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .background(recapNarrativeCardBackground)
-                .cornerRadius(12)
+                .appChromeCornerRadius(12)
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
             }
@@ -4208,7 +4348,7 @@ Your blog remains private unless you choose to share it.
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
                         .background(Color(white: 0.1))
-                        .cornerRadius(10)
+                        .appChromeCornerRadius(10)
                         .padding(.horizontal, 16)
                 }
                 if isGeneratingTripNarrative {
@@ -4566,6 +4706,20 @@ Your blog remains private unless you choose to share it.
         ToolbarItem(placement: .topBarTrailing) {
             if isEditMode {
                 Button {
+                    performUndo()
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(lastUndoAction != nil ? recapChromeForeground : recapChromeForeground.opacity(0.3))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Undo")
+                .disabled(lastUndoAction == nil)
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            if isEditMode {
+                Button {
                     if saveDraft() {
                         isEditMode = false
                     }
@@ -4625,10 +4779,10 @@ Your blog remains private unless you choose to share it.
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .background(
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(appChromeBaseRadius: 14)
                     .fill(.ultraThinMaterial)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 14)
+                        RoundedRectangle(appChromeBaseRadius: 14)
                             .stroke(recapHairline, lineWidth: 1)
                     )
             )
@@ -4668,10 +4822,10 @@ Your blog remains private unless you choose to share it.
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .background(
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(appChromeBaseRadius: 14)
                     .fill(.ultraThinMaterial)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 14)
+                        RoundedRectangle(appChromeBaseRadius: 14)
                             .stroke(recapHairline, lineWidth: 1)
                     )
             )
@@ -4715,7 +4869,7 @@ Your blog remains private unless you choose to share it.
                 }
                 .padding(16)
                 .background(Color(.systemGray6).opacity(0.5))
-                .cornerRadius(12)
+                .appChromeCornerRadius(12)
 
                 Text("Cloud access is currently available through early access.")
                     .font(.caption)
@@ -4738,7 +4892,7 @@ Your blog remains private unless you choose to share it.
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color.blue)
-                        .cornerRadius(12)
+                        .appChromeCornerRadius(12)
                 }
 
                 Button("Done") {
@@ -4783,7 +4937,7 @@ Your blog remains private unless you choose to share it.
                 Spacer()
                 VStack(spacing: 0) {
                     // Drag pill
-                    RoundedRectangle(cornerRadius: 3)
+                    RoundedRectangle(appChromeBaseRadius: 3)
                         .fill(Color.primary.opacity(0.2))
                         .frame(width: 36, height: 5)
                         .padding(.top, 10)
@@ -4843,7 +4997,7 @@ Your blog remains private unless you choose to share it.
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 15)
                             .background(Color.green.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .clipShape(RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
 
                             Button {
                                 earlyAccessSheetPresented = false
@@ -4875,7 +5029,7 @@ Your blog remains private unless you choose to share it.
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 15)
                                     .background(Color.blue)
-                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                    .clipShape(RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
                             }
 
                             Button {
@@ -4899,7 +5053,7 @@ Your blog remains private unless you choose to share it.
                     .padding(.bottom, geo.safeAreaInsets.bottom + 12)
                 }
                 .background(Color(uiColor: .systemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 24, style: .continuous))
                 .shadow(color: .black.opacity(0.18), radius: 24, y: -6)
             }
         }
@@ -4950,7 +5104,7 @@ Your blog remains private unless you choose to share it.
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color.blue)
-                        .cornerRadius(12)
+                        .appChromeCornerRadius(12)
                 }
 
                 Button {
@@ -5214,7 +5368,6 @@ Your blog remains private unless you choose to share it.
         if case .deletePhoto(_, _, let undoPhoto, _) = lastUndoAction, undoPhoto.id == photoId {
             withAnimation {
                 lastUndoAction = nil
-                showUndoOverlay = false
             }
         }
     }
@@ -5605,7 +5758,7 @@ private struct PhotoLibraryAccessPromptView: View {
                             .frame(maxWidth: .infinity)
                             .padding()
                             .background(Color.blue)
-                            .cornerRadius(12)
+                            .appChromeCornerRadius(12)
                     }
 
                     Button {
@@ -5617,7 +5770,7 @@ private struct PhotoLibraryAccessPromptView: View {
                             .frame(maxWidth: .infinity)
                             .padding()
                             .background(Color.blue.opacity(0.1))
-                            .cornerRadius(12)
+                            .appChromeCornerRadius(12)
                     }
 
                     Button {
@@ -5632,7 +5785,7 @@ private struct PhotoLibraryAccessPromptView: View {
             }
             .padding(24)
             .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(appChromeBaseRadius: 20, style: .continuous)
                     .fill(.ultraThinMaterial)
             )
             .padding(.horizontal, 32)
@@ -5797,7 +5950,7 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(Color.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
@@ -5851,7 +6004,7 @@ private struct RecapMergePlacesSelectionSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-                RoundedRectangle(cornerRadius: 3)
+                RoundedRectangle(appChromeBaseRadius: 3)
                     .fill(Color.secondary.opacity(0.45))
                     .frame(width: 38, height: 5)
                     .frame(maxWidth: .infinity)
@@ -5915,7 +6068,7 @@ private struct RecapMergePlacesSelectionSheet: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(appChromeBaseRadius: 12)
                 .fill(Color.orange.opacity(0.2))
         )
     }
@@ -5947,7 +6100,7 @@ private struct RecapMergePlacesSelectionSheet: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(appChromeBaseRadius: 12)
                     .fill(Color(uiColor: .secondarySystemBackground))
             )
         }
@@ -5967,9 +6120,9 @@ private struct RecapMergePlacesSelectionSheet: View {
         if let photo {
             RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 200, height: 200))
                 .frame(width: 52, height: 52)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 8))
         } else {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(appChromeBaseRadius: 8)
                 .fill(Color.secondary.opacity(0.2))
                 .frame(width: 52, height: 52)
                 .overlay(
@@ -6117,14 +6270,14 @@ struct ProcessingDayPopup: View {
                 .buttonStyle(.plain)
             }
             .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(appChromeBaseRadius: 24, style: .continuous)
                     .fill(.ultraThinMaterial)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        RoundedRectangle(appChromeBaseRadius: 24, style: .continuous)
                             .stroke(Color.white.opacity(0.1), lineWidth: 1)
                     )
             )
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .clipShape(RoundedRectangle(appChromeBaseRadius: 24, style: .continuous))
             .shadow(color: .black.opacity(0.45), radius: 30, y: 10)
             .padding(.horizontal, 40)
         }
@@ -6233,7 +6386,7 @@ private struct NewMomentsReviewSheet: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 15)
                             .background(visibleCount > 0 ? Color.green : Color.green.opacity(0.4))
-                            .cornerRadius(14)
+                            .appChromeCornerRadius(14)
                     }
                     .disabled(visibleCount == 0)
 
@@ -6254,7 +6407,7 @@ private struct NewMomentsReviewSheet: View {
             }
             .frame(maxHeight: UIScreen.main.bounds.height * 0.80)
             .background(sheetBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipShape(RoundedRectangle(appChromeBaseRadius: 20, style: .continuous))
             .offset(y: max(dragOffset, 0))
             .gesture(
                 DragGesture()
@@ -6283,7 +6436,7 @@ private struct NewMomentsReviewSheet: View {
         .aspectRatio(contentMode: .fill)
         .frame(width: size, height: size)
         .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: cornerRadius, style: .continuous))
     }
 
     private func newMomentPlaceCard(group: NewMomentPlaceGroup) -> some View {
@@ -6345,14 +6498,14 @@ private struct NewMomentsReviewSheet: View {
             }
             .padding(12)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(appChromeBaseRadius: 16)
                     .fill(Color(uiColor: .tertiarySystemGroupedBackground))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(appChromeBaseRadius: 16)
                             .stroke(Color.primary.opacity(0.06), lineWidth: 1)
                     )
             )
-            .contentShape(RoundedRectangle(cornerRadius: 16))
+            .contentShape(RoundedRectangle(appChromeBaseRadius: 16))
         }
         .buttonStyle(.plain)
         .opacity(isHidden ? 0.35 : 1.0)
@@ -6392,7 +6545,7 @@ private struct MissingPhotosTooltipOverlay: View {
                             .font(.body.weight(.semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
-                            .background(Color.white.opacity(0.2), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .background(Color.white.opacity(0.2), in: RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
                             .foregroundStyle(.white)
                     }
                     .buttonStyle(.plain)
@@ -6408,11 +6561,11 @@ private struct MissingPhotosTooltipOverlay: View {
             }
             .padding(24)
             .background(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
                     .fill(.ultraThinMaterial)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
                     .stroke(Color.white.opacity(0.14), lineWidth: 1)
             )
             .padding(.horizontal, 28)

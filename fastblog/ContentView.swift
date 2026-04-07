@@ -398,7 +398,7 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color.blue)
-                        .cornerRadius(12)
+                        .appChromeCornerRadius(12)
                 }
             }
             .padding(.horizontal, 24)

@@ -55,7 +55,7 @@ struct ClusterRowView: View {
         }
         .frame(width: 64, height: 64)
         .clipped()
-        .cornerRadius(8)
+        .appChromeCornerRadius(8)
     }
 }
 

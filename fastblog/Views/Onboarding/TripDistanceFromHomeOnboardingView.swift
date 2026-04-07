@@ -105,17 +105,17 @@ struct TripDistanceFromHomeOnboardingView: View {
 
                     VStack(alignment: .leading, spacing: 10) {
                         hintRow(
-                            "You can change this anytime in Settings under My home. After changing it there, Bloggo rescans when you release the slider; if needed, quit the app fully and reopen, then open Trips."
+                            "You can change this anytime in Settings > My home. Bloggo rescans when you release the slider."
                         )
                         hintRow(
-                            "A shorter distance can include more nearby outings—helpful if you want to blog local activities."
+                            "Use a shorter distance to include more nearby outings."
                         )
                     }
                     .padding(.top, 4)
                 }
                 .padding(20)
                 .background(Color.white.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 16, style: .continuous))
                 .padding(.horizontal, OnboardingConstants.Layout.horizontalPadding)
                 .opacity(showControls ? 1 : 0)
                 .offset(y: showControls ? 0 : 10)

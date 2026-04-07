@@ -47,7 +47,7 @@ struct MyStatsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
     }
 
     private var metricsGrid: some View {
@@ -72,7 +72,7 @@ struct MyStatsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
     }
 }
 

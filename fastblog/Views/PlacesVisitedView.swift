@@ -441,7 +441,7 @@ struct PlacesVisitedView: View {
         }
         .padding(.horizontal, 16)
         .frame(height: searchBarHeight)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
         .padding(.horizontal, bottomBarHorizontalPadding)
         .padding(.bottom, 12)
     }
@@ -589,12 +589,12 @@ private struct PlaceVisitedCard: View {
                         RecapPhotoThumbnail(photo: hero, cornerRadius: 14, showIcon: false, targetSize: CGSize(width: 900, height: 600))
                             .frame(height: 150)
                             .frame(maxWidth: .infinity)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
                     } else {
                         Color.clear
                             .frame(height: 150)
                             .frame(maxWidth: .infinity)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
                             .overlay {
                                 Image(systemName: "photo")
                                     .font(.title2)
@@ -623,14 +623,14 @@ private struct PlaceVisitedCard: View {
                             ForEach(Array(previewThumbs)) { photo in
                                 RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 200, height: 200))
                                     .frame(width: thumbSize, height: thumbSize)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .clipShape(RoundedRectangle(appChromeBaseRadius: 10))
                                     .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 2)
                             }
                         }
                         .padding(stripPadding)
                         .frame(width: min(backingWidth, availableWidth))
                         .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(appChromeBaseRadius: 14, style: .continuous)
                                 .fill(Color.black.opacity(0.35))
                                 .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 6)
                         )
@@ -660,9 +660,9 @@ private struct PlaceVisitedCard: View {
         }
         .padding(12)
         .background(Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 18, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(appChromeBaseRadius: 18, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
         }
     }
@@ -684,7 +684,9 @@ private struct PlacesVisitedMapView: View {
     @State private var selectedPlaceForModal: VisitedPlaceSummary?
     @State private var revealNavDuringModalDismiss: Bool = false
     @State private var isSearchActive: Bool = false
+    @State private var hasTappedLocationButton: Bool = false
     @FocusState private var isSearchFocused: Bool
+    @StateObject private var locationHelper = PlacesVisitedMapLocationHelper()
 
     private let defaultRegion = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
@@ -768,6 +770,47 @@ private struct PlacesVisitedMapView: View {
         }
     }
 
+    private func openLocationSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+    }
+
+    private func centerOnCurrentLocation() {
+        if !CLLocationManager.locationServicesEnabled() {
+            openLocationSettings()
+            return
+        }
+
+        switch locationHelper.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            locationHelper.requestCurrentLocation { coordinate in
+                withAnimation {
+                    mapPosition = .region(
+                        MKCoordinateRegion(
+                            center: coordinate,
+                            span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+                        )
+                    )
+                }
+            }
+        case .notDetermined:
+            locationHelper.requestAuthorizationAndCenter { coordinate in
+                withAnimation {
+                    mapPosition = .region(
+                        MKCoordinateRegion(
+                            center: coordinate,
+                            span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+                        )
+                    )
+                }
+            }
+        case .restricted, .denied:
+            openLocationSettings()
+        @unknown default:
+            openLocationSettings()
+        }
+    }
+
     // MARK: - Year / Month grouping helpers (mirrors PlacesVisitedView)
 
     private struct MonthGroup {
@@ -842,11 +885,11 @@ private struct PlacesVisitedMapView: View {
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            chip(label: "All", isSelected: selectedYear == nil) {
+                            chip(label: "All", isSelected: selectedYear == nil, unselectedBackground: Color(red: 0.25, green: 0.31, blue: 0.40)) {
                                 selectedYear = nil
                             }
                             ForEach(availableYears, id: \.self) { y in
-                                chip(label: String(y), isSelected: selectedYear == y) {
+                                chip(label: String(y), isSelected: selectedYear == y, unselectedBackground: Color(red: 0.25, green: 0.31, blue: 0.40)) {
                                     selectedYear = (selectedYear == y) ? nil : y
                                 }
                             }
@@ -915,7 +958,7 @@ private struct PlacesVisitedMapView: View {
                     .padding(.horizontal, 16)
                     .frame(height: 56)
                     .background(
-                        RoundedRectangle(cornerRadius: 14)
+                        RoundedRectangle(appChromeBaseRadius: 14)
                             .fill(Color.white.opacity(0.12))
                     )
                     .padding(.horizontal, 16)
@@ -1015,6 +1058,31 @@ private struct PlacesVisitedMapView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
             }
+
+            if !isSearchActive {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            hasTappedLocationButton = true
+                            centerOnCurrentLocation()
+                        }) {
+                            Image(systemName: "location.fill")
+                                .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 52, height: 52)
+                            .background(hasTappedLocationButton ? Color.blue.opacity(0.92) : Color.white.opacity(0.23))
+                            .clipShape(Circle())
+                            .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 2)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 16)
+                        .padding(.bottom, 22)
+                    }
+                }
+                .zIndex(90)
+            }
         }
         .navigationBarBackButtonHidden(true)
         .navigationTitle("Map")
@@ -1086,22 +1154,26 @@ private struct PlacesVisitedMapView: View {
         return Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: p.symbol)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.caption.weight(.semibold))
                 Text(label)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    .font(.subheadline)
+                    .fontWeight(isSelected ? .semibold : .regular)
             }
-            .foregroundColor(.white)
+            .foregroundStyle(isSelected ? Color.white : p.color)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(isSelected ? p.color : p.color.opacity(0.35))
             .clipShape(Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(isSelected ? 0.4 : 0.2), lineWidth: 1))
+            .overlay(
+                Capsule()
+                    .stroke(p.color.opacity(isSelected ? 0.25 : 0.45), lineWidth: isSelected ? 0 : 1)
+            )
             .lineLimit(1)
         }
         .buttonStyle(.plain)
     }
 
-    private func chip(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+    private func chip(label: String, isSelected: Bool, unselectedBackground: Color = Color.white.opacity(0.23), action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
                 .font(.subheadline)
@@ -1109,7 +1181,7 @@ private struct PlacesVisitedMapView: View {
                 .foregroundColor(.white)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(isSelected ? Color.blue : Color.white.opacity(0.23))
+                .background(isSelected ? Color.blue : unselectedBackground)
                 .clipShape(Capsule())
                 .lineLimit(1)
         }
@@ -1117,29 +1189,105 @@ private struct PlacesVisitedMapView: View {
     }
 }
 
+private final class PlacesVisitedMapLocationHelper: NSObject, ObservableObject, CLLocationManagerDelegate {
+    @Published private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
+
+    private let manager = CLLocationManager()
+    private var pendingCenterRequest = false
+    private var onCoordinateResolved: ((CLLocationCoordinate2D) -> Void)?
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyBest
+        authorizationStatus = manager.authorizationStatus
+    }
+
+    func requestCurrentLocation(onResolved: @escaping (CLLocationCoordinate2D) -> Void) {
+        onCoordinateResolved = onResolved
+        manager.requestLocation()
+    }
+
+    func requestAuthorizationAndCenter(onResolved: @escaping (CLLocationCoordinate2D) -> Void) {
+        onCoordinateResolved = onResolved
+        pendingCenterRequest = true
+        manager.requestWhenInUseAuthorization()
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        authorizationStatus = manager.authorizationStatus
+        guard pendingCenterRequest else { return }
+        if authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways {
+            pendingCenterRequest = false
+            manager.requestLocation()
+        } else if authorizationStatus == .denied || authorizationStatus == .restricted {
+            pendingCenterRequest = false
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let coordinate = locations.last?.coordinate else { return }
+        onCoordinateResolved?(coordinate)
+        onCoordinateResolved = nil
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        onCoordinateResolved = nil
+    }
+}
+
 private struct PlacesVisitedMapMarker: View {
     let place: VisitedPlaceSummary
 
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(Color.blue)
-                .frame(width: 46, height: 46)
-                .shadow(color: .black.opacity(0.25), radius: 5, x: 0, y: 3)
+        let rawCategory = place.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let categoryKey = rawCategory.isEmpty ? "Others" : rawCategory
+        let categoryPresentation = PlacePOICategoryPresentation.presentation(forRaw: categoryKey)
 
-            if let hero = place.heroPhoto {
-                RecapPhotoThumbnail(photo: hero, cornerRadius: 12, showIcon: false, targetSize: CGSize(width: 200, height: 200))
-                    .frame(width: 40, height: 40)
-                    .clipShape(Circle())
-                    .overlay {
-                        Circle()
-                            .strokeBorder(Color.white.opacity(0.95), lineWidth: 2)
+        VStack(spacing: 6) {
+            ZStack(alignment: .topTrailing) {
+                ZStack {
+                    Circle()
+                        .fill(Color.blue)
+                        .frame(width: 46, height: 46)
+                        .shadow(color: .black.opacity(0.25), radius: 5, x: 0, y: 3)
+
+                    if let hero = place.heroPhoto {
+                        RecapPhotoThumbnail(photo: hero, cornerRadius: 12, showIcon: false, targetSize: CGSize(width: 200, height: 200))
+                            .frame(width: 40, height: 40)
+                            .clipShape(Circle())
+                            .overlay {
+                                Circle()
+                                    .strokeBorder(Color.white.opacity(0.95), lineWidth: 2)
+                            }
+                    } else {
+                        Image(systemName: "photo")
+                            .font(.subheadline)
+                            .foregroundColor(.white)
                     }
-            } else {
-                Image(systemName: "photo")
-                    .font(.subheadline)
+                }
+
+                Image(systemName: categoryPresentation.symbol)
+                    .font(.system(size: 9, weight: .bold))
                     .foregroundColor(.white)
+                    .frame(width: 18, height: 18)
+                    .background(Circle().fill(categoryPresentation.color))
+                    .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 1))
+                    .offset(x: 4, y: -2)
+                    .shadow(color: .black.opacity(0.35), radius: 2, x: 0, y: 1)
             }
+
+            Text(place.displayName)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(.ultraThinMaterial)
+                .background(Color.black.opacity(0.75))
+                .clipShape(Capsule())
+                .frame(maxWidth: 110)
         }
     }
 }

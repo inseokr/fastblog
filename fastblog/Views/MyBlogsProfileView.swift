@@ -456,7 +456,7 @@ struct MyBlogsProfileView: View {
         }
         .padding(.horizontal, 16)
         .frame(height: searchBarHeight)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
         .padding(.horizontal, horizontalPadding)
         .padding(.bottom, 12)
     }
@@ -597,7 +597,7 @@ private struct RecentBlogCard: View {
                     targetSize: CGSize(width: 200, height: 200)
                 )
                 .frame(width: 80, height: 80)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 10))
 
                 if recap.lastEditedAt == nil {
                     Text("Draft")
@@ -607,7 +607,7 @@ private struct RecentBlogCard: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Color.black.opacity(0.6))
-                        .cornerRadius(4)
+                        .appChromeCornerRadius(4)
                         .padding(4)
                 }
             }
@@ -631,7 +631,7 @@ private struct RecentBlogCard: View {
         .frame(width: 260)
         .padding(10)
         .background(Color.white.opacity(0.1))
-        .cornerRadius(12)
+        .appChromeCornerRadius(12)
     }
 }
 
@@ -740,7 +740,7 @@ private struct MyBlogsManageSheet: View {
                                 .font(.system(size: 22, weight: .semibold))
                                 .foregroundColor(.primary)
                                 .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                         }
                         Spacer()
                         Button {
@@ -754,7 +754,7 @@ private struct MyBlogsManageSheet: View {
                                 .font(.system(size: 22, weight: .semibold))
                                 .foregroundColor(.primary)
                                 .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                         }
                     }
                     .padding(.horizontal, 24)

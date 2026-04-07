@@ -204,9 +204,9 @@ struct RemovedPlacesSheet: View {
                         )
                         .frame(height: 150)
                         .frame(maxWidth: .infinity)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
                     } else {
-                        RoundedRectangle(cornerRadius: 14)
+                        RoundedRectangle(appChromeBaseRadius: 14)
                             .fill(Color(white: 0.18))
                             .frame(height: 150)
                             .frame(maxWidth: .infinity)
@@ -247,14 +247,14 @@ struct RemovedPlacesSheet: View {
                                     targetSize: CGSize(width: 200, height: 200)
                                 )
                                 .frame(width: thumbSize, height: thumbSize)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .clipShape(RoundedRectangle(appChromeBaseRadius: 10))
                                 .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 2)
                             }
                         }
                         .padding(stripPadding)
                         .frame(width: min(backingWidth, availableWidth))
                         .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(appChromeBaseRadius: 14, style: .continuous)
                                 .fill(Color.black.opacity(0.35))
                                 .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 6)
                         )
@@ -299,9 +299,9 @@ struct RemovedPlacesSheet: View {
         }
         .padding(12)
         .background(Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 18, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(appChromeBaseRadius: 18, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
         }
     }
@@ -366,18 +366,18 @@ struct RemovedPlacesSheet: View {
             }
         }
 
-        // If the blog was empty (no cover photo) before this restore, auto-assign the best photo
-        // from the newly restored place as the cover photo.
-        if currentCover == nil && draft.selectedCoverPhotoIdentifier == nil {
+        // Prefer the cover from before this stop was hidden (matches undo); older entries omit this field.
+        if let priorCover = entry.coverPhotoIdentifierBeforeRemoval {
+            draft.selectedCoverPhotoIdentifier = priorCover
+        } else if currentCover == nil && draft.selectedCoverPhotoIdentifier == nil {
+            // Legacy: blog had no cover before this restore — pick from the restored stop.
             let includedPhotos = entry.stop.photos.filter(\.isIncluded)
-            // Pick highest quality score, falling back to the first included photo
             let bestPhoto = includedPhotos.max(by: { ($0.qualityScore?.totalScore ?? 0) < ($1.qualityScore?.totalScore ?? 0) })
                 ?? includedPhotos.first
             if let identifier = bestPhoto?.localIdentifier {
                 draft.selectedCoverPhotoIdentifier = identifier
             }
         } else {
-            // Restore cover photo to what it was before
             draft.selectedCoverPhotoIdentifier = currentCover
         }
 

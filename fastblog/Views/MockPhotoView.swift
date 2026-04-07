@@ -3,6 +3,7 @@
 //  Capper
 //
 
+import Photos
 import SwiftUI
 
 /// Static day cover for the day card: last selected photo for that day, or last photo of the day when none selected.
@@ -50,11 +51,12 @@ struct AssetPhotoView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             } else {
-                MockPhotoView(seed: assetIdentifier.hashValue, cornerRadius: cornerRadius, showIcon: true)
+                // Outer clip applies the radius; avoid double-scaling the placeholder.
+                MockPhotoView(seed: assetIdentifier.hashValue, cornerRadius: 0, showIcon: true)
             }
         }
         .clipped()
-        .cornerRadius(cornerRadius)
+        .appChromeCornerRadius(cornerRadius)
         .task(id: assetIdentifier) {
             // if image is already loaded and identifier matches, do nothing (prevents flicker on view update)
             if let currentImage = image, displayedIdentifier == assetIdentifier {
@@ -101,7 +103,7 @@ struct MockPhotoView: View {
             }
         }
         .clipped()
-        .cornerRadius(cornerRadius)
+        .appChromeCornerRadius(cornerRadius)
     }
 
     private var mockPhotoGradient: some View {
@@ -178,11 +180,11 @@ struct CloudPhotoView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             } else {
-                MockPhotoView(seed: permanentURL.hashValue, cornerRadius: cornerRadius, showIcon: true)
+                MockPhotoView(seed: permanentURL.hashValue, cornerRadius: 0, showIcon: true)
             }
         }
         .clipped()
-        .cornerRadius(cornerRadius)
+        .appChromeCornerRadius(cornerRadius)
         .task(id: permanentURL) {
             guard image == nil else { return }
             do {
@@ -195,6 +197,19 @@ struct CloudPhotoView: View {
                 print("⚠️ CloudPhotoView: failed to load \(permanentURL): \(error)")
             }
         }
+    }
+}
+
+extension RecapPhoto {
+    /// True when the recap row should show a real thumbnail: cloud URL, on-disk app capture, or a Photos library asset that still exists.
+    /// Prevents gradient placeholders (and time badges) after the user deletes an in-app capture or removes the library asset.
+    var hasDisplayableLocalBacking: Bool {
+        if let cloud = cloudURL, !cloud.isEmpty { return true }
+        guard let lid = localIdentifier, !lid.isEmpty else { return false }
+        if lid.hasPrefix(AppCapturePhotoService.prefix) {
+            return AppCapturePhotoService.shared.loadImage(identifier: lid) != nil
+        }
+        return PHAsset.fetchAssets(withLocalIdentifiers: [lid], options: nil).firstObject != nil
     }
 }
 

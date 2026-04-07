@@ -158,7 +158,7 @@ struct MergeBlogsView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
                     .background {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        RoundedRectangle(appChromeBaseRadius: 14, style: .continuous)
                             .fill(.ultraThinMaterial)
                             .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
                     }
@@ -316,7 +316,7 @@ struct MergeBlogsView: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(appChromeBaseRadius: 12)
                                 .strokeBorder(Color.blue, lineWidth: 2)
                         )
                 }
@@ -378,7 +378,7 @@ struct MergeBlogsView: View {
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(Color.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
@@ -396,7 +396,7 @@ struct MergeBlogsView: View {
                 .frame(maxWidth: .infinity)
                 .padding()
                 .background(Color.blue)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
         }
         .buttonStyle(.plain)
     }
@@ -463,7 +463,7 @@ struct MergeBlogsView: View {
         }
         .padding(12)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
     }
 
     private func photoCount(for blog: CreatedRecapBlog) -> Int {
@@ -482,7 +482,7 @@ struct MergeBlogsView: View {
                 targetSize: CGSize(width: photoSide * 2, height: photoSide * 2)
             )
             .frame(width: photoSide, height: photoSide)
-            .clipShape(RoundedRectangle(cornerRadius: photoCornerRadius, style: .continuous))
+            .clipShape(RoundedRectangle(appChromeBaseRadius: photoCornerRadius, style: .continuous))
 
             Text(blog.title)
                 .font(.system(size: 12, weight: .semibold))

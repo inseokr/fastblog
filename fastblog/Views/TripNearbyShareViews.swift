@@ -39,7 +39,7 @@ struct TripShareQRCodeView: View {
                     .frame(maxWidth: 200, maxHeight: 200)
                     .padding(12)
                     .background(Color.white)
-                    .cornerRadius(12)
+                    .appChromeCornerRadius(12)
             } else {
                 Text("Could not build QR")
                     .foregroundStyle(.secondary)
@@ -185,14 +185,14 @@ struct TripNearbyShareHostBlogSettingsOverlay: View {
                     .frame(maxWidth: 400)
                     .frame(maxHeight: 620)
                     .background(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        RoundedRectangle(appChromeBaseRadius: 24, style: .continuous)
                             .fill(Color(uiColor: .secondarySystemGroupedBackground))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                RoundedRectangle(appChromeBaseRadius: 24, style: .continuous)
                                     .stroke(Color.white.opacity(0.08), lineWidth: 1)
                             )
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 24, style: .continuous))
                     .shadow(color: .black.opacity(0.45), radius: 30, y: 10)
                     .padding(.horizontal, 24)
 
@@ -279,7 +279,7 @@ struct TripNearbyShareReceiveSheet: View {
                         .multilineTextAlignment(.center)
                         .padding(14)
                         .background(Color(uiColor: .secondarySystemGroupedBackground))
-                        .cornerRadius(12)
+                        .appChromeCornerRadius(12)
 
                     receiveStatusView
                 }
@@ -471,7 +471,7 @@ struct TripNearbyShareReceiveSheet: View {
             }
             .padding(24)
             .background(.ultraThinMaterial)
-            .cornerRadius(16)
+            .appChromeCornerRadius(16)
             .padding(28)
         }
     }

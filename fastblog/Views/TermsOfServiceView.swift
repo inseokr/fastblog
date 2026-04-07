@@ -7,9 +7,32 @@ import SwiftUI
 
 /// Dedicated Terms of Service page for Bloggo. Shown from Settings.
 struct TermsOfServiceView: View {
+    @Environment(\.dismiss) private var dismiss
+    private let scrollBottomInset: CGFloat = 120
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+        ZStack(alignment: .bottom) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack {
+                        Spacer(minLength: 0)
+                        Image("SplashIcon")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 68, height: 68)
+                            .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.top, 8)
+                    .padding(.bottom, 2)
+
+                    Text("Terms of Service")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+
                 Group {
                     sectionTitle("1. Acceptance of Terms")
                     bodyText("By using Bloggo — whether as a guest or by creating an account — you agree to these Terms of Service and our Privacy Policy. If you do not agree, please do not use our service.")
@@ -29,15 +52,16 @@ struct TermsOfServiceView: View {
                     sectionTitle("3. Guest Users and Registered Accounts")
                     bodyText("Bloggo can be used with or without a registered account:")
                     bullet("Guest Users: Guests may create and export one (1) blog. Guest data is stored locally on the device and is not associated with any account.")
-                    bullet("Registered Users (free): Creating a free Bloggo account allows you to save and manage unlimited blog drafts and export as many blogs as you like. Registered accounts require a valid email address.")
-                    bodyText("Account creation is free and takes only a moment. Registered users enjoy the full Bloggo experience with no content restrictions.")
+                    bullet("Registered Users: Creating a Bloggo account allows you to save and manage unlimited blog drafts and export as many blogs as you like. Registered accounts require a valid email address.")
+                    bodyText("Account creation takes only a moment. Registered users enjoy the full Bloggo experience with no content restrictions.")
                 }
 
                 Group {
                     sectionTitle("4. User Accounts")
                     bodyText("If you create an account, you are responsible for maintaining the confidentiality of your account credentials and for all activities that occur under your account. Please notify us immediately of any unauthorized use.")
-                    bullet("You must be at least 13 years old to create an account.")
-                    bullet("You may not create more than one account per person.")
+                    bullet("You must be at least 13 years old to create a Bloggo account.")
+                    bullet("If you are under 13, you may use Bloggo only as a guest (without creating an account).")
+                    bullet("Only one account may be created per email address.")
                     bullet("You must provide accurate and complete information during registration.")
                     bullet("You are responsible for all content created or exported from your account.")
                 }
@@ -95,8 +119,36 @@ struct TermsOfServiceView: View {
                 Spacer(minLength: 40)
             }
             .padding(20)
+            .padding(.bottom, scrollBottomInset)
+            }
+
+            VStack(spacing: 0) {
+                LinearGradient(
+                    colors: [Color.clear, Color(uiColor: .systemBackground).opacity(0.9)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 42)
+                .allowsHitTesting(false)
+
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Close")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color.blue)
+                        .clipShape(Capsule())
+                        .shadow(color: Color.blue.opacity(0.3), radius: 10, y: 4)
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 4)
+                .padding(.bottom, 16)
+            }
         }
-        .navigationTitle("Terms of Service")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
     }
 

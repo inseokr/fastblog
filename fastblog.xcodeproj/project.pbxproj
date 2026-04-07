@@ -48,6 +48,7 @@
 		AC413CC9DFEB2B2939B89DA5 /* StoryBookContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67D919F737961D65785318BA /* StoryBookContent.swift */; };
 		ACC2FF7BA930277126E43C96 /* StoryPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0733072C4EA957FE04A03752 /* StoryPageView.swift */; };
 		BB000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000101 /* ContentView.swift */; };
+		BB0003C5 /* AppChromeMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003C4 /* AppChromeMetrics.swift */; };
 		BB000104 /* fastblogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000103 /* fastblogApp.swift */; };
 		BB000106 /* MyBlogsProfileViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000105 /* MyBlogsProfileViewModel.swift */; };
 		BB000108 /* ProfileMapViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000107 /* ProfileMapViewModel.swift */; };
@@ -137,6 +138,7 @@
 		BB0001C0 /* PlaceSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001BF /* PlaceSearchViewModel.swift */; };
 		BB0001C2 /* KeyboardCaptionToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C1 /* KeyboardCaptionToolbar.swift */; };
 		BB0001C4 /* UndoOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C3 /* UndoOverlayView.swift */; };
+		BB0003E3 /* UndoToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E2 /* UndoToastView.swift */; };
 		BB0001C6 /* NeighborhoodIntroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C5 /* NeighborhoodIntroView.swift */; };
 		BB0001C8 /* NeighborhoodMapRefinementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C7 /* NeighborhoodMapRefinementView.swift */; };
 		BB0001CA /* NeighborhoodSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C9 /* NeighborhoodSearchView.swift */; };
@@ -281,6 +283,7 @@
 		B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PlaceCaptionEditSheet.swift; sourceTree = "<group>"; };
 		BB0003E0 /* GoogleSearchEmbeddedWebView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoogleSearchEmbeddedWebView.swift; sourceTree = "<group>"; };
 		BB000101 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		BB0003C4 /* AppChromeMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppChromeMetrics.swift; sourceTree = "<group>"; };
 		BB000103 /* fastblogApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = fastblogApp.swift; sourceTree = "<group>"; };
 		BB000105 /* MyBlogsProfileViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyBlogsProfileViewModel.swift; sourceTree = "<group>"; };
 		BB000107 /* ProfileMapViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileMapViewModel.swift; sourceTree = "<group>"; };
@@ -370,6 +373,7 @@
 		BB0001BF /* PlaceSearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSearchViewModel.swift; sourceTree = "<group>"; };
 		BB0001C1 /* KeyboardCaptionToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardCaptionToolbar.swift; sourceTree = "<group>"; };
 		BB0001C3 /* UndoOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoOverlayView.swift; sourceTree = "<group>"; };
+		BB0003E2 /* UndoToastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoToastView.swift; sourceTree = "<group>"; };
 		BB0001C5 /* NeighborhoodIntroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodIntroView.swift; sourceTree = "<group>"; };
 		BB0001C7 /* NeighborhoodMapRefinementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodMapRefinementView.swift; sourceTree = "<group>"; };
 		BB0001C9 /* NeighborhoodSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodSearchView.swift; sourceTree = "<group>"; };
@@ -546,6 +550,7 @@
 			isa = PBXGroup;
 			children = (
 				BB000101 /* ContentView.swift */,
+				BB0003C4 /* AppChromeMetrics.swift */,
 				BB000103 /* fastblogApp.swift */,
 				BB00022D /* SplashStateManager.swift */,
 				BB0001EF /* Info.plist */,
@@ -672,6 +677,7 @@
 				TS00R04 /* TripNearbyShareViews.swift */,
 				BB0002F6 /* NewMomentsPullUpViews.swift */,
 				BB0001C3 /* UndoOverlayView.swift */,
+				BB0003E2 /* UndoToastView.swift */,
 				BB00020D /* UnsavedTripCard.swift */,
 				BB000213 /* RemovedPlacesSheet.swift */,
 				BB0003C0 /* SplitPlaceStopView.swift */,
@@ -912,6 +918,7 @@
 				BB000301 /* AdminAnalyticsDashboardView.swift in Sources */,
 				BB000303 /* MyStatsView.swift in Sources */,
 				BB000102 /* ContentView.swift in Sources */,
+				BB0003C5 /* AppChromeMetrics.swift in Sources */,
 				BB000104 /* fastblogApp.swift in Sources */,
 				BB00F002 /* PlacesVisitedView.swift in Sources */,
 				BB00F004 /* PlaceVisitedDetailView.swift in Sources */,
@@ -1036,6 +1043,7 @@
 				BB000306 /* AtmosphericWaveformView.swift in Sources */,
 				BB0001C2 /* KeyboardCaptionToolbar.swift in Sources */,
 				BB0001C4 /* UndoOverlayView.swift in Sources */,
+				BB0003E3 /* UndoToastView.swift in Sources */,
 				BB0001C6 /* NeighborhoodIntroView.swift in Sources */,
 				BB0001C8 /* NeighborhoodMapRefinementView.swift in Sources */,
 				BB0001CA /* NeighborhoodSearchView.swift in Sources */,

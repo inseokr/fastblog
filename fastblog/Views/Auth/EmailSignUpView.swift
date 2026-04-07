@@ -33,10 +33,18 @@ struct EmailSignUpView: View {
     @State private var errorMessage: String?
     @State private var isLoading = false
     @State private var showSpamAlert = false
+    @State private var showPrivacyPolicy = false
+    @State private var showTermsOfService = false
     
     @FocusState private var usernameFocused: Bool
     @FocusState private var emailFocused: Bool
-    @FocusState private var passwordFocused: Bool
+
+    private enum PasswordFieldFocus: Hashable {
+        case primary
+        case confirm
+    }
+
+    @FocusState private var passwordFieldFocus: PasswordFieldFocus?
 
     // Validation
     private var isPasswordLengthValid: Bool { password.count >= 8 }
@@ -53,30 +61,38 @@ struct EmailSignUpView: View {
         !password.isEmpty && password == confirmPassword
     }
 
+    private var confirmPasswordBorderColor: Color {
+        if passwordFieldFocus == .confirm {
+            return Color.white.opacity(0.6)
+        }
+        if confirmPassword.isEmpty {
+            return Color.white.opacity(0.2)
+        }
+        return doPasswordsMatch ? Color.green.opacity(0.6) : Color.red.opacity(0.6)
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
                 backgroundGradient.ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    stepIndicator
-                        .padding(.top, 8)
-                        .padding(.bottom, 32)
-                    
                     ScrollView {
-                        VStack(spacing: 24) {
-                            switch step {
-                            case .enterUsername:
-                                usernameStep
-                            case .enterEmail:
-                                emailStep
-                            case .enterPassword:
-                                passwordStep
+                        ScrollViewReader { proxy in
+                            VStack(spacing: 24) {
+                                switch step {
+                                case .enterUsername:
+                                    usernameStep
+                                case .enterEmail:
+                                    emailStep
+                                case .enterPassword:
+                                    passwordStep(proxy: proxy)
+                                }
                             }
                         }
                     }
-
-                    Spacer()
+                    .scrollDismissesKeyboard(.interactively)
+                    .frame(maxHeight: .infinity)
                 }
                 .padding(.horizontal, 24)
 
@@ -105,12 +121,21 @@ struct EmailSignUpView: View {
                             .foregroundColor(.white.opacity(0.7))
                     }
                 }
+                ToolbarItem(placement: .principal) {
+                    stepIndicator
+                }
             }
             .preferredColorScheme(.dark)
             .alert("Verify Your Email", isPresented: $showSpamAlert) {
                 Button("Got it") { dismiss() }
             } message: {
                 Text("A verification link has been sent to \(email). Tap the link in that email to complete sign-up. Don't see it? Check your spam or junk folder.")
+            }
+            .sheet(isPresented: $showPrivacyPolicy) {
+                PrivacyPolicyView()
+            }
+            .sheet(isPresented: $showTermsOfService) {
+                TermsOfServiceView()
             }
         }
     }
@@ -137,10 +162,10 @@ struct EmailSignUpView: View {
                     .padding()
                     .background(Color.white.opacity(0.1))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(appChromeBaseRadius: 12)
                             .stroke(usernameFocused ? Color.white.opacity(0.6) : Color.white.opacity(0.2), lineWidth: 1)
                     )
-                    .cornerRadius(12)
+                    .appChromeCornerRadius(12)
                     .foregroundColor(.white)
                     .tint(.white)
                     .submitLabel(.continue)
@@ -151,10 +176,35 @@ struct EmailSignUpView: View {
                 }
             }
 
-            primaryButton("Next", icon: "arrow.right") {
+            primaryButton("Continue", icon: "arrow.right") {
                 goToEmail()
             }
             .disabled(username.trimmingCharacters(in: .whitespaces).isEmpty)
+
+            VStack(spacing: 6) {
+                Text("By continuing, you are agreeing to Bloggo's")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.35))
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+
+                HStack(spacing: 4) {
+                    Button("Terms of Service") {
+                        showTermsOfService = true
+                    }
+                    .foregroundColor(.white.opacity(0.55))
+
+                    Text("and")
+                        .foregroundColor(.white.opacity(0.35))
+
+                    Button("Privacy Policy") {
+                        showPrivacyPolicy = true
+                    }
+                    .foregroundColor(.white.opacity(0.55))
+                }
+                .font(.caption)
+            }
+            .padding(.top, 4)
         }
         .onAppear { usernameFocused = true }
     }
@@ -180,14 +230,17 @@ struct EmailSignUpView: View {
                     .padding()
                     .background(Color.white.opacity(0.1))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(appChromeBaseRadius: 12)
                             .stroke(emailFocused ? Color.white.opacity(0.6) : Color.white.opacity(0.2), lineWidth: 1)
                     )
-                    .cornerRadius(12)
+                    .appChromeCornerRadius(12)
                     .foregroundColor(.white)
                     .tint(.white)
                     .submitLabel(.continue)
                     .onSubmit { goToPassword() }
+                    .onChange(of: email) { _, _ in
+                        if errorMessage != nil { errorMessage = nil }
+                    }
 
                 if let err = errorMessage {
                     errorRow(err)
@@ -202,7 +255,7 @@ struct EmailSignUpView: View {
         .onAppear { emailFocused = true }
     }
 
-    private var passwordStep: some View {
+    private func passwordStep(proxy: ScrollViewProxy) -> some View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Create Password")
@@ -224,14 +277,14 @@ struct EmailSignUpView: View {
                         }
                     }
                     .textContentType(.newPassword)
-                    .focused($passwordFocused)
+                    .focused($passwordFieldFocus, equals: .primary)
                     .padding()
                     .background(Color.white.opacity(0.1))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(passwordFocused ? Color.white.opacity(0.6) : Color.white.opacity(0.2), lineWidth: 1)
+                        RoundedRectangle(appChromeBaseRadius: 12)
+                            .stroke(passwordFieldFocus == .primary ? Color.white.opacity(0.6) : Color.white.opacity(0.2), lineWidth: 1)
                     )
-                    .cornerRadius(12)
+                    .appChromeCornerRadius(12)
                     .foregroundColor(.white)
                     .tint(.white)
 
@@ -263,13 +316,14 @@ struct EmailSignUpView: View {
                         }
                     }
                     .textContentType(.newPassword)
+                    .focused($passwordFieldFocus, equals: .confirm)
                     .padding()
                     .background(Color.white.opacity(0.1))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(confirmPassword.isEmpty ? Color.white.opacity(0.2) : (doPasswordsMatch ? Color.green.opacity(0.6) : Color.red.opacity(0.6)), lineWidth: 1)
+                        RoundedRectangle(appChromeBaseRadius: 12)
+                            .stroke(confirmPasswordBorderColor, lineWidth: 1)
                     )
-                    .cornerRadius(12)
+                    .appChromeCornerRadius(12)
                     .foregroundColor(.white)
                     .tint(.white)
                     
@@ -289,9 +343,18 @@ struct EmailSignUpView: View {
             primaryButton("Create Account", icon: "checkmark.circle.fill") {
                 performSignUp()
             }
+            .id("passwordCreateAccountCTA")
             .disabled(!isPasswordValid || !doPasswordsMatch)
         }
-        .onAppear { passwordFocused = true }
+        .onAppear { passwordFieldFocus = .primary }
+        .onChange(of: passwordFieldFocus) { _, newValue in
+            guard newValue == .confirm else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                withAnimation(.easeOut(duration: 0.28)) {
+                    proxy.scrollTo("passwordCreateAccountCTA", anchor: .bottom)
+                }
+            }
+        }
     }
     
     // MARK: - Step indicator
@@ -342,13 +405,11 @@ struct EmailSignUpView: View {
         
         Task {
             do {
-                // <note> let's allow duplicate email for now. we'll add a check later.
-                // let isAvailable = try await authService.checkEmailAvailability(email: trimmedEmail)
-                let isAvailable = true
+                let isAvailable = try await authService.checkEmailAvailability(email: trimmedEmail)
                 if isAvailable {
                     withAnimation { step = .enterPassword }
                 } else {
-                    errorMessage = "That email is already in use."
+                    errorMessage = "An account with this email already exists."
                 }
             } catch {
                 errorMessage = error.localizedDescription
@@ -415,7 +476,7 @@ struct EmailSignUpView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 54)
             .background(Color.white)
-            .cornerRadius(14)
+            .appChromeCornerRadius(14)
             .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
         }
         .buttonStyle(.plain)

@@ -79,7 +79,7 @@ struct StoryModePDFOptionsSheet: View {
                 }
             }
             .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .cornerRadius(12)
+            .appChromeCornerRadius(12)
         }
     }
 
@@ -104,7 +104,7 @@ struct StoryModePDFOptionsSheet: View {
                 }
             }
             .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .cornerRadius(12)
+            .appChromeCornerRadius(12)
         }
     }
 
@@ -127,7 +127,7 @@ struct StoryModePDFOptionsSheet: View {
             .padding(.vertical, 16)
             .background(Color.accentColor)
             .foregroundColor(.white)
-            .cornerRadius(12)
+            .appChromeCornerRadius(12)
         }
         .buttonStyle(.plain)
     }

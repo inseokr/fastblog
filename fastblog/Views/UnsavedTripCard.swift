@@ -42,16 +42,16 @@ struct UnsavedTripCard: View {
                     .padding(.vertical, 6)
                     .frame(maxWidth: .infinity)
                     .background(Color.white)
-                    .cornerRadius(6)
+                    .appChromeCornerRadius(6)
                     .padding(.top, 8)
             }
             .padding(12)
         }
         .frame(width: cardWidth)
         .background(Color.white.opacity(0.1))
-        .cornerRadius(12)
+        .appChromeCornerRadius(12)
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(appChromeBaseRadius: 12)
                 .stroke(Color.white.opacity(0.1), lineWidth: 1)
         )
         .contentShape(Rectangle())

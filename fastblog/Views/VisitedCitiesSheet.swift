@@ -347,7 +347,7 @@ struct VisitedCitiesSheet: View {
         .padding(.horizontal, 14)
         .frame(height: 46)
         .background(Color(UIColor.secondarySystemFill))
-        .clipShape(RoundedRectangle(cornerRadius: 15))
+        .clipShape(RoundedRectangle(appChromeBaseRadius: 15))
     }
 
     // MARK: - Trip list
@@ -377,9 +377,9 @@ struct VisitedCitiesSheet: View {
                             }
                         }
                         .background(Color(UIColor.secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                        .clipShape(RoundedRectangle(appChromeBaseRadius: 18))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 18)
+                            RoundedRectangle(appChromeBaseRadius: 18)
                                 .stroke(Color.primary.opacity(0.06), lineWidth: 1)
                         )
                     }
@@ -839,7 +839,7 @@ private struct VisitedCityMomentPreviewSheet: View {
                 .scaledToFit()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
 
             VStack {
                 Spacer(minLength: 0)
@@ -851,7 +851,7 @@ private struct VisitedCityMomentPreviewSheet: View {
                 .frame(height: 120)
                 .allowsHitTesting(false)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
 
             VStack(alignment: .leading, spacing: 10) {
                 if isLoadingMorePhotos {
@@ -884,9 +884,9 @@ private struct VisitedCityMomentPreviewSheet: View {
                                     .scaledToFill()
                                     .frame(width: 58, height: 58)
                                     .clipped()
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .clipShape(RoundedRectangle(appChromeBaseRadius: 10))
                                     .overlay(
-                                        RoundedRectangle(cornerRadius: 10)
+                                        RoundedRectangle(appChromeBaseRadius: 10)
                                             .stroke(selectedIndex == i ? Color.white : Color.white.opacity(0.25), lineWidth: selectedIndex == i ? 3 : 1)
                                     )
                             }
@@ -922,7 +922,7 @@ private struct VisitedCityMomentPreviewSheet: View {
                 .mapStyle(.standard(elevation: .realistic))
                 .frame(height: 260)
                 .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
                 .colorScheme(.light)
                 .id("\(c.latitude)-\(c.longitude)-\(selectedIndex)")
             }
@@ -1004,7 +1004,7 @@ private struct CityTripRow: View {
                 onTapCover()
             } label: {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(appChromeBaseRadius: 12)
                         .fill(Color(UIColor.tertiarySystemFill))
                         .frame(width: 60, height: 60)
 
@@ -1013,7 +1013,7 @@ private struct CityTripRow: View {
                             .resizable()
                             .scaledToFill()
                             .frame(width: 60, height: 60)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
                     } else {
                         Image(systemName: "mappin.circle.fill")
                             .font(.system(size: 22))
@@ -1072,11 +1072,11 @@ private struct CityTripRow: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(appChromeBaseRadius: 14)
                 .fill(isSelected ? Color.accentColor.opacity(0.10) : Color.clear)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(appChromeBaseRadius: 14)
                 .stroke(isSelected ? Color.accentColor.opacity(0.35) : Color.clear, lineWidth: 1)
         )
         .opacity(isUnavailable ? 0.75 : 1)

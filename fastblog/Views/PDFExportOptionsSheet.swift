@@ -84,7 +84,7 @@ struct PDFExportOptionsSheet: View {
                 }
             }
             .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .cornerRadius(12)
+            .appChromeCornerRadius(12)
         }
     }
 
@@ -109,7 +109,7 @@ struct PDFExportOptionsSheet: View {
                 }
             }
             .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .cornerRadius(12)
+            .appChromeCornerRadius(12)
         }
     }
 
@@ -165,7 +165,7 @@ struct PDFExportOptionsSheet: View {
             .padding(.vertical, 16)
             .background(Color.accentColor)
             .foregroundColor(.white)
-            .cornerRadius(12)
+            .appChromeCornerRadius(12)
         }
         .buttonStyle(.plain)
     }
@@ -201,7 +201,7 @@ struct PDFExportOptionsSheet: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
             .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .cornerRadius(12)
+            .appChromeCornerRadius(12)
         }
         .buttonStyle(.plain)
         .animation(.easeInOut(duration: 0.2), value: shape)
@@ -215,14 +215,14 @@ struct PDFExportOptionsSheet: View {
         let stroke = Color.accentColor
         switch shape {
         case .rounded:
-            RoundedRectangle(cornerRadius: 5)
+            RoundedRectangle(appChromeBaseRadius: 5)
                 .fill(fill)
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(stroke, lineWidth: 1.5))
+                .overlay(RoundedRectangle(appChromeBaseRadius: 5).stroke(stroke, lineWidth: 1.5))
 
         case .squircle:
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(appChromeBaseRadius: 14)
                 .fill(fill)
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(stroke, lineWidth: 1.5))
+                .overlay(RoundedRectangle(appChromeBaseRadius: 14).stroke(stroke, lineWidth: 1.5))
 
         case .circle:
             Circle()

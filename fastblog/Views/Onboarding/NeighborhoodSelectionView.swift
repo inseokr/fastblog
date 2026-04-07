@@ -24,7 +24,11 @@ struct NeighborhoodSelectionView: View {
     @State private var resolvePlaceTask: Task<Void, Never>?
     @FocusState private var isFocused: Bool
     @State private var isMapRevealed = false
-    @ScaledMetric(relativeTo: .body) private var minFieldHeight: CGFloat = 44
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .body) private var minFieldHeight: CGFloat = 52
+    @ScaledMetric(relativeTo: .body) private var fieldHorizontalInset: CGFloat = 16
+    @ScaledMetric(relativeTo: .body) private var fieldVerticalInset: CGFloat = 13
+    @ScaledMetric(relativeTo: .body) private var clearButtonTrailingInset: CGFloat = 12
     private var settingsBackground: Color {
         OnboardingConstants.Colors.background
     }
@@ -150,19 +154,21 @@ struct NeighborhoodSelectionView: View {
             HStack(spacing: 0) {
                 ZStack(alignment: .leading) {
                     if searchHelper.query.isEmpty {
-                        Text("Search for your city or neighborhood")
+                        Text("Search for your neighborhood")
                             .font(.body)
                             .foregroundColor(Color(white: 0.45))
-                            .lineLimit(2)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 2)
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(.leading, 16)
-                            .padding(.trailing, 12)
+                            .padding(.leading, fieldHorizontalInset)
+                            .padding(.trailing, clearButtonTrailingInset)
                     }
                     TextField("", text: $searchHelper.query)
                         .textFieldStyle(.plain)
+                        .font(.body)
                         .foregroundColor(.black.opacity(0.85))
                         .focused($isFocused)
-                        .padding(12)
+                        .padding(.horizontal, fieldHorizontalInset)
+                        .padding(.vertical, fieldVerticalInset)
                         .onChange(of: isFocused) { _, focused in
                             if focused && hasPendingSelection {
                                 // User re-tapped the field after a confirmed selection —
@@ -189,14 +195,14 @@ struct NeighborhoodSelectionView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(Color(white: 0.45))
-                            .padding(.trailing, 12)
+                            .padding(.trailing, clearButtonTrailingInset)
                     }
                     .buttonStyle(.plain)
                 }
             }
             .frame(minHeight: minFieldHeight)
             .background(OnboardingConstants.Colors.searchBackground)
-            .cornerRadius(OnboardingConstants.Layout.searchCornerRadius)
+            .appChromeCornerRadius(OnboardingConstants.Layout.searchCornerRadius)
             .accessibilityLabel("Select area on map")
             .accessibilityHint("Type to see suggestions, or pan the map and tap Select to choose an area")
 
@@ -238,9 +244,9 @@ struct NeighborhoodSelectionView: View {
                 }
             }
             .background(OnboardingConstants.Colors.background)
-            .cornerRadius(OnboardingConstants.Layout.searchCornerRadius)
+            .appChromeCornerRadius(OnboardingConstants.Layout.searchCornerRadius)
             .overlay(
-                RoundedRectangle(cornerRadius: OnboardingConstants.Layout.searchCornerRadius)
+                RoundedRectangle(appChromeBaseRadius: OnboardingConstants.Layout.searchCornerRadius)
                     .stroke(Color.white.opacity(0.2), lineWidth: 1)
             )
         }
@@ -333,7 +339,7 @@ struct NeighborhoodSelectionView: View {
             }
             .padding()
             .background(Color.white.opacity(0.05))
-            .cornerRadius(16)
+            .appChromeCornerRadius(16)
         }
         .padding(.top, 4)
     }

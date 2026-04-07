@@ -1277,7 +1277,7 @@ private struct SlideshowGalleryPhotoDetailView: View {
                             .font(.system(size: 22, weight: .semibold))
                             .foregroundColor(.white)
                             .frame(width: 56, height: 56)
-                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                     }
                     .accessibilityLabel("Download Photo")
 
@@ -1291,7 +1291,7 @@ private struct SlideshowGalleryPhotoDetailView: View {
                                 .font(.system(size: 22, weight: .semibold))
                                 .foregroundColor(.white)
                                 .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                         }
                         .accessibilityLabel("Delete Photo")
                     }
@@ -1451,12 +1451,6 @@ private struct GalleryThumbCell: View {
             }
         }
         .clipped()
-        .overlay {
-            if isCurrentPhoto {
-                Rectangle()
-                    .strokeBorder(Color.white, lineWidth: 2.5)
-            }
-        }
         .task(id: entry.id) {
             guard thumb == nil, loadedImages[entry.id] == nil else { return }
             thumb = await ImageLoader.shared.loadThumbnail(

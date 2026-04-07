@@ -252,7 +252,7 @@ struct ProfilePageView: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 56)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
         .padding(.horizontal, 20)
         .padding(.bottom, 12)
         .alert("Upload to Cloud?", isPresented: $showUploadPromptAlert) {
@@ -862,7 +862,7 @@ struct LockedCloudSection: View {
 
             HStack(spacing: ProfileTheme.Spacing.md) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(appChromeBaseRadius: 12)
                         .fill(
                             LinearGradient(
                                 colors: [Color.blue.opacity(0.12), Color.indigo.opacity(0.08)],
@@ -911,13 +911,13 @@ struct LockedCloudSection: View {
                             endPoint: .trailing
                         )
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
             }
             .buttonStyle(.plain)
         }
         .padding(ProfileTheme.Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(appChromeBaseRadius: 16)
                 .fill(Color(.secondarySystemBackground))
         )
     }

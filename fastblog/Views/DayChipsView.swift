@@ -46,7 +46,7 @@ struct DayChip: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
                 .background(isSelected ? Color.orange : Color(uiColor: .tertiarySystemFill))
-                .cornerRadius(20)
+                .appChromeCornerRadius(20)
         }
         .buttonStyle(.plain)
     }

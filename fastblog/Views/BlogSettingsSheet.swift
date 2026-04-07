@@ -140,7 +140,7 @@ struct BlogSettingsSheet: View {
                         .foregroundStyle(.white.opacity(0.9))
                 }
                 .padding(28)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 16))
                 .zIndex(16)
             }
 
@@ -180,10 +180,10 @@ struct BlogSettingsSheet: View {
         List {
             editAndRestoreSection
             titleAndCoverSection
-            backupSection
             unusedPhotosSection
             fontStyleSection
             weatherSection
+            backupSection
             cloudSection
         }
     }
@@ -269,7 +269,7 @@ struct BlogSettingsSheet: View {
             .disabled(isExportingBackup || !canExportSavedBackup)
         } footer: {
             if canExportSavedBackup {
-                Text("Exports the last saved version of this blog (not unsaved edits in the editor). The ZIP includes text and JPEG photos (reduced size for backup, not necessarily full-resolution originals in Photos). Use Save to Files, iCloud Drive, or another app to keep a copy outside this phone—Bloggo doesn’t store this file for you. On a new device, enable “Match Photo Library when importing” under Settings → Blog backup so the app can reconnect to photos already synced from iCloud.")
+                Text("Exports the last saved version (not unsaved edits). Save the ZIP outside this phone. On a new device, turn on “Add photos already on this device” in Settings → Blog backup so imports can link to your library.")
             } else {
                 Text("Save this blog from the editor first (toolbar Save). Export only includes saved blogs, not draft-only recaps.")
             }
@@ -313,7 +313,7 @@ struct BlogSettingsSheet: View {
 
     private var fontStyleSection: some View {
         Section {
-            Picker("Font Style", selection: $selectedBlogFont) {
+            Picker(selection: $selectedBlogFont) {
                 Text("Default")
                     .font(.system(size: 16))
                     .tag("Default")
@@ -344,6 +344,8 @@ struct BlogSettingsSheet: View {
                 Text("Typewriter")
                     .font(.custom("AmericanTypewriter", size: 16))
                     .tag("Typewriter")
+            } label: {
+                Label("Font Style", systemImage: "textformat.alt")
             }
         }
     }
@@ -384,10 +386,12 @@ struct BlogSettingsSheet: View {
 
     private var weatherSection: some View {
         Section {
-            Picker("Day weather", selection: $weatherTemperatureUnitRaw) {
+            Picker(selection: $weatherTemperatureUnitRaw) {
                 ForEach(WeatherTemperatureUnit.allCases, id: \.rawValue) { unit in
                     Text(unit.displayName).tag(unit.rawValue)
                 }
+            } label: {
+                Label("Day weather", systemImage: "sun.max")
             }
         } footer: {
             Text("High and low temperatures shown on each day in the blog use this unit.")
@@ -425,7 +429,7 @@ struct BlogSettingsSheet: View {
                 .frame(maxWidth: .infinity)
                 .padding()
                 .background(Color(uiColor: .secondarySystemGroupedBackground))
-                .cornerRadius(12)
+                .appChromeCornerRadius(12)
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 16)
@@ -511,7 +515,7 @@ struct BlogSettingsSheet: View {
                         .resizable()
                         .scaledToFit()
                         .frame(width: 60, height: 60)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
                         .padding(.top, 8)
                     
                     VStack(spacing: 8) {
@@ -545,7 +549,7 @@ struct BlogSettingsSheet: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
                                 .background(Color.red)
-                                .cornerRadius(12)
+                                .appChromeCornerRadius(12)
                         }
                         
                         Button {
@@ -559,7 +563,7 @@ struct BlogSettingsSheet: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
                                 .background(Color(white: 0.2))
-                                .cornerRadius(12)
+                                .appChromeCornerRadius(12)
                         }
                         
                         Button {
@@ -577,7 +581,7 @@ struct BlogSettingsSheet: View {
                 }
                 .padding(24)
                 .background(Color(uiColor: .secondarySystemGroupedBackground))
-                .cornerRadius(24)
+                .appChromeCornerRadius(24)
                 .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
                 .padding(.horizontal, 32)
                 .transition(.scale(scale: 0.8).combined(with: .opacity))
@@ -632,7 +636,7 @@ struct BlogTitleChangeSheet: View {
                 TextField("Blog title", text: $tempTitle)
                     .padding(16)
                     .background(Color(uiColor: .secondarySystemGroupedBackground))
-                    .cornerRadius(16)
+                    .appChromeCornerRadius(16)
                     .padding()
                     .focused($isFocused)
             }
@@ -694,7 +698,7 @@ struct BlogCoverChangeSheet: View {
                             HStack {
                                 TripCoverImage(theme: theme.id)
                                     .frame(width: 80, height: 50)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .clipShape(RoundedRectangle(appChromeBaseRadius: 8))
                                 Text(theme.label)
                                     .foregroundColor(.primary)
                                 Spacer()
@@ -706,7 +710,7 @@ struct BlogCoverChangeSheet: View {
                             .padding(.vertical, 8)
                             .padding(.horizontal, 12)
                             .background(Color(uiColor: .secondarySystemGroupedBackground))
-                            .cornerRadius(12)
+                            .appChromeCornerRadius(12)
                         }
                         .buttonStyle(.plain)
                     }
