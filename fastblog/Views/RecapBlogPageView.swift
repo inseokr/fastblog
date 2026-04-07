@@ -172,9 +172,9 @@ struct RecapBlogPageView: View {
 
     // Undo State
     @State private var lastUndoAction: UndoAction?
-    @State private var showUndoOverlay = false
     @State private var showUndoToast = false
     @State private var undoToastText = ""
+    @State private var undoToastTask: Task<Void, Never>?
     @State private var isKeyboardVisible = false
     @State private var cancellables = Set<AnyCancellable>()
     @State private var visitedDayIndices: Set<Int> = [0]
@@ -3327,7 +3327,6 @@ Your blog remains private unless you choose to share it.
         AppAnalytics.track(.blogSave(blogId: blogId.uuidString))
 
         withAnimation {
-            showUndoOverlay = false
             lastUndoAction = nil
         }
 
@@ -3363,7 +3362,6 @@ Your blog remains private unless you choose to share it.
         let stop = day.placeStops[stopIndex]
         withAnimation {
             lastUndoAction = .deletePlace(dayId: dayId, stop: stop, index: stopIndex)
-            showUndoOverlay = true
         }
         
         // Soft-delete: preserve stop in removedPlaceStops so it can be restored later
@@ -3406,7 +3404,6 @@ Your blog remains private unless you choose to share it.
         
         withAnimation {
             lastUndoAction = .deletePhoto(dayId: dayId, stopId: stopId, photo: photo, index: photoIdx)
-            showUndoOverlay = true
         }
         
         // Perform Deletion
@@ -3453,7 +3450,6 @@ Your blog remains private unless you choose to share it.
 
         withAnimation {
             lastUndoAction = .mergePlaceStops(dayId: dayId, originalFirst: first, originalSecond: second, firstIndex: firstIdx)
-            showUndoOverlay = true
         }
 
         var merged = first
@@ -3638,7 +3634,6 @@ Your blog remains private unless you choose to share it.
                 }
             }
 
-            showUndoOverlay = false
             lastUndoAction = nil
 
             persistRecapBlogDetail()
@@ -3646,12 +3641,17 @@ Your blog remains private unless you choose to share it.
 
         // Show toast confirming what was undone (`action` is still in scope from the guard let above)
         undoToastText = action.text
+        undoToastTask?.cancel()
         withAnimation {
             showUndoToast = true
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            withAnimation {
-                showUndoToast = false
+        undoToastTask = Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation {
+                    showUndoToast = false
+                }
             }
         }
     }
@@ -4619,6 +4619,7 @@ Your blog remains private unless you choose to share it.
                         .foregroundColor(lastUndoAction != nil ? recapChromeForeground : recapChromeForeground.opacity(0.3))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Undo")
                 .disabled(lastUndoAction == nil)
             }
         }
@@ -5273,7 +5274,6 @@ Your blog remains private unless you choose to share it.
         if case .deletePhoto(_, _, let undoPhoto, _) = lastUndoAction, undoPhoto.id == photoId {
             withAnimation {
                 lastUndoAction = nil
-                showUndoOverlay = false
             }
         }
     }
