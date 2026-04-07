@@ -173,7 +173,8 @@ struct RecapBlogPageView: View {
     // Undo State
     @State private var lastUndoAction: UndoAction?
     @State private var showUndoOverlay = false
-    @State private var isUndoMinimized = false
+    @State private var showUndoToast = false
+    @State private var undoToastText = ""
     @State private var isKeyboardVisible = false
     @State private var cancellables = Set<AnyCancellable>()
     @State private var visitedDayIndices: Set<Int> = [0]
@@ -1286,21 +1287,12 @@ struct RecapBlogPageView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            // Undo Overlay (Banner or Button)
-            if showUndoOverlay {
-                UndoOverlayView(
-                    text: lastUndoAction?.text ?? "Item hidden",
-                    isMinimized: $isUndoMinimized,
-                    onUndo: { performUndo() },
-                    onDismiss: {
-                        withAnimation {
-                            showUndoOverlay = false
-                            lastUndoAction = nil
-                        }
-                    }
-                )
-                .padding(.bottom, Self.dayFilterApproxHeight + 10)
-                .zIndex(20)
+            // Undo Toast (appears for 3s after undo is performed)
+            if showUndoToast {
+                UndoToastView(text: undoToastText)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, Self.dayFilterApproxHeight + 10)
+                    .zIndex(20)
             } else if showSplitUndoBanner {
                 // Special banner for "Undo Split" in edit mode
                 VStack {
@@ -3372,7 +3364,6 @@ Your blog remains private unless you choose to share it.
         withAnimation {
             lastUndoAction = .deletePlace(dayId: dayId, stop: stop, index: stopIndex)
             showUndoOverlay = true
-            isUndoMinimized = false
         }
         
         // Soft-delete: preserve stop in removedPlaceStops so it can be restored later
@@ -3416,7 +3407,6 @@ Your blog remains private unless you choose to share it.
         withAnimation {
             lastUndoAction = .deletePhoto(dayId: dayId, stopId: stopId, photo: photo, index: photoIdx)
             showUndoOverlay = true
-            isUndoMinimized = false
         }
         
         // Perform Deletion
@@ -3464,7 +3454,6 @@ Your blog remains private unless you choose to share it.
         withAnimation {
             lastUndoAction = .mergePlaceStops(dayId: dayId, originalFirst: first, originalSecond: second, firstIndex: firstIdx)
             showUndoOverlay = true
-            isUndoMinimized = false
         }
 
         var merged = first
@@ -3653,6 +3642,17 @@ Your blog remains private unless you choose to share it.
             lastUndoAction = nil
 
             persistRecapBlogDetail()
+        }
+
+        // Show toast confirming what was undone (`action` is still in scope from the guard let above)
+        undoToastText = action.text
+        withAnimation {
+            showUndoToast = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            withAnimation {
+                showUndoToast = false
+            }
         }
     }
 

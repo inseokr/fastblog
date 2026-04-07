@@ -138,6 +138,7 @@
 		BB0001C0 /* PlaceSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001BF /* PlaceSearchViewModel.swift */; };
 		BB0001C2 /* KeyboardCaptionToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C1 /* KeyboardCaptionToolbar.swift */; };
 		BB0001C4 /* UndoOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C3 /* UndoOverlayView.swift */; };
+		BB0003E3 /* UndoToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E2 /* UndoToastView.swift */; };
 		BB0001C6 /* NeighborhoodIntroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C5 /* NeighborhoodIntroView.swift */; };
 		BB0001C8 /* NeighborhoodMapRefinementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C7 /* NeighborhoodMapRefinementView.swift */; };
 		BB0001CA /* NeighborhoodSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0001C9 /* NeighborhoodSearchView.swift */; };
@@ -371,6 +372,7 @@
 		BB0001BF /* PlaceSearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSearchViewModel.swift; sourceTree = "<group>"; };
 		BB0001C1 /* KeyboardCaptionToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardCaptionToolbar.swift; sourceTree = "<group>"; };
 		BB0001C3 /* UndoOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoOverlayView.swift; sourceTree = "<group>"; };
+		BB0003E2 /* UndoToastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoToastView.swift; sourceTree = "<group>"; };
 		BB0001C5 /* NeighborhoodIntroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodIntroView.swift; sourceTree = "<group>"; };
 		BB0001C7 /* NeighborhoodMapRefinementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodMapRefinementView.swift; sourceTree = "<group>"; };
 		BB0001C9 /* NeighborhoodSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodSearchView.swift; sourceTree = "<group>"; };
@@ -673,6 +675,7 @@
 				TS00R04 /* TripNearbyShareViews.swift */,
 				BB0002F6 /* NewMomentsPullUpViews.swift */,
 				BB0001C3 /* UndoOverlayView.swift */,
+				BB0003E2 /* UndoToastView.swift */,
 				BB00020D /* UnsavedTripCard.swift */,
 				BB000213 /* RemovedPlacesSheet.swift */,
 				BB0003C0 /* SplitPlaceStopView.swift */,
@@ -1038,6 +1041,7 @@
 				BB000306 /* AtmosphericWaveformView.swift in Sources */,
 				BB0001C2 /* KeyboardCaptionToolbar.swift in Sources */,
 				BB0001C4 /* UndoOverlayView.swift in Sources */,
+				BB0003E3 /* UndoToastView.swift in Sources */,
 				BB0001C6 /* NeighborhoodIntroView.swift in Sources */,
 				BB0001C8 /* NeighborhoodMapRefinementView.swift in Sources */,
 				BB0001CA /* NeighborhoodSearchView.swift in Sources */,
