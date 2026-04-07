@@ -5,7 +5,7 @@ struct CoverPageView: View {
     let cover: CoverContent
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
+        ZStack(alignment: .topLeading) {
             // Avoid white letterboxing when TabView lays out in the safe-area inset (fixed UIScreen frames no longer match).
             Color.black
                 .ignoresSafeArea(edges: .all)
@@ -28,32 +28,32 @@ struct CoverPageView: View {
             .clipped()
             .ignoresSafeArea(edges: .all)
 
-            // Gradient scrim so text is readable over any photo (bottom ~half of screen, like before).
+            // Gradient scrim so text is readable over any photo (top ~half of screen).
             VStack(spacing: 0) {
-                Spacer(minLength: 0)
                 LinearGradient(
-                    colors: [.clear, .black.opacity(0.65)],
+                    colors: [.black.opacity(0.65), .clear],
                     startPoint: .top,
                     endPoint: .bottom
                 )
                 .frame(maxWidth: .infinity)
                 .frame(height: max(280, UIScreen.main.bounds.height * 0.5))
+                Spacer(minLength: 0)
             }
             .ignoresSafeArea(edges: .vertical)
 
-            // Trip name + duration — bottom left
+            // Trip name + duration — top left
             VStack(alignment: .leading, spacing: 6) {
                 Text(cover.title)
                     .font(.system(size: 30, weight: .bold))
                     .foregroundColor(.white)
                     .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
                 Text(cover.subtitle)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: 30, weight: .medium))
                     .foregroundColor(.white.opacity(0.9))
                     .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, StoryPageLayout.storyChromeBottomOverlayHeight)
+            .padding(.top, 80)
         }
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .background(Color.black)

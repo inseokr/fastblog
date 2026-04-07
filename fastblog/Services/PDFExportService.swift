@@ -910,7 +910,7 @@ class PDFExportService {
         dateText: String,
         fontTheme: FontTheme
     ) {
-        let scrimH = min(76, mapFrame.height * 0.34)
+        let scrimH = min(140, mapFrame.height * 0.45)
         drawPDFTopEdgeGradientOverlay(
             in: CGRect(x: mapFrame.minX, y: mapFrame.minY, width: mapFrame.width, height: scrimH),
             maxHeight: scrimH
@@ -922,7 +922,7 @@ class PDFExportService {
         shadow.shadowOffset = CGSize(width: 0, height: 1)
 
         let dayLabel = "DAY \(dayNumber)"
-        let dayFont = font(for: fontTheme, size: 11, weight: .semibold)
+        let dayFont = font(for: fontTheme, size: 44, weight: .bold)
         let dateFont = font(for: fontTheme, size: 18, weight: .bold)
 
         let left = NSMutableParagraphStyle()
@@ -943,7 +943,7 @@ class PDFExportService {
         ]
 
         let padX: CGFloat = 14
-        let padY: CGFloat = 12
+        let padY: CGFloat = 20
         let textWidth = mapFrame.width - padX * 2
 
         let dayH = dayLabel.boundingRect(
