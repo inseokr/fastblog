@@ -310,6 +310,9 @@ struct FullScreenMapView: View {
     var onDismiss: () -> Void
     /// Called when a photo caption is saved inside the modal. Receives (stopId, photoId, newCaption).
     var onCaptionSaved: ((UUID, UUID, String) -> Void)? = nil
+    /// Called when a place name is saved from the modal kebab menu.
+    /// Receives (stopId, newName, category, coordinate, subtitleLine).
+    var onPlaceNameSaved: ((UUID, String, String?, CLLocationCoordinate2D?, String) -> Void)? = nil
     /// When set, opens focused on this place marker.
     var initialFocusedPlaceId: UUID? = nil
 
@@ -329,11 +332,13 @@ struct FullScreenMapView: View {
         day: RecapBlogDay,
         onDismiss: @escaping () -> Void,
         onCaptionSaved: ((UUID, UUID, String) -> Void)? = nil,
+        onPlaceNameSaved: ((UUID, String, String?, CLLocationCoordinate2D?, String) -> Void)? = nil,
         initialFocusedPlaceId: UUID? = nil
     ) {
         self.day = day
         self.onDismiss = onDismiss
         self.onCaptionSaved = onCaptionSaved
+        self.onPlaceNameSaved = onPlaceNameSaved
         self.initialFocusedPlaceId = initialFocusedPlaceId
     }
 
@@ -503,7 +508,14 @@ struct FullScreenMapView: View {
             // Same full-screen fade overlay as RecapBlogPageView place viewer (not a pull-up sheet).
             if let stop = photoModalStop, let initialId = photoModalInitialPhotoId {
                 PlacePhotoModalView(
-                    placeTitle: .constant(stop.placeTitle),
+                    placeTitle: Binding(
+                        get: { photoModalStop?.placeTitle ?? stop.placeTitle },
+                        set: { newValue in
+                            guard var updated = photoModalStop else { return }
+                            updated.placeTitle = newValue
+                            photoModalStop = updated
+                        }
+                    ),
                     placeSubtitle: stop.placeSubtitle,
                     photos: stop.includedPhotos,
                     initialPhotoId: initialId,
@@ -521,6 +533,20 @@ struct FullScreenMapView: View {
                         flushCaptionChanges(stop: stop)
                         photoModalStop = nil
                         photoModalInitialPhotoId = nil
+                    },
+                    onSavePlaceName: { name, category, coord, subtitleLine in
+                        guard var updated = photoModalStop else { return }
+                        updated.placeTitle = name
+                        if let category {
+                            updated.placeCategory = category
+                        }
+                        if let coord {
+                            updated.representativeLocation = PhotoCoordinate(latitude: coord.latitude, longitude: coord.longitude)
+                        }
+                        let trimmedSubtitle = subtitleLine.trimmingCharacters(in: .whitespacesAndNewlines)
+                        updated.placeSubtitle = trimmedSubtitle.isEmpty ? nil : trimmedSubtitle
+                        photoModalStop = updated
+                        onPlaceNameSaved?(updated.id, name, category, coord, subtitleLine)
                     }
                 )
                 .transition(.asymmetric(insertion: .opacity, removal: .identity))
@@ -528,7 +554,9 @@ struct FullScreenMapView: View {
             }
         }
         .background(Color.black)
-        .ignoresSafeArea(edges: .all)
+        // Keep fullscreen map under system bars, but preserve keyboard safe-area
+        // so PlacePhotoModalView's caption editor inset stays above the keyboard.
+        .ignoresSafeArea(.container, edges: .all)
         .preferredColorScheme(.dark)
         .animation(.easeInOut(duration: 0.38), value: photoModalStop?.id)
         .onAppear {

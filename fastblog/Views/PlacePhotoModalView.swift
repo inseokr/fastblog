@@ -20,7 +20,9 @@ private extension View {
     @ViewBuilder
     func placePhotoModalIgnoreKeyboardSafeAreaForPhotoLayer(_ active: Bool) -> some View {
         if active {
-            self.ignoresSafeArea(.all, edges: .bottom)
+            // Ignore only the container safe area. Keeping keyboard safe-area behavior allows
+            // the caption editor inset (place name + text field) to stay above the keyboard.
+            self.ignoresSafeArea(.container, edges: .bottom)
         } else {
             self
         }
@@ -640,10 +642,18 @@ struct PlacePhotoModalView: View {
                 isVibeEnabled: isVibeEnabled,
                 isVibePlaying: isVibeEnabled && vibePlayer.isPlaying,
                 playingVibePulse: playingVibePulse,
-                onLeadingPrimary: { handleUserRequestedDismiss() },
+                onLeadingPrimary: {
+                    // Caption edit from kebab menu: "Cancel" should leave edit mode and
+                    // return to read-only in the same full-screen viewer.
+                    if isEditing && !blogIsEditMode && !openInCaptionEditor {
+                        isCaptionFocused = false
+                        revertChanges()
+                    } else {
+                        handleUserRequestedDismiss()
+                    }
+                },
                 onSaveCaptionAndDismiss: {
                     commitCaption()
-                    onDismiss()
                 },
                 onDoneBlogEdit: {
                     if hasUnsavedChanges {
@@ -1068,9 +1078,10 @@ struct PlacePhotoModalView: View {
                     .font(.system(size: 28))
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(.white, Color.black.opacity(0.5))
-                    .padding(16)
             }
             .buttonStyle(.plain)
+            .padding(.leading, 12)
+            .padding(.top, max(8, deviceSafeAreaInsets.top - 2))
         }
     }
 

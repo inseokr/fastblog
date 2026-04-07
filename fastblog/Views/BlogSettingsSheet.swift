@@ -313,7 +313,7 @@ struct BlogSettingsSheet: View {
 
     private var fontStyleSection: some View {
         Section {
-            Picker("Font Style", selection: $selectedBlogFont) {
+            Picker(selection: $selectedBlogFont) {
                 Text("Default")
                     .font(.system(size: 16))
                     .tag("Default")
@@ -344,6 +344,8 @@ struct BlogSettingsSheet: View {
                 Text("Typewriter")
                     .font(.custom("AmericanTypewriter", size: 16))
                     .tag("Typewriter")
+            } label: {
+                Label("Font Style", systemImage: "textformat.alt")
             }
         }
     }
@@ -384,10 +386,12 @@ struct BlogSettingsSheet: View {
 
     private var weatherSection: some View {
         Section {
-            Picker("Day weather", selection: $weatherTemperatureUnitRaw) {
+            Picker(selection: $weatherTemperatureUnitRaw) {
                 ForEach(WeatherTemperatureUnit.allCases, id: \.rawValue) { unit in
                     Text(unit.displayName).tag(unit.rawValue)
                 }
+            } label: {
+                Label("Day weather", systemImage: "sun.max")
             }
         } footer: {
             Text("High and low temperatures shown on each day in the blog use this unit.")
