@@ -100,6 +100,14 @@ private enum PlaceDetailChromeLayout {
 /// **Fullscreen (blog timeline, blog map, Places Visited):** use `presentation: .fullscreen(source:)` so top chrome
 /// matches across entry points. **Sheet (e.g. removed places):** use `presentation: .sheet` (default).
 struct PlacePhotoModalView: View {
+    private enum NavigationMapAppPreference: String {
+        case apple
+        case google
+    }
+
+    private static let navigationChooserSuppressedKey = "placePhotoNavigationChooserSuppressed"
+    private static let navigationChooserPreferredAppKey = "placePhotoNavigationChooserPreferredApp"
+
     @Binding var placeTitle: String
     let placeSubtitle: String?
     let photos: [RecapPhoto]
@@ -170,6 +178,10 @@ struct PlacePhotoModalView: View {
     @State private var resolvedTimeZoneByPhotoId: [UUID: TimeZone] = [:]
     @FocusState private var isCaptionFocused: Bool
     @State private var showRenameSheet = false
+    @State private var showNavigationAppChooser = false
+    @State private var navigationDoNotShowAgain = false
+    @AppStorage(Self.navigationChooserSuppressedKey) private var navigationChooserSuppressed = false
+    @AppStorage(Self.navigationChooserPreferredAppKey) private var navigationChooserPreferredAppRaw = ""
     /// When non-nil, replaces `placeSubtitle` for display after an in-modal rename (empty clears the line).
     @State private var subtitleOverride: String? = nil
     /// Read-only bottom overlay: multi-line captions start collapsed; user can expand.
@@ -679,7 +691,7 @@ struct PlacePhotoModalView: View {
                         vibePlayer.stop()
                     }
                 },
-                onNavigate: { openNavigation() },
+                onNavigate: { handleNavigationTap() },
                 onLink: { openGoogleSearch() }
             )
             .ignoresSafeArea(.all, edges: presentation.isSheet ? [] : .top)
@@ -722,6 +734,12 @@ struct PlacePhotoModalView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.ignoresSafeArea())
         .statusBar(hidden: false)
+        .overlay {
+            if showNavigationAppChooser {
+                navigationAppChooserOverlay
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
+        }
         .onDisappear {
             vibePlayer.stop()
         }
@@ -828,6 +846,97 @@ struct PlacePhotoModalView: View {
                 }
             }
         }
+    }
+
+    private var navigationAppChooserOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    showNavigationAppChooser = false
+                }
+
+            VStack(spacing: 14) {
+                Image(systemName: "arrow.triangle.turn.up.right.circle.fill")
+                    .font(.system(size: 44))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, Color.green)
+                    .padding(.top, 4)
+
+                Text("Navigate")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+
+                Text("Pick your preferred map app to start directions instantly.")
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.88))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 6)
+
+                Toggle(isOn: $navigationDoNotShowAgain) {
+                    Text("Do not show again")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+                .tint(.green)
+                .padding(.top, 2)
+
+                VStack(spacing: 10) {
+                    Button(action: { chooseNavigationApp(.apple) }) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "apple.logo")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("Apple Maps")
+                                .font(.body.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 13)
+                        .padding(.horizontal, 14)
+                        .background(Color.gray.opacity(0.42), in: RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: { chooseNavigationApp(.google) }) {
+                        HStack(spacing: 10) {
+                            googleMapsLogoBadge
+                            Text("Google Maps")
+                                .font(.body.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 13)
+                        .padding(.horizontal, 14)
+                        .background(Color.gray.opacity(0.42), in: RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 2)
+            }
+            .padding(22)
+            .background(
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 12)
+            .padding(.horizontal, 26)
+        }
+    }
+
+    private var googleMapsLogoBadge: some View {
+        ZStack {
+            Circle()
+                .fill(Color.white)
+            Text("G")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(Color(red: 0.26, green: 0.52, blue: 0.96))
+        }
+        .frame(width: 18, height: 18)
     }
 
     /// Caption editor above the keyboard — blog edit mode, caption-sheet handoff, or other fullscreen contexts that allow caption editing.
@@ -1153,14 +1262,52 @@ struct PlacePhotoModalView: View {
         return lines
     }
 
-    private func openNavigation() {
+    private var preferredNavigationApp: NavigationMapAppPreference? {
+        NavigationMapAppPreference(rawValue: navigationChooserPreferredAppRaw)
+    }
+
+    private func handleNavigationTap() {
+        guard currentPhoto?.location != nil else { return }
+        if navigationChooserSuppressed, let preferredNavigationApp {
+            openNavigation(with: preferredNavigationApp)
+            return
+        }
+        navigationDoNotShowAgain = false
+        showNavigationAppChooser = true
+    }
+
+    private func chooseNavigationApp(_ app: NavigationMapAppPreference) {
+        if navigationDoNotShowAgain {
+            navigationChooserSuppressed = true
+            navigationChooserPreferredAppRaw = app.rawValue
+        } else {
+            navigationChooserSuppressed = false
+        }
+        showNavigationAppChooser = false
+        openNavigation(with: app)
+    }
+
+    private func openNavigation(with app: NavigationMapAppPreference) {
         guard let location = currentPhoto?.location else { return }
         let lat = location.latitude
         let lon = location.longitude
-        // Open Apple Maps navigation to this coordinate
-        let urlString = "http://maps.apple.com/?daddr=\(lat),\(lon)"
-        if let url = URL(string: urlString) {
-            UIApplication.shared.open(url)
+
+        switch app {
+        case .apple:
+            let urlString = "http://maps.apple.com/?daddr=\(lat),\(lon)"
+            if let url = URL(string: urlString) {
+                UIApplication.shared.open(url)
+            }
+        case .google:
+            let nativeURL = URL(string: "comgooglemaps://?daddr=\(lat),\(lon)&directionsmode=driving")
+            if let nativeURL, UIApplication.shared.canOpenURL(nativeURL) {
+                UIApplication.shared.open(nativeURL)
+                return
+            }
+            let webURL = URL(string: "https://www.google.com/maps/dir/?api=1&destination=\(lat),\(lon)")
+            if let webURL {
+                UIApplication.shared.open(webURL)
+            }
         }
     }
     
@@ -1426,12 +1573,14 @@ private struct PlaceDetailTopChrome: View {
                                     .clipShape(Circle())
                                     .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
                             }
+                            .frame(width: PlaceDetailChromeLayout.circleActionSize, alignment: .center)
 
                             RightActionStack(
                                 onSparkles: { },
                                 onNavigate: onNavigate,
                                 onLink: onLink
                             )
+                            .frame(width: PlaceDetailChromeLayout.circleActionSize, alignment: .center)
                         }
                     } else if isEditing && !blogIsEditMode && !openInCaptionEditor {
                         accentHeaderPill(title: "Save", fill: Color.blue, action: onSaveCaptionAndDismiss)

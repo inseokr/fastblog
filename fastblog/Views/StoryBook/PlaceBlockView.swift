@@ -354,10 +354,8 @@ struct StoryPlaceExternalLinkIcon: View {
     }
 
     var body: some View {
-        Image("PlaceOpenInNew")
-            .renderingMode(.template)
-            .resizable()
-            .scaledToFit()
+        Image(systemName: "link")
+            .font(.system(size: iconSide, weight: .semibold))
             .frame(width: iconSide, height: iconSide)
             .foregroundColor(foregroundColor.opacity(0.92))
             .accessibilityHidden(true)

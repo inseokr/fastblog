@@ -27,7 +27,6 @@ final class CitySearchHelper: NSObject, ObservableObject {
 
         $query
             .debounce(for: .seconds(debounceInterval), scheduler: RunLoop.main)
-            .removeDuplicates()
             .sink { [weak self] newQuery in
                 self?.updateCompleter(query: newQuery)
             }
@@ -36,6 +35,7 @@ final class CitySearchHelper: NSObject, ObservableObject {
 
     private func updateCompleter(query: String) {
         if query.isEmpty {
+            completer.queryFragment = ""
             suggestions = []
             return
         }
