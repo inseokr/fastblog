@@ -558,6 +558,237 @@ struct CreatedRecapCard: View {
     }
 }
 
+// MARK: - Settings help (Blog backup / My home)
+
+private enum SettingsHelpTopic: String, Identifiable {
+    case blogBackup
+    case myHome
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .blogBackup: return "Blog backup"
+        case .myHome: return "My home"
+        }
+    }
+
+    /// Short line under the onboarding-style headline.
+    var subtitle: String {
+        switch self {
+        case .blogBackup: return "Export, back up, and import your saved blogs on a new device."
+        case .myHome: return "How distance from home works for trip scanning."
+        }
+    }
+}
+
+/// Shared card chrome for Settings help sheets (Blog backup, My home).
+private struct SettingsHelpTopicCard: View {
+    let icon: String
+    let tint: Color
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(tint.opacity(0.22))
+                    .frame(width: 42, height: 42)
+                Image(systemName: icon)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(tint)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.white.opacity(0.07))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
+    }
+}
+
+/// Structured help for Blog backup: same layout as My home (logo + cards).
+private struct SettingsBlogBackupHelpContent: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SettingsHelpTopicCard(
+                icon: "doc.zipper",
+                tint: Color(red: 0.35, green: 0.65, blue: 1.0),
+                title: "1. Export your blogs as a ZIP",
+                detail: "Tap Export all saved blogs. Bloggo packs your stories and JPEG photos into one file. Only blogs you have saved from the editor are included."
+            )
+            SettingsHelpTopicCard(
+                icon: "icloud.fill",
+                tint: Color(red: 0.25, green: 0.55, blue: 0.95),
+                title: "2. Back it up to iCloud",
+                detail: "Use Save to Files and put the ZIP in iCloud Drive, or send it to another cloud or computer. That way you can grab it again if this phone is lost or replaced."
+            )
+            SettingsHelpTopicCard(
+                icon: "arrow.down.doc",
+                tint: Color(red: 0.45, green: 0.85, blue: 0.55),
+                title: "3. Import on another device",
+                detail: "Whenever you are ready, open Bloggo on another phone or tablet, tap Import blog backup, and choose your ZIP. If your photos are already on that device, turn on Add photos already on this device in Settings under Blog backup so your blogs can link to them."
+            )
+        }
+        .padding(.horizontal, 20)
+    }
+}
+
+/// Structured help for “My home”: cards and logo instead of a wall of text.
+private struct SettingsMyHomeHelpContent: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SettingsHelpTopicCard(
+                icon: "house.fill",
+                tint: Color(red: 0.35, green: 0.65, blue: 1.0),
+                title: "What “My home” is",
+                detail: "This is the spot Bloggo measures from. It helps tell everyday photos near you apart from trip photos that feel farther away."
+            )
+            SettingsHelpTopicCard(
+                icon: "slider.horizontal.3",
+                tint: Color(red: 0.45, green: 0.85, blue: 0.55),
+                title: "The distance slider",
+                detail: "This sets how far from home a photo can be before it appears in trip lists. Slide it higher to hide more neighborhood photos."
+            )
+            SettingsHelpTopicCard(
+                icon: "arrow.triangle.2.circlepath",
+                tint: Color(red: 1.0, green: 0.75, blue: 0.35),
+                title: "After you change it",
+                detail: "Release the slider and Bloggo will rescan when it can. If trips still look wrong, close Bloggo fully, reopen, then open Trips."
+            )
+            SettingsHelpTopicCard(
+                icon: "photo.badge.lock.fill",
+                tint: Color(red: 0.75, green: 0.65, blue: 1.0),
+                title: "Limited Photos access",
+                detail: "If iOS only shows part of your library, home distance still applies, but scans use a default distance until you allow access to more photos."
+            )
+        }
+        .padding(.horizontal, 20)
+    }
+}
+
+private struct SettingsHelpSheet: View {
+    let topic: SettingsHelpTopic
+    @Environment(\.dismiss) private var dismiss
+
+    /// Space so the last cards can scroll above the floating CTA + gradient.
+    private let scrollBottomInset: CGFloat = 132
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            LinearGradient(
+                colors: [
+                    OnboardingConstants.Colors.backgroundGradientTop,
+                    OnboardingConstants.Colors.backgroundGradientBottom
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Keep a comfortable gap below the sheet grabber/drag area
+                    // so the title does not feel cramped in medium detent.
+                    Spacer(minLength: 0)
+                        .frame(height: 28)
+
+                    Image("SplashIcon")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 68, height: 68)
+                        .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
+                        .padding(.bottom, 10)
+
+                    VStack(spacing: 10) {
+                        Text(topic.title)
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+
+                        Text(topic.subtitle)
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.68))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 12)
+                    }
+                    .padding(.top, 6)
+                    .padding(.bottom, 12)
+
+                    switch topic {
+                    case .blogBackup:
+                        SettingsBlogBackupHelpContent()
+                    case .myHome:
+                        SettingsMyHomeHelpContent()
+                    }
+                }
+                .padding(.bottom, scrollBottomInset)
+            }
+            .scrollIndicators(.visible)
+
+            settingsHelpBottomCTA
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .preferredColorScheme(.dark)
+    }
+
+    /// Gradient scrim + primary action so scroll content can pass underneath (onboarding-style).
+    private var settingsHelpBottomCTA: some View {
+        VStack(spacing: 0) {
+            LinearGradient(
+                colors: [
+                    OnboardingConstants.Colors.backgroundGradientTop.opacity(0),
+                    OnboardingConstants.Colors.backgroundGradientBottom.opacity(0.55),
+                    OnboardingConstants.Colors.backgroundGradientBottom.opacity(0.97)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 52)
+            .allowsHitTesting(false)
+
+            Button {
+                dismiss()
+            } label: {
+                Text("Close")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(OnboardingConstants.Colors.doneButtonBlue)
+                    .clipShape(Capsule())
+                    .shadow(color: Color.blue.opacity(0.32), radius: 10, y: 4)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 4)
+            .padding(.bottom, 20)
+            .background(
+                OnboardingConstants.Colors.backgroundGradientBottom
+                    .ignoresSafeArea(edges: .bottom)
+            )
+        }
+    }
+}
+
 /// Settings sheet from the home page (gear icon). Includes neighborhood selection.
 private struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -592,6 +823,7 @@ private struct SettingsView: View {
     @State private var backupFlowAlertMessage = ""
     @State private var showBackupFlowAlert = false
     @AppStorage("bloggo.preferPhotoLibraryWhenImportingBackup") private var preferPhotoLibraryWhenImportingBackup = false
+    @State private var settingsHelpTopic: SettingsHelpTopic?
 
     private var travelStats: (countries: Int, cities: Int, places: Int) {
         let store = CreatedRecapBlogStore.shared
@@ -744,35 +976,6 @@ private struct SettingsView: View {
                 }
 
                 Section {
-                    Toggle(isOn: $preferPhotoLibraryWhenImportingBackup) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Match Photo Library when importing")
-                            Text("Uses capture time and location from the backup to link to photos already on this device (e.g. from iCloud). If no match, the copy inside the ZIP is used.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    Button {
-                        showImportBackupPicker = true
-                    } label: {
-                        Label("Import blog backup", systemImage: "arrow.down.doc")
-                    }
-                    .disabled(isImportingBackup)
-
-                    Button {
-                        Task { await exportAllBlogsBackupTapped() }
-                    } label: {
-                        Label("Export all saved blogs", systemImage: "square.and.arrow.up.on.square")
-                    }
-                    .disabled(isExportingAllBackups || !hasAnyBackupableBlog)
-                } header: {
-                    Text("Blog backup")
-                } footer: {
-                    Text("Export includes only blogs you’ve saved from the editor (not draft-only recaps). It packs them into a ZIP with text and JPEG images (compressed, not a full copy of every original camera file). Save that ZIP somewhere outside this phone—such as iCloud Drive, another cloud app, or a computer—if you want to recover after a lost device. Import adds new blogs here. With “Match Photo Library,” the blog references your existing library photos when possible (nothing new is saved to the library). Otherwise imported images are stored inside Bloggo only, not added to your Camera Roll.")
-                }
-
-                Section {
                     NavigationLink(
                         destination: NeighborhoodIntroView(onDismiss: {
                             showNeighborhoodFlow = false
@@ -822,12 +1025,60 @@ private struct SettingsView: View {
                         }
                     }
                 } header: {
-                    Text("My home")
-                } footer: {
-                    if photoAuth.status == .limited {
-                        Text("Home sets where nearby photos are measured from. With limited photo access, trip scans use the default distance from home for your neighborhood.")
-                    } else {
-                        Text("Please adjust it to a smaller value if you want to blog about activities around your neighborhood. Changing this distance only affects your trip list after a full library scan—when you release the slider, Bloggo starts one automatically if it can. If your trips still look wrong afterward, quit the app completely and reopen, then open Trips.")
+                    HStack {
+                        Text("My home")
+                        Spacer(minLength: 8)
+                        Button {
+                            settingsHelpTopic = .myHome
+                        } label: {
+                            Image(systemName: "questionmark.circle")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Learn more about My home")
+                    }
+                }
+
+                Section {
+                    Toggle(isOn: $preferPhotoLibraryWhenImportingBackup) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Add photos already on this device")
+                            Text("When you import a backup, Bloggo tries to match each image to a Moment already on this device. If no match is found, it imports and uses the copy from the ZIP.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Button {
+                        showImportBackupPicker = true
+                    } label: {
+                        Label("Import blog backup", systemImage: "arrow.down.doc")
+                    }
+                    .disabled(isImportingBackup)
+
+                    Button {
+                        Task { await exportAllBlogsBackupTapped() }
+                    } label: {
+                        Label("Export all saved blogs", systemImage: "square.and.arrow.up.on.square")
+                            .foregroundStyle(Color.blue)
+                    }
+                    .buttonStyle(.plain)
+                    .opacity((isExportingAllBackups || !hasAnyBackupableBlog) ? 0.45 : 1.0)
+                    .disabled(isExportingAllBackups || !hasAnyBackupableBlog)
+                } header: {
+                    HStack {
+                        Text("Blog backup")
+                        Spacer(minLength: 8)
+                        Button {
+                            settingsHelpTopic = .blogBackup
+                        } label: {
+                            Image(systemName: "questionmark.circle")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Learn more about blog backup")
                     }
                 }
 
@@ -916,6 +1167,9 @@ private struct SettingsView: View {
                 }
             }
             .preferredColorScheme(.dark)
+            .sheet(item: $settingsHelpTopic) { topic in
+                SettingsHelpSheet(topic: topic)
+            }
             .sheet(isPresented: $showAuth) {
                 AuthView(onAuthenticated: {
                     showAuth = false

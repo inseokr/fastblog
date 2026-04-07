@@ -179,13 +179,9 @@ struct ProblemStatementView: View {
                     Spacer()
 
                     Button(action: onContinue) {
-                        HStack {
-                            Text("Continue")
-                                .font(.headline)
-                            Image(systemName: "arrow.right")
-                                .font(.headline)
-                        }
-                        .foregroundColor(.white)
+                        Text("Continue")
+                            .font(.headline)
+                            .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(Color.blue)

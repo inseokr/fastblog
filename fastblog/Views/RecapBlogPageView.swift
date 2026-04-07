@@ -200,6 +200,7 @@ struct RecapBlogPageView: View {
     @State private var uploadErrorMessage = ""
     @State private var showAuth = false
     @State private var showGuestSecondSaveLimitModal = false
+    @State private var pendingSecondSaveCommitAfterAuth = false
     @State private var pendingEarlyAccessAfterAuth = false
     @State private var pendingCloudUploadAfterAuth = false
     @State private var pendingExportAfterAuth = false
@@ -502,10 +503,17 @@ struct RecapBlogPageView: View {
                 }
                 pendingWebLinkAfterAuth = false
                 pendingBloggoQRAfterAuth = false
+                pendingSecondSaveCommitAfterAuth = false
             }) {
                 AuthView(
                     onAuthenticated: {
-                        if pendingEarlyAccessAfterAuth {
+                        if pendingSecondSaveCommitAfterAuth {
+                            pendingSecondSaveCommitAfterAuth = false
+                            showAuth = false
+                            if saveDraft() {
+                                performDismiss()
+                            }
+                        } else if pendingEarlyAccessAfterAuth {
                             // Immediately return to the blog with the confirmation pull-up; register via API in the background.
                             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                             pendingEarlyAccessAfterAuth = false
@@ -654,6 +662,7 @@ struct RecapBlogPageView: View {
             VStack(spacing: 12) {
                 Button {
                     showGuestSecondSaveLimitModal = false
+                    pendingSecondSaveCommitAfterAuth = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         showAuth = true
                     }

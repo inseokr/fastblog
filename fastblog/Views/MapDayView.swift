@@ -485,7 +485,7 @@ struct FullScreenMapView: View {
                                 }
                             }
                         }
-                        .padding(.top, 98) // Push filters below the adjusted top bar
+                        .padding(.top, 112) // Extra gap so chips don't crowd the date label
                         .frame(maxWidth: .infinity, alignment: .top)
                         .zIndex(1)
 

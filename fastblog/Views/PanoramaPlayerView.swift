@@ -1451,12 +1451,6 @@ private struct GalleryThumbCell: View {
             }
         }
         .clipped()
-        .overlay {
-            if isCurrentPhoto {
-                Rectangle()
-                    .strokeBorder(Color.white, lineWidth: 2.5)
-            }
-        }
         .task(id: entry.id) {
             guard thumb == nil, loadedImages[entry.id] == nil else { return }
             thumb = await ImageLoader.shared.loadThumbnail(

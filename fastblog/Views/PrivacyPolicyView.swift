@@ -7,9 +7,32 @@ import SwiftUI
 
 /// Dedicated Privacy Policy page for Bloggo. Shown from Settings.
 struct PrivacyPolicyView: View {
+    @Environment(\.dismiss) private var dismiss
+    private let scrollBottomInset: CGFloat = 120
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+        ZStack(alignment: .bottom) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack {
+                        Spacer(minLength: 0)
+                        Image("SplashIcon")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 68, height: 68)
+                            .clipShape(RoundedRectangle(appChromeBaseRadius: 16))
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.top, 8)
+                    .padding(.bottom, 2)
+
+                    Text("Privacy Policy")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+
                 Group {
                     sectionTitle("1. Information We Collect")
                     bodyText("We collect information you provide directly to us, such as when you create an account or contact support. This includes your name and email address.")
@@ -53,7 +76,9 @@ struct PrivacyPolicyView: View {
                     sectionTitle("6. Guest and Registered User Access")
                     bodyText("Bloggo offers two tiers of access:")
                     bullet("Guest Users (no account): Guests may create and export one (1) blog. To save additional blogs or export more than one, guests are encouraged to create an account.")
-                    bullet("Registered Users: Users with a Bloggo account can create and save as many blog drafts as they like and export as many blogs as they like. Account creation requires only an email address.")
+                    bullet("Registered Users: Users with a Bloggo account can create and save as many blog drafts as they like and export as many blogs as they like. Account creation requires a valid email address.")
+                    bullet("You must be at least 13 years old to create an account. If you are under 13, you may use Bloggo only as a guest.")
+                    bullet("Only one account may be created per email address.")
                     bodyText("Creating an account does not change what data is stored or how your content is handled — all blog content continues to be stored locally on your device.")
                 }
 
@@ -85,8 +110,36 @@ struct PrivacyPolicyView: View {
                 Spacer(minLength: 40)
             }
             .padding(20)
+            .padding(.bottom, scrollBottomInset)
+            }
+
+            VStack(spacing: 0) {
+                LinearGradient(
+                    colors: [Color.clear, Color(uiColor: .systemBackground).opacity(0.9)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 42)
+                .allowsHitTesting(false)
+
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Close")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color.blue)
+                        .clipShape(Capsule())
+                        .shadow(color: Color.blue.opacity(0.3), radius: 10, y: 4)
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 4)
+                .padding(.bottom, 16)
+            }
         }
-        .navigationTitle("Privacy Policy")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
     }
 

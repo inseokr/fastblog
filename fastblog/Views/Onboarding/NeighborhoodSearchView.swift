@@ -75,7 +75,7 @@ struct NeighborhoodSearchView: View {
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.white.opacity(0.5))
 
-                    TextField("", text: $searchHelper.query, prompt: Text("Search for your city or neighborhood").foregroundColor(.white.opacity(0.3)))
+                    TextField("", text: $searchHelper.query, prompt: Text("Search for your neighborhood").foregroundColor(.white.opacity(0.3)))
                         .textFieldStyle(.plain)
                         .foregroundColor(.white)
                         .focused($isFocused)

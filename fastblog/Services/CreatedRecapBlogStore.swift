@@ -1846,8 +1846,8 @@ final class CreatedRecapBlogStore: ObservableObject {
                                     if let vtd = serverPlace.visitedTimeDigitized {
                                         detail.days[dayIdx].placeStops[stopIdx].visitedTimeDigitized = vtd
                                     }
-                                    // Place name
-                                    if let name = serverPlace.placeName, !name.isEmpty {
+                                    // Place name (do not clobber user-edited titles; matches geocode + import behavior)
+                                    if let name = serverPlace.placeName, !name.isEmpty, !stop.placeTitleIsManual {
                                         detail.days[dayIdx].placeStops[stopIdx].placeTitle = name
                                     }
                                     // Place category (POI type from create payload or server)
@@ -3160,9 +3160,13 @@ final class CreatedRecapBlogStore: ObservableObject {
                             ? existing.placeCaption
                             : newSummary.placeCaption
 
+                        let mergedName = newSummary.latestVisitDate > existing.latestVisitDate
+                            ? newSummary.placeName
+                            : existing.placeName
+
                         existing = VisitedPlaceSummary(
                             placeId: existing.placeId,
-                            placeName: existing.placeName,
+                            placeName: mergedName,
                             city: existing.city.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? newSummary.city : existing.city,
                             country: existing.country,
                             categoryRawValue: existing.categoryRawValue ?? newSummary.categoryRawValue,

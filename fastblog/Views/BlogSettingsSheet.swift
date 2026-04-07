@@ -180,10 +180,10 @@ struct BlogSettingsSheet: View {
         List {
             editAndRestoreSection
             titleAndCoverSection
-            backupSection
             unusedPhotosSection
             fontStyleSection
             weatherSection
+            backupSection
             cloudSection
         }
     }
@@ -269,7 +269,7 @@ struct BlogSettingsSheet: View {
             .disabled(isExportingBackup || !canExportSavedBackup)
         } footer: {
             if canExportSavedBackup {
-                Text("Exports the last saved version of this blog (not unsaved edits in the editor). The ZIP includes text and JPEG photos (reduced size for backup, not necessarily full-resolution originals in Photos). Use Save to Files, iCloud Drive, or another app to keep a copy outside this phone—Bloggo doesn’t store this file for you. On a new device, enable “Match Photo Library when importing” under Settings → Blog backup so the app can reconnect to photos already synced from iCloud.")
+                Text("Exports the last saved version (not unsaved edits). Save the ZIP outside this phone. On a new device, turn on “Add photos already on this device” in Settings → Blog backup so imports can link to your library.")
             } else {
                 Text("Save this blog from the editor first (toolbar Save). Export only includes saved blogs, not draft-only recaps.")
             }
