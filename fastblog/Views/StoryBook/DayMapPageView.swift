@@ -30,7 +30,7 @@ struct DayMapPageView: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .frame(height: 120)
+                .frame(height: 180)
 
                 Spacer(minLength: 0)
             }
@@ -39,9 +39,8 @@ struct DayMapPageView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("DAY \(day.dayNumber)")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 30, weight: .bold))
                     .foregroundColor(.white)
-                    .tracking(1.2)
                     .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 1)
 
                 Text(day.shortDateText)
@@ -49,10 +48,8 @@ struct DayMapPageView: View {
                     .foregroundColor(.white)
                     .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 1)
             }
-            .padding(.leading, 20)
-            .padding(.top, 24)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .safeAreaPadding(.top, 8)
+            .padding(.horizontal, 24)
+            .padding(.top, 80)
         }
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .background(Color.black)

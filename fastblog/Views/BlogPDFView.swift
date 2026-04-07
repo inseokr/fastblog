@@ -131,14 +131,13 @@ struct BlogPDFView: View {
                         startPoint: .top,
                         endPoint: .bottom
                     )
-                    .frame(width: contentWidth, height: 76)
+                    .frame(width: contentWidth, height: 140)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text("DAY \(dayIndex)")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(Font.custom("Georgia-Bold", size: 44))
                             .foregroundColor(.white)
-                            .tracking(1.2)
                             .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 1)
 
                         Text(day.shortDateText)
@@ -147,7 +146,7 @@ struct BlogPDFView: View {
                             .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 1)
                     }
                     .padding(.leading, 14)
-                    .padding(.top, 12)
+                    .padding(.top, 20)
                 }
                 .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
             }

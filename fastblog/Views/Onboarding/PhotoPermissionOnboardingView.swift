@@ -136,7 +136,7 @@ struct PhotoPermissionOnboardingView: View {
                             await requestLimitedAccess()
                         }
                     } label: {
-                        Text("Choose limited photos")
+                        Text("Choose limited access")
                             .font(.subheadline)
                             .foregroundColor(.white.opacity(0.55))
                             .underline()
