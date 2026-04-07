@@ -4612,6 +4612,19 @@ Your blog remains private unless you choose to share it.
         ToolbarItem(placement: .topBarTrailing) {
             if isEditMode {
                 Button {
+                    performUndo()
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(lastUndoAction != nil ? recapChromeForeground : recapChromeForeground.opacity(0.3))
+                }
+                .buttonStyle(.plain)
+                .disabled(lastUndoAction == nil)
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            if isEditMode {
+                Button {
                     if saveDraft() {
                         isEditMode = false
                     }
