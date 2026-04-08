@@ -2483,6 +2483,12 @@ struct RecapBlogPageView: View {
                     onTellPlaceStory: {
                         triggerPlaceNarrative(dayId: day.id, stopId: stop.id, dayDate: day.date)
                     },
+                    onRevertPlaceStory: {
+                        guard let dayIdx = draft.days.firstIndex(where: { $0.id == day.id }),
+                              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stop.id }) else { return }
+                        draft.days[dayIdx].placeStops[stopIdx].placeNarrative = nil
+                        persistRecapBlogDetail()
+                    },
                     onSentimentChanged: { newValue in
                         guard let dayIdx = draft.days.firstIndex(where: { $0.id == day.id }),
                               let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stop.id }) else { return }

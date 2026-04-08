@@ -38,7 +38,7 @@ struct PlaceCaptionEditSheet: View {
     @AppStorage(StoryWritingStyle.presetStorageKey) private var stylePresetId: String = ""
     /// Captures the user's own text before the first AI run, enabling "Revert to original".
     @State private var originalDraft: String? = nil
-    @FocusState private var isFocused: Bool
+    @State private var isFocused: Bool = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.colorScheme) private var colorScheme
 
@@ -66,9 +66,11 @@ struct PlaceCaptionEditSheet: View {
         Array(photos.filter(\.hasDisplayableLocalBacking).prefix(3))
     }
 
-    /// Horizontal inset for typed text inside the rounded editor (both sides). Slightly tight so the caret sits a bit left of default.
+    /// Horizontal inset for typed text inside the rounded editor (both sides).
+    /// Also used as `textContainerInset` in ScrollMetricsReportingTextEditor so placeholder aligns exactly.
     private let editorTextHorizontalPadding: CGFloat = 14
-    /// Matches `editorTextHorizontalPadding` so placeholder lines up with the caret (outer sheet padding is on the ZStack, not inside it).
+    /// Matches `editorTextHorizontalPadding` exactly — no lineFragmentPadding fudge needed because
+    /// ScrollMetricsReportingTextEditor zeroes lineFragmentPadding and uses textContainerInset instead.
     private let placeholderLeadingInset: CGFloat = 14
     private let placeholderTrailingInset: CGFloat = 20
 
@@ -334,18 +336,20 @@ struct PlaceCaptionEditSheet: View {
                 .padding(.bottom, 10)
 
             ZStack(alignment: .topLeading) {
-                TextEditor(text: $editedText)
-                    .focused($isFocused)
-                    .font(.body)
-                    .foregroundColor(.primary)
-                    .tint(Color(white: 0.92))
-                    .scrollContentBackground(.hidden)
-                    .scrollIndicators(.never)
-                    .padding(.horizontal, editorTextHorizontalPadding)
-                    .padding(.vertical, 14)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .background(Color(uiColor: .secondarySystemBackground))
-                    .clipShape(RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
+                ScrollMetricsReportingTextEditor(
+                    text: $editedText,
+                    wantsKeyboardFocus: $isFocused,
+                    textInsets: UIEdgeInsets(
+                        top: 14,
+                        left: editorTextHorizontalPadding,
+                        bottom: 14,
+                        right: editorTextHorizontalPadding
+                    ),
+                    caretTint: .white
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(Color(uiColor: .secondarySystemBackground))
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
 
                 if editedText.isEmpty {
                     Text(captionPlaceholderText)

@@ -177,6 +177,8 @@ struct PlaceStopRowView: View {
     var isGeneratingNarrative: Bool = false
     /// When set (and device is capable), shows a "Tell Story" button. Parent manages the async task.
     var onTellPlaceStory: (() -> Void)? = nil
+    /// When set, shows a "Revert" button next to "Generate story" after a narrative has been generated.
+    var onRevertPlaceStory: (() -> Void)? = nil
     /// Called when user taps the sentiment pill in edit mode. Receives the new sentiment value (1/2/3).
     var onSentimentChanged: ((Int) -> Void)? = nil
 
@@ -1004,25 +1006,38 @@ struct PlaceStopRowView: View {
                 if let n = stop.placeNarrative, !n.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return false }
                 return overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }()
+            let hasAIPlaceNarrative = (stop.placeNarrative ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             let showGenerateStoryInStoryRow = isEditMode
                 && onTellPlaceStory != nil
                 && LocalLLMStoryCaptionGenerator.isCapable
-                && placeStoryEmptyForAI
+                && (placeStoryEmptyForAI || hasAIPlaceNarrative)
             if showGenerateStoryInStoryRow {
                 VStack(alignment: .leading, spacing: 8) {
-                    if showGenerateStoryInStoryRow {
-                        HStack {
-                            Spacer(minLength: 0)
-                            if isGeneratingNarrative {
-                                HStack(spacing: 6) {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle(tint: .secondary))
-                                        .scaleEffect(0.7)
-                                    Text("Generating story…")
-                                        .font(.caption)
-                                        .foregroundColor(.primary)
+                    HStack {
+                        Spacer(minLength: 0)
+                        if isGeneratingNarrative {
+                            HStack(spacing: 6) {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .secondary))
+                                    .scaleEffect(0.7)
+                                Text("Generating story…")
+                                    .font(.caption)
+                                    .foregroundColor(.primary)
+                            }
+                        } else {
+                            if hasAIPlaceNarrative, let revert = onRevertPlaceStory {
+                                Button(action: revert) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "arrow.uturn.backward")
+                                            .font(.caption)
+                                        Text("Revert")
+                                            .font(.caption)
+                                    }
+                                    .foregroundColor(.secondary)
                                 }
-                            } else if let tell = onTellPlaceStory {
+                                .buttonStyle(.plain)
+                            }
+                            if let tell = onTellPlaceStory {
                                 Button(action: tell) {
                                     HStack(spacing: 4) {
                                         Image(systemName: "sparkles")
@@ -1051,7 +1066,7 @@ struct PlaceStopRowView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 16)
+                .padding(.top, 2)
                 .padding(.bottom, 8)
             }
         }
