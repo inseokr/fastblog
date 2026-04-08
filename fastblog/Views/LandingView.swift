@@ -644,7 +644,7 @@ private struct SettingsBlogBackupHelpContent: View {
                 icon: "arrow.down.doc",
                 tint: Color(red: 0.45, green: 0.85, blue: 0.55),
                 title: "3. Import on another device",
-                detail: "Whenever you are ready, open Bloggo on another phone or tablet, tap Import blog backup, and choose your ZIP. Right before the import runs, Bloggo asks whether to reuse matching photos already in your library (for example from iCloud Photos) or to use only the images inside the backup file."
+                detail: "Whenever you are ready, open Bloggo on another phone or tablet, tap Import blog backup, and choose your ZIP. Turn on Add photos already on this device in Settings → Blog backup to link to matching library photos when possible (for example from iCloud Photos); turn it off to use only the JPEGs stored in the backup."
             )
         }
         .padding(.horizontal, 20)
@@ -822,9 +822,7 @@ private struct SettingsView: View {
     @State private var backupFlowAlertTitle = ""
     @State private var backupFlowAlertMessage = ""
     @State private var showBackupFlowAlert = false
-    /// Staged ZIP after the user picks a file; shown until import finishes or the user cancels the photo-library choice.
-    @State private var stagedImportZipURL: URL?
-    @State private var showImportPhotoLibraryChoice = false
+    @AppStorage("bloggo.backupImport.preferPhotoLibrary") private var preferPhotoLibraryWhenImportingBackup = true
     @State private var settingsHelpTopic: SettingsHelpTopic?
 
     private var travelStats: (countries: Int, cities: Int, places: Int) {
@@ -1068,13 +1066,6 @@ private struct SettingsView: View {
                     .buttonStyle(.plain)
                     .opacity((isExportingAllBackups || !hasAnyBackupableBlog) ? 0.45 : 1.0)
                     .disabled(isExportingAllBackups || !hasAnyBackupableBlog)
-
-                    Button {
-                        showImportBackupPicker = true
-                    } label: {
-                        Label("Import blog backup", systemImage: "arrow.down.doc")
-                    }
-                    .disabled(isImportingBackup)
                 } header: {
                     HStack {
                         Text("Blog backup")
@@ -1242,33 +1233,6 @@ private struct SettingsView: View {
             } message: {
                 Text(backupFlowAlertMessage)
             }
-            .confirmationDialog(
-                "Reuse photos from your library?",
-                isPresented: $showImportPhotoLibraryChoice,
-                titleVisibility: .visible
-            ) {
-                Button("Link to library when possible") {
-                    guard let url = stagedImportZipURL else { return }
-                    stagedImportZipURL = nil
-                    Task { @MainActor in
-                        await importBlogBackup(stagedZipURL: url, preferPhotoLibrary: true)
-                    }
-                }
-                Button("Use images from the backup only") {
-                    guard let url = stagedImportZipURL else { return }
-                    stagedImportZipURL = nil
-                    Task { @MainActor in
-                        await importBlogBackup(stagedZipURL: url, preferPhotoLibrary: false)
-                    }
-                }
-                Button("Cancel", role: .cancel) {
-                    discardStagedImport()
-                }
-            } message: {
-                Text(
-                    "If the same pictures are already in Photos (for example synced with iCloud), Bloggo can connect the imported blog to those originals and avoid extra copies. Otherwise it uses the JPEGs stored in the ZIP. Photos access is only needed when you choose linking."
-                )
-            }
             }
 
             if isImportingBackup || isExportingAllBackups {
@@ -1331,20 +1295,14 @@ private struct SettingsView: View {
         do {
             let dest = FileManager.default.temporaryDirectory.appendingPathComponent("bloggo-import-staging-\(UUID().uuidString).zip")
             try FileManager.default.copyItem(at: pickedURL, to: dest)
-            stagedImportZipURL = dest
-            showImportPhotoLibraryChoice = true
+            let preferLibrary = preferPhotoLibraryWhenImportingBackup
+            Task { @MainActor in
+                await importBlogBackup(stagedZipURL: dest, preferPhotoLibrary: preferLibrary)
+            }
         } catch {
             backupFlowAlertTitle = "Import failed"
             backupFlowAlertMessage = error.localizedDescription
             showBackupFlowAlert = true
-        }
-    }
-
-    @MainActor
-    private func discardStagedImport() {
-        if let url = stagedImportZipURL {
-            try? FileManager.default.removeItem(at: url)
-            stagedImportZipURL = nil
         }
     }
 
