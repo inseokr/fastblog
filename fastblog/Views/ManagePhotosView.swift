@@ -4,6 +4,8 @@
 //
 
 import SwiftUI
+import UIKit
+import Photos
 
 /// iOS Photos-style grid view to include/exclude photos for a place stop.
 /// Normal mode: scrollable 3-column grid; tap a photo to view full-screen.
@@ -20,6 +22,9 @@ struct ManagePhotosView: View {
     @State private var isSelectMode = false
     @State private var fullScreenPhotoId: UUID? = nil
     @State private var cachedAiRanks: [UUID: Int] = [:]
+    @State private var didPrimeGridCache = false
+    @State private var existingPhotoLibraryAssetIds: Set<String> = []
+    @State private var visiblePhotoCount: Int = 0
 
     // Drag-selection state
     @State private var cellFrames: [UUID: CGRect] = [:]
@@ -33,8 +38,76 @@ struct ManagePhotosView: View {
         GridItem(.flexible(), spacing: 2)
     ]
 
-    /// Slots that still resolve to pixels (library asset, app capture on disk, or cloud). Missing assets are omitted from the grid.
-    private var manageGridPhotos: [RecapPhoto] { photos.filter(\.hasDisplayableLocalBacking) }
+    /// Pixel size for PHCachingImageManager / `ImageLoader` so grid cells hit the same cache keys as other ~⅓-screen thumbnails.
+    private var gridThumbnailPixelSize: CGSize {
+        let w = (UIScreen.main.bounds.width - 4) / 3
+        let s = UIScreen.main.scale
+        return CGSize(width: w * s, height: w * s)
+    }
+
+    /// Slots that should resolve to pixels.
+    /// Source of truth is `localIdentifier` (Photo Library or app-capture). iCloud photos still have a `localIdentifier`;
+    /// they are fetched by Photos on demand.
+    ///
+    /// Important: this must stay *cheap* because it's evaluated often during layout and scrolling. We batch-check asset
+    /// existence via `existingPhotoLibraryAssetIds` instead of per-cell `PHAsset.fetchAssets(...)`.
+    private var manageGridPhotos: [RecapPhoto] {
+        photos
+            .filter { photo in
+                guard let lid = photo.localIdentifier, !lid.isEmpty else { return false }
+                if lid.hasPrefix(AppCapturePhotoService.prefix) {
+                    return AppCapturePhotoService.shared.loadImage(identifier: lid) != nil
+                }
+                return existingPhotoLibraryAssetIds.contains(lid)
+            }
+            .sorted { ($0.qualityScore?.totalScore ?? 0) > ($1.qualityScore?.totalScore ?? 0) }
+    }
+
+    private let initialBatchSize = 60
+    private let batchSize = 60
+
+    private var gridCacheAssetIdentifiers: [String] {
+        manageGridPhotos.compactMap(\.localIdentifier)
+    }
+
+    /// Render only a prefix at first, then extend as the user scrolls.
+    private var visibleGridPhotos: [RecapPhoto] {
+        let initial = min(initialBatchSize, manageGridPhotos.count)
+        let effective = min(max(visiblePhotoCount, initial), manageGridPhotos.count)
+        return Array(manageGridPhotos.prefix(effective))
+    }
+
+    private var visibleGridAssetIdentifiers: [String] {
+        visibleGridPhotos.compactMap(\.localIdentifier)
+    }
+
+    private func refreshExistingAssetIds() {
+        let ids = photos.compactMap(\.localIdentifier).filter { !$0.isEmpty && !$0.hasPrefix(AppCapturePhotoService.prefix) }
+        guard !ids.isEmpty else {
+            existingPhotoLibraryAssetIds = []
+            return
+        }
+        let fetched = PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil)
+        var set = Set<String>()
+        set.reserveCapacity(fetched.count)
+        fetched.enumerateObjects { asset, _, _ in
+            set.insert(asset.localIdentifier)
+        }
+        existingPhotoLibraryAssetIds = set
+    }
+
+    private func ensureInitialBatch() {
+        if visiblePhotoCount == 0 {
+            visiblePhotoCount = min(initialBatchSize, manageGridPhotos.count)
+        }
+    }
+
+    private func maybeLoadMoreIfNeeded(currentPhoto: RecapPhoto) {
+        guard let last = visibleGridPhotos.last, last.id == currentPhoto.id else { return }
+        guard visiblePhotoCount < manageGridPhotos.count else { return }
+        visiblePhotoCount = min(manageGridPhotos.count, visiblePhotoCount + batchSize)
+        ImageLoader.shared.startCachingThumbnails(assetIdentifiers: visibleGridAssetIdentifiers, targetSize: gridThumbnailPixelSize)
+    }
 
     private var includedCount: Int { manageGridPhotos.filter(\.isIncluded).count }
 
@@ -185,14 +258,35 @@ struct ManagePhotosView: View {
         }
         .preferredColorScheme(.dark)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .tint(.white)
         .onAppear {
-            let sorted = photos.sorted { ($0.qualityScore?.totalScore ?? 0) > ($1.qualityScore?.totalScore ?? 0) }
-            if sorted.map(\.id) != photos.map(\.id) { photos = sorted }
+            refreshExistingAssetIds()
             cachedAiRanks = photos.aiRanksByPhotoId()
+            ensureInitialBatch()
+            // Match previous behavior (persist AI sort to the binding) without blocking the first navigation frame.
+            DispatchQueue.main.async {
+                let sorted = photos.sorted { ($0.qualityScore?.totalScore ?? 0) > ($1.qualityScore?.totalScore ?? 0) }
+                if sorted.map(\.id) != photos.map(\.id) {
+                    photos = sorted
+                }
+            }
+            // Prime Photos caching so the first grid paint is immediate (especially on iCloud assets).
+            if !didPrimeGridCache {
+                didPrimeGridCache = true
+                ImageLoader.shared.startCachingThumbnails(assetIdentifiers: visibleGridAssetIdentifiers, targetSize: gridThumbnailPixelSize)
+            }
+        }
+        .onDisappear {
+            if didPrimeGridCache {
+                ImageLoader.shared.stopCachingThumbnails(assetIdentifiers: gridCacheAssetIdentifiers, targetSize: gridThumbnailPixelSize)
+            }
         }
         .onChange(of: photos.map(\.id)) { _, _ in
+            refreshExistingAssetIds()
             cachedAiRanks = photos.aiRanksByPhotoId()
+            // Reset progressive rendering when the photo set changes.
+            visiblePhotoCount = min(max(initialBatchSize, visiblePhotoCount), manageGridPhotos.count)
         }
     }
 
@@ -201,9 +295,10 @@ struct ManagePhotosView: View {
     private var photoGrid: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVGrid(columns: columns, spacing: 2) {
-                ForEach(manageGridPhotos) { photo in
+                ForEach(visibleGridPhotos) { photo in
                     ManagePhotoGridCell(
                         photo: photo,
+                        thumbnailTargetSize: gridThumbnailPixelSize,
                         isSelectMode: isSelectMode,
                         rank: cachedAiRanks[photo.id],
                         onTap: {
@@ -216,6 +311,7 @@ struct ManagePhotosView: View {
                             }
                         }
                     )
+                    .onAppear { maybeLoadMoreIfNeeded(currentPhoto: photo) }
                     .background(
                         GeometryReader { geo in
                             Color.clear.preference(
@@ -304,6 +400,7 @@ private struct ManagePhotoGridCellFrameKey: PreferenceKey {
 
 private struct ManagePhotoGridCell: View {
     let photo: RecapPhoto
+    var thumbnailTargetSize: CGSize
     let isSelectMode: Bool
     let rank: Int?
     let onTap: () -> Void
@@ -312,7 +409,12 @@ private struct ManagePhotoGridCell: View {
         Button(action: onTap) {
             ZStack(alignment: .topLeading) {
                 GeometryReader { geo in
-                    RecapPhotoThumbnail(photo: photo, cornerRadius: 0, showIcon: false)
+                    RecapPhotoThumbnail(
+                        photo: photo,
+                        cornerRadius: 0,
+                        showIcon: false,
+                        targetSize: thumbnailTargetSize
+                    )
                         .frame(width: geo.size.width, height: geo.size.width)
                         .clipped()
                 }
@@ -379,15 +481,38 @@ private struct ManagePhotoDetailView: View {
     let aiRanks: [UUID: Int]
     let onDismiss: () -> Void
 
-    @State private var currentPhotoId: UUID?
+    @State private var currentPhotoId: UUID
     @State private var zoomScale: CGFloat = 1.0
     @State private var baseZoomScale: CGFloat = 1.0
 
-    private var detailPhotos: [RecapPhoto] { photos.filter(\.hasDisplayableLocalBacking) }
+    init(photos: Binding<[RecapPhoto]>, initialPhotoId: UUID, aiRanks: [UUID: Int], onDismiss: @escaping () -> Void) {
+        _photos = photos
+        self.initialPhotoId = initialPhotoId
+        self.aiRanks = aiRanks
+        self.onDismiss = onDismiss
+        _currentPhotoId = State(initialValue: initialPhotoId)
+    }
+
+    /// Same ordering as the grid (`manageGridPhotos`) so swipe order matches thumbnails.
+    private var detailPhotos: [RecapPhoto] {
+        photos
+            .filter(\.hasDisplayableLocalBacking)
+            .sorted { ($0.qualityScore?.totalScore ?? 0) > ($1.qualityScore?.totalScore ?? 0) }
+    }
+
+    private var detailMainPixelSize: CGSize {
+        let b = UIScreen.main.bounds
+        let d = max(b.width, b.height) * UIScreen.main.scale
+        return CGSize(width: d, height: d)
+    }
+
+    private var filmstripPixelSize: CGSize {
+        let s = UIScreen.main.scale
+        return CGSize(width: 120 * s, height: 120 * s)
+    }
 
     private var currentPhoto: RecapPhoto? {
-        if let id = currentPhotoId, let p = detailPhotos.first(where: { $0.id == id }) { return p }
-        return detailPhotos.first
+        detailPhotos.first(where: { $0.id == currentPhotoId }) ?? detailPhotos.first
     }
 
     var body: some View {
@@ -402,7 +527,7 @@ private struct ManagePhotoDetailView: View {
                                 photo: photo,
                                 cornerRadius: 0,
                                 showIcon: false,
-                                targetSize: CGSize(width: 800, height: 800)
+                                targetSize: detailMainPixelSize
                             )
                             .aspectRatio(contentMode: .fit)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -449,7 +574,7 @@ private struct ManagePhotoDetailView: View {
                 .tabViewStyle(.page(indexDisplayMode: .never))
 
                 VStack(spacing: 4) {
-                    if let rank = aiRanks[currentPhotoId ?? UUID()] {
+                    if let rank = aiRanks[currentPhotoId] {
                         HStack(spacing: 4) {
                             Image(systemName: "star.fill")
                                 .font(.system(size: 11, weight: .bold))
@@ -481,7 +606,7 @@ private struct ManagePhotoDetailView: View {
                                         photo: photo,
                                         cornerRadius: 8,
                                         showIcon: false,
-                                        targetSize: CGSize(width: 120, height: 120)
+                                        targetSize: filmstripPixelSize
                                     )
                                     .frame(width: 56, height: 56)
                                     .clipped()
@@ -498,14 +623,11 @@ private struct ManagePhotoDetailView: View {
                         .padding(.horizontal, 12)
                     }
                     .onAppear {
-                        if let id = currentPhotoId {
-                            proxy.scrollTo(id, anchor: .center)
-                        }
+                        proxy.scrollTo(currentPhotoId, anchor: .center)
                     }
                     .onChange(of: currentPhotoId) { _, newId in
-                        guard let id = newId else { return }
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            proxy.scrollTo(id, anchor: .center)
+                            proxy.scrollTo(newId, anchor: .center)
                         }
                     }
                 }
@@ -514,10 +636,10 @@ private struct ManagePhotoDetailView: View {
             .padding(.top, 8)
         }
         .onAppear {
-            if detailPhotos.contains(where: { $0.id == initialPhotoId }) {
-                currentPhotoId = initialPhotoId
-            } else {
-                currentPhotoId = detailPhotos.first?.id
+            if let first = detailPhotos.first {
+                if detailPhotos.contains(where: { $0.id == currentPhotoId }) == false {
+                    currentPhotoId = first.id
+                }
             }
         }
         .onChange(of: currentPhotoId) { _, _ in

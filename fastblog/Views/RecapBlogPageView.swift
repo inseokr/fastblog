@@ -87,11 +87,6 @@ struct RecapBlogPageView: View {
         colorScheme == .dark ? .black : Color(uiColor: .systemGroupedBackground)
     }
 
-    /// Softer than `recapScreenBackground` in dark mode so the day-2+ scroll-alignment cover never reads as a full black screen.
-    private var readOnlyMapAlignmentMaskFill: Color {
-        colorScheme == .dark ? Color(white: 0.14) : Color(uiColor: .systemGroupedBackground)
-    }
-
     private var recapChromeForeground: Color {
         colorScheme == .dark ? .white : .primary
     }
@@ -122,8 +117,17 @@ struct RecapBlogPageView: View {
 
     @State private var draft: RecapBlogDetail
     @State private var selectedDayIndex: Int = 0  // 0 = Day 1, 1 = Day 2, ...
-    /// Read-only day 2+ pages briefly cover the scroll view until `scrollTo(map)` can apply (SwiftUI paints offset 0 first). Kept very short; fill uses a soft tone in dark mode, not pure black.
-    @State private var readOnlyMapRevealDayIndices: Set<Int> = []
+    /// iOS 17+ horizontal paging ScrollView position. Kept in sync with `selectedDayIndex`.
+    @State private var dayPagerScrollIndex: Int? = 0
+    /// While true, child views that pan horizontally (e.g. maps) temporarily stop hit-testing
+    /// so the day pager can complete a clean snap.
+    @State private var isDayPagerHorizontalDragActive: Bool = false
+    /// Deterministic day navigation via swipe (no partial offsets).
+    @State private var daySwipeTransitionDirection: Int = 0 // -1 = moved to previous, +1 = moved to next
+    /// True only for swipe-driven day changes. Pill taps / programmatic changes render immediately.
+    @State private var shouldAnimateDayChange: Bool = false
+    /// Require swipes to begin at the screen edge to avoid fighting inner horizontal carousels.
+    private let daySwipeEdgeInset: CGFloat = 80
     @State private var overflowStop: OverflowItem?
     @State private var mergeSelectionItem: MergeSelectionItem?
     @State private var showEditNameForStop: PlaceStop?
@@ -193,6 +197,7 @@ struct RecapBlogPageView: View {
     @State private var isKeyboardVisible = false
     @State private var cancellables = Set<AnyCancellable>()
     @State private var visitedDayIndices: Set<Int> = [0]
+    @State private var cachedDayPagerThumbnailAssetIds: [String] = []
 
     // Cloud Upload State
     @State private var isUploading = false
@@ -1313,18 +1318,94 @@ struct RecapBlogPageView: View {
         ZStack(alignment: .bottom) {
             recapScreenBackground.ignoresSafeArea()
 
-            // Horizontal day pager — each page is one day's full scrollable content.
+            // Day view — deterministic snap navigation via swipe (no horizontal scrolling).
             if draft.days.isEmpty {
                 emptyDayPage(screenHeight: screenHeight)
             } else {
-                TabView(selection: $selectedDayIndex) {
-                    ForEach(Array(draft.days.enumerated()), id: \.element.id) { index, day in
-                        dayPageView(blogDay: day, index: index, screenHeight: screenHeight)
-                            .tag(index)
+                if let day = day(at: selectedDayIndex) {
+                    GeometryReader { geo in
+                        let w = geo.size.width
+                        dayPageView(blogDay: day, index: selectedDayIndex, screenHeight: screenHeight)
+                            .id(day.id) // ensures per-day scroll state resets appropriately on day change
+                            .transition(
+                                shouldAnimateDayChange
+                                ? .asymmetric(
+                                    insertion: .move(edge: daySwipeTransitionDirection >= 0 ? .trailing : .leading).combined(with: .opacity),
+                                    removal: .move(edge: daySwipeTransitionDirection >= 0 ? .leading : .trailing).combined(with: .opacity)
+                                )
+                                : .identity
+                            )
+                            // Keep swipe transitions smooth and directional, but make pill taps render immediately.
+                            .transaction { txn in
+                                // Faster, more responsive feel for swipe-to-change-day.
+                                txn.animation = shouldAnimateDayChange ? .easeOut(duration: 0.08) : nil
+                            }
+                            // Swipe only from edges so inner horizontal carousels (photos) don't trigger day navigation.
+                            // Important: use simultaneousGesture so vertical ScrollView keeps native scroll.
+                            .simultaneousGesture(
+                                DragGesture(minimumDistance: 12)
+                                    .onChanged { value in
+                                        let startX = value.startLocation.x
+                                        let isEdgeSwipe = startX <= daySwipeEdgeInset || startX >= (w - daySwipeEdgeInset)
+                                        guard isEdgeSwipe else { return }
+
+                                        // If the user is clearly swiping horizontally, temporarily stop map hit-testing
+                                        // so a mid-gesture map pan doesn't "eat" the swipe.
+                                        let dx = value.translation.width
+                                        let dy = value.translation.height
+                                        let isHorizontal = abs(dx) > abs(dy) * 1.15 && abs(dx) > 10
+                                        if isHorizontal, !isDayPagerHorizontalDragActive {
+                                            isDayPagerHorizontalDragActive = true
+                                        }
+                                    }
+                                    .onEnded { value in
+                                        defer {
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                                                isDayPagerHorizontalDragActive = false
+                                            }
+                                        }
+
+                                        let startX = value.startLocation.x
+                                        let isEdgeSwipe = startX <= daySwipeEdgeInset || startX >= (w - daySwipeEdgeInset)
+                                        guard isEdgeSwipe else { return }
+
+                                        // Ignore mostly-vertical drags so the inner ScrollView stays natural.
+                                        let dx = value.translation.width
+                                        let dy = value.translation.height
+                                        guard abs(dx) > abs(dy) * 1.15 else { return }
+
+                                        // Snap thresholds tuned for a "decisive" swipe.
+                                        let predicted = value.predictedEndTranslation.width
+                                        let shouldGoNext = predicted < -120 || dx < -90
+                                        let shouldGoPrev = predicted > 120 || dx > 90
+                                        guard shouldGoNext || shouldGoPrev else { return }
+
+                                        let candidate = selectedDayIndex + (shouldGoNext ? 1 : -1)
+                                        guard draft.days.indices.contains(candidate) else { return }
+
+                                        // Match the bottom pill behavior: block swipe into unprocessed / processing days.
+                                        let processingIndex = createdRecapStore.processingDayIndexByBlogId[blogId]
+                                        let targetDay = draft.days[candidate]
+                                        let isProcessed = targetDay.isPlaceNamesResolved
+                                        let isProcessing = processingIndex == candidate
+                                        let isBlocked = (!isProcessed && !isProcessing) || isProcessing
+                                        guard !isBlocked else {
+                                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                                showUnprocessedDayAlert = true
+                                            }
+                                            return
+                                        }
+
+                                        shouldAnimateDayChange = true
+                                        daySwipeTransitionDirection = shouldGoNext ? 1 : -1
+                                        selectedDayIndex = candidate
+                                    }
+                            )
                     }
+                } else {
+                    // Safety fallback (should not happen because indices are clamped elsewhere).
+                    emptyDayPage(screenHeight: screenHeight)
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
             // Undo Toast (appears for 3s after undo is performed)
@@ -1372,11 +1453,11 @@ struct RecapBlogPageView: View {
         }
         .ignoresSafeArea(.keyboard)
         .background(recapScreenBackground)
-        .onChange(of: selectedDayIndex) { oldIndex, newIndex in
+        .onChange(of: selectedDayIndex) { _, newIndex in
             visitedDayIndices.insert(newIndex)
-            if oldIndex > 0 {
-                readOnlyMapRevealDayIndices.remove(oldIndex)
-            }
+            preloadDayPagerThumbnails(around: newIndex)
+            // Reset so subsequent non-swipe changes don't inherit swipe animation.
+            shouldAnimateDayChange = false
         }
         .onChange(of: draft.days.count) { _, _ in
             schedulePlacesVisitedDeepLinkScroll()
@@ -1388,6 +1469,7 @@ struct RecapBlogPageView: View {
                     selectedDayIndex = idx
                 }
             }
+            preloadDayPagerThumbnails(around: selectedDayIndex)
             schedulePlacesVisitedDeepLinkScroll()
         }
         .onDisappear {
@@ -1400,9 +1482,6 @@ struct RecapBlogPageView: View {
                 visitedDayIndices = [selectedDayIndex]
                 showHeroMetadata = true
             } else {
-                if selectedDayIndex > 0 {
-                    readOnlyMapRevealDayIndices.remove(selectedDayIndex)
-                }
                 // When tapping Save, the hero header can briefly re-layout while the day pager/nav updates.
                 // Delay metadata so multi-line titles never collide with duration/moment captions.
                 showHeroMetadata = false
@@ -1432,40 +1511,47 @@ struct RecapBlogPageView: View {
         VStack(alignment: .leading, spacing: 0) {
             Color.clear.frame(height: 0).id(RecapBlogScrollAnchor.pageTop)
 
-            // Trip-level edit affordances stay on day 1 so they are not repeated on every tab.
-            if index == 0 {
-                if isEditMode && photoAuth.status == .limited {
-                    photoLibraryAccessBanner
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 8)
-                }
-            }
-
-            // Cover / title + trip narrative: same for every day so paging the day filter still matches day 1.
+            // Always show the trip header (cover/title) on every day so swiping doesn't feel like the
+            // cover "disappears" after Day 1. (Other trip-level affordances can still be Day 1 only.)
             if draft.selectedCoverPhotoIdentifier != nil {
                 coverPhotoHero(screenHeight: screenHeight)
             } else {
                 blogTitleView
             }
 
-            if index == 0 {
-                if isEditMode && !draft.removedPlaceStops.isEmpty {
-                    restoreRemovedPlacesCard
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
-                        .padding(.bottom, 12)
+            // In read-only mode, Day 2+ pages start with the map so no scroll-to-map is needed.
+            // In edit mode, or on Day 1, the full hero + narrative header is shown on every page.
+            let showHeroHeader = isEditMode || index == 0
+
+            if showHeroHeader {
+                // Trip-level edit affordances stay on day 1 so they are not repeated on every tab.
+                if index == 0 {
+                    if isEditMode && photoAuth.status == .limited {
+                        photoLibraryAccessBanner
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 8)
+                    }
                 }
 
-                if newMomentsPlaceCount > 0 {
-                    newMomentsCard
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
-                        .padding(.bottom, 12)
+                if index == 0 {
+                    if isEditMode && !draft.removedPlaceStops.isEmpty {
+                        restoreRemovedPlacesCard
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+                            .padding(.bottom, 12)
+                    }
+
+                    if newMomentsPlaceCount > 0 {
+                        newMomentsCard
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+                            .padding(.bottom, 12)
+                    }
                 }
+
+                tripNarrativeCard
+                    .padding(.bottom, 12)
             }
-
-            tripNarrativeCard
-                .padding(.bottom, 12)
 
             if !isEditMode {
                 mapCard(for: blogDay)
@@ -1483,40 +1569,42 @@ struct RecapBlogPageView: View {
         .background(recapScreenBackground)
     }
 
-    /// Read-only days 2+: pin the scroll position so the map is at the top. Retries are unanimated so the user does not briefly see the hero cover then watch it slide away (animated `scrollTo` after `TabView` layout caused that flash).
-    private func scheduleReadOnlyScrollToMap(proxy: ScrollViewProxy, blogDay: RecapBlogDay, dayPageIndex: Int) {
-        guard !isEditMode, dayPageIndex > 0 else { return }
-        guard selectedDayIndex == dayPageIndex, pendingDeepLinkStopScrollId == nil else { return }
-        let mapAnchor = RecapBlogScrollAnchor.mapForDay(blogDay.id)
-        let scrollInstant: () -> Void = {
-            guard selectedDayIndex == dayPageIndex, !isEditMode, pendingDeepLinkStopScrollId == nil else { return }
-            var t = Transaction()
-            t.disablesAnimations = true
-            withTransaction(t) {
-                proxy.scrollTo(mapAnchor, anchor: .top)
-            }
+    private var dayPagerThumbnailTargetSize: CGSize {
+        // A fairly "universal" size used across recap cards so the first paint during paging doesn't wait on decoding.
+        let s = UIScreen.main.scale
+        return CGSize(width: 240 * s, height: 240 * s)
+    }
+
+    private func thumbnailAssetIdsForDay(index: Int) -> [String] {
+        guard draft.days.indices.contains(index) else { return [] }
+        return draft.days[index]
+            .placeStops
+            .flatMap(\.photos)
+            .filter(\.isIncluded)
+            .compactMap(\.localIdentifier)
+    }
+
+    /// Preload thumbnails for the currently selected day and its immediate neighbors.
+    /// This reduces "empty" or placeholder frames while swiping between days.
+    private func preloadDayPagerThumbnails(around index: Int) {
+        let ids =
+            thumbnailAssetIdsForDay(index: index)
+            + thumbnailAssetIdsForDay(index: index - 1)
+            + thumbnailAssetIdsForDay(index: index + 1)
+
+        // Stop caching old set (PHCachingImageManager), then start caching the new set.
+        if !cachedDayPagerThumbnailAssetIds.isEmpty {
+            ImageLoader.shared.stopCachingThumbnails(
+                assetIdentifiers: cachedDayPagerThumbnailAssetIds,
+                targetSize: dayPagerThumbnailTargetSize
+            )
         }
-        let revealAfterScrollAttempts: () -> Void = {
-            guard selectedDayIndex == dayPageIndex, !isEditMode, pendingDeepLinkStopScrollId == nil else { return }
-            readOnlyMapRevealDayIndices.insert(dayPageIndex)
-        }
-        // Nested async passes beat fixed sleeps: mask drops after a few run-loop turns (~2–3 frames) instead of ~64ms+ black field.
-        DispatchQueue.main.async {
-            scrollInstant()
-            DispatchQueue.main.async {
-                scrollInstant()
-                DispatchQueue.main.async {
-                    scrollInstant()
-                    revealAfterScrollAttempts()
-                }
-            }
-        }
-        Task { @MainActor in
-            scrollInstant()
-            for delayMs in [120, 120, 140, 180, 220] {
-                try? await Task.sleep(nanoseconds: UInt64(delayMs) * 1_000_000)
-                scrollInstant()
-            }
+        cachedDayPagerThumbnailAssetIds = ids
+        if !ids.isEmpty {
+            ImageLoader.shared.startCachingThumbnails(
+                assetIdentifiers: ids,
+                targetSize: dayPagerThumbnailTargetSize
+            )
         }
     }
 
@@ -1534,19 +1622,6 @@ struct RecapBlogPageView: View {
         }
         .background(recapScreenBackground)
         .ignoresSafeArea(edges: isKeyboardVisible ? [] : .bottom)
-        .overlay {
-            if !isEditMode, index > 0, !readOnlyMapRevealDayIndices.contains(index), pendingDeepLinkStopScrollId == nil {
-                readOnlyMapAlignmentMaskFill
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
-        }
-        .onAppear {
-            // TabView swipe/pill can finish layout after `onChange`; re-apply map alignment when this page is visible.
-            guard !isEditMode, index > 0, selectedDayIndex == index, pendingDeepLinkStopScrollId == nil else { return }
-            scheduleReadOnlyScrollToMap(proxy: proxy, blogDay: blogDay, dayPageIndex: index)
-        }
         .onChange(of: scrollToStopId) { _, newId in
             guard let id = newId, selectedDayIndex == index else { return }
             scrollToStopId = nil
@@ -1579,26 +1654,19 @@ struct RecapBlogPageView: View {
                         proxy.scrollTo("day-section-\(d.id)", anchor: .top)
                     }
                 }
-            } else {
-                if newIndex == 0 {
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        proxy.scrollTo(RecapBlogScrollAnchor.pageTop, anchor: .top)
-                    }
-                } else {
-                    scheduleReadOnlyScrollToMap(proxy: proxy, blogDay: blogDay, dayPageIndex: index)
+            } else if newIndex == 0 {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    proxy.scrollTo(RecapBlogScrollAnchor.pageTop, anchor: .top)
                 }
             }
+            // Read-only Day 2+: map is already at the top of the scroll view, no scroll needed.
         }
         .onChange(of: hasFinishedInitialLoad) { _, finished in
             guard finished else { return }
-            if index == 0 {
-                if isEditMode, initialScrollToStopId == nil {
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        proxy.scrollTo(RecapBlogScrollAnchor.pageTop, anchor: .top)
-                    }
+            if index == 0, isEditMode, initialScrollToStopId == nil {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    proxy.scrollTo(RecapBlogScrollAnchor.pageTop, anchor: .top)
                 }
-            } else if !isEditMode, selectedDayIndex == index, initialScrollToStopId == nil {
-                scheduleReadOnlyScrollToMap(proxy: proxy, blogDay: blogDay, dayPageIndex: index)
             }
         }
         .onChange(of: pendingDeepLinkStopScrollId) { _, stopId in
@@ -2115,7 +2183,11 @@ struct RecapBlogPageView: View {
                     showUnprocessedDayAlert = true
                 }
             } else {
-                selectedDayIndex = index
+                // Day selected from bottom pills: no slide motion, render ASAP.
+                shouldAnimateDayChange = false
+                withTransaction(Transaction(animation: nil)) {
+                    selectedDayIndex = index
+                }
             }
         } label: {
             HStack(spacing: 6) {
@@ -2170,6 +2242,7 @@ struct RecapBlogPageView: View {
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 8)
+        .allowsHitTesting(!isDayPagerHorizontalDragActive)
         .id(RecapBlogScrollAnchor.mapForDay(day.id))
     }
 

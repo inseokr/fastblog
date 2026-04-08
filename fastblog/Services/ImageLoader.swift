@@ -16,6 +16,48 @@ final class ImageLoader {
     
     init() {}
 
+    /// Prime `PHCachingImageManager` so grids can paint quickly.
+    /// This does *not* store to our memory `NSCache`; it just lets Photos fetch/decode ahead of time.
+    func startCachingThumbnails(assetIdentifiers: [String], targetSize: CGSize) {
+        let ids = assetIdentifiers.filter { !$0.hasPrefix(AppCapturePhotoService.prefix) }
+        guard !ids.isEmpty else { return }
+        let results = PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil)
+        var assets: [PHAsset] = []
+        assets.reserveCapacity(results.count)
+        results.enumerateObjects { asset, _, _ in assets.append(asset) }
+        guard !assets.isEmpty else { return }
+
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.isNetworkAccessAllowed = true
+        imageManager.startCachingImages(
+            for: assets,
+            targetSize: targetSize,
+            contentMode: .aspectFill,
+            options: options
+        )
+    }
+
+    func stopCachingThumbnails(assetIdentifiers: [String], targetSize: CGSize) {
+        let ids = assetIdentifiers.filter { !$0.hasPrefix(AppCapturePhotoService.prefix) }
+        guard !ids.isEmpty else { return }
+        let results = PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil)
+        var assets: [PHAsset] = []
+        assets.reserveCapacity(results.count)
+        results.enumerateObjects { asset, _, _ in assets.append(asset) }
+        guard !assets.isEmpty else { return }
+
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.isNetworkAccessAllowed = true
+        imageManager.stopCachingImages(
+            for: assets,
+            targetSize: targetSize,
+            contentMode: .aspectFill,
+            options: options
+        )
+    }
+
     func loadThumbnail(assetIdentifier: String, targetSize: CGSize = CGSize(width: 200, height: 200)) async -> UIImage? {
         // Check memory cache first
         let key = NSString(string: "\(assetIdentifier)-thumb-\(targetSize.width)x\(targetSize.height)")
@@ -35,11 +77,12 @@ final class ImageLoader {
             let assets = PHAsset.fetchAssets(withLocalIdentifiers: [assetIdentifier], options: nil)
             asset = assets.firstObject
             if asset != nil { break }
-            if attempt < 2 { try? await Task.sleep(nanoseconds: 250_000_000) }
+            if attempt < 2 { try? await Task.sleep(nanoseconds: 50_000_000) }
         }
         guard let asset else { return nil }
 
         let options = PHImageRequestOptions()
+        // `fastFormat` returns noticeably soft images when cells scale thumbnails on retina; keep full-quality delivery.
         options.deliveryMode = .highQualityFormat
         options.isNetworkAccessAllowed = true
         options.isSynchronous = false
@@ -78,7 +121,7 @@ final class ImageLoader {
             let assets = PHAsset.fetchAssets(withLocalIdentifiers: [assetIdentifier], options: nil)
             asset = assets.firstObject
             if asset != nil { break }
-            if attempt < 2 { try? await Task.sleep(nanoseconds: 250_000_000) }
+            if attempt < 2 { try? await Task.sleep(nanoseconds: 50_000_000) }
         }
         guard let asset else { return nil }
 
