@@ -644,7 +644,7 @@ private struct SettingsBlogBackupHelpContent: View {
                 icon: "arrow.down.doc",
                 tint: Color(red: 0.45, green: 0.85, blue: 0.55),
                 title: "3. Import on another device",
-                detail: "Whenever you are ready, open Bloggo on another phone or tablet, tap Import blog backup, and choose your ZIP. If your photos are already on that device, turn on Add photos already on this device in Settings under Blog backup so your blogs can link to them."
+                detail: "Whenever you are ready, open Bloggo on another phone or tablet, tap Import blog backup, and choose your ZIP. Right before the import runs, Bloggo asks whether to reuse matching photos already in your library (for example from iCloud Photos) or to use only the images inside the backup file."
             )
         }
         .padding(.horizontal, 20)
@@ -822,7 +822,9 @@ private struct SettingsView: View {
     @State private var backupFlowAlertTitle = ""
     @State private var backupFlowAlertMessage = ""
     @State private var showBackupFlowAlert = false
-    @AppStorage("bloggo.preferPhotoLibraryWhenImportingBackup") private var preferPhotoLibraryWhenImportingBackup = false
+    /// Staged ZIP after the user picks a file; shown until import finishes or the user cancels the photo-library choice.
+    @State private var stagedImportZipURL: URL?
+    @State private var showImportPhotoLibraryChoice = false
     @State private var settingsHelpTopic: SettingsHelpTopic?
 
     private var travelStats: (countries: Int, cities: Int, places: Int) {
@@ -1041,22 +1043,6 @@ private struct SettingsView: View {
                 }
 
                 Section {
-                    Toggle(isOn: $preferPhotoLibraryWhenImportingBackup) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Add photos already on this device")
-                            Text("When you import a backup, Bloggo tries to match each image to a Moment already on this device. If no match is found, it imports and uses the copy from the ZIP.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    Button {
-                        showImportBackupPicker = true
-                    } label: {
-                        Label("Import blog backup", systemImage: "arrow.down.doc")
-                    }
-                    .disabled(isImportingBackup)
-
                     Button {
                         Task { await exportAllBlogsBackupTapped() }
                     } label: {
@@ -1066,6 +1052,13 @@ private struct SettingsView: View {
                     .buttonStyle(.plain)
                     .opacity((isExportingAllBackups || !hasAnyBackupableBlog) ? 0.45 : 1.0)
                     .disabled(isExportingAllBackups || !hasAnyBackupableBlog)
+
+                    Button {
+                        showImportBackupPicker = true
+                    } label: {
+                        Label("Import blog backup", systemImage: "arrow.down.doc")
+                    }
+                    .disabled(isImportingBackup)
                 } header: {
                     HStack {
                         Text("Blog backup")
@@ -1199,9 +1192,7 @@ private struct SettingsView: View {
                 switch result {
                 case .success(let urls):
                     guard let url = urls.first else { return }
-                    Task { @MainActor in
-                        await importBlogBackup(from: url)
-                    }
+                    stageImportBackupAndPrompt(from: url)
                 case .failure(let error):
                     backupFlowAlertTitle = "Import failed"
                     backupFlowAlertMessage = error.localizedDescription
@@ -1222,6 +1213,33 @@ private struct SettingsView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(backupFlowAlertMessage)
+            }
+            .confirmationDialog(
+                "Reuse photos from your library?",
+                isPresented: $showImportPhotoLibraryChoice,
+                titleVisibility: .visible
+            ) {
+                Button("Link to library when possible") {
+                    guard let url = stagedImportZipURL else { return }
+                    stagedImportZipURL = nil
+                    Task { @MainActor in
+                        await importBlogBackup(stagedZipURL: url, preferPhotoLibrary: true)
+                    }
+                }
+                Button("Use images from the backup only") {
+                    guard let url = stagedImportZipURL else { return }
+                    stagedImportZipURL = nil
+                    Task { @MainActor in
+                        await importBlogBackup(stagedZipURL: url, preferPhotoLibrary: false)
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    discardStagedImport()
+                }
+            } message: {
+                Text(
+                    "If the same pictures are already in Photos (for example synced with iCloud), Bloggo can connect the imported blog to those originals and avoid extra copies. Otherwise it uses the JPEGs stored in the ZIP. Photos access is only needed when you choose linking."
+                )
             }
             }
 
@@ -1275,33 +1293,53 @@ private struct SettingsView: View {
         }
     }
 
+    /// Copies the picked backup into a temp file, then shows the library-vs-ZIP choice. Security-scoped access ends here.
     @MainActor
-    private func importBlogBackup(from url: URL) async {
+    private func stageImportBackupAndPrompt(from pickedURL: URL) {
+        let accessing = pickedURL.startAccessingSecurityScopedResource()
+        defer {
+            if accessing { pickedURL.stopAccessingSecurityScopedResource() }
+        }
+        do {
+            let dest = FileManager.default.temporaryDirectory.appendingPathComponent("bloggo-import-staging-\(UUID().uuidString).zip")
+            try FileManager.default.copyItem(at: pickedURL, to: dest)
+            stagedImportZipURL = dest
+            showImportPhotoLibraryChoice = true
+        } catch {
+            backupFlowAlertTitle = "Import failed"
+            backupFlowAlertMessage = error.localizedDescription
+            showBackupFlowAlert = true
+        }
+    }
+
+    @MainActor
+    private func discardStagedImport() {
+        if let url = stagedImportZipURL {
+            try? FileManager.default.removeItem(at: url)
+            stagedImportZipURL = nil
+        }
+    }
+
+    /// Imports from a temp ZIP already copied from the document picker. Removes the staged file when finished.
+    @MainActor
+    private func importBlogBackup(stagedZipURL: URL, preferPhotoLibrary: Bool) async {
         isImportingBackup = true
         backupFlowProgress = 0
         defer {
             isImportingBackup = false
             backupFlowProgress = 0
-        }
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer {
-            if accessing { url.stopAccessingSecurityScopedResource() }
+            try? FileManager.default.removeItem(at: stagedZipURL)
         }
         do {
-            if preferPhotoLibraryWhenImportingBackup, !photoAuth.isAuthorized {
+            if preferPhotoLibrary, !photoAuth.isAuthorized {
                 await photoAuth.requestAccess()
             }
-            let dest = FileManager.default.temporaryDirectory.appendingPathComponent("bloggo-import-\(UUID().uuidString).zip")
-            backupFlowProgress = 0.02
-            await Task.yield()
-            try FileManager.default.copyItem(at: url, to: dest)
             backupFlowProgress = 0.06
             await Task.yield()
-            defer { try? FileManager.default.removeItem(at: dest) }
             let ids = try await BlogBackupService.importFromZip(
-                zipURL: dest,
+                zipURL: stagedZipURL,
                 store: createdRecapStore,
-                preferPhotoLibrary: preferPhotoLibraryWhenImportingBackup && photoAuth.isAuthorized,
+                preferPhotoLibrary: preferPhotoLibrary && photoAuth.isAuthorized,
                 progress: { frac in
                     Task { @MainActor in
                         backupFlowProgress = 0.06 + 0.94 * frac

@@ -269,7 +269,7 @@ struct BlogSettingsSheet: View {
             .disabled(isExportingBackup || !canExportSavedBackup)
         } footer: {
             if canExportSavedBackup {
-                Text("Exports the last saved version (not unsaved edits). Save the ZIP outside this phone. On a new device, turn on “Add photos already on this device” in Settings → Blog backup so imports can link to your library.")
+                Text("Exports the last saved version (not unsaved edits). Save the ZIP outside this phone. On a new device, use Settings → Import blog backup; when asked, choose to link to your photo library if the same photos are already in Photos so Bloggo can reuse them when it finds a match.")
             } else {
                 Text("Save this blog from the editor first (toolbar Save). Export only includes saved blogs, not draft-only recaps.")
             }

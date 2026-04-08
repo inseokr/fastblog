@@ -22,7 +22,8 @@ struct AdminAnalyticsDashboardView: View {
     static func isAdminUser(_ user: AuthUser) -> Bool {
         let email = (user.email ?? "").lowercased()
         let username = (user.username ?? "").lowercased()
-        return adminEmails.contains(email) || adminUsernames.contains(username)
+        return false
+        // return adminEmails.contains(email) || adminUsernames.contains(username)
     }
 
     private var isAdmin: Bool {

@@ -87,6 +87,11 @@ struct RecapBlogPageView: View {
         colorScheme == .dark ? .black : Color(uiColor: .systemGroupedBackground)
     }
 
+    /// Softer than `recapScreenBackground` in dark mode so the day-2+ scroll-alignment cover never reads as a full black screen.
+    private var readOnlyMapAlignmentMaskFill: Color {
+        colorScheme == .dark ? Color(white: 0.14) : Color(uiColor: .systemGroupedBackground)
+    }
+
     private var recapChromeForeground: Color {
         colorScheme == .dark ? .white : .primary
     }
@@ -117,6 +122,8 @@ struct RecapBlogPageView: View {
 
     @State private var draft: RecapBlogDetail
     @State private var selectedDayIndex: Int = 0  // 0 = Day 1, 1 = Day 2, ...
+    /// Read-only day 2+ pages briefly cover the scroll view until `scrollTo(map)` can apply (SwiftUI paints offset 0 first). Kept very short; fill uses a soft tone in dark mode, not pure black.
+    @State private var readOnlyMapRevealDayIndices: Set<Int> = []
     @State private var overflowStop: OverflowItem?
     @State private var mergeSelectionItem: MergeSelectionItem?
     @State private var showEditNameForStop: PlaceStop?
@@ -1365,8 +1372,11 @@ struct RecapBlogPageView: View {
         }
         .ignoresSafeArea(.keyboard)
         .background(recapScreenBackground)
-        .onChange(of: selectedDayIndex) { _, newIndex in
+        .onChange(of: selectedDayIndex) { oldIndex, newIndex in
             visitedDayIndices.insert(newIndex)
+            if oldIndex > 0 {
+                readOnlyMapRevealDayIndices.remove(oldIndex)
+            }
         }
         .onChange(of: draft.days.count) { _, _ in
             schedulePlacesVisitedDeepLinkScroll()
@@ -1390,6 +1400,9 @@ struct RecapBlogPageView: View {
                 visitedDayIndices = [selectedDayIndex]
                 showHeroMetadata = true
             } else {
+                if selectedDayIndex > 0 {
+                    readOnlyMapRevealDayIndices.remove(selectedDayIndex)
+                }
                 // When tapping Save, the hero header can briefly re-layout while the day pager/nav updates.
                 // Delay metadata so multi-line titles never collide with duration/moment captions.
                 showHeroMetadata = false
@@ -1470,22 +1483,39 @@ struct RecapBlogPageView: View {
         .background(recapScreenBackground)
     }
 
-    /// Read-only days 2+: align the scroll view so the map is at the top (cover stays above). `ScrollViewReader.scrollTo` often runs before `TabView` finishes laying out the selected page, and the page transition can reset scroll after an early `scrollTo`, so we only scroll after short delays and retry (same idea as the Places Visited deep link).
+    /// Read-only days 2+: pin the scroll position so the map is at the top. Retries are unanimated so the user does not briefly see the hero cover then watch it slide away (animated `scrollTo` after `TabView` layout caused that flash).
     private func scheduleReadOnlyScrollToMap(proxy: ScrollViewProxy, blogDay: RecapBlogDay, dayPageIndex: Int) {
         guard !isEditMode, dayPageIndex > 0 else { return }
         guard selectedDayIndex == dayPageIndex, pendingDeepLinkStopScrollId == nil else { return }
         let mapAnchor = RecapBlogScrollAnchor.mapForDay(blogDay.id)
-        let scroll: () -> Void = {
+        let scrollInstant: () -> Void = {
             guard selectedDayIndex == dayPageIndex, !isEditMode, pendingDeepLinkStopScrollId == nil else { return }
-            withAnimation(.easeOut(duration: 0.3)) {
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) {
                 proxy.scrollTo(mapAnchor, anchor: .top)
             }
         }
+        let revealAfterScrollAttempts: () -> Void = {
+            guard selectedDayIndex == dayPageIndex, !isEditMode, pendingDeepLinkStopScrollId == nil else { return }
+            readOnlyMapRevealDayIndices.insert(dayPageIndex)
+        }
+        // Nested async passes beat fixed sleeps: mask drops after a few run-loop turns (~2–3 frames) instead of ~64ms+ black field.
+        DispatchQueue.main.async {
+            scrollInstant()
+            DispatchQueue.main.async {
+                scrollInstant()
+                DispatchQueue.main.async {
+                    scrollInstant()
+                    revealAfterScrollAttempts()
+                }
+            }
+        }
         Task { @MainActor in
-            // Stagger after tab transition / layout; repeats beat a one-shot that lands on offset 0.
+            scrollInstant()
             for delayMs in [120, 120, 140, 180, 220] {
                 try? await Task.sleep(nanoseconds: UInt64(delayMs) * 1_000_000)
-                scroll()
+                scrollInstant()
             }
         }
     }
@@ -1504,6 +1534,14 @@ struct RecapBlogPageView: View {
         }
         .background(recapScreenBackground)
         .ignoresSafeArea(edges: isKeyboardVisible ? [] : .bottom)
+        .overlay {
+            if !isEditMode, index > 0, !readOnlyMapRevealDayIndices.contains(index), pendingDeepLinkStopScrollId == nil {
+                readOnlyMapAlignmentMaskFill
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         .onAppear {
             // TabView swipe/pill can finish layout after `onChange`; re-apply map alignment when this page is visible.
             guard !isEditMode, index > 0, selectedDayIndex == index, pendingDeepLinkStopScrollId == nil else { return }
