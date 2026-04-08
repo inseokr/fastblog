@@ -31,6 +31,11 @@ struct TermsOfServiceView: View {
                         .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 8)
+
+                    Text("Last Updated: April 7, 2026")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.bottom, 4)
 
                 Group {

@@ -31,6 +31,11 @@ struct PrivacyPolicyView: View {
                         .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 8)
+
+                    Text("Last Updated: April 7, 2026")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.bottom, 4)
 
                 Group {
@@ -43,7 +48,7 @@ struct PrivacyPolicyView: View {
                     sectionTitle("2. Photos & Blog Content")
                     bodyText("Bloggo is designed with your privacy in mind. Your photos and blog content are processed and stored locally on your device. Specifically:")
                     bullet("Photos you use in your blogs are accessed from your device's photo library and are never uploaded to external servers.")
-                    bullet("AI-assisted blog generation is performed on-device or through on-device models; your photos are not sent to third-party services for this purpose.")
+                    bullet("AI-assisted blog generation runs entirely on-device. Your photos are never sent to external AI services.")
                     bullet("EXIF metadata (such as GPS location embedded in photo files) may be read locally to enrich your blog with location context. You can disable this in your app settings.")
                     bullet("Your blog content remains on your device unless you choose to export or share it using the available sharing features described below.")
                 }

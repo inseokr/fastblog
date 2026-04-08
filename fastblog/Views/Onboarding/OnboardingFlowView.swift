@@ -191,19 +191,24 @@ struct ProblemStatementView: View {
                     .padding(.horizontal, 24)
                     .padding(.bottom, 12)
 
-                    HStack(spacing: 4) {
-                        Button("Privacy Policy") {
-                            showPrivacyPolicy = true
-                        }
-                        .foregroundColor(.white.opacity(0.5))
-
-                        Text("and")
+                    VStack(spacing: 4) {
+                        Text("By continuing, you agree to Bloggo's")
                             .foregroundColor(.white.opacity(0.35))
 
-                        Button("Terms of Service") {
-                            showTermsOfService = true
+                        HStack(spacing: 4) {
+                            Button("Privacy Policy") {
+                                showPrivacyPolicy = true
+                            }
+                            .foregroundColor(.white.opacity(0.5))
+
+                            Text("and")
+                                .foregroundColor(.white.opacity(0.35))
+
+                            Button("Terms of Service") {
+                                showTermsOfService = true
+                            }
+                            .foregroundColor(.white.opacity(0.5))
                         }
-                        .foregroundColor(.white.opacity(0.5))
                     }
                     .font(.caption)
                     .padding(.bottom, 32)
