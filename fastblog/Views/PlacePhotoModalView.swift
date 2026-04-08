@@ -440,9 +440,9 @@ struct PlacePhotoModalView: View {
     /// Slides the modal the rest of the way off-screen, then runs `completion` (typically `onDismiss`).
     /// Uses a spring (not ease-in) so the finish matches system sheet / pull-modal dismiss: quick to start, smooth settle.
     private func animateSwipeDismissCompletion(_ completion: @escaping () -> Void) {
-        let response: CGFloat = usesInlineCaptionChrome ? 0.32 : 0.4
-        let damping: CGFloat = usesInlineCaptionChrome ? 0.9 : 0.93
-        let settleNanoseconds: UInt64 = usesInlineCaptionChrome ? 380_000_000 : 480_000_000
+        let response: CGFloat = usesInlineCaptionChrome ? 0.24 : 0.30
+        let damping: CGFloat = usesInlineCaptionChrome ? 0.88 : 0.88
+        let settleNanoseconds: UInt64 = usesInlineCaptionChrome ? 260_000_000 : 330_000_000
         onDismissSlideBegan?()
         dismissFrozenPhotoId = currentPhotoId
         isDismissExitAnimating = true
@@ -465,47 +465,18 @@ struct PlacePhotoModalView: View {
 
     private var photoModalSwipeDismissGesture: some Gesture {
         DragGesture(minimumDistance: 12, coordinateSpace: .local)
-            .onChanged { value in
-                guard swipeToDismissEnabled else { return }
-                let dx = value.translation.width
-                let dy = value.translation.height
-                guard isPrimarilyVerticalDismissDrag(dx: dx, dy: dy) else { return }
-                // Lock paging on first accepted vertical frame — avoids horizontal wobble before dy was > 40.
-                if dismissFrozenPhotoId == nil {
-                    dismissFrozenPhotoId = currentPhotoId
-                }
-                interactiveDismissDragOffset = dy
-            }
             .onEnded { value in
-                guard !isDismissExitAnimating else { return }
-                guard swipeToDismissEnabled || interactiveDismissDragOffset > 0 else {
-                    dismissFrozenPhotoId = nil
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.86, blendDuration: 0)) {
-                        interactiveDismissDragOffset = 0
-                    }
-                    return
-                }
+                guard !isDismissExitAnimating, swipeToDismissEnabled else { return }
                 let dx = value.translation.width
                 let dy = value.translation.height
-                let mostlyVertical = isPrimarilyVerticalDismissDrag(dx: dx, dy: dy)
                 let predicted = value.predictedEndTranslation.height
-                let shouldDismiss = mostlyVertical && (dy > 115 || predicted > 220)
-                if shouldDismiss {
-                    let needsSaveAlert = (isEditing || usesInlineCaptionChrome) && hasAnyChanges && !openInCaptionEditor
-                    if needsSaveAlert {
-                        dismissFrozenPhotoId = nil
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.86, blendDuration: 0)) {
-                            interactiveDismissDragOffset = 0
-                        }
-                        showSaveConfirmationAlert = true
-                    } else {
-                        handleUserRequestedDismiss()
-                    }
+                guard isPrimarilyVerticalDismissDrag(dx: dx, dy: dy) else { return }
+                guard dy > 115 || predicted > 220 else { return }
+                let needsSaveAlert = (isEditing || usesInlineCaptionChrome) && hasAnyChanges && !openInCaptionEditor
+                if needsSaveAlert {
+                    showSaveConfirmationAlert = true
                 } else {
-                    dismissFrozenPhotoId = nil
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.86, blendDuration: 0)) {
-                        interactiveDismissDragOffset = 0
-                    }
+                    handleUserRequestedDismiss()
                 }
             }
     }
@@ -671,7 +642,7 @@ struct PlacePhotoModalView: View {
                     if hasUnsavedChanges {
                         commitCaption()
                     }
-                    onDismiss()
+                    animateSwipeDismissCompletion { onDismiss() }
                 },
                 onMenuEditPlaceName: { showRenameSheet = true },
                 onMenuBeginCaptionEdit: {
@@ -788,12 +759,12 @@ struct PlacePhotoModalView: View {
         .alert("Update caption?", isPresented: $showSaveConfirmationAlert) {
             Button("Update") {
                 commitCaption()
-                onDismiss()
+                animateSwipeDismissCompletion { onDismiss() }
             }
             Button("Keep Editing", role: .cancel) { }
             Button("Leave", role: .destructive) {
                 revertChanges()
-                onDismiss()
+                animateSwipeDismissCompletion { onDismiss() }
             }
         } message: {
             Text("Your changes will be lost if you leave")
