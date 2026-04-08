@@ -440,9 +440,9 @@ struct PlacePhotoModalView: View {
     /// Slides the modal the rest of the way off-screen, then runs `completion` (typically `onDismiss`).
     /// Uses a spring (not ease-in) so the finish matches system sheet / pull-modal dismiss: quick to start, smooth settle.
     private func animateSwipeDismissCompletion(_ completion: @escaping () -> Void) {
-        let response: CGFloat = usesInlineCaptionChrome ? 0.24 : 0.30
-        let damping: CGFloat = usesInlineCaptionChrome ? 0.88 : 0.88
-        let settleNanoseconds: UInt64 = usesInlineCaptionChrome ? 260_000_000 : 330_000_000
+        let response: CGFloat = usesInlineCaptionChrome ? 0.02 : 0.02
+        let damping: CGFloat = usesInlineCaptionChrome ? 0.10 : 0.10
+        let settleNanoseconds: UInt64 = usesInlineCaptionChrome ? 260_000_000 : 400_000_000
         onDismissSlideBegan?()
         dismissFrozenPhotoId = currentPhotoId
         isDismissExitAnimating = true
