@@ -23,6 +23,8 @@ struct AuthView: View {
     var onDismiss: (() -> Void)?
     /// When true, the host will dismiss (e.g. after keyboard down + delay); this view does not call dismiss() after onAuthenticated.
     var hostControlsDismiss: Bool = false
+    /// Top-left close control (e.g. hide when presented as a sheet with a drag indicator).
+    var showsCloseButton: Bool = true
 
     // MARK: - Body
 
@@ -34,20 +36,21 @@ struct AuthView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Close button
-                HStack {
-                    Button {
-                        AuthService.Analytics.track(.authCancelled)
-                        if let onDismiss { onDismiss() } else { dismiss() }
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(.white.opacity(0.3))
+                if showsCloseButton {
+                    HStack {
+                        Button {
+                            AuthService.Analytics.track(.authCancelled)
+                            if let onDismiss { onDismiss() } else { dismiss() }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(.white.opacity(0.3))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.leading, 20)
+                        .padding(.top, 20)
+                        Spacer()
                     }
-                    .buttonStyle(.plain)
-                    .padding(.leading, 20)
-                    .padding(.top, 20)
-                    Spacer()
                 }
 
                 Spacer()
@@ -144,7 +147,7 @@ struct AuthView: View {
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
 
-            Text("Save and download unlimited blogs.\nGuest users can export 1 blog to try Bloggo")
+            Text("Save and export unlimited blogs.\nGuests can export one blog to try Bloggo.")
                 .font(.subheadline)
                 .foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)

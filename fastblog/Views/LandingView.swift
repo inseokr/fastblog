@@ -962,9 +962,9 @@ private struct SettingsView: View {
                     Text("Account")
                 } footer: {
                     if authService.isSignedIn {
-                        Text("Your recaps sync to the cloud and can be edited on web.")
+                        Text("You can save and export unlimited blogs.")
                     } else {
-                        Text("Sign in to back up your recaps, access them on web, and restore Pro.")
+                        Text("Create an account to save and download unlimited blogs.")
                     }
                 }
 
@@ -1186,7 +1186,7 @@ private struct SettingsView: View {
                 AuthView(onAuthenticated: {
                     showAuth = false
                     dismiss()
-                })
+                }, showsCloseButton: false)
                 .environmentObject(authService)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)

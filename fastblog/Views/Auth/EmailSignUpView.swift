@@ -118,12 +118,6 @@ struct EmailSignUpView: View {
                         }
                     }
                 }
-                ToolbarItem(placement: .cancellationAction) {
-                    if step == .enterUsername {
-                        Button("Cancel") { dismiss() }
-                            .foregroundColor(.white.opacity(0.7))
-                    }
-                }
                 ToolbarItem(placement: .principal) {
                     stepIndicator
                 }

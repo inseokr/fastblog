@@ -103,12 +103,6 @@ struct EmailLoginView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundColor(.white.opacity(0.7))
-                }
-            }
             .preferredColorScheme(.dark)
             .onAppear { emailFocused = true }
             .sheet(isPresented: $showForgotPassword) {
