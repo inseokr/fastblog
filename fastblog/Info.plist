@@ -33,23 +33,20 @@
 	<string>We use your camera so you can capture moments and add them to your blog.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>We record a short audio Vibe clip alongside your photo so you can relive the sounds of the moment.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Bloggo reads your photo library to find travel photos and automatically organize them into trip blogs on your device.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>We save your in-app camera photos to your photo library so they can appear in your travel blogs.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>We add location to your captured photos so they appear correctly on the map and in your travel blogs.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Bloggo uses the local network to discover nearby devices when you share or receive a trip.</string>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Bloggo can use Bluetooth to find nearby devices for trip sharing when Wi-Fi is not available.</string>
+
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_bloggo-trip._tcp</string>
 	</array>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-	</dict>
+
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
