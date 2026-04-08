@@ -61,6 +61,13 @@ struct LoadingScanView: View {
         }
     }
 
+    /// When the slow-scan hint is shown, replaces cycling/progress step text so we do not stack two messages.
+    private var displayedSecondaryLabel: String {
+        showSlowScanHint
+            ? "Taking a little longer than expected. Please wait…"
+            : progressStepLabel
+    }
+
     var body: some View {
         ZStack {
             if isOverlay {
@@ -252,12 +259,12 @@ struct LoadingScanView: View {
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
 
-            Text(progressStepLabel)
+            Text(displayedSecondaryLabel)
                 .font(.subheadline)
                 .foregroundColor(.white.opacity(0.65))
                 .multilineTextAlignment(.center)
-                .contentTransition(.numericText())
-                .animation(.easeInOut(duration: 0.3), value: progressStepLabel)
+                .contentTransition(.opacity)
+                .animation(.easeInOut(duration: 0.3), value: displayedSecondaryLabel)
 
             if let progress {
                 Text("\(Int(progress * 100))%")
@@ -273,16 +280,6 @@ struct LoadingScanView: View {
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.35))
                     .padding(.top, 4)
-            }
-
-            if showSlowScanHint {
-                Text("Taking a little longer than expected. Please wait…")
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.55))
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 6)
-                    .transition(.opacity)
-                    .animation(.easeInOut(duration: 0.25), value: showSlowScanHint)
             }
         }
         .padding(.horizontal, 32)

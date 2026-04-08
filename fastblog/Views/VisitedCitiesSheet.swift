@@ -148,7 +148,7 @@ struct VisitedCitiesSheet: View {
                    !filteredTrips.isEmpty {
                     selectionBottomOverlay
                         .background(alignment: .bottom) {
-                            Color.black
+                            Color(UIColor.secondarySystemFill)
                                 .ignoresSafeArea(.keyboard, edges: .bottom)
                         }
                 }
@@ -237,7 +237,7 @@ struct VisitedCitiesSheet: View {
                     Text("\(filteredTrips.count) \(filteredTrips.count == 1 ? "trip" : "trips")")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.primary)
-                    Text("Select memories to create a blog")
+                    Text("Select memories to create a blog, You can also select multiple memories to merge them into one.")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
@@ -318,7 +318,7 @@ struct VisitedCitiesSheet: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color.black)
+        .background(Color(UIColor.secondarySystemFill))
         .overlay(alignment: .top) {
             Divider()
         }

@@ -7,8 +7,14 @@
 
 import SwiftUI
 
+private enum BloggoLegalWebURLs {
+    static let privacy = URL(string: "https://bloggo.linkedspaces.com/privacy")!
+    static let terms = URL(string: "https://bloggo.linkedspaces.com/terms")!
+}
+
 struct EmailSignUpView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var authService: AuthService
 
     var onAuthenticated: (() -> Void)?
@@ -33,8 +39,6 @@ struct EmailSignUpView: View {
     @State private var errorMessage: String?
     @State private var isLoading = false
     @State private var showSpamAlert = false
-    @State private var showPrivacyPolicy = false
-    @State private var showTermsOfService = false
     
     @FocusState private var usernameFocused: Bool
     @FocusState private var emailFocused: Bool
@@ -130,12 +134,6 @@ struct EmailSignUpView: View {
             } message: {
                 Text("A verification link has been sent to \(email). Tap the link in that email to complete sign-up. Don't see it? Check your spam or junk folder.")
             }
-            .sheet(isPresented: $showPrivacyPolicy) {
-                PrivacyPolicyView()
-            }
-            .sheet(isPresented: $showTermsOfService) {
-                TermsOfServiceView()
-            }
     }
 
     // MARK: - Steps
@@ -188,7 +186,7 @@ struct EmailSignUpView: View {
 
                 HStack(spacing: 4) {
                     Button("Terms of Service") {
-                        showTermsOfService = true
+                        openURL(BloggoLegalWebURLs.terms)
                     }
                     .foregroundColor(.white.opacity(0.55))
 
@@ -196,7 +194,7 @@ struct EmailSignUpView: View {
                         .foregroundColor(.white.opacity(0.35))
 
                     Button("Privacy Policy") {
-                        showPrivacyPolicy = true
+                        openURL(BloggoLegalWebURLs.privacy)
                     }
                     .foregroundColor(.white.opacity(0.55))
                 }

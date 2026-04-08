@@ -674,7 +674,7 @@ private struct SettingsMyHomeHelpContent: View {
                 detail: "Release the slider and Bloggo will rescan when it can. If trips still look wrong, close Bloggo fully, reopen, then open Trips."
             )
             SettingsHelpTopicCard(
-                icon: "photo.badge.lock.fill",
+                icon: "photo.badge.plus",
                 tint: Color(red: 0.75, green: 0.65, blue: 1.0),
                 title: "Limited Photos access",
                 detail: "If iOS only shows part of your library, home distance still applies, but scans use a default distance until you allow access to more photos."
@@ -1044,6 +1044,22 @@ private struct SettingsView: View {
 
                 Section {
                     Button {
+                        showImportBackupPicker = true
+                    } label: {
+                        Label("Import blog backup", systemImage: "arrow.down.doc")
+                    }
+                    .disabled(isImportingBackup)
+
+                    Toggle(isOn: $preferPhotoLibraryWhenImportingBackup) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Add photos already on this device")
+                            Text("Prefer library photos when they match; otherwise use the backup.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Button {
                         Task { await exportAllBlogsBackupTapped() }
                     } label: {
                         Label("Export all saved blogs", systemImage: "square.and.arrow.up.on.square")
@@ -1092,12 +1108,24 @@ private struct SettingsView: View {
                     NavigationLink {
                         PrivacyPolicyView()
                     } label: {
-                        Label("Privacy Policy", systemImage: "hand.raised.fill")
+                        Label {
+                            Text("Privacy Policy")
+                                .foregroundStyle(.primary)
+                        } icon: {
+                            Image(systemName: "hand.raised.fill")
+                                .foregroundStyle(.white)
+                        }
                     }
                     NavigationLink {
                         TermsOfServiceView()
                     } label: {
-                        Label("Terms of Service", systemImage: "doc.text.fill")
+                        Label {
+                            Text("Terms of Service")
+                                .foregroundStyle(.primary)
+                        } icon: {
+                            Image(systemName: "doc.text.fill")
+                                .foregroundStyle(.white)
+                        }
                     }
                 } header: {
                     Text("Legal")

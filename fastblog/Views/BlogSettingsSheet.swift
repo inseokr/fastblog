@@ -181,8 +181,7 @@ struct BlogSettingsSheet: View {
             editAndRestoreSection
             titleAndCoverSection
             unusedPhotosSection
-            fontStyleSection
-            weatherSection
+            fontStyleAndWeatherSection
             backupSection
             cloudSection
         }
@@ -269,7 +268,7 @@ struct BlogSettingsSheet: View {
             .disabled(isExportingBackup || !canExportSavedBackup)
         } footer: {
             if canExportSavedBackup {
-                Text("Exports the last saved version (not unsaved edits). Save the ZIP outside this phone. On a new device, use Settings → Import blog backup; when asked, choose to link to your photo library if the same photos are already in Photos so Bloggo can reuse them when it finds a match.")
+                Text("Creates a backup file of this blog so you can import it to another device using Bloggo. Import can be found in the App Settings page.")
             } else {
                 Text("Save this blog from the editor first (toolbar Save). Export only includes saved blogs, not draft-only recaps.")
             }
@@ -311,7 +310,7 @@ struct BlogSettingsSheet: View {
         }
     }
 
-    private var fontStyleSection: some View {
+    private var fontStyleAndWeatherSection: some View {
         Section {
             Picker(selection: $selectedBlogFont) {
                 Text("Default")
@@ -345,8 +344,27 @@ struct BlogSettingsSheet: View {
                     .font(.custom("AmericanTypewriter", size: 16))
                     .tag("Typewriter")
             } label: {
-                Label("Font Style", systemImage: "textformat.alt")
+                Label {
+                    Text("Font Style")
+                } icon: {
+                    Image(systemName: "textformat.alt")
+                        .foregroundStyle(.white)
+                }
             }
+            Picker(selection: $weatherTemperatureUnitRaw) {
+                ForEach(WeatherTemperatureUnit.allCases, id: \.rawValue) { unit in
+                    Text(unit.displayName).tag(unit.rawValue)
+                }
+            } label: {
+                Label {
+                    Text("Day weather")
+                } icon: {
+                    Image(systemName: "sun.max")
+                        .foregroundStyle(.white)
+                }
+            }
+        } footer: {
+            Text("High and low temperatures shown on each day in the blog use this unit.")
         }
     }
 
@@ -381,20 +399,6 @@ struct BlogSettingsSheet: View {
         } footer: {
             Text(displayPrompt)
                 .lineLimit(3)
-        }
-    }
-
-    private var weatherSection: some View {
-        Section {
-            Picker(selection: $weatherTemperatureUnitRaw) {
-                ForEach(WeatherTemperatureUnit.allCases, id: \.rawValue) { unit in
-                    Text(unit.displayName).tag(unit.rawValue)
-                }
-            } label: {
-                Label("Day weather", systemImage: "sun.max")
-            }
-        } footer: {
-            Text("High and low temperatures shown on each day in the blog use this unit.")
         }
     }
 
@@ -437,15 +441,13 @@ struct BlogSettingsSheet: View {
 
     @ToolbarContentBuilder
     private var navigationToolbar: some ToolbarContent {
-        ToolbarItem(placement: .cancellationAction) {
-            Button {
+        ToolbarItem(placement: .confirmationAction) {
+            Button("Done") {
                 onSave()
                 dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14))
-                    .foregroundColor(.white)
             }
+            .fontWeight(.semibold)
+            .foregroundColor(.white)
         }
     }
 

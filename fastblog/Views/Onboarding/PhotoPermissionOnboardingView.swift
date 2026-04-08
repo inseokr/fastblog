@@ -83,7 +83,7 @@ struct PhotoPermissionOnboardingView: View {
                         .opacity(showBody ? 1 : 0)
                         .offset(y: showBody ? 0 : 8)
                     
-                    Text("Your photos stay private on your device. Nothing is uploaded to external servers.")
+                    Text("Your photos stay private on your device.")
                         .font(.footnote)
                         .foregroundColor(.white.opacity(0.5))
                         .multilineTextAlignment(.center)
