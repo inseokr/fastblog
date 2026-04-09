@@ -9,6 +9,12 @@ import Photos
 import SwiftUI
 import UIKit
 
+/// Same fill as trip card stacks in this sheet (`secondarySystemGroupedBackground`), not the outer `systemGroupedBackground` gutter.
+private enum VisitedCitiesSheetChrome {
+    static let uiColor = UIColor.secondarySystemGroupedBackground
+    static var color: Color { Color(uiColor) }
+}
+
 // MARK: - Sheet
 
 struct VisitedCitiesSheet: View {
@@ -107,9 +113,10 @@ struct VisitedCitiesSheet: View {
         NavigationStack {
             VStack(spacing: 0) {
                 controlsHeader
+                    .background(VisitedCitiesSheetChrome.color)
 
                 ZStack {
-                    Color(UIColor.systemGroupedBackground).ignoresSafeArea()
+                    VisitedCitiesSheetChrome.color.ignoresSafeArea()
 
                     switch viewModel.visitedCitiesBuildState {
                     case .building(let p):
@@ -128,7 +135,24 @@ struct VisitedCitiesSheet: View {
                     }
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
+            .background(VisitedCitiesNavBarGroupedBackgroundApplier())
+            .navigationTitle("Your Memories")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(VisitedCitiesSheetChrome.color, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss")
+                }
+            }
             .onAppear {
                 viewModel.loadVisitedCities(year: viewModel.visitedCitiesYear)
                 seedCurrentYearCache()
@@ -193,9 +217,6 @@ struct VisitedCitiesSheet: View {
 
     private var controlsHeader: some View {
         VStack(alignment: .leading, spacing: 0) {
-            topNavigationHeader
-                .padding(.bottom, 20)
-
             searchBarView
                 .padding(.bottom, 12)
 
@@ -260,40 +281,8 @@ struct VisitedCitiesSheet: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 22)
+        .padding(.top, 8)
         .padding(.bottom, 14)
-        .background(Color(UIColor.systemGroupedBackground))
-    }
-
-    private var topNavigationHeader: some View {
-        HStack {
-            // Same control as AppCaptureGalleryView toolbar leading: plain chevron, no circle.
-            HStack {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.primary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss")
-                Spacer(minLength: 0)
-            }
-            .frame(width: 44, alignment: .leading)
-
-            Spacer()
-
-            Text("Your Memories")
-                .font(.system(size: 23, weight: .semibold))
-                .foregroundStyle(.primary)
-
-            Spacer()
-
-            Color.clear
-                .frame(width: 44, height: 44)
-                .accessibilityHidden(true)
-        }
     }
 
     private var selectionBottomOverlay: some View {
@@ -398,7 +387,7 @@ struct VisitedCitiesSheet: View {
                                 }
                             }
                         }
-                        .background(Color(UIColor.secondarySystemGroupedBackground))
+                        .background(VisitedCitiesSheetChrome.color)
                         .clipShape(RoundedRectangle(appChromeBaseRadius: 18))
                         .overlay(
                             RoundedRectangle(appChromeBaseRadius: 18)
@@ -434,7 +423,7 @@ struct VisitedCitiesSheet: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color(UIColor.systemGroupedBackground))
+        .background(VisitedCitiesSheetChrome.color)
     }
 
     // MARK: - Building (full-screen, no results yet)
@@ -451,7 +440,7 @@ struct VisitedCitiesSheet: View {
             progressStepLabelOverride: { p in
                 p >= 0.9 ? "Almost done..." : "Please wait..."
             },
-            backgroundColorOverride: Color(UIColor.systemGroupedBackground),
+            backgroundColorOverride: VisitedCitiesSheetChrome.color,
             useCenteredLayout: true
         )
     }
@@ -1125,6 +1114,32 @@ private struct CityTripRow: View {
             options: opts
         ) { img, _ in
             if let img { coverImage = img }
+        }
+    }
+}
+
+// MARK: - Nav bar: opaque `secondarySystemGroupedBackground` (same tone as trip card stacks)
+
+private struct VisitedCitiesNavBarGroupedBackgroundApplier: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> UIViewController {
+        let vc = UIViewController()
+        vc.view.isUserInteractionEnabled = false
+        vc.view.backgroundColor = .clear
+        return vc
+    }
+
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
+        DispatchQueue.main.async {
+            guard let nav = uiViewController.navigationController else { return }
+            nav.navigationBar.isTranslucent = false
+            let appearance = UINavigationBarAppearance()
+            appearance.configureWithOpaqueBackground()
+            appearance.backgroundColor = VisitedCitiesSheetChrome.uiColor
+            appearance.shadowColor = .clear
+            nav.navigationBar.standardAppearance = appearance
+            nav.navigationBar.scrollEdgeAppearance = appearance
+            nav.navigationBar.compactAppearance = appearance
+            nav.navigationBar.compactScrollEdgeAppearance = appearance
         }
     }
 }

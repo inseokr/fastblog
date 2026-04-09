@@ -19,10 +19,6 @@ struct ScrollMetricsReportingTextEditor: UIViewRepresentable {
     /// Cursor and selection tint; avoids system blue flashing on dark caption chrome during rapid relayout.
     var caretTint: UIColor = .label
 
-    private var usesCustomScrollMetrics: Bool {
-        contentHeight != nil && visibleViewportHeight != nil && scrollOffsetY != nil
-    }
-
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
@@ -39,7 +35,8 @@ struct ScrollMetricsReportingTextEditor: UIViewRepresentable {
         tv.textColor = .label
         tv.tintColor = caretTint
         tv.keyboardDismissMode = .interactive
-        tv.showsVerticalScrollIndicator = !usesCustomScrollMetrics
+        tv.showsVerticalScrollIndicator = false
+        tv.showsHorizontalScrollIndicator = false
         tv.text = text
         tv.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         tv.setContentHuggingPriority(.defaultLow, for: .vertical)
@@ -51,7 +48,8 @@ struct ScrollMetricsReportingTextEditor: UIViewRepresentable {
         uiView.textContainerInset = textInsets
         uiView.font = UIFont.preferredFont(forTextStyle: .body)
         uiView.tintColor = caretTint
-        uiView.showsVerticalScrollIndicator = !usesCustomScrollMetrics
+        uiView.showsVerticalScrollIndicator = false
+        uiView.showsHorizontalScrollIndicator = false
         if uiView.text != text {
             uiView.text = text
         }
