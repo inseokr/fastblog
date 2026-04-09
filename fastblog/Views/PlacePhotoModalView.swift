@@ -987,16 +987,6 @@ struct PlacePhotoModalView: View {
                             .foregroundColor(PlacePhotoStoryCaptionFieldColor.text)
                             .lineLimit(2...6)
                             .padding(12)
-                            .overlay(alignment: .trailing) {
-                                // Scroll indicator — signals caption area is scrollable when text overflows
-                                if !editedCaptionText.isEmpty {
-                                    Capsule()
-                                        .fill(Color.white.opacity(0.3))
-                                        .frame(width: 3, height: 32)
-                                        .padding(.trailing, 4)
-                                        .allowsHitTesting(false)
-                                }
-                            }
 
                         // Action bar — mirrors place story sheet layout
                         let trimmed = editedCaptionText.trimmingCharacters(in: .whitespacesAndNewlines)

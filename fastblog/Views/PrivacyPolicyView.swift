@@ -8,12 +8,16 @@ import SwiftUI
 /// Dedicated Privacy Policy page for Bloggo. Shown from Settings.
 struct PrivacyPolicyView: View {
     @Environment(\.dismiss) private var dismiss
-    private let scrollBottomInset: CGFloat = 120
+
+    /// Gradient + Close row + vertical paddings (excluding safe area). Used so the last lines can scroll above the CTA while content may draw under it.
+    private static let closeFooterFixedHeight: CGFloat = 32 + 4 + 16 + 22 + 16 + 16
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+        GeometryReader { geometry in
+            let bottomScrollPadding = Self.closeFooterFixedHeight + geometry.safeAreaInsets.bottom
+            ZStack(alignment: .bottom) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
                     HStack {
                         Spacer(minLength: 0)
                         Image("SplashIcon")
@@ -41,14 +45,14 @@ struct PrivacyPolicyView: View {
                 Group {
                     sectionTitle("1. Information We Collect")
                     bodyText("We collect information you provide directly to us, such as when you create an account or contact support. This includes your username, name where applicable, and email address.")
-                    bodyText("We also collect limited technical and usage data to improve the app and diagnose issues. For example, the app may send product analytics events to our servers (including an anonymous identifier stored on your device, app version, timezone, and non-content contextual fields such as feature or screen names). Crash or diagnostic data may be included depending on your device settings. This category of data is not a full copy of your blog text or photo library.")
+                    bodyText("We also collect limited technical and usage data to improve the app and diagnose issues. For example, the app may send product analytics events to our servers (including an anonymous identifier stored on your device, app version, timezone, and contextual fields such as feature or screen names that do not include the text of your blogs or your photo library). Crash or diagnostic data may be included depending on your device settings. This category of data is not a full copy of your blog text or photo library.")
                 }
 
                 Group {
                     sectionTitle("2. Your Blog Content Stays on Your Device")
                     bodyText("Your blogs, drafts, and the photos you include in them are stored and processed on your device. Bloggo does not upload your blog content or your photos to our servers for backup, sync, hosting, or publishing.")
-                    bodyText("Whether you use Bloggo as a guest or with an account, your blog material stays on your device unless you export it yourself (for example, as a PDF or zip file). If you create an account, we store the information needed to sign you in and operate your account—such as username and email—on our systems. That account information is separate from your blog files, which remain on your device.")
-                    bullet("Blog generation that uses on-device AI runs on your device. Your photos are not sent to external AI services for that processing.")
+                    bodyText("Whether you use Bloggo as a guest or with an account, your blog material stays on your device unless you export it yourself (for example, as a PDF or zip file). If you create an account, we store the information needed to sign you in and operate your account on our systems, such as username and email. That account information is separate from your blog files, which remain on your device.")
+                    bullet("Blog generation uses AI that runs entirely on your device. Your photos are not sent to external AI services for that processing.")
                 }
 
                 Group {
@@ -61,7 +65,7 @@ struct PrivacyPolicyView: View {
                     sectionTitle("4. Sharing and Personal Backup")
                     bodyText("Sharing in Bloggo is something you start from the app; we do not put your blog on a public website. Typical options include:")
                     bullet("PDF: The app can create a PDF on your device. You can save or download it and share it manually using Mail, AirDrop, Files, or any other app you choose. Those services have their own privacy practices.")
-                    bullet("QR code: You can use a QR code to hand off a blog to another Bloggo user in person (for example, so they can open it in Bloggo on their device), or for your own convenience. That flow is designed for direct, user-initiated sharing—not for us to host or publish your blog online.")
+                    bullet("QR code: You can use a QR code to hand off a blog to another Bloggo user in person (for example, so they can open it in Bloggo on their device), or for your own convenience. That flow is designed for direct, user initiated sharing; it is not for us to host or publish your blog online.")
                     bullet("Zip export: You can export your blog as a zip file (or similar archive) for your own backup or to move it between your devices. Those files stay under your control unless you choose to send them somewhere else.")
                 }
 
@@ -99,7 +103,7 @@ struct PrivacyPolicyView: View {
 
                 Group {
                     sectionTitle("9. Data Security")
-                    bodyText("We implement security measures consistent with industry practice. Data sent between the app and our servers for account sign-in and related services is encrypted in transit (HTTPS/TLS). Your blog content itself is not uploaded to our servers under this policy. No method of storage or transmission is perfectly secure; we encourage you to use a strong, unique password for your Bloggo account and to keep your device and Apple ID secure.")
+                    bodyText("We implement security measures consistent with industry practice. Data sent between the app and our servers for account sign in and related services is encrypted in transit (HTTPS/TLS). Your blog content itself is not uploaded to our servers under this policy. No method of storage or transmission is perfectly secure; we encourage you to use a strong, unique password for your Bloggo account and to keep your device and Apple ID secure.")
                 }
 
                 Group {
@@ -117,40 +121,54 @@ struct PrivacyPolicyView: View {
                     bodyText("If you have questions or concerns about this privacy policy, please contact us at bloggo@linkedspaces.com.")
                 }
 
-                Spacer(minLength: 40)
-            }
-            .padding(20)
-            .padding(.bottom, scrollBottomInset)
-            }
-
-            VStack(spacing: 0) {
-                LinearGradient(
-                    colors: [Color.clear, Color(uiColor: .systemBackground).opacity(0.9)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 42)
-                .allowsHitTesting(false)
-
-                Button {
-                    dismiss()
-                } label: {
-                    Text("Close")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Color.blue)
-                        .clipShape(Capsule())
-                        .shadow(color: Color.blue.opacity(0.3), radius: 10, y: 4)
+                    Spacer(minLength: 40)
+                    }
+                    .padding(20)
+                    .padding(.bottom, bottomScrollPadding)
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 4)
-                .padding(.bottom, 16)
+                .scrollClipDisabled()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                closeFooter
             }
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var closeFooter: some View {
+        VStack(spacing: 0) {
+            LinearGradient(
+                colors: [
+                    Color(uiColor: .systemBackground).opacity(0),
+                    Color(uiColor: .systemBackground)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 32)
+            .allowsHitTesting(false)
+
+            Button {
+                dismiss()
+            } label: {
+                Text("Close")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(Color.blue)
+                    .clipShape(Capsule())
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 4)
+            .padding(.bottom, 16)
+        }
+        .frame(maxWidth: .infinity)
+        .background {
+            Color(uiColor: .systemBackground)
+                .ignoresSafeArea(edges: .bottom)
+        }
     }
 
     private func sectionTitle(_ text: String) -> some View {

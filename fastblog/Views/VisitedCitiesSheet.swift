@@ -106,7 +106,7 @@ struct VisitedCitiesSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                controlsHeader
+                memoriesHeaderModule
 
                 ZStack {
                     Color(UIColor.systemGroupedBackground).ignoresSafeArea()
@@ -128,24 +128,7 @@ struct VisitedCitiesSheet: View {
                     }
                 }
             }
-            .navigationTitle("Your Memories")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(Color.black, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.white)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Dismiss")
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
             .onAppear {
                 viewModel.loadVisitedCities(year: viewModel.visitedCitiesYear)
                 seedCurrentYearCache()
@@ -203,6 +186,47 @@ struct VisitedCitiesSheet: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
             }
+        }
+    }
+
+    // MARK: - Header (title + dismiss + controls, one grouped background)
+
+    /// System `toolbarBackground` often renders a slightly different gray than SwiftUI fills; one module avoids the seam.
+    private var memoriesHeaderModule: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.primary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss")
+
+                Spacer(minLength: 8)
+
+                Text("Your Memories")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Spacer(minLength: 8)
+
+                Color.clear
+                    .frame(width: 44, height: 36)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, 8)
+            .frame(minHeight: 44)
+            .padding(.top, 4)
+
+            controlsHeader
+        }
+        .background {
+            Color(UIColor.systemGroupedBackground)
+                .ignoresSafeArea(edges: .top)
         }
     }
 
@@ -274,9 +298,8 @@ struct VisitedCitiesSheet: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.top, 8)
         .padding(.bottom, 14)
-        .background(Color(UIColor.systemGroupedBackground))
     }
 
     private var selectionBottomOverlay: some View {

@@ -8,12 +8,16 @@ import SwiftUI
 /// Dedicated Terms of Service page for Bloggo. Shown from Settings.
 struct TermsOfServiceView: View {
     @Environment(\.dismiss) private var dismiss
-    private let scrollBottomInset: CGFloat = 120
+
+    /// Gradient + Close row + vertical paddings (excluding safe area). Used so the last lines can scroll above the CTA while content may draw under it.
+    private static let closeFooterFixedHeight: CGFloat = 32 + 4 + 16 + 22 + 16 + 16
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+        GeometryReader { geometry in
+            let bottomScrollPadding = Self.closeFooterFixedHeight + geometry.safeAreaInsets.bottom
+            ZStack(alignment: .bottom) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
                     HStack {
                         Spacer(minLength: 0)
                         Image("SplashIcon")
@@ -122,40 +126,54 @@ struct TermsOfServiceView: View {
                     bodyText("For questions about these Terms of Service, please contact us at bloggo@linkedspaces.com.")
                 }
 
-                Spacer(minLength: 40)
-            }
-            .padding(20)
-            .padding(.bottom, scrollBottomInset)
-            }
-
-            VStack(spacing: 0) {
-                LinearGradient(
-                    colors: [Color.clear, Color(uiColor: .systemBackground).opacity(0.9)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 42)
-                .allowsHitTesting(false)
-
-                Button {
-                    dismiss()
-                } label: {
-                    Text("Close")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Color.blue)
-                        .clipShape(Capsule())
-                        .shadow(color: Color.blue.opacity(0.3), radius: 10, y: 4)
+                    Spacer(minLength: 40)
+                    }
+                    .padding(20)
+                    .padding(.bottom, bottomScrollPadding)
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 4)
-                .padding(.bottom, 16)
+                .scrollClipDisabled()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                closeFooter
             }
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var closeFooter: some View {
+        VStack(spacing: 0) {
+            LinearGradient(
+                colors: [
+                    Color(uiColor: .systemBackground).opacity(0),
+                    Color(uiColor: .systemBackground)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 32)
+            .allowsHitTesting(false)
+
+            Button {
+                dismiss()
+            } label: {
+                Text("Close")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(Color.blue)
+                    .clipShape(Capsule())
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 4)
+            .padding(.bottom, 16)
+        }
+        .frame(maxWidth: .infinity)
+        .background {
+            Color(uiColor: .systemBackground)
+                .ignoresSafeArea(edges: .bottom)
+        }
     }
 
     private func sectionTitle(_ text: String) -> some View {
