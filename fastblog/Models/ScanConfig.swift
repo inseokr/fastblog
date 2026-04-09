@@ -38,4 +38,9 @@ enum ScanConfig {
     
     /// Hard limit: max days per trip (1 week). Trips longer than this are split into Part 1, Part 2, etc. as separate blogs.
     static let maxTripDays: Int = 7
+
+    /// Minimum distance in miles between consecutive days with different country codes to trigger a trip split.
+    /// Below this threshold, the country change is treated as a short cross-border drive (e.g. Paris→Brussels ~175mi).
+    /// Above it, the user almost certainly flew, so the days belong to separate trip blogs.
+    static let flyingDistanceMilesThreshold: Double = 400
 }

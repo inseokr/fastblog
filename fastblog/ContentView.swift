@@ -183,6 +183,9 @@ struct ContentView: View {
                 }
             }
             .opacity(showSeeAll || showPlacesVisited || showTrips || showCameraFromHome || selectedCreatedRecap != nil ? 0 : 1)
+            // Opacity alone still receives touches — disable hit testing whenever a full-screen overlay covers landing
+            // so gestures (e.g. swipe-down to dismiss Capture) cannot fall through to the hidden bottom bar.
+            .allowsHitTesting(!(showSeeAll || showPlacesVisited || showTrips || showCameraFromHome || selectedCreatedRecap != nil))
 
             // Camera overlay (fade in/out).
             if showCameraFromHome {
@@ -208,6 +211,8 @@ struct ContentView: View {
                     )
                     .environmentObject(createdRecapStore)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black)
                 .transition(.opacity)
                 .zIndex(2)
                 .simultaneousGesture(
@@ -238,6 +243,7 @@ struct ContentView: View {
                     )
                     .environmentObject(createdRecapStore)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .tint(.primary)
                 .preferredColorScheme(.dark)
                 .transition(.opacity)
@@ -258,6 +264,7 @@ struct ContentView: View {
                     )
                     .environmentObject(createdRecapStore)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .tint(.primary)
                 .transition(.opacity)
                 .zIndex(4)
@@ -305,6 +312,7 @@ struct ContentView: View {
                     .id("\(recap.sourceTripId.uuidString)-\(initialScrollToStopIdForRecap?.uuidString ?? "none")")
                     .environmentObject(createdRecapStore)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .transition(.opacity)
                 .zIndex(10)
             }

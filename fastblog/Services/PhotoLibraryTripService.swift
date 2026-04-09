@@ -346,8 +346,10 @@ final class PhotoLibraryTripService {
         let monthYearFormatter = DateFormatter()
         monthYearFormatter.dateFormat = "MMM yyyy"
 
-        let splitTrips = splitTripsByMaxDays(groupingResult.trips, maxDays: ScanConfig.maxTripDays)
-        debugPrint("[Scan] Trip grouping done: \(groupingResult.trips.count) trip(s), \(splitTrips.count) after 7-day split. Building trip models...")
+        let countryBoundarySplit = await splitTripsByCountryBoundary(groupingResult.trips)
+        debugPrint("[Scan] Country-boundary split: \(groupingResult.trips.count) → \(countryBoundarySplit.count) trip(s)")
+        let splitTrips = splitTripsByMaxDays(countryBoundarySplit, maxDays: ScanConfig.maxTripDays)
+        debugPrint("[Scan] Trip grouping done: \(groupingResult.trips.count) trip(s), \(splitTrips.count) after country-boundary + 7-day split. Building trip models...")
         var trips: [TripDraft] = []
         for (tripIdx, item) in splitTrips.enumerated() {
             let tripDays = item.days
@@ -474,7 +476,8 @@ final class PhotoLibraryTripService {
         let monthYearFormatter = DateFormatter()
         monthYearFormatter.dateFormat = "MMM yyyy"
 
-        let splitTrips = splitTripsByMaxDays(groupingResult.trips, maxDays: ScanConfig.maxTripDays)
+        let countryBoundarySplit = await splitTripsByCountryBoundary(groupingResult.trips)
+        let splitTrips = splitTripsByMaxDays(countryBoundarySplit, maxDays: ScanConfig.maxTripDays)
         var results: [TripScanResult] = []
         for item in splitTrips {
             let tripDays = item.days
@@ -665,7 +668,8 @@ final class PhotoLibraryTripService {
         let monthYearFormatter = DateFormatter()
         monthYearFormatter.dateFormat = "MMM yyyy"
 
-        let splitTrips = splitTripsByMaxDays(groupingResult.trips, maxDays: ScanConfig.maxTripDays)
+        let countryBoundarySplit = await splitTripsByCountryBoundary(groupingResult.trips)
+        let splitTrips = splitTripsByMaxDays(countryBoundarySplit, maxDays: ScanConfig.maxTripDays)
         var trips: [TripDraft] = []
         for item in splitTrips {
             let tripDays = item.days
@@ -773,7 +777,8 @@ final class PhotoLibraryTripService {
         let monthYearFormatter = DateFormatter()
         monthYearFormatter.dateFormat = "MMM yyyy"
 
-        let splitTrips = splitTripsByMaxDays(groupingResult.trips, maxDays: ScanConfig.maxTripDays)
+        let countryBoundarySplit = await splitTripsByCountryBoundary(groupingResult.trips)
+        let splitTrips = splitTripsByMaxDays(countryBoundarySplit, maxDays: ScanConfig.maxTripDays)
         var trips: [TripDraft] = []
         for item in splitTrips {
             let tripDays = item.days
@@ -872,6 +877,68 @@ final class PhotoLibraryTripService {
                     result.append((days: chunk, partNumber: zeroBased + 1, totalParts: chunks.count))
                 }
             }
+        }
+        return result
+    }
+
+    /// Splits trips at country boundaries when the distance between consecutive days with different countries
+    /// exceeds `ScanConfig.flyingDistanceMilesThreshold`. Short cross-border drives (e.g. Paris→Brussels)
+    /// are kept in one trip; intercontinental jumps are split into separate blogs.
+    ///
+    /// Geocodes each day's centroid using the cached `GeocodingService`, so extra network calls are minimal.
+    private func splitTripsByCountryBoundary(_ trips: [[DayCluster]]) async -> [[DayCluster]] {
+        var result: [[DayCluster]] = []
+        for trip in trips {
+            guard trip.count >= 2 else {
+                result.append(trip)
+                continue
+            }
+
+            // Geocode each day's centroid to get its ISO country code.
+            var countryCodes: [String] = []
+            for day in trip {
+                let loc = CLLocation(latitude: day.dayCentroid.latitude, longitude: day.dayCentroid.longitude)
+                let place = await GeocodingService.shared.place(for: loc)
+                countryCodes.append(place.isoCountryCode)
+            }
+
+            // Walk days, splitting where a country change AND flying distance both occur.
+            var currentSegment: [DayCluster] = [trip[0]]
+            var lastKnownCountry = countryCodes[0]
+
+            for i in 1..<trip.count {
+                let prevCountry = lastKnownCountry
+                let currCountry = countryCodes[i]
+
+                var shouldSplit = false
+                if !prevCountry.isEmpty && !currCountry.isEmpty && prevCountry != currCountry {
+                    let dist = GeoDistanceHelper.haversineMiles(trip[i - 1].dayCentroid, trip[i].dayCentroid)
+                    if dist > ScanConfig.flyingDistanceMilesThreshold {
+                        shouldSplit = true
+                        debugPrint(
+                            "[TripSplit][Country] \(prevCountry)→\(currCountry) dist=\(String(format: "%.0f", dist))mi " +
+                            "— splitting trip at day \(i + 1)"
+                        )
+                    } else {
+                        debugPrint(
+                            "[TripSplit][Country] \(prevCountry)→\(currCountry) dist=\(String(format: "%.0f", dist))mi " +
+                            "— within drive threshold, keeping in same trip"
+                        )
+                    }
+                }
+
+                if shouldSplit {
+                    result.append(currentSegment)
+                    currentSegment = [trip[i]]
+                } else {
+                    currentSegment.append(trip[i])
+                }
+
+                if !currCountry.isEmpty {
+                    lastKnownCountry = currCountry
+                }
+            }
+            result.append(currentSegment)
         }
         return result
     }

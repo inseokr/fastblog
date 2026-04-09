@@ -193,11 +193,10 @@ struct LandingView: View {
         }
         .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
         .preferredColorScheme(.dark)
-        .gesture(
-            DragGesture()
+        // Use simultaneousGesture so vertical drags don’t win over the bottom bar buttons (exclusive .gesture can).
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 40)
                 .onEnded { value in
-                    // Swipe left to open Profile/Auth is disabled.
-                    // Swipe up opens in-app Capture (same as the bottom "Capture" control).
                     if value.translation.height < -50 && abs(value.translation.height) > abs(value.translation.width) {
                         withAnimation(.easeInOut(duration: 0.18)) {
                             showCameraFromHome = true
@@ -443,7 +442,7 @@ struct LandingView: View {
     }
 
     private var bottomMenuBar: some View {
-        HStack {
+        HStack(spacing: 0) {
             Button {
                 showSeeAll = true
             } label: {
@@ -461,6 +460,8 @@ struct LandingView: View {
             }
             .buttonStyle(.plain)
 
+            // Center: icon-sized tap target only — was full-width third of the bar, which overlapped
+            // swipe-down-to-dismiss-Capture and edge taps near the home indicator.
             Button {
                 showCameraFromHome = true
             } label: {
@@ -473,7 +474,8 @@ struct LandingView: View {
                         .font(.caption2)
                         .foregroundColor(.white)
                 }
-                .frame(maxWidth: .infinity)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
@@ -496,7 +498,8 @@ struct LandingView: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
-        .safeAreaPadding(.bottom, 16)
+        // Extra lift so the bar sits a bit farther from the system home / edge gesture band.
+        .safeAreaPadding(.bottom, 24)
     }
 }
 
@@ -1129,7 +1132,7 @@ private struct SettingsView: View {
                             Label("Delete Account", systemImage: "trash")
                                 .foregroundColor(.red)
                         }
-                        .alert("Delete Account?", isPresented: $showDeleteAccountAlert) {
+                        .alert("Delete Account", isPresented: $showDeleteAccountAlert) {
                             Button("Delete", role: .destructive) {
                                 Task {
                                     await authService.deleteAccount()
@@ -1138,7 +1141,7 @@ private struct SettingsView: View {
                             }
                             Button("Cancel", role: .cancel) { }
                         } message: {
-                            Text("This will permanently delete your account and all local data. This action cannot be undone.")
+                            Text("Are you sure? This will permanently delete your account and all associated data from our servers. This action is immediate and cannot be undone.")
                         }
                     }
                 }

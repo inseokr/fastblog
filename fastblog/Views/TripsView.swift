@@ -1991,6 +1991,11 @@ struct CameraCaptureView: View {
     private static let nearHomeAlertSuppressedKey = "bloggo.nearHomeAlertSuppressed"
     private static let nearHomeSuppressedPreferKeepKey = "bloggo.nearHomeSuppressedPreferKeep"
 
+    private func openAppSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+    }
+
     var body: some View {
         ZStack {
             // Full-screen camera preview as the base layer
@@ -2028,16 +2033,26 @@ struct CameraCaptureView: View {
             VStack {
                 Spacer()
                 if cameraController.authorizationDenied {
-                    VStack(spacing: 8) {
-                        Image(systemName: "camera.slash")
-                            .font(.system(size: 34, weight: .semibold))
-                        Text("Enable camera access in Settings to capture moments.")
-                            .multilineTextAlignment(.center)
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.8))
-                            .padding(.horizontal, 24)
+                    Button {
+                        openAppSettings()
+                    } label: {
+                        VStack(spacing: 8) {
+                            Image(systemName: "camera.slash")
+                                .font(.system(size: 34, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.9))
+                            (Text("Enable camera access in ") + Text("Settings").underline() + Text(" to capture moments."))
+                                .multilineTextAlignment(.center)
+                                .font(.subheadline)
+                                .foregroundColor(.white.opacity(0.8))
+                                .padding(.horizontal, 24)
+                        }
+                        .padding(.bottom, 24)
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.bottom, 24)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open Settings")
+                    .accessibilityHint("Enable camera access for this app")
                 } else if !cameraController.isConfigured {
                     ProgressView("Preparing camera…")
                         .tint(.white)

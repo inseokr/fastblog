@@ -245,6 +245,8 @@ final class AuthService: NSObject, ObservableObject {
                 isLoading = false
                 return
             }
+            // authorizationCode is a one-time code; capture it now — Apple won't provide it again.
+            let authorizationCode: String? = cred.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
             let fullName: String? = {
                 guard let full = cred.fullName else { return nil }
                 return [full.givenName, full.familyName]
@@ -254,24 +256,28 @@ final class AuthService: NSObject, ObservableObject {
                     .nonEmpty
             }()
             Task { @MainActor in
-                await exchangeAppleToken(idToken: idTokenString, fullName: fullName)
+                await exchangeAppleToken(idToken: idTokenString, authorizationCode: authorizationCode, fullName: fullName)
             }
         }
     }
 
     /// Exchanges Apple identity token with backend and completes sign-in with JWT.
-    private func exchangeAppleToken(idToken: String, fullName: String?) async {
+    /// `authorizationCode` is forwarded to the backend so it can exchange it for a
+    /// refresh token — required for Apple token revocation on account deletion.
+    private func exchangeAppleToken(idToken: String, authorizationCode: String?, fullName: String?) async {
         struct AppleAuthRequest: Encodable {
             let id_token: String
             let full_name: String?
             let userType: String
+            let authorizationCode: String?
         }
         defer { isLoading = false }
         do {
             let payload = AppleAuthRequest(
                 id_token: idToken,
                 full_name: fullName,
-                userType: "bloggo"
+                userType: "bloggo",
+                authorizationCode: authorizationCode
             )
             let response: LoginResponse = try await APIManager.shared.post(
                 endpoint: "/oauth/apple",
