@@ -9,10 +9,8 @@ import Photos
 import SwiftUI
 import UIKit
 
-/// Same fill as trip card stacks in this sheet (`secondarySystemGroupedBackground`), not the outer `systemGroupedBackground` gutter.
 private enum VisitedCitiesSheetChrome {
-    static let uiColor = UIColor.secondarySystemGroupedBackground
-    static var color: Color { Color(uiColor) }
+    static var color: Color { Color(UIColor.secondarySystemGroupedBackground) }
 }
 
 // MARK: - Sheet
@@ -112,6 +110,34 @@ struct VisitedCitiesSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // Custom title bar — avoids system nav bar material that causes color mismatch
+                HStack {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss")
+
+                    Spacer()
+
+                    Text("Your Memories")
+                        .font(.headline)
+
+                    Spacer()
+
+                    // Invisible balance item so title stays centered
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 15, weight: .semibold))
+                        .hidden()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(VisitedCitiesSheetChrome.color)
+
                 controlsHeader
                     .background(VisitedCitiesSheetChrome.color)
 
@@ -135,24 +161,7 @@ struct VisitedCitiesSheet: View {
                     }
                 }
             }
-            .background(VisitedCitiesNavBarGroupedBackgroundApplier())
-            .navigationTitle("Your Memories")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(VisitedCitiesSheetChrome.color, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.primary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Dismiss")
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
             .onAppear {
                 viewModel.loadVisitedCities(year: viewModel.visitedCitiesYear)
                 seedCurrentYearCache()
@@ -181,6 +190,7 @@ struct VisitedCitiesSheet: View {
                 }
             }
         }
+        .background(VisitedCitiesSheetChrome.color.ignoresSafeArea())
         .alert(selectionAlertTitle, isPresented: $showUnavailableAlert) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -1118,28 +1128,3 @@ private struct CityTripRow: View {
     }
 }
 
-// MARK: - Nav bar: opaque `secondarySystemGroupedBackground` (same tone as trip card stacks)
-
-private struct VisitedCitiesNavBarGroupedBackgroundApplier: UIViewControllerRepresentable {
-    func makeUIViewController(context: Context) -> UIViewController {
-        let vc = UIViewController()
-        vc.view.isUserInteractionEnabled = false
-        vc.view.backgroundColor = .clear
-        return vc
-    }
-
-    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
-        DispatchQueue.main.async {
-            guard let nav = uiViewController.navigationController else { return }
-            nav.navigationBar.isTranslucent = false
-            let appearance = UINavigationBarAppearance()
-            appearance.configureWithOpaqueBackground()
-            appearance.backgroundColor = VisitedCitiesSheetChrome.uiColor
-            appearance.shadowColor = .clear
-            nav.navigationBar.standardAppearance = appearance
-            nav.navigationBar.scrollEdgeAppearance = appearance
-            nav.navigationBar.compactAppearance = appearance
-            nav.navigationBar.compactScrollEdgeAppearance = appearance
-        }
-    }
-}
