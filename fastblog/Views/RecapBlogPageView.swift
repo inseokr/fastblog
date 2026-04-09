@@ -6149,6 +6149,7 @@ private struct RecapMergePlacesSelectionSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @ScaledMetric(relativeTo: .body) private var photoThumbSize: CGFloat = 52
+    @State private var contentHeight: CGFloat = 300
 
     private var previousCandidate: RecapMergePlaceCandidateItem? {
         candidates.first(where: { $0.position == .previous })
@@ -6159,7 +6160,8 @@ private struct RecapMergePlacesSelectionSheet: View {
     }
 
     var body: some View {
-        ScrollView {
+        VStack {
+            Spacer(minLength: 0)
             VStack(alignment: .leading, spacing: 16) {
                 Image(systemName: "arrow.triangle.merge")
                     .font(.title2.weight(.semibold))
@@ -6208,11 +6210,17 @@ private struct RecapMergePlacesSelectionSheet: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { contentHeight = geo.size.height }
+                        .onChange(of: geo.size.height) { contentHeight = $0 }
+                }
+            )
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.height(contentHeight + 60), .large])
         .presentationDragIndicator(.visible)
-        .presentationContentInteraction(.scrolls)
     }
     
     private var currentPlaceCard: some View {
