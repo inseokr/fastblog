@@ -9,6 +9,12 @@ import Photos
 import SwiftUI
 import UIKit
 
+/// Same fill as trip card stacks in this sheet (`secondarySystemGroupedBackground`), not the outer `systemGroupedBackground` gutter.
+private enum VisitedCitiesSheetChrome {
+    static let uiColor = UIColor.secondarySystemGroupedBackground
+    static var color: Color { Color(uiColor) }
+}
+
 // MARK: - Sheet
 
 struct VisitedCitiesSheet: View {
@@ -106,10 +112,11 @@ struct VisitedCitiesSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                memoriesHeaderModule
+                controlsHeader
+                    .background(VisitedCitiesSheetChrome.color)
 
                 ZStack {
-                    Color(UIColor.systemGroupedBackground).ignoresSafeArea()
+                    VisitedCitiesSheetChrome.color.ignoresSafeArea()
 
                     switch viewModel.visitedCitiesBuildState {
                     case .building(let p):
@@ -128,7 +135,24 @@ struct VisitedCitiesSheet: View {
                     }
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
+            .background(VisitedCitiesNavBarGroupedBackgroundApplier())
+            .navigationTitle("Your Memories")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(VisitedCitiesSheetChrome.color, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss")
+                }
+            }
             .onAppear {
                 viewModel.loadVisitedCities(year: viewModel.visitedCitiesYear)
                 seedCurrentYearCache()
@@ -186,47 +210,6 @@ struct VisitedCitiesSheet: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
             }
-        }
-    }
-
-    // MARK: - Header (title + dismiss + controls, one grouped background)
-
-    /// System `toolbarBackground` often renders a slightly different gray than SwiftUI fills; one module avoids the seam.
-    private var memoriesHeaderModule: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.primary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss")
-
-                Spacer(minLength: 8)
-
-                Text("Your Memories")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                Spacer(minLength: 8)
-
-                Color.clear
-                    .frame(width: 44, height: 36)
-                    .accessibilityHidden(true)
-            }
-            .padding(.horizontal, 8)
-            .frame(minHeight: 44)
-            .padding(.top, 4)
-
-            controlsHeader
-        }
-        .background {
-            Color(UIColor.systemGroupedBackground)
-                .ignoresSafeArea(edges: .top)
         }
     }
 
@@ -404,7 +387,7 @@ struct VisitedCitiesSheet: View {
                                 }
                             }
                         }
-                        .background(Color(UIColor.secondarySystemGroupedBackground))
+                        .background(VisitedCitiesSheetChrome.color)
                         .clipShape(RoundedRectangle(appChromeBaseRadius: 18))
                         .overlay(
                             RoundedRectangle(appChromeBaseRadius: 18)
@@ -440,7 +423,7 @@ struct VisitedCitiesSheet: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color(UIColor.systemGroupedBackground))
+        .background(VisitedCitiesSheetChrome.color)
     }
 
     // MARK: - Building (full-screen, no results yet)
@@ -457,7 +440,7 @@ struct VisitedCitiesSheet: View {
             progressStepLabelOverride: { p in
                 p >= 0.9 ? "Almost done..." : "Please wait..."
             },
-            backgroundColorOverride: Color(UIColor.systemGroupedBackground),
+            backgroundColorOverride: VisitedCitiesSheetChrome.color,
             useCenteredLayout: true
         )
     }
@@ -1131,6 +1114,32 @@ private struct CityTripRow: View {
             options: opts
         ) { img, _ in
             if let img { coverImage = img }
+        }
+    }
+}
+
+// MARK: - Nav bar: opaque `secondarySystemGroupedBackground` (same tone as trip card stacks)
+
+private struct VisitedCitiesNavBarGroupedBackgroundApplier: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> UIViewController {
+        let vc = UIViewController()
+        vc.view.isUserInteractionEnabled = false
+        vc.view.backgroundColor = .clear
+        return vc
+    }
+
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
+        DispatchQueue.main.async {
+            guard let nav = uiViewController.navigationController else { return }
+            nav.navigationBar.isTranslucent = false
+            let appearance = UINavigationBarAppearance()
+            appearance.configureWithOpaqueBackground()
+            appearance.backgroundColor = VisitedCitiesSheetChrome.uiColor
+            appearance.shadowColor = .clear
+            nav.navigationBar.standardAppearance = appearance
+            nav.navigationBar.scrollEdgeAppearance = appearance
+            nav.navigationBar.compactAppearance = appearance
+            nav.navigationBar.compactScrollEdgeAppearance = appearance
         }
     }
 }

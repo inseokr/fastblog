@@ -75,6 +75,10 @@ struct StorageManagementView: View {
         return "Unused Photos"
     }
 
+    private var allVisiblePhotosAreSelected: Bool {
+        !visiblePhotos.isEmpty && visiblePhotos.allSatisfy { selectedPhotoIds.contains($0.photo.id) }
+    }
+
     /// Photo currently shown in the full-screen unused-photos viewer (updates when the user swipes).
     private var fullScreenHeaderPhoto: RecapPhoto? {
         guard let id = fullScreenPhotoId else { return nil }
@@ -284,7 +288,13 @@ struct StorageManagementView: View {
         if fullScreenPhotoId == nil {
             ToolbarItem(placement: .navigationBarTrailing) {
                 if isSelectMode {
-                    Button("Select All") { selectAll() }
+                    Button(allVisiblePhotosAreSelected ? "Deselect All" : "Select All") {
+                        if allVisiblePhotosAreSelected {
+                            deselectAll()
+                        } else {
+                            selectAll()
+                        }
+                    }
                 } else {
                     Button("Select") { enterSelectMode() }
                 }
@@ -327,6 +337,10 @@ struct StorageManagementView: View {
 
     private func selectAll() {
         selectedPhotoIds = Set(visiblePhotos.map(\.photo.id))
+    }
+
+    private func deselectAll() {
+        selectedPhotoIds = []
     }
 
     // MARK: - Bottom bar (matches AppCaptureGalleryView select-mode chrome)
