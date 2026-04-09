@@ -885,7 +885,8 @@ final class PhotoLibraryTripService {
     /// exceeds `ScanConfig.flyingDistanceMilesThreshold`. Short cross-border drives (e.g. Paris→Brussels)
     /// are kept in one trip; intercontinental jumps are split into separate blogs.
     ///
-    /// Geocodes each day's centroid using the cached `GeocodingService`, so extra network calls are minimal.
+    /// Fast-path: if no consecutive day pair exceeds the flying distance threshold, skips geocoding entirely.
+    /// This makes single-country trips essentially free (one distance check per adjacent day pair, no network).
     private func splitTripsByCountryBoundary(_ trips: [[DayCluster]]) async -> [[DayCluster]] {
         var result: [[DayCluster]] = []
         for trip in trips {
@@ -894,6 +895,17 @@ final class PhotoLibraryTripService {
                 continue
             }
 
+            // Fast-path: if no adjacent day pair exceeds the flying threshold, the trip can't need a country
+            // split regardless of geocode results — skip geocoding entirely for the common single-country case.
+            let anyPairExceedsThreshold = zip(trip, trip.dropFirst()).contains { a, b in
+                GeoDistanceHelper.haversineMiles(a.dayCentroid, b.dayCentroid) > ScanConfig.flyingDistanceMilesThreshold
+            }
+            guard anyPairExceedsThreshold else {
+                result.append(trip)
+                continue
+            }
+
+            // Only trips with at least one large jump get geocoded.
             // Geocode each day's centroid to get its ISO country code.
             var countryCodes: [String] = []
             for day in trip {
