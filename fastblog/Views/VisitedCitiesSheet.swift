@@ -147,9 +147,12 @@ struct VisitedCitiesSheet: View {
                 if case .done = viewModel.visitedCitiesBuildState,
                    !filteredTrips.isEmpty {
                     selectionBottomOverlay
-                        .background(alignment: .bottom) {
-                            Color(UIColor.secondarySystemFill)
-                                .ignoresSafeArea(.keyboard, edges: .bottom)
+                        .frame(maxWidth: .infinity)
+                        .background {
+                            Rectangle()
+                                .fill(.ultraThinMaterial)
+                                .frame(maxWidth: .infinity)
+                                .ignoresSafeArea(.all, edges: .bottom)
                         }
                 }
             }
@@ -232,23 +235,28 @@ struct VisitedCitiesSheet: View {
             }
             .padding(.bottom, 16)
 
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline) {
                     Text("\(filteredTrips.count) \(filteredTrips.count == 1 ? "trip" : "trips")")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.primary)
-                    Text("Select memories to create a blog, You can also select multiple memories to merge them into one.")
+                    Spacer(minLength: 12)
+                    if case .done = viewModel.visitedCitiesBuildState {
+                        Button("Rescan memories") {
+                            viewModel.refreshVisitedCities()
+                        }
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if case .done = viewModel.visitedCitiesBuildState {
-                    Button("Rescan memories") {
-                        viewModel.refreshVisitedCities()
+                        .foregroundStyle(Color.accentColor.opacity(0.9))
                     }
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.accentColor.opacity(0.9))
                 }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("You can select multiple memories")
+                    Text("to merge them into one blog.")
+                }
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, 16)
@@ -259,15 +267,20 @@ struct VisitedCitiesSheet: View {
 
     private var topNavigationHeader: some View {
         HStack {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
+            // Same control as AppCaptureGalleryView toolbar leading: plain chevron, no circle.
+            HStack {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.primary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss")
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Done")
+            .frame(width: 44, alignment: .leading)
 
             Spacer()
 
@@ -277,48 +290,57 @@ struct VisitedCitiesSheet: View {
 
             Spacer()
 
-            // Keeps title optically centered against the leading close button.
             Color.clear
-                .frame(width: 15, height: 15)
+                .frame(width: 44, height: 44)
                 .accessibilityHidden(true)
         }
     }
 
     private var selectionBottomOverlay: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Selecting multiple memories will be merged into one blog.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
+        VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center) {
                 Text("\(selectedTripIds.count) selected")
                     .font(.system(size: 15, weight: .semibold))
-                    .fontWeight(.semibold)
                     .foregroundStyle(.primary)
                 Spacer()
 
-                Button {
-                    beginCreateBlogFromSelection()
-                } label: {
-                    if isCreatingBlog {
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(.white)
-                            .frame(width: 120)
+                Group {
+                    if selectedTripIds.isEmpty && !isCreatingBlog {
+                        Button {
+                            beginCreateBlogFromSelection()
+                        } label: {
+                            Text("Select memories")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .frame(minWidth: 120)
+                        }
+                        .disabled(true)
+                        .buttonStyle(.bordered)
+                        .tint(.secondary)
                     } else {
-                        Text(selectedTripIds.isEmpty ? "Select memories" : "Create Blog")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .frame(minWidth: 120)
+                        Button {
+                            beginCreateBlogFromSelection()
+                        } label: {
+                            if isCreatingBlog {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(.white)
+                                    .frame(width: 120)
+                            } else {
+                                Text("Create Blog")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .frame(minWidth: 120)
+                            }
+                        }
+                        .disabled(isCreatingBlog)
+                        .buttonStyle(.borderedProminent)
                     }
                 }
-                .disabled(isCreatingBlog || selectedTripIds.isEmpty)
-                .buttonStyle(.borderedProminent)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color(UIColor.secondarySystemFill))
         .overlay(alignment: .top) {
             Divider()
         }
