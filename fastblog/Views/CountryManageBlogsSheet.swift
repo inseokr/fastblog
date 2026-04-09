@@ -41,6 +41,9 @@ struct CountryManageBlogsSheet: View {
             .sorted { ($0.tripStartDate ?? $0.createdAt) > ($1.tripStartDate ?? $1.createdAt) }
     }
 
+    private var canSplit: Bool { !sortedBlogs.isEmpty }
+    private var canMerge: Bool { sortedBlogs.count >= 2 }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -102,7 +105,7 @@ struct CountryManageBlogsSheet: View {
                         } label: {
                             Image(systemName: "scissors")
                                 .font(.system(size: 22, weight: .semibold))
-                                .foregroundColor(.primary)
+                                .foregroundColor(canSplit ? .orange : .primary)
                                 .frame(width: 56, height: 56)
                                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                         }
@@ -112,7 +115,7 @@ struct CountryManageBlogsSheet: View {
                         } label: {
                             Image(systemName: "arrow.triangle.merge")
                                 .font(.system(size: 22, weight: .semibold))
-                                .foregroundColor(.primary)
+                                .foregroundColor(canMerge ? .blue : .primary)
                                 .frame(width: 56, height: 56)
                                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                         }

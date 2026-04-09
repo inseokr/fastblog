@@ -86,14 +86,24 @@ struct PlacesVisitedView: View {
             return place.year == y
         }
 
-        let dataRaws = Set(
-            placesForYear.compactMap { $0.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-        )
+        let allRaws = placesForYear.compactMap { $0.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let dataRaws = Set(allRaws.filter { !$0.isEmpty })
         let includeOthers = placesForYear.contains {
             ($0.categoryRawValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
-        return PlacePOICategoryCatalog.categoryRawsAppearingInDataForFilters(dataRaws: dataRaws, includeOthers: includeOthers)
+
+        var frequencies: [String: Int] = [:]
+        for raw in allRaws where !raw.isEmpty { frequencies[raw, default: 0] += 1 }
+
+        let cats = PlacePOICategoryCatalog.categoryRawsAppearingInDataForFilters(dataRaws: dataRaws, includeOthers: false)
+        let sorted = cats.sorted { a, b in
+            let fa = frequencies[a] ?? 0
+            let fb = frequencies[b] ?? 0
+            if fa != fb { return fa > fb }
+            return PlacePOICategoryPresentation.displayLabel(forRaw: a)
+                .localizedStandardCompare(PlacePOICategoryPresentation.displayLabel(forRaw: b)) == .orderedAscending
+        }
+        return includeOthers ? sorted + ["Others"] : sorted
     }
 
     private var filteredPlaces: [VisitedPlaceSummary] {
@@ -737,14 +747,24 @@ private struct PlacesVisitedMapView: View {
             return place.year == y
         }
 
-        let dataRaws = Set(
-            placesForYear.compactMap { $0.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-        )
+        let allRaws = placesForYear.compactMap { $0.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let dataRaws = Set(allRaws.filter { !$0.isEmpty })
         let includeOthers = placesForYear.contains {
             ($0.categoryRawValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
-        return PlacePOICategoryCatalog.categoryRawsAppearingInDataForFilters(dataRaws: dataRaws, includeOthers: includeOthers)
+
+        var frequencies: [String: Int] = [:]
+        for raw in allRaws where !raw.isEmpty { frequencies[raw, default: 0] += 1 }
+
+        let cats = PlacePOICategoryCatalog.categoryRawsAppearingInDataForFilters(dataRaws: dataRaws, includeOthers: false)
+        let sorted = cats.sorted { a, b in
+            let fa = frequencies[a] ?? 0
+            let fb = frequencies[b] ?? 0
+            if fa != fb { return fa > fb }
+            return PlacePOICategoryPresentation.displayLabel(forRaw: a)
+                .localizedStandardCompare(PlacePOICategoryPresentation.displayLabel(forRaw: b)) == .orderedAscending
+        }
+        return includeOthers ? sorted + ["Others"] : sorted
     }
 
     private func coordinate(for place: VisitedPlaceSummary) -> CLLocationCoordinate2D? {

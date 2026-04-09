@@ -13,14 +13,13 @@ struct MergeBlogsView: View {
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @Environment(\.dismiss) private var dismiss
 
-    @State private var pairToMerge: MergePair?
-    @State private var showMergeAlert = false
     @State private var namePickPair: MergePair?
     @State private var showMergeNameSheet = false
     @State private var mergeNameSheetPhase: MergeNameSheetPhase = .choose
     @State private var customMergeTitleText = ""
     @State private var mergeNameSheetDetent: PresentationDetent = .medium
     @State private var showMergeUndoBanner = false
+    @FocusState private var isCustomTitleFocused: Bool
 
     private enum MergeNameSheetPhase {
         case choose
@@ -183,11 +182,6 @@ struct MergeBlogsView: View {
                 .accessibilityLabel("Back")
             }
         }
-        .sheet(isPresented: $showMergeAlert) {
-            mergeConfirmSheet
-                .presentationDetents([.height(200)])
-                .presentationDragIndicator(.visible)
-        }
         .sheet(isPresented: $showMergeNameSheet, onDismiss: {
             namePickPair = nil
             mergeNameSheetPhase = .choose
@@ -200,57 +194,6 @@ struct MergeBlogsView: View {
                 .presentationContentInteraction(.scrolls)
                 .preferredColorScheme(.dark)
         }
-    }
-
-    private var mergeConfirmSheet: some View {
-        VStack(spacing: 20) {
-            VStack(spacing: 6) {
-                Text("Merge Blogs?")
-                    .font(.headline)
-                Text("This will combine these trips into a single blog.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(.top, 8)
-
-            VStack(spacing: 10) {
-                Button {
-                    guard let pair = pairToMerge else { return }
-                    showMergeAlert = false
-                    pairToMerge = nil
-                    namePickPair = pair
-                    mergeNameSheetPhase = .choose
-                    mergeNameSheetDetent = .medium
-                    showMergeNameSheet = true
-                } label: {
-                    Text("Merge")
-                        .font(.body.weight(.semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color.blue)
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    pairToMerge = nil
-                    showMergeAlert = false
-                } label: {
-                    Text("Cancel")
-                        .font(.body.weight(.medium))
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color(uiColor: .secondarySystemGroupedBackground))
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 24)
-        .padding(.bottom, 16)
     }
 
     @ViewBuilder
@@ -275,7 +218,7 @@ struct MergeBlogsView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 50, height: 50)
-                    .foregroundColor(.orange)
+                    .foregroundColor(.blue)
                     .padding(.top, 8)
 
                 VStack(spacing: 8) {
@@ -309,6 +252,9 @@ struct MergeBlogsView: View {
                         mergeNameSheetPhase = .editCustom
                     }
                     mergeNameSheetDetent = .large
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        isCustomTitleFocused = true
+                    }
                 } label: {
                     Text("Edit Blog Title")
                         .font(.headline)
@@ -336,9 +282,9 @@ struct MergeBlogsView: View {
                     }
                     mergeNameSheetDetent = .medium
                 } label: {
-                    Text("Back")
+                    Text("Cancel")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.blue)
+                        .foregroundColor(.white)
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -353,9 +299,13 @@ struct MergeBlogsView: View {
                 }
 
                 TextField("Blog title", text: $customMergeTitleText)
-                    .textFieldStyle(.roundedBorder)
+                    .focused($isCustomTitleFocused)
                     .textInputAutocapitalization(.words)
                     .submitLabel(.done)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 16)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
                     .onSubmit {
                         let t = customMergeTitleText.trimmingCharacters(in: .whitespacesAndNewlines)
                         if !t.isEmpty {
@@ -416,7 +366,6 @@ struct MergeBlogsView: View {
         )
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
-        pairToMerge = nil
         namePickPair = nil
         showMergeNameSheet = false
         mergeNameSheetPhase = .choose
@@ -444,8 +393,10 @@ struct MergeBlogsView: View {
             Spacer()
 
             Button {
-                pairToMerge = pair
-                showMergeAlert = true
+                namePickPair = pair
+                mergeNameSheetPhase = .choose
+                mergeNameSheetDetent = .medium
+                showMergeNameSheet = true
             } label: {
                 Text("Merge")
                     .font(.subheadline.weight(.semibold))

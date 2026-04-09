@@ -377,7 +377,8 @@ struct MyBlogsProfileView: View {
     private var blogsScrollView: some View {
         ScrollView(showsIndicators: false) {
             let allSections = MyBlogsProfileViewModel.sections(from: createdRecapStore.countrySummaries)
-            let sections = viewModel.filteredSections(from: allSections)
+            let searched = viewModel.filteredSections(from: allSections)
+            let sections = searched
             Group {
                 if false && !isSearchActive && !viewModel.unsavedTrips.isEmpty {
                     unsavedTripsSection
@@ -645,22 +646,29 @@ private struct MyBlogsManageSheet: View {
     @State private var blogPendingRemoval: CreatedRecapBlog?
     @State private var showRemoveAlert = false
     @State private var removedBlogIDs: Set<UUID> = []
+    @State private var selectedCountryFilter: String?
 
     // Merge / Split — push inside this sheet’s NavigationStack (same as CountryManageBlogsSheet).
     @State private var mergeCountryNav: String?
     @State private var splitCountryNav: String?
-    @State private var showMergeCountrySelection = false
-    @State private var showSplitCountrySelection = false
 
     private var countryNames: [String] {
-        sections.map(\.country).sorted()
+        allSections.map(\.country).sorted()
     }
 
-    private var sections: [(country: String, blogs: [CreatedRecapBlog])] {
+    private var canSplit: Bool { !countryNames.isEmpty }
+    private var canMerge: Bool { allSections.contains { $0.blogs.count >= 2 } }
+
+    private var allSections: [(country: String, blogs: [CreatedRecapBlog])] {
         let active = createdRecapStore.visibleRecents.filter { !removedBlogIDs.contains($0.id) }
         let grouped = Dictionary(grouping: active) { $0.countryName ?? "Unknown" }
         return grouped.map { (country: $0.key, blogs: $0.value.sorted { ($0.tripStartDate ?? $0.createdAt) > ($1.tripStartDate ?? $1.createdAt) }) }
             .sorted { $0.country < $1.country }
+    }
+
+    private var sections: [(country: String, blogs: [CreatedRecapBlog])] {
+        guard let filter = selectedCountryFilter else { return allSections }
+        return allSections.filter { $0.country == filter }
     }
 
     var body: some View {
@@ -729,32 +737,52 @@ private struct MyBlogsManageSheet: View {
                 VStack {
                     Spacer()
                     HStack {
-                        Button {
+                        Group {
                             if countryNames.count == 1, let only = countryNames.first {
-                                splitCountryNav = only
-                            } else if countryNames.count > 1 {
-                                showSplitCountrySelection = true
+                                Button { splitCountryNav = only } label: {
+                                    Image(systemName: "scissors")
+                                        .font(.system(size: 22, weight: .semibold))
+                                        .foregroundColor(canSplit ? .orange : .primary)
+                                        .frame(width: 56, height: 56)
+                                        .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                                }
+                            } else {
+                                Menu {
+                                    ForEach(countryNames, id: \.self) { country in
+                                        Button(country) { splitCountryNav = country }
+                                    }
+                                } label: {
+                                    Image(systemName: "scissors")
+                                        .font(.system(size: 22, weight: .semibold))
+                                        .foregroundColor(canSplit ? .orange : .primary)
+                                        .frame(width: 56, height: 56)
+                                        .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                                }
                             }
-                        } label: {
-                            Image(systemName: "scissors")
-                                .font(.system(size: 22, weight: .semibold))
-                                .foregroundColor(.primary)
-                                .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                         }
                         Spacer()
-                        Button {
+                        Group {
                             if countryNames.count == 1, let only = countryNames.first {
-                                mergeCountryNav = only
-                            } else if countryNames.count > 1 {
-                                showMergeCountrySelection = true
+                                Button { mergeCountryNav = only } label: {
+                                    Image(systemName: "arrow.triangle.merge")
+                                        .font(.system(size: 22, weight: .semibold))
+                                        .foregroundColor(canMerge ? .blue : .primary)
+                                        .frame(width: 56, height: 56)
+                                        .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                                }
+                            } else {
+                                Menu {
+                                    ForEach(countryNames, id: \.self) { country in
+                                        Button(country) { mergeCountryNav = country }
+                                    }
+                                } label: {
+                                    Image(systemName: "arrow.triangle.merge")
+                                        .font(.system(size: 22, weight: .semibold))
+                                        .foregroundColor(canMerge ? .blue : .primary)
+                                        .frame(width: 56, height: 56)
+                                        .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                                }
                             }
-                        } label: {
-                            Image(systemName: "arrow.triangle.merge")
-                                .font(.system(size: 22, weight: .semibold))
-                                .foregroundColor(.primary)
-                                .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                         }
                     }
                     .padding(.horizontal, 24)
@@ -767,6 +795,26 @@ private struct MyBlogsManageSheet: View {
                     Button("Close") { dismiss() }
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            selectedCountryFilter = nil
+                        } label: {
+                            Label("All Countries", systemImage: selectedCountryFilter == nil ? "checkmark" : "")
+                        }
+                        Divider()
+                        ForEach(countryNames, id: \.self) { country in
+                            Button {
+                                selectedCountryFilter = country
+                            } label: {
+                                Label(country, systemImage: selectedCountryFilter == country ? "checkmark" : "")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: selectedCountryFilter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                            .foregroundColor(selectedCountryFilter == nil ? .primary : .blue)
+                    }
                 }
             }
             .navigationDestination(item: $mergeCountryNav) { country in
@@ -792,26 +840,6 @@ private struct MyBlogsManageSheet: View {
                 Button("Cancel", role: .cancel) { blogPendingRemoval = nil }
             } message: { _ in
                 Text("This removes the blog from local storage.")
-            }
-            .confirmationDialog("Merge Blogs", isPresented: $showMergeCountrySelection, titleVisibility: .visible) {
-                ForEach(countryNames, id: \.self) { country in
-                    Button(country) {
-                        mergeCountryNav = country
-                    }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Select a country to merge blogs from.")
-            }
-            .confirmationDialog("Split Blog", isPresented: $showSplitCountrySelection, titleVisibility: .visible) {
-                ForEach(countryNames, id: \.self) { country in
-                    Button(country) {
-                        splitCountryNav = country
-                    }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Select a country to split a blog from.")
             }
         }
         .tint(.primary)

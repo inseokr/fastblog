@@ -1540,7 +1540,7 @@ private struct PlaceDetailTopChrome: View {
                                 Button {
                                     onMenuRemovePhoto(currentPhotoId)
                                 } label: {
-                                    Label("Hide photo", systemImage: "eye.slash")
+                                    Label("Hide photo", systemImage: "minus.circle")
                                         .foregroundStyle(.white)
                                 }
                             } label: {
