@@ -8,6 +8,23 @@ import CoreLocation
 import MapKit
 import SwiftUI
 
+/// A named POI returned for a map tap when several places are too close to pick automatically.
+struct MapTapPOICandidate: Identifiable {
+    var id: String { "\(name)|\(coordinate.latitude)|\(coordinate.longitude)" }
+    let name: String
+    let category: String?
+    let coordinate: CLLocationCoordinate2D
+    /// Distance from the user’s tap to this POI’s placemark (meters).
+    let distanceMeters: Double
+}
+
+/// Result of resolving a bare map tap (no `MKMapFeatureAnnotation`) to a place.
+enum MapTapPOIResult {
+    case none
+    case single(name: String, category: String?, coordinate: CLLocationCoordinate2D)
+    case ambiguous(candidates: [MapTapPOICandidate])
+}
+
 /// Wraps MKLocalSearchCompleter for place suggestions, biased by a specific location.
 final class PlaceSearchViewModel: NSObject, ObservableObject {
     @Published var query: String = ""
@@ -61,30 +78,6 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         completer.queryFragment = query
     }
 
-    /// Subtract from tap distance when choosing among nearby POIs so broad venues can win over closer sub-POIs.
-    /// Kept conservative: only categories that usually represent a whole site, not `.school` (often a single building).
-    private static func poiSelectionBiasMeters(for category: MKPointOfInterestCategory?) -> Double {
-        guard let c = category else { return 0 }
-        switch c {
-        case .university, .nationalPark:
-            return 58
-        case .park, .amusementPark, .stadium, .museum, .zoo, .aquarium:
-            return 38
-        default:
-            if #available(iOS 18.0, *) {
-                switch c {
-                case .fairground, .nationalMonument, .castle, .fortress:
-                    return 38
-                case .landmark, .conventionCenter:
-                    return 14
-                default:
-                    break
-                }
-            }
-            return 0
-        }
-    }
-
     func clearQuery() {
         query = ""
         suggestions = []
@@ -105,56 +98,67 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         return raw
     }
 
-    /// Resolves the specific POI at the given coordinate (e.g. restaurant inside a mall) by fetching
-    /// nearby points of interest and picking the one closest to the tap. Prefer this over reverse
-    /// geocoding when the user taps a place on the map, so they get the venue name not the building/area.
-    /// Returns (name, category) or nil if no POI found (caller can fall back to reverse geocode).
-    ///
-    /// Pass `mapRegion` so the search radius scales with zoom level. Without it, a fixed 100m radius
-    /// can return invisible/database-only POIs that happen to be geometrically closer than the tapped icon.
-    func resolvePOIAtCoordinate(_ coordinate: CLLocationCoordinate2D, mapRegion: MKCoordinateRegion? = nil) async -> (name: String, category: String?)? {
-        // Scale tap radius to current zoom: meters-per-point × ~22pt (half finger).
-        // At street zoom (~200m span) → ~9m; at city zoom (~5km span) → capped at 80m.
-        // MKLocalPointsOfInterestRequest returns database POIs regardless of what MapKit renders on
-        // screen, so a tighter radius prevents invisible POIs from winning over the visible one.
-        let tapRadius: Double
+    /// Search radius for POIs around a map tap (meters). Scales with zoom so we don’t pull in far-away DB hits.
+    private static func tapSearchRadiusMeters(mapRegion: MKCoordinateRegion?) -> Double {
         if let region = mapRegion {
             let metersPerPoint = region.span.latitudeDelta * 111_000.0 / 500.0
-            tapRadius = max(25.0, min(80.0, metersPerPoint * 22.0))
-        } else {
-            tapRadius = 80.0
+            return max(25.0, min(80.0, metersPerPoint * 22.0))
         }
-        debugPrint("[POI] resolvePOIAtCoordinate radius=\(Int(tapRadius))m latDelta=\(mapRegion?.span.latitudeDelta ?? -1)")
+        return 80.0
+    }
+
+    /// Resolves a bare map tap (coordinate only) to a POI. Uses **closest placemark distance** only—no category
+    /// bias, so the tapped building wins over a farther “parent” campus. If two or more POIs are almost
+    /// equally close, returns `.ambiguous` so the UI can ask which one.
+    func resolveMapTapPOI(near coordinate: CLLocationCoordinate2D, mapRegion: MKCoordinateRegion? = nil) async -> MapTapPOIResult {
+        let tapRadius = Self.tapSearchRadiusMeters(mapRegion: mapRegion)
+        debugPrint("[POI] resolveMapTapPOI radius=\(Int(tapRadius))m latDelta=\(mapRegion?.span.latitudeDelta ?? -1)")
 
         let tapLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
         let request = MKLocalPointsOfInterestRequest(center: coordinate, radius: tapRadius)
         let search = MKLocalSearch(request: request)
-        guard let response = try? await search.start(), !response.mapItems.isEmpty else { return nil }
+        guard let response = try? await search.start(), !response.mapItems.isEmpty else { return .none }
+
         let withName = response.mapItems.filter { ($0.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
-        // Prefer large “parent” venues (campus, park, mall-scale POI) when several POIs overlap: pure
-        // distance often picks a sub-building (e.g. hall) over the university the map label referred to.
-        func effectiveDistanceMeters(for item: MKMapItem) -> Double {
+        let scored: [(item: MKMapItem, distance: Double)] = withName.compactMap { item in
             let loc = item.placemark.location
                 ?? CLLocation(latitude: item.placemark.coordinate.latitude, longitude: item.placemark.coordinate.longitude)
             let d = tapLocation.distance(from: loc)
-            let bias = Self.poiSelectionBiasMeters(for: item.pointOfInterestCategory)
-            return d - bias
+            guard d <= tapRadius else { return nil }
+            return (item, d)
         }
-        guard let closest = withName.min(by: { effectiveDistanceMeters(for: $0) < effectiveDistanceMeters(for: $1) }) else { return nil }
-        // Reject if even the closest POI is outside the tap radius — it's a database-only POI, not
-        // something the user could have visually tapped. Fall back to reverse geocoding instead.
-        let closestLoc = closest.placemark.location
-            ?? CLLocation(latitude: closest.placemark.coordinate.latitude, longitude: closest.placemark.coordinate.longitude)
-        let distToClosest = tapLocation.distance(from: closestLoc)
-        debugPrint("[POI] closest='\(closest.name ?? "")' dist=\(Int(distToClosest))m radius=\(Int(tapRadius))m")
-        guard distToClosest <= tapRadius else {
-            debugPrint("[POI] closest POI outside tap radius, falling back to geocode")
-            return nil
+        .sorted { $0.distance < $1.distance }
+
+        guard let first = scored.first else {
+            debugPrint("[POI] no named POI within tap radius")
+            return .none
         }
-        let name = (closest.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return nil }
-        let category = closest.pointOfInterestCategory?.rawValue
-        return (name, category)
+
+        let gapToSecond = scored.count >= 2 ? scored[1].distance - first.distance : Double.greatestFiniteMagnitude
+        /// If the #2 POI is almost as close as #1, auto-picking is often wrong—let the user choose.
+        let ambiguousGapMeters: Double = 22
+
+        if scored.count >= 2, gapToSecond < ambiguousGapMeters {
+            let capped = scored.prefix(8).map { pair in
+                MapTapPOICandidate(
+                    name: (pair.item.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+                    category: pair.item.pointOfInterestCategory?.rawValue,
+                    coordinate: pair.item.placemark.coordinate,
+                    distanceMeters: pair.distance
+                )
+            }
+            debugPrint("[POI] ambiguous tap: \(capped.count) candidates (gap \(Int(gapToSecond))m)")
+            return .ambiguous(candidates: Array(capped))
+        }
+
+        let name = (first.item.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return .none }
+        debugPrint("[POI] single POI '\(name)' dist=\(Int(first.distance))m")
+        return .single(
+            name: name,
+            category: first.item.pointOfInterestCategory?.rawValue,
+            coordinate: first.item.placemark.coordinate
+        )
     }
 
     /// Resolves POI category at a coordinate by searching for the place name in a small region.
