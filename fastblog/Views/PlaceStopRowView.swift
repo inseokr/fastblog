@@ -128,6 +128,31 @@ private struct PlaceCategoryChip: View {
     private static let horizontalPadding: CGFloat = 12
 }
 
+// MARK: - Add category placeholder (edit mode only)
+
+/// Muted pill when a stop has no POI category yet; opens the category picker on tap.
+private struct AddPlaceCategoryPlaceholderChip: View {
+    var verticalPadding: CGFloat = 6
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "tag")
+                .font(.caption2)
+            Text("Add category")
+                .font(.caption2)
+                .fontWeight(.medium)
+        }
+        .foregroundStyle(Color.secondary.opacity(0.72))
+        .padding(.horizontal, 12)
+        .padding(.vertical, verticalPadding)
+        .background(
+            Capsule()
+                .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05))
+        )
+    }
+}
+
 
 struct PlaceStopRowView: View {
     let day: RecapBlogDay
@@ -403,7 +428,11 @@ struct PlaceStopRowView: View {
                 && !stop.placeTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let hasCaptionText = !(overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 || stop.photos.contains(where: { !($0.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-            if categoryPresent != nil || hasCaptionText {
+            let showAddCategoryPlaceholder = isEditMode
+                && onEditCategory != nil
+                && hasResolvedPlaceName
+                && categoryPresent == nil
+            if categoryPresent != nil || showAddCategoryPlaceholder || hasCaptionText {
                 HStack(alignment: .center, spacing: 8) {
                     if let cat = categoryPresent {
                         let categoryAccent = cat.color
@@ -430,6 +459,14 @@ struct PlaceStopRowView: View {
                                 verticalPadding: isEditMode ? 6 : 5
                             )
                         }
+                    } else if showAddCategoryPlaceholder, let pickCategory = onEditCategory {
+                        Button {
+                            pickCategory()
+                        } label: {
+                            AddPlaceCategoryPlaceholderChip(verticalPadding: isEditMode ? 6 : 5)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Add place category")
                     }
                     if hasCaptionText {
                         UserSentimentPill(

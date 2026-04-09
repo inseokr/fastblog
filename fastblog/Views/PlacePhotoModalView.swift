@@ -143,7 +143,7 @@ struct PlacePhotoModalView: View {
     var onAICaptionApplied: ((UUID) -> Void)?
     /// Called when the user manually edits a photo caption in the modal. Used to mark captionIsManual = true.
     var onPhotoCaptionManuallyEdited: ((UUID) -> Void)?
-    /// Called when the user chooses "Remove photo" from the kebab menu.
+    /// Called when the user chooses "Hide photo" from the kebab menu.
     var onRemovePhoto: ((UUID) -> Void)?
     /// Called when the user saves a place name edit from within this modal.
     /// Provides (newName, category, coordinate, subtitleLine) so the caller can update the store; subtitle is trimmed (empty clears).
@@ -808,6 +808,18 @@ struct PlacePhotoModalView: View {
             if isEditing {
                 captionWhenEditingStarted = currentCaption
                 // Place Title is same for all photos in this modal
+            }
+        }
+        .onChange(of: photos) { oldPhotos, newPhotos in
+            // If the currently-displayed photo was just hidden, navigate to the nearest remaining photo.
+            guard !newPhotos.contains(where: { $0.id == currentPhotoId }) else { return }
+            if let oldIndex = oldPhotos.firstIndex(where: { $0.id == currentPhotoId }) {
+                let targetIndex = min(oldIndex, newPhotos.count - 1)
+                if targetIndex >= 0 {
+                    currentPhotoId = newPhotos[targetIndex].id
+                }
+            } else if let first = newPhotos.first {
+                currentPhotoId = first.id
             }
         }
         .onChange(of: editedCaptionText) { _, newValue in
@@ -1525,10 +1537,11 @@ private struct PlaceDetailTopChrome: View {
                                         Label("Edit caption", systemImage: "text.alignleft")
                                     }
                                 }
-                                Button(role: .destructive) {
+                                Button {
                                     onMenuRemovePhoto(currentPhotoId)
                                 } label: {
-                                    Label("Remove photo", systemImage: "trash")
+                                    Label("Hide photo", systemImage: "eye.slash")
+                                        .foregroundStyle(.white)
                                 }
                             } label: {
                                 Image(systemName: "ellipsis")

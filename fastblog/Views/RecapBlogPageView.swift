@@ -322,6 +322,7 @@ struct RecapBlogPageView: View {
     @State private var dayIndexToSplit: Int?
     @State private var unsavedSplitPromptIndex: Int?
     @State private var showSplitUndoBanner = false
+    @State private var splitUndoBannerDismissTask: Task<Void, Never>?
 
     // MARK: - Place Stop Merge / Split
     private struct SplitPlaceStopItem: Identifiable {
@@ -1416,39 +1417,44 @@ struct RecapBlogPageView: View {
                     .padding(.bottom, Self.dayFilterApproxHeight + 10)
                     .zIndex(20)
             } else if showSplitUndoBanner {
-                // Special banner for "Undo Split" in edit mode
-                VStack {
-                    Spacer()
-                    HStack(spacing: 12) {
-                        Text("Blog split into two parts")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.primary)
+                // Above the day filter (same z-index treatment as `UndoToastView`).
+                HStack(alignment: .center, spacing: 12) {
+                    Text("Blog split into two parts")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
 
-                        Spacer()
+                    Spacer(minLength: 8)
 
-                        Button("Undo") {
-                            createdRecapStore.undoSplit()
-                            withAnimation { showSplitUndoBanner = false }
-                            if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
-                                draft = updated
-                            }
+                    Button("Undo") {
+                        splitUndoBannerDismissTask?.cancel()
+                        splitUndoBannerDismissTask = nil
+                        createdRecapStore.undoSplit()
+                        withAnimation { showSplitUndoBanner = false }
+                        if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
+                            draft = updated
                         }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.orange)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                    .background {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
-                    }
-                    .padding(.horizontal, 20)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.orange)
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .background {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+                }
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, Self.dayFilterApproxHeight + 14)
+                .zIndex(20)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
             if !isKeyboardVisible {
                 dayFilterSection
+                    .zIndex(1)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -1477,6 +1483,8 @@ struct RecapBlogPageView: View {
             placesVisitedDeepLinkTask?.cancel()
             placesVisitedDeepLinkTask = nil
             pendingDeepLinkStopScrollId = nil
+            splitUndoBannerDismissTask?.cancel()
+            splitUndoBannerDismissTask = nil
         }
         .onChange(of: isEditMode) { _, editing in
             if editing {
@@ -3917,14 +3925,8 @@ Your blog remains private unless you choose to share it.
                 stop.placeTitle = title
                 stop.placeTitleIsManual = true
                 stop.placeSubtitle = subTrimmed.isEmpty ? nil : subTrimmed
-                if let category {
-                    stop.placeCategory = category
-                } else {
-                    let existingCat = stop.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    if existingCat.isEmpty {
-                        stop.placeCategory = PlacePOICategoryPresentation.inferredCategoryRaw(fromPlaceTitle: title)
-                    }
-                }
+                // `EditPlaceStopNameSheet` passes the resolved category (including nil to clear after a rename).
+                stop.placeCategory = category
                 if let coordinate {
                     stop.representativeLocation = PhotoCoordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
                 }
@@ -5727,11 +5729,20 @@ Your blog remains private unless you choose to share it.
                 selectedDayIndex = max(0, draft.days.count - 1)
             }
             
-            // Show the Undo Banner
+            splitUndoBannerDismissTask?.cancel()
             withAnimation {
                 showSplitUndoBanner = true
             }
-            
+            splitUndoBannerDismissTask = Task {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    withAnimation {
+                        showSplitUndoBanner = false
+                    }
+                }
+            }
+
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.success)
         }

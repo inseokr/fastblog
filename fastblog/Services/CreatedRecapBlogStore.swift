@@ -1152,15 +1152,8 @@ final class CreatedRecapBlogStore: ObservableObject {
                     if containsPhoto {
                         detail.days[dayIdx].placeStops[stopIdx].placeTitle = trimmed
                         detail.days[dayIdx].placeStops[stopIdx].placeTitleIsManual = true
-                        if let category {
-                            detail.days[dayIdx].placeStops[stopIdx].placeCategory = category
-                        } else {
-                            let existingCat = detail.days[dayIdx].placeStops[stopIdx].placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                            if existingCat.isEmpty {
-                                detail.days[dayIdx].placeStops[stopIdx].placeCategory =
-                                    PlacePOICategoryPresentation.inferredCategoryRaw(fromPlaceTitle: trimmed)
-                            }
-                        }
+                        // `EditPlaceStopNameSheet` passes the resolved category (including nil to clear after a rename).
+                        detail.days[dayIdx].placeStops[stopIdx].placeCategory = category
                         if let coordinate {
                             detail.days[dayIdx].placeStops[stopIdx].representativeLocation = PhotoCoordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
                         }

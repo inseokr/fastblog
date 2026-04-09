@@ -345,12 +345,15 @@ struct FullScreenMapView: View {
     }
 
     private var availableCategories: [String] {
-        let cats = editablePlaceStops
-            .compactMap {
-                let cat = $0.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                return cat.isEmpty ? "Others" : cat
-            }
-        return Array(Set(cats)).sorted()
+        let dataRaws = Set(editablePlaceStops.compactMap { stop -> String? in
+            let cat = stop.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !cat.isEmpty else { return nil }
+            return cat
+        })
+        let includeOthers = editablePlaceStops.contains {
+            ($0.placeCategory ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return PlacePOICategoryCatalog.mergedCategoryRawsForFilters(dataRaws: dataRaws, includeOthers: includeOthers)
     }
 
     private var filteredStops: [PlaceStop] {
@@ -540,14 +543,8 @@ struct FullScreenMapView: View {
                     onSavePlaceName: { name, category, coord, subtitleLine in
                         guard var updated = photoModalStop else { return }
                         updated.placeTitle = name
-                        if let category {
-                            updated.placeCategory = category
-                        } else {
-                            let existing = updated.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                            if existing.isEmpty {
-                                updated.placeCategory = PlacePOICategoryPresentation.inferredCategoryRaw(fromPlaceTitle: name)
-                            }
-                        }
+                        // `EditPlaceStopNameSheet` passes the resolved category (including nil to clear after a rename).
+                        updated.placeCategory = category
                         if let coord {
                             updated.representativeLocation = PhotoCoordinate(latitude: coord.latitude, longitude: coord.longitude)
                         }

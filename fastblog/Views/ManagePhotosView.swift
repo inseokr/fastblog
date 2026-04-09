@@ -219,7 +219,7 @@ struct ManagePhotosView: View {
                     Button("Save") {
                         dismiss()
                     }
-                    .foregroundColor(.white)
+                    .foregroundColor(.blue)
                     .accessibilityLabel("Save and close")
                 }
             } else if isSelectMode {

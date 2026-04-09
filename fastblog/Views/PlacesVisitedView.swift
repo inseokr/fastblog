@@ -86,10 +86,14 @@ struct PlacesVisitedView: View {
             return place.year == y
         }
 
-        let cats = placesForYear
-            .compactMap { $0.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        return Array(Set(cats)).sorted()
+        let dataRaws = Set(
+            placesForYear.compactMap { $0.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
+        let includeOthers = placesForYear.contains {
+            ($0.categoryRawValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return PlacePOICategoryCatalog.categoryRawsAppearingInDataForFilters(dataRaws: dataRaws, includeOthers: includeOthers)
     }
 
     private var filteredPlaces: [VisitedPlaceSummary] {
@@ -102,9 +106,13 @@ struct PlacesVisitedView: View {
                     if lhs.caseInsensitiveCompare(rhs) != .orderedSame { return false }
                 }
                 if let cat = selectedCategory {
-                    let lhs = (place.categoryRawValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     let rhs = cat.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if lhs.caseInsensitiveCompare(rhs) != .orderedSame { return false }
+                    let lhsRaw = (place.categoryRawValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if rhs.caseInsensitiveCompare("Others") == .orderedSame {
+                        if !lhsRaw.isEmpty { return false }
+                    } else if lhsRaw.caseInsensitiveCompare(rhs) != .orderedSame {
+                        return false
+                    }
                 }
 
                 let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -546,7 +554,9 @@ private struct PlaceVisitedPhotoModalWrapper: View {
                 },
                 onRemovePhoto: { photoId in
                     store.removePhotoFromBlog(photoId: photoId)
-                    onDismiss()
+                    if photos.count <= 1 {
+                        onDismiss()
+                    }
                 },
                 onSavePlaceName: { newName, category, coord, subtitleLine in
                     let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -727,10 +737,14 @@ private struct PlacesVisitedMapView: View {
             return place.year == y
         }
 
-        let cats = placesForYear
-            .compactMap { $0.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        return Array(Set(cats)).sorted()
+        let dataRaws = Set(
+            placesForYear.compactMap { $0.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
+        let includeOthers = placesForYear.contains {
+            ($0.categoryRawValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return PlacePOICategoryCatalog.categoryRawsAppearingInDataForFilters(dataRaws: dataRaws, includeOthers: includeOthers)
     }
 
     private func coordinate(for place: VisitedPlaceSummary) -> CLLocationCoordinate2D? {
@@ -749,9 +763,13 @@ private struct PlacesVisitedMapView: View {
                     if lhs.caseInsensitiveCompare(rhs) != .orderedSame { return false }
                 }
                 if let cat = selectedCategory {
-                    let lhs = (place.categoryRawValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     let rhs = cat.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if lhs.caseInsensitiveCompare(rhs) != .orderedSame { return false }
+                    let lhsRaw = (place.categoryRawValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if rhs.caseInsensitiveCompare("Others") == .orderedSame {
+                        if !lhsRaw.isEmpty { return false }
+                    } else if lhsRaw.caseInsensitiveCompare(rhs) != .orderedSame {
+                        return false
+                    }
                 }
                 let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !query.isEmpty {

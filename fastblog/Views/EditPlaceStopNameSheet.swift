@@ -11,7 +11,7 @@ struct EditPlaceStopNameSheet: View {
     @Binding var placeTitle: String
     /// City / country line under the title; editable even when there is no map or photos.
     var initialPlaceSubtitle: String? = nil
-    /// Existing `PlaceStop.placeCategory` when opening the sheet so Save preserves it unless the user picks a new POI.
+    /// Existing `PlaceStop.placeCategory` when opening the sheet. Kept on save only when the place name is unchanged; renames re-resolve or clear (see `saveAndDismissAsync`).
     var initialPlaceCategory: String? = nil
     var location: CLLocationCoordinate2D?
     /// All stop photos; the bottom thumbnail strip shows only `isIncluded` (blog-visible) shots.
@@ -492,7 +492,14 @@ struct EditPlaceStopNameSheet: View {
         let trimmed = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalName = trimmed.isEmpty ? "Stop" : trimmed
 
-        var category = selectedCategory
+        let trimmedInitial = initialTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let titleChanged = finalName != trimmedInitial
+        let inferred = PlacePOICategoryPresentation.inferredCategoryRaw(fromPlaceTitle: finalName)
+
+        var category: String?
+        if !titleChanged {
+            category = selectedCategory
+        }
         if category == nil {
             let searchCoord = selectedCoordinate ?? location
             if let searchCoord {
@@ -500,7 +507,10 @@ struct EditPlaceStopNameSheet: View {
             }
         }
         if category == nil {
-            category = PlacePOICategoryPresentation.inferredCategoryRaw(fromPlaceTitle: finalName)
+            category = inferred
+        }
+        if titleChanged, inferred == nil, PlacePOICategoryPresentation.titleLooksLikeAddressOrGenericPlaceholder(finalName) {
+            category = nil
         }
 
         debugPrint("[Category] EditPlaceStopNameSheet save: name='\(finalName)' category=\(category ?? "nil") coord=\(selectedCoordinate.map { "\($0.latitude),\($0.longitude)" } ?? "nil")")

@@ -3,47 +3,32 @@
 //  fastblog
 //
 
-import MapKit
 import SwiftUI
 
 /// Lets the user pick one `MKPointOfInterestCategory` (stored as `PlaceStop.placeCategory`) or clear to no category (“Others”).
+/// Tapping a row saves immediately and dismisses; only **Cancel** leaves without changes.
 struct PlaceStopCategoryPickerSheet: View {
     let initialCategoryRaw: String?
     var onCancel: () -> Void
     var onDone: (String?) -> Void
 
-    @State private var draftRaw: String = ""
-
-    private static let poiCategories: [MKPointOfInterestCategory] = [
-        .restaurant, .cafe, .bakery, .winery, .brewery, .nightlife, .hotel, .campground,
-        .museum, .movieTheater, .theater, .amusementPark, .zoo, .aquarium, .park, .beach,
-        .nationalPark, .airport, .publicTransport, .gasStation, .hospital, .pharmacy,
-        .fitnessCenter, .store, .foodMarket, .library, .school, .university, .marina, .stadium, .bank,
-        // Activity categories (iOS 18+); constructed from raw strings for backward compatibility.
-        MKPointOfInterestCategory(rawValue: "MKPOICategoryHiking"),
-        MKPointOfInterestCategory(rawValue: "MKPOICategorySkiing"),
-    ]
-
-    private var extraInitialRow: (raw: String, label: String)? {
-        let t = initialCategoryRaw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !t.isEmpty else { return nil }
-        let known = Set(Self.poiCategories.map(\.rawValue))
-        guard !known.contains(t) else { return nil }
-        return (t, Self.displayLabel(forRaw: t))
+    private var normalizedInitialRaw: String {
+        initialCategoryRaw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
-    /// POI rows sorted A–Z by display label; unknown initial category is merged in. “Others” is shown separately at the bottom.
+    /// Full MapKit POI list (see `PlacePOICategoryCatalog`) plus any stored value not yet in the catalog.
     private var sortedPOIRows: [(raw: String, label: String)] {
-        var rows: [(raw: String, label: String)] = Self.poiCategories.map {
-            ($0.rawValue, Self.displayLabel(for: $0))
+        var rows: [(raw: String, label: String)] = PlacePOICategoryCatalog.allSelectableCategoryRawValuesSortedByLabel().map {
+            ($0, Self.displayLabel(forRaw: $0))
         }
-        if let extra = extraInitialRow {
-            rows.append((extra.raw, extra.label))
-        }
-        rows.sort {
-            let order = $0.label.localizedStandardCompare($1.label)
-            if order == .orderedSame { return $0.raw < $1.raw }
-            return order == .orderedAscending
+        let initial = initialCategoryRaw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !initial.isEmpty, !rows.contains(where: { $0.raw == initial }) {
+            rows.append((initial, Self.displayLabel(forRaw: initial)))
+            rows.sort {
+                let order = $0.label.localizedStandardCompare($1.label)
+                if order == .orderedSame { return $0.raw < $1.raw }
+                return order == .orderedAscending
+            }
         }
         return rows
     }
@@ -55,17 +40,20 @@ struct PlaceStopCategoryPickerSheet: View {
                     categoryRow(
                         raw: item.raw,
                         label: item.label,
-                        isSelected: draftRaw == item.raw,
-                        select: { draftRaw = item.raw }
-                    )
+                        isSelected: normalizedInitialRaw == item.raw
+                    ) {
+                        onDone(item.raw)
+                    }
                 }
                 categoryRow(
                     raw: "",
                     label: "Others",
-                    isSelected: draftRaw.isEmpty,
-                    select: { draftRaw = "" }
-                )
+                    isSelected: normalizedInitialRaw.isEmpty
+                ) {
+                    onDone(nil)
+                }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("Category")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -74,24 +62,16 @@ struct PlaceStopCategoryPickerSheet: View {
                         onCancel()
                     }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        onDone(draftRaw.isEmpty ? nil : draftRaw)
-                    }
-                }
             }
-        }
-        .onAppear {
-            draftRaw = initialCategoryRaw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
 
-    /// Full row is tappable; icon + label use shared category color / symbol.
-    private func categoryRow(raw: String, label: String, isSelected: Bool, select: @escaping () -> Void) -> some View {
+    /// Full row is tappable; icon + label use shared category color / symbol. Tap saves and dismisses the sheet.
+    private func categoryRow(raw: String, label: String, isSelected: Bool, onPick: @escaping () -> Void) -> some View {
         let p = PlacePOICategoryPresentation.presentation(forRaw: raw)
-        return Button(action: select) {
+        return Button(action: onPick) {
             HStack(spacing: 12) {
                 Image(systemName: p.symbol)
                     .font(.body)
@@ -111,10 +91,6 @@ struct PlaceStopCategoryPickerSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    private static func displayLabel(for cat: MKPointOfInterestCategory) -> String {
-        displayLabel(forRaw: cat.rawValue)
     }
 
     /// Human-readable label for a stored category string (matches map / place row naming).

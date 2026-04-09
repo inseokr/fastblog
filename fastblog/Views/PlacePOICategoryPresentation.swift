@@ -31,6 +31,9 @@ enum PlacePOICategoryPresentation {
         if let info = info(forMKCategory: mk) {
             return info
         }
+        if let info = supplementalPOIInfo(forMKRawValue: trimmed) {
+            return info
+        }
 
         if let info = heuristicInfo(forTrimmed: trimmed) {
             return info
@@ -91,6 +94,59 @@ enum PlacePOICategoryPresentation {
         }
 
         return nil
+    }
+
+    /// True when the edited title is probably a street address, coordinates, or a generic placeholder — not a POI name we should keep a MapKit category for after a rename.
+    static func titleLooksLikeAddressOrGenericPlaceholder(_ title: String) -> Bool {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+        let lower = trimmed.lowercased()
+        if lower == "stop" || lower == "unknown" { return true }
+
+        // "12.345, -118.123" style
+        if trimmed.contains(",") {
+            let parts = trimmed.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            if parts.count == 2, let a = Double(parts[0]), let b = Double(parts[1]),
+               abs(a) <= 90, abs(b) <= 180 {
+                return true
+            }
+        }
+
+        // If the title clearly names a venue or natural feature, do not treat as a bare address.
+        let venueHints = [
+            "restaurant", "cafe", "coffee", "hotel", "motel", "hostel", "museum", "theater", "theatre",
+            "cinema", "stadium", "arena", "park", "garden", "beach", "golf", "ski", "resort", "campground",
+            "rv park", "marina", "pier", "wharf", "lighthouse", "castle", "palace", "temple", "church", "mosque",
+            "synagogue", "shrine", "monument", "tower", "bridge", "market", "mall", "plaza", "square",
+            "airport", "terminal", "station", "brewery", "winery", "distillery", "bar ", " pub", "grill",
+            "kitchen", "pizza", "burger", "bakery", "library", "school", "university", "college",
+            "zoo", "aquarium", "trail", "trailhead", "peak", "mountain", "canyon", "falls", "lake", "river",
+            "forest", "national park", "lookout", "viewpoint", "overlook", "shop", "store", "boutique",
+            "gallery", "spa", "gym", "fitness", "club ", "hall ", "center", "centre",
+        ]
+        if venueHints.contains(where: { lower.contains($0) }) {
+            return false
+        }
+
+        // Leading house/street number (after optional # / "Unit" handled by digit rule)
+        if let first = trimmed.first(where: { !$0.isWhitespace }), first.isNumber {
+            return true
+        }
+
+        // US ZIP / postal-style dense digit run (e.g. "90210" or "90210-1234")
+        if trimmed.range(of: #"\b\d{5}(-\d{4})?\b"#, options: .regularExpression) != nil {
+            return true
+        }
+
+        // Common street line endings
+        if trimmed.range(
+            of: #"\b(street|st\.?|avenue|ave\.?|road|rd\.?|boulevard|blvd\.?|drive|dr\.?|lane|ln\.?|court|ct\.?|way|circle|cir\.?|parkway|pkwy\.?|highway|hwy\.?|route|terrace|place|pl\.?)\s*$"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil {
+            return true
+        }
+
+        return false
     }
 
     /// Category visuals for a blog/map row: stored POI raw first, then name-based inference (matches My Places filtering once persisted).
@@ -192,16 +248,102 @@ enum PlacePOICategoryPresentation {
             return Info(symbol: "sportscourt.fill", label: "Stadium", color: Color(red: 0.88, green: 0.38, blue: 0.22))
         case .bank:
             return Info(symbol: "banknote.fill", label: "Bank", color: Color(red: 0.2, green: 0.58, blue: 0.46))
+        case .atm:
+            return Info(symbol: "banknote.fill", label: "ATM", color: Color(red: 0.35, green: 0.55, blue: 0.42))
+        case .carRental:
+            return Info(symbol: "car.fill", label: "Car Rental", color: Color(red: 0.38, green: 0.48, blue: 0.78))
+        case .evCharger:
+            return Info(symbol: "bolt.car.fill", label: "EV Charging", color: Color(red: 0.22, green: 0.72, blue: 0.52))
+        case .fireStation:
+            return Info(symbol: "flame.fill", label: "Fire Station", color: Color(red: 0.92, green: 0.38, blue: 0.22))
+        case .laundry:
+            return Info(symbol: "washer.fill", label: "Laundry", color: Color(red: 0.45, green: 0.55, blue: 0.72))
+        case .parking:
+            return Info(symbol: "parkingsign", label: "Parking", color: Color(red: 0.42, green: 0.46, blue: 0.52))
+        case .police:
+            return Info(symbol: "shield.fill", label: "Police", color: Color(red: 0.28, green: 0.38, blue: 0.72))
+        case .postOffice:
+            return Info(symbol: "envelope.fill", label: "Post Office", color: Color(red: 0.55, green: 0.42, blue: 0.78))
+        case .restroom:
+            return Info(symbol: "figure.stand", label: "Restroom", color: Color(red: 0.48, green: 0.52, blue: 0.58))
         default:
-            // Newer MapKit POI kinds (iOS 18+) not yet available as static members on all deployment targets.
-            let raw = cat.rawValue
-            if raw.contains("Hiking") {
-                return Info(symbol: "figure.hiking", label: "Hiking", color: Color(red: 0.36, green: 0.64, blue: 0.32))
-            }
-            if raw.contains("Skiing") || raw.contains("Ski") {
-                return Info(symbol: "figure.skiing.downhill", label: "Skiing", color: Color(red: 0.32, green: 0.62, blue: 0.85))
-            }
-            // Fall back to heuristic / generic styling upstream.
+            return supplementalPOIInfo(forMKRawValue: cat.rawValue)
+        }
+    }
+
+    /// Icons for iOS 18+ POI kinds (and any `MKPOICategory…` string MapKit adds) when the main `switch` has no static case.
+    private static func supplementalPOIInfo(forMKRawValue raw: String) -> Info? {
+        guard raw.hasPrefix("MKPOICategory") else { return nil }
+        let suffix = String(raw.dropFirst("MKPOICategory".count))
+        guard !suffix.isEmpty else { return nil }
+
+        switch suffix {
+        case "Hiking":
+            return Info(symbol: "figure.hiking", label: "Hiking", color: Color(red: 0.36, green: 0.64, blue: 0.32))
+        case "Skiing":
+            return Info(symbol: "figure.skiing.downhill", label: "Skiing", color: Color(red: 0.32, green: 0.62, blue: 0.85))
+        case "Golf":
+            return Info(symbol: "figure.golf", label: "Golf", color: Color(red: 0.28, green: 0.55, blue: 0.38))
+        case "MiniGolf":
+            return Info(symbol: "figure.golf", label: "Mini Golf", color: Color(red: 0.32, green: 0.58, blue: 0.42))
+        case "Tennis":
+            return Info(symbol: "tennis.racket", label: "Tennis", color: Color(red: 0.72, green: 0.58, blue: 0.28))
+        case "Baseball":
+            return Info(symbol: "baseball.fill", label: "Baseball", color: Color(red: 0.82, green: 0.36, blue: 0.28))
+        case "Basketball":
+            return Info(symbol: "basketball.fill", label: "Basketball", color: Color(red: 0.88, green: 0.48, blue: 0.22))
+        case "Soccer":
+            return Info(symbol: "sportscourt.fill", label: "Soccer", color: Color(red: 0.28, green: 0.62, blue: 0.38))
+        case "Volleyball":
+            return Info(symbol: "volleyball.fill", label: "Volleyball", color: Color(red: 0.92, green: 0.62, blue: 0.28))
+        case "Bowling":
+            return Info(symbol: "sportscourt.fill", label: "Bowling", color: Color(red: 0.55, green: 0.35, blue: 0.72))
+        case "Surfing":
+            return Info(symbol: "figure.surfing", label: "Surfing", color: Color(red: 0.22, green: 0.58, blue: 0.82))
+        case "Swimming":
+            return Info(symbol: "figure.pool.swim", label: "Swimming", color: Color(red: 0.25, green: 0.62, blue: 0.78))
+        case "Skating":
+            return Info(symbol: "figure.skating", label: "Skating", color: Color(red: 0.42, green: 0.55, blue: 0.82))
+        case "SkatePark":
+            return Info(symbol: "skateboard.fill", label: "Skate Park", color: Color(red: 0.52, green: 0.42, blue: 0.78))
+        case "RockClimbing":
+            return Info(symbol: "figure.climbing", label: "Rock Climbing", color: Color(red: 0.58, green: 0.42, blue: 0.32))
+        case "Fishing":
+            return Info(symbol: "fish.fill", label: "Fishing", color: Color(red: 0.28, green: 0.52, blue: 0.68))
+        case "Kayaking":
+            return Info(symbol: "sailboat.fill", label: "Kayaking", color: Color(red: 0.22, green: 0.55, blue: 0.72))
+        case "GoKart":
+            return Info(symbol: "flag.checkered", label: "Go Kart", color: Color(red: 0.78, green: 0.32, blue: 0.32))
+        case "Castle":
+            return Info(symbol: "building.columns.fill", label: "Castle", color: Color(red: 0.55, green: 0.48, blue: 0.62))
+        case "Fortress":
+            return Info(symbol: "shield.lefthalf.filled", label: "Fortress", color: Color(red: 0.48, green: 0.45, blue: 0.52))
+        case "Landmark":
+            return Info(symbol: "mappin.and.ellipse", label: "Landmark", color: Color(red: 0.62, green: 0.38, blue: 0.42))
+        case "NationalMonument":
+            return Info(symbol: "building.columns.fill", label: "National Monument", color: Color(red: 0.58, green: 0.42, blue: 0.35))
+        case "MusicVenue":
+            return Info(symbol: "music.mic", label: "Music Venue", color: Color(red: 0.72, green: 0.28, blue: 0.52))
+        case "Planetarium":
+            return Info(symbol: "sparkles", label: "Planetarium", color: Color(red: 0.38, green: 0.35, blue: 0.78))
+        case "ConventionCenter":
+            return Info(symbol: "building.2.fill", label: "Convention Center", color: Color(red: 0.42, green: 0.48, blue: 0.72))
+        case "Distillery":
+            return Info(symbol: "flask.fill", label: "Distillery", color: Color(red: 0.62, green: 0.48, blue: 0.32))
+        case "Fairground":
+            return Info(symbol: "ticket.fill", label: "Fairground", color: Color(red: 0.82, green: 0.45, blue: 0.55))
+        case "Spa":
+            return Info(symbol: "sparkles", label: "Spa", color: Color(red: 0.55, green: 0.42, blue: 0.68))
+        case "Beauty":
+            return Info(symbol: "scissors", label: "Beauty", color: Color(red: 0.78, green: 0.42, blue: 0.58))
+        case "AutomotiveRepair":
+            return Info(symbol: "wrench.and.screwdriver.fill", label: "Auto Repair", color: Color(red: 0.48, green: 0.5, blue: 0.55))
+        case "AnimalService":
+            return Info(symbol: "pawprint.fill", label: "Animal Service", color: Color(red: 0.52, green: 0.48, blue: 0.38))
+        case "RVPark":
+            // No dedicated motorhome symbol in SF Symbols; tow-hitch + car reads as travel trailer / towable RV at a park.
+            return Info(symbol: "car.side.rear.tow.hitch.fill", label: "RV Park", color: Color(red: 0.38, green: 0.58, blue: 0.48))
+        default:
             return nil
         }
     }
@@ -217,8 +359,17 @@ enum PlacePOICategoryPresentation {
             return Info(symbol: "figure.hiking", label: "Hiking", color: Color(red: 0.36, green: 0.64, blue: 0.32))
         }
         if blob.contains("skiing") || blob.contains("ski resort") || blob.contains("ski area")
-            || blob.contains("mkpoicategoryskiing") || blob.contains("mkpoicategoryski") {
+            || blob.contains("mkpoicategoryskiing") {
             return Info(symbol: "figure.skiing.downhill", label: "Skiing", color: Color(red: 0.32, green: 0.62, blue: 0.85))
+        }
+        if blob.contains("mkpoicategoryminigolf") {
+            return Info(symbol: "figure.golf", label: "Mini Golf", color: Color(red: 0.32, green: 0.58, blue: 0.42))
+        }
+        if blob.contains("mkpoicategorygolf") {
+            return Info(symbol: "figure.golf", label: "Golf", color: Color(red: 0.28, green: 0.55, blue: 0.38))
+        }
+        if blob.contains("mkpoicategorytennis") {
+            return Info(symbol: "tennis.racket", label: "Tennis", color: Color(red: 0.72, green: 0.58, blue: 0.28))
         }
 
         func firstMatch(_ pairs: [(String, MKPointOfInterestCategory)]) -> Info? {
