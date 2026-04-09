@@ -62,7 +62,7 @@ struct CountryManageBlogsSheet: View {
                             .foregroundColor(.primary)
                             .multilineTextAlignment(.center)
 
-                        Text("Remove downloaded blogs from this device")
+                        Text("Remove blogs from this device")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
@@ -104,7 +104,7 @@ struct CountryManageBlogsSheet: View {
                                 .font(.system(size: 22, weight: .semibold))
                                 .foregroundColor(.primary)
                                 .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                         }
                         Spacer()
                         Button {
@@ -114,7 +114,7 @@ struct CountryManageBlogsSheet: View {
                                 .font(.system(size: 22, weight: .semibold))
                                 .foregroundColor(.primary)
                                 .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
                         }
                     }
                     .padding(.horizontal, 24)
@@ -227,7 +227,7 @@ struct CountryManageRow: View {
                             .padding(5)
                     }
                 }
-                .clipShape(RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(blog.title)
@@ -262,7 +262,7 @@ struct CountryManageRow: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .opacity(isRemoved ? 0.6 : 1.0)
         .animation(.easeInOut(duration: 0.25), value: isRemoved)
     }
@@ -296,7 +296,7 @@ struct CountryManageRow: View {
             .frame(minWidth: 40, minHeight: 36)
             .padding(.horizontal, 10)
             .background(
-                RoundedRectangle(appChromeBaseRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(isRemoved ? Color.secondary.opacity(0.1) : Color.red.opacity(0.08))
             )
         }

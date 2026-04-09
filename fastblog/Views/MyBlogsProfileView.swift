@@ -678,7 +678,7 @@ private struct MyBlogsManageSheet: View {
                                 .padding(.bottom, 4)
                             Text("Manage Blogs")
                                 .font(.system(.title2, design: .serif).weight(.medium))
-                            Text("Remove downloaded blogs from this device")
+                            Text("Remove blogs from this device")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
@@ -689,7 +689,7 @@ private struct MyBlogsManageSheet: View {
 
                         // Country sections
                         if sections.isEmpty {
-                            Text("No local blogs to manage.")
+                            Text("No blogs to manage.")
                                 .foregroundColor(.secondary)
                                 .padding(.top, 24)
                         } else {
