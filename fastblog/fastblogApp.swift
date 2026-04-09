@@ -224,16 +224,14 @@ struct fastblogApp: App {
                 )
             }
 
-            // ── Layer 2: animated logo overlay ──
+            // ── Layer 2: splash logo overlay ──
             if splashManager.phase != .done {
                 let isSplash = splashManager.phase == .splash
-
                 ZStack {
                     // Dark background fades out as home fades in
                     Color(red: 5 / 255, green: 10 / 255, blue: 48 / 255)
                         .ignoresSafeArea()
 
-                    // Logo fades away
                     Image("SplashIcon")
                         .resizable()
                         .scaledToFit()

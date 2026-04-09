@@ -128,7 +128,24 @@ struct VisitedCitiesSheet: View {
                     }
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationTitle("Your Memories")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarBackground(Color.black, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss")
+                }
+            }
             .onAppear {
                 viewModel.loadVisitedCities(year: viewModel.visitedCitiesYear)
                 seedCurrentYearCache()
@@ -193,9 +210,6 @@ struct VisitedCitiesSheet: View {
 
     private var controlsHeader: some View {
         VStack(alignment: .leading, spacing: 0) {
-            topNavigationHeader
-                .padding(.bottom, 20)
-
             searchBarView
                 .padding(.bottom, 12)
 
@@ -260,40 +274,9 @@ struct VisitedCitiesSheet: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 22)
+        .padding(.top, 12)
         .padding(.bottom, 14)
         .background(Color(UIColor.systemGroupedBackground))
-    }
-
-    private var topNavigationHeader: some View {
-        HStack {
-            // Same control as AppCaptureGalleryView toolbar leading: plain chevron, no circle.
-            HStack {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.primary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss")
-                Spacer(minLength: 0)
-            }
-            .frame(width: 44, alignment: .leading)
-
-            Spacer()
-
-            Text("Your Memories")
-                .font(.system(size: 23, weight: .semibold))
-                .foregroundStyle(.primary)
-
-            Spacer()
-
-            Color.clear
-                .frame(width: 44, height: 44)
-                .accessibilityHidden(true)
-        }
     }
 
     private var selectionBottomOverlay: some View {

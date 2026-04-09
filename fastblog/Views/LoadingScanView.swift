@@ -28,6 +28,8 @@ struct LoadingScanView: View {
     /// When false, hides the top-right circular action buttons.
     var showsTopTrailingActions: Bool = true
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     @State private var ringRotation: Double = 0
     @State private var pulseScale: CGFloat = 1
     @State private var stepLabelIndex: Int = 0
@@ -68,6 +70,33 @@ struct LoadingScanView: View {
             : progressStepLabel
     }
 
+    /// Non-`useCenteredLayout` stacks the message block with a fixed Y offset; large Dynamic Type
+    /// makes that text taller and it overlaps the scan rings. Add clearance and lift the animation slightly.
+    private var nonCenteredDynamicTypeClearance: CGFloat {
+        switch dynamicTypeSize {
+        case .xSmall, .small, .medium, .large:
+            return 0
+        case .xLarge:
+            return 32
+        case .xxLarge:
+            return 58
+        case .xxxLarge:
+            return 86
+        case .accessibility1:
+            return 108
+        case .accessibility2:
+            return 128
+        case .accessibility3:
+            return 148
+        case .accessibility4:
+            return 166
+        case .accessibility5:
+            return 184
+        @unknown default:
+            return 108
+        }
+    }
+
     var body: some View {
         ZStack {
             if isOverlay {
@@ -84,7 +113,7 @@ struct LoadingScanView: View {
 
             Group {
                 if useCenteredLayout {
-                    VStack(spacing: 20) {
+                    VStack(spacing: dynamicTypeSize >= .xLarge ? 26 : 20) {
                         scanAnimation
                         messageSection
                         actionButtons
@@ -92,12 +121,13 @@ struct LoadingScanView: View {
                 } else {
                     ZStack {
                         scanAnimation
+                            .offset(y: -nonCenteredDynamicTypeClearance * 0.42)
                         VStack(spacing: 36) {
                             messageSection
                             actionButtons
                         }
-                        // Keep the text block below the scan animation so it doesn't overlap.
-                        .offset(y: 240)
+                        // Keep the text block below the scan animation; extra drop + lift animation when type is large.
+                        .offset(y: 240 + nonCenteredDynamicTypeClearance * 0.58)
                     }
                 }
             }
