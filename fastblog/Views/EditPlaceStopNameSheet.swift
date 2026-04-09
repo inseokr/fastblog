@@ -58,6 +58,9 @@ struct EditPlaceStopNameSheet: View {
                         zoomOutTrigger: mapZoomOutTrigger,
                         onTap: { tappedCoordinate, mapRegion in
                             resolvePOI(at: tappedCoordinate, mapRegion: mapRegion)
+                        },
+                        onMapFeatureTap: { feature, mapRegion in
+                            resolvePOIFromMapFeature(feature, mapRegion: mapRegion)
                         }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -196,21 +199,41 @@ struct EditPlaceStopNameSheet: View {
                                 UIApplication.shared.open(url)
                             }
                         } label: {
-                            HStack(spacing: 8) {
-                                // Fallback icon since a specific Google asset isn't confirmed
+                            HStack(spacing: 10) {
                                 Image(systemName: "map.fill")
-                                    .foregroundColor(.blue)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [
+                                                Color(red: 0.45, green: 0.88, blue: 0.72),
+                                                Color(red: 0.28, green: 0.72, blue: 0.85)
+                                            ],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
                                 Text("View on Google Maps")
                                     .font(.subheadline.weight(.semibold))
-                                    .foregroundColor(.black)
+                                    .foregroundStyle(Color.white.opacity(0.95))
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(Color.white)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 11)
+                            .background {
+                                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                    .fill(.ultraThinMaterial)
+                                    .background {
+                                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                            .fill(Color.black.opacity(0.38))
+                                    }
+                            }
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                    .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+                            }
                             .appChromeCornerRadius(24)
-                            .shadow(color: .black.opacity(0.2), radius: 5, x: 0, y: 2)
+                            .shadow(color: .black.opacity(0.45), radius: 12, x: 0, y: 6)
                         }
-                        .padding(.bottom, 16)
+                        .padding(.bottom, 6)
                     } else if selectedCoordinate == nil {
                         Text("Tap a place on the map to use its name")
                             .font(.caption)
@@ -218,7 +241,7 @@ struct EditPlaceStopNameSheet: View {
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
                             .background(Capsule().fill(Color.black.opacity(0.6)))
-                            .padding(.bottom, 16)
+                            .padding(.bottom, 6)
                     }
                 }
             }
@@ -421,6 +444,54 @@ struct EditPlaceStopNameSheet: View {
         }
     }
 
+    /// Uses the map feature Apple associated with the tap (same hit-testing as the Maps UI), then `MKMapItemRequest`
+    /// for the canonical name. Avoids picking a geometrically closer but different POI from `MKLocalPointsOfInterestRequest`
+    /// (e.g. a building on a campus vs the university label the user tapped).
+    private func resolvePOIFromMapFeature(_ annotation: MKMapFeatureAnnotation, mapRegion: MKCoordinateRegion) {
+        if isResolvingPOI {
+            debugPrint("[POI] resolvePOIFromMapFeature skipped (already resolving)")
+            return
+        }
+        debugPrint("[POI] resolvePOIFromMapFeature started")
+        isResolvingPOI = true
+        isFocused = false
+        showSuggestions = false
+        Task { @MainActor in
+            let request = MKMapItemRequest(mapFeatureAnnotation: annotation)
+            var mapItem: MKMapItem?
+            do {
+                mapItem = try await request.mapItem
+            } catch {
+                debugPrint("[POI] MKMapItemRequest.mapItem error: \(error)")
+            }
+            if let mapItem,
+               let raw = mapItem.name?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !raw.isEmpty {
+                debugPrint("[POI] map feature → mapItem name=\(raw)")
+                editedTitle = raw
+                selectedCoordinate = mapItem.placemark.coordinate
+                selectedCategory = mapItem.pointOfInterestCategory?.rawValue
+                mapTapResolvedAsPOI = true
+                isResolvingPOI = false
+                debugPrint("[POI] resolvePOIFromMapFeature finished (mapItem)")
+                return
+            }
+            if let title = annotation.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+                debugPrint("[POI] map feature fallback annotation.title=\(title)")
+                editedTitle = title
+                selectedCoordinate = annotation.coordinate
+                selectedCategory = annotation.pointOfInterestCategory?.rawValue
+                mapTapResolvedAsPOI = true
+                isResolvingPOI = false
+                debugPrint("[POI] resolvePOIFromMapFeature finished (annotation title)")
+                return
+            }
+            debugPrint("[POI] map feature had no resolvable name, falling back to coordinate POI search")
+            isResolvingPOI = false
+            resolvePOI(at: annotation.coordinate, mapRegion: mapRegion)
+        }
+    }
+
     // MARK: - Tappable map (tap → coordinate → resolve POI)
     private struct TappableMapView: UIViewRepresentable {
         let center: CLLocationCoordinate2D
@@ -428,6 +499,7 @@ struct EditPlaceStopNameSheet: View {
         var zoomInTrigger: Int = 0
         var zoomOutTrigger: Int = 0
         var onTap: (CLLocationCoordinate2D, MKCoordinateRegion) -> Void
+        var onMapFeatureTap: (MKMapFeatureAnnotation, MKCoordinateRegion) -> Void
 
         /// `spanScale` multiplies span: smaller than 1 zooms in, larger than 1 zooms out.
         private static func applyZoom(_ mapView: MKMapView, spanScale: CGFloat) {
@@ -451,6 +523,7 @@ struct EditPlaceStopNameSheet: View {
             )
             map.mapType = .standard
             map.showsUserLocation = false
+            map.selectableMapFeatures = [.pointsOfInterest]
             let ann = MKPointAnnotation()
             ann.coordinate = center
             map.addAnnotation(ann)
@@ -497,6 +570,9 @@ struct EditPlaceStopNameSheet: View {
             let parent: TappableMapView
             var lastZoomInTrigger: Int = 0
             var lastZoomOutTrigger: Int = 0
+            /// When the user taps a rendered POI, `didSelect(MKMapFeatureAnnotation)` runs; we cancel this so we do not
+            /// also run proximity-based `MKLocalPointsOfInterestRequest` (which can pick a different sub-POI).
+            private var pendingBareMapTap: DispatchWorkItem?
 
             init(_ parent: TappableMapView) {
                 self.parent = parent
@@ -514,8 +590,31 @@ struct EditPlaceStopNameSheet: View {
                 }
                 let point = gesture.location(in: mapView)
                 let coordinate = mapView.convert(point, toCoordinateFrom: mapView)
-                debugPrint("[POI] tap at point=\(point), coordinate=\(coordinate.latitude),\(coordinate.longitude) -> calling onTap")
-                parent.onTap(coordinate, mapView.region)
+                debugPrint("[POI] tap at point=\(point), coordinate=\(coordinate.latitude),\(coordinate.longitude) -> scheduling deferred onTap")
+                pendingBareMapTap?.cancel()
+                let region = mapView.region
+                let work = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    debugPrint("[POI] deferred bare-map tap → onTap")
+                    self.parent.onTap(coordinate, region)
+                }
+                pendingBareMapTap = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
+            }
+
+            func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
+                if let feature = annotation as? MKMapFeatureAnnotation {
+                    pendingBareMapTap?.cancel()
+                    pendingBareMapTap = nil
+                    mapView.deselectAnnotation(annotation, animated: false)
+                    debugPrint("[POI] didSelect MKMapFeatureAnnotation → onMapFeatureTap")
+                    parent.onMapFeatureTap(feature, mapView.region)
+                    return
+                }
+                if annotation is MKPointAnnotation {
+                    pendingBareMapTap?.cancel()
+                    pendingBareMapTap = nil
+                }
             }
 
             func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {

@@ -61,6 +61,30 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         completer.queryFragment = query
     }
 
+    /// Subtract from tap distance when choosing among nearby POIs so broad venues can win over closer sub-POIs.
+    /// Kept conservative: only categories that usually represent a whole site, not `.school` (often a single building).
+    private static func poiSelectionBiasMeters(for category: MKPointOfInterestCategory?) -> Double {
+        guard let c = category else { return 0 }
+        switch c {
+        case .university, .nationalPark:
+            return 58
+        case .park, .amusementPark, .stadium, .museum, .zoo, .aquarium:
+            return 38
+        default:
+            if #available(iOS 18.0, *) {
+                switch c {
+                case .fairground, .nationalMonument, .castle, .fortress:
+                    return 38
+                case .landmark, .conventionCenter:
+                    return 14
+                default:
+                    break
+                }
+            }
+            return 0
+        }
+    }
+
     func clearQuery() {
         query = ""
         suggestions = []
@@ -107,11 +131,16 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         let search = MKLocalSearch(request: request)
         guard let response = try? await search.start(), !response.mapItems.isEmpty else { return nil }
         let withName = response.mapItems.filter { ($0.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
-        guard let closest = withName.min(by: { item1, item2 in
-            let loc1 = item1.placemark.location ?? CLLocation(latitude: item1.placemark.coordinate.latitude, longitude: item1.placemark.coordinate.longitude)
-            let loc2 = item2.placemark.location ?? CLLocation(latitude: item2.placemark.coordinate.latitude, longitude: item2.placemark.coordinate.longitude)
-            return tapLocation.distance(from: loc1) < tapLocation.distance(from: loc2)
-        }) else { return nil }
+        // Prefer large “parent” venues (campus, park, mall-scale POI) when several POIs overlap: pure
+        // distance often picks a sub-building (e.g. hall) over the university the map label referred to.
+        func effectiveDistanceMeters(for item: MKMapItem) -> Double {
+            let loc = item.placemark.location
+                ?? CLLocation(latitude: item.placemark.coordinate.latitude, longitude: item.placemark.coordinate.longitude)
+            let d = tapLocation.distance(from: loc)
+            let bias = Self.poiSelectionBiasMeters(for: item.pointOfInterestCategory)
+            return d - bias
+        }
+        guard let closest = withName.min(by: { effectiveDistanceMeters(for: $0) < effectiveDistanceMeters(for: $1) }) else { return nil }
         // Reject if even the closest POI is outside the tap radius — it's a database-only POI, not
         // something the user could have visually tapped. Fall back to reverse geocoding instead.
         let closestLoc = closest.placemark.location
