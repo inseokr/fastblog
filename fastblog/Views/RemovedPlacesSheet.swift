@@ -56,6 +56,7 @@ struct RemovedPlacesSheet: View {
                             }
                         ),
                         placeSubtitle: stop.placeSubtitle,
+                        initialPlaceCategory: stop.placeCategory,
                         photos: photos,
                         initialPhotoId: initialPhotoId,
                         stopDigitizedTime: stop.visitedTimeDigitized,

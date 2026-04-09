@@ -67,6 +67,14 @@ struct CountryBlogsView: View {
     // Year filter support
     @State private var selectedYear: Int? = nil
 
+    /// Live blogs for this country, read from the store so edits (title, cover) propagate immediately.
+    private var liveBlogs: [CreatedRecapBlog] {
+        if let summary = createdRecapStore.countrySummaries.first(where: { $0.countryName == section.countryName }) {
+            return summary.blogs
+        }
+        return section.blogs
+    }
+
     private let darkNavy = Color(red: 5/255, green: 10/255, blue: 48/255)
     /// Swipe delete: explicit colors so parent `.tint(.primary)` (white in dark mode) does not wash out the icon.
     private let swipeDeleteRed = Color(red: 0.88, green: 0.38, blue: 0.40)
@@ -77,7 +85,7 @@ struct CountryBlogsView: View {
     private let undoDuration: TimeInterval = 7
 
     private var availableYears: [Int] {
-        let activeBlogs = section.blogs.filter { createdRecapStore.hasCreatedBlog(sourceTripId: $0.sourceTripId) }
+        let activeBlogs = liveBlogs.filter { createdRecapStore.hasCreatedBlog(sourceTripId: $0.sourceTripId) }
         let years = activeBlogs.compactMap { blog -> Int? in
             guard let date = blog.tripStartDate ?? blog.tripEndDate else { return nil }
             return Calendar.current.component(.year, from: date)
@@ -90,7 +98,7 @@ struct CountryBlogsView: View {
     }
 
     private var filteredAndSortedBlogs: [CreatedRecapBlog] {
-        let activeBlogs = section.blogs.filter { createdRecapStore.hasCreatedBlog(sourceTripId: $0.sourceTripId) }
+        let activeBlogs = liveBlogs.filter { createdRecapStore.hasCreatedBlog(sourceTripId: $0.sourceTripId) }
         let sorted = activeBlogs.sorted {
             ($0.tripStartDate ?? $0.createdAt) > ($1.tripStartDate ?? $1.createdAt)
         }
@@ -275,7 +283,7 @@ struct CountryBlogsView: View {
         .sheet(isPresented: $showManageSheet) {
             CountryManageBlogsSheet(
                 countryName: section.countryName,
-                blogs: section.blogs,
+                blogs: liveBlogs,
                 onOpenBlog: { blog in
                     reopenManageSheetAfterRecapDismiss = true
                     showManageSheet = false
@@ -528,8 +536,8 @@ struct CountryBlogRowView: View {
                             onDeleteBlog()
                         } label: {
                             Label("Delete Blog", systemImage: "trash")
-                                .foregroundColor(.red)
                         }
+                        .tint(.red)
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.system(size: 14, weight: .semibold))

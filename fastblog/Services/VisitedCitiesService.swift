@@ -16,6 +16,7 @@ struct VisitedCityTrip: Identifiable, Codable {
     let startDate: Date
     let endDate: Date
     let dayCount: Int
+    let photoCount: Int
     let coverAssetIdentifier: String?
     /// IANA id from reverse-geocode at the place cell; used so date labels match capture-timezone wall times (e.g. preview digitized line).
     let displayTimeZoneIdentifier: String?
@@ -83,7 +84,7 @@ final class VisitedCitiesService {
 
     // MARK: - Cache
 
-    private static let cacheKeyPrefix = "visitedCities.v5"
+    private static let cacheKeyPrefix = "visitedCities.v6"
     private static let cacheMaxAge: TimeInterval = 3 * 24 * 3600 // 3 days
 
     private struct Cache: Codable {
@@ -306,7 +307,7 @@ final class VisitedCitiesService {
         }
 
         // ── Phase 5: Group consecutive same-city days into trip segments ──
-        let trips = groupIntoTrips(dayEntries: dayEntries)
+        let trips = groupIntoTrips(dayEntries: dayEntries, dayMap: dayMap)
         print("[VisitedCities] \(year): grouped into \(trips.count) trip(s)")
         for t in trips {
             print("[VisitedCities]   \(t.cityName), \(t.countryName)  \(t.startDate) → \(t.endDate)  (\(t.dayCount) days)")
@@ -318,7 +319,8 @@ final class VisitedCitiesService {
     // MARK: - Grouping
 
     private func groupIntoTrips(
-        dayEntries: [(dateKey: String, city: String, country: String, assetId: String, timeZoneIdentifier: String?)]
+        dayEntries: [(dateKey: String, city: String, country: String, assetId: String, timeZoneIdentifier: String?)],
+        dayMap: [String: [PHAsset]]
     ) -> [VisitedCityTrip] {
         guard !dayEntries.isEmpty else { return [] }
 
@@ -332,6 +334,7 @@ final class VisitedCitiesService {
         var coverAsset = dayEntries[0].assetId
         var curTzId    = dayEntries[0].timeZoneIdentifier
         var dayCount   = 1
+        var photoCount = dayMap[dayEntries[0].dateKey]?.count ?? 0
 
         func flush() {
             let tz = (curTzId.flatMap { TimeZone(identifier: $0) }) ?? TimeZone.current
@@ -342,7 +345,8 @@ final class VisitedCitiesService {
             trips.append(VisitedCityTrip(
                 cityName: curCity, countryName: curCtry,
                 startDate: start, endDate: end,
-                dayCount: dayCount, coverAssetIdentifier: coverAsset,
+                dayCount: dayCount, photoCount: photoCount,
+                coverAssetIdentifier: coverAsset,
                 displayTimeZoneIdentifier: curTzId
             ))
         }
@@ -356,8 +360,9 @@ final class VisitedCitiesService {
             let samePlace = cur.city == curCity && cur.country == curCtry
 
             if samePlace && gap <= maxGapDays {
-                endKey    = cur.dateKey
-                dayCount += 1
+                endKey      = cur.dateKey
+                dayCount   += 1
+                photoCount += dayMap[cur.dateKey]?.count ?? 0
             } else {
                 flush()
                 startKey   = cur.dateKey
@@ -367,6 +372,7 @@ final class VisitedCitiesService {
                 coverAsset = cur.assetId
                 curTzId    = cur.timeZoneIdentifier
                 dayCount   = 1
+                photoCount = dayMap[cur.dateKey]?.count ?? 0
             }
         }
         flush()

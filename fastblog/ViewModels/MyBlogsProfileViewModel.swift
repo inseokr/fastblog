@@ -48,7 +48,7 @@ final class MyBlogsProfileViewModel: ObservableObject {
         summaries.map { summary in
             CountrySection(
                 countryName: summary.countryName,
-                lastBlogDate: summary.mostRecentBlog.createdAt,
+                lastBlogDate: summary.mostRecentBlog.tripEndDate ?? summary.mostRecentBlog.tripStartDate ?? summary.mostRecentBlog.createdAt,
                 latestCoverBlog: summary.mostRecentBlog,
                 blogs: summary.blogs
             )

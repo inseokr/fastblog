@@ -3,7 +3,6 @@
 //  Capper
 //
 
-import MapKit
 import SwiftUI
 import UIKit
 
@@ -395,16 +394,19 @@ struct PlaceStopRowView: View {
             .padding(.top, 12)
             .padding(.bottom, 4)
 
-            // Category chip + sentiment — aligned with photo section edges
-            let cat = categoryInfo(for: stop.placeCategory)
+            // Category chip + sentiment — aligned with photo section edges (same POI presentation as My Places / map).
+            let categoryPresent = PlacePOICategoryPresentation.presentationForPlaceRow(
+                storedCategory: stop.placeCategory,
+                placeTitle: stop.placeTitle
+            )
             let hasResolvedPlaceName = day.isPlaceNamesResolved
                 && !stop.placeTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let hasCaptionText = !(overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 || stop.photos.contains(where: { !($0.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-            let categoryAccent = PlacePOICategoryPresentation.presentation(forRaw: stop.placeCategory).color
-            if cat != nil || hasCaptionText {
+            if categoryPresent != nil || hasCaptionText {
                 HStack(alignment: .center, spacing: 8) {
-                    if let cat {
+                    if let cat = categoryPresent {
+                        let categoryAccent = cat.color
                         if hasResolvedPlaceName, let pickCategory = onEditCategory {
                             Button {
                                 pickCategory()
@@ -1102,45 +1104,6 @@ struct PlaceStopRowView: View {
             .padding(.leading, 27)
     }
 
-    private func categoryInfo(for rawValue: String?) -> (symbol: String, label: String)? {
-        guard let raw = rawValue else { return nil }
-        let cat = MKPointOfInterestCategory(rawValue: raw)
-        switch cat {
-        case .restaurant:      return ("fork.knife", "Restaurant")
-        case .cafe:            return ("cup.and.saucer.fill", "Café")
-        case .bakery:          return ("birthday.cake.fill", "Bakery")
-        case .winery:          return ("wineglass.fill", "Winery")
-        case .brewery:         return ("mug.fill", "Brewery")
-        case .nightlife:       return ("moon.stars.fill", "Nightlife")
-        case .hotel:           return ("bed.double.fill", "Hotel")
-        case .campground:      return ("tent.fill", "Campground")
-        case .museum:          return ("building.columns.fill", "Museum")
-        case .movieTheater:    return ("film.fill", "Movie Theater")
-        case .theater:         return ("theatermasks.fill", "Theater")
-        case .amusementPark:   return ("ferriswheel", "Amusement Park")
-        case .zoo:             return ("pawprint.fill", "Zoo")
-        case .aquarium:        return ("fish.fill", "Aquarium")
-        case .park:            return ("leaf.fill", "Park")
-        case .beach:           return ("beach.umbrella.fill", "Beach")
-        case .nationalPark:    return ("tree.fill", "National Park")
-        case .airport:         return ("airplane", "Airport")
-        case .publicTransport: return ("tram.fill", "Transit")
-        case .gasStation:      return ("fuelpump.fill", "Gas Station")
-        case .hospital:        return ("cross.fill", "Hospital")
-        case .pharmacy:        return ("cross.case.fill", "Pharmacy")
-        case .fitnessCenter:   return ("dumbbell.fill", "Fitness")
-        case .store:           return ("bag.fill", "Store")
-        case .foodMarket:      return ("cart.fill", "Market")
-        case .library:         return ("books.vertical.fill", "Library")
-        case .school:          return ("graduationcap.fill", "School")
-        case .university:      return ("graduationcap.fill", "University")
-        case .marina:          return ("sailboat.fill", "Marina")
-        case .stadium:         return ("sportscourt.fill", "Stadium")
-        case .bank:            return ("banknote.fill", "Bank")
-        case _ where raw == "MKPOICategoryMusicVenue": return ("music.mic", "Music Venue")
-        default:               return nil
-        }
-    }
 }
 
 #Preview {

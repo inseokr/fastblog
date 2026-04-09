@@ -1136,6 +1136,52 @@ final class CreatedRecapBlogStore: ObservableObject {
         recents[idx].syncStatus = .needsUpload
     }
 
+    /// Updates the place stop name, category, coordinate, and subtitle for the stop that contains the given photo.
+    /// Called when the user saves a place name edit from the Places Visited photo modal (via `EditPlaceStopNameSheet`).
+    func updatePlaceStopFromPlacesVisited(photoId: UUID, newName: String, category: String?, coordinate: CLLocationCoordinate2D?, subtitle: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let subTrimmed = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        var changed = false
+        for key in blogDetailsBySourceId.keys {
+            guard var detail = blogDetailsBySourceId[key] else { continue }
+            var detailChanged = false
+            for dayIdx in detail.days.indices {
+                for stopIdx in detail.days[dayIdx].placeStops.indices {
+                    let containsPhoto = detail.days[dayIdx].placeStops[stopIdx].photos.contains { $0.id == photoId }
+                    if containsPhoto {
+                        detail.days[dayIdx].placeStops[stopIdx].placeTitle = trimmed
+                        detail.days[dayIdx].placeStops[stopIdx].placeTitleIsManual = true
+                        if let category {
+                            detail.days[dayIdx].placeStops[stopIdx].placeCategory = category
+                        } else {
+                            let existingCat = detail.days[dayIdx].placeStops[stopIdx].placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                            if existingCat.isEmpty {
+                                detail.days[dayIdx].placeStops[stopIdx].placeCategory =
+                                    PlacePOICategoryPresentation.inferredCategoryRaw(fromPlaceTitle: trimmed)
+                            }
+                        }
+                        if let coordinate {
+                            detail.days[dayIdx].placeStops[stopIdx].representativeLocation = PhotoCoordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                        }
+                        if !subTrimmed.isEmpty {
+                            detail.days[dayIdx].placeStops[stopIdx].placeSubtitle = subTrimmed
+                        }
+                        detailChanged = true
+                    }
+                }
+            }
+            if detailChanged {
+                blogDetailsBySourceId[key] = detail
+                changed = true
+            }
+        }
+        if changed {
+            persistBlogDetails()
+            objectWillChange.send()
+        }
+    }
+
     /// Updates the place stop name for the stop that contains the given photo, across all stored blog details.
     /// Called when the user edits a place name from the Places Visited photo modal.
     func updatePlaceStopName(photoId: UUID, newName: String) {
@@ -1150,6 +1196,11 @@ final class CreatedRecapBlogStore: ObservableObject {
                     let containsPhoto = detail.days[dayIdx].placeStops[stopIdx].photos.contains { $0.id == photoId }
                     if containsPhoto {
                         detail.days[dayIdx].placeStops[stopIdx].placeTitle = trimmed
+                        let cat = detail.days[dayIdx].placeStops[stopIdx].placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        if cat.isEmpty {
+                            detail.days[dayIdx].placeStops[stopIdx].placeCategory =
+                                PlacePOICategoryPresentation.inferredCategoryRaw(fromPlaceTitle: trimmed)
+                        }
                         detailChanged = true
                     }
                 }
@@ -3060,14 +3111,21 @@ final class CreatedRecapBlogStore: ObservableObject {
             return name.isEmpty || name == "Unknown" ? "Unknown" : name
         }
         return grouped.compactMap { countryName, blogs in
-            guard let mostRecent = blogs.max(by: { $0.createdAt < $1.createdAt }) else { return nil }
+            guard let mostRecent = blogs.max(by: {
+                ($0.tripEndDate ?? $0.tripStartDate ?? $0.createdAt) < ($1.tripEndDate ?? $1.tripStartDate ?? $1.createdAt)
+            }) else { return nil }
             return CountryRecapSummary(
                 countryName: countryName,
                 mostRecentBlog: mostRecent,
-                blogs: blogs.sorted { $0.createdAt > $1.createdAt }
+                blogs: blogs.sorted {
+                    ($0.tripEndDate ?? $0.tripStartDate ?? $0.createdAt) > ($1.tripEndDate ?? $1.tripStartDate ?? $1.createdAt)
+                }
             )
         }
-        .sorted { $0.mostRecentBlog.createdAt > $1.mostRecentBlog.createdAt }
+        .sorted {
+            ($0.mostRecentBlog.tripEndDate ?? $0.mostRecentBlog.tripStartDate ?? $0.mostRecentBlog.createdAt) >
+            ($1.mostRecentBlog.tripEndDate ?? $1.mostRecentBlog.tripStartDate ?? $1.mostRecentBlog.createdAt)
+        }
     }
 
     // MARK: - Auth-Aware Display Helpers
@@ -3102,14 +3160,21 @@ final class CreatedRecapBlogStore: ObservableObject {
             return name.isEmpty || name == "Unknown" ? "Unknown" : name
         }
         return grouped.compactMap { countryName, blogs in
-            guard let mostRecent = blogs.max(by: { $0.createdAt < $1.createdAt }) else { return nil }
+            guard let mostRecent = blogs.max(by: {
+                ($0.tripEndDate ?? $0.tripStartDate ?? $0.createdAt) < ($1.tripEndDate ?? $1.tripStartDate ?? $1.createdAt)
+            }) else { return nil }
             return CountryRecapSummary(
                 countryName: countryName,
                 mostRecentBlog: mostRecent,
-                blogs: blogs.sorted { $0.createdAt > $1.createdAt }
+                blogs: blogs.sorted {
+                    ($0.tripEndDate ?? $0.tripStartDate ?? $0.createdAt) > ($1.tripEndDate ?? $1.tripStartDate ?? $1.createdAt)
+                }
             )
         }
-        .sorted { $0.mostRecentBlog.createdAt > $1.mostRecentBlog.createdAt }
+        .sorted {
+            ($0.mostRecentBlog.tripEndDate ?? $0.mostRecentBlog.tripStartDate ?? $0.mostRecentBlog.createdAt) >
+            ($1.mostRecentBlog.tripEndDate ?? $1.mostRecentBlog.tripStartDate ?? $1.mostRecentBlog.createdAt)
+        }
     }
 
     /// Derived list of visited places aggregated across all visible blogs (latest-first).
@@ -3136,6 +3201,8 @@ final class CreatedRecapBlogStore: ObservableObject {
                     let year = Calendar.current.component(.year, from: latestVisit)
                     let placeName = stop.placeTitle
                     let city = stop.placeSubtitle ?? ""
+                    let resolvedCategoryRaw = stop.placeCategory
+                        ?? PlacePOICategoryPresentation.inferredCategoryRaw(fromPlaceTitle: placeName)
 
                     let placeKey: String = {
                         if let idx = stop.cloudPlaceIndex {
@@ -3157,7 +3224,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                         placeName: placeName,
                         city: city,
                         country: country,
-                        categoryRawValue: stop.placeCategory,
+                        categoryRawValue: resolvedCategoryRaw,
                         latestVisitDate: latestVisit,
                         year: year,
                         photos: included.sorted(by: { $0.timestamp > $1.timestamp }),

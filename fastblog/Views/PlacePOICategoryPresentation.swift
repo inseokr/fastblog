@@ -43,6 +43,69 @@ enum PlacePOICategoryPresentation {
         )
     }
 
+    // MARK: - Infer category from free-text place names
+
+    /// Tokens used when MapKit did not assign `pointOfInterestCategory` but the place name implies an activity or venue type.
+    /// Persisted on `PlaceStop.placeCategory` so blog rows, My Places, and uploads stay aligned.
+    private enum InferredCategoryStorage {
+        static let skiing = "MKPOICategorySkiing"
+        static let hiking = "MKPOICategoryHiking"
+    }
+
+    /// Lowercased alphanumeric tokens from a place title (handles hyphenated words reasonably).
+    private static func normalizedWordTokens(in title: String) -> [String] {
+        let lower = title.lowercased()
+        let folded = lower.folding(options: .diacriticInsensitive, locale: .current)
+        return folded.split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { !$0.isEmpty }
+    }
+
+    /// Returns an MK-style raw string suitable for `PlaceStop.placeCategory`, or nil if the name is too generic to infer.
+    static func inferredCategoryRaw(fromPlaceTitle name: String) -> String? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let tokens = Set(normalizedWordTokens(in: trimmed))
+        let lowerBlob = trimmed.lowercased()
+
+        func token(_ w: String) -> Bool { tokens.contains(w) }
+
+        // Ski / snow sports (word-safe — avoids matching "whisky" / "risk" as standalone "ski").
+        if token("ski") || token("skis") || token("skiing") || token("skier") || token("skiers")
+            || token("snowboard") || token("snowboarding") || token("snowboarder")
+            || lowerBlob.contains("ski resort") || lowerBlob.contains("ski area") || lowerBlob.contains("heli-ski")
+            || lowerBlob.contains("heliski") {
+            return InferredCategoryStorage.skiing
+        }
+
+        // Hiking / trails
+        if token("hike") || token("hikes") || token("hiking") || token("hiker") || token("hikers")
+            || token("trail") || token("trails") || token("trailhead") || token("trek") || token("trekking") {
+            return InferredCategoryStorage.hiking
+        }
+
+        // Major ski-hill wording without the word "ski" (e.g. "Jackson Hole Mountain Resort").
+        if token("mountain") && token("resort")
+            && (lowerBlob.contains("hole") || lowerBlob.contains("alp") || lowerBlob.contains("alpine")
+                || lowerBlob.contains("snow") || lowerBlob.contains("powder") || lowerBlob.contains("piste")
+                || lowerBlob.contains("gondola") || lowerBlob.contains("chairlift") || lowerBlob.contains("lift line")) {
+            return InferredCategoryStorage.skiing
+        }
+
+        return nil
+    }
+
+    /// Category visuals for a blog/map row: stored POI raw first, then name-based inference (matches My Places filtering once persisted).
+    static func presentationForPlaceRow(storedCategory: String?, placeTitle: String) -> Info? {
+        let stored = storedCategory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let useStored = !stored.isEmpty && stored.caseInsensitiveCompare("Others") != .orderedSame
+        let rawForPresentation: String? = {
+            if useStored { return stored }
+            return inferredCategoryRaw(fromPlaceTitle: placeTitle)
+        }()
+        let info = presentation(forRaw: rawForPresentation)
+        if info.label == "Others" { return nil }
+        return info
+    }
+
     /// Human-readable label (picker, chips, maps) — stable for any stored raw string.
     static func displayLabel(forRaw rawValue: String) -> String {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -130,7 +193,15 @@ enum PlacePOICategoryPresentation {
         case .bank:
             return Info(symbol: "banknote.fill", label: "Bank", color: Color(red: 0.2, green: 0.58, blue: 0.46))
         default:
-            // New or unrecognized MapKit POI kinds — fall back to heuristic / generic styling upstream.
+            // Newer MapKit POI kinds (iOS 18+) not yet available as static members on all deployment targets.
+            let raw = cat.rawValue
+            if raw.contains("Hiking") {
+                return Info(symbol: "figure.hiking", label: "Hiking", color: Color(red: 0.36, green: 0.64, blue: 0.32))
+            }
+            if raw.contains("Skiing") || raw.contains("Ski") {
+                return Info(symbol: "figure.skiing.downhill", label: "Skiing", color: Color(red: 0.32, green: 0.62, blue: 0.85))
+            }
+            // Fall back to heuristic / generic styling upstream.
             return nil
         }
     }
@@ -139,6 +210,16 @@ enum PlacePOICategoryPresentation {
     private static func heuristicInfo(forTrimmed trimmed: String) -> Info? {
         let lower = trimmed.lowercased()
         let blob = lower + " " + displayLabel(forRaw: trimmed).lowercased()
+
+        // Activity categories not available as static MKPointOfInterestCategory on all OS versions.
+        if blob.contains("hiking") || blob.contains("hike") || blob.contains("mkpoicategoryhiking")
+            || blob.contains("trailhead") {
+            return Info(symbol: "figure.hiking", label: "Hiking", color: Color(red: 0.36, green: 0.64, blue: 0.32))
+        }
+        if blob.contains("skiing") || blob.contains("ski resort") || blob.contains("ski area")
+            || blob.contains("mkpoicategoryskiing") || blob.contains("mkpoicategoryski") {
+            return Info(symbol: "figure.skiing.downhill", label: "Skiing", color: Color(red: 0.32, green: 0.62, blue: 0.85))
+        }
 
         func firstMatch(_ pairs: [(String, MKPointOfInterestCategory)]) -> Info? {
             for (needle, mk) in pairs where blob.contains(needle) {

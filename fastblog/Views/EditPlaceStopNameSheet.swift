@@ -11,6 +11,8 @@ struct EditPlaceStopNameSheet: View {
     @Binding var placeTitle: String
     /// City / country line under the title; editable even when there is no map or photos.
     var initialPlaceSubtitle: String? = nil
+    /// Existing `PlaceStop.placeCategory` when opening the sheet so Save preserves it unless the user picks a new POI.
+    var initialPlaceCategory: String? = nil
     var location: CLLocationCoordinate2D?
     /// All stop photos; the bottom thumbnail strip shows only `isIncluded` (blog-visible) shots.
     var photos: [RecapPhoto] = []
@@ -42,8 +44,10 @@ struct EditPlaceStopNameSheet: View {
     /// Incremented to request zoom on the embedded `MKMapView` (handled in `TappableMapView.updateUIView`).
     @State private var mapZoomInTrigger = 0
     @State private var mapZoomOutTrigger = 0
+    @State private var isSavingName = false
     /// One-time coachmark for “tap the map to fill the place name” (shown until dismissed or the user taps the map).
     @AppStorage("blogify.editPlaceMapTapCoachmarkSeen") private var mapTapCoachmarkSeen = false
+    @State private var showMapTapCoachmarkSheet = false
     /// Square cell size for the stacked map zoom control (compact, map-style).
     private let mapZoomControlSide: CGFloat = 34
 
@@ -51,15 +55,9 @@ struct EditPlaceStopNameSheet: View {
         photos.filter(\.isIncluded).filter(\.hasDisplayableLocalBacking)
     }
 
-    /// Extra space above the bottom hint so the photo strip does not cover the first-run coachmark.
-    private var mapBottomHintClearance: CGFloat {
-        guard location != nil, selectedCoordinate == nil, !mapTapCoachmarkSeen else { return 56 }
-        return 200
-    }
-
-    private var showFirstRunMapTapCoachmark: Bool {
-        location != nil && selectedCoordinate == nil && !mapTapCoachmarkSeen
-    }
+    /// Extra space above the bottom hint so the photo strip does not cover it.
+    /// Scales with Dynamic Type so the hint capsule never overlaps photos at large text sizes.
+    @ScaledMetric(relativeTo: .caption) private var mapBottomHintClearance: CGFloat = 56
 
     var body: some View {
         NavigationStack {
@@ -95,6 +93,7 @@ struct EditPlaceStopNameSheet: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .ignoresSafeArea(edges: .bottom)
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 0) {
                     autocompleteBar
@@ -166,16 +165,16 @@ struct EditPlaceStopNameSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     let canSave = !editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     Button("Save") {
-                        saveAndDismiss()
+                        Task { await saveAndDismissAsync() }
                     }
-                    .disabled(!canSave)
-                    .foregroundStyle(canSave ? Color(uiColor: .systemBlue) : Color.white.opacity(0.35))
+                    .disabled(!canSave || isSavingName)
+                    .foregroundStyle(canSave && !isSavingName ? Color(uiColor: .systemBlue) : Color.white.opacity(0.35))
                 }
             }
             .interactiveDismissDisabled(hasChanges)
             .alert("Save changes?", isPresented: $showSaveConfirmationAlert) {
                 Button("Save") {
-                    saveAndDismiss()
+                    Task { await saveAndDismissAsync() }
                 }
                 Button("Discard", role: .destructive) {
                     dismiss()
@@ -200,11 +199,14 @@ struct EditPlaceStopNameSheet: View {
                 initialSubtitle = subSeed
                 selectedCoordinate = nil
                 initialCoordinate = nil
-                selectedCategory = nil
-                initialCategory = nil
+                selectedCategory = initialPlaceCategory
+                initialCategory = initialPlaceCategory
                 mapTapResolvedAsPOI = false
                 pickedFromAutocomplete = false
                 searchViewModel.setBiasLocation(location)
+                if location != nil, !mapTapCoachmarkSeen {
+                    showMapTapCoachmarkSheet = true
+                }
             }
             .onChange(of: isResolvingPOI) { _, resolving in
                 if resolving { mapTapCoachmarkSeen = true }
@@ -255,11 +257,32 @@ struct EditPlaceStopNameSheet: View {
                         }
                         .padding(.bottom, 6)
                     } else if selectedCoordinate == nil {
-                        mapTapPlaceNameHint
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 10)
+                        VStack(spacing: 0) {
+                            Spacer(minLength: 0)
+                            mapTapPlaceNameHint
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 30)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: 180)
+                        .background(
+                            LinearGradient(
+                                colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
+                                startPoint: .bottom,
+                                endPoint: .top
+                            )
+                            .allowsHitTesting(false)
+                        )
+                        .ignoresSafeArea(edges: .bottom)
                     }
                 }
+            }
+            .sheet(isPresented: $showMapTapCoachmarkSheet, onDismiss: {
+                mapTapCoachmarkSeen = true
+            }) {
+                mapTapCoachmarkSheetContent
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
+                    .preferredColorScheme(.dark)
             }
             .preferredColorScheme(.dark)
         }
@@ -267,98 +290,57 @@ struct EditPlaceStopNameSheet: View {
 
     @ViewBuilder
     private var mapTapPlaceNameHint: some View {
-        Group {
-            if showFirstRunMapTapCoachmark {
-                mapTapPlaceNameCoachmarkCard
-            } else {
-                HStack {
-                    Spacer(minLength: 0)
-                    mapTapPlaceNameCompactHint
-                    Spacer(minLength: 0)
-                }
-            }
+        HStack {
+            Spacer(minLength: 0)
+            mapTapPlaceNameCompactHint
+            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity)
-        .animation(.spring(response: 0.4, dampingFraction: 0.86), value: showFirstRunMapTapCoachmark)
     }
 
-    /// First visit: prominent card so “tap the map” is hard to miss.
-    private var mapTapPlaceNameCoachmarkCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color(red: 0.32, green: 0.74, blue: 0.82),
-                                    Color(red: 0.22, green: 0.52, blue: 0.78)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 46, height: 46)
-                        .overlay {
-                            Circle()
-                                .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
-                        }
-                    Image(systemName: "mappin.and.ellipse")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
-                .accessibilityHidden(true)
+    /// First visit: pull-up modal explaining map interaction for editing the place name.
+    private var mapTapCoachmarkSheetContent: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 20) {
+                Image(systemName: "mappin.and.ellipse")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 50, height: 50)
+                    .foregroundColor(.cyan)
+                    .padding(.top, 8)
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Use a place from the map")
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(.white)
-                    Text("Tap any labeled place on the map—café, park, campus, or landmark. Zoom in or out with + and − if you don’t see a name yet; labels often appear only at certain zoom levels. The name and pin update to match what you tapped. You could enter the place name if you remember the place.")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.white.opacity(0.82))
-                        .fixedSize(horizontal: false, vertical: true)
+                VStack(spacing: 8) {
+                    Text("Edit your place name")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.primary)
+
+                    Text("Tap any place on the map to set it as this moment's location. You can also zoom in and out to discover more place names, or type a name directly in the search bar.")
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
                 }
-                .accessibilityElement(children: .combine)
             }
+            .padding(.horizontal, 24)
+
+            Spacer()
 
             Button {
-                mapTapCoachmarkSeen = true
+                showMapTapCoachmarkSheet = false
             } label: {
-                Text("Got it")
-                    .font(.subheadline.weight(.semibold))
+                Text("Continue")
+                    .font(.headline)
+                    .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Color(uiColor: .systemBlue))
-                    )
-                    .foregroundStyle(.white)
+                    .padding()
+                    .background(Color.blue)
+                    .appChromeCornerRadius(12)
             }
-            .buttonStyle(.plain)
-            .accessibilityHint("Dismisses this tip.")
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
         }
-        .padding(20)
-        .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .background {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.black.opacity(0.52))
-                }
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.24), Color.white.opacity(0.06)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
-        }
-        .appChromeCornerRadius(20)
-        .shadow(color: .black.opacity(0.55), radius: 20, x: 0, y: 10)
+        .padding(.top, 24)
     }
 
     /// Returning users: small reminder aligned with the map chrome.
@@ -366,36 +348,22 @@ struct EditPlaceStopNameSheet: View {
         HStack(spacing: 8) {
             Image(systemName: "hand.tap.fill")
                 .font(.caption.weight(.bold))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.5, green: 0.88, blue: 0.78),
-                            Color(red: 0.35, green: 0.75, blue: 0.9)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-            Text("Tap the map to use a place name — zoom +/− if labels are hidden")
+                .foregroundColor(.cyan)
+            Text("Tap the map to use a place name")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(Color.white.opacity(0.95))
+                .foregroundColor(.white.opacity(0.95))
                 .multilineTextAlignment(.center)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background {
+        .background(
             Capsule(style: .continuous)
                 .fill(.ultraThinMaterial)
-                .background {
-                    Capsule(style: .continuous)
-                        .fill(Color.black.opacity(0.5))
-                }
-        }
-        .overlay {
+        )
+        .overlay(
             Capsule(style: .continuous)
                 .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.4), radius: 10, x: 0, y: 5)
+        )
     }
 
     private func applyMapTapPOIChoice(_ candidate: MapTapPOICandidate) {
@@ -413,29 +381,48 @@ struct EditPlaceStopNameSheet: View {
                 Button {
                     applyMapTapPOIChoice(candidate)
                 } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(candidate.name)
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(.primary)
-                        Text(
-                            candidate.distanceMeters < 8
-                                ? "Very near your tap"
-                                : String(format: "About %.0f m from your tap", candidate.distanceMeters)
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    let p = PlacePOICategoryPresentation.presentation(forRaw: candidate.category)
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: p.symbol)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(p.color)
+                            .frame(width: 24, height: 24)
+                            .background(
+                                Circle()
+                                    .fill(p.color.opacity(0.18))
+                            )
+                            .overlay(
+                                Circle()
+                                    .stroke(p.color.opacity(0.35), lineWidth: 1)
+                            )
+                            .frame(width: 24, alignment: .leading)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(candidate.name)
+                                .font(.body.weight(.medium))
+                                .foregroundStyle(.primary)
+                            Text(
+                                candidate.distanceMeters < 8
+                                    ? "Very near your tap"
+                                    : String(format: "About %.0f m from your tap", candidate.distanceMeters)
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 4)
                 }
             }
-            .navigationTitle("Which place?")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        showMapTapPOIDisambiguation = false
-                        mapTapPOIDisambiguationCandidates = []
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 2) {
+                        Text("Which place is this?")
+                            .font(.headline)
+                        Text("Choose the correct place name.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -497,10 +484,26 @@ struct EditPlaceStopNameSheet: View {
         .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
     }
 
-    private func saveAndDismiss() {
+    @MainActor
+    private func saveAndDismissAsync() async {
+        isSavingName = true
+        defer { isSavingName = false }
+
         let trimmed = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalName = trimmed.isEmpty ? "Stop" : trimmed
-        debugPrint("[Category] EditPlaceStopNameSheet saveAndDismiss: name='\(finalName)' category=\(selectedCategory ?? "nil") coord=\(selectedCoordinate.map { "\($0.latitude),\($0.longitude)" } ?? "nil")")
+
+        var category = selectedCategory
+        if category == nil {
+            let searchCoord = selectedCoordinate ?? location
+            if let searchCoord {
+                category = await searchViewModel.fetchCategory(at: searchCoord, name: finalName)
+            }
+        }
+        if category == nil {
+            category = PlacePOICategoryPresentation.inferredCategoryRaw(fromPlaceTitle: finalName)
+        }
+
+        debugPrint("[Category] EditPlaceStopNameSheet save: name='\(finalName)' category=\(category ?? "nil") coord=\(selectedCoordinate.map { "\($0.latitude),\($0.longitude)" } ?? "nil")")
         if mapTapResolvedAsPOI {
             AppAnalytics.trackEvent(name: "Blog-Place-ChangeName-ClickPoi")
         } else if pickedFromAutocomplete {
@@ -514,7 +517,7 @@ struct EditPlaceStopNameSheet: View {
             }
             return initialSubtitle.trimmingCharacters(in: .whitespacesAndNewlines)
         }()
-        onSave(finalName, selectedCoordinate, selectedCategory, subTrimmed)
+        onSave(finalName, selectedCoordinate, category, subTrimmed)
         dismiss()
     }
 
@@ -905,6 +908,7 @@ struct EditPlaceStopNameSheet: View {
     EditPlaceStopNameSheet(
         placeTitle: .constant("Iceland Ring Road"),
         initialPlaceSubtitle: "Reykjavík, Iceland",
+        initialPlaceCategory: nil,
         location: CLLocationCoordinate2D(latitude: 64.15, longitude: -21.95),
         onSave: { _, _, _, _ in }
     )

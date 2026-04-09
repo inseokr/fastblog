@@ -517,10 +517,12 @@ private struct PlaceVisitedPhotoModalWrapper: View {
                         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !trimmed.isEmpty else { return }
                         livePlaceTitle = trimmed
+                        // Name-only fallback; full update (with category/coord/subtitle) handled by onSavePlaceName.
                         store.updatePlaceStopName(photoId: initialPhotoId, newName: trimmed)
                     }
                 ),
                 placeSubtitle: place.cityDisplay ?? place.country,
+                initialPlaceCategory: place.categoryRawValue,
                 photos: photos,
                 initialPhotoId: initialPhotoId,
                 stopDigitizedTime: nil,
@@ -545,6 +547,18 @@ private struct PlaceVisitedPhotoModalWrapper: View {
                 onRemovePhoto: { photoId in
                     store.removePhotoFromBlog(photoId: photoId)
                     onDismiss()
+                },
+                onSavePlaceName: { newName, category, coord, subtitleLine in
+                    let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return }
+                    livePlaceTitle = trimmed
+                    store.updatePlaceStopFromPlacesVisited(
+                        photoId: initialPhotoId,
+                        newName: trimmed,
+                        category: category,
+                        coordinate: coord,
+                        subtitle: subtitleLine
+                    )
                 }
             )
         } else {

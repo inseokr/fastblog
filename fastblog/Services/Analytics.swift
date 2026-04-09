@@ -186,7 +186,8 @@ final class AppAnalytics {
 
         URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
             guard let self else { return }
-            let success = error == nil && (response as? HTTPURLResponse)?.statusCode == 200
+            let http = response as? HTTPURLResponse
+            let success = error == nil && http?.statusCode == 200
 
             if success {
                 // Remove sent events from disk.
@@ -202,7 +203,8 @@ final class AppAnalytics {
                 // Exponential backoff: 2s, 4s, 8s
                 let delay = pow(2.0, Double(attempt))
                 #if DEBUG
-                print("📊 flush failed (attempt \(attempt)), retrying in \(Int(delay))s")
+                let detail = analyticsFlushFailureDetail(http: http, error: error)
+                print("📊 flush failed (attempt \(attempt)) — \(detail), retrying in \(Int(delay))s")
                 #endif
                 DispatchQueue.global().asyncAfter(deadline: .now() + delay) {
                     self.sendBatch(events, attempt: attempt + 1)
@@ -214,7 +216,8 @@ final class AppAnalytics {
                     self.saveQueueToDisk(self.pendingEvents)
                 }
                 #if DEBUG
-                print("📊 flush failed after \(self.maxRetries) attempts, queued for next session")
+                let detail = analyticsFlushFailureDetail(http: http, error: error)
+                print("📊 flush failed after \(self.maxRetries) attempts — \(detail), queued for next session")
                 #endif
             }
         }.resume()
@@ -248,3 +251,18 @@ final class AppAnalytics {
         UserDefaults.standard.set(data, forKey: countersKey)
     }
 }
+
+#if DEBUG
+private func analyticsFlushFailureDetail(http: HTTPURLResponse?, error: Error?) -> String {
+    let statusPart: String
+    if let http {
+        statusPart = "HTTP \(http.statusCode)"
+    } else {
+        statusPart = "no HTTP response"
+    }
+    if let error {
+        return "\(error.localizedDescription) (\(statusPart))"
+    }
+    return statusPart
+}
+#endif

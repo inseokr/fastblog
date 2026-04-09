@@ -110,6 +110,8 @@ struct PlacePhotoModalView: View {
 
     @Binding var placeTitle: String
     let placeSubtitle: String?
+    /// Persisted POI category for this stop (passed into the rename sheet so Save preserves it).
+    var initialPlaceCategory: String? = nil
     let photos: [RecapPhoto]
     let initialPhotoId: UUID
     /// EXIF digitized timestamp of the stop's earliest photo ("yyyy:MM:dd HH:mm:ss" local time).
@@ -282,6 +284,7 @@ struct PlacePhotoModalView: View {
     init(
         placeTitle: Binding<String>,
         placeSubtitle: String?,
+        initialPlaceCategory: String? = nil,
         photos: [RecapPhoto],
         initialPhotoId: UUID,
         stopDigitizedTime: String? = nil,
@@ -306,6 +309,7 @@ struct PlacePhotoModalView: View {
     ) {
         self._placeTitle = placeTitle
         self.placeSubtitle = placeSubtitle
+        self.initialPlaceCategory = initialPlaceCategory
         self.photos = photos
         self.initialPhotoId = initialPhotoId
         self.stopDigitizedTime = stopDigitizedTime
@@ -718,6 +722,7 @@ struct PlacePhotoModalView: View {
             EditPlaceStopNameSheet(
                 placeTitle: $placeTitle,
                 initialPlaceSubtitle: effectivePlaceSubtitle,
+                initialPlaceCategory: initialPlaceCategory,
                 location: photos.compactMap({ $0.location?.clCoordinate }).first,
                 photos: photos,
                 onSave: { newName, coord, category, subtitleLine in

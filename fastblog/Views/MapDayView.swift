@@ -519,6 +519,7 @@ struct FullScreenMapView: View {
                         }
                     ),
                     placeSubtitle: stop.placeSubtitle,
+                    initialPlaceCategory: stop.placeCategory,
                     photos: stop.includedPhotos,
                     initialPhotoId: initialId,
                     stopDigitizedTime: stop.visitedTimeDigitized,
@@ -541,6 +542,11 @@ struct FullScreenMapView: View {
                         updated.placeTitle = name
                         if let category {
                             updated.placeCategory = category
+                        } else {
+                            let existing = updated.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                            if existing.isEmpty {
+                                updated.placeCategory = PlacePOICategoryPresentation.inferredCategoryRaw(fromPlaceTitle: name)
+                            }
                         }
                         if let coord {
                             updated.representativeLocation = PhotoCoordinate(latitude: coord.latitude, longitude: coord.longitude)

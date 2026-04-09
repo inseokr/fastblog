@@ -19,6 +19,9 @@ struct PlaceStopCategoryPickerSheet: View {
         .museum, .movieTheater, .theater, .amusementPark, .zoo, .aquarium, .park, .beach,
         .nationalPark, .airport, .publicTransport, .gasStation, .hospital, .pharmacy,
         .fitnessCenter, .store, .foodMarket, .library, .school, .university, .marina, .stadium, .bank,
+        // Activity categories (iOS 18+); constructed from raw strings for backward compatibility.
+        MKPointOfInterestCategory(rawValue: "MKPOICategoryHiking"),
+        MKPointOfInterestCategory(rawValue: "MKPOICategorySkiing"),
     ]
 
     private var extraInitialRow: (raw: String, label: String)? {

@@ -36,30 +36,8 @@ struct ContentView: View {
     /// User dismissed the limited library picker without changing which photos are shared (e.g. tapped away).
     @State private var showLimitedPickerDismissedWithoutChangeAlert = false
     @EnvironmentObject private var photoAuth: PhotosAuthorizationManager
-    @State private var showCaptureIntroSheet = false
     /// Day index to open when navigating to a blog via the new-moments popup.
     @AppStorage("blogify.justFinishedOnboarding") private var justFinishedOnboarding = false
-
-    /// Per-identity flag for whether the Capture intro has been seen.
-    private var captureIntroSeenForCurrentIdentity: Bool {
-        let key: String
-        if let userId = AuthService.shared.currentUser?.id {
-            key = "blogify.captureIntroSeen.user.\(userId)"
-        } else {
-            key = "blogify.captureIntroSeen.guest"
-        }
-        return UserDefaults.standard.bool(forKey: key)
-    }
-
-    private func markCaptureIntroSeenForCurrentIdentity() {
-        let key: String
-        if let userId = AuthService.shared.currentUser?.id {
-            key = "blogify.captureIntroSeen.user.\(userId)"
-        } else {
-            key = "blogify.captureIntroSeen.guest"
-        }
-        UserDefaults.standard.set(true, forKey: key)
-    }
 
     init() {
         _tripsViewModel = StateObject(wrappedValue: TripsViewModel(createdRecapStore: CreatedRecapBlogStore.shared))
@@ -106,15 +84,6 @@ struct ContentView: View {
             .environment(\.dismissToLanding, {
                 dismissToLandingRequested = true
             })
-            .sheet(isPresented: $showCaptureIntroSheet, onDismiss: {
-                // Any dismissal (swipe down, tap outside, or Continue) counts as seen for this identity.
-                markCaptureIntroSeenForCurrentIdentity()
-            }) {
-                captureIntroModalContent
-                    .presentationDetents([.medium])
-                    .presentationDragIndicator(.visible)
-                    .preferredColorScheme(.dark)
-            }
             .onChange(of: tripsViewModel.scanState) { _, newState in
                 if newState == .idle && pendingShowTripsWhenIdle {
                     pendingShowTripsWhenIdle = false
@@ -150,14 +119,6 @@ struct ContentView: View {
                         pendingShowTripsWhenIdle = true
                     } else {
                         showTrips = true
-                    }
-                }
-            }
-            .onChange(of: showCameraFromHome) { _, isShowing in
-                // Show first-time Capture intro when camera opens from home, once per identity.
-                if isShowing, !captureIntroSeenForCurrentIdentity {
-                    withAnimation(.easeInOut(duration: 0.22)) {
-                        showCaptureIntroSheet = true
                     }
                 }
             }
@@ -364,56 +325,6 @@ struct ContentView: View {
             tripsViewModel.startDefaultScan()
             pendingShowTripsWhenIdle = true
         }
-    }
-
-    // MARK: - Capture Intro Pull-Up
-
-    private var captureIntroModalContent: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 20) {
-                // Match the capture button icon used on the home page
-                Image("SplashIcon")
-                    .resizable()
-                    .renderingMode(.template)
-                    .scaledToFit()
-                    .frame(width: 52, height: 52)
-                    .foregroundColor(.white)
-                    .padding(.top, 8)
-
-                VStack(spacing: 8) {
-                    Text("Capture Trip Moments")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .multilineTextAlignment(.center)
-
-                    Text("Photos will be organized into your blogs.")
-                        .font(.body)
-                        .multilineTextAlignment(.center)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .padding(.horizontal, 24)
-
-            Spacer()
-
-            VStack(spacing: 12) {
-                Button {
-                    showCaptureIntroSheet = false
-                } label: {
-                    Text("Continue")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .appChromeCornerRadius(12)
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
-        }
-        .padding(.top, 24)
-        .preferredColorScheme(.dark)
     }
 
     private func presentLimitedLibraryPickerFromLanding() {

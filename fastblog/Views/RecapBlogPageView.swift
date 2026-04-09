@@ -348,7 +348,7 @@ struct RecapBlogPageView: View {
             switch self {
             case .deletePlace: return "Place restored"
             case .deletePhoto: return "Photo restored"
-            case .mergePlaceStops: return "Merge Undo"
+            case .mergePlaceStops: return "Merge undone"
             }
         }
     }
@@ -1058,6 +1058,7 @@ struct RecapBlogPageView: View {
                 EditPlaceStopNameSheet(
                     placeTitle: bindingForPlaceTitle(stopId: stop.id),
                     initialPlaceSubtitle: stop.placeSubtitle,
+                    initialPlaceCategory: stop.placeCategory,
                     location: stop.representativeLocation?.clCoordinate ?? stop.photos.first?.location?.clCoordinate,
                     photos: stop.includedPhotos,
                     onSave: { newTitle, newCoordinate, newCategory, subtitleLine in
@@ -2620,6 +2621,7 @@ struct RecapBlogPageView: View {
                     PlacePhotoModalView(
                         placeTitle: bindingForPlaceTitle(stopId: item.stopId),
                         placeSubtitle: stop.placeSubtitle,
+                        initialPlaceCategory: stop.placeCategory,
                         photos: includedPhotos,
                         initialPhotoId: includedPhotos.contains(where: { $0.id == item.initialPhotoId }) ? item.initialPhotoId : includedPhotos[0].id,
                         stopDigitizedTime: stop.visitedTimeDigitized,
@@ -3915,7 +3917,14 @@ Your blog remains private unless you choose to share it.
                 stop.placeTitle = title
                 stop.placeTitleIsManual = true
                 stop.placeSubtitle = subTrimmed.isEmpty ? nil : subTrimmed
-                if let category { stop.placeCategory = category }
+                if let category {
+                    stop.placeCategory = category
+                } else {
+                    let existingCat = stop.placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    if existingCat.isEmpty {
+                        stop.placeCategory = PlacePOICategoryPresentation.inferredCategoryRaw(fromPlaceTitle: title)
+                    }
+                }
                 if let coordinate {
                     stop.representativeLocation = PhotoCoordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
                 }
@@ -6670,11 +6679,11 @@ private struct NewMomentsReviewSheet: View {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
                     Image(systemName: isHidden ? "eye" : "eye.slash")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundColor(isHidden ? .green : .secondary)
                     Spacer(minLength: 0)
                 }
-                .frame(width: 36, height: thumbSize)
+                .frame(width: 40, height: thumbSize)
                 .contentShape(Rectangle())
             }
             .padding(12)

@@ -130,6 +130,15 @@ enum PlaceCategoryID: String, Sendable {
             if lower.contains("zoo") || lower.contains("aquarium") || lower.contains("amusement") { return .amusementPark }
             if lower.contains("trail") || lower.contains("trails") || lower.contains("trek") { return .trail }
             if lower.contains("hike") || lower.contains("hiking") { return .trail }
+            // Word-safe ski hints (avoid matching "whisky" / "risk" via standalone "ski").
+            let skiNameRegex = try? NSRegularExpression(pattern: #"(^|[^a-z])(ski|skiing|skier|snowboard)([^a-z]|$)"#, options: .caseInsensitive)
+            if let skiNameRegex, skiNameRegex.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)) != nil {
+                return .mountain
+            }
+            if lower.contains("ski resort") || lower.contains("ski area") { return .mountain }
+            if lower.contains("mountain") && lower.contains("resort"), lower.contains("hole") || lower.contains("alp") || lower.contains("alpine") {
+                return .mountain
+            }
             if lower.contains("mountain") || lower.contains("peak") || lower.contains("summit") { return .mountain }
             if lower.contains("beach") || lower.contains("shore") || lower.contains("coast") { return .beach }
             if lower.contains("park") || lower.contains("garden") || lower.contains("nature") { return .park }

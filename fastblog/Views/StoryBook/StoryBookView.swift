@@ -66,7 +66,9 @@ struct StoryBookView: View {
 
             switch viewModel.state {
             case .loading:
-                PreparingStoryBookView()
+                PreparingStoryBookView(onCancel: {
+                    if let od = onDismiss { od() } else { dismiss() }
+                })
 
             case .ready(let pages):
                 ZStack {
@@ -259,8 +261,8 @@ struct StoryBookView: View {
 
     private var showsStoryModeBottomBar: Bool {
         switch viewModel.state {
-        case .loading, .ready: return true
-        case .failed: return false
+        case .ready: return true
+        case .loading, .failed: return false
         }
     }
 

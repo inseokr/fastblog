@@ -6,6 +6,8 @@
 import SwiftUI
 
 struct PreparingStoryBookView: View {
+    var onCancel: (() -> Void)? = nil
+
     @State private var ringTrim: CGFloat = 0
     @State private var ringRotation: Double = 0
     @State private var assembledStep: Int = 0
@@ -18,14 +20,15 @@ struct PreparingStoryBookView: View {
             navyBlue
                 .ignoresSafeArea()
 
-            VStack(spacing: 32) {
+            VStack(spacing: 0) {
                 Spacer()
                 preparingAnimation
+                    .padding(.bottom, 32)
                 messageSection
+                    .padding(.bottom, 40)
+                cancelButton
                 Spacer()
             }
-            // Reserve space for the shared story-mode bottom bar (Cancel / Share) in `StoryBookView`.
-            .padding(.bottom, 80)
         }
         .preferredColorScheme(.dark)
         .onAppear {
@@ -108,6 +111,27 @@ struct PreparingStoryBookView: View {
                 assembledStep = step
             }
         }
+    }
+
+    private var cancelButton: some View {
+        Button {
+            onCancel?()
+        } label: {
+            Text("Cancel")
+                .font(.body.weight(.medium))
+                .foregroundStyle(.white.opacity(0.85))
+                .padding(.horizontal, 32)
+                .padding(.vertical, 12)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.white.opacity(0.12))
+                )
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
     }
 }
 

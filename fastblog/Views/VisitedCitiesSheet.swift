@@ -489,7 +489,8 @@ struct VisitedCitiesSheet: View {
     private func interactionLabel(for trip: VisitedCityTrip) -> String {
         if isUnavailableForSelection(trip) { return "Already added to a blog" }
         if selectedTripIds.contains(trip.id) { return "Selected" }
-        return "Available to select"
+        let count = trip.photoCount
+        return "\(count) \(count == 1 ? "photo" : "photos")"
     }
 
     /// Fills every available place between the earliest and latest selected (chronological).
