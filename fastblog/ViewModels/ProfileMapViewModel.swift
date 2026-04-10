@@ -83,6 +83,13 @@ final class ProfileMapViewModel: ObservableObject {
         }
     }
 
+    /// Trips grouped into spatial clusters based on the current map span.
+    /// Single-trip clusters render as the existing `TripAnnotationView`;
+    /// multi-trip clusters render as the new `TripClusterAnnotationView`.
+    var clusteredMapItems: [TripCluster] {
+        clusterTrips(tripsWithCoordinates, span: mapRegion.span)
+    }
+
     /// Set country filter and recenter map + scroll card list to latest trip in that country.
     func selectCountry(_ countryID: String?) {
         selectedCountryID = countryID
@@ -152,5 +159,27 @@ final class ProfileMapViewModel: ObservableObject {
             selectedTripID = visibleTrips.first?.sourceTripId
             recenterToLatestTrip()
         }
+    }
+
+    /// Zoom in by halving the current map span (minimum 0.001°).
+    func zoomIn() {
+        let current = mapRegion
+        let newSpan = MKCoordinateSpan(
+            latitudeDelta: max(0.001, current.span.latitudeDelta / 2),
+            longitudeDelta: max(0.001, current.span.longitudeDelta / 2)
+        )
+        mapRegion = MKCoordinateRegion(center: current.center, span: newSpan)
+        mapRegionChangeCounter += 1
+    }
+
+    /// Zoom out by doubling the current map span (maximum 90° lat / 180° lon).
+    func zoomOut() {
+        let current = mapRegion
+        let newSpan = MKCoordinateSpan(
+            latitudeDelta: min(90, current.span.latitudeDelta * 2),
+            longitudeDelta: min(180, current.span.longitudeDelta * 2)
+        )
+        mapRegion = MKCoordinateRegion(center: current.center, span: newSpan)
+        mapRegionChangeCounter += 1
     }
 }
