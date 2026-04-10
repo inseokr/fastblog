@@ -23,6 +23,8 @@ struct VisitedCitiesSheet: View {
     @State private var yearTripsCache: [Int: [VisitedCityTrip]] = [:]
     @State private var selectedTripIds: Set<UUID> = []
     @State private var isCreatingBlog: Bool = false
+    /// When true, overlay shows copy about large trips (Continue after >7 day warning).
+    @State private var createBlogOverlayLongTripCopy: Bool = false
     @State private var unavailableAlertMessage: String = ""
     @State private var showUnavailableAlert: Bool = false
     @State private var selectionAlertTitle: String = "Unavailable for Selection"
@@ -109,7 +111,8 @@ struct VisitedCitiesSheet: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationStack {
+        ZStack {
+            NavigationStack {
             VStack(spacing: 0) {
                 // Custom title bar — avoids system nav bar material that causes color mismatch
                 VStack(spacing: 0) {
@@ -194,8 +197,13 @@ struct VisitedCitiesSheet: View {
                         }
                 }
             }
+            }
+            .background(VisitedCitiesSheetChrome.color.ignoresSafeArea())
+
+            if isCreatingBlog {
+                memoriesCreatingBlogOverlay
+            }
         }
-        .background(VisitedCitiesSheetChrome.color.ignoresSafeArea())
         .alert(selectionAlertTitle, isPresented: $showUnavailableAlert) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -206,7 +214,7 @@ struct VisitedCitiesSheet: View {
             Button("Continue") {
                 let trips = pendingLongStayTrips
                 pendingLongStayTrips = []
-                startCreateBlogTask(with: trips)
+                startCreateBlogTask(with: trips, longTripMessaging: true)
             }
         } message: {
             Text("Trips over 7 days take longer to process. You can still continue.")
@@ -350,6 +358,48 @@ struct VisitedCitiesSheet: View {
         .overlay(alignment: .top) {
             Divider()
         }
+    }
+
+    /// Full-screen glass overlay while a blog is being built from the selection (especially long >7 day trips).
+    private var memoriesCreatingBlogOverlay: some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+            Color.black.opacity(0.18)
+                .ignoresSafeArea()
+            VStack(spacing: 20) {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(.accentColor)
+                Text("Creating your blog…")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+                Text(
+                    createBlogOverlayLongTripCopy
+                        ? "Trips over 7 days take longer to prepare. This can take a moment."
+                        : "Almost there…"
+                )
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 28)
+            }
+            .padding(.vertical, 36)
+            .padding(.horizontal, 24)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(.regularMaterial)
+                    .shadow(color: .black.opacity(0.18), radius: 20, y: 8)
+            )
+            .padding(.horizontal, 32)
+        }
+        .ignoresSafeArea()
+        .contentShape(Rectangle())
+        .transition(.opacity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Creating your blog")
+        .accessibilityAddTraits(.updatesFrequently)
     }
 
     // MARK: - Search bar
@@ -586,15 +636,21 @@ struct VisitedCitiesSheet: View {
             showUnavailableAlert = true
             return
         }
-        startCreateBlogTask(with: trips)
+        startCreateBlogTask(with: trips, longTripMessaging: false)
     }
 
-    private func startCreateBlogTask(with trips: [VisitedCityTrip]) {
-        isCreatingBlog = true
+    private func startCreateBlogTask(with trips: [VisitedCityTrip], longTripMessaging: Bool = false) {
+        withAnimation(.easeInOut(duration: 0.28)) {
+            createBlogOverlayLongTripCopy = longTripMessaging
+            isCreatingBlog = true
+        }
         Task {
             let success = await viewModel.createTripFromVisitedCitiesSelection(trips)
             await MainActor.run {
-                isCreatingBlog = false
+                withAnimation(.easeInOut(duration: 0.28)) {
+                    isCreatingBlog = false
+                    createBlogOverlayLongTripCopy = false
+                }
                 if success {
                     dismiss()
                 } else {

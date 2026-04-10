@@ -337,18 +337,14 @@ struct RemovedPlacesSheet: View {
         // Preserve the current cover photo so restoration doesn't change it
         let currentCover = draft.selectedCoverPhotoIdentifier
 
-        // Remove from the removed list
-        draft.removedPlaceStops.removeAll { $0.stop.id == entry.stop.id }
-
-        // Find the original day and insert at its original order position
+        // Restore into the row that still has this day id, or recreate the day if it was dropped
+        // (e.g. last place on that day was hidden). Do NOT match only on `dayIndex`: after other
+        // days are removed or renumbered, another row can share the same index and we'd merge stops
+        // into the wrong calendar day and clear this entry without bringing the real day back.
         if let dayIdx = draft.days.firstIndex(where: { $0.id == entry.dayId }) {
             insertByOrderIndex(entry.stop, into: &draft.days[dayIdx].placeStops)
             selectedDayIndex = dayIdx
-        } else if let dayIdx = draft.days.firstIndex(where: { $0.dayIndex == entry.dayIndex }) {
-            insertByOrderIndex(entry.stop, into: &draft.days[dayIdx].placeStops)
-            selectedDayIndex = dayIdx
         } else {
-            // Day was completely removed, we must recreate it.
             let fallbackDate = entry.stop.photos.first?.timestamp ?? Date()
             let resurrectedDay = RecapBlogDay(
                 id: entry.dayId,
@@ -356,8 +352,7 @@ struct RemovedPlacesSheet: View {
                 date: entry.dayDate ?? fallbackDate,
                 placeStops: [entry.stop]
             )
-            
-            // Insert the recreated day at the correct sequential dayIndex
+
             if let insertIdx = draft.days.firstIndex(where: { $0.dayIndex > entry.dayIndex }) {
                 draft.days.insert(resurrectedDay, at: insertIdx)
                 selectedDayIndex = insertIdx
@@ -366,6 +361,8 @@ struct RemovedPlacesSheet: View {
                 selectedDayIndex = draft.days.count - 1
             }
         }
+
+        draft.removedPlaceStops.removeAll { $0.stop.id == entry.stop.id }
 
         // Prefer the cover from before this stop was hidden (matches undo); older entries omit this field.
         if let priorCover = entry.coverPhotoIdentifierBeforeRemoval {

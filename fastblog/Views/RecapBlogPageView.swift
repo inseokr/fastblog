@@ -170,10 +170,12 @@ struct RecapBlogPageView: View {
     @State private var sessionDismissedMissingPhotosTooltip = false
     @State private var missingPhotosTooltipDebounceTask: Task<Void, Never>?
 
-    // Undo State
+    // Undo State (toolbar button in edit mode; toast confirms after Undo is tapped)
     @State private var lastUndoAction: UndoAction?
-    @State private var showUndoOverlay = false
-    @State private var isUndoMinimized = false
+    @State private var showUndoToast = false
+    @State private var undoToastText = ""
+    /// Auto-clear place/photo undo after 3s (merge undo stays until Save, explicit Undo, or another action).
+    @State private var undoOverlayAutoDismissTask: Task<Void, Never>?
     @State private var isKeyboardVisible = false
     @State private var cancellables = Set<AnyCancellable>()
     @State private var visitedDayIndices: Set<Int> = [0]
@@ -314,11 +316,12 @@ struct RecapBlogPageView: View {
         case deletePhoto(dayId: UUID, stopId: UUID, photo: RecapPhoto, index: Int)
         case mergePlaceStops(dayId: UUID, originalFirst: PlaceStop, originalSecond: PlaceStop, firstIndex: Int)
 
-        var text: String {
+        /// Confirmation toast after the user taps Undo in the nav bar.
+        var undoneToastText: String {
             switch self {
-            case .deletePlace: return "Place hidden"
-            case .deletePhoto: return "Photo removed"
-            case .mergePlaceStops: return "Places merged"
+            case .deletePlace: return "Place restored"
+            case .deletePhoto: return "Photo restored"
+            case .mergePlaceStops: return "Merge undone"
             }
         }
     }
@@ -976,12 +979,12 @@ struct RecapBlogPageView: View {
                 PlaceStopActionSheet(
                     placeTitle: item.stop.placeTitle,
                     placeSubtitle: item.stop.placeSubtitle,
-                    onEditName: {
+                    onEditPlaceName: {
                         AppAnalytics.track(.blogPlaceChangeName(blogId: blogId.uuidString, placeId: item.stop.id.uuidString))
                         showEditNameForStop = item.stop
                     },
                     onManagePhotos: { openManagePhotos(dayId: item.dayId, stopId: item.stop.id) },
-                    onEditMode: {
+                    onEditCaption: {
                         // Treat this as "Edit Caption" — open the full-screen place caption editor.
                         placeCaptionEditItem = PlaceCaptionEditItem(dayId: item.dayId, stopId: item.stop.id)
                     },
@@ -1021,8 +1024,8 @@ struct RecapBlogPageView: View {
                     placeTitle: bindingForPlaceTitle(stopId: stop.id),
                     location: stop.representativeLocation?.clCoordinate ?? stop.photos.first?.location?.clCoordinate,
                     photos: stop.includedPhotos,
-                    onSave: { newTitle, newCoordinate, newCategory in
-                        updatePlaceTitle(stopId: stop.id, to: newTitle, category: newCategory, coordinate: newCoordinate)
+                    onSave: { newTitle, newCoordinate, newCategory, subtitleLine in
+                        updatePlaceTitle(stopId: stop.id, to: newTitle, category: newCategory, coordinate: newCoordinate, placeSubtitleLine: subtitleLine)
                     }
                 )
             }
@@ -1285,22 +1288,14 @@ struct RecapBlogPageView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            // Undo Overlay (Banner or Button)
-            if showUndoOverlay {
-                UndoOverlayView(
-                    text: lastUndoAction?.text ?? "Item hidden",
-                    isMinimized: $isUndoMinimized,
-                    onUndo: { performUndo() },
-                    onDismiss: {
-                        withAnimation {
-                            showUndoOverlay = false
-                            lastUndoAction = nil
-                        }
-                    }
-                )
-                .padding(.bottom, Self.dayFilterApproxHeight + 10)
-                .zIndex(20)
-            } else if showSplitUndoBanner {
+            if showUndoToast {
+                UndoToastView(text: undoToastText)
+                    .padding(.bottom, Self.dayFilterApproxHeight + 10)
+                    .zIndex(20)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            if showSplitUndoBanner {
                 // Special banner for "Undo Split" in edit mode
                 VStack {
                     Spacer()
@@ -1362,6 +1357,7 @@ struct RecapBlogPageView: View {
             placesVisitedDeepLinkTask?.cancel()
             placesVisitedDeepLinkTask = nil
             pendingDeepLinkStopScrollId = nil
+            cancelUndoOverlayAutoDismiss()
         }
         .onChange(of: isEditMode) { _, editing in
             if editing {
@@ -3296,8 +3292,8 @@ Your blog remains private unless you choose to share it.
         guard createdRecapStore.saveBlogDetail(draft) else { return false }
         AppAnalytics.track(.blogSave(blogId: blogId.uuidString))
 
+        cancelUndoOverlayAutoDismiss()
         withAnimation {
-            showUndoOverlay = false
             lastUndoAction = nil
         }
 
@@ -3331,12 +3327,12 @@ Your blog remains private unless you choose to share it.
         // Prepare Undo
         let day = draft.days[dayIndex]
         let stop = day.placeStops[stopIndex]
+        cancelUndoOverlayAutoDismiss()
         withAnimation {
             lastUndoAction = .deletePlace(dayId: dayId, stop: stop, index: stopIndex)
-            showUndoOverlay = true
-            isUndoMinimized = false
         }
-        
+        scheduleUndoOverlayAutoDismissForPlaceOrPhoto()
+
         // Soft-delete: preserve stop in removedPlaceStops so it can be restored later
         let removedEntry = RemovedPlaceEntry(dayId: dayId, dayIndex: day.dayIndex, dayDate: day.date, stop: stop)
         draft.removedPlaceStops.append(removedEntry)
@@ -3375,12 +3371,12 @@ Your blog remains private unless you choose to share it.
         let stop = day.placeStops[stopIdx]
         let photo = stop.photos[photoIdx]
         
+        cancelUndoOverlayAutoDismiss()
         withAnimation {
             lastUndoAction = .deletePhoto(dayId: dayId, stopId: stopId, photo: photo, index: photoIdx)
-            showUndoOverlay = true
-            isUndoMinimized = false
         }
-        
+        scheduleUndoOverlayAutoDismissForPlaceOrPhoto()
+
         // Perform Deletion
         var updatedDay = day
         var updatedStop = stop
@@ -3423,10 +3419,9 @@ Your blog remains private unless you choose to share it.
         let first = day.placeStops[firstIdx]
         let second = day.placeStops[secondIdx]
 
+        cancelUndoOverlayAutoDismiss()
         withAnimation {
             lastUndoAction = .mergePlaceStops(dayId: dayId, originalFirst: first, originalSecond: second, firstIndex: firstIdx)
-            showUndoOverlay = true
-            isUndoMinimized = false
         }
 
         var merged = first
@@ -3562,21 +3557,84 @@ Your blog remains private unless you choose to share it.
         showManagePhotosForStop = nil  // pop ManagePhotosView so user sees both new stops
     }
 
+    private func cancelUndoOverlayAutoDismiss() {
+        undoOverlayAutoDismissTask?.cancel()
+        undoOverlayAutoDismissTask = nil
+    }
+
+    /// Hides place/photo undo banner after 3s if the user does not tap Undo.
+    private func scheduleUndoOverlayAutoDismissForPlaceOrPhoto() {
+        cancelUndoOverlayAutoDismiss()
+        undoOverlayAutoDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            undoOverlayAutoDismissTask = nil
+            withAnimation {
+                lastUndoAction = nil
+            }
+        }
+    }
+
+    /// Inserts a stop by `orderIndex` (same rule as `RemovedPlacesSheet.restore`).
+    private func insertPlaceStopByOrderIndex(_ stop: PlaceStop, into placeStops: inout [PlaceStop]) {
+        if let insertIndex = placeStops.firstIndex(where: { $0.orderIndex > stop.orderIndex }) {
+            placeStops.insert(stop, at: insertIndex)
+        } else {
+            placeStops.append(stop)
+        }
+    }
+
     private func performUndo() {
         guard let action = lastUndoAction else { return }
+        let toastMessage = action.undoneToastText
+
+        cancelUndoOverlayAutoDismiss()
+        var shouldClearUndo = true
 
         withAnimation {
             switch action {
             case .deletePlace(let dayId, let stop, let index):
+                // Must match `RemovedPlacesSheet.restore`: hiding the last place removes the whole day row,
+                // so `dayId` may no longer exist — recreate the day from `removedPlaceStops` in that case.
+                guard let entry = draft.removedPlaceStops.first(where: { $0.stop.id == stop.id }) else {
+                    shouldClearUndo = false
+                    break
+                }
+                var restored = false
                 if let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }) {
                     var day = draft.days[dayIdx]
                     if index <= day.placeStops.count {
                         day.placeStops.insert(stop, at: index)
                         draft.days[dayIdx] = day
+                        selectedDayIndex = dayIdx
+                        restored = true
                     }
+                } else {
+                    let fallbackDate = entry.stop.photos.first?.timestamp ?? Date()
+                    let resurrectedDay = RecapBlogDay(
+                        id: entry.dayId,
+                        dayIndex: entry.dayIndex,
+                        date: entry.dayDate ?? fallbackDate,
+                        placeStops: [stop]
+                    )
+                    if let insertIdx = draft.days.firstIndex(where: { $0.dayIndex > entry.dayIndex }) {
+                        draft.days.insert(resurrectedDay, at: insertIdx)
+                        selectedDayIndex = insertIdx
+                    } else {
+                        draft.days.append(resurrectedDay)
+                        selectedDayIndex = draft.days.count - 1
+                    }
+                    restored = true
                 }
-                // Remove from the soft-deleted list since user chose to undo (not just restore later)
-                draft.removedPlaceStops.removeAll { $0.stop.id == stop.id }
+
+                if restored {
+                    if let priorCover = entry.coverPhotoIdentifierBeforeRemoval {
+                        draft.selectedCoverPhotoIdentifier = priorCover
+                    }
+                    draft.removedPlaceStops.removeAll { $0.stop.id == stop.id }
+                } else {
+                    shouldClearUndo = false
+                }
 
             case .deletePhoto(let dayId, let stopId, let photo, _):
                 if let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
@@ -3611,28 +3669,42 @@ Your blog remains private unless you choose to share it.
                 }
             }
 
-            showUndoOverlay = false
-            lastUndoAction = nil
+            if shouldClearUndo {
+                lastUndoAction = nil
+                persistRecapBlogDetail()
+            }
+        }
 
-            persistRecapBlogDetail()
+        if shouldClearUndo {
+            undoToastText = toastMessage
+            withAnimation {
+                showUndoToast = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                withAnimation {
+                    showUndoToast = false
+                }
+            }
         }
     }
 
-    private func updatePlaceTitle(stopId: UUID, to title: String, category: String? = nil, coordinate: CLLocationCoordinate2D? = nil) {
-        debugPrint("[Category] updatePlaceTitle called: stopId=\(stopId) title='\(title)' category=\(category ?? "nil") coord=\(coordinate.map { "\($0.latitude),\($0.longitude)" } ?? "nil")")
+    private func updatePlaceTitle(stopId: UUID, to title: String, category: String? = nil, coordinate: CLLocationCoordinate2D? = nil, placeSubtitleLine: String = "") {
+        let subTrimmed = placeSubtitleLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        debugPrint("[Category] updatePlaceTitle called: stopId=\(stopId) title='\(title)' category=\(category ?? "nil") coord=\(coordinate.map { "\($0.latitude),\($0.longitude)" } ?? "nil") subtitle='\(subTrimmed)'")
         for i in draft.days.indices {
             if let j = draft.days[i].placeStops.firstIndex(where: { $0.id == stopId }) {
                 var day = draft.days[i]
                 var stop = day.placeStops[j]
                 stop.placeTitle = title
                 stop.placeTitleIsManual = true
+                stop.placeSubtitle = subTrimmed.isEmpty ? nil : subTrimmed
                 if let category { stop.placeCategory = category }
                 if let coordinate {
                     stop.representativeLocation = PhotoCoordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
                 }
                 day.placeStops[j] = stop
                 draft.days[i] = day
-                debugPrint("[Category] updatePlaceTitle stored: placeTitle='\(stop.placeTitle)' placeCategory=\(stop.placeCategory ?? "nil")")
+                debugPrint("[Category] updatePlaceTitle stored: placeTitle='\(stop.placeTitle)' placeSubtitle=\(stop.placeSubtitle ?? "nil") placeCategory=\(stop.placeCategory ?? "nil")")
 
                 persistRecapBlogDetail()
                 if let placeKey = stop.visitedTimeDigitized {
@@ -4569,8 +4641,19 @@ Your blog remains private unless you choose to share it.
                 .opacity(!isEditMode && showNavBarTitle ? 1 : 0)
                 .animation(.easeInOut(duration: 0.2), value: showNavBarTitle)
         }
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItemGroup(placement: .topBarTrailing) {
             if isEditMode {
+                Button {
+                    performUndo()
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(lastUndoAction != nil ? recapChromeForeground : recapChromeForeground.opacity(0.3))
+                }
+                .buttonStyle(.plain)
+                .disabled(lastUndoAction == nil)
+                .accessibilityLabel("Undo")
+
                 Button {
                     if saveDraft() {
                         isEditMode = false
@@ -5218,9 +5301,9 @@ Your blog remains private unless you choose to share it.
 
     private func clearUndoIfRestoredIncludedPhoto(photoId: UUID) {
         if case .deletePhoto(_, _, let undoPhoto, _) = lastUndoAction, undoPhoto.id == photoId {
+            cancelUndoOverlayAutoDismiss()
             withAnimation {
                 lastUndoAction = nil
-                showUndoOverlay = false
             }
         }
     }

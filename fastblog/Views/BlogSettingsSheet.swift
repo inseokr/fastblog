@@ -651,7 +651,7 @@ struct BlogTitleChangeSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
+                    Button {
                         title = tempTitle
                         if let key = blogKey {
                             let newTitle = tempTitle
@@ -659,7 +659,11 @@ struct BlogTitleChangeSheet: View {
                         }
                         onDone()
                         dismiss()
+                    } label: {
+                        Text("Save")
+                            .foregroundStyle(.blue)
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .onAppear {
