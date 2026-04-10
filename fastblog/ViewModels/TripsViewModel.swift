@@ -493,6 +493,8 @@ final class TripsViewModel: ObservableObject {
     private var findMoreScanTask: Task<Void, Never>?
     /// Tracks the running visited-cities build task so it can be cancelled.
     private var visitedCitiesBuildTask: Task<Void, Never>?
+    /// Incremented each time a new build starts; used to discard stale progress callbacks.
+    private var visitedCitiesBuildGeneration: Int = 0
     /// Tracks the running visited-city trip-scan task so it can be cancelled.
     private var visitedCityScanTask: Task<Void, Never>?
     /// Tracks the running load-older scan task so it can be cancelled.
@@ -1685,6 +1687,8 @@ final class TripsViewModel: ObservableObject {
         visitedCitiesBuildTask?.cancel()
         visitedCitiesBuildTask = nil
         visitedCitiesYear = year
+        visitedCitiesBuildGeneration += 1
+        let generation = visitedCitiesBuildGeneration
 
         if let cached = VisitedCitiesService.shared.loadCached(userId: currentUserId, year: year) {
             visitedCityTrips = cached
@@ -1697,7 +1701,7 @@ final class TripsViewModel: ObservableObject {
         visitedCitiesBuildTask = Task {
             let trips = await VisitedCitiesService.shared.buildVisitedCities(year: year) { [weak self] p in
                 Task { @MainActor [weak self] in
-                    guard let self else { return }
+                    guard let self, self.visitedCitiesBuildGeneration == generation else { return }
                     if case .building = self.visitedCitiesBuildState {
                         self.visitedCitiesBuildState = .building(p)
                     }
