@@ -145,6 +145,8 @@ struct RecapBlogPageView: View {
     @State private var isGeneratingTripNarrative = false
     /// Whether the trip narrative card is expanded (shows full text vs. 4-line preview).
     @State private var tripNarrativeExpanded = false
+    /// Day IDs whose caption is expanded beyond the 4-line preview.
+    @State private var expandedDayCaptionIds: Set<UUID> = []
     /// Snapshot taken when ManagePhotosView opens, used to diff on dismiss for targeted cloud sync.
     @State private var managePhotosEditInfo: ManagePhotosEditInfo?
     /// Presents the system photo picker while managing a place's photo group.
@@ -1746,7 +1748,7 @@ struct RecapBlogPageView: View {
                     showTitleChange = true
                 } label: {
                     let titleBoxRadius: CGFloat = 14
-                    let titleEditIconOutset: CGFloat = 16
+                    let titleEditIconOutset: CGFloat = 22
                     Text(draft.title)
                         .font(.blog(selectedBlogFont, size: 28, bold: true))
                         .foregroundColor(recapChromeForeground)
@@ -1852,7 +1854,7 @@ struct RecapBlogPageView: View {
                                 Button { showTitleChange = true } label: {
                                     let heroTitleBoxRadius: CGFloat = 16
                                     let heroTitleMaxWidth = max(120, geo.size.width - 120)
-                                    let heroTitleEditIconOutset: CGFloat = 16
+                                    let heroTitleEditIconOutset: CGFloat = 22
                                     Text(draft.title)
                                         .font(.blog(selectedBlogFont, size: 30, bold: true))
                                         .foregroundColor(.white)
@@ -2504,6 +2506,7 @@ struct RecapBlogPageView: View {
 
             if isEditMode, LocalLLMStoryCaptionGenerator.isCapable {
                 let dayCaptionEmpty = (day.dayCaption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                let hasAIDayNarrative = (day.dayNarrative ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
                 if generatingNarrativeDayId == day.id {
                     HStack {
                         Spacer()
@@ -2523,6 +2526,48 @@ struct RecapBlogPageView: View {
                                 Image(systemName: "wand.and.sparkles")
                                     .font(.system(size: 13, weight: .medium))
                                 Text("Generate story")
+                                    .font(.footnote.weight(.medium))
+                            }
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06))
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.top, -8)
+                } else if hasAIDayNarrative {
+                    HStack(spacing: 12) {
+                        Spacer()
+                        Button {
+                            if let dayIdx = draft.days.firstIndex(where: { $0.id == day.id }) {
+                                draft.days[dayIdx].dayNarrative = nil
+                                draft.days[dayIdx].dayCaption = nil
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.uturn.backward")
+                                    .font(.caption)
+                                Text("Revert")
+                                    .font(.caption)
+                            }
+                            .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            triggerDayNarrative(day: day)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "wand.and.sparkles")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text("Regenerate")
                                     .font(.footnote.weight(.medium))
                             }
                             .foregroundStyle(
@@ -4287,28 +4332,45 @@ Your blog remains private unless you choose to share it.
     private func dayCaptionRow(day: RecapBlogDay) -> some View {
         let captionBinding = bindingForDayCaption(dayId: day.id)
         if isEditMode {
-            HStack(alignment: .top, spacing: 8) {
-                // Tappable display — opens DayCaptionEditSheet
-                Button {
-                    dayCaptionEditItem = DayCaptionEditItem(
-                        dayId: day.id,
-                        dayNumber: day.dayIndex,
-                        dateLine: day.dayStoryDateLine
-                    )
-                } label: {
-                    let trimmed = captionBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                    Text(trimmed.isEmpty ? "Describe your day in a sentence…" : trimmed)
-                        .font(.subheadline)
-                        .foregroundColor(trimmed.isEmpty ? .secondary.opacity(0.9) : .white)
-                        .lineLimit(3)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .background(Color(white: 0.1))
-                        .appChromeCornerRadius(10)
+            let isExpanded = expandedDayCaptionIds.contains(day.id)
+            let trimmed = captionBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(trimmed.isEmpty ? "Describe your day in a sentence…" : trimmed)
+                    .font(.subheadline)
+                    .foregroundColor(trimmed.isEmpty ? .secondary.opacity(0.9) : .white)
+                    .lineLimit(isExpanded ? nil : 3)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        dayCaptionEditItem = DayCaptionEditItem(
+                            dayId: day.id,
+                            dayNumber: day.dayIndex,
+                            dateLine: day.dayStoryDateLine
+                        )
+                    }
+                if !trimmed.isEmpty {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if isExpanded {
+                                expandedDayCaptionIds.remove(day.id)
+                            } else {
+                                expandedDayCaptionIds.insert(day.id)
+                            }
+                        }
+                    } label: {
+                        Text(isExpanded ? "Less" : "More")
+                            .font(.footnote.weight(.medium))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 6)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
+            .padding(12)
+            .background(Color(white: 0.1))
+            .appChromeCornerRadius(10)
             .padding(.bottom, 4)
         } else {
             let displayCaption: String? = {
@@ -4318,12 +4380,30 @@ Your blog remains private unless you choose to share it.
                 return nil
             }()
             if let text = displayCaption {
-                Text(text)
-                    .font(.blog(selectedBlogFont, size: 17))
-                    .lineSpacing(8)
-                    .foregroundColor(.white.opacity(0.9))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 4)
+                let isExpanded = expandedDayCaptionIds.contains(day.id)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(text)
+                        .font(.blog(selectedBlogFont, size: 17))
+                        .lineSpacing(8)
+                        .foregroundColor(.white.opacity(0.9))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .lineLimit(isExpanded ? nil : 4)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if isExpanded {
+                                expandedDayCaptionIds.remove(day.id)
+                            } else {
+                                expandedDayCaptionIds.insert(day.id)
+                            }
+                        }
+                    } label: {
+                        Text(isExpanded ? "Less" : "More")
+                            .font(.footnote.weight(.medium))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.bottom, 4)
             }
         }
     }
@@ -4549,10 +4629,10 @@ Your blog remains private unless you choose to share it.
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(recapNarrativeCardBackground)
-                .appChromeCornerRadius(12)
+                .padding(.horizontal, isEditMode ? 16 : 0)
+                .padding(.vertical, isEditMode ? 12 : 0)
+                .background(isEditMode ? recapNarrativeCardBackground : Color.clear)
+                .appChromeCornerRadius(isEditMode ? 12 : 0)
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
             }
@@ -4604,6 +4684,47 @@ Your blog remains private unless you choose to share it.
                         .padding(.trailing, 16)
                         .padding(.top, hasNarrative ? 2 : 8)
                     }
+                } else {
+                    HStack(spacing: 12) {
+                        Spacer()
+                        Button {
+                            draft.tripNarrative = nil
+                            tripNarrativeExpanded = false
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.uturn.backward")
+                                    .font(.caption)
+                                Text("Revert")
+                                    .font(.caption)
+                            }
+                            .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            triggerTripNarrative()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "wand.and.sparkles")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text("Regenerate")
+                                    .font(.footnote.weight(.medium))
+                            }
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06))
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 16)
+                    }
+                    .padding(.top, 2)
                 }
             }
         }
@@ -4844,70 +4965,28 @@ Your blog remains private unless you choose to share it.
         Color.clear
     }
 
+    private var hasUnsavedChanges: Bool {
+        guard let snapshot = draftSnapshot else { return false }
+        return draft != snapshot
+    }
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             Button {
-                print("🔙 Back button tapped — isEditMode: \(isEditMode)")
                 if isEditMode {
-                    guard let recentEntry = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }) else {
-                        performDismiss()
-                        return
-                    }
-                    // Presented as root overlay (Places visited, map, etc.): always dismiss this layer — never
-                    // fall through to read-only, which would trap users until a second back tap.
-                    if onRequestDismiss != nil {
-                        if let snapshot = draftSnapshot, draft != snapshot {
-                            showSaveTipAlert = false
-                            DispatchQueue.main.async {
-                                guard createdRecapStore.recents.contains(where: { $0.sourceTripId == blogId }) else { return }
-                                showOverlayDraftExitConfirmation = true
-                            }
-                        } else {
-                            performDismiss()
-                        }
-                        return
-                    }
-                    // No edits since entering edit mode (or since last aligned snapshot): exit without prompts.
-                    if let snapshot = draftSnapshot, draft == snapshot {
-                        let firstLifecycleExitPending = !recentEntry.hasCompletedInitialRecapExit
-                        if firstLifecycleExitPending,
-                           !recentEntry.hasCommittedRecapSave,
-                           recentEntry.lastEditedAt == nil {
-                            print("🔙 No changes, first recap session — dismissing")
-                            performDismiss()
-                        } else {
-                            print("🔙 No changes, returning to read-only")
-                            isEditMode = false
-                        }
-                        return
-                    }
-                    // First recap session only: offer Save as Draft / Exit. After user has left the editor once,
-                    // draft-only blogs use the normal unsaved-changes flow (see `hasCompletedInitialRecapExit`).
-                    let needsNewBlogExitSheet = recentEntry.lastEditedAt == nil
-                        && !recentEntry.hasCommittedRecapSave
-                        && !recentEntry.hasCompletedInitialRecapExit
-                    if needsNewBlogExitSheet {
-                        print("🔙 Setting showNewBlogExitConfirmation = true")
-                        showSaveTipAlert = false
-                        DispatchQueue.main.async {
-                            guard let still = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }) else { return }
-                            guard still.lastEditedAt == nil,
-                                  !still.hasCommittedRecapSave,
-                                  !still.hasCompletedInitialRecapExit else { return }
-                            showNewBlogExitConfirmation = true
-                        }
-                    } else {
-                        print("🔙 Changes detected, showing unsaved alert")
+                    // X button: exit edit mode. Show discard alert if there are unsaved changes.
+                    if hasUnsavedChanges {
                         showUnsavedChangesAlert = true
+                    } else {
+                        isEditMode = false
                     }
                 } else {
                     print("🔙 View mode, dismissing")
                     performDismiss()
                 }
             } label: {
-                Image(systemName: "chevron.left")
+                Image(systemName: isEditMode ? "xmark" : "chevron.left")
                     .font(.body.weight(.semibold))
                     .foregroundColor(recapChromeForeground)
             }
@@ -4948,9 +5027,10 @@ Your blog remains private unless you choose to share it.
                         .fixedSize()
                         .padding(.horizontal, 20)
                         .padding(.vertical, 7)
-                        .background(Color.blue, in: Capsule())
+                        .background(hasUnsavedChanges ? Color.blue : Color.gray.opacity(0.5), in: Capsule())
                 }
                 .buttonStyle(.plain)
+                .disabled(!hasUnsavedChanges)
             } else if !isExportingPDF && !showStoryMode {
                 Button {
                     showBlogSettings = true
