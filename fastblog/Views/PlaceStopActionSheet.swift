@@ -56,8 +56,8 @@ struct PlaceStopActionSheet: View {
             RoundedRectangle(appChromeBaseRadius: 3)
                 .fill(Color.secondary.opacity(0.4))
                 .frame(width: 40, height: 5)
-                .padding(.top, 12)
-                .padding(.bottom, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 10)
 
             // Header - Typography Hierarchy
             VStack(spacing: 4) {
@@ -76,7 +76,7 @@ struct PlaceStopActionSheet: View {
                         .foregroundColor(.secondary)
                 }
             }
-            .padding(.bottom, 24)
+            .padding(.bottom, 14)
 
             // Section 1: Editing Actions
             VStack(spacing: 0) {
@@ -131,6 +131,8 @@ struct PlaceStopActionSheet: View {
                 .padding(.bottom, 24)
             }
 
+            Spacer(minLength: 8)
+
             // Section 3: Destructive Action
             VStack(spacing: 0) {
                 Button(action: {
@@ -148,10 +150,10 @@ struct PlaceStopActionSheet: View {
             .background(Color(white: 0.15))
             .appChromeCornerRadius(12)
             .padding(.horizontal, 16)
-
-            Spacer()
+            .padding(.bottom, 34)
         }
         .frame(maxWidth: .infinity)
+        .ignoresSafeArea(edges: .bottom)
         .background(Color.clear)
         .presentationBackground {
             // Subtle blur for depth

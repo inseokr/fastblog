@@ -117,6 +117,8 @@ struct RecapBlogPageView: View {
 
     @State private var draft: RecapBlogDetail
     @State private var selectedDayIndex: Int = 0  // 0 = Day 1, 1 = Day 2, ...
+    /// Hides the scroll view while Day 2+ jumps to the map so the cover hero never flashes on screen.
+    @State private var recapDayScrollCoverMaskActive = false
     /// iOS 17+ horizontal paging ScrollView position. Kept in sync with `selectedDayIndex`.
     @State private var dayPagerScrollIndex: Int? = 0
     /// While true, child views that pan horizontally (e.g. maps) temporarily stop hit-testing
@@ -1279,7 +1281,7 @@ struct RecapBlogPageView: View {
     @State private var scrollToStopId: UUID?
     /// When the user focuses a story/caption field we store the row id here and scroll when the keyboard actually appears (no fixed delay).
     @State private var pendingScrollToStopId: UUID?
-    /// Non-nil while jumping to a place from Places Visited — blocks read-only `selectedDayIndex` scroll-to-map, which hides the stop row.
+    /// Non-nil while jumping to a place from Places Visited — blocks default Day 2+ scroll-to-map so the stop row stays visible.
     @State private var pendingDeepLinkStopScrollId: UUID?
     @State private var didApplyPlacesVisitedDeepLink = false
     @State private var placesVisitedDeepLinkTask: Task<Void, Never>?
@@ -1327,7 +1329,12 @@ struct RecapBlogPageView: View {
                 if let day = day(at: selectedDayIndex) {
                     GeometryReader { geo in
                         let w = geo.size.width
-                        dayPageView(blogDay: day, index: selectedDayIndex, screenHeight: screenHeight)
+                        dayPageView(
+                            blogDay: day,
+                            index: selectedDayIndex,
+                            screenHeight: screenHeight,
+                            scrollCoverMaskActive: $recapDayScrollCoverMaskActive
+                        )
                             .id(day.id) // ensures per-day scroll state resets appropriately on day change
                             .transition(
                                 shouldAnimateDayChange
@@ -1342,67 +1349,8 @@ struct RecapBlogPageView: View {
                                 // Faster, more responsive feel for swipe-to-change-day.
                                 txn.animation = shouldAnimateDayChange ? .easeOut(duration: 0.08) : nil
                             }
-                            // Swipe only from edges so inner horizontal carousels (photos) don't trigger day navigation.
-                            // Important: use simultaneousGesture so vertical ScrollView keeps native scroll.
-                            .simultaneousGesture(
-                                DragGesture(minimumDistance: 12)
-                                    .onChanged { value in
-                                        let startX = value.startLocation.x
-                                        let isEdgeSwipe = startX <= daySwipeEdgeInset || startX >= (w - daySwipeEdgeInset)
-                                        guard isEdgeSwipe else { return }
-
-                                        // If the user is clearly swiping horizontally, temporarily stop map hit-testing
-                                        // so a mid-gesture map pan doesn't "eat" the swipe.
-                                        let dx = value.translation.width
-                                        let dy = value.translation.height
-                                        let isHorizontal = abs(dx) > abs(dy) * 1.15 && abs(dx) > 10
-                                        if isHorizontal, !isDayPagerHorizontalDragActive {
-                                            isDayPagerHorizontalDragActive = true
-                                        }
-                                    }
-                                    .onEnded { value in
-                                        defer {
-                                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                                                isDayPagerHorizontalDragActive = false
-                                            }
-                                        }
-
-                                        let startX = value.startLocation.x
-                                        let isEdgeSwipe = startX <= daySwipeEdgeInset || startX >= (w - daySwipeEdgeInset)
-                                        guard isEdgeSwipe else { return }
-
-                                        // Ignore mostly-vertical drags so the inner ScrollView stays natural.
-                                        let dx = value.translation.width
-                                        let dy = value.translation.height
-                                        guard abs(dx) > abs(dy) * 1.15 else { return }
-
-                                        // Snap thresholds tuned for a "decisive" swipe.
-                                        let predicted = value.predictedEndTranslation.width
-                                        let shouldGoNext = predicted < -120 || dx < -90
-                                        let shouldGoPrev = predicted > 120 || dx > 90
-                                        guard shouldGoNext || shouldGoPrev else { return }
-
-                                        let candidate = selectedDayIndex + (shouldGoNext ? 1 : -1)
-                                        guard draft.days.indices.contains(candidate) else { return }
-
-                                        // Match the bottom pill behavior: block swipe into unprocessed / processing days.
-                                        let processingIndex = createdRecapStore.processingDayIndexByBlogId[blogId]
-                                        let targetDay = draft.days[candidate]
-                                        let isProcessed = targetDay.isPlaceNamesResolved
-                                        let isProcessing = processingIndex == candidate
-                                        let isBlocked = (!isProcessed && !isProcessing) || isProcessing
-                                        guard !isBlocked else {
-                                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                                showUnprocessedDayAlert = true
-                                            }
-                                            return
-                                        }
-
-                                        shouldAnimateDayChange = true
-                                        daySwipeTransitionDirection = shouldGoNext ? 1 : -1
-                                        selectedDayIndex = candidate
-                                    }
-                            )
+                            // Day-swipe gesture disabled: conflicts with inner horizontal photo carousels.
+                            // Use the day pill buttons to navigate between days.
                     }
                 } else {
                     // Safety fallback (should not happen because indices are clamped elsewhere).
@@ -1465,6 +1413,20 @@ struct RecapBlogPageView: View {
             preloadDayPagerThumbnails(around: newIndex)
             // Reset so subsequent non-swipe changes don't inherit swipe animation.
             shouldAnimateDayChange = false
+            if newIndex > 0, pendingDeepLinkStopScrollId == nil {
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) {
+                    recapDayScrollCoverMaskActive = true
+                }
+            } else {
+                recapDayScrollCoverMaskActive = false
+            }
+        }
+        .onChange(of: pendingDeepLinkStopScrollId) { _, id in
+            if id != nil {
+                recapDayScrollCoverMaskActive = false
+            }
         }
         .onChange(of: draft.days.count) { _, _ in
             schedulePlacesVisitedDeepLinkScroll()
@@ -1509,9 +1471,20 @@ struct RecapBlogPageView: View {
     // MARK: - Day Page Views
 
     /// A single horizontally-paged day view: shared trip header (cover, narrative) + per-day map + places.
-    private func dayPageView(blogDay: RecapBlogDay, index: Int, screenHeight: CGFloat) -> some View {
+    private func dayPageView(
+        blogDay: RecapBlogDay,
+        index: Int,
+        screenHeight: CGFloat,
+        scrollCoverMaskActive: Binding<Bool>
+    ) -> some View {
         ScrollViewReader { proxy in
-            dayPageScrollView(blogDay: blogDay, index: index, screenHeight: screenHeight, proxy: proxy)
+            dayPageScrollView(
+                blogDay: blogDay,
+                index: index,
+                screenHeight: screenHeight,
+                proxy: proxy,
+                scrollCoverMaskActive: scrollCoverMaskActive
+            )
         }
     }
 
@@ -1528,8 +1501,7 @@ struct RecapBlogPageView: View {
                 blogTitleView
             }
 
-            // In read-only mode, Day 2+ pages start with the map so no scroll-to-map is needed.
-            // In edit mode, or on Day 1, the full hero + narrative header is shown on every page.
+            // Day 1 shows trip narrative under the cover; Day 2+ omit it in view mode. Edit mode keeps it on every day.
             let showHeroHeader = isEditMode || index == 0
 
             if showHeroHeader {
@@ -1562,7 +1534,8 @@ struct RecapBlogPageView: View {
                     .padding(.bottom, 12)
             }
 
-            if !isEditMode {
+            // Read-only: map on every day. Edit: map from Day 2+ (Day 1 keeps edit chrome uncluttered).
+            if !isEditMode || index > 0 {
                 mapCard(for: blogDay)
             }
 
@@ -1617,20 +1590,50 @@ struct RecapBlogPageView: View {
         }
     }
 
-    private func dayPageScrollView(blogDay: RecapBlogDay, index: Int, screenHeight: CGFloat, proxy: ScrollViewProxy) -> some View {
-        ScrollView {
-            dayPageScrollInner(blogDay: blogDay, index: index, screenHeight: screenHeight)
+    /// Day 1: top of scroll. Day 2+: scroll to inline map (cover stays above in layout; no animation to avoid a visible slide).
+    private func applyDefaultDayPageScrollPosition(proxy: ScrollViewProxy, dayPageIndex: Int) {
+        guard selectedDayIndex == dayPageIndex else { return }
+        if pendingDeepLinkStopScrollId != nil { return }
+        if dayPageIndex == 0 {
+            proxy.scrollTo(RecapBlogScrollAnchor.pageTop, anchor: .top)
+        } else if let d = day(at: dayPageIndex) {
+            proxy.scrollTo(RecapBlogScrollAnchor.mapForDay(d.id), anchor: .top)
         }
-        .coordinateSpace(name: "scroll")
-        .onPreferenceChange(TitleMinYPreferenceKey.self) { minY in
-            guard index == selectedDayIndex else { return }
-            let shouldShow = minY < 0
-            if shouldShow != showNavBarTitle {
-                showNavBarTitle = shouldShow
+    }
+
+    private func dayPageScrollView(
+        blogDay: RecapBlogDay,
+        index: Int,
+        screenHeight: CGFloat,
+        proxy: ScrollViewProxy,
+        scrollCoverMaskActive: Binding<Bool>
+    ) -> some View {
+        let showScrollCoverMask = index > 0
+            && scrollCoverMaskActive.wrappedValue
+            && pendingDeepLinkStopScrollId == nil
+
+        return ZStack(alignment: .top) {
+            ScrollView {
+                dayPageScrollInner(blogDay: blogDay, index: index, screenHeight: screenHeight)
+            }
+            .coordinateSpace(name: "scroll")
+            .onPreferenceChange(TitleMinYPreferenceKey.self) { minY in
+                guard index == selectedDayIndex else { return }
+                let shouldShow = minY < 0
+                if shouldShow != showNavBarTitle {
+                    showNavBarTitle = shouldShow
+                }
+            }
+            .background(recapScreenBackground)
+            .ignoresSafeArea(edges: isKeyboardVisible ? [] : .bottom)
+
+            if showScrollCoverMask {
+                recapScreenBackground
+                    .ignoresSafeArea(edges: isKeyboardVisible ? [] : .bottom)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
             }
         }
-        .background(recapScreenBackground)
-        .ignoresSafeArea(edges: isKeyboardVisible ? [] : .bottom)
         .onChange(of: scrollToStopId) { _, newId in
             guard let id = newId, selectedDayIndex == index else { return }
             scrollToStopId = nil
@@ -1653,22 +1656,37 @@ struct RecapBlogPageView: View {
         }
         .onChange(of: selectedDayIndex) { _, newIndex in
             guard newIndex == index else { return }
-            if pendingDeepLinkStopScrollId != nil { return }
-            if isEditMode {
-                withAnimation(.easeOut(duration: 0.3)) {
-                    if newIndex == 0 {
-                        // Day 1: hero + trip chrome at top of the scroll view.
-                        proxy.scrollTo(RecapBlogScrollAnchor.pageTop, anchor: .top)
-                    } else if let d = day(at: newIndex) {
-                        proxy.scrollTo("day-section-\(d.id)", anchor: .top)
+            if pendingDeepLinkStopScrollId != nil {
+                scrollCoverMaskActive.wrappedValue = false
+                return
+            }
+            guard newIndex > 0 else { return }
+            // Mask (from parent) hides the cover until scroll lands on the map; second async lets UIKit apply offset before fade-out.
+            DispatchQueue.main.async {
+                applyDefaultDayPageScrollPosition(proxy: proxy, dayPageIndex: newIndex)
+                DispatchQueue.main.async {
+                    guard selectedDayIndex == newIndex else { return }
+                    withAnimation(.easeOut(duration: 0.16)) {
+                        scrollCoverMaskActive.wrappedValue = false
                     }
                 }
-            } else if newIndex == 0 {
-                withAnimation(.easeOut(duration: 0.3)) {
-                    proxy.scrollTo(RecapBlogScrollAnchor.pageTop, anchor: .top)
+            }
+        }
+        .onAppear {
+            guard index > 0 else { return }
+            if pendingDeepLinkStopScrollId != nil {
+                scrollCoverMaskActive.wrappedValue = false
+                return
+            }
+            DispatchQueue.main.async {
+                applyDefaultDayPageScrollPosition(proxy: proxy, dayPageIndex: index)
+                DispatchQueue.main.async {
+                    guard selectedDayIndex == index else { return }
+                    withAnimation(.easeOut(duration: 0.16)) {
+                        scrollCoverMaskActive.wrappedValue = false
+                    }
                 }
             }
-            // Read-only Day 2+: map is already at the top of the scroll view, no scroll needed.
         }
         .onChange(of: hasFinishedInitialLoad) { _, finished in
             guard finished else { return }
