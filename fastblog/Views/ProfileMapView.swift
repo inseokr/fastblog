@@ -107,28 +107,6 @@ struct ProfileMapView: View {
     }
 
     @MapContentBuilder
-    private func annotation(for item: (blog: CreatedRecapBlog, coordinate: CLLocationCoordinate2D)) -> some MapContent {
-        Annotation("", coordinate: item.coordinate) {
-            TripAnnotationView(
-                blog: item.blog,
-                isSelected: viewModel.selectedTripID == item.blog.sourceTripId
-            )
-            .onTapGesture {
-                if viewModel.selectedTripID == item.blog.sourceTripId {
-                    // Already selected — second tap opens the blog via global overlay (fade).
-                    selectedCreatedRecap = item.blog
-                } else {
-                    // First tap — select and scroll card into view
-                    withAnimation {
-                        viewModel.selectTrip(item.blog.sourceTripId)
-                        viewModel.recenterToTrip(item.blog)
-                    }
-                }
-            }
-        }
-    }
-
-    @MapContentBuilder
     private func clusterAnnotation(for cluster: TripCluster) -> some MapContent {
         Annotation("", coordinate: cluster.coordinate) {
             if cluster.isCluster {
@@ -372,14 +350,6 @@ struct ProfileMapView: View {
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
-    }
-}
-
-// MARK: - Safe Collection Subscript (shared by map views)
-
-extension Collection {
-    subscript(safe index: Index) -> Element? {
-        indices.contains(index) ? self[index] : nil
     }
 }
 

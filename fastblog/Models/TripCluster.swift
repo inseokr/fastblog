@@ -4,9 +4,9 @@ import MapKit
 
 /// One or more trips grouped together at a map position.
 struct TripCluster: Identifiable {
-    /// Stable identity; regenerated each time clusters are recomputed — intentional,
-    /// because MapKit re-renders the annotation view when the cluster changes.
-    let id: UUID
+    /// Derived from the representative blog's ID so SwiftUI can diff cluster annotations
+    /// across recomputations without treating every cluster as new.
+    var id: UUID { representative.sourceTripId }
     /// Blog whose cover photo represents the group visually.
     let representative: CreatedRecapBlog
     /// Map position for the annotation (first trip's coordinate for greedy clustering).
@@ -15,7 +15,6 @@ struct TripCluster: Identifiable {
     let blogs: [CreatedRecapBlog]
 
     init(representative: CreatedRecapBlog, coordinate: CLLocationCoordinate2D, blogs: [CreatedRecapBlog]) {
-        self.id = UUID()
         self.representative = representative
         self.coordinate = coordinate
         self.blogs = blogs
