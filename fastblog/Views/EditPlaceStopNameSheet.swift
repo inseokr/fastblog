@@ -48,6 +48,8 @@ struct EditPlaceStopNameSheet: View {
     /// One-time coachmark for “tap the map to fill the place name” (shown until dismissed or the user taps the map).
     @AppStorage("blogify.editPlaceMapTapCoachmarkSeen") private var mapTapCoachmarkSeen = false
     @State private var showMapTapCoachmarkSheet = false
+    /// Tapping a strip thumbnail opens a full-screen preview (swipe between included photos).
+    @State private var enlargedStripPhoto: RecapPhoto? = nil
     /// Square cell size for the stacked map zoom control (compact, map-style).
     private let mapZoomControlSide: CGFloat = 34
 
@@ -57,10 +59,11 @@ struct EditPlaceStopNameSheet: View {
 
     /// Extra space above the bottom hint so the photo strip does not cover it.
     /// Scales with Dynamic Type so the hint capsule never overlaps photos at large text sizes.
-    @ScaledMetric(relativeTo: .caption) private var mapBottomHintClearance: CGFloat = 56
+    @ScaledMetric(relativeTo: .caption) private var mapBottomHintClearance: CGFloat = 40
 
     var body: some View {
-        NavigationStack {
+        ZStack(alignment: .bottom) {
+            NavigationStack {
             Group {
                 if let coord = location {
                     TappableMapView(
@@ -104,49 +107,6 @@ struct EditPlaceStopNameSheet: View {
                     if isFocused, showSuggestions, !searchViewModel.suggestions.isEmpty {
                         suggestionsListContent
                     }
-                }
-            }
-            .overlay(alignment: .bottom) {
-                if !stripPhotos.isEmpty && !isFocused {
-                    VStack(spacing: 0) {
-                        HStack(alignment: .bottom, spacing: 0) {
-                            mapZoomControlsColumn
-                                .padding(.leading, 16)
-                            // Let pan/pinch hit the map in the rest of this row (gradient was stealing touches).
-                            Spacer(minLength: 0)
-                                .allowsHitTesting(false)
-                        }
-                        .padding(.bottom, 8)
-
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
-                                ForEach(stripPhotos) { photo in
-                                    RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 200, height: 200))
-                                        .frame(width: 90, height: 90)
-                                        .clipped()
-                                        .appChromeCornerRadius(10)
-                                        .shadow(color: .black.opacity(0.3), radius: 3)
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.top, 12)
-                            .padding(.bottom, 12)
-                        }
-                        // Spacer so the strip clears the bottom hint / first-run coachmark
-                        Spacer()
-                            .frame(height: mapBottomHintClearance)
-                            .allowsHitTesting(false)
-                    }
-                    .background(
-                        LinearGradient(
-                            colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
-                            startPoint: .bottom,
-                            endPoint: .top
-                        )
-                        // Full-width fade sat behind thumbnails; without this it blocked map gestures beside the strip.
-                        .allowsHitTesting(false)
-                    )
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .navigationTitle("Edit Name")
@@ -211,71 +171,6 @@ struct EditPlaceStopNameSheet: View {
             .onChange(of: isResolvingPOI) { _, resolving in
                 if resolving { mapTapCoachmarkSeen = true }
             }
-            .overlay(alignment: .bottom) {
-                if location != nil, !isResolvingPOI {
-                    if selectedCoordinate != nil, mapTapResolvedAsPOI {
-                        Button {
-                            let query = editedTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-                            let urlString = "https://www.google.com/maps/search/?api=1&query=\(query)"
-                            if let url = URL(string: urlString) {
-                                UIApplication.shared.open(url)
-                            }
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: "map.fill")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(
-                                        LinearGradient(
-                                            colors: [
-                                                Color(red: 0.45, green: 0.88, blue: 0.72),
-                                                Color(red: 0.28, green: 0.72, blue: 0.85)
-                                            ],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                Text("View on Google Maps")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(Color.white.opacity(0.95))
-                            }
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 11)
-                            .background {
-                                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                    .fill(.ultraThinMaterial)
-                                    .background {
-                                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                            .fill(Color.black.opacity(0.38))
-                                    }
-                            }
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                    .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
-                            }
-                            .appChromeCornerRadius(24)
-                            .shadow(color: .black.opacity(0.45), radius: 12, x: 0, y: 6)
-                        }
-                        .padding(.bottom, 6)
-                    } else if selectedCoordinate == nil {
-                        VStack(spacing: 0) {
-                            Spacer(minLength: 0)
-                            mapTapPlaceNameHint
-                                .padding(.horizontal, 16)
-                                .padding(.bottom, 30)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: 180)
-                        .background(
-                            LinearGradient(
-                                colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
-                                startPoint: .bottom,
-                                endPoint: .top
-                            )
-                            .allowsHitTesting(false)
-                        )
-                        .ignoresSafeArea(edges: .bottom)
-                    }
-                }
-            }
             .sheet(isPresented: $showMapTapCoachmarkSheet, onDismiss: {
                 mapTapCoachmarkSeen = true
             }) {
@@ -285,6 +180,133 @@ struct EditPlaceStopNameSheet: View {
                     .preferredColorScheme(.dark)
             }
             .preferredColorScheme(.dark)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            editPlaceBottomPhotoStripOverlay
+            editPlaceBottomMapChromeOverlay
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea(edges: .bottom)
+        .fullScreenCover(item: $enlargedStripPhoto) { photo in
+            EditPlaceStripPhotoFullScreenViewer(photos: stripPhotos, initialPhoto: photo)
+        }
+    }
+
+    /// Sibling of `NavigationStack` so bottom alignment uses the sheet’s full bounds, not the nav stack’s safe-area-inset overlay region.
+    @ViewBuilder
+    private var editPlaceBottomPhotoStripOverlay: some View {
+        if !stripPhotos.isEmpty && !isFocused {
+            VStack(spacing: 0) {
+                HStack(alignment: .bottom, spacing: 0) {
+                    mapZoomControlsColumn
+                        .padding(.leading, 16)
+                    Spacer(minLength: 0)
+                        .allowsHitTesting(false)
+                }
+                .padding(.bottom, 8)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(stripPhotos) { photo in
+                            Button {
+                                enlargedStripPhoto = photo
+                            } label: {
+                                RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 200, height: 200))
+                                    .frame(width: 90, height: 90)
+                                    .clipped()
+                                    .appChromeCornerRadius(10)
+                                    .shadow(color: .black.opacity(0.3), radius: 3)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("View photo larger")
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+                }
+                Spacer()
+                    .frame(height: mapBottomHintClearance)
+                    .allowsHitTesting(false)
+            }
+            .frame(maxWidth: .infinity)
+            .background(
+                LinearGradient(
+                    colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
+                    startPoint: .bottom,
+                    endPoint: .top
+                )
+                .allowsHitTesting(false)
+            )
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    @ViewBuilder
+    private var editPlaceBottomMapChromeOverlay: some View {
+        if location != nil, !isResolvingPOI {
+            Group {
+                if selectedCoordinate != nil, mapTapResolvedAsPOI {
+                    Button {
+                        let query = editedTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                        let urlString = "https://www.google.com/maps/search/?api=1&query=\(query)"
+                        if let url = URL(string: urlString) {
+                            UIApplication.shared.open(url)
+                        }
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "map.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [
+                                            Color(red: 0.45, green: 0.88, blue: 0.72),
+                                            Color(red: 0.28, green: 0.72, blue: 0.85)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                            Text("View on Google Maps")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Color.white.opacity(0.95))
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 11)
+                        .background {
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .fill(.ultraThinMaterial)
+                                .background {
+                                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                        .fill(Color.black.opacity(0.38))
+                                }
+                        }
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+                        }
+                        .appChromeCornerRadius(24)
+                        .shadow(color: .black.opacity(0.45), radius: 12, x: 0, y: 6)
+                    }
+                } else if selectedCoordinate == nil {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        mapTapPlaceNameHint
+                            .padding(.horizontal, 16)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: 180)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.black.opacity(0.8), Color.black.opacity(0.4), Color.clear],
+                            startPoint: .bottom,
+                            endPoint: .top
+                        )
+                        .allowsHitTesting(false)
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -911,6 +933,58 @@ struct EditPlaceStopNameSheet: View {
             .frame(maxHeight: 280)
         }
         .background(Color(white: 0.12))
+    }
+}
+
+// MARK: - Strip photo full-screen preview
+
+private struct EditPlaceStripPhotoFullScreenViewer: View {
+    let photos: [RecapPhoto]
+    let initialPhoto: RecapPhoto
+    @Environment(\.dismiss) private var dismiss
+    @State private var selection: RecapPhoto.ID
+
+    init(photos: [RecapPhoto], initialPhoto: RecapPhoto) {
+        self.photos = photos
+        self.initialPhoto = initialPhoto
+        _selection = State(initialValue: initialPhoto.id)
+    }
+
+    private static let previewPixelSize = CGSize(width: 1400, height: 1400)
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                TabView(selection: $selection) {
+                    ForEach(photos) { photo in
+                        RecapPhotoThumbnail(
+                            photo: photo,
+                            cornerRadius: 14,
+                            showIcon: false,
+                            targetSize: Self.previewPixelSize
+                        )
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.horizontal, 12)
+                        .tag(photo.id)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: photos.count > 1 ? .automatic : .never))
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .foregroundStyle(.white)
+                }
+            }
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+        }
+        .preferredColorScheme(.dark)
     }
 }
 
