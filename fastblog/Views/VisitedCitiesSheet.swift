@@ -112,15 +112,9 @@ struct VisitedCitiesSheet: View {
             VStack(spacing: 0) {
                 // Custom title bar — avoids system nav bar material that causes color mismatch
                 HStack {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.primary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Dismiss")
+                    Button("Close") { dismiss() }
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.primary)
 
                     Spacer()
 
@@ -130,8 +124,8 @@ struct VisitedCitiesSheet: View {
                     Spacer()
 
                     // Invisible balance item so title stays centered
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 15, weight: .semibold))
+                    Text("Close")
+                        .fontWeight(.semibold)
                         .hidden()
                 }
                 .padding(.horizontal, 16)
@@ -215,7 +209,8 @@ struct VisitedCitiesSheet: View {
                     mainImage: main,
                     coverAssetId: trip.coverAssetIdentifier,
                     extraAssetIds: coverPreviewExtraAssetIds,
-                    fallbackCoordinate: coverPreviewCoordinate
+                    fallbackCoordinate: coverPreviewCoordinate,
+                    onSelect: { selectedTrip in handleToggle(selectedTrip) }
                 )
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
@@ -710,6 +705,7 @@ private struct VisitedCityMomentPreviewSheet: View {
     let coverAssetId: String?
     let extraAssetIds: [String]
     let fallbackCoordinate: CLLocationCoordinate2D?
+    var onSelect: (VisitedCityTrip) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var photos: [UIImage]
@@ -719,19 +715,22 @@ private struct VisitedCityMomentPreviewSheet: View {
     @State private var isLoadingMorePhotos = false
     @State private var mapPosition: MapCameraPosition
     @State private var digitizedTimeDisplay: String?
+    @State private var markerPlaceLabel: String?
 
     init(
         trip: VisitedCityTrip,
         mainImage: UIImage,
         coverAssetId: String?,
         extraAssetIds: [String],
-        fallbackCoordinate: CLLocationCoordinate2D?
+        fallbackCoordinate: CLLocationCoordinate2D?,
+        onSelect: @escaping (VisitedCityTrip) -> Void
     ) {
         self.trip = trip
         self.mainImage = mainImage
         self.coverAssetId = coverAssetId
         self.extraAssetIds = extraAssetIds
         self.fallbackCoordinate = fallbackCoordinate
+        self.onSelect = onSelect
         _photos = State(initialValue: [mainImage])
         if let c = coverAssetId {
             _photoAssetIds = State(initialValue: [c])
@@ -780,6 +779,7 @@ private struct VisitedCityMomentPreviewSheet: View {
                             mapSection
                         }
                     }
+                    .padding(.top, 4)
                     .padding(.bottom, 24)
                 }
             }
@@ -788,22 +788,25 @@ private struct VisitedCityMomentPreviewSheet: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    VStack(spacing: 2) {
+                    VStack(alignment: .leading, spacing: 1) {
                         Text(headingLine)
                             .font(.headline)
                             .fontWeight(.semibold)
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(.white)
                             .lineLimit(1)
                         Text(trip.displaySubtitle)
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.white.opacity(0.6))
+                            .lineLimit(1)
                     }
-                    .frame(maxWidth: 220)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button("Select") {
+                        onSelect(trip)
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
                 }
             }
         }
@@ -819,6 +822,9 @@ private struct VisitedCityMomentPreviewSheet: View {
         }
         .task(id: "\(selectedIndex)-\(photoAssetIds.count)") {
             await refreshDigitizedTime()
+        }
+        .task(id: "\(selectedIndex)-\(photoAssetIds.count)-marker") {
+            await refreshMarkerPlaceLabel()
         }
     }
 
@@ -840,6 +846,22 @@ private struct VisitedCityMomentPreviewSheet: View {
         await MainActor.run { digitizedTimeDisplay = str }
     }
 
+    private func refreshMarkerPlaceLabel() async {
+        guard let c = mapCoordinateForSelection else {
+            await MainActor.run { markerPlaceLabel = trip.cityName.isEmpty ? nil : trip.cityName }
+            return
+        }
+        let location = CLLocation(latitude: c.latitude, longitude: c.longitude)
+        let place = await GeocodingService.shared.place(for: location)
+        let label: String
+        if place.bestPlaceLabel == "Unknown Place" || place.bestPlaceLabel.isEmpty {
+            label = trip.cityName.isEmpty ? trip.countryName : trip.cityName
+        } else {
+            label = place.bestPlaceLabel
+        }
+        await MainActor.run { markerPlaceLabel = label }
+    }
+
     private static func formattedCaptureDate(creationDate: Date, timeZone: TimeZone) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -847,34 +869,34 @@ private struct VisitedCityMomentPreviewSheet: View {
         f.timeZone = timeZone
         f.dateFormat = "yyyy MMM d, hh:mm a"
         let formatted = f.string(from: creationDate)
-        let zoneLabel =
-            timeZone.abbreviation(for: creationDate)
-            ?? timeZone.localizedName(for: .shortStandard, locale: Locale(identifier: "en_US_POSIX"))
-            ?? timeZone.identifier
-        return "\(formatted) \(zoneLabel)"
+        return formatted
     }
 
     private var photoHeroWithThumbnailStrip: some View {
-        ZStack(alignment: .bottom) {
-            Image(uiImage: photos[selectedIndex])
+        VStack(alignment: .leading, spacing: 0) {
+            // ── Hero photo — sized by its own aspect ratio, no fixed height ──
+            let img = photos[selectedIndex]
+            let aspectRatio = img.size.height > 0 ? img.size.width / img.size.height : 1
+
+            Image(uiImage: img)
                 .resizable()
                 .scaledToFit()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity)
                 .background(Color.black)
                 .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
+                .overlay(alignment: .bottom) {
+                    // Gradient sits flush at the bottom of the actual image
+                    LinearGradient(
+                        colors: [.clear, .black.opacity(0.75)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: aspectRatio < 1 ? 80 : 60) // taller gradient for portrait
+                    .allowsHitTesting(false)
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
+                }
 
-            VStack {
-                Spacer(minLength: 0)
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.82)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 120)
-                .allowsHitTesting(false)
-            }
-            .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
-
+            // ── Info strip — always below the photo, never overlapping ──
             VStack(alignment: .leading, spacing: 10) {
                 if isLoadingMorePhotos {
                     HStack(spacing: 8) {
@@ -884,7 +906,7 @@ private struct VisitedCityMomentPreviewSheet: View {
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.9))
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 4)
                 }
 
                 if let digitized = digitizedTimeDisplay {
@@ -892,37 +914,38 @@ private struct VisitedCityMomentPreviewSheet: View {
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, 4)
                 }
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(photos.indices, id: \.self) { i in
-                            Button {
-                                selectedIndex = i
-                            } label: {
-                                Image(uiImage: photos[i])
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 58, height: 58)
-                                    .clipped()
-                                    .clipShape(RoundedRectangle(appChromeBaseRadius: 10))
-                                    .overlay(
-                                        RoundedRectangle(appChromeBaseRadius: 10)
-                                            .stroke(selectedIndex == i ? Color.white : Color.white.opacity(0.25), lineWidth: selectedIndex == i ? 3 : 1)
-                                    )
+                if photos.count > 1 {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(photos.indices, id: \.self) { i in
+                                Button {
+                                    selectedIndex = i
+                                } label: {
+                                    Image(uiImage: photos[i])
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 58, height: 58)
+                                        .clipped()
+                                        .clipShape(RoundedRectangle(appChromeBaseRadius: 10))
+                                        .overlay(
+                                            RoundedRectangle(appChromeBaseRadius: 10)
+                                                .stroke(selectedIndex == i ? Color.white : Color.white.opacity(0.25), lineWidth: selectedIndex == i ? 3 : 1)
+                                        )
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
-                    .padding(.horizontal, 12)
                 }
             }
-            .padding(.bottom, 12)
+            .padding(.top, 14)
+            .padding(.horizontal, 4)
         }
-        .frame(height: UIScreen.main.bounds.height * 0.8)
-        .frame(maxWidth: .infinity)
         .padding(.horizontal, 8)
+        .padding(.top, 0)
     }
 
     private var mapSection: some View {
@@ -935,10 +958,23 @@ private struct VisitedCityMomentPreviewSheet: View {
             if let c = mapCoordinateForSelection {
                 Map(position: $mapPosition) {
                     Annotation("Photo", coordinate: c) {
-                        Image(systemName: "mappin.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(.red)
-                            .shadow(radius: 2)
+                        VStack(spacing: 4) {
+                            Image(systemName: "mappin.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(.red)
+                                .shadow(radius: 2)
+                            if let label = markerPlaceLabel {
+                                Text("Near \(label)")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(.white)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 3)
+                                    .background(.black.opacity(0.72), in: Capsule())
+                            }
+                        }
                     }
                 }
                 .mapStyle(.standard(elevation: .realistic))

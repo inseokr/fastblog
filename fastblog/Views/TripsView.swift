@@ -378,6 +378,8 @@ struct TripsView: View {
         }
         .sheet(isPresented: $viewModel.showVisitedCitiesSheet) {
             VisitedCitiesSheet(viewModel: viewModel)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $viewModel.showFindMoreSheet) {
             FindMoreTripsSheet(viewModel: viewModel)
