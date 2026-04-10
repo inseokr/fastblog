@@ -270,16 +270,19 @@ struct CountryManageRow: View {
         .animation(.easeInOut(duration: 0.25), value: isRemoved)
     }
 
+    @ViewBuilder
     private var cloudBadge: some View {
-        Text(isInCloud ? "In Cloud" : "Local Only")
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(isInCloud ? Color.green : Color.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                Capsule()
-                    .fill(isInCloud ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12))
-            )
+        if isInCloud {
+            Text("In Cloud")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.green)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(Color.green.opacity(0.12))
+                )
+        }
     }
 
     private var removeControl: some View {
