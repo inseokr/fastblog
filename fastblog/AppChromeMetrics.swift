@@ -35,3 +35,18 @@ enum AppChromeShapes {
         )
     }
 }
+
+// MARK: - Recap editor toolbar Save
+
+/// Trailing navigation **Save** for recap editor sheets (blog title, change cover, etc.): blue text, consistent padding, no fill.
+struct RecapEditorToolbarSaveLabel: View {
+    var body: some View {
+        Text("Save")
+            .font(.subheadline)
+            .fontWeight(.semibold)
+            .foregroundColor(.blue)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 9)
+            .fixedSize()
+    }
+}

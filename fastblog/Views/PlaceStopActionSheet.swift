@@ -25,12 +25,57 @@ struct PlaceStopActionSheet: View {
     /// Header truncation on non‑Max phones at xxxLarge+ Dynamic Type (40 = 45 − 5 vs. the usual comfortable cap).
     private static let placeTitleHeaderCharLimitNarrowLargestType = 40
 
+    /// Row chrome matches `actionRow` / destructive button: 16pt vertical padding each side + label/icon line height.
+    private var actionRowMinHeight: CGFloat {
+        let bodyFont = UIFont.preferredFont(forTextStyle: .body)
+        return max(24, ceil(bodyFont.lineHeight)) + 32
+    }
+
+    /// Derive height from typography so the pull-up grows with Dynamic Type (fixed pt values clip at accessibility sizes).
     private var sheetHeight: CGFloat {
-        let missingEditRows = (onEditPlaceName == nil ? 1 : 0) + (onEditCaption == nil ? 1 : 0)
-        var base: CGFloat = 380 - CGFloat(missingEditRows) * 52
-        if onMergePlaces != nil { base += 52 }
-        if onSplit != nil { base += 52 }
-        return base
+        let headlineFont = UIFont.preferredFont(forTextStyle: .headline)
+        let subheadFont = UIFont.preferredFont(forTextStyle: .subheadline)
+        let rowH = actionRowMinHeight
+
+        var height: CGFloat = 8 + 5 + 10
+
+        height += 2 * ceil(headlineFont.lineHeight) + 4
+        if let subtitle = placeSubtitle, !subtitle.isEmpty {
+            height += ceil(subheadFont.lineHeight)
+        }
+        height += 14
+
+        var section1Rows = 1
+        var section1Dividers = 0
+        if onEditPlaceName != nil {
+            section1Rows += 1
+            section1Dividers += 1
+        }
+        if onEditCaption != nil {
+            section1Rows += 1
+            section1Dividers += 1
+        }
+        height += CGFloat(section1Rows) * rowH + CGFloat(section1Dividers)
+        height += (onMergePlaces != nil || onSplit != nil) ? 12 : 24
+
+        if onMergePlaces != nil || onSplit != nil {
+            var section2Rows = 0
+            var section2Dividers = 0
+            if onMergePlaces != nil {
+                section2Rows += 1
+                if onSplit != nil { section2Dividers += 1 }
+            }
+            if onSplit != nil { section2Rows += 1 }
+            height += CGFloat(section2Rows) * rowH + CGFloat(section2Dividers)
+            height += 24
+        }
+
+        height += 8
+
+        height += rowH
+        height += 34
+
+        return max(ceil(height), 320)
     }
 
     /// Non‑Max iPhone widths are below ~428pt (e.g. 11 / 12 / 13 / 14 standard); Pro Max / Plus are wider.

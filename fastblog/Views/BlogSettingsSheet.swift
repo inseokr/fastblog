@@ -660,8 +660,7 @@ struct BlogTitleChangeSheet: View {
                         onDone()
                         dismiss()
                     } label: {
-                        Text("Save")
-                            .foregroundStyle(.blue)
+                        RecapEditorToolbarSaveLabel()
                     }
                     .buttonStyle(.plain)
                 }

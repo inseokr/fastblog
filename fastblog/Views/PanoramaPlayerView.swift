@@ -2,15 +2,6 @@ import Photos
 import SwiftUI
 import UIKit
 
-// MARK: - Gallery scroll offset (for swipe-down dismiss when scrolled to top)
-
-private struct SlideshowGalleryScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 /// Gallery chrome ignores the safe area; match status-bar inset for close / full-screen photo bars.
 private enum SlideshowGalleryLayout {
     static func chromeTopPadding() -> CGFloat {
@@ -99,8 +90,6 @@ struct PanoramaPlayerView: View {
     // MARK: - Gallery
     @State private var showGallery: Bool = false
     @State private var wasPlayingBeforeGallery: Bool = false
-    /// Top content offset in `slideshowGalleryScroll` space; near 0 when the gallery list is at the top.
-    @State private var galleryScrollContentMinY: CGFloat = 0
     /// Full-screen photo paging within the gallery overlay (grid tap); `nil` = grid / hero visible.
     @State private var galleryDetailPhotoId: String?
 
@@ -641,7 +630,6 @@ struct PanoramaPlayerView: View {
         if isPlaying {
             Task { await slideshowMusic.pause() }
         }
-        galleryScrollContentMinY = 0
         withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
             showGallery = true
         }
@@ -795,26 +783,7 @@ struct PanoramaPlayerView: View {
                         Color.clear
                             .frame(height: geo.safeAreaInsets.bottom + 16)
                     }
-                    .background(
-                        GeometryReader { proxy in
-                            Color.clear.preference(
-                                key: SlideshowGalleryScrollOffsetKey.self,
-                                value: proxy.frame(in: .named("slideshowGalleryScroll")).minY
-                            )
-                        }
-                    )
                 }
-                .coordinateSpace(name: "slideshowGalleryScroll")
-                .onPreferenceChange(SlideshowGalleryScrollOffsetKey.self) { galleryScrollContentMinY = $0 }
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 24)
-                        .onEnded { value in
-                            guard galleryScrollContentMinY >= -8 else { return }
-                            if value.translation.height > 56 {
-                                dismissSlideshowGallery()
-                            }
-                        }
-                )
 
                 // Close gallery — same role as tapping the dimmed area in the old sheet
                 Button {

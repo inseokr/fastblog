@@ -1829,16 +1829,42 @@ struct RecapBlogPageView: View {
                     // Title layer (always centered, always same font/position).
                     Group {
                         if isEditMode {
-                            Button { showTitleChange = true } label: {
-                                Text(draft.title)
-                                    .font(.blog(selectedBlogFont, size: 30, bold: true))
-                                    .foregroundColor(.white)
-                                    .lineLimit(2)
-                                    .multilineTextAlignment(.center)
-                                    .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
-                                    .frame(maxWidth: .infinity)
+                            HStack {
+                                Spacer(minLength: 0)
+                                Button { showTitleChange = true } label: {
+                                    HStack(alignment: .center, spacing: 10) {
+                                        Text(draft.title)
+                                            .font(.blog(selectedBlogFont, size: 30, bold: true))
+                                            .foregroundColor(.white)
+                                            .lineLimit(2)
+                                            .multilineTextAlignment(.center)
+                                            .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
+                                            .frame(maxWidth: max(120, geo.size.width - 120), alignment: .center)
+                                        ZStack {
+                                            Circle()
+                                                .fill(Color.white.opacity(0.22))
+                                            Image(systemName: "pencil")
+                                                .font(.system(size: 16, weight: .semibold))
+                                                .foregroundStyle(.white)
+                                        }
+                                        .frame(width: 36, height: 36)
+                                        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+                                    }
+                                    .padding(.leading, 18)
+                                    .padding(.trailing, 14)
+                                    .padding(.vertical, 12)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                            .fill(Color.black.opacity(0.22))
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                            .strokeBorder(Color.white.opacity(0.95), lineWidth: 2)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                Spacer(minLength: 0)
                             }
-                            .buttonStyle(.plain)
                         } else {
                             Text(draft.title)
                                 .font(.blog(selectedBlogFont, size: 30, bold: true))
@@ -1861,23 +1887,6 @@ struct RecapBlogPageView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                     .offset(y: -18)
                     .id("hero-title-\(isEditMode ? "edit" : "view")")
-
-                    // Edit affordance (kept out of the title's text bounds to avoid overlap).
-                    if isEditMode {
-                        Button { showTitleChange = true } label: {
-                            Image(systemName: "pencil")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .padding(10)
-                                .background(Circle().fill(Color.white.opacity(0.22)))
-                        }
-                        .buttonStyle(.plain)
-                        .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                        .padding(.trailing, 18)
-                        .padding(.top, 18)
-                        .id("hero-title-pencil")
-                    }
 
                     // Controls layer (fixed offset below center so title never moves).
                     VStack(spacing: 6) {
@@ -2290,13 +2299,13 @@ struct RecapBlogPageView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Restore Removed Places")
+                    Text("Restore Hidden Places")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(recapChromeForeground)
                     Text(draft.removedPlaceStops.count == 1
-                         ? "1 place was removed — tap to bring it back"
-                         : "\(draft.removedPlaceStops.count) places were removed — tap to bring them back")
+                         ? "1 place was hidden"
+                         : "\(draft.removedPlaceStops.count) places were hidden")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(2)
@@ -4912,8 +4921,8 @@ Your blog remains private unless you choose to share it.
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 9)
                         .background(Color.blue)
                         .clipShape(Capsule())
                         .fixedSize()

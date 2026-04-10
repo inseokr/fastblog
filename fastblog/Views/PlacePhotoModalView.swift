@@ -1565,8 +1565,10 @@ private struct PlaceDetailTopChrome: View {
                         }
                     } else if isEditing && !blogIsEditMode && !openInCaptionEditor {
                         accentHeaderPill(title: "Save", fill: Color.blue, action: onSaveCaptionAndDismiss)
-                    } else if (blogIsEditMode || openInCaptionEditor)
-                        && !(openInCaptionEditor && hideChromeDoneFromCaptionEditorSheet) {
+                    } else if blogIsEditMode && !openInCaptionEditor {
+                        blogEditPhotoSaveCapsule(action: onDoneBlogEdit)
+                            .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
+                    } else if openInCaptionEditor && !hideChromeDoneFromCaptionEditorSheet {
                         capsuleButton(title: "Done", action: onDoneBlogEdit)
                             .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
                     }
@@ -1582,6 +1584,20 @@ private struct PlaceDetailTopChrome: View {
 
     private func capsuleButton(title: String, action: @escaping () -> Void) -> some View {
         accentHeaderPill(title: title, fill: Color.black.opacity(0.35), action: action)
+    }
+
+    private func blogEditPhotoSaveCapsule(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text("Save")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.blue)
+                .padding(.horizontal, PlaceDetailChromeLayout.headerPillHorizontalPadding)
+                .padding(.vertical, PlaceDetailChromeLayout.headerPillVerticalPadding)
+                .background(Color.black.opacity(0.35))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private func accentHeaderPill(title: String, fill: Color, action: @escaping () -> Void) -> some View {

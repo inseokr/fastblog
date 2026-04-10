@@ -134,12 +134,14 @@ struct CoverPhotoPickerView: View {
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button {
                         selectedCoverAssetIdentifier = pendingSelection ?? selectedCoverAssetIdentifier
                         onSave()
                         dismiss()
+                    } label: {
+                        RecapEditorToolbarSaveLabel()
                     }
-                    .fontWeight(.semibold)
+                    .buttonStyle(.plain)
                 }
             }
             .preferredColorScheme(.dark)
@@ -254,11 +256,13 @@ struct BlogCoverPhotoPickerView: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button {
                         selectedIdentifier = pendingSelection ?? selectedIdentifier
                         onSave()
+                    } label: {
+                        RecapEditorToolbarSaveLabel()
                     }
-                    .fontWeight(.semibold)
+                    .buttonStyle(.plain)
                 }
             }
             .preferredColorScheme(.dark)

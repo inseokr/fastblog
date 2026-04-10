@@ -84,11 +84,6 @@ struct PlaceCaptionEditSheet: View {
         UIScreen.main.bounds.width < 428 && dynamicTypeSize >= .xxxLarge
     }
 
-    /// Standard-width phones and smaller: skip the large header preview; use “View Full Photo” + re-tap thumbnail instead.
-    private var useCompactPhotoCaptionHeader: Bool {
-        UIScreen.main.bounds.width < 428
-    }
-
     /// Single line by default; explicit newline on narrow phones at largest content sizes.
     private var captionPlaceholderText: String {
         switch captionThumbnailSelection {
@@ -213,41 +208,19 @@ struct PlaceCaptionEditSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             Group {
                 if case .photo(let photoId) = captionThumbnailSelection {
-                    if useCompactPhotoCaptionHeader {
-                        VStack(alignment: .leading, spacing: 4) {
-                            placeTitleRowWithEditNameControl
-                            placeSubtitleIfAny
-                            if onRequestFullPhotoView != nil {
-                                Button {
-                                    presentFullPhotoViewer(for: photoId)
-                                } label: {
-                                    Text("View Full Photo")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(Color(uiColor: .systemBlue))
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("View full photo")
+                    VStack(alignment: .leading, spacing: 4) {
+                        placeTitleRowWithEditNameControl
+                        placeSubtitleIfAny
+                        if onRequestFullPhotoView != nil {
+                            Button {
+                                presentFullPhotoViewer(for: photoId)
+                            } label: {
+                                Text("View full photo")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(Color(uiColor: .systemBlue))
                             }
-                        }
-                    } else {
-                        HStack(alignment: .top, spacing: 12) {
-                            Group {
-                                if onRequestFullPhotoView != nil {
-                                    Button {
-                                        presentFullPhotoViewer(for: photoId)
-                                    } label: {
-                                        headerPhotoThumbnail(for: photoId)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("View full photo")
-                                } else {
-                                    headerPhotoThumbnail(for: photoId)
-                                }
-                            }
-                            VStack(alignment: .leading, spacing: 4) {
-                                placeTitleRowWithEditNameControl
-                                placeSubtitleIfAny
-                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("View full photo")
                         }
                     }
                 } else {
@@ -259,74 +232,6 @@ struct PlaceCaptionEditSheet: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// 12-hour clock from `RecapPhoto.timestamp` (matches `PlaceStopRowView` strip badges).
-    private static let headerPhotoTimeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "h:mm a"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
-
-    /// Parses EXIF-style `yyyy:MM:dd HH:mm:ss` into a 12-hour clock label (e.g. `3:42 PM`).
-    private static func formattedClockTime(fromDigitized digitized: String) -> String? {
-        let parts = digitized.split(separator: " ")
-        guard parts.count == 2 else { return nil }
-        let timeParts = parts[1].split(separator: ":")
-        guard timeParts.count >= 2,
-              let hours = Int(timeParts[0]),
-              let minutes = Int(timeParts[1]) else { return nil }
-        let period = hours >= 12 ? "PM" : "AM"
-        let h = hours == 0 ? 12 : (hours > 12 ? hours - 12 : hours)
-        return "\(h):\(String(format: "%02d", minutes)) \(period)"
-    }
-
-    private static func photoTimeDisplayText(for photo: RecapPhoto) -> String {
-        if let d = photo.digitizedTime,
-           let t = formattedClockTime(fromDigitized: d) {
-            return t
-        }
-        return headerPhotoTimeFormatter.string(from: photo.timestamp)
-    }
-
-    /// Shown beside the place name only when a photo thumbnail is selected (place story uses title only).
-    @ViewBuilder
-    private func headerPhotoThumbnail(for photoId: UUID) -> some View {
-        if let photo = photos.first(where: { $0.id == photoId }) {
-            RecapPhotoThumbnail(
-                photo: photo,
-                cornerRadius: thumbnailCorner,
-                showIcon: false,
-                targetSize: CGSize(width: 200, height: 200)
-            )
-            .frame(width: thumbnailSize * 3, height: thumbnailSize * 3)
-            .clipShape(RoundedRectangle(appChromeBaseRadius: thumbnailCorner, style: .continuous))
-            .overlay(alignment: .topLeading) {
-                Text(Self.photoTimeDisplayText(for: photo))
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3.5)
-                    .background(Color.black.opacity(0.6))
-                    .appChromeCornerRadius(6)
-                    .padding(6)
-            }
-            .overlay {
-                RoundedRectangle(appChromeBaseRadius: thumbnailCorner, style: .continuous)
-                    .strokeBorder(Color.white, lineWidth: thumbnailStroke)
-            }
-            .accessibilityLabel("Editing caption for selected photo")
-        } else {
-            RoundedRectangle(appChromeBaseRadius: thumbnailCorner, style: .continuous)
-                .fill(Color(uiColor: .tertiarySystemFill))
-                .frame(width: thumbnailSize * 3, height: thumbnailSize * 3)
-                .overlay {
-                    Image(systemName: "photo")
-                        .foregroundStyle(.secondary)
-                }
-                .accessibilityLabel("Photo")
-        }
     }
 
     var body: some View {
@@ -552,7 +457,7 @@ struct PlaceCaptionEditSheet: View {
 
     private func selectThumbnail(_ newSelection: CaptionThumbnailSelection) {
         if newSelection == captionThumbnailSelection {
-            if useCompactPhotoCaptionHeader, case .photo(let photoId) = newSelection {
+            if case .photo(let photoId) = newSelection {
                 presentFullPhotoViewer(for: photoId)
             }
             return
