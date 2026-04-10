@@ -93,8 +93,13 @@ struct DayContentPageView: View {
                 photos: photos,
                 photoImageHeight: photoImageHeight,
                 photoGridLayout: photoGridLayout,
-                storyUsesTwoColumns: false,
+                storyUsesTwoColumns: storyUsesTwoColumns,
                 showPlaceStory: showPlaceStory,
+                showPlaceTitleRow: StoryPageLayout.placeBlockShowsTitleRow(
+                    place: place,
+                    photoSlice: photoSlice,
+                    showPlaceStory: showPlaceStory
+                ),
                 photoShapeOptions: PDFPhotoShapeOptions(),
                 blogColor: blogColor,
                 fontTheme: fontTheme

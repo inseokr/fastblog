@@ -240,7 +240,10 @@ struct RecapBlogPageView: View {
     @State private var showShareYourBlogSheet = false
     /// Which screen is shown inside the “Share Your Blog” pull-up (menu vs guest prompts).
     @State private var shareYourBlogSheetPhase: ShareYourBlogSheetPhase = .menu
-    @State private var shareSheetPresentationDetent: PresentationDetent = .height(428)
+    @State private var shareSheetPresentationDetent: PresentationDetent = .height(492) // updated to shareMenuDetentHeight on appear
+    @State private var showVideoExportOptions = false
+    @State private var blogVideoShareURL: URL? = nil
+    @State private var showBlogVideoShareSheet = false
     @State private var showCloudSharingComingSoonAlert = false
     @State private var pendingWebLinkAfterAuth = false
     /// After guest signs in from the “Share with Bloggo” prompt, open the QR share overlay.
@@ -599,7 +602,7 @@ struct RecapBlogPageView: View {
             }
             .sheet(isPresented: $showShareYourBlogSheet, onDismiss: {
                 shareYourBlogSheetPhase = .menu
-                shareSheetPresentationDetent = .height(428)
+                shareSheetPresentationDetent = .height(shareMenuDetentHeight)
                 if pendingBloggoQRSheetAfterShareDismiss {
                     pendingBloggoQRSheetAfterShareDismiss = false
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -609,14 +612,14 @@ struct RecapBlogPageView: View {
             }) {
                 shareYourBlogSheetContent()
                     .onAppear {
-                        shareSheetPresentationDetent = shareYourBlogSheetPhase == .menu ? .height(428) : .height(538)
+                        shareSheetPresentationDetent = shareYourBlogSheetPhase == .menu ? .height(shareMenuDetentHeight) : .height(538)
                     }
                     .onChange(of: shareYourBlogSheetPhase) { _, phase in
                         withAnimation(.easeInOut(duration: shareYourBlogSheetPhaseTransitionDuration)) {
-                            shareSheetPresentationDetent = phase == .menu ? .height(428) : .height(538)
+                            shareSheetPresentationDetent = phase == .menu ? .height(shareMenuDetentHeight) : .height(538)
                         }
                     }
-                    .presentationDetents([.height(428), .height(538)], selection: $shareSheetPresentationDetent)
+                    .presentationDetents([.height(shareMenuDetentHeight), .height(538)], selection: $shareSheetPresentationDetent)
                     .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showStoryModePDFOptions, onDismiss: {
@@ -912,6 +915,21 @@ struct RecapBlogPageView: View {
         content
             .sheet(isPresented: $showShareSheet) {
                 ShareSheet(items: shareItems)
+            }
+            .sheet(isPresented: $showVideoExportOptions) {
+                BlogVideoExportOptionsSheet(draft: draft) { url in
+                    blogVideoShareURL = url
+                    // Brief delay lets the options sheet fully dismiss before the system share sheet appears.
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 350_000_000)
+                        showBlogVideoShareSheet = true
+                    }
+                }
+            }
+            .sheet(isPresented: $showBlogVideoShareSheet) {
+                if let url = blogVideoShareURL {
+                    ShareSheet(items: [url])
+                }
             }
             .sheet(isPresented: $showBlogSettings) {
                 BlogSettingsSheet(
@@ -3118,6 +3136,11 @@ struct RecapBlogPageView: View {
         return Date().timeIntervalSince(latest) < 24 * 3600
     }
 
+    private var shareMenuDetentHeight: CGFloat {
+        // 3 rows: storybook PDF, Bloggo, slideshow video → 492
+        492
+    }
+
     private var shareText: String {
         let placeCount = draft.days.flatMap(\.placeStops).count
         if placeCount > 0 {
@@ -3212,6 +3235,15 @@ struct RecapBlogPageView: View {
                     }
                 }
                 .opacity(!authService.isSignedIn ? 0.4 : 1)
+                Divider().padding(.leading, 52)
+                shareOptionRow(
+                    title: "Export Slideshow Video",
+                    subtitle: "Full blog slideshow video",
+                    icon: "video.badge.plus"
+                ) {
+                    showShareYourBlogSheet = false
+                    showVideoExportOptions = true
+                }
             }
             .background(Color(uiColor: .secondarySystemGroupedBackground))
             .appChromeCornerRadius(14)

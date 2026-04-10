@@ -96,6 +96,17 @@ enum StoryPageLayout {
     static let dayStoryBoxTextPaddingTop: CGFloat = 10
     static let dayStoryBoxTextPaddingBottom: CGFloat = 10
     static let placeTitleHeight: CGFloat = 32
+
+    /// Extra photos for the same stop use `showPlaceStory: false`; hide marker/title so we don’t repeat place chrome between pages.
+    static func placeBlockShowsTitleRow(place: PlaceContent, photoSlice: ClosedRange<Int>, showPlaceStory: Bool) -> Bool {
+        if showPlaceStory { return true }
+        guard !place.photos.isEmpty else { return true }
+        let lo = photoSlice.lowerBound
+        let hi = min(photoSlice.upperBound, place.photos.count - 1)
+        let hasPhotosInSlot = lo <= hi
+        return !hasPhotosInSlot
+    }
+
     /// Story Mode day pages: never show more than this many photos at once (matches recap PDF pacing).
     static let maxPhotosPerStoryDayPage: Int = 2
     static let placeCaptionShort: CGFloat = 48
@@ -123,8 +134,31 @@ enum StoryPageLayout {
         // Story: one `s` gap before the caption (from photos or title); no row below the caption in the block.
         return (s, 0)
     }
-    /// TOC first page: matches `TOCPageView` — CONTENTS row + divider + trip title + date + spacing before first day row.
+    /// Legacy approximate header height (first TOC page). Prefer `estimatedTOCFirstPageHeaderHeight(overview:)` — trip title can wrap to 3 lines.
     static let tocHeaderHeight: CGFloat = 119
+
+    /// Matches `TOCPageView.contentsTitleBlock` (CONTENTS + divider + trip title up to 3 lines + date + bottom gap).
+    /// Header uses system fonts (not `storyFontTheme`).
+    static func estimatedTOCFirstPageHeaderHeight(overview: BlogOverviewContent) -> CGFloat {
+        let contentWidth = max(0, StoryRenderMetrics.clampedScreenWidth - 32)
+        let contentsFont = UIFont.systemFont(ofSize: 28, weight: .heavy)
+        let tripTitleFont = UIFont.systemFont(ofSize: 20, weight: .bold)
+        let dateFont = UIFont.systemFont(ofSize: 14, weight: .regular)
+
+        var h: CGFloat = 0
+        h += 8
+        h += max(28, contentsFont.lineHeight)
+        h += 8 + 1
+        h += 12
+        let tripH = min(
+            estimateTextHeight(overview.tripTitle, font: tripTitleFont, width: contentWidth),
+            tripTitleFont.lineHeight * 3 + 2
+        )
+        h += tripH
+        h += 4 + dateFont.lineHeight
+        h += 12
+        return h
+    }
     /// Hero strip above CONTENTS on the first TOC page (cover photo + page indicator).
     static let tocCoverStripHeight: CGFloat = 88
     /// First TOC page: small inset below the last row (page numbers sit on the cover strip, not here).
@@ -441,6 +475,20 @@ enum StoryPageLayout {
         )
     }
 
+    /// Story-only slot before photo slot(s), so long copy never shares a screen with an image (one intact photo per page).
+    private static func placeContentOmittingPhotos(_ place: PlaceContent) -> PlaceContent {
+        PlaceContent(
+            title: place.title,
+            subtitle: place.subtitle,
+            markerNumber: place.markerNumber,
+            markerType: place.markerType,
+            timestamp: place.timestamp,
+            caption: place.caption,
+            captionIsLong: place.captionIsLong,
+            photos: []
+        )
+    }
+
     /// Prefer vertical stacking when both photos are portrait-oriented; side-by-side looks cramped.
     private static func shouldStackLongPhotoPair(_ photos: [PhotoContent]) -> Bool {
         guard photos.count == 2 else { return false }
@@ -475,13 +523,14 @@ enum StoryPageLayout {
         let cap = place.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let lines = estimatedStoryLineCount(caption: cap, metrics: metrics, fontTheme: fontTheme)
         let twoCol = shouldUseTwoColumnPlaceStory(caption: cap, lineCount: lines)
-        if lines >= placeStoryLineCountSinglePhotoThreshold {
+        if longPlaceStoryUsesOnePhotoPerScreen(caption: cap, metrics: metrics, fontTheme: fontTheme) {
+            let storyPlace = placeContentOmittingPhotos(place)
             let h0 = feasibleSinglePhotoImageHeight(
                 metrics: metrics,
                 place: place,
                 fontTheme: fontTheme,
-                storyUsesTwoColumns: twoCol,
-                showPlaceStory: true
+                storyUsesTwoColumns: false,
+                showPlaceStory: false
             )
             let h1 = feasibleSinglePhotoImageHeight(
                 metrics: metrics,
@@ -492,12 +541,20 @@ enum StoryPageLayout {
             )
             return [
                 .placeBlock(
+                    storyPlace,
+                    photoSlice: 0...0,
+                    photoImageHeight: 0,
+                    photoGridLayout: .single,
+                    storyUsesTwoColumns: twoCol,
+                    showPlaceStory: true
+                ),
+                .placeBlock(
                     place,
                     photoSlice: 0...0,
                     photoImageHeight: h0,
                     photoGridLayout: .single,
-                    storyUsesTwoColumns: twoCol,
-                    showPlaceStory: true
+                    storyUsesTwoColumns: false,
+                    showPlaceStory: false
                 ),
                 .placeBlock(
                     place,
@@ -579,10 +636,37 @@ enum StoryPageLayout {
         return estimateTextHeight(caption, font: font, width: pageWidth) + font.lineHeight * 0.35
     }
 
-    /// UIKit `boundingRect` vs SwiftUI `Text` + float noise; avoid splitting when we are within this band.
+    /// When true, never stack multiple photos in the same `placeBlock` as the story — one image per slot so long copy does not crowd photos off-screen.
+    private static func longPlaceStoryUsesOnePhotoPerScreen(
+        caption: String,
+        metrics: Metrics,
+        fontTheme: FontTheme
+    ) -> Bool {
+        let cap = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cap.isEmpty else { return false }
+        let lines = estimatedStoryLineCount(caption: cap, metrics: metrics, fontTheme: fontTheme)
+        if lines >= placeStoryLineCountSinglePhotoThreshold { return true }
+        let twoCol = shouldUseTwoColumnPlaceStory(caption: cap, lineCount: lines)
+        let storyH = placeStoryBlockTextHeight(
+            caption: cap,
+            pageWidth: metrics.pageWidth,
+            fontTheme: fontTheme,
+            storyUsesTwoColumns: twoCol
+        )
+        // Rough band for “two stacked singles” at minimum image height + typical per-photo caption rows.
+        let photoCaptionFont = StoryFontHelper.uiFont(for: fontTheme, size: photoCaptionFontSize)
+        let rowCap = min(photoCaptionFont.lineHeight * 10 + photoCaptionToImageSpacing, 150)
+        let minTwoPhotoStack = metrics.minSinglePhotoImageHeight * 2 + photoGap + rowCap * 2
+        let headroom = pageContentHeight - dayHeaderHeight - placeTitleHeight - 16
+        let maxStoryAboveTwoPhotos = max(0, headroom - minTwoPhotoStack)
+        return storyH > maxStoryAboveTwoPhotos * 0.88
+    }
+
+    /// UIKit `boundingRect` vs SwiftUI `Text` + float noise. Keep small: a large slack skipped `expandPlaceStoryPagination`
+    /// while `PlaceBlockView` still drew the full story — `slotHeight` then lied (caption cap), and photos clipped under the bar.
     private static func placeStoryHeightEstimateSlack(fontTheme: FontTheme) -> CGFloat {
         let font = StoryFontHelper.uiFont(for: fontTheme, size: placeStoryBodyFontSize)
-        return max(6, font.lineHeight * 1.25)
+        return max(2, font.lineHeight * 0.4)
     }
 
     /// Matches `slotHeight`’s place story: max text height above photos for this block (pre stretch or post stretch).
@@ -794,13 +878,31 @@ enum StoryPageLayout {
                 fullH = hSingle
             }
 
-            let chunks = splitCaptionIntoPaginatedChunks(
+            var chunks = splitCaptionIntoPaginatedChunks(
                 capRaw,
                 font: bodyFont,
                 width: metrics.pageWidth,
                 firstChunkMaxHeight: max(lh, innerBudget - lh * 0.35),
                 continuationMaxHeight: continuationTextMax
             )
+            if chunks.count <= 1 {
+                let singleColH = placeStoryBlockTextHeight(
+                    caption: capRaw,
+                    pageWidth: metrics.pageWidth,
+                    fontTheme: fontTheme,
+                    storyUsesTwoColumns: false
+                )
+                if singleColH > innerBudget + slack {
+                    let tighter = max(lh * 2, innerBudget * 0.5)
+                    chunks = splitCaptionIntoPaginatedChunks(
+                        capRaw,
+                        font: bodyFont,
+                        width: metrics.pageWidth,
+                        firstChunkMaxHeight: tighter,
+                        continuationMaxHeight: continuationTextMax
+                    )
+                }
+            }
             guard chunks.count > 1 else {
                 out.append(slot)
                 continue
@@ -1094,11 +1196,12 @@ enum StoryPageLayout {
     }
 
     /// Vertical space available for day rows (everything below the optional CONTENTS header, above the page number).
-    private static func tocAvailableHeightForRows(isFirstPage: Bool, fontTheme: FontTheme) -> CGFloat {
+    private static func tocAvailableHeightForRows(isFirstPage: Bool, overview: BlogOverviewContent, fontTheme: FontTheme) -> CGFloat {
         let h = StoryRenderMetrics.effectiveStoryViewportHeight - storyChromeBottomOverlayHeight
         var used: CGFloat = 0
         if isFirstPage {
-            used += tocCoverStripHeight + tocHeaderHeight + tocFirstPageBottomChrome
+            let headerH = estimatedTOCFirstPageHeaderHeight(overview: overview)
+            used += tocCoverStripHeight + headerH + tocFirstPageBottomChrome
         } else {
             used += tocTopPadding + tocContinuationHeaderHeight(fontTheme: fontTheme) + tocBottomChrome
         }
@@ -1139,20 +1242,24 @@ enum StoryPageLayout {
 
         h += dateFont.lineHeight + innerGap + momentsFont.lineHeight
 
-        let placesText = entry.placeNames.joined(separator: ", ")
+        // One Text per place (`TOCPageView.tocPlacesList`), 3pt between, up to 2 lines each.
         h += 2
-        let placesH = min(
-            estimateTextHeight(placesText, font: placesFont, width: contentWidth),
-            placesFont.lineHeight * 2 + 1
-        )
-        h += placesH
+        let placeLines = entry.placeNames.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        for (pi, name) in placeLines.enumerated() {
+            if pi > 0 { h += 3 }
+            let nameH = min(
+                estimateTextHeight(name, font: placesFont, width: contentWidth),
+                placesFont.lineHeight * 2 + 1
+            )
+            h += nameH
+        }
 
         // Small cushion so we don’t pack slightly tighter than Text layout (row bottom padding removed; spacing is in separator).
         return h + 4
     }
 
     /// Greedy page breaks using measured row heights (avoids pushing short days to the next page when fixed 128pt rows underestimate capacity).
-    private static func splitTOCEntriesIntoPages(_ entries: [TOCEntry], fontTheme: FontTheme) -> [[TOCEntry]] {
+    private static func splitTOCEntriesIntoPages(_ entries: [TOCEntry], overview: BlogOverviewContent, fontTheme: FontTheme) -> [[TOCEntry]] {
         guard !entries.isEmpty else { return [[]] }
 
         let contentWidth = max(0, StoryRenderMetrics.clampedScreenWidth - 32)
@@ -1162,7 +1269,7 @@ enum StoryPageLayout {
 
         while i < entries.count {
             let isFirstTOCPage = (tocPageNumber == 1)
-            var available = tocAvailableHeightForRows(isFirstPage: isFirstTOCPage, fontTheme: fontTheme)
+            var available = tocAvailableHeightForRows(isFirstPage: isFirstTOCPage, overview: overview, fontTheme: fontTheme)
             var page: [TOCEntry] = []
             var rowIndexInPage = 0
 
@@ -1212,7 +1319,7 @@ enum StoryPageLayout {
         pages.append(.cover(content.cover))
 
         // How many TOC pages we will render (must match `buildTOCPages` so day start indices are correct).
-        let tocSlices = splitTOCEntriesIntoPages(content.overview.entries, fontTheme: fontTheme)
+        let tocSlices = splitTOCEntriesIntoPages(content.overview.entries, overview: content.overview, fontTheme: fontTheme)
         let tocTotalPages = max(1, tocSlices.count)
 
         // 2. Days (built off to the side, but indices assume TOC is inserted after cover).
@@ -1286,7 +1393,7 @@ enum StoryPageLayout {
 
     // MARK: - TOC
     private static func buildTOCPages(overview: BlogOverviewContent, fontTheme: FontTheme) -> [StoryPage] {
-        let slices = splitTOCEntriesIntoPages(overview.entries, fontTheme: fontTheme)
+        let slices = splitTOCEntriesIntoPages(overview.entries, overview: overview, fontTheme: fontTheme)
         let totalPages = max(1, slices.count)
 
         var result: [StoryPage] = []
@@ -1367,6 +1474,34 @@ enum StoryPageLayout {
                 let cap = place.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 let lines = estimatedStoryLineCount(caption: cap, metrics: metrics, fontTheme: fontTheme)
                 let twoCol = shouldUseTwoColumnPlaceStory(caption: cap, lineCount: lines)
+                if !cap.isEmpty, longPlaceStoryUsesOnePhotoPerScreen(caption: cap, metrics: metrics, fontTheme: fontTheme) {
+                    let storyPlace = placeContentOmittingPhotos(place)
+                    let hPhoto = feasibleSinglePhotoImageHeight(
+                        metrics: metrics,
+                        place: place,
+                        fontTheme: fontTheme,
+                        storyUsesTwoColumns: false,
+                        showPlaceStory: false
+                    )
+                    return [
+                        .placeBlock(
+                            storyPlace,
+                            photoSlice: 0...0,
+                            photoImageHeight: 0,
+                            photoGridLayout: .single,
+                            storyUsesTwoColumns: twoCol,
+                            showPlaceStory: true
+                        ),
+                        .placeBlock(
+                            place,
+                            photoSlice: 0...0,
+                            photoImageHeight: hPhoto,
+                            photoGridLayout: .single,
+                            storyUsesTwoColumns: false,
+                            showPlaceStory: false
+                        )
+                    ]
+                }
                 let h = feasibleSinglePhotoImageHeight(
                     metrics: metrics,
                     place: place,
@@ -1391,6 +1526,41 @@ enum StoryPageLayout {
             let cap = place.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let lines = estimatedStoryLineCount(caption: cap, metrics: metrics, fontTheme: fontTheme)
             let twoColLead = shouldUseTwoColumnPlaceStory(caption: cap, lineCount: lines)
+
+            if longPlaceStoryUsesOnePhotoPerScreen(caption: cap, metrics: metrics, fontTheme: fontTheme) {
+                let storyPlace = placeContentOmittingPhotos(place)
+                var sequential: [ContentSlot] = [
+                    .placeBlock(
+                        storyPlace,
+                        photoSlice: 0...0,
+                        photoImageHeight: 0,
+                        photoGridLayout: .single,
+                        storyUsesTwoColumns: twoColLead,
+                        showPlaceStory: true
+                    )
+                ]
+                for idx in 0..<photoCount {
+                    let h = feasibleSinglePhotoImageHeight(
+                        metrics: metrics,
+                        place: place,
+                        fontTheme: fontTheme,
+                        storyUsesTwoColumns: false,
+                        showPlaceStory: false
+                    )
+                    sequential.append(
+                        .placeBlock(
+                            place,
+                            photoSlice: idx...idx,
+                            photoImageHeight: h,
+                            photoGridLayout: .single,
+                            storyUsesTwoColumns: false,
+                            showPlaceStory: false
+                        )
+                    )
+                }
+                return sequential
+            }
+
             let leadH = feasibleStackedRowImageHeight(
                 metrics: metrics,
                 place: place,
@@ -1460,7 +1630,9 @@ enum StoryPageLayout {
             return dayStoryCaptionBoxHeight(for: text, pageWidth: metrics.pageWidth, fontTheme: fontTheme)
 
         case .placeBlock(let place, let photoSlice, let photoImageHeight, let photoGridLayout, let storyUsesTwoColumns, let showPlaceStory):
-            var h: CGFloat = placeTitleHeight
+            var h: CGFloat = placeBlockShowsTitleRow(place: place, photoSlice: photoSlice, showPlaceStory: showPlaceStory)
+                ? placeTitleHeight
+                : 0
             let hasPhotosInSlot: Bool = {
                 guard !place.photos.isEmpty else { return false }
                 let lo = photoSlice.lowerBound
@@ -1524,10 +1696,9 @@ enum StoryPageLayout {
                 }
             }
 
-            let captionHeadroom = max(0, pageContentHeight - dayHeaderHeight - placeTitleHeight - photosBlockH - 8)
-            if captionBlockH > captionHeadroom {
-                captionBlockH = captionHeadroom
-            }
+            // Do **not** cap `captionBlockH` to “headroom”: `PlaceBlockView` always renders the full caption height in
+            // `captionSection`, so capping here made `packSlots` think the page fit while SwiftUI drew past the viewport
+            // and the bottom photo was clipped by the story chrome.
 
             h += captionBlockH
             h += photosBlockH
@@ -1847,6 +2018,102 @@ enum StoryPageLayout {
         }
     }
 
+    /// Shrinks a single full-width photo’s `photoImageHeight` so one `.placeBlock` fits in `maxSlotHeight` (avoids a tall block spilling across TabView pages).
+    private static func clampSinglePhotoPlaceBlockToFitPage(
+        _ slot: ContentSlot,
+        maxSlotHeight: CGFloat,
+        metrics: Metrics,
+        fontTheme: FontTheme,
+        layoutMode: PDFLayoutMode
+    ) -> ContentSlot {
+        guard case .placeBlock(let place, let slice, let h0, let grid, let stc, let sps) = slot else { return slot }
+        guard grid == .single else { return slot }
+        guard !place.photos.isEmpty else { return slot }
+        let lo = slice.lowerBound
+        let hi = min(slice.upperBound, place.photos.count - 1)
+        guard lo <= hi, lo == hi else { return slot }
+
+        if slotHeight(slot, metrics: metrics, fontTheme: fontTheme, layoutMode: layoutMode) <= maxSlotHeight {
+            return slot
+        }
+
+        var lowH: CGFloat = 80
+        var highH = max(h0, lowH + 1)
+        var bestH = lowH
+        for _ in 0..<28 {
+            let mid = (lowH + highH) / 2
+            let cand: ContentSlot = .placeBlock(
+                place,
+                photoSlice: slice,
+                photoImageHeight: mid,
+                photoGridLayout: grid,
+                storyUsesTwoColumns: stc,
+                showPlaceStory: sps
+            )
+            let sh = slotHeight(cand, metrics: metrics, fontTheme: fontTheme, layoutMode: layoutMode)
+            if sh <= maxSlotHeight {
+                bestH = mid
+                lowH = mid
+            } else {
+                highH = mid
+            }
+        }
+        return .placeBlock(
+            place,
+            photoSlice: slice,
+            photoImageHeight: bestH,
+            photoGridLayout: grid,
+            storyUsesTwoColumns: stc,
+            showPlaceStory: sps
+        )
+    }
+
+    /// Marker + title — identifies a stop across its storybook slots (PDF / Story Mode packing).
+    private static func placeIdentity(_ slot: ContentSlot) -> (marker: Int, title: String)? {
+        switch slot {
+        case .placeBlock(let p, _, _, _, _, _):
+            return (p.markerNumber, p.title)
+        case .photoOverflowContinuation(_, let p, _, _, _, _):
+            return (p.markerNumber, p.title)
+        case .dayCaption, .photoCaptionContinuation, .placeStoryContinuation:
+            return nil
+        }
+    }
+
+    /// Sum of `slotHeight` from `startIndex` through the first slot for this stop that includes ≥1 photo,
+    /// including any in-between `.placeStoryContinuation` / `.photoCaptionContinuation` (same stop, story-only pages before photos).
+    private static func minimumVerticalBudgetThroughFirstPhotoOfPlace(
+        slots: [ContentSlot],
+        startIndex: Int,
+        metrics: Metrics,
+        fontTheme: FontTheme,
+        layoutMode: PDFLayoutMode
+    ) -> CGFloat? {
+        guard startIndex < slots.count, let anchor = placeIdentity(slots[startIndex]) else { return nil }
+
+        var total: CGFloat = 0
+        var i = startIndex
+
+        slotWalk: while i < slots.count {
+            let s = slots[i]
+            if let pid = placeIdentity(s) {
+                guard pid.marker == anchor.marker, pid.title == anchor.title else { break slotWalk }
+                total += slotHeight(s, metrics: metrics, fontTheme: fontTheme, layoutMode: layoutMode)
+                if photoCountInContentSlot(s) > 0 { return total }
+                i += 1
+                continue
+            }
+            switch s {
+            case .placeStoryContinuation, .photoCaptionContinuation:
+                total += slotHeight(s, metrics: metrics, fontTheme: fontTheme, layoutMode: layoutMode)
+                i += 1
+            default:
+                break slotWalk
+            }
+        }
+        return total
+    }
+
     private static func packSlots(
         _ slots: [ContentSlot],
         day: StoryDay,
@@ -1863,11 +2130,25 @@ enum StoryPageLayout {
         var isFirstPage = true
         var slotIdx = 0
         var didBorrowOnFirstPage = false
+        /// Last stop identity from a `.placeBlock` / `photoOverflowContinuation` (not story continuations).
+        var lastAppendedPlaceIdentity: (marker: Int, title: String)? = nil
 
         while slotIdx < slots.count {
-            let slot = slots[slotIdx]
-            let h = slotHeight(slot, metrics: metrics, fontTheme: fontTheme, layoutMode: layoutMode)
-            let slotPhotos = photoCountInContentSlot(slot)
+            let rawSlot = slots[slotIdx]
+            let maxSlotBody = pageContentHeight - dayHeaderHeight
+            var slotToAdd = rawSlot
+            var h = slotHeight(slotToAdd, metrics: metrics, fontTheme: fontTheme, layoutMode: layoutMode)
+            if currentSlots.isEmpty, dayHeaderHeight + h > pageContentHeight {
+                slotToAdd = clampSinglePhotoPlaceBlockToFitPage(
+                    slotToAdd,
+                    maxSlotHeight: maxSlotBody,
+                    metrics: metrics,
+                    fontTheme: fontTheme,
+                    layoutMode: layoutMode
+                )
+                h = slotHeight(slotToAdd, metrics: metrics, fontTheme: fontTheme, layoutMode: layoutMode)
+            }
+            let slotPhotos = photoCountInContentSlot(slotToAdd)
             let photosOnPage = currentSlots.reduce(0) { $0 + photoCountInContentSlot($1) }
 
             if photosOnPage + slotPhotos > maxPhotosPerStoryDayPage && !currentSlots.isEmpty {
@@ -1884,6 +2165,45 @@ enum StoryPageLayout {
                 isFirstPage = false
             }
 
+            // Storybook / story-mode PDF: don’t start a new stop at the bottom of a page unless the remainder can show
+            // that stop through its first photo (story-only lead slots + first photo slot, if that’s how it’s authored).
+            if let newId = placeIdentity(slotToAdd),
+               let prevId = lastAppendedPlaceIdentity,
+               newId.marker != prevId.marker || newId.title != prevId.title,
+               let bundleH = minimumVerticalBudgetThroughFirstPhotoOfPlace(
+                    slots: slots,
+                    startIndex: slotIdx,
+                    metrics: metrics,
+                    fontTheme: fontTheme,
+                    layoutMode: layoutMode
+               ),
+               !currentSlots.isEmpty {
+                let remaining = pageContentHeight - usedHeight
+                if bundleH > remaining {
+                    pages.append(DayContentPage(
+                        day: day,
+                        isFirstPage: isFirstPage,
+                        slots: currentSlots,
+                        isLastPageOfDay: false,
+                        isLastPageOfTrip: false,
+                        nextDayName: nil
+                    ))
+                    currentSlots = []
+                    usedHeight = dayHeaderHeight
+                    isFirstPage = false
+                    if dayHeaderHeight + h > pageContentHeight {
+                        slotToAdd = clampSinglePhotoPlaceBlockToFitPage(
+                            slotToAdd,
+                            maxSlotHeight: maxSlotBody,
+                            metrics: metrics,
+                            fontTheme: fontTheme,
+                            layoutMode: layoutMode
+                        )
+                        h = slotHeight(slotToAdd, metrics: metrics, fontTheme: fontTheme, layoutMode: layoutMode)
+                    }
+                }
+            }
+
             if usedHeight + h > pageContentHeight && !currentSlots.isEmpty {
                 pages.append(DayContentPage(
                     day: day,
@@ -1898,13 +2218,16 @@ enum StoryPageLayout {
                 isFirstPage = false
             }
 
-            currentSlots.append(slot)
+            currentSlots.append(slotToAdd)
             usedHeight += h
+            if let id = placeIdentity(slotToAdd) {
+                lastAppendedPlaceIdentity = id
+            }
             slotIdx += 1
 
             // Peek-ahead borrow: after place 1's last slot on the first page, try to borrow place 2
             if isFirstPage && !didBorrowOnFirstPage,
-               case .placeBlock(let place1, _, _, _, _, _) = slot,
+               case .placeBlock(let place1, _, _, _, _, _) = slotToAdd,
                slotIdx < slots.count,
                case .placeBlock(let place2, _, _, _, _, _) = slots[slotIdx] {
 
@@ -1912,10 +2235,20 @@ enum StoryPageLayout {
                 guard p1PhotoCount <= 2 else { continue }
 
                 let remaining = pageContentHeight - usedHeight
+                if let bundle2 = minimumVerticalBudgetThroughFirstPhotoOfPlace(
+                    slots: slots,
+                    startIndex: slotIdx,
+                    metrics: metrics,
+                    fontTheme: fontTheme,
+                    layoutMode: layoutMode
+                ), remaining < bundle2 {
+                    continue
+                }
+
                 let borrowed = borrowSlots(for: place2, remainingSpace: remaining, metrics: metrics, fontTheme: fontTheme, layoutMode: layoutMode)
 
                 if !borrowed.isEmpty {
-                let borrowedHeight = borrowed.reduce(0) { $0 + slotHeight($1, metrics: metrics, fontTheme: fontTheme, layoutMode: layoutMode) }
+                    let borrowedHeight = borrowed.reduce(0) { $0 + slotHeight($1, metrics: metrics, fontTheme: fontTheme, layoutMode: layoutMode) }
                     // Ensure the next page has room for at least two minimal place blocks.
                     let minNextPageHeight: CGFloat = (placeTitleHeight + metrics.minSinglePhotoImageHeight) * 2
                     let remainingAfterBorrow = pageContentHeight - borrowedHeight
@@ -1925,6 +2258,9 @@ enum StoryPageLayout {
                        remainingAfterBorrow >= minNextPageHeight {
                         currentSlots.append(contentsOf: borrowed)
                         usedHeight += borrowedHeight
+                        for b in borrowed {
+                            if let id = placeIdentity(b) { lastAppendedPlaceIdentity = id }
+                        }
                         didBorrowOnFirstPage = true
                         // `borrowed` can be multiple `.placeBlock`s (e.g. two-photo stop with a long story);
                         // skip the same number of matching upcoming slots so place 2 is not laid out twice.
@@ -2073,8 +2409,9 @@ enum StoryPageLayout {
             switch slot {
             case .dayCaption, .photoCaptionContinuation, .placeStoryContinuation:
                 break
-            case .placeBlock(let place, _, _, _, _, _):
-                if let url = StoryPlaceGoogleSearch.url(placeName: place.title, placeSubtitle: place.subtitle) {
+            case .placeBlock(let place, let slice, _, _, _, let showPS):
+                if placeBlockShowsTitleRow(place: place, photoSlice: slice, showPlaceStory: showPS),
+                   let url = StoryPlaceGoogleSearch.url(placeName: place.title, placeSubtitle: place.subtitle) {
                     let titleY = y + 4
                     results.append(
                         (CGRect(x: horizontalPadding, y: titleY, width: contentWidth, height: placeTitleHeight), url)
@@ -2106,7 +2443,7 @@ enum StoryPageLayout {
         pageSize: CGSize,
         fontTheme: FontTheme
     ) -> [(CGRect, Int)] {
-        guard case .tableOfContents(let entries, _, let pageIndex, _) = storyPage else { return [] }
+        guard case .tableOfContents(let entries, let overview, let pageIndex, _) = storyPage else { return [] }
         guard !entries.isEmpty else { return [] }
 
         let horizontalInset: CGFloat = 16
@@ -2120,7 +2457,7 @@ enum StoryPageLayout {
 
         var y: CGFloat
         if pageIndex == 1 {
-            y = tocCoverStripHeight + tocHeaderHeight
+            y = tocCoverStripHeight + estimatedTOCFirstPageHeaderHeight(overview: overview)
         } else {
             y = tocTopPadding + tocContinuationHeaderHeight(fontTheme: fontTheme)
         }
@@ -2175,7 +2512,7 @@ enum StoryPageLayout {
         pageSize: CGSize,
         fontTheme: FontTheme
     ) -> [(CGRect, URL)] {
-        guard case .tableOfContents(let entries, _, let pageIndex, _) = storyPage else { return [] }
+        guard case .tableOfContents(let entries, let overview, let pageIndex, _) = storyPage else { return [] }
         guard !entries.isEmpty else { return [] }
 
         let horizontalInset: CGFloat = 16
@@ -2190,7 +2527,7 @@ enum StoryPageLayout {
 
         var y: CGFloat
         if pageIndex == 1 {
-            y = tocCoverStripHeight + tocHeaderHeight
+            y = tocCoverStripHeight + estimatedTOCFirstPageHeaderHeight(overview: overview)
         } else {
             y = tocTopPadding + tocContinuationHeaderHeight(fontTheme: fontTheme)
         }
@@ -2217,7 +2554,7 @@ enum StoryPageLayout {
             placesLineTop += dateFont.lineHeight + innerGap + momentsFont.lineHeight
             placesLineTop += 2
 
-            let localRects = tocPlaceLineCharacterRangeLinkRects(
+            let localRects = tocPlaceVerticalLinkRects(
                 placeNames: entry.placeNames,
                 containerWidth: contentWidth,
                 font: placesFont
@@ -2237,46 +2574,27 @@ enum StoryPageLayout {
         return results
     }
 
-    /// Lays out the comma-separated places string with `NSLayoutManager` (2-line cap) and returns one rect per place name.
-    private static func tocPlaceLineCharacterRangeLinkRects(
+    /// One rect per non-empty place line (`TOCPageView.tocPlacesList`), matching vertical spacing and 2-line cap per name.
+    private static func tocPlaceVerticalLinkRects(
         placeNames: [String],
         containerWidth: CGFloat,
         font: UIFont
     ) -> [(CGRect, URL)] {
-        var segments: [(NSRange, URL)] = []
-        var full = ""
-        var needsComma = false
-        for raw in placeNames {
-            let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !t.isEmpty, let u = StoryPlaceGoogleSearch.url(placeName: t, placeSubtitle: nil) else { continue }
-            if needsComma { full += ", " }
-            needsComma = true
-            let start = (full as NSString).length
-            full += t
-            let len = (t as NSString).length
-            segments.append((NSRange(location: start, length: len), u))
-        }
-        guard !full.isEmpty, !segments.isEmpty, containerWidth > 0 else { return [] }
-
-        let attr = NSAttributedString(string: full, attributes: [.font: font])
-        let storage = NSTextStorage(attributedString: attr)
-        let layoutManager = NSLayoutManager()
-        storage.addLayoutManager(layoutManager)
-        let container = NSTextContainer(size: CGSize(width: containerWidth, height: .greatestFiniteMagnitude))
-        container.lineFragmentPadding = 0
-        container.widthTracksTextView = true
-        container.maximumNumberOfLines = 2
-        container.lineBreakMode = .byWordWrapping
-        layoutManager.addTextContainer(container)
-        layoutManager.ensureLayout(for: container)
-
+        guard containerWidth > 0 else { return [] }
+        let names = placeNames.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         var out: [(CGRect, URL)] = []
-        for (range, url) in segments {
-            let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-            guard glyphRange.length > 0 else { continue }
-            let rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: container)
-            guard rect.width > 0, rect.height > 0 else { continue }
-            out.append((rect, url))
+        var y: CGFloat = 0
+        for (idx, t) in names.enumerated() {
+            if idx > 0 { y += 3 }
+            let nameH = min(
+                estimateTextHeight(t, font: font, width: containerWidth),
+                font.lineHeight * 2 + 1
+            )
+            let h = max(nameH, font.lineHeight)
+            if let u = StoryPlaceGoogleSearch.url(placeName: t, placeSubtitle: nil) {
+                out.append((CGRect(x: 0, y: y, width: containerWidth, height: h), u))
+            }
+            y += h
         }
         return out
     }

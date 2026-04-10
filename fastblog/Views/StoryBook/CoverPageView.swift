@@ -41,7 +41,7 @@ struct CoverPageView: View {
             }
             .ignoresSafeArea(edges: .vertical)
 
-            // Trip name + duration — top left
+            // Trip name + duration — top left; optional trip narrative (AI) below.
             VStack(alignment: .leading, spacing: 6) {
                 Text(cover.title)
                     .font(.system(size: 30, weight: .bold))
@@ -51,6 +51,16 @@ struct CoverPageView: View {
                     .font(.system(size: 30, weight: .medium))
                     .foregroundColor(.white.opacity(0.9))
                     .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+                if let narrative = cover.tripNarrative, !narrative.isEmpty {
+                    Text(narrative)
+                        .font(.system(size: 17, weight: .regular))
+                        .foregroundColor(.white.opacity(0.92))
+                        .lineSpacing(5)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 10)
+                        .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+                }
             }
             .padding(.horizontal, 24)
             .padding(.top, 80)

@@ -9,7 +9,14 @@ enum StoryBookBuilder {
     static func build(from detail: RecapBlogDetail) async -> StoryBookContent {
         let coverPhoto = await loadCoverPhoto(identifier: detail.selectedCoverPhotoIdentifier)
         let dateRange = dateRangeString(from: detail.days)
-        let cover = CoverContent(title: detail.title, subtitle: dateRange, coverPhoto: coverPhoto)
+        let tripTrimmed = detail.tripNarrative?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tripNarrative: String? = (tripTrimmed?.isEmpty == false) ? tripTrimmed : nil
+        let cover = CoverContent(
+            title: detail.title,
+            subtitle: dateRange,
+            coverPhoto: coverPhoto,
+            tripNarrative: tripNarrative
+        )
         let overview = buildOverview(detail: detail, dateRange: dateRange, coverPhoto: coverPhoto)
         let days = await buildDays(detail)
         return StoryBookContent(cover: cover, overview: overview, days: days)
@@ -25,7 +32,7 @@ enum StoryBookBuilder {
                 date: day.shortDateText,
                 firstPlaceName: names.first ?? "Day \(idx + 1)",
                 placeNames: names,
-                daySubtitle: day.dayCaption,
+                daySubtitle: effectiveDayCaption(for: day),
                 momentCount: moments,
                 dayStartPageNumber: 0   // computed later in StoryPageLayout.buildPages
             )
@@ -58,7 +65,7 @@ enum StoryBookBuilder {
             storyDays.append(StoryDay(
                 dayNumber: idx + 1,
                 date: day.date,
-                dayCaption: day.dayCaption,
+                dayCaption: effectiveDayCaption(for: day),
                 mapSnapshot: snapshot,
                 places: places
             ))
@@ -71,7 +78,7 @@ enum StoryBookBuilder {
         var out: [PlaceContent] = []
         out.reserveCapacity(stops.count)
         for (idx, stop) in stops.enumerated() {
-            let caption = stop.overallStory ?? stop.noteText
+            let caption = effectivePlaceStory(for: stop)
             let captionIsLong = (caption?.count ?? 0) > 80
             let included = stop.photos.filter(\.isIncluded)
             var idToImage: [UUID: UIImage] = [:]
@@ -112,6 +119,25 @@ enum StoryBookBuilder {
             ))
         }
         return out
+    }
+
+    // MARK: - Story text (match recap editor / `RecapBlogPageView` + `PlaceStopRowView`)
+
+    /// User-written day caption wins; otherwise AI `dayNarrative`.
+    private static func effectiveDayCaption(for day: RecapBlogDay) -> String? {
+        if let c = day.dayCaption?.trimmingCharacters(in: .whitespacesAndNewlines), !c.isEmpty { return c }
+        if let n = day.dayNarrative?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty { return n }
+        return nil
+    }
+
+    /// Manual overall story wins when flagged; else AI `placeNarrative`; else overall story; else place note.
+    private static func effectivePlaceStory(for stop: PlaceStop) -> String? {
+        let manual = stop.overallStory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if stop.overallStoryIsManual, !manual.isEmpty { return manual }
+        if let n = stop.placeNarrative?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty { return n }
+        if !manual.isEmpty { return manual }
+        if let note = stop.noteText?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty { return note }
+        return nil
     }
 
     // MARK: - Helpers

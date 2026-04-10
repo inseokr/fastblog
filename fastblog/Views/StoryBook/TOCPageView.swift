@@ -100,6 +100,9 @@ struct TOCPageView: View {
             Text(overview.tripTitle)
                 .font(.system(size: 20, weight: .bold))
                 .foregroundColor(primaryColor)
+                .lineLimit(3)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 12)
 
             Text(overview.dateRange)
@@ -107,7 +110,8 @@ struct TOCPageView: View {
                 .foregroundColor(primaryColor.opacity(0.75))
                 .padding(.top, 4)
 
-            Spacer()
+            // Fixed gap only — a flexible `Spacer` here steals vertical space inside `GeometryReader` and pushes TOC rows off-page / under the chrome.
+            Color.clear
                 .frame(height: 12)
         }
     }
@@ -179,11 +183,27 @@ struct TOCPageView: View {
                 .italic()
                 .foregroundColor(primaryColor.opacity(0.75))
 
-            Text(entry.placeNames.map { $0 }.joined(separator: ", "))
-                .font(.system(size: 11))
-                .foregroundColor(primaryColor.opacity(0.6))
-                .lineLimit(2)
-                .padding(.top, 2)
+            tocPlacesList(entry: entry)
+        }
+    }
+
+    /// One line per stop (up to 2 lines each if the name is long). Avoids comma-wrapped text fighting `lineLimit` + export clipping.
+    @ViewBuilder
+    private func tocPlacesList(entry: TOCEntry) -> some View {
+        let names = entry.placeNames.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        if names.isEmpty { EmptyView() }
+        else {
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(Array(names.enumerated()), id: \.offset) { _, placeName in
+                    Text(placeName)
+                        .font(.system(size: 11))
+                        .foregroundColor(primaryColor.opacity(0.6))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.top, 2)
         }
     }
 }

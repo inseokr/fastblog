@@ -12,6 +12,8 @@ struct PlaceBlockView: View {
     var storyUsesTwoColumns: Bool = false
     /// When false, only title + photos render (e.g. second single-photo slot after a long story).
     var showPlaceStory: Bool = true
+    /// When false, omit marker/title/timestamp (continuation photos for the same stop).
+    var showPlaceTitleRow: Bool = true
     let photoShapeOptions: PDFPhotoShapeOptions
     let blogColor: BlogColor
     let fontTheme: FontTheme
@@ -48,43 +50,45 @@ struct PlaceBlockView: View {
         let googleURL = StoryPlaceGoogleSearch.url(placeName: place.title, placeSubtitle: place.subtitle)
 
         VStack(alignment: .leading, spacing: StoryPageLayout.placeBlockRowSpacing) {
-            HStack(alignment: .center, spacing: 4) {
-                if storyRasterizesForExport {
-                    placeTitleCluster(
-                        markerColor: markerColor,
-                        markerSize: markerSize,
-                        markerNumberFontSize: markerNumberFontSize,
-                        titleFontSize: titleFontSize,
-                        titleColor: titleColor,
-                        showExternalIcon: googleURL != nil
-                    )
-                } else if let url = googleURL {
-                    Link(destination: url) {
+            if showPlaceTitleRow {
+                HStack(alignment: .center, spacing: 4) {
+                    if storyRasterizesForExport {
                         placeTitleCluster(
                             markerColor: markerColor,
                             markerSize: markerSize,
                             markerNumberFontSize: markerNumberFontSize,
                             titleFontSize: titleFontSize,
                             titleColor: titleColor,
-                            showExternalIcon: true
+                            showExternalIcon: googleURL != nil
+                        )
+                    } else if let url = googleURL {
+                        Link(destination: url) {
+                            placeTitleCluster(
+                                markerColor: markerColor,
+                                markerSize: markerSize,
+                                markerNumberFontSize: markerNumberFontSize,
+                                titleFontSize: titleFontSize,
+                                titleColor: titleColor,
+                                showExternalIcon: true
+                            )
+                        }
+                    } else {
+                        placeTitleCluster(
+                            markerColor: markerColor,
+                            markerSize: markerSize,
+                            markerNumberFontSize: markerNumberFontSize,
+                            titleFontSize: titleFontSize,
+                            titleColor: titleColor,
+                            showExternalIcon: false
                         )
                     }
-                } else {
-                    placeTitleCluster(
-                        markerColor: markerColor,
-                        markerSize: markerSize,
-                        markerNumberFontSize: markerNumberFontSize,
-                        titleFontSize: titleFontSize,
-                        titleColor: titleColor,
-                        showExternalIcon: false
-                    )
-                }
 
-                Spacer()
-                if let ts = place.timestamp {
-                    Text(ts)
-                        .font(Font(StoryFontHelper.uiFont(for: fontTheme, size: 11)))
-                        .foregroundColor(blogColor == .black ? Color.white : Color.black)
+                    Spacer()
+                    if let ts = place.timestamp {
+                        Text(ts)
+                            .font(Font(StoryFontHelper.uiFont(for: fontTheme, size: 11)))
+                            .foregroundColor(blogColor == .black ? Color.white : Color.black)
+                    }
                 }
             }
 
