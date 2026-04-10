@@ -957,36 +957,41 @@ private struct EditPlaceStripPhotoFullScreenViewer: View {
     private static let previewPixelSize = CGSize(width: 1400, height: 1400)
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                TabView(selection: $selection) {
-                    ForEach(photos) { photo in
-                        RecapPhotoThumbnail(
-                            photo: photo,
-                            cornerRadius: 14,
-                            showIcon: false,
-                            targetSize: Self.previewPixelSize
-                        )
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.horizontal, 12)
-                        .tag(photo.id)
-                    }
-                }
-                .tabViewStyle(.page(indexDisplayMode: photos.count > 1 ? .automatic : .never))
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                    .foregroundStyle(.white)
+        ZStack(alignment: .top) {
+            Color.black.ignoresSafeArea()
+
+            TabView(selection: $selection) {
+                ForEach(photos) { photo in
+                    RecapPhotoThumbnail(
+                        photo: photo,
+                        cornerRadius: 0,
+                        showIcon: false,
+                        targetSize: Self.previewPixelSize
+                    )
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .tag(photo.id)
                 }
             }
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .tabViewStyle(.page(indexDisplayMode: photos.count > 1 ? .automatic : .never))
+            .ignoresSafeArea()
+
+            // Done button — top-trailing, floating above the photo
+            HStack {
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Done")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
+                .padding(.trailing, 16)
+            }
+            .padding(.top, 56) // below status bar / Dynamic Island
         }
         .preferredColorScheme(.dark)
     }
