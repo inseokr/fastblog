@@ -4921,11 +4921,13 @@ Your blog remains private unless you choose to share it.
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 9)
-                        .background(Color.blue)
-                        .clipShape(Capsule())
-                        .fixedSize()
+                        // Toolbar bar-button items clip to a tight rect; fixedSize + large Dynamic Type
+                        // overflows and chops Capsule ends. Let the label scale down instead.
+                        .background(Color.blue, in: Capsule())
                 }
                 .buttonStyle(.plain)
             } else if !isExportingPDF && !showStoryMode {
