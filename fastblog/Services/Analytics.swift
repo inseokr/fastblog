@@ -53,7 +53,8 @@ final class AppAnalytics {
     /// Persistent queue — survives crashes and restarts.
     private var pendingEvents: [AnalyticsEventPayload] = []
     private let queueFileURL: URL = {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
         return dir.appendingPathComponent("bloggo_analytics_queue.json")
     }()
 

@@ -239,19 +239,15 @@ final class TripsViewModel: ObservableObject {
         }
     }
 
-    /// Returns a camera-created trip draft (coverImageName == "camera.fill") that matches
-    /// the capture date — same day or within maxGapDaysToBridge after the draft's last day (same rule as trip scanner).
+    /// Returns a camera-created trip draft (coverImageName == "camera.fill") whose last photo
+    /// is within 24 hours of the capture date. If the gap exceeds 24 hours, the capture starts a new trip.
     func cameraTripDraftMatching(captureDate: Date) -> TripDraft? {
-        let cal = Calendar.current
-        let captureDay = cal.startOfDay(for: captureDate)
         let drafts = tripDrafts.filter { $0.coverImageName == "camera.fill" }
         for draft in drafts {
             guard let draftEnd = draft.latestDate else { continue }
-            let draftEndDay = cal.startOfDay(for: draftEnd)
-            let draftStartDay = cal.startOfDay(for: draft.earliestDate ?? draftEnd)
-            if captureDay >= draftStartDay && captureDay <= draftEndDay { return draft }
-            let dayDiff = cal.dateComponents([.day], from: draftEndDay, to: captureDay).day ?? Int.max
-            if dayDiff >= 1 && dayDiff <= ScanConfig.maxGapDaysToBridge { return draft }
+            // Negative means capture is before draft end (within the draft) — always match.
+            // Positive means capture is after draft end — only match within 24 hours.
+            if captureDate.timeIntervalSince(draftEnd) <= 86400 { return draft }
         }
         return nil
     }
@@ -1970,8 +1966,7 @@ final class TripsViewModel: ObservableObject {
             )
         }
 
-        let firstDate = dayGroups.first!.date
-        let lastDate = dayGroups.last!.date
+        guard let firstDate = dayGroups.first?.date, let lastDate = dayGroups.last?.date else { return }
         let dateRangeText = cal.isDate(firstDate, inSameDayAs: lastDate)
             ? formatter.string(from: firstDate)
             : "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"

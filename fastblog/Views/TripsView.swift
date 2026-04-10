@@ -2985,18 +2985,14 @@ extension CameraCaptureView {
         return activeSourceTripId
     }
 
-    /// Finds a created blog whose date range includes the capture date (same day or within 7 days after).
+    /// Finds a created blog whose end date is within 24 hours of (or after) the capture timestamp.
+    /// If the capture is more than 24 hours past the blog's end, it is treated as a new trip.
     private func blogMatchingCaptureDate(_ captureTimestamp: Date) -> CreatedRecapBlog? {
-        let cal = Calendar.current
-        let captureDay = cal.startOfDay(for: captureTimestamp)
         for blog in createdRecapStore.visibleRecents {
-            guard let blogStart = blog.tripStartDate, let blogEnd = blog.tripEndDate else { continue }
-            let blogStartDay = cal.startOfDay(for: blogStart)
-            let blogEndDay = cal.startOfDay(for: blogEnd)
-            let overlaps = captureDay >= blogStartDay && captureDay <= blogEndDay
-            let dayDiff = cal.dateComponents([.day], from: blogEndDay, to: captureDay).day ?? Int.max
-            let continues = dayDiff >= 0 && dayDiff <= 7
-            if overlaps || continues { return blog }
+            guard let blogEnd = blog.tripEndDate else { continue }
+            // Negative values mean capture is before blog end (within the trip) — always match.
+            // Positive values mean capture is after blog end — only match within 24 hours.
+            if captureTimestamp.timeIntervalSince(blogEnd) <= 86400 { return blog }
         }
         return nil
     }
@@ -3152,23 +3148,16 @@ extension CameraCaptureView {
         let momentsWithImages = sessionMoments.filter { $0.previewImage != nil }
 
         // Validate that the selected trip is related to the camera session's timestamps.
-        // If the session moments don't overlap with the trip's date range, ignore the trip
-        // and create from session moments only (avoid pulling photos from unrelated trips).
+        // If the capture is more than 24 hours past the trip's last photo, treat it as a new trip
+        // so the library draft is not consumed/converted here.
         let validatedTrip: TripDraft? = {
             guard let trip = currentTrip,
-                  let tripStart = trip.earliestDate,
                   let tripEnd = trip.latestDate else { return currentTrip }
-            let cal = Calendar.current
             let sessionTimestamps = momentsWithImages.map(\.timestamp)
             guard let earliestCapture = sessionTimestamps.min() else { return currentTrip }
-            let captureDay = cal.startOfDay(for: earliestCapture)
-            let tripStartDay = cal.startOfDay(for: tripStart)
-            let tripEndDay = cal.startOfDay(for: tripEnd)
-            // Trip covers the capture date, or capture is within 7 days after trip end
-            let overlaps = captureDay >= tripStartDay && captureDay <= tripEndDay
-            let dayDiff = cal.dateComponents([.day], from: tripEndDay, to: captureDay).day ?? Int.max
-            let continues = dayDiff >= 0 && dayDiff <= 7
-            return (overlaps || continues) ? trip : nil
+            // Negative means capture is before trip end (within the trip) — always match.
+            // Positive means capture is after trip end — only match within 24 hours.
+            return earliestCapture.timeIntervalSince(tripEnd) <= 86400 ? trip : nil
         }()
 
         // No existing trip: create a new trip + blog from session moments (save to library first).

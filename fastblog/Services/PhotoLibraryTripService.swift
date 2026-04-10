@@ -355,8 +355,8 @@ final class PhotoLibraryTripService {
             let tripDays = item.days
             guard !tripDays.isEmpty else { continue }
             let segment = tripDays.flatMap { $0.assets }
-            let firstDate = tripDays.first!.dayDate
-            let lastDate = tripDays.last!.dayDate
+            let firstDate = tripDays[0].dayDate
+            let lastDate = tripDays[tripDays.count - 1].dayDate
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
             let placeSummary = await buildTripPlaceSummary(for: tripDays)
             let title = placeSummary.title
@@ -483,8 +483,8 @@ final class PhotoLibraryTripService {
             let tripDays = item.days
             guard !tripDays.isEmpty else { continue }
             let assets = tripDays.flatMap { $0.assets }
-            let firstDate = tripDays.first!.dayDate
-            let lastDate = tripDays.last!.dayDate
+            let firstDate = tripDays[0].dayDate
+            let lastDate = tripDays[tripDays.count - 1].dayDate
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
             let placeSummary = await buildTripPlaceSummary(for: tripDays)
             let title = placeSummary.title
@@ -675,8 +675,8 @@ final class PhotoLibraryTripService {
             let tripDays = item.days
             guard !tripDays.isEmpty else { continue }
             let segment = tripDays.flatMap { $0.assets }
-            let firstDate = tripDays.first!.dayDate
-            let lastDate = tripDays.last!.dayDate
+            let firstDate = tripDays[0].dayDate
+            let lastDate = tripDays[tripDays.count - 1].dayDate
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
             let placeSummary = await buildTripPlaceSummary(for: tripDays)
             let title = placeSummary.title
@@ -784,8 +784,8 @@ final class PhotoLibraryTripService {
             let tripDays = item.days
             guard !tripDays.isEmpty else { continue }
             let segment = tripDays.flatMap { $0.assets }
-            let firstDate = tripDays.first!.dayDate
-            let lastDate = tripDays.last!.dayDate
+            let firstDate = tripDays[0].dayDate
+            let lastDate = tripDays[tripDays.count - 1].dayDate
             let dateRangeText = "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
             let placeSummary = await buildTripPlaceSummary(for: tripDays)
             let title = placeSummary.title
