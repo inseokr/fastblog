@@ -1745,25 +1745,43 @@ struct RecapBlogPageView: View {
                 Button {
                     showTitleChange = true
                 } label: {
-                    HStack(alignment: .center, spacing: 10) {
-                        Text(draft.title)
-                            .font(.blog(selectedBlogFont, size: 28, bold: true))
-                            .foregroundColor(recapChromeForeground)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                        Image(systemName: "pencil")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(recapChromeForeground)
-                            .padding(8)
-                            .background(Circle().fill(colorScheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.08)))
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 16)
-                    .padding(.trailing, 32)
-                    .padding(.top, 12)
-                    .padding(.bottom, 8)
+                    let titleBoxRadius: CGFloat = 14
+                    let titleEditIconOutset: CGFloat = 16
+                    Text(draft.title)
+                        .font(.blog(selectedBlogFont, size: 28, bold: true))
+                        .foregroundColor(recapChromeForeground)
+                        .lineLimit(3)
+                        .multilineTextAlignment(.leading)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .padding(.top, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: titleBoxRadius, style: .continuous)
+                                .fill(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.06))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: titleBoxRadius, style: .continuous)
+                                .strokeBorder(recapChromeForeground.opacity(colorScheme == .dark ? 0.28 : 0.18), lineWidth: 1.5)
+                        )
+                        .overlay(alignment: .topTrailing) {
+                            ZStack {
+                                Circle()
+                                    .fill(colorScheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.1))
+                                Image(systemName: "pencil")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(recapChromeForeground)
+                            }
+                            .frame(width: 30, height: 30)
+                            .offset(x: titleEditIconOutset, y: -titleEditIconOutset)
+                        }
                 }
                 .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 16)
+                .padding(.trailing, 32)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
             } else {
                 Text(draft.title)
                     .font(.blog(selectedBlogFont, size: 30, bold: true))
@@ -1832,35 +1850,40 @@ struct RecapBlogPageView: View {
                             HStack {
                                 Spacer(minLength: 0)
                                 Button { showTitleChange = true } label: {
-                                    HStack(alignment: .center, spacing: 10) {
-                                        Text(draft.title)
-                                            .font(.blog(selectedBlogFont, size: 30, bold: true))
-                                            .foregroundColor(.white)
-                                            .lineLimit(2)
-                                            .multilineTextAlignment(.center)
-                                            .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
-                                            .frame(maxWidth: max(120, geo.size.width - 120), alignment: .center)
-                                        ZStack {
-                                            Circle()
-                                                .fill(Color.white.opacity(0.22))
-                                            Image(systemName: "pencil")
-                                                .font(.system(size: 16, weight: .semibold))
-                                                .foregroundStyle(.white)
+                                    let heroTitleBoxRadius: CGFloat = 16
+                                    let heroTitleMaxWidth = max(120, geo.size.width - 120)
+                                    let heroTitleEditIconOutset: CGFloat = 16
+                                    Text(draft.title)
+                                        .font(.blog(selectedBlogFont, size: 30, bold: true))
+                                        .foregroundColor(.white)
+                                        .lineLimit(3)
+                                        .multilineTextAlignment(.center)
+                                        .minimumScaleFactor(0.88)
+                                        .shadow(color: .black.opacity(0.6), radius: 6, y: 2)
+                                        .padding(.horizontal, 18)
+                                        .padding(.vertical, 14)
+                                        .padding(.top, 6)
+                                        .frame(maxWidth: heroTitleMaxWidth)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: heroTitleBoxRadius, style: .continuous)
+                                                .fill(Color.black.opacity(0.22))
+                                        )
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: heroTitleBoxRadius, style: .continuous)
+                                                .strokeBorder(Color.white.opacity(0.95), lineWidth: 2)
+                                        )
+                                        .overlay(alignment: .topTrailing) {
+                                            ZStack {
+                                                Circle()
+                                                    .fill(Color.white.opacity(0.28))
+                                                Image(systemName: "pencil")
+                                                    .font(.system(size: 13, weight: .semibold))
+                                                    .foregroundStyle(.white)
+                                            }
+                                            .frame(width: 30, height: 30)
+                                            .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+                                            .offset(x: heroTitleEditIconOutset, y: -heroTitleEditIconOutset)
                                         }
-                                        .frame(width: 36, height: 36)
-                                        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
-                                    }
-                                    .padding(.leading, 18)
-                                    .padding(.trailing, 14)
-                                    .padding(.vertical, 12)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                            .fill(Color.black.opacity(0.22))
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                            .strokeBorder(Color.white.opacity(0.95), lineWidth: 2)
-                                    )
                                 }
                                 .buttonStyle(.plain)
                                 Spacer(minLength: 0)
@@ -4821,6 +4844,7 @@ Your blog remains private unless you choose to share it.
         Color.clear
     }
 
+
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
@@ -4918,15 +4942,12 @@ Your blog remains private unless you choose to share it.
                     }
                 } label: {
                     Text("Save")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                        .font(.subheadline.weight(.semibold))
                         .foregroundColor(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 9)
-                        // Toolbar bar-button items clip to a tight rect; fixedSize + large Dynamic Type
-                        // overflows and chops Capsule ends. Let the label scale down instead.
+                        .dynamicTypeSize(.small ... .xLarge)
+                        .fixedSize()
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 7)
                         .background(Color.blue, in: Capsule())
                 }
                 .buttonStyle(.plain)
@@ -6802,6 +6823,7 @@ private struct MissingPhotosTooltipOverlay: View {
         }
     }
 }
+
 
 #Preview {
     NavigationStack {
