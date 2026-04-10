@@ -252,7 +252,7 @@ struct ManagePhotosView: View {
                         }
                     }
                     .frame(minWidth: isSelectMode ? 56 : 0, alignment: .center)
-                    .foregroundColor(.white)
+                    .foregroundColor(isSelectMode ? .blue : .white)
                 }
             }
         }

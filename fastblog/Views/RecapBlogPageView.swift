@@ -1064,7 +1064,8 @@ struct RecapBlogPageView: View {
                     photos: stop.includedPhotos,
                     onSave: { newTitle, newCoordinate, newCategory, subtitleLine in
                         updatePlaceTitle(stopId: stop.id, to: newTitle, category: newCategory, coordinate: newCoordinate, placeSubtitleLine: subtitleLine)
-                    }
+                    },
+                    confirmLabel: "Done"
                 )
             }
             .sheet(item: $placeCategoryPickerTarget) { target in
@@ -4114,7 +4115,8 @@ Your blog remains private unless you choose to share it.
             activePhotoModalToken: placePhotoModalItem?.id,
             onRequestEditPlaceName: {
                 showEditNameForStop = stop
-            }
+            },
+            confirmLabel: "Done"
         )
     }
 

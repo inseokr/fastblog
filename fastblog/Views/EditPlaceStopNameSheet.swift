@@ -18,6 +18,7 @@ struct EditPlaceStopNameSheet: View {
     var photos: [RecapPhoto] = []
     /// Title, coordinate, POI category raw value, trimmed subtitle (empty clears subtitle).
     var onSave: (String, CLLocationCoordinate2D?, String?, String) -> Void
+    var confirmLabel: String = "Save"
     @Environment(\.dismiss) private var dismiss
 
     @StateObject private var searchViewModel = PlaceSearchViewModel()
@@ -124,7 +125,7 @@ struct EditPlaceStopNameSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     let canSave = !editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    Button("Save") {
+                    Button(confirmLabel) {
                         Task { await saveAndDismissAsync() }
                     }
                     .disabled(!canSave || isSavingName)
@@ -338,10 +339,13 @@ struct EditPlaceStopNameSheet: View {
                         .multilineTextAlignment(.center)
                         .foregroundColor(.primary)
 
-                    Text("Tap any place on the map to set it as this moment's location. You can also zoom in and out to discover more place names, or type a name directly in the search bar.")
-                        .font(.body)
-                        .multilineTextAlignment(.center)
-                        .foregroundColor(.secondary)
+                    VStack(spacing: 6) {
+                        Text("Tap any place on the map to set it as this moment's location.")
+                        Text("Zoom in to discover more place names, or type one directly in the search bar.")
+                    }
+                    .font(.body)
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.secondary)
                 }
             }
             .padding(.horizontal, 24)
