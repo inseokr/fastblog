@@ -353,6 +353,14 @@ struct ProfileMapView: View {
     }
 }
 
+// MARK: - Safe Collection Subscript (shared by map views)
+
+extension Collection {
+    subscript(safe index: Index) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
+}
+
 // MARK: - ProfileMapCardView (Bottom List Item)
 private struct ProfileMapCardView: View {
     let blog: CreatedRecapBlog
