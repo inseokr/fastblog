@@ -527,6 +527,8 @@ struct CountryMapView: View {
     @State private var isSearchActive = false
     @State private var searchText: String = ""
     @FocusState private var isSearchFocused: Bool
+    @State private var mapSpan: MKCoordinateSpan = MKCoordinateSpan(latitudeDelta: 0.5, longitudeDelta: 0.5)
+    @State private var mapCenter: CLLocationCoordinate2D = CLLocationCoordinate2D(latitude: 0, longitude: 0)
 
     init(
         countryName: String,
@@ -567,6 +569,10 @@ struct CountryMapView: View {
         }
     }
 
+    private var clusteredItems: [TripCluster] {
+        clusterTrips(tripsWithCoordinates, span: mapSpan)
+    }
+
     var body: some View {
         Group {
             if isSearchActive {
@@ -575,12 +581,21 @@ struct CountryMapView: View {
                 ZStack(alignment: .bottom) {
                     // Full-screen map
                     Map(position: $mapPosition) {
-                        ForEach(tripsWithCoordinates, id: \.blog.sourceTripId) { item in
-                            annotation(for: item)
+                        ForEach(clusteredItems) { cluster in
+                            countryClusterAnnotation(for: cluster)
                         }
                     }
                     .mapStyle(.standard(elevation: .realistic))
                     .ignoresSafeArea(edges: .bottom)
+                    .onMapCameraChange(frequency: .onEnd) { context in
+                        mapSpan = context.region.span
+                        mapCenter = context.region.center
+                    }
+                    .overlay(alignment: .bottomLeading) {
+                        countryZoomButtons
+                            .padding(.leading, 16)
+                            .padding(.bottom, 164)
+                    }
 
                     // Bottom blog card strip
                     if !sortedBlogs.isEmpty {
@@ -798,6 +813,95 @@ struct CountryMapView: View {
                 }
             }
         }
+    }
+
+    @MapContentBuilder
+    private func countryClusterAnnotation(for cluster: TripCluster) -> some MapContent {
+        Annotation("", coordinate: cluster.coordinate) {
+            if cluster.isCluster {
+                TripClusterAnnotationView(
+                    cluster: cluster,
+                    isSelected: cluster.blogs.contains(where: { $0.sourceTripId == selectedTripID })
+                )
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.4)) {
+                        mapPosition = .region(MKCoordinateRegion(
+                            center: cluster.coordinate,
+                            span: MKCoordinateSpan(
+                                latitudeDelta: max(0.001, mapSpan.latitudeDelta / 3),
+                                longitudeDelta: max(0.001, mapSpan.longitudeDelta / 3)
+                            )
+                        ))
+                    }
+                }
+            } else {
+                TripAnnotationView(
+                    blog: cluster.representative,
+                    isSelected: selectedTripID == cluster.representative.sourceTripId
+                )
+                .onTapGesture {
+                    let blog = cluster.representative
+                    if selectedTripID == blog.sourceTripId {
+                        openBlogFromMap(blog)
+                    } else {
+                        withAnimation {
+                            selectedTripID = blog.sourceTripId
+                            if let coord = createdRecapStore.coordinate(for: blog.sourceTripId) {
+                                mapPosition = .region(MKCoordinateRegion(
+                                    center: coord,
+                                    span: MKCoordinateSpan(latitudeDelta: 0.08, longitudeDelta: 0.08)
+                                ))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Zoom Controls (CountryMapView)
+
+    private var countryZoomButtons: some View {
+        VStack(spacing: 0) {
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    mapPosition = .region(MKCoordinateRegion(
+                        center: mapCenter,
+                        span: MKCoordinateSpan(
+                            latitudeDelta: max(0.001, mapSpan.latitudeDelta / 2),
+                            longitudeDelta: max(0.001, mapSpan.longitudeDelta / 2)
+                        )
+                    ))
+                }
+            }) {
+                Image(systemName: "plus")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 42, height: 42)
+            }
+            Rectangle()
+                .fill(Color.white.opacity(0.2))
+                .frame(height: 1)
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    mapPosition = .region(MKCoordinateRegion(
+                        center: mapCenter,
+                        span: MKCoordinateSpan(
+                            latitudeDelta: min(90, mapSpan.latitudeDelta * 2),
+                            longitudeDelta: min(180, mapSpan.longitudeDelta * 2)
+                        )
+                    ))
+                }
+            }) {
+                Image(systemName: "minus")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 42, height: 42)
+            }
+        }
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
     }
 
     private func displayCountryName(_ name: String) -> String {
