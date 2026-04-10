@@ -74,3 +74,61 @@ func clusterTrips(
         return TripCluster(representative: first, coordinate: center, blogs: blogs)
     }
 }
+
+// MARK: - VisitedPlaceCluster
+
+/// One or more visited places grouped at a map position.
+struct VisitedPlaceCluster: Identifiable {
+    /// Derived from the representative place's id so SwiftUI can stable-diff across recomputations.
+    var id: String { representative.id }
+    let representative: VisitedPlaceSummary
+    let coordinate: CLLocationCoordinate2D
+    let places: [VisitedPlaceSummary]
+    var count: Int { places.count }
+    var isCluster: Bool { places.count > 1 }
+
+    init(representative: VisitedPlaceSummary, coordinate: CLLocationCoordinate2D, places: [VisitedPlaceSummary]) {
+        self.representative = representative
+        self.coordinate = coordinate
+        self.places = places
+    }
+}
+
+/// Groups visited-place `items` into spatial clusters based on the current map `span`.
+/// Same greedy nearest-center algorithm as `clusterTrips`.
+func clusterVisitedPlaces(
+    _ items: [(place: VisitedPlaceSummary, coordinate: CLLocationCoordinate2D)],
+    span: MKCoordinateSpan
+) -> [VisitedPlaceCluster] {
+    guard span.latitudeDelta >= 0.15 else {
+        return items.map {
+            VisitedPlaceCluster(representative: $0.place, coordinate: $0.coordinate, places: [$0.place])
+        }
+    }
+
+    let radiusDeg = max(0.05, span.latitudeDelta * 0.12)
+    var centers: [CLLocationCoordinate2D] = []
+    var groups: [[VisitedPlaceSummary]] = []
+
+    for item in items {
+        let coord = item.coordinate
+        let lonFactor = max(0.01, cos(coord.latitude * .pi / 180))
+        if let idx = centers.indices.first(where: { i in
+            abs(centers[i].latitude - coord.latitude) < radiusDeg &&
+            abs(centers[i].longitude - coord.longitude) < radiusDeg / lonFactor
+        }) {
+            groups[idx].append(item.place)
+        } else {
+            centers.append(coord)
+            groups.append([item.place])
+        }
+    }
+
+    return zip(centers, groups).compactMap { center, places in
+        guard let first = places.first else {
+            assertionFailure("VisitedPlaceCluster invariant violated: group is empty")
+            return nil
+        }
+        return VisitedPlaceCluster(representative: first, coordinate: center, places: places)
+    }
+}

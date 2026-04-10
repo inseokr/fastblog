@@ -811,6 +811,10 @@ private struct PlacesVisitedMapView: View {
         }
     }
 
+    private var clusteredPlaceItems: [VisitedPlaceCluster] {
+        clusterVisitedPlaces(placesWithCoordinates, span: mapRegion.span)
+    }
+
     private func recenterToLatestPlace() {
         if let latest = placesWithCoordinates.first?.coordinate {
             let region = MKCoordinateRegion(
@@ -997,12 +1001,28 @@ private struct PlacesVisitedMapView: View {
         ZStack(alignment: .top) {
             GeometryReader { geo in
                 Map(position: $mapPosition) {
-                    ForEach(placesWithCoordinates, id: \.place.id) { item in
-                        Annotation("", coordinate: item.coordinate) {
-                            PlacesVisitedMapMarker(place: item.place)
-                                .onTapGesture {
-                                    handleMarkerTap(item.place)
-                                }
+                    ForEach(clusteredPlaceItems) { cluster in
+                        Annotation("", coordinate: cluster.coordinate) {
+                            if cluster.isCluster {
+                                PlacesVisitedClusterMarker(cluster: cluster)
+                                    .onTapGesture {
+                                        let newLat = max(Self.minZoomSpanLat, mapRegion.span.latitudeDelta / 3)
+                                        let newLon = max(Self.minZoomSpanLon, mapRegion.span.longitudeDelta / 3)
+                                        let region = MKCoordinateRegion(
+                                            center: cluster.coordinate,
+                                            span: MKCoordinateSpan(latitudeDelta: newLat, longitudeDelta: newLon)
+                                        )
+                                        mapRegion = region
+                                        withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+                                            mapPosition = .region(region)
+                                        }
+                                    }
+                            } else {
+                                PlacesVisitedMapMarker(place: cluster.representative)
+                                    .onTapGesture {
+                                        handleMarkerTap(cluster.representative)
+                                    }
+                            }
                         }
                     }
                 }
@@ -1447,6 +1467,54 @@ private struct PlacesVisitedMapMarker: View {
                 .background(Color.black.opacity(0.75))
                 .clipShape(Capsule())
                 .frame(maxWidth: 110)
+        }
+    }
+}
+
+/// Cluster marker for 2+ visited places grouped at one map position.
+/// Ghost ring behind + count badge distinguish it from the individual PlacesVisitedMapMarker.
+private struct PlacesVisitedClusterMarker: View {
+    let cluster: VisitedPlaceCluster
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            // Ghost ring signals "multiple items here"
+            Circle()
+                .fill(Color.blue.opacity(0.25))
+                .frame(width: 60, height: 60)
+                .offset(x: 4, y: -4)
+
+            // Representative photo circle (slightly larger than individual 46pt)
+            ZStack {
+                Circle()
+                    .fill(Color.blue)
+                    .frame(width: 52, height: 52)
+                    .shadow(color: .black.opacity(0.3), radius: 5, x: 0, y: 3)
+
+                if let hero = cluster.representative.heroPhoto {
+                    RecapPhotoThumbnail(photo: hero, cornerRadius: 12, showIcon: false, targetSize: CGSize(width: 200, height: 200))
+                        .frame(width: 46, height: 46)
+                        .clipShape(Circle())
+                        .overlay {
+                            Circle().strokeBorder(Color.white.opacity(0.95), lineWidth: 2)
+                        }
+                } else {
+                    Image(systemName: "photo")
+                        .font(.subheadline)
+                        .foregroundColor(.white)
+                }
+            }
+
+            // Count badge
+            Text("\(cluster.count)")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.blue))
+                .overlay(Capsule().stroke(Color.white, lineWidth: 1.5))
+                .shadow(color: .black.opacity(0.35), radius: 2)
+                .offset(x: 10, y: -8)
         }
     }
 }
