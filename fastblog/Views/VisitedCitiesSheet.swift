@@ -33,6 +33,7 @@ struct VisitedCitiesSheet: View {
     @State private var coverPreviewMainImage: UIImage?
     @State private var coverPreviewExtraAssetIds: [String] = []
     @State private var coverPreviewCoordinate: CLLocationCoordinate2D?
+    @State private var coverPreviewIsSelected: Bool = false
     @State private var tripsListResetToken: UUID = UUID()
 
     private let currentYear = Calendar.current.component(.year, from: Date())
@@ -111,25 +112,35 @@ struct VisitedCitiesSheet: View {
         NavigationStack {
             VStack(spacing: 0) {
                 // Custom title bar — avoids system nav bar material that causes color mismatch
-                HStack {
-                    Button("Close") { dismiss() }
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.primary)
+                VStack(spacing: 0) {
+                    // Pull-down indicator
+                    Capsule()
+                        .fill(Color(uiColor: .systemGray3))
+                        .frame(width: 36, height: 5)
+                        .padding(.top, 8)
+                        .padding(.bottom, 8)
 
-                    Spacer()
+                    HStack {
+                        Button("Close") { dismiss() }
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
 
-                    Text("Your Memories")
-                        .font(.headline)
+                        Spacer()
 
-                    Spacer()
+                        Text("Your Memories")
+                            .font(.headline)
 
-                    // Invisible balance item so title stays centered
-                    Text("Close")
-                        .fontWeight(.semibold)
-                        .hidden()
+                        Spacer()
+
+                        // Invisible balance item so title stays centered
+                        Text("Close")
+                            .fontWeight(.semibold)
+                            .hidden()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                    .padding(.bottom, 12)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
                 .background(VisitedCitiesSheetChrome.color)
 
                 controlsHeader
@@ -190,7 +201,7 @@ struct VisitedCitiesSheet: View {
         } message: {
             Text(unavailableAlertMessage)
         }
-        .alert("Long stay", isPresented: $showLongSingleStayWarning) {
+        .alert("Large Trip", isPresented: $showLongSingleStayWarning) {
             Button("Cancel", role: .cancel) { pendingLongStayTrips = [] }
             Button("Continue") {
                 let trips = pendingLongStayTrips
@@ -198,7 +209,7 @@ struct VisitedCitiesSheet: View {
                 startCreateBlogTask(with: trips)
             }
         } message: {
-            Text("This place spans more than 7 days. Building the blog may take longer. Continue?")
+            Text("Trips over 7 days take longer to process. You can still continue.")
         }
         .sheet(isPresented: $showCoverPreviewSheet, onDismiss: {
             resetCoverPreviewState()
@@ -210,6 +221,7 @@ struct VisitedCitiesSheet: View {
                     coverAssetId: trip.coverAssetIdentifier,
                     extraAssetIds: coverPreviewExtraAssetIds,
                     fallbackCoordinate: coverPreviewCoordinate,
+                    isSelected: coverPreviewIsSelected,
                     onSelect: { selectedTrip in handleToggle(selectedTrip) }
                 )
                 .presentationDetents([.large])
@@ -524,8 +536,8 @@ struct VisitedCitiesSheet: View {
             let span = calendarSpanDays(of: built)
             if span > 7, built.count >= 2 {
                 selectedTripIds = before
-                selectionAlertTitle = "Too many days"
-                unavailableAlertMessage = "You can select up to 7 days across multiple places. Remove places from the start or end of the range, or choose a shorter stretch."
+                selectionAlertTitle = "Trips too far apart"
+                unavailableAlertMessage = "Choose trips that are next to each other."
                 showUnavailableAlert = true
             }
         }
@@ -570,7 +582,7 @@ struct VisitedCitiesSheet: View {
                 return
             }
             selectionAlertTitle = "Too many days"
-            unavailableAlertMessage = "You can select up to 7 days across multiple places. Narrow your selection with Clear or by removing places from the start or end of the range."
+            unavailableAlertMessage = "Blogs can include up to 7 days. Deselect a few trips to continue."
             showUnavailableAlert = true
             return
         }
@@ -601,6 +613,7 @@ struct VisitedCitiesSheet: View {
         coverPreviewMainImage = nil
         coverPreviewExtraAssetIds = []
         coverPreviewCoordinate = nil
+        coverPreviewIsSelected = false
     }
 
     /// Up to three other located photos from the same trip date span (cover excluded).
@@ -670,6 +683,7 @@ struct VisitedCitiesSheet: View {
             coverPreviewMainImage = image
             coverPreviewExtraAssetIds = fetchAdditionalAssetLocalIdentifiers(for: trip, excluding: assetId)
             coverPreviewCoordinate = resolveCoordinateForPreview(trip: trip, coverAssetId: assetId)
+            coverPreviewIsSelected = selectedTripIds.contains(trip.id)
             showCoverPreviewSheet = true
         }
     }
@@ -705,6 +719,7 @@ private struct VisitedCityMomentPreviewSheet: View {
     let coverAssetId: String?
     let extraAssetIds: [String]
     let fallbackCoordinate: CLLocationCoordinate2D?
+    let isSelected: Bool
     var onSelect: (VisitedCityTrip) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -723,6 +738,7 @@ private struct VisitedCityMomentPreviewSheet: View {
         coverAssetId: String?,
         extraAssetIds: [String],
         fallbackCoordinate: CLLocationCoordinate2D?,
+        isSelected: Bool,
         onSelect: @escaping (VisitedCityTrip) -> Void
     ) {
         self.trip = trip
@@ -730,6 +746,7 @@ private struct VisitedCityMomentPreviewSheet: View {
         self.coverAssetId = coverAssetId
         self.extraAssetIds = extraAssetIds
         self.fallbackCoordinate = fallbackCoordinate
+        self.isSelected = isSelected
         self.onSelect = onSelect
         _photos = State(initialValue: [mainImage])
         if let c = coverAssetId {
@@ -802,7 +819,7 @@ private struct VisitedCityMomentPreviewSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Select") {
+                    Button(isSelected ? "Unselect" : "Select") {
                         onSelect(trip)
                         dismiss()
                     }
