@@ -89,8 +89,8 @@ struct ProfileMapView: View {
 
     private var profileMap: some View {
         Map(position: $mapPosition) {
-            ForEach(viewModel.tripsWithCoordinates, id: \.blog.sourceTripId) { item in
-                annotation(for: item)
+            ForEach(viewModel.clusteredMapItems) { cluster in
+                clusterAnnotation(for: cluster)
             }
         }
         .mapStyle(.standard(elevation: .realistic))
@@ -99,6 +99,11 @@ struct ProfileMapView: View {
         }
         .ignoresSafeArea(edges: .bottom)
         .ignoresSafeArea(.keyboard)
+        .overlay(alignment: .bottomLeading) {
+            zoomButtons
+                .padding(.leading, 16)
+                .padding(.bottom, 164)
+        }
     }
 
     @MapContentBuilder
@@ -117,6 +122,46 @@ struct ProfileMapView: View {
                     withAnimation {
                         viewModel.selectTrip(item.blog.sourceTripId)
                         viewModel.recenterToTrip(item.blog)
+                    }
+                }
+            }
+        }
+    }
+
+    @MapContentBuilder
+    private func clusterAnnotation(for cluster: TripCluster) -> some MapContent {
+        Annotation("", coordinate: cluster.coordinate) {
+            if cluster.isCluster {
+                TripClusterAnnotationView(
+                    cluster: cluster,
+                    isSelected: cluster.blogs.contains(where: { $0.sourceTripId == viewModel.selectedTripID })
+                )
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.4)) {
+                        viewModel.mapRegion = MKCoordinateRegion(
+                            center: cluster.coordinate,
+                            span: MKCoordinateSpan(
+                                latitudeDelta: viewModel.mapRegion.span.latitudeDelta / 3,
+                                longitudeDelta: viewModel.mapRegion.span.longitudeDelta / 3
+                            )
+                        )
+                        viewModel.mapRegionChangeCounter += 1
+                    }
+                }
+            } else {
+                TripAnnotationView(
+                    blog: cluster.representative,
+                    isSelected: viewModel.selectedTripID == cluster.representative.sourceTripId
+                )
+                .onTapGesture {
+                    let blog = cluster.representative
+                    if viewModel.selectedTripID == blog.sourceTripId {
+                        selectedCreatedRecap = blog
+                    } else {
+                        withAnimation {
+                            viewModel.selectTrip(blog.sourceTripId)
+                            viewModel.recenterToTrip(blog)
+                        }
                     }
                 }
             }
@@ -302,6 +347,31 @@ struct ProfileMapView: View {
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Zoom Controls
+
+    private var zoomButtons: some View {
+        VStack(spacing: 0) {
+            Button(action: { withAnimation(.easeInOut(duration: 0.3)) { viewModel.zoomIn() } }) {
+                Image(systemName: "plus")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 42, height: 42)
+            }
+            Rectangle()
+                .fill(Color.white.opacity(0.2))
+                .frame(height: 1)
+            Button(action: { withAnimation(.easeInOut(duration: 0.3)) { viewModel.zoomOut() } }) {
+                Image(systemName: "minus")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 42, height: 42)
+            }
+        }
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
     }
 }
 
