@@ -1,7 +1,5 @@
 // fastblog/Models/TripCluster.swift
 
-import CoreLocation
-import Foundation
 import MapKit
 
 /// One or more trips grouped together at a map position.
@@ -69,7 +67,11 @@ func clusterTrips(
         }
     }
 
-    return zip(centers, groups).map { center, blogs in
-        TripCluster(representative: blogs.first!, coordinate: center, blogs: blogs)
+    return zip(centers, groups).compactMap { center, blogs in
+        guard let first = blogs.first else {
+            assertionFailure("TripCluster invariant violated: cluster group is empty")
+            return nil
+        }
+        return TripCluster(representative: first, coordinate: center, blogs: blogs)
     }
 }
