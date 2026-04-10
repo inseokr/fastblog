@@ -183,91 +183,90 @@ struct CountryManageRow: View {
     /// Tap the card (outside remove) to open the blog.
     var onOpenBlog: (() -> Void)? = nil
 
-    /// Portrait (3:4) thumb so covers match My Blogs cards.
-    /// Scales up on smaller iPhones and larger Dynamic Type to reduce
-    /// the "empty space" below the thumbnails when text wraps taller.
-    private var thumbnailWidth: CGFloat {
-        let screenWidth = UIScreen.main.bounds.width
-        let baseWidth: CGFloat
-        if screenWidth <= 390 {
-            baseWidth = 80
-        } else if screenWidth >= 428 {
-            baseWidth = 92
-        } else {
-            baseWidth = 84
-        }
-        return baseWidth
-    }
-
-    private var thumbnailHeight: CGFloat { thumbnailWidth * 4 / 3 }
-    private var coverTargetSize: CGSize {
-        // Keep the existing ~5x thumbnail-to-thumbnail-load-size ratio for sharpness.
-        CGSize(width: thumbnailWidth * 5, height: thumbnailHeight * 5)
-    }
+    /// Hero aspect ratio aligned with profile `BlogCard` covers.
+    private let heroAspect: CGFloat = 16 / 9
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            HStack(alignment: .top, spacing: 14) {
-                ZStack(alignment: .bottomLeading) {
-                    AssetPhotoView(
-                        assetIdentifier: blog.coverAssetIdentifier ?? blog.coverImageName,
-                        cornerRadius: 0,
-                        targetSize: coverTargetSize
-                    )
-                    .aspectRatio(3 / 4, contentMode: .fill)
-                    .frame(minWidth: thumbnailWidth, maxWidth: thumbnailWidth, minHeight: thumbnailHeight, maxHeight: .infinity)
-                    .clipped()
+        Color.clear
+            .aspectRatio(heroAspect, contentMode: .fit)
+            .overlay {
+                GeometryReader { proxy in
+                    let target = CGSize(width: proxy.size.width * 2, height: proxy.size.height * 2)
+                    ZStack {
+                        AssetPhotoView(
+                            assetIdentifier: blog.coverAssetIdentifier ?? blog.coverImageName,
+                            cornerRadius: 0,
+                            targetSize: target
+                        )
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .clipped()
 
-                    if isDraft {
-                        Text("Draft")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.primary)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(.thinMaterial, in: Capsule())
-                            .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
-                            .padding(5)
+                        LinearGradient(
+                            colors: [
+                                .black.opacity(0.35),
+                                .black.opacity(0.15),
+                                .clear,
+                                .black.opacity(0.5),
+                                .black.opacity(0.82)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .allowsHitTesting(false)
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
+            }
+            .overlay(alignment: .topLeading) {
+                if isDraft {
+                    Text("Draft")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .background(Capsule().fill(Color.black.opacity(0.35)))
+                        .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                        .padding(12)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                removeControl
+                    .padding(10)
+            }
+            .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(blog.title)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
 
                     Text(blog.tripDateRangeText ?? "Unknown Date")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                    Spacer(minLength: 4)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.92))
+                        .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
 
                     cloudBadge
                 }
-                .frame(maxWidth: .infinity, minHeight: thumbnailHeight, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .allowsHitTesting(false)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .onTapGesture {
                 guard !isRemoved else { return }
                 onOpenBlog?()
             }
-
-            VStack {
-                Spacer(minLength: 0)
-                removeControl
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(uiColor: .secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .opacity(isRemoved ? 0.6 : 1.0)
-        .animation(.easeInOut(duration: 0.25), value: isRemoved)
+            .opacity(isRemoved ? 0.55 : 1.0)
+            .animation(.easeInOut(duration: 0.25), value: isRemoved)
     }
 
     @ViewBuilder
@@ -275,13 +274,11 @@ struct CountryManageRow: View {
         if isInCloud {
             Text("In Cloud")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.green)
-                .padding(.horizontal, 8)
+                .foregroundStyle(Color(red: 0.65, green: 0.95, blue: 0.72))
+                .padding(.horizontal, 9)
                 .padding(.vertical, 4)
-                .background(
-                    Capsule()
-                        .fill(Color.green.opacity(0.12))
-                )
+                .background(Capsule().fill(Color.black.opacity(0.45)))
+                .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.5))
         }
     }
 
@@ -289,7 +286,7 @@ struct CountryManageRow: View {
         Button(action: onRemove) {
             Group {
                 if isRemoved {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 4) {
                         Image(systemName: "checkmark")
                         Text("Removed")
                     }
@@ -297,13 +294,18 @@ struct CountryManageRow: View {
                     Image(systemName: "trash")
                 }
             }
-            .font(.system(.subheadline, weight: .medium))
-            .foregroundStyle(isRemoved ? Color.secondary : Color.red)
-            .frame(minWidth: 40, minHeight: 36)
-            .padding(.horizontal, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isRemoved ? Color.secondary.opacity(0.1) : Color.red.opacity(0.08))
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(isRemoved ? Color.white : Color.red)
+            .padding(.horizontal, isRemoved ? 12 : 11)
+            .padding(.vertical, isRemoved ? 9 : 11)
+            .background {
+                Capsule()
+                    .fill(Color.black.opacity(0.48))
+                    .background(.ultraThinMaterial, in: Capsule())
+            }
+            .overlay(
+                Capsule()
+                    .stroke(Color.white.opacity(0.22), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
