@@ -13,7 +13,7 @@ import Photos
 struct ManagePhotosView: View {
     let placeTitle: String
     @Binding var photos: [RecapPhoto]
-    /// Called from the trailing "…" menu when user chooses Split. Nil hides that item.
+    /// Split control in the bottom-leading corner. Nil hides it.
     var onSplitRequested: (() -> Void)? = nil
     /// Called from the trailing "…" menu when user chooses Add from Library. Nil hides that item.
     var onAddFromLibrary: (() -> Void)? = nil
@@ -116,11 +116,9 @@ struct ManagePhotosView: View {
         fullScreenPhotoId == nil ? "Manage Photos" : ""
     }
 
-    /// Split and add-from-library live in the trailing "…" menu; hide it when neither action exists.
+    /// Bottom bar: split (when offered) and/or add-from-library. Split stays visible but disabled with one photo.
     private var managePhotosOverflowMenuVisible: Bool {
-        let canSplit = onSplitRequested != nil && manageGridPhotos.count > 1
-        let canAddFromLibrary = onAddFromLibrary != nil
-        return canSplit || canAddFromLibrary
+        onSplitRequested != nil || onAddFromLibrary != nil
     }
 
     var body: some View {
@@ -173,15 +171,23 @@ struct ManagePhotosView: View {
                 VStack {
                     Spacer()
                     HStack {
-                        if let split = onSplitRequested, manageGridPhotos.count > 1 {
+                        if let split = onSplitRequested {
+                            let canSplit = manageGridPhotos.count > 1
                             Button(action: split) {
                                 Image(systemName: "scissors")
                                     .font(.system(size: 22, weight: .semibold))
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(Color.orange.opacity(canSplit ? 1.0 : 0.38))
                                     .frame(width: 56, height: 56)
                                     .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                             }
+                            .buttonStyle(.plain)
+                            .disabled(!canSplit)
                             .accessibilityLabel("Split")
+                            .accessibilityHint(
+                                canSplit
+                                    ? "Splits this place into two at a chosen photo."
+                                    : "Unavailable until this place has at least two photos."
+                            )
                         }
                         Spacer()
                         if onAddFromLibrary != nil {
@@ -252,7 +258,7 @@ struct ManagePhotosView: View {
                         }
                     }
                     .frame(minWidth: isSelectMode ? 56 : 0, alignment: .center)
-                    .foregroundColor(.white)
+                    .foregroundColor(isSelectMode ? .blue : .white)
                 }
             }
         }

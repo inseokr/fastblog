@@ -18,6 +18,7 @@ struct PlaceCaptionEditSheet: View {
     /// `placeCaptionChanged` / `changedPhotoIds` reflect edits vs. values when the sheet opened.
     var onSave: (_ placeCaptionChanged: Bool, _ changedPhotoIds: Set<UUID>) -> Void
     var onCancel: () -> Void
+    var confirmLabel: String = "Save"
     /// When provided, the Enhance button is shown. Receives the draft; returns AI-enriched text.
     var onEnhance: ((String) async -> String)? = nil
     /// Called after AI successfully applies a result (so caller can mark overallStoryIsManual = false).
@@ -446,7 +447,7 @@ struct PlaceCaptionEditSheet: View {
 
                 Spacer()
 
-                Button("Save") {
+                Button(confirmLabel) {
                     flushCurrentDraftFromEditor()
                     caption = draftPlaceCaption
                     for p in captionStripPhotos {
