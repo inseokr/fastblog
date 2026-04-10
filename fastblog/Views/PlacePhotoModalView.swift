@@ -381,10 +381,10 @@ struct PlacePhotoModalView: View {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Full-screen / blog overlay: inset bottom chrome from the home indicator and nudge it upward vs sheet layout.
+    /// Full-screen / blog overlay: inset bottom chrome to clear the home indicator.
     private func bottomPhotoChromeInset(safeBottom: CGFloat) -> CGFloat {
         if presentation.isSheet { return 0 }
-        return max(safeBottom, 10) + 6
+        return 0
     }
 
     /// Title-row “View blog” only for Places Visited; never in the top-right stack.
@@ -601,6 +601,7 @@ struct PlacePhotoModalView: View {
                                 endPoint: .top
                             )
                             .padding(.top, PlaceDetailChromeLayout.bottomGradientNegativeTopPadding(sheet: presentation.isSheet))
+                            .ignoresSafeArea(edges: .bottom)
                         )
                         .opacity(isZoomMode ? 0 : 1)
                         .animation(.easeInOut(duration: 0.25), value: isZoomMode)
@@ -1091,6 +1092,7 @@ struct PlacePhotoModalView: View {
         let tapGesture = doubleTap.exclusively(before: singleTap)
 
         return HorizontalScrollablePhotoView(photo: photo)
+            .ignoresSafeArea()
             .contentShape(Rectangle())
             .highPriorityGesture(tapGesture)
     }
