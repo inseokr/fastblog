@@ -1555,7 +1555,6 @@ struct RecapBlogPageView: View {
                 }
 
                 tripNarrativeCard
-                    .padding(.bottom, 12)
             }
 
             // Read-only: map on every day. Edit: map from Day 2+ (Day 1 keeps edit chrome uncluttered).
@@ -1754,7 +1753,7 @@ struct RecapBlogPageView: View {
                 } else {
                     blogTitleView
                 }
-                tripNarrativeCard.padding(.bottom, 12)
+                tripNarrativeCard
                 if hasFinishedInitialLoad {
                     Text("All places are hidden.")
                         .font(.headline)
@@ -2144,7 +2143,6 @@ struct RecapBlogPageView: View {
             }
         }
         .frame(height: resolvedBaseHeight * 0.55)
-        .padding(.bottom, 16)
     }
 
     // MARK: - Photo Library Access (Limited users)
@@ -2371,7 +2369,7 @@ struct RecapBlogPageView: View {
             .padding(12)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.top, 16)
         .padding(.bottom, 8)
         .allowsHitTesting(!isDayPagerHorizontalDragActive)
         .id(RecapBlogScrollAnchor.mapForDay(day.id))
