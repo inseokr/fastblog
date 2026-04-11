@@ -251,7 +251,6 @@ struct fastblogApp: App {
         .onAppear {
             GoogleAuthManager.shared.restorePreviousSignIn()
             Task {
-                await EntitlementManager.shared.refreshEntitlements()
                 createdRecapStore.enforceArchiveRules()
 
                 // Ensure splash is visible for at least 1.5 seconds.
@@ -285,7 +284,6 @@ struct fastblogApp: App {
             } else if newPhase == .active {
                 AppAnalytics.shared.flushOnBackground()
                 Task {
-                    await EntitlementManager.shared.refreshEntitlements()
                     createdRecapStore.enforceArchiveRules()
                     if authStateManager.isLoggedIn {
                         await createdRecapStore.syncFromCloud()
