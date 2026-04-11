@@ -2,6 +2,8 @@
 
 Swift/SwiftUI iOS travel blog app. Read and follow the skills below before writing or reviewing any code.
 
+Cursor loads the same expectations via **`.cursor/rules/fastblog.mdc`** (always-on rule that points here and to `.ai/skills/`).
+
 ## Build command
 ```
 xcodebuild -project fastblog.xcodeproj -scheme fastblog -sdk iphonesimulator build
