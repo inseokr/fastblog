@@ -4247,6 +4247,8 @@ struct TripCarouselCard: View {
     var showNewBadge: Bool = false
     var onTap: () -> Void = {}
 
+    @State private var ctaPulse = false
+
     private static let cornerRadius: CGFloat = 18
 
     private var durationText: String {
@@ -4313,20 +4315,54 @@ struct TripCarouselCard: View {
                         .padding(10)
                 }
             }
-            // Subtle "tap to create" hint only on the selected card
+            // "Create Blog" call-to-action — shown only on the selected card
             .overlay(alignment: .topTrailing) {
                 if isSelected {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.white, Color.blue)
-                        .padding(10)
-                        .transition(.scale.combined(with: .opacity))
+                    HStack(spacing: 6) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Create Blog")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .tracking(0.3)
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 8)
+                    .background(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.45, green: 0.18, blue: 0.98),
+                                Color(red: 0.04, green: 0.52, blue: 1.0)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
+                    .shadow(color: Color(red: 0.25, green: 0.35, blue: 0.98).opacity(0.65), radius: 14, x: 0, y: 4)
+                    .scaleEffect(ctaPulse ? 1.05 : 1.0)
+                    .animation(.spring(response: 0.9, dampingFraction: 0.5).repeatForever(autoreverses: true), value: ctaPulse)
+                    .onAppear { ctaPulse = true }
+                    .onDisappear { ctaPulse = false }
+                    .padding(10)
+                    .transition(.scale.combined(with: .opacity))
                 }
             }
-            // Selection ring
+            // Selection ring — gradient stroke when selected
             .overlay {
                 RoundedRectangle(appChromeBaseRadius: Self.cornerRadius)
-                    .stroke(Color.white.opacity(isSelected ? 0.8 : 0), lineWidth: 2)
+                    .stroke(
+                        LinearGradient(
+                            colors: isSelected
+                                ? [Color(red: 0.45, green: 0.18, blue: 0.98), Color(red: 0.04, green: 0.52, blue: 1.0)]
+                                : [Color.clear, Color.clear],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 2
+                    )
                     .animation(.easeInOut(duration: 0.2), value: isSelected)
             }
             .clipShape(RoundedRectangle(appChromeBaseRadius: Self.cornerRadius))
