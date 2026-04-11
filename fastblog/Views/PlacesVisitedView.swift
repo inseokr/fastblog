@@ -209,12 +209,9 @@ struct PlacesVisitedView: View {
                                         ForEach(pairs, id: \.first?.id) { pair in
                                             HStack(alignment: .top, spacing: 12) {
                                                 ForEach(Array(pair.enumerated()), id: \.element.id) { _, place in
-                                                    Button {
+                                                    PlaceVisitedCard(place: place) {
                                                         selectedPlaceForModal = place
-                                                    } label: {
-                                                        PlaceVisitedCard(place: place)
                                                     }
-                                                    .buttonStyle(.plain)
                                                     .frame(maxWidth: .infinity)
                                                 }
                                                 // If odd number in this row, fill the gap
@@ -232,6 +229,7 @@ struct PlacesVisitedView: View {
                     .padding(.horizontal, horizontalPadding)
                     .padding(.bottom, 140)
                 }
+                .scrollDismissesKeyboard(.immediately)
             }
 
             // Persistent bottom bar (search + map), same design as My Blogs
@@ -282,6 +280,12 @@ struct PlacesVisitedView: View {
                 .zIndex(200)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
+            }
+        }
+        .onTapGesture {
+            if isSearchFocused {
+                isSearchFocused = false
+                isSearchActive = false
             }
         }
         .animation(.easeInOut(duration: 0.38), value: selectedPlaceForModal?.id)
@@ -589,35 +593,11 @@ private struct PlaceVisitedPhotoModalWrapper: View {
 
 private struct PlaceVisitedCard: View {
     let place: VisitedPlaceSummary
-
-    private let maxThumbs: Int = 3
-    private let thumbSpacing: CGFloat = 8
-    private let stripPadding: CGFloat = 10
-    /// Preferred thumb size on wide cards; scales down when the grid column is narrower (non‑Max iPhones).
-    private let preferredThumbSize: CGFloat = 44
+    var onTap: (() -> Void)? = nil
 
     var body: some View {
-        let heroId = place.heroPhoto?.id
-        let previewThumbs = place.photos
-            .filter { $0.id != heroId }
-            .sorted(by: { $0.timestamp > $1.timestamp })
-            .prefix(maxThumbs)
-
         VStack(alignment: .leading, spacing: 10) {
-            GeometryReader { geo in
-                let availableWidth = geo.size.width
-                let thumbCount = previewThumbs.count
-                let thumbSize: CGFloat = {
-                    guard thumbCount > 0 else { return preferredThumbSize }
-                    let gutters = stripPadding * 2 + CGFloat(thumbCount - 1) * thumbSpacing
-                    let raw = (availableWidth - gutters) / CGFloat(thumbCount)
-                    // No minimum clamp — a floor can make the strip wider than the column on narrow phones.
-                    return min(preferredThumbSize, max(1, raw))
-                }()
-                let backingWidth = CGFloat(thumbCount) * thumbSize
-                    + CGFloat(thumbCount - 1) * thumbSpacing
-                    + stripPadding * 2
-
+            Button { onTap?() } label: {
                 ZStack(alignment: .bottom) {
                     if let hero = place.heroPhoto {
                         RecapPhotoThumbnail(photo: hero, cornerRadius: 14, showIcon: false, targetSize: CGSize(width: 900, height: 600))
@@ -625,10 +605,10 @@ private struct PlaceVisitedCard: View {
                             .frame(maxWidth: .infinity)
                             .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
                     } else {
-                        Color.clear
+                        RoundedRectangle(appChromeBaseRadius: 14)
+                            .fill(Color.secondary.opacity(0.15))
                             .frame(height: 150)
                             .frame(maxWidth: .infinity)
-                            .clipShape(RoundedRectangle(appChromeBaseRadius: 14))
                             .overlay {
                                 Image(systemName: "photo")
                                     .font(.title2)
@@ -651,27 +631,9 @@ private struct PlaceVisitedCard: View {
                         Spacer()
                     }
                     .padding(10)
-
-                    if !previewThumbs.isEmpty {
-                        HStack(spacing: thumbSpacing) {
-                            ForEach(Array(previewThumbs)) { photo in
-                                RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 200, height: 200))
-                                    .frame(width: thumbSize, height: thumbSize)
-                                    .clipShape(RoundedRectangle(appChromeBaseRadius: 10))
-                                    .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 2)
-                            }
-                        }
-                        .padding(stripPadding)
-                        .frame(width: min(backingWidth, availableWidth))
-                        .background(
-                            RoundedRectangle(appChromeBaseRadius: 14, style: .continuous)
-                                .fill(Color.black.opacity(0.35))
-                                .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 6)
-                        )
-                    }
                 }
             }
-            .frame(height: 150)
+            .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(place.displayName)
@@ -679,21 +641,21 @@ private struct PlaceVisitedCard: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
-                HStack(spacing: 8) {
-                    Text(place.cityDisplay ?? place.country)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                Text(place.cityDisplay ?? place.country)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
 
                 if let raw = place.categoryRawValue?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
                     PlacePOICategoryBadge(rawCategory: raw)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+
+                Spacer(minLength: 0)
             }
         }
         .padding(12)
-        .background(Color.clear)
+        .frame(maxHeight: .infinity, alignment: .top)
         .clipShape(RoundedRectangle(appChromeBaseRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(appChromeBaseRadius: 18, style: .continuous)
@@ -1187,12 +1149,9 @@ private struct PlacesVisitedMapView: View {
                                             ForEach(pairs, id: \.first?.id) { pair in
                                                 HStack(alignment: .top, spacing: 12) {
                                                     ForEach(Array(pair.enumerated()), id: \.element.id) { _, place in
-                                                        Button {
+                                                        PlaceVisitedCard(place: place) {
                                                             selectedPlaceForModal = place
-                                                        } label: {
-                                                            PlaceVisitedCard(place: place)
                                                         }
-                                                        .buttonStyle(.plain)
                                                         .frame(maxWidth: .infinity)
                                                     }
                                                     if pair.count == 1 {
@@ -1209,6 +1168,7 @@ private struct PlacesVisitedMapView: View {
                         .padding(.horizontal, 16)
                         .padding(.bottom, 32)
                     }
+                    .scrollDismissesKeyboard(.immediately)
                 }
                 .transition(.opacity)
             }
@@ -1261,6 +1221,11 @@ private struct PlacesVisitedMapView: View {
                     }
                 }
                 .zIndex(90)
+            }
+        }
+        .onTapGesture {
+            if isSearchFocused {
+                isSearchFocused = false
             }
         }
         .navigationBarBackButtonHidden(true)
