@@ -697,6 +697,19 @@ final class TripsViewModel: ObservableObject {
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
 
+        // When the user signs out, clear cached scan data so the next onAppear() triggers a
+        // fresh scan after re-login. This ensures detectNewMomentsForOnTheGoTrip re-evaluates
+        // with account blogs visible and the active on-the-go blog is properly detected.
+        AuthService.shared.$currentUser
+            .dropFirst()
+            .filter { $0 == nil }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.tripDrafts = []
+                self?.currentWindowTrips = nil
+            }
+            .store(in: &cancellables)
+
         NotificationCenter.default.publisher(for: .blogifyTripExclusionRadiusDidFinishAdjusting)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in

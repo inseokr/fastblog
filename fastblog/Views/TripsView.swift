@@ -2978,9 +2978,19 @@ extension CameraCaptureView {
               OnTheGoTripStore.isTripStillOngoing() else {
             return nil
         }
-        if !createdRecapStore.hasCreatedBlog(sourceTripId: activeSourceTripId) {
-            OnTheGoTripStore.markTripAsEnded()
-            return nil
+        // Only permanently clear the on-the-go state when the user is signed in and the blog
+        // genuinely no longer exists. While logged out, account blogs are hidden in visibleRecents
+        // even though they still exist on disk — clearing state here would lose the active blog
+        // association across logout/login cycles.
+        if AuthService.shared.isSignedIn {
+            if !createdRecapStore.hasCreatedBlog(sourceTripId: activeSourceTripId) {
+                OnTheGoTripStore.markTripAsEnded()
+                return nil
+            }
+        } else {
+            guard createdRecapStore.hasCreatedBlog(sourceTripId: activeSourceTripId) else {
+                return nil
+            }
         }
         return activeSourceTripId
     }
