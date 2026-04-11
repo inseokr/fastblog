@@ -515,7 +515,7 @@ struct CreatedRecapCard: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack(alignment: .bottomLeading) {
+            ZStack(alignment: .topLeading) {
                 TripCoverImage(theme: recap.coverImageName, coverAssetIdentifier: recap.coverAssetIdentifier)
                     .frame(width: 80, height: 80)
                     .clipShape(RoundedRectangle(appChromeBaseRadius: 10))
@@ -1376,7 +1376,7 @@ struct AllRecentsSheet: View {
                         dismiss()
                     } label: {
                         HStack(spacing: 14) {
-                            ZStack(alignment: .bottomLeading) {
+                            ZStack(alignment: .topLeading) {
                                 TripCoverImage(theme: recap.coverImageName, coverAssetIdentifier: recap.coverAssetIdentifier)
                                     .frame(width: 60, height: 60)
                                     .clipShape(RoundedRectangle(appChromeBaseRadius: 8))

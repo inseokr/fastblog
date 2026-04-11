@@ -178,7 +178,7 @@ struct CoverPhotoPickerView: View {
                                     .clipShape(RoundedRectangle(appChromeBaseRadius: 8))
                                     .overlay(
                                         RoundedRectangle(appChromeBaseRadius: 8)
-                                            .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 3)
+                                            .stroke(isSelected ? Color.white : Color.clear, lineWidth: 3)
                                     )
                             }
                             .buttonStyle(.plain)
@@ -299,7 +299,7 @@ struct BlogCoverPhotoPickerView: View {
                                     .clipShape(RoundedRectangle(appChromeBaseRadius: 8))
                                     .overlay(
                                         RoundedRectangle(appChromeBaseRadius: 8)
-                                            .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 3)
+                                            .stroke(isSelected ? Color.white : Color.clear, lineWidth: 3)
                                     )
                             }
                             .buttonStyle(.plain)

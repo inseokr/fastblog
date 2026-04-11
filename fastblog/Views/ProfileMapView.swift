@@ -99,11 +99,6 @@ struct ProfileMapView: View {
         }
         .ignoresSafeArea(edges: .bottom)
         .ignoresSafeArea(.keyboard)
-        .overlay(alignment: .bottomLeading) {
-            zoomButtons
-                .padding(.leading, 16)
-                .padding(.bottom, 164)
-        }
     }
 
     @MapContentBuilder
@@ -327,30 +322,6 @@ struct ProfileMapView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Zoom Controls
-
-    private var zoomButtons: some View {
-        VStack(spacing: 0) {
-            Button(action: { withAnimation(.easeInOut(duration: 0.3)) { viewModel.zoomIn() } }) {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 42, height: 42)
-            }
-            Rectangle()
-                .fill(Color.white.opacity(0.2))
-                .frame(height: 1)
-            Button(action: { withAnimation(.easeInOut(duration: 0.3)) { viewModel.zoomOut() } }) {
-                Image(systemName: "minus")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 42, height: 42)
-            }
-        }
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
-    }
 }
 
 // MARK: - Safe Collection Subscript (shared by map views)
@@ -569,12 +540,6 @@ struct CountryMapView: View {
                         mapSpan = context.region.span
                         mapCenter = context.region.center
                     }
-                    .overlay(alignment: .bottomLeading) {
-                        countryZoomButtons
-                            .padding(.leading, 16)
-                            .padding(.bottom, 164)
-                    }
-
                     // Bottom blog card strip
                     if !sortedBlogs.isEmpty {
                         bottomBlogStrip
@@ -838,49 +803,6 @@ struct CountryMapView: View {
     }
 
     // MARK: - Zoom Controls (CountryMapView)
-
-    private var countryZoomButtons: some View {
-        VStack(spacing: 0) {
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    mapPosition = .region(MKCoordinateRegion(
-                        center: mapCenter,
-                        span: MKCoordinateSpan(
-                            latitudeDelta: max(0.001, mapSpan.latitudeDelta / 2),
-                            longitudeDelta: max(0.001, mapSpan.longitudeDelta / 2)
-                        )
-                    ))
-                }
-            }) {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 42, height: 42)
-            }
-            Rectangle()
-                .fill(Color.white.opacity(0.2))
-                .frame(height: 1)
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    mapPosition = .region(MKCoordinateRegion(
-                        center: mapCenter,
-                        span: MKCoordinateSpan(
-                            latitudeDelta: min(90, mapSpan.latitudeDelta * 2),
-                            longitudeDelta: min(180, mapSpan.longitudeDelta * 2)
-                        )
-                    ))
-                }
-            }) {
-                Image(systemName: "minus")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 42, height: 42)
-            }
-        }
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
-    }
 
     private func displayCountryName(_ name: String) -> String {
         name.isEmpty || name == "Unknown" ? "Other" : name

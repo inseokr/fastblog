@@ -485,7 +485,7 @@ struct CountryBlogRowView: View {
                 .frame(height: 250)
                 .frame(maxWidth: .infinity)
                 .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
-                .overlay(alignment: .bottomLeading) {
+                .overlay(alignment: .topLeading) {
                     if isDraft {
                         Text("Draft")
                             .font(.caption2)

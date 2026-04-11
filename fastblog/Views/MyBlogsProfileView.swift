@@ -591,7 +591,7 @@ private struct RecentBlogCard: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack(alignment: .bottomLeading) {
+            ZStack(alignment: .topLeading) {
                 AssetPhotoView(
                     assetIdentifier: recap.coverAssetIdentifier ?? recap.coverImageName,
                     cornerRadius: 10,

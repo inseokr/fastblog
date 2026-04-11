@@ -1442,14 +1442,18 @@ private struct PlacesVisitedClusterMarker: View {
     let cluster: VisitedPlaceCluster
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            // Ghost ring signals "multiple items here"
-            Circle()
-                .fill(Color.blue.opacity(0.25))
-                .frame(width: 60, height: 60)
-                .offset(x: 4, y: -4)
+        VStack(spacing: 4) {
+            // Count pill above the marker
+            Text("\(cluster.count) Places")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(Color.blue))
+                .overlay(Capsule().stroke(Color.white, lineWidth: 1.5))
+                .shadow(color: .black.opacity(0.35), radius: 2)
 
-            // Representative photo circle (slightly larger than individual 46pt)
+            // Representative photo circle
             ZStack {
                 Circle()
                     .fill(Color.blue)
@@ -1469,17 +1473,6 @@ private struct PlacesVisitedClusterMarker: View {
                         .foregroundColor(.white)
                 }
             }
-
-            // Count badge
-            Text("\(cluster.count)")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(.white)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(Color.blue))
-                .overlay(Capsule().stroke(Color.white, lineWidth: 1.5))
-                .shadow(color: .black.opacity(0.35), radius: 2)
-                .offset(x: 10, y: -8)
         }
     }
 }

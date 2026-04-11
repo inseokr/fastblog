@@ -36,7 +36,7 @@ struct PrivacyPolicyView: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 8)
 
-                    Text("Last Updated: April 8, 2026")
+                    Text("Last Updated: April 10, 2026")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -90,7 +90,8 @@ struct PrivacyPolicyView: View {
                     bodyText("Bloggo offers two tiers of access:")
                     bullet("Guest users (no account): Guests may create and export a limited number of blogs, as shown in the app. To save additional blogs or use features that require an account, you can create one.")
                     bullet("Registered users: Users with a Bloggo account can save and export blogs according to the limits shown in the app. Account creation requires a valid email address.")
-                    bullet("You must be at least 13 years old to create an account. If you are under 13, you may use Bloggo only as a guest.")
+                    bodyText("Age and accounts. Bloggo is listed on the Apple App Store with a 4+ age rating. That rating reflects the general suitability of the app for download and everyday use, including when you use Bloggo without registering. Creating a Bloggo account is different: it requires you to provide personal information (such as an email address) that we process on our systems. For that reason, you must be at least 13 years old to create an account. If you are not yet 13, you may not register; you may still use Bloggo as a guest within the limits shown in the app, without submitting the information we collect for registered users.")
+                    bullet("By creating an account, you represent that you are at least 13 years of age, or the minimum age required in your jurisdiction to consent to the collection of your personal information online, whichever is higher.")
                     bullet("Only one account may be created per email address.")
                     bodyText("An account does not move your blog content to our servers; it is still stored on your device as described in Section 2, while we store the account details needed to sign you in.")
                 }

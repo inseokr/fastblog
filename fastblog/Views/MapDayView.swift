@@ -227,7 +227,7 @@ private struct PlaceMarkerView: View {
                 startEndBadge(text: "END", color: Color.orange)
             }
 
-            ZStack(alignment: .bottomTrailing) {
+            ZStack(alignment: .topLeading) {
                 RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 80, height: 80))
                     .frame(width: 48, height: 48)
                     .clipShape(Circle())
@@ -246,7 +246,7 @@ private struct PlaceMarkerView: View {
                     .frame(width: 18, height: 18)
                     .background(Circle().fill(Color.blue.opacity(0.9)))
                     .overlay(Circle().stroke(Color.white, lineWidth: 1))
-                    .offset(x: 4, y: 4)
+                    .offset(x: -4, y: -4)
             }
 
             Text(title)
@@ -353,7 +353,7 @@ struct FullScreenMapView: View {
         let includeOthers = editablePlaceStops.contains {
             ($0.placeCategory ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
-        return PlacePOICategoryCatalog.mergedCategoryRawsForFilters(dataRaws: dataRaws, includeOthers: includeOthers)
+        return PlacePOICategoryCatalog.categoryRawsAppearingInDataForFilters(dataRaws: dataRaws, includeOthers: includeOthers)
     }
 
     private var filteredStops: [PlaceStop] {
