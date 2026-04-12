@@ -102,7 +102,18 @@ struct EmailLoginView: View {
                     loadingOverlay
                 }
             }
+            .navigationBarBackButtonHidden(true)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .foregroundColor(.white)
+                    }
+                }
+            }
             .preferredColorScheme(.dark)
             .onAppear { emailFocused = true }
             .sheet(isPresented: $showForgotPassword) {

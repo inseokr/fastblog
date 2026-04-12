@@ -103,19 +103,21 @@ struct EmailSignUpView: View {
                     loadingOverlay
                 }
             }
+            .navigationBarBackButtonHidden(true)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    if step != .enterUsername {
-                        Button {
-                            // Go back one step
+                    Button {
+                        if step == .enterUsername {
+                            dismiss()
+                        } else {
                             withAnimation {
                                 step = Step(rawValue: step.rawValue - 1) ?? .enterUsername
                             }
-                        } label: {
-                            Image(systemName: "chevron.left")
-                                .foregroundColor(.white)
                         }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .foregroundColor(.white)
                     }
                 }
                 ToolbarItem(placement: .principal) {
