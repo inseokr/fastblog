@@ -54,3 +54,6 @@ playground.xcworkspace
 
 # Secrets — never commit real keys
 Secrets.xcconfig
+
+# Xcode test results
+TestResults/

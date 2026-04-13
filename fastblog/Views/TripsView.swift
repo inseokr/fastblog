@@ -4247,8 +4247,6 @@ struct TripCarouselCard: View {
     var showNewBadge: Bool = false
     var onTap: () -> Void = {}
 
-    @State private var ctaPulse = false
-
     private static let cornerRadius: CGFloat = 18
 
     private var durationText: String {
@@ -4342,10 +4340,6 @@ struct TripCarouselCard: View {
                     .clipShape(Capsule())
                     .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
                     .shadow(color: Color(red: 0.25, green: 0.35, blue: 0.98).opacity(0.65), radius: 14, x: 0, y: 4)
-                    .scaleEffect(ctaPulse ? 1.05 : 1.0)
-                    .animation(.spring(response: 0.9, dampingFraction: 0.5).repeatForever(autoreverses: true), value: ctaPulse)
-                    .onAppear { ctaPulse = true }
-                    .onDisappear { ctaPulse = false }
                     .padding(10)
                     .transition(.scale.combined(with: .opacity))
                 }
