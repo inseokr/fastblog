@@ -568,11 +568,12 @@ final class TripsViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     /// Draft trips that have not yet been turned into a created recap blog. Use this for the Trips list.
-    /// Filters by both UUID match and date/location overlap so trips never survive a re-scan.
+    /// Only hides trips that were directly turned into a blog (by UUID). The `isDraftRedundantWithSavedBlogs`
+    /// filter runs only during scans so that adding library photos to an existing blog does not
+    /// immediately collapse other visible trip cards.
     var visibleDraftTrips: [TripDraft] {
         return tripDrafts.filter { draft in
             !createdRecapStore.hasCreatedBlog(sourceTripId: draft.id)
-            && !createdRecapStore.isDraftRedundantWithSavedBlogs(draft)
         }
     }
 
@@ -650,12 +651,13 @@ final class TripsViewModel: ObservableObject {
 
     /// Trips ordered newest first — reads from the active window when present, but still
     /// applies the same created/draft filtering so saved trips disappear immediately.
+    /// Note: `isDraftRedundantWithSavedBlogs` is intentionally omitted here; it runs only
+    /// during scans to avoid trips vanishing when unrelated blog photos are updated.
     var visibleDraftTripsNewestFirst: [TripDraft] {
         let source: [TripDraft]
         if let window = currentWindowTrips {
             source = window.filter { draft in
                 !createdRecapStore.hasCreatedBlog(sourceTripId: draft.id)
-                && !createdRecapStore.isDraftRedundantWithSavedBlogs(draft)
             }
         } else {
             source = visibleDraftTrips

@@ -5121,10 +5121,10 @@ Your blog remains private unless you choose to share it.
                         .fixedSize()
                         .padding(.horizontal, 20)
                         .padding(.vertical, 7)
-                        .background(hasUnsavedChanges ? Color.blue : Color.gray.opacity(0.5), in: Capsule())
+                        .background((hasUnsavedChanges || !hasBlogBeenSavedToDevice) ? Color.blue : Color.gray.opacity(0.5), in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(!hasUnsavedChanges)
+                .disabled(!hasUnsavedChanges && hasBlogBeenSavedToDevice)
             } else if !isExportingPDF && !showStoryMode {
                 Button {
                     showBlogSettings = true
@@ -5640,6 +5640,11 @@ Your blog remains private unless you choose to share it.
     /// For newly included photos that have never been uploaded, uploads first then adds.
     /// Photos added mid-session (e.g. library import) are not in `photoInclusionBefore`; they are treated as newly included.
     private func syncPhotoChangesWithCloud() {
+        // Cloud sync disabled for current release — no backend auth available.
+        managePhotosEditInfo = nil
+    }
+
+    private func _syncPhotoChangesWithCloud_disabled() {
         guard let info = managePhotosEditInfo else {
             print("📸 [syncPhoto] ⚠️ managePhotosEditInfo is nil — skipping cloud sync")
             return
