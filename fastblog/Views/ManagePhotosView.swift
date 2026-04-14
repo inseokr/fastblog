@@ -17,6 +17,8 @@ struct ManagePhotosView: View {
     var onSplitRequested: (() -> Void)? = nil
     /// Called from the trailing "…" menu when user chooses Add from Library. Nil hides that item.
     var onAddFromLibrary: (() -> Void)? = nil
+    /// Called when user chooses Add Video from Library. Nil hides that button.
+    var onAddVideoFromLibrary: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var isSelectMode = false
@@ -118,7 +120,7 @@ struct ManagePhotosView: View {
 
     /// Bottom bar: split (when offered) and/or add-from-library. Split stays visible but disabled with one photo.
     private var managePhotosOverflowMenuVisible: Bool {
-        onSplitRequested != nil || onAddFromLibrary != nil
+        onSplitRequested != nil || onAddFromLibrary != nil || onAddVideoFromLibrary != nil
     }
 
     var body: some View {
@@ -190,6 +192,16 @@ struct ManagePhotosView: View {
                             )
                         }
                         Spacer()
+                        if onAddVideoFromLibrary != nil {
+                            Button(action: { onAddVideoFromLibrary?() }) {
+                                Image(systemName: "video.badge.plus")
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 56, height: 56)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                            }
+                            .accessibilityLabel("Add Videos")
+                        }
                         if onAddFromLibrary != nil {
                             Button(action: { onAddFromLibrary?() }) {
                                 Image(systemName: "photo.badge.plus")
@@ -426,6 +438,18 @@ private struct ManagePhotoGridCell: View {
                 }
                 .aspectRatio(1, contentMode: .fit)
 
+                // Video play badge (top-left)
+                if photo.isVideo {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 3)
+                        .background(Color.black.opacity(0.65))
+                        .appChromeCornerRadius(4)
+                        .padding(4)
+                }
+
                 // AI rank badge
                 if let rank = rank {
                     HStack(spacing: 2) {
@@ -440,6 +464,7 @@ private struct ManagePhotoGridCell: View {
                     .background(Color.black.opacity(0.72))
                     .appChromeCornerRadius(4)
                     .padding(4)
+                    .padding(.top, photo.isVideo ? 22 : 0)
                 }
 
                 // Dim unselected photos in select mode

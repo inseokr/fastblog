@@ -105,6 +105,37 @@ struct MultiPhotoLibraryImportPickerView: UIViewControllerRepresentable {
     }
 }
 
+// MARK: - Video import (single or multi-select from camera roll)
+
+/// PHPicker configured to show only video assets. Returns PHAsset `localIdentifier` strings.
+/// Used by "Add Video" flows in `ManagePhotosView` / `RecapBlogPageView`.
+struct VideoCameraRollPickerView: UIViewControllerRepresentable {
+    let onComplete: ([String]) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onComplete: onComplete) }
+
+    func makeUIViewController(context: Context) -> PHPickerViewController {
+        var config = PHPickerConfiguration(photoLibrary: .shared())
+        config.selectionLimit = 0   // 0 = unlimited
+        config.filter = .videos
+        let picker = PHPickerViewController(configuration: config)
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, PHPickerViewControllerDelegate {
+        let onComplete: ([String]) -> Void
+        init(onComplete: @escaping ([String]) -> Void) { self.onComplete = onComplete }
+
+        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            let identifiers = results.compactMap { $0.assetIdentifier }
+            onComplete(identifiers)
+        }
+    }
+}
+
 // MARK: - Single-image import (copy pixels into app storage)
 
 /// Picks one photo from the library, loads image data, and resolves date/location from `PHAsset` when available.

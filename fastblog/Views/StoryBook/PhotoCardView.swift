@@ -15,23 +15,35 @@ struct PhotoCardView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: StoryPageLayout.photoCaptionToImageSpacing) {
-            Image(uiImage: photo.image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: width, height: imageHeight)
-                .clipped()
-                .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
+        if let videoId = photo.videoLocalIdentifier {
+            // Video clip: show interactive thumbnail with play overlay and inline player.
+            VideoThumbnailCardView(
+                localIdentifier: videoId,
+                width: width,
+                imageHeight: imageHeight,
+                caption: photo.caption,
+                fontTheme: fontTheme,
+                blogColor: blogColor
+            )
+        } else {
+            VStack(alignment: .leading, spacing: StoryPageLayout.photoCaptionToImageSpacing) {
+                Image(uiImage: photo.image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: width, height: imageHeight)
+                    .clipped()
+                    .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
 
-            if let caption = photo.caption?.trimmingCharacters(in: .whitespacesAndNewlines), !caption.isEmpty {
-                Text(caption)
-                    .font(Font(StoryFontHelper.uiFont(for: fontTheme, size: StoryPageLayout.photoCaptionFontSize)))
-                    .foregroundColor(captionColor)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let caption = photo.caption?.trimmingCharacters(in: .whitespacesAndNewlines), !caption.isEmpty {
+                    Text(caption)
+                        .font(Font(StoryFontHelper.uiFont(for: fontTheme, size: StoryPageLayout.photoCaptionFontSize)))
+                        .foregroundColor(captionColor)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
+            .frame(width: width, alignment: .leading)
         }
-        .frame(width: width, alignment: .leading)
     }
 }

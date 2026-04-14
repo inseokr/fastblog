@@ -79,7 +79,18 @@ enum PlaceMarkerType {
 }
 
 struct PhotoContent {
-    let image: UIImage          // pre-downsampled to screen resolution
+    let image: UIImage          // pre-downsampled to screen resolution (or first-frame thumbnail for video)
     let caption: String?
     let captionIsLong: Bool     // caption.count > 80
+    /// Non-nil when this item is a video clip. Drives play-overlay rendering and inline playback.
+    let videoLocalIdentifier: String?
+
+    var isVideo: Bool { videoLocalIdentifier != nil }
+
+    init(image: UIImage, caption: String?, captionIsLong: Bool, videoLocalIdentifier: String? = nil) {
+        self.image = image
+        self.caption = caption
+        self.captionIsLong = captionIsLong
+        self.videoLocalIdentifier = videoLocalIdentifier
+    }
 }

@@ -160,6 +160,8 @@ struct RecapBlogPageView: View {
     @State private var managePhotosEditInfo: ManagePhotosEditInfo?
     /// Presents the system photo picker while managing a place's photo group.
     @State private var showLibraryImportForManageStop = false
+    /// Presents the system video picker while managing a place's photo/video group.
+    @State private var showLibraryVideoImportForManageStop = false
     @State private var isEditMode = true
     @State private var showBlogSettings = false
     @State private var showShareSheet = false
@@ -1118,12 +1120,22 @@ struct RecapBlogPageView: View {
                         guard let stop = placeStop(dayId: pair.dayId, stopId: pair.stopId) else { return }
                         presentSplitPlaceStopSheet(dayId: pair.dayId, stop: stop)
                     },
-                    onAddFromLibrary: { showLibraryImportForManageStop = true }
+                    onAddFromLibrary: { showLibraryImportForManageStop = true },
+                    onAddVideoFromLibrary: { showLibraryVideoImportForManageStop = true }
                 )
             }
             .sheet(isPresented: $showLibraryImportForManageStop) {
                 CameraRollPickerView { identifiers in
                     showLibraryImportForManageStop = false
+                    guard let pair = showManagePhotosForStop, !identifiers.isEmpty else { return }
+                    Task {
+                        await importLibraryPhotosIntoStop(assetIdentifiers: identifiers, dayId: pair.dayId, stopId: pair.stopId)
+                    }
+                }
+            }
+            .sheet(isPresented: $showLibraryVideoImportForManageStop) {
+                VideoCameraRollPickerView { identifiers in
+                    showLibraryVideoImportForManageStop = false
                     guard let pair = showManagePhotosForStop, !identifiers.isEmpty else { return }
                     Task {
                         await importLibraryPhotosIntoStop(assetIdentifiers: identifiers, dayId: pair.dayId, stopId: pair.stopId)
@@ -5832,19 +5844,24 @@ Your blog remains private unless you choose to share it.
             let assets = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
             guard let asset = assets.firstObject else { continue }
 
+            let isVideo = asset.mediaType == .video
             let coord = PlaceLibraryPhotoImport.resolvedCoordinate(asset: asset, stop: stop)
             let timestamp = PlaceLibraryPhotoImport.resolvedTimestamp(asset: asset, stop: stop, day: day, placeTimeZone: placeTZ)
             let recap = RecapPhoto(
                 timestamp: timestamp,
                 location: coord,
-                imageName: "photo",
+                imageName: isVideo ? "video" : "photo",
                 isIncluded: true,
-                localIdentifier: id
+                localIdentifier: id,
+                mediaType: isVideo ? .video : .photo,
+                videoDurationSeconds: isVideo ? asset.duration : nil
             )
             stop.photos.append(recap)
             existingIds.insert(id)
 
-            if let img = await ImageLoader.shared.loadImage(assetIdentifier: id, targetSize: CGSize(width: 2048, height: 2048)) {
+            // Only add to in-app photo store for images (not video blobs).
+            if !isVideo,
+               let img = await ImageLoader.shared.loadImage(assetIdentifier: id, targetSize: CGSize(width: 2048, height: 2048)) {
                 InAppCameraPhotoStore.shared.addPhoto(image: img, timestamp: timestamp)
             }
         }

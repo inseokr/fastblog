@@ -316,6 +316,15 @@ struct PhotoCoordinate: Equatable, Hashable, Codable, Sendable {
     var clCoordinate: CLLocationCoordinate2D { CLLocationCoordinate2D(latitude: latitude, longitude: longitude) }
 }
 
+// MARK: - Media type
+
+/// Distinguishes photos from video clips stored in `RecapPhoto`.
+/// Defaults to `.photo` when decoded from older data that pre-dates this field.
+enum RecapMediaType: String, Codable, Sendable {
+    case photo
+    case video
+}
+
 struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
     let id: UUID
     var timestamp: Date
@@ -338,8 +347,14 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
     /// photo's capture-location timezone. Stored so that subsequent updatePhoto calls send the exact same
     /// value the backend recorded — avoids divergence from re-computing with a different TZ fallback.
     var digitizedTime: String?
+    /// Whether this item is a photo or a video clip. Defaults to `.photo` for backward compatibility.
+    var mediaType: RecapMediaType
+    /// Duration in seconds for video clips. Nil for photos.
+    var videoDurationSeconds: Double?
 
-    init(id: UUID = UUID(), timestamp: Date, location: PhotoCoordinate? = nil, imageName: String, isIncluded: Bool = true, localIdentifier: String? = nil, caption: String? = nil, qualityScore: PhotoScore? = nil, cloudURL: String? = nil, captionIsManual: Bool = false, sentiment: Int = 2, digitizedTime: String? = nil) {
+    var isVideo: Bool { mediaType == .video }
+
+    init(id: UUID = UUID(), timestamp: Date, location: PhotoCoordinate? = nil, imageName: String, isIncluded: Bool = true, localIdentifier: String? = nil, caption: String? = nil, qualityScore: PhotoScore? = nil, cloudURL: String? = nil, captionIsManual: Bool = false, sentiment: Int = 2, digitizedTime: String? = nil, mediaType: RecapMediaType = .photo, videoDurationSeconds: Double? = nil) {
         self.id = id
         self.timestamp = timestamp
         self.location = location
@@ -352,6 +367,8 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
         self.captionIsManual = captionIsManual
         self.sentiment = sentiment
         self.digitizedTime = digitizedTime
+        self.mediaType = mediaType
+        self.videoDurationSeconds = videoDurationSeconds
     }
 
     init(from decoder: Decoder) throws {
@@ -368,11 +385,14 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
         captionIsManual = try c.decodeIfPresent(Bool.self, forKey: .captionIsManual) ?? false
         sentiment = try c.decodeIfPresent(Int.self, forKey: .sentiment) ?? 2
         digitizedTime = try c.decodeIfPresent(String.self, forKey: .digitizedTime)
+        mediaType = try c.decodeIfPresent(RecapMediaType.self, forKey: .mediaType) ?? .photo
+        videoDurationSeconds = try c.decodeIfPresent(Double.self, forKey: .videoDurationSeconds)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, timestamp, location, imageName, isIncluded, localIdentifier
         case caption, qualityScore, cloudURL, captionIsManual, sentiment, digitizedTime
+        case mediaType, videoDurationSeconds
     }
 }
 

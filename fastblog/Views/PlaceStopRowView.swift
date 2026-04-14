@@ -218,6 +218,8 @@ struct PlaceStopRowView: View {
     // Vibe playback for blog photo thumbnails
     @StateObject private var vibePlayer = VibePlayer()
     @State private var playingVibePhotoId: UUID? = nil
+    // Video playback
+    @State private var playingVideoLocalIdentifier: String? = nil
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("selectedBlogFont") private var selectedBlogFont: String = "Serif"
 
@@ -666,8 +668,28 @@ struct PlaceStopRowView: View {
                                     .animation(.easeInOut(duration: 0.2), value: isPlaying)
                                 }
                             }
+                            .overlay {
+                                if photo.isVideo {
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color.black.opacity(0.55))
+                                            .frame(width: 52, height: 52)
+                                        Image(systemName: "play.fill")
+                                            .font(.system(size: 22, weight: .bold))
+                                            .foregroundColor(.white)
+                                            .offset(x: 2)
+                                    }
+                                    .allowsHitTesting(false)
+                                }
+                            }
                             .contentShape(Rectangle())
-                            .onTapGesture { onPhotoTapped?(photo) }
+                            .onTapGesture {
+                                if photo.isVideo, let lid = photo.localIdentifier {
+                                    playingVideoLocalIdentifier = lid
+                                } else {
+                                    onPhotoTapped?(photo)
+                                }
+                            }
 
                     if isEditMode {
                         Button {
@@ -785,9 +807,27 @@ struct PlaceStopRowView: View {
                                                     .padding(6)
                                                 }
                                             }
+                                            .overlay {
+                                                if photo.isVideo {
+                                                    ZStack {
+                                                        Circle()
+                                                            .fill(Color.black.opacity(0.55))
+                                                            .frame(width: 44, height: 44)
+                                                        Image(systemName: "play.fill")
+                                                            .font(.system(size: 18, weight: .bold))
+                                                            .foregroundColor(.white)
+                                                            .offset(x: 1)
+                                                    }
+                                                    .allowsHitTesting(false)
+                                                }
+                                            }
                                             .contentShape(Rectangle())
                                             .onTapGesture {
-                                                onPhotoTapped?(photo)
+                                                if photo.isVideo, let lid = photo.localIdentifier {
+                                                    playingVideoLocalIdentifier = lid
+                                                } else {
+                                                    onPhotoTapped?(photo)
+                                                }
                                             }
                                         .overlay(alignment: .bottomLeading) {
                                             if vibeURL(for: photo) != nil {
@@ -925,6 +965,24 @@ struct PlaceStopRowView: View {
                         doneButtonTitle: "Done"
                     )
                 }
+            }
+        }
+        .fullScreenCover(isPresented: Binding(
+            get: { playingVideoLocalIdentifier != nil },
+            set: { if !$0 { playingVideoLocalIdentifier = nil } }
+        )) {
+            if let lid = playingVideoLocalIdentifier {
+                InlineVideoPlayerView(localIdentifier: lid)
+                    .ignoresSafeArea()
+                    .overlay(alignment: .topLeading) {
+                        Button { playingVideoLocalIdentifier = nil } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 30))
+                                .foregroundStyle(.white, Color.black.opacity(0.5))
+                                .padding(16)
+                        }
+                        .accessibilityLabel("Close video")
+                    }
             }
         }
     }

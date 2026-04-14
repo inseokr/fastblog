@@ -1,4 +1,6 @@
 // fastblog/Services/StoryBookBuilder.swift
+import AVFoundation
+import Photos
 import UIKit
 
 enum StoryBookBuilder {
@@ -85,7 +87,12 @@ enum StoryBookBuilder {
             await withTaskGroup(of: (UUID, UIImage?).self) { group in
                 for photo in included {
                     group.addTask {
-                        let img = await loadImageForRecapPhoto(photo, targetPixelSize: targetPixelSize)
+                        let img: UIImage?
+                        if photo.isVideo {
+                            img = await loadVideoThumbnail(for: photo, targetPixelSize: targetPixelSize)
+                        } else {
+                            img = await loadImageForRecapPhoto(photo, targetPixelSize: targetPixelSize)
+                        }
                         return (photo.id, img)
                     }
                 }
@@ -99,7 +106,8 @@ enum StoryBookBuilder {
                 return PhotoContent(
                     image: image,
                     caption: photoCaption,
-                    captionIsLong: (photoCaption?.count ?? 0) > 80
+                    captionIsLong: (photoCaption?.count ?? 0) > 80,
+                    videoLocalIdentifier: photo.isVideo ? photo.localIdentifier : nil
                 )
             }
             let markerType: PlaceMarkerType = {
@@ -162,6 +170,32 @@ enum StoryBookBuilder {
             return UIImage(data: data)
         } catch {
             return nil
+        }
+    }
+
+    /// Generates a first-frame thumbnail from a video PHAsset for use in story pages and PDF export.
+    private static func loadVideoThumbnail(for photo: RecapPhoto, targetPixelSize: CGSize) async -> UIImage? {
+        guard let lid = normalizedLocalID(photo.localIdentifier) else { return nil }
+        let assets = PHAsset.fetchAssets(withLocalIdentifiers: [lid], options: nil)
+        guard let asset = assets.firstObject else { return nil }
+
+        let options = PHVideoRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.deliveryMode = .fastFormat
+
+        return await withCheckedContinuation { continuation in
+            PHCachingImageManager.default().requestAVAsset(forVideo: asset, options: options) { avAsset, _, _ in
+                guard let avAsset else { continuation.resume(returning: nil); return }
+                let generator = AVAssetImageGenerator(asset: avAsset)
+                generator.appliesPreferredTrackTransform = true
+                generator.maximumSize = targetPixelSize
+                do {
+                    let cgImage = try generator.copyCGImage(at: .zero, actualTime: nil)
+                    continuation.resume(returning: UIImage(cgImage: cgImage))
+                } catch {
+                    continuation.resume(returning: nil)
+                }
+            }
         }
     }
 
