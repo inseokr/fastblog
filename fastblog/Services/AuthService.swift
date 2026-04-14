@@ -570,6 +570,20 @@ extension AuthService {
 
     // MARK: - Password Recovery
 
+    /// Sends the account username to the given email address.
+    /// Endpoint: POST /auth/forgot-username  { email }
+    /// Always resolves successfully (server never confirms whether the email exists).
+    func requestUsernameReminder(email: String) async throws {
+        struct ForgotUsernameRequest: Encodable { let email: String }
+        struct ForgotUsernameResponse: Decodable { let result: String? }
+        let payload = ForgotUsernameRequest(email: email)
+        let _: ForgotUsernameResponse = try await APIManager.shared.post(
+            endpoint: "/auth/forgot-username",
+            body: payload,
+            requiresAuth: false
+        )
+    }
+
     /// Sends a password-reset email to the given username/email combination.
     /// Endpoint: POST /auth/request-reset  { username, email }
     func sendRecoveryEmail(username: String, email: String) async throws {
