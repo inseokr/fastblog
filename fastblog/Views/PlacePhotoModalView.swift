@@ -7,7 +7,7 @@ import SwiftUI
 import CoreLocation
 import Photos
 import UIKit
-/// Typed + prompt styling for “Leave a story for this photo…” (full opacity, softer than pure white).
+/// Typed + prompt styling for “Leave a story for this moment…” (full opacity, softer than pure white).
 private enum PlacePhotoStoryCaptionFieldColor {
     static let text = Color(white: 0.88)
     /// Placeholder only — a touch brighter than typed text so it reads clearly on the dark overlay.
@@ -553,7 +553,7 @@ struct PlacePhotoModalView: View {
                                     isEditing: $isEditing,
                                     captionText: $editedCaptionText,
                                     isCaptionExpanded: $isReadOnlyCaptionExpanded,
-                                    placeholder: "Leave a story for this photo...",
+                                    placeholder: "Leave a story for this moment...",
                                     blogIsEditMode: usesInlineCaptionChrome,
                                     contentVerticalPadding: PlaceDetailChromeLayout.bottomContentVerticalPadding(sheet: presentation.isSheet),
                                     contentHorizontalPadding: PlaceDetailChromeLayout.bottomContentHorizontalPadding(sheet: presentation.isSheet),
@@ -994,7 +994,7 @@ struct PlacePhotoModalView: View {
                         TextField(
                             "",
                             text: $editedCaptionText,
-                            prompt: Text("Leave a story for this photo...")
+                            prompt: Text("Leave a story for this moment...")
                                 .foregroundColor(PlacePhotoStoryCaptionFieldColor.placeholder),
                             axis: .vertical
                         )

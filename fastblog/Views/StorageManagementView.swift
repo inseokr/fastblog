@@ -72,7 +72,7 @@ struct StorageManagementView: View {
     private var navigationTitleText: String {
         if fullScreenPhotoId != nil { return "" }
         if isSelectMode { return "\(selectedPhotoIds.count) selected" }
-        return "Unused Photos"
+        return "Unused Media"
     }
 
     private var allVisiblePhotosAreSelected: Bool {

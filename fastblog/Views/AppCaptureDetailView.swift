@@ -351,7 +351,7 @@ struct AppCaptureDetailView: View {
                         withAnimation { isEditingCaption = true }
                         DispatchQueue.main.async { captionFocused = true }
                     } label: {
-                        Text("Leave a story for this photo...")
+                        Text("Leave a story for this moment...")
                             .font(.body)
                             .foregroundColor(.white.opacity(0.45))
                             .lineLimit(2)
@@ -445,7 +445,7 @@ struct AppCaptureDetailView: View {
                     }
                     .padding(.bottom, 4)
 
-                    TextField("Leave a story for this photo...", text: $captionDraft, axis: .vertical)
+                    TextField("Leave a story for this moment...", text: $captionDraft, axis: .vertical)
                         .focused($captionFocused)
                         .textFieldStyle(.plain)
                         .font(.body)

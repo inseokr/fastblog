@@ -115,7 +115,7 @@ struct ManagePhotosView: View {
 
     /// Centered inline title; hidden while viewing a full-screen photo so the bar stays minimal.
     private var navigationBarTitle: String {
-        fullScreenPhotoId == nil ? "Manage Photos" : ""
+        fullScreenPhotoId == nil ? "Manage Media" : ""
     }
 
     /// Bottom bar: split (when offered) and/or add-from-library. Split stays visible but disabled with one photo.
@@ -130,10 +130,10 @@ struct ManagePhotosView: View {
 
             if manageGridPhotos.isEmpty, fullScreenPhotoId == nil {
                 VStack(spacing: 10) {
-                    Text("No photos")
+                    Text("Nothing here yet")
                         .font(.title2.weight(.semibold))
                         .foregroundColor(.white)
-                    Text("Add photos from your library if you like.")
+                    Text("Add photos or videos from your library.")
                         .font(.subheadline)
                         .foregroundColor(.white.opacity(0.65))
                         .multilineTextAlignment(.center)

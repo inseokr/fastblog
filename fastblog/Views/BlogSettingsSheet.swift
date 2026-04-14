@@ -231,7 +231,7 @@ struct BlogSettingsSheet: View {
                 StorageManagementView(draft: $draft, onSave: onSave)
             } label: {
                 Label {
-                    Text("Unused Photos")
+                    Text("Unused Media")
                 } icon: {
                     Image(systemName: "photo.stack")
                         .foregroundStyle(.white)

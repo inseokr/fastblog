@@ -133,7 +133,7 @@ struct PlaceStopActionSheet: View {
                     Divider()
                         .background(Color(white: 0.3))
                 }
-                actionRow(icon: "photo.on.rectangle", title: "Manage Photos", action: {
+                actionRow(icon: "photo.on.rectangle", title: "Manage Media", action: {
                     dismiss()
                     onManagePhotos()
                 })
@@ -164,7 +164,7 @@ struct PlaceStopActionSheet: View {
                         }
                     }
                     if let split = onSplit {
-                        actionRow(icon: "scissors", title: "Split Photo Group", action: {
+                        actionRow(icon: "scissors", title: "Split Moment", action: {
                             dismiss()
                             split()
                         })

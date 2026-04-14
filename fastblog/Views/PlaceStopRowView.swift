@@ -545,7 +545,7 @@ struct PlaceStopRowView: View {
             let shouldShowManagePhotosCard = isEditMode
 
             if displayableIncludedPhotos.count == 1, let photo = displayableIncludedPhotos.first {
-                // --- CASE 2a: Single included photo — full-width hero (read and edit). Manage Photos bar sits above in edit mode.
+                // --- CASE 2a: Single included photo — full-width hero (read and edit). Manage Media bar sits above in edit mode.
                 VStack(alignment: .leading, spacing: 12) {
                     if shouldShowManagePhotosCard {
                         Button(action: onManagePhotos) {
@@ -564,7 +564,7 @@ struct PlaceStopRowView: View {
                                     .clipShape(RoundedRectangle(appChromeBaseRadius: 11, style: .continuous))
 
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text("Manage Photos")
+                                    Text("Manage Media")
                                         .font(.subheadline.weight(.semibold))
                                         .foregroundColor(.primary)
                                     Text("\(stop.photos.count) \(stop.photos.count == 1 ? "Photo" : "Photos")")
@@ -588,7 +588,7 @@ struct PlaceStopRowView: View {
                             )
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Manage Photos, \(stop.photos.count) \(stop.photos.count == 1 ? "photo" : "photos")")
+                        .accessibilityLabel("Manage Media, \(stop.photos.count) \(stop.photos.count == 1 ? "photo" : "photos")")
                     }
 
                     VStack(alignment: .leading, spacing: 0) {
@@ -732,7 +732,7 @@ struct PlaceStopRowView: View {
                 .padding(.top, isEditMode ? 4 : 0)
                 .padding(.bottom, isEditMode ? 20 : 12)
             } else if displayableIncludedPhotos.count > 1 || (displayableIncludedPhotos.isEmpty && shouldShowManagePhotosCard) {
-                // --- CASE 2b: Multiple included photos, or edit mode with none included but a pool to manage — Manage Photos bar + horizontal strip when applicable ---
+                // --- CASE 2b: Multiple included photos, or edit mode with none included but a pool to manage — Manage Media bar + horizontal strip when applicable ---
                 VStack(alignment: .leading, spacing: 12) {
                     if shouldShowManagePhotosCard {
                         Button(action: onManagePhotos) {
@@ -751,7 +751,7 @@ struct PlaceStopRowView: View {
                                     .clipShape(RoundedRectangle(appChromeBaseRadius: 11, style: .continuous))
 
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text("Manage Photos")
+                                    Text("Manage Media")
                                         .font(.subheadline.weight(.semibold))
                                         .foregroundColor(.primary)
                                     Text("\(stop.photos.count) \(stop.photos.count == 1 ? "Photo" : "Photos")")
@@ -775,7 +775,7 @@ struct PlaceStopRowView: View {
                             )
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Manage Photos, \(stop.photos.count) \(stop.photos.count == 1 ? "photo" : "photos")")
+                        .accessibilityLabel("Manage Media, \(stop.photos.count) \(stop.photos.count == 1 ? "photo" : "photos")")
                     }
 
                     if !displayableIncludedPhotos.isEmpty {

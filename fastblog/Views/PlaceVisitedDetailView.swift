@@ -92,7 +92,7 @@ struct PlaceVisitedDetailView: View {
 
             if !place.photoCaptions.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Photo notes")
+                    Text("Media notes")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundStyle(.secondary)
