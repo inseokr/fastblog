@@ -101,7 +101,7 @@ struct LandingView: View {
                     )
                     Spacer()
                     Button {
-                        withAnimation(.easeInOut(duration: 0.3)) { showNotifications = true }
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) { showNotifications = true }
                     } label: {
                         Image(systemName: "bell.fill")
                             .font(.title2)
@@ -131,13 +131,14 @@ struct LandingView: View {
             }
 
             // Notifications slide-in from the right
-            if showNotifications {
-                NotificationsOverlayView(onDismiss: {
-                    withAnimation(.easeInOut(duration: 0.3)) { showNotifications = false }
-                })
-                .transition(.move(edge: .trailing))
-                .zIndex(10)
-            }
+            NotificationsOverlayView(onDismiss: {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) { showNotifications = false }
+            })
+            .offset(x: showNotifications ? 0 : UIScreen.main.bounds.width)
+            .opacity(showNotifications ? 1 : 0)
+            .allowsHitTesting(showNotifications)
+            .animation(.spring(response: 0.4, dampingFraction: 0.9), value: showNotifications)
+            .zIndex(10)
 
             // Post-camera toast banner
             if let toastMsg = postCameraToastMessage {
@@ -1423,6 +1424,9 @@ struct AllRecentsSheet: View {
 private struct NotificationsOverlayView: View {
     var onDismiss: () -> Void
     private let backgroundBlue = Color(red: 5/255, green: 10/255, blue: 48/255)
+    private let dismissThreshold: CGFloat = 100
+
+    @GestureState private var dragOffsetX: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1454,6 +1458,20 @@ private struct NotificationsOverlayView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(backgroundBlue.ignoresSafeArea())
         .preferredColorScheme(.dark)
+        .offset(x: max(0, dragOffsetX))
+        .gesture(
+            DragGesture()
+                .updating($dragOffsetX) { value, state, _ in
+                    if value.translation.width > 0 {
+                        state = value.translation.width
+                    }
+                }
+                .onEnded { value in
+                    if value.translation.width > dismissThreshold {
+                        onDismiss()
+                    }
+                }
+        )
     }
 }
 
