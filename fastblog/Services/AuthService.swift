@@ -140,22 +140,14 @@ final class AuthService: NSObject, ObservableObject {
         defaults.set(false, forKey: "hasJoinedEarlyAccess")
         defaults.set(false, forKey: "bloggo.earlyAccess.hasRegistered")
 
-        // Reset first-time tooltips for the guest session only so a signed-out user (guest)
-        // sees them again. Per-account tooltip state is preserved across logout/login so that
-        // users who have already dismissed intros don't see them repeatedly.
-        // Trips intro
+        // Reset guest-session intro state so a newly signed-out user sees first-time flows again.
+        // Account-scoped tooltip keys (hasSeenPhotoGroupingTip, hasSeenCameraTooltip,
+        // editPlaceMapTapCoachmarkSeen, hasSeenVibeTooltip) are intentionally NOT cleared here
+        // so users who have already dismissed them don't see them again after logging back in.
         defaults.set(false, forKey: "blogify.tripsIntroSeen.guest")
-        // Capture intro
         defaults.set(false, forKey: "blogify.captureIntroSeen.guest")
-        // Recap split/merge onboarding tooltip
-        defaults.set(false, forKey: "bloggo.hasSeenPhotoGroupingTip")
-        // In-app camera tooltip: reset so guest sees it again
-        defaults.set(false, forKey: "bloggo.hasSeenCameraTooltip")
-        // Edit-name map tap coachmark: reset so guest sees it again
-        defaults.set(false, forKey: "blogify.editPlaceMapTapCoachmarkSeen")
-        // Vibe: reset toggle and first-time tooltip so guest starts fresh
+        // Vibe toggle: reset to off so guest starts with default state
         defaults.set(false, forKey: "bloggo.camera.vibeEnabled")
-        defaults.set(false, forKey: "bloggo.hasSeenVibeTooltip")
 
         #if canImport(GoogleSignIn)
         GoogleAuthManager.shared.signOut()
