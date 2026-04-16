@@ -174,6 +174,7 @@
 		BB000204 /* BottomSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000203 /* BottomSheetView.swift */; };
 		BB000206 /* ImportDraftsModalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000205 /* ImportDraftsModalView.swift */; };
 		BB000208 /* ProfileManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000207 /* ProfileManagementView.swift */; };
+		BB0002FB /* CarouselStudioSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002FA /* CarouselStudioSheet.swift */; };
 		BB00020A /* ProfilePageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000209 /* ProfilePageView.swift */; };
 		BB00020C /* TrackableScrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00020B /* TrackableScrollView.swift */; };
 		BB00020E /* UnsavedTripCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00020D /* UnsavedTripCard.swift */; };
@@ -307,6 +308,7 @@
 		BB000400 /* TripCluster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCluster.swift; sourceTree = "<group>"; };
 		BB00011F /* BlogPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogPreviewView.swift; sourceTree = "<group>"; };
 		BB000121 /* BlogSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogSettingsSheet.swift; sourceTree = "<group>"; };
+		BB0002FA /* CarouselStudioSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarouselStudioSheet.swift; sourceTree = "<group>"; };
 		BB000123 /* ClusterRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterRowView.swift; sourceTree = "<group>"; };
 		BB000125 /* CountryBlogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryBlogsView.swift; sourceTree = "<group>"; };
 		BB000127 /* CountryCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryCardView.swift; sourceTree = "<group>"; };
@@ -630,6 +632,7 @@
 				BB000302 /* MyStatsView.swift */,
 				BB00011F /* BlogPreviewView.swift */,
 				BB000121 /* BlogSettingsSheet.swift */,
+				BB0002FA /* CarouselStudioSheet.swift */,
 				BB0003B4 /* WeatherEditSheet.swift */,
 				BB000203 /* BottomSheetView.swift */,
 				BB000123 /* ClusterRowView.swift */,
@@ -958,6 +961,7 @@
 				BB00011E /* TripDraft.swift in Sources */,
 				BB000120 /* BlogPreviewView.swift in Sources */,
 				BB000122 /* BlogSettingsSheet.swift in Sources */,
+				BB0002FB /* CarouselStudioSheet.swift in Sources */,
 				BB0003B5 /* WeatherEditSheet.swift in Sources */,
 				BB000124 /* ClusterRowView.swift in Sources */,
 				BB000126 /* CountryBlogsView.swift in Sources */,
