@@ -159,12 +159,6 @@ struct CarouselSlideView: View {
                                 .lineLimit(1)
                         }
 
-                        if let dayTitle = slide.dayTitle, !dayTitle.isEmpty {
-                            Text(dayTitle)
-                                .font(.system(size: width * 0.04))
-                                .foregroundColor(.white.opacity(0.6))
-                        }
-
                         if let caption = slide.caption {
                             Text(caption)
                                 .font(.system(size: width * 0.044))
@@ -549,10 +543,6 @@ struct SocialPostStudioSheet: View {
         )
 
         for (dayIdx, day) in blog.days.enumerated() {
-            // This text is the "new day" cue shown on the first place slide.
-            // Place slides should no longer repeat the blog title (cover slide already carries it).
-            let dayTitleForPlace = blog.days.count > 1 ? "Day \(dayIdx + 1)" : nil
-
             // Load place hero images first so we can draw photo markers on the map snapshot.
             var markerImagesByStopId: [UUID: UIImage] = [:]
             var placeSlidesForDay: [CarouselSlide] = []
@@ -583,7 +573,7 @@ struct SocialPostStudioSheet: View {
                         dayInfoLine1: nil,
                         dayInfoLine2: nil,
                         placeStop: stop,
-                        dayTitle: dayTitleForPlace
+                        dayTitle: nil
                     )
                 )
             }
