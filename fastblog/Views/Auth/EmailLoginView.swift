@@ -12,9 +12,11 @@ struct EmailLoginView: View {
     @EnvironmentObject private var authService: AuthService
 
     var onAuthenticated: (() -> Void)?
-    
-    init(onAuthenticated: (() -> Void)? = nil) {
+    var onDismiss: (() -> Void)?
+
+    init(onAuthenticated: (() -> Void)? = nil, onDismiss: (() -> Void)? = nil) {
         self.onAuthenticated = onAuthenticated
+        self.onDismiss = onDismiss
     }
 
     @State private var email = ""
@@ -43,7 +45,7 @@ struct EmailLoginView: View {
                     .padding(.top, 32)
 
                     VStack(spacing: 16) {
-                        TextField("Email or Username", text: $email)
+                        TextField("Username", text: $email)
                             .keyboardType(.emailAddress)
                             .textContentType(.emailAddress)
                             .autocapitalization(.none)
@@ -107,7 +109,7 @@ struct EmailLoginView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
-                        dismiss()
+                        if let onDismiss { onDismiss() } else { dismiss() }
                     } label: {
                         Image(systemName: "chevron.left")
                             .foregroundColor(.white)
@@ -115,7 +117,14 @@ struct EmailLoginView: View {
                 }
             }
             .preferredColorScheme(.dark)
-            .onAppear { emailFocused = true }
+            .onAppear {
+                if let saved = UserDefaults.standard.string(forKey: "blogify.lastLoginUsername"), !saved.isEmpty {
+                    email = saved
+                    passwordFocused = true
+                } else {
+                    emailFocused = true
+                }
+            }
             .sheet(isPresented: $showForgotPassword) {
                 ForgotPasswordView(initialUsername: email.trimmingCharacters(in: .whitespaces).isEmpty ? nil : email.trimmingCharacters(in: .whitespaces))
                     .environmentObject(authService)

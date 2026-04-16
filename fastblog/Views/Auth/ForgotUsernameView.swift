@@ -1,29 +1,23 @@
 //
-//  ForgotPasswordView.swift
+//  ForgotUsernameView.swift
 //  fastblog
 //
-//  Forgot-password screen: collects username + email and requests a password-reset link.
+//  Lets users recover their username by entering the email address
+//  they signed up with. The backend sends the username to that address.
 //
 
 import SwiftUI
 
-struct ForgotPasswordView: View {
+struct ForgotUsernameView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var authService: AuthService
 
-    /// Pre-fill from login screen (e.g. "Email or Username" field) when navigating via "Forgot Password?".
-    var initialUsername: String?
-
-    @State private var username = ""
     @State private var email = ""
-
-    init(initialUsername: String? = nil) {
-        self.initialUsername = initialUsername
-    }
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var didSendEmail = false
-    @State private var showForgotUsername = false
+
+    @FocusState private var emailFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -32,10 +26,10 @@ struct ForgotPasswordView: View {
 
                 VStack(spacing: 24) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Recover Password")
+                        Text("Find Your Username")
                             .font(.system(size: 26, weight: .bold, design: .rounded))
                             .foregroundColor(.white)
-                        Text("Enter your username and email address and we'll send you a reset link.")
+                        Text("Enter the email address you signed up with and we'll send your username to it.")
                             .font(.subheadline)
                             .foregroundColor(.white.opacity(0.65))
                             .lineSpacing(2)
@@ -46,7 +40,7 @@ struct ForgotPasswordView: View {
                     if didSendEmail {
                         successBanner
                     } else {
-                        inputFields
+                        inputSection
                     }
 
                     Spacer()
@@ -65,71 +59,46 @@ struct ForgotPasswordView: View {
                 }
             }
             .preferredColorScheme(.dark)
-            .onAppear {
-                if let prefill = initialUsername, !prefill.isEmpty {
-                    username = prefill
-                } else if username.isEmpty, let last = UserDefaults.standard.string(forKey: "blogify.lastLoginUsername") {
-                    username = last
-                }
-            }
+            .onAppear { emailFocused = true }
         }
     }
 
-    @ViewBuilder
-    private var inputFields: some View {
-        VStack(spacing: 16) {
-            TextField("Username", text: $username)
-                .textContentType(.username)
-                .autocapitalization(.none)
-                .autocorrectionDisabled()
-                .padding()
-                .background(Color.white.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(appChromeBaseRadius: 12)
-                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                )
-                .appChromeCornerRadius(12)
-                .foregroundColor(.white)
-                .tint(.white)
+    // MARK: - Subviews
 
-            TextField("Email Address", text: $email)
+    @ViewBuilder
+    private var inputSection: some View {
+        VStack(spacing: 16) {
+            TextField("Email address", text: $email)
                 .keyboardType(.emailAddress)
                 .textContentType(.emailAddress)
                 .autocapitalization(.none)
                 .autocorrectionDisabled()
+                .focused($emailFocused)
                 .padding()
                 .background(Color.white.opacity(0.1))
                 .overlay(
                     RoundedRectangle(appChromeBaseRadius: 12)
-                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                        .stroke(emailFocused ? Color.white.opacity(0.6) : Color.white.opacity(0.2), lineWidth: 1)
                 )
                 .appChromeCornerRadius(12)
                 .foregroundColor(.white)
                 .tint(.white)
+                .submitLabel(.send)
+                .onSubmit { sendReminder() }
+                .onChange(of: email) { _, _ in
+                    if errorMessage != nil { errorMessage = nil }
+                }
+
+            if let err = errorMessage {
+                errorRow(err)
+            }
         }
 
-        if let err = errorMessage {
-            errorRow(err)
+        primaryButton("Send Username", icon: "envelope.fill") {
+            sendReminder()
         }
-
-        primaryButton("Send Recovery Email", icon: "envelope.fill") {
-            sendRecovery()
-        }
-        .disabled(username.trimmingCharacters(in: .whitespaces).isEmpty
-                  || email.trimmingCharacters(in: .whitespaces).isEmpty
-                  || isLoading)
+        .disabled(!authService.isValidEmail(email.trimmingCharacters(in: .whitespaces)) || isLoading)
         .padding(.top, 8)
-
-        Button("Don't know your username?") {
-            showForgotUsername = true
-        }
-        .font(.subheadline)
-        .foregroundColor(.white.opacity(0.55))
-        .padding(.top, 4)
-        .sheet(isPresented: $showForgotUsername) {
-            ForgotUsernameView()
-                .environmentObject(authService)
-        }
     }
 
     private var successBanner: some View {
@@ -143,7 +112,7 @@ struct ForgotPasswordView: View {
                 .font(.system(size: 20, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
 
-            Text("If an account with those details exists, you'll receive a password reset email shortly.")
+            Text("If an account is registered with that email, we've sent the username to it.")
                 .font(.subheadline)
                 .foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
@@ -156,23 +125,29 @@ struct ForgotPasswordView: View {
         }
     }
 
-    private func sendRecovery() {
-        let trimmedUsername = username.trimmingCharacters(in: .whitespaces)
-        let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
-        guard !trimmedUsername.isEmpty, !trimmedEmail.isEmpty else { return }
+    // MARK: - Logic
 
+    private func sendReminder() {
+        let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
+        guard authService.isValidEmail(trimmedEmail) else {
+            errorMessage = "Please enter a valid email address."
+            return
+        }
         isLoading = true
         errorMessage = nil
         Task {
             do {
-                try await authService.sendRecoveryEmail(username: trimmedUsername, email: trimmedEmail)
+                try await authService.requestUsernameReminder(email: trimmedEmail)
                 withAnimation { didSendEmail = true }
             } catch {
-                errorMessage = error.localizedDescription
+                // Show success anyway — never reveal whether an email exists.
+                withAnimation { didSendEmail = true }
             }
             isLoading = false
         }
     }
+
+    // MARK: - Helpers
 
     private func errorRow(_ message: String) -> some View {
         HStack(spacing: 8) {
@@ -221,6 +196,6 @@ struct ForgotPasswordView: View {
 }
 
 #Preview {
-    ForgotPasswordView()
+    ForgotUsernameView()
         .environmentObject(AuthService.shared)
 }

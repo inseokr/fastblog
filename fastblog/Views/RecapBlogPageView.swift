@@ -232,9 +232,6 @@ struct RecapBlogPageView: View {
     @State private var pendingSecondSaveCommitAfterAuth = false
     @State private var pendingEarlyAccessAfterAuth = false
     @State private var pendingCloudUploadAfterAuth = false
-    @State private var pendingExportAfterAuth = false
-    /// When true, shows "Sign in or Cancel" alert for guest tapping Export.
-    @State private var showExportSignInAlert = false
     /// Pull-up modal shown when a guest taps the cloud upload button.
     @State private var showGuestCloudUploadModal = false
     /// Single pull-up modal: shown when non-nil; content is "You're on the list" when true, else "Join Early Access" prompt.
@@ -570,18 +567,6 @@ struct RecapBlogPageView: View {
                             pendingWebLinkAfterAuth = false
                             showAuth = false
                             handleShareWebLinkTap()
-                        } else if pendingExportAfterAuth {
-                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                            Task { @MainActor in
-                                try? await Task.sleep(nanoseconds: 350_000_000)
-                                // Reset keyboard state before revealing the blog so the day filter
-                                // doesn't animate in from the bottom (distracting flash).
-                                isKeyboardVisible = false
-                                showAuth = false
-                                try? await Task.sleep(nanoseconds: 500_000_000)
-                                pendingExportAfterAuth = false
-                                showPDFExportOptions = true
-                            }
                         } else {
                             showAuth = false
                         }
@@ -761,18 +746,6 @@ struct RecapBlogPageView: View {
                 Button("No", role: .cancel) { }
             } message: {
                 Text("This blog needs to be uploaded to the cloud before you can share a link. Would you like to upload it now?")
-            }
-            .alert("Sign in to Export", isPresented: $showExportSignInAlert) {
-                Button("Sign in") {
-                    showExportSignInAlert = false
-                    pendingExportAfterAuth = true
-                    showAuth = true
-                }
-                Button("Cancel", role: .cancel) {
-                    showExportSignInAlert = false
-                }
-            } message: {
-                Text("Create an account or sign in to export your blog as PDF.")
             }
             .sheet(isPresented: $showGuestCloudUploadModal) {
                 guestCloudUploadModalContent
@@ -5412,11 +5385,7 @@ Your blog remains private unless you choose to share it.
 
                             Button {
                                 earlyAccessSheetPresented = false
-                                if authService.isSignedIn {
-                                    showPDFExportOptions = true
-                                } else {
-                                    showExportSignInAlert = true
-                                }
+                                showPDFExportOptions = true
                             } label: {
                                 Text("Export as PDF Instead")
                                     .font(.subheadline.weight(.medium))

@@ -69,12 +69,10 @@ struct PhotosPermissionView: View {
 
     private var message: String {
         switch status {
-        case .denied, .restricted, .notDetermined:
-            return "Bloggo needs access to your photos to scan for trips from the last 3 months and build your recap blogs."
         case .limited:
-            return "Photo access was denied. Turn on access in Settings to scan your library and create recap blogs."
+            return "You've granted limited photo access. For the best experience, turn on full access in Settings."
         default:
-            return "Allow photo access to continue."
+            return "Bloggo needs access to your photos to scan for trips and build your recap blogs. Turn on access in Settings."
         }
     }
 }

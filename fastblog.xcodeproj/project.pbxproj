@@ -187,6 +187,7 @@
 		BB000224 /* StoryCaptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000225 /* StoryCaptionService.swift */; };
 		BB000226 /* LocalLLMStoryCaptionGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000227 /* LocalLLMStoryCaptionGenerator.swift */; };
 		BB00022A /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000228 /* ForgotPasswordView.swift */; };
+		BB00F007 /* ForgotUsernameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00F008 /* ForgotUsernameView.swift */; };
 		BB00022B /* ResetPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000229 /* ResetPasswordView.swift */; };
 		BB00022C /* SplashStateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00022D /* SplashStateManager.swift */; };
 		BB00022E /* CountryManageBlogsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00022F /* CountryManageBlogsSheet.swift */; };
@@ -430,6 +431,7 @@
 		BB000225 /* StoryCaptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryCaptionService.swift; sourceTree = "<group>"; };
 		BB000227 /* LocalLLMStoryCaptionGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalLLMStoryCaptionGenerator.swift; sourceTree = "<group>"; };
 		BB000228 /* ForgotPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordView.swift; sourceTree = "<group>"; };
+		BB00F008 /* ForgotUsernameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotUsernameView.swift; sourceTree = "<group>"; };
 		BB000229 /* ResetPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResetPasswordView.swift; sourceTree = "<group>"; };
 		BB00022D /* SplashStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashStateManager.swift; sourceTree = "<group>"; };
 		BB00022F /* CountryManageBlogsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryManageBlogsSheet.swift; sourceTree = "<group>"; };
@@ -837,6 +839,7 @@
 				BB0001FF /* EmailLoginView.swift */,
 				BB000201 /* EmailSignUpView.swift */,
 				BB000228 /* ForgotPasswordView.swift */,
+				BB00F008 /* ForgotUsernameView.swift */,
 				BB000229 /* ResetPasswordView.swift */,
 			);
 			path = Auth;
@@ -1097,6 +1100,7 @@
 				BB000200 /* EmailLoginView.swift in Sources */,
 				BB000202 /* EmailSignUpView.swift in Sources */,
 				BB00022A /* ForgotPasswordView.swift in Sources */,
+				BB00F007 /* ForgotUsernameView.swift in Sources */,
 				BB00022B /* ResetPasswordView.swift in Sources */,
 				BB000204 /* BottomSheetView.swift in Sources */,
 				BB000206 /* ImportDraftsModalView.swift in Sources */,
@@ -1262,7 +1266,7 @@
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Debug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
@@ -1294,7 +1298,7 @@
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Release.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
