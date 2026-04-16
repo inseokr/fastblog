@@ -178,24 +178,36 @@ class MapSnapshotHelper {
             // Draw the base map
             snapshot.image.draw(at: .zero)
 
-            // 1) Draw the polyline route (blue)
+            // 1) Draw the polyline route
             if coords.count >= 2 {
+                // Scale line width with the canvas so it reads well at both preview and full export sizes.
+                let routeLineWidth = max(4, size.width * 0.006)
+
                 context.saveGState()
-                context.setStrokeColor(UIColor.systemBlue.cgColor)
-                context.setLineWidth(4.0)
                 context.setLineCap(.round)
                 context.setLineJoin(.round)
 
-                context.beginPath()
-                for (i, coord) in coords.enumerated() {
-                    let point = snapshot.point(for: coord)
-                    if i == 0 {
-                        context.move(to: point)
-                    } else {
-                        context.addLine(to: point)
+                // Helper: build the route path.
+                func addRoutePath() {
+                    context.beginPath()
+                    for (i, coord) in coords.enumerated() {
+                        let point = snapshot.point(for: coord)
+                        if i == 0 { context.move(to: point) } else { context.addLine(to: point) }
                     }
                 }
+
+                // White backing stroke — improves contrast on light map tiles.
+                addRoutePath()
+                context.setStrokeColor(UIColor.white.withAlphaComponent(0.7).cgColor)
+                context.setLineWidth(routeLineWidth + 4)
                 context.strokePath()
+
+                // Accent stroke on top.
+                addRoutePath()
+                context.setStrokeColor(UIColor(red: 0.22, green: 0.56, blue: 1.0, alpha: 1.0).cgColor)
+                context.setLineWidth(routeLineWidth)
+                context.strokePath()
+
                 context.restoreGState()
             }
 
@@ -447,11 +459,15 @@ class MapSnapshotHelper {
         )
 
         context.saveGState()
-        context.setFillColor(UIColor.systemBlue.withAlphaComponent(0.92).cgColor)
+        // Dark navy badge — neutral, doesn't compete with the photo or the border colour.
+        context.setShadow(offset: CGSize(width: 0, height: 1), blur: 3,
+                          color: UIColor.black.withAlphaComponent(0.5).cgColor)
+        context.setFillColor(UIColor(red: 0.04, green: 0.06, blue: 0.18, alpha: 0.92).cgColor)
         context.addEllipse(in: badgeRect)
         context.fillPath()
-        context.setStrokeColor(UIColor.white.cgColor)
-        context.setLineWidth(2)
+        context.setShadow(offset: .zero, blur: 0, color: nil)
+        context.setStrokeColor(UIColor.white.withAlphaComponent(0.9).cgColor)
+        context.setLineWidth(max(1.5, badgeRadius * 0.12))
         context.addEllipse(in: badgeRect)
         context.strokePath()
 
@@ -482,36 +498,41 @@ class MapSnapshotHelper {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        let maxLabelWidth = min(260, canvasSize.width * 0.42)
-        let font = UIFont.systemFont(ofSize: 12, weight: .semibold)
+        // Scale typography and spacing proportionally with the marker so everything
+        // looks consistent whether rendering a small preview or a full 1080 px export.
+        let fontSize = max(11, markerRadius * 0.34)
+        let padH = max(8, markerRadius * 0.30)
+        let padV = max(4, markerRadius * 0.18)
+        let maxLabelWidth = min(canvasSize.width * 0.38, markerRadius * 7)
 
+        let font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
 
+        // Dark text on white pill — legible on any map style.
         let textAttrs: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: UIColor.white,
+            .foregroundColor: UIColor(white: 0.1, alpha: 1.0),
             .paragraphStyle: paragraph
         ]
 
-        let textRect = (trimmed as NSString).boundingRect(
+        let measured = (trimmed as NSString).boundingRect(
             with: CGSize(width: maxLabelWidth, height: 80),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: textAttrs,
             context: nil
         )
 
-        let padH: CGFloat = 8
-        let padV: CGFloat = 4
-        let labelW = min(textRect.width + padH * 2, maxLabelWidth + padH * 2)
-        let labelH = ceil(textRect.height) + padV * 2
+        let labelW = min(ceil(measured.width) + padH * 2, maxLabelWidth + padH * 2)
+        let labelH = ceil(measured.height) + padV * 2
+        // True capsule — radius equals half the height.
+        let cornerRadius = labelH / 2
 
-        // Prefer placing *under* the marker; if it overflows, flip above (keeps slide readable).
-        let margin: CGFloat = 8
+        let margin = max(8, markerRadius * 0.3)
         var originX = markerCenter.x - labelW / 2
         originX = min(max(originX, margin), canvasSize.width - margin - labelW)
 
-        let verticalGap: CGFloat = 7
+        let verticalGap = max(5, markerRadius * 0.22)
         var originY = markerCenter.y + markerRadius + verticalGap
         if originY + labelH > canvasSize.height - margin {
             originY = markerCenter.y - markerRadius - verticalGap - labelH
@@ -519,27 +540,21 @@ class MapSnapshotHelper {
 
         let pillRect = CGRect(x: originX, y: originY, width: labelW, height: labelH)
 
-        // Connector line (marker → pill)
-        let connectorStart = CGPoint(x: markerCenter.x, y: originY >= markerCenter.y ? markerCenter.y + markerRadius : markerCenter.y - markerRadius)
-        let connectorEnd = CGPoint(x: pillRect.midX, y: originY >= markerCenter.y ? pillRect.minY : pillRect.maxY)
-
         context.saveGState()
-        context.setStrokeColor(UIColor.black.withAlphaComponent(0.55).cgColor)
-        context.setLineWidth(1.5)
-        context.setLineCap(.round)
-        context.move(to: connectorStart)
-        context.addLine(to: connectorEnd)
-        context.strokePath()
 
-        // Pill background
-        context.setShadow(offset: CGSize(width: 0, height: 1), blur: 3, color: UIColor.black.withAlphaComponent(0.35).cgColor)
-        let bgPath = UIBezierPath(roundedRect: pillRect, cornerRadius: 6).cgPath
+        // White pill with a pronounced drop shadow for pop against the map.
+        context.setShadow(
+            offset: CGSize(width: 0, height: max(1, markerRadius * 0.1)),
+            blur: max(4, markerRadius * 0.35),
+            color: UIColor.black.withAlphaComponent(0.42).cgColor
+        )
+        let bgPath = UIBezierPath(roundedRect: pillRect, cornerRadius: cornerRadius).cgPath
         context.addPath(bgPath)
-        context.setFillColor(UIColor.black.withAlphaComponent(0.72).cgColor)
+        context.setFillColor(UIColor.white.withAlphaComponent(0.94).cgColor)
         context.fillPath()
         context.setShadow(offset: .zero, blur: 0, color: nil)
 
-        // Text
+        // Label text
         let drawTextRect = CGRect(
             x: pillRect.minX + padH,
             y: pillRect.minY + padV,
