@@ -6,18 +6,70 @@ import SwiftUI
 
 // MARK: - Model
 
+enum CarouselSlideKind {
+    case cover
+    case mapRoute
+    case placeStop
+}
+
+/// Badge shape with only top-right + bottom-left rounded.
+/// Top-left and bottom-right stay square for the map day label.
+private struct DiagonalRoundedBadgeShape: Shape {
+    let radius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let r = min(radius, min(rect.width, rect.height) / 2)
+        var path = Path()
+
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY + r),
+            control: CGPoint(x: rect.maxX, y: rect.minY)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX, y: rect.maxY - r),
+            control: CGPoint(x: rect.minX, y: rect.maxY)
+        )
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.closeSubpath()
+
+        return path
+    }
+}
+
 struct CarouselSlide: Identifiable {
     let id: String
-    let placeStop: PlaceStop
-    let dayTitle: String
-    var heroImage: UIImage?
+    let kind: CarouselSlideKind
     var isSelected = true
+
+    // Background images (cover + place use this; map uses mapSnapshot)
+    var heroImage: UIImage?
+
+    // Cover
+    var coverTitle: String?
+
+    // Map route
+    var mapSnapshot: UIImage?
+    var dayInfoLine1: String?
+    var dayInfoLine2: String?
+
+    // Place stop
+    var placeStop: PlaceStop?
+    var dayTitle: String?
 
     /// Best available caption: AI narrative → overall story → user note.
     var caption: String? {
-        [placeStop.placeNarrative, placeStop.overallStory, placeStop.noteText]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty }
+        guard kind == .placeStop, let placeStop else { return nil }
+        return [
+            placeStop.placeNarrative,
+            placeStop.overallStory,
+            placeStop.noteText
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first { !$0.isEmpty }
     }
 }
 
@@ -35,61 +87,100 @@ struct CarouselSlideView: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            // Hero photo or gradient fallback
-            Group {
-                if let image = slide.heroImage {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .scaleEffect(heroImageScale)
+            switch slide.kind {
+            case .cover:
+                coverBackground
+                LinearGradient(
+                    colors: [.black.opacity(0.72), .black.opacity(0.3), .clear],
+                    startPoint: .bottom,
+                    endPoint: .top
+                )
+                .frame(width: width, height: height)
+
+                VStack(spacing: 6) {
+                    if let title = slide.coverTitle, !title.isEmpty {
+                        Text(title)
+                            .font(.system(size: width * 0.085, weight: .heavy))
+                            .foregroundColor(.white)
+                            .lineLimit(3)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, width * 0.06)
+                    }
+                }
+                .frame(width: width, height: height, alignment: .center)
+
+            case .mapRoute:
+                mapRouteBackground
+                LinearGradient(
+                    colors: [.black.opacity(0.55), .black.opacity(0.18), .clear],
+                    startPoint: .bottom,
+                    endPoint: .center
+                )
+                .frame(width: width, height: height)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    if let l1 = slide.dayInfoLine1 {
+                        Text(l1)
+                            .font(.system(size: width * 0.055, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                    if let l2 = slide.dayInfoLine2 {
+                        Text(l2)
+                            .font(.system(size: width * 0.037, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.9))
+                            .lineLimit(1)
+                    }
+                }
+                .padding(width * 0.05)
+                .background(Color.black.opacity(0.25))
+                // Scale corner radius with slide width so preview/export match.
+                .clipShape(DiagonalRoundedBadgeShape(radius: width * 0.046))
+
+            case .placeStop:
+                placeStopBackground
+                LinearGradient(
+                    colors: [.black.opacity(0.72), .black.opacity(0.3), .clear],
+                    startPoint: .bottom,
+                    endPoint: slide.caption != nil ? .top : .center
+                )
+                .frame(width: width, height: height)
+
+                if let placeStop = slide.placeStop {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(placeStop.placeTitle)
+                            .font(.system(size: width * 0.065, weight: .bold))
+                            .foregroundColor(.white)
+                            .lineLimit(2)
+
+                        if let subtitle = placeStop.placeSubtitle, !subtitle.isEmpty {
+                            Text(subtitle)
+                                .font(.system(size: width * 0.048))
+                                .foregroundColor(.white.opacity(0.8))
+                                .lineLimit(1)
+                        }
+
+                        if let dayTitle = slide.dayTitle, !dayTitle.isEmpty {
+                            Text(dayTitle)
+                                .font(.system(size: width * 0.04))
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+
+                        if let caption = slide.caption {
+                            Text(caption)
+                                .font(.system(size: width * 0.044))
+                                .foregroundColor(.white.opacity(0.85))
+                                .lineLimit(3)
+                                .padding(.top, width * 0.02)
+                        }
+                    }
+                    .padding(width * 0.06)
                 } else {
-                    LinearGradient(
-                        colors: [
-                            Color(red: 26/255, green: 26/255, blue: 46/255),
-                            Color(red: 45/255, green: 53/255, blue: 97/255)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
+                    Text("Missing place data")
+                        .font(.system(size: width * 0.05, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.9))
+                        .padding(width * 0.06)
                 }
             }
-            .frame(width: width, height: height)
-            .clipped()
-
-            // Text scrim — extends higher when caption is present
-            LinearGradient(
-                colors: [.black.opacity(0.72), .black.opacity(0.3), .clear],
-                startPoint: .bottom,
-                endPoint: slide.caption != nil ? .top : .center
-            )
-
-            // Place info
-            VStack(alignment: .leading, spacing: 4) {
-                Text(slide.placeStop.placeTitle)
-                    .font(.system(size: width * 0.065, weight: .bold))
-                    .foregroundColor(.white)
-                    .lineLimit(2)
-
-                if let subtitle = slide.placeStop.placeSubtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.system(size: width * 0.048))
-                        .foregroundColor(.white.opacity(0.8))
-                        .lineLimit(1)
-                }
-
-                Text(slide.dayTitle)
-                    .font(.system(size: width * 0.04))
-                    .foregroundColor(.white.opacity(0.6))
-
-                if let caption = slide.caption {
-                    Text(caption)
-                        .font(.system(size: width * 0.044))
-                        .foregroundColor(.white.opacity(0.85))
-                        .lineLimit(3)
-                        .padding(.top, width * 0.02)
-                }
-            }
-            .padding(width * 0.06)
         }
         .overlay(alignment: .topTrailing) {
             if showsSelectionChrome {
@@ -124,6 +215,44 @@ struct CarouselSlideView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: slide.isSelected)
+    }
+
+    private var coverBackground: some View {
+        Group {
+            if let image = slide.heroImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .scaleEffect(heroImageScale)
+            } else {
+                LinearGradient(
+                    colors: [
+                        Color(red: 26/255, green: 26/255, blue: 46/255),
+                        Color(red: 45/255, green: 53/255, blue: 97/255)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+        }
+        .frame(width: width, height: height)
+        .clipped()
+    }
+
+    private var placeStopBackground: some View { coverBackground }
+
+    private var mapRouteBackground: some View {
+        Group {
+            if let image = slide.mapSnapshot {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Color(red: 12/255, green: 16/255, blue: 33/255)
+            }
+        }
+        .frame(width: width, height: height)
+        .clipped()
     }
 }
 
@@ -180,9 +309,10 @@ struct SocialPostStudioSheet: View {
     @State private var showSavedAlert = false
     @Environment(\.dismiss) private var dismiss
 
-    private let previewWidth: CGFloat = 260
+    private let previewHeight: CGFloat = 325
     private let exportWidth: CGFloat = 1080
     private var exportHeight: CGFloat { exportWidth / exportFormat.aspectRatio }
+    private var previewWidth: CGFloat { previewHeight * exportFormat.aspectRatio }
     private var selectedSlides: [CarouselSlide] { slides.filter { $0.isSelected } }
 
     var body: some View {
@@ -382,7 +512,8 @@ struct SocialPostStudioSheet: View {
                 .disabled(isRendering || selectedSlides.isEmpty)
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, 32)
+            // Keep CTAs visually anchored near the bottom, especially for Story/Reel (taller slide aspect).
+            .padding(.bottom, 16)
         }
     }
 
@@ -390,22 +521,100 @@ struct SocialPostStudioSheet: View {
 
     private func loadSlides() async {
         var result: [CarouselSlide] = []
+
+        // Cover slide — always the first slide.
+        let coverImage: UIImage?
+        if let coverIdentifier = blog.selectedCoverPhotoIdentifier {
+            coverImage = await loadAssetImage(
+                identifier: coverIdentifier,
+                size: CGSize(width: exportWidth, height: exportHeight)
+            )
+        } else {
+            coverImage = nil
+        }
+
+        result.append(
+            CarouselSlide(
+                id: "cover-\(blog.id.uuidString)",
+                kind: .cover,
+                isSelected: true,
+                heroImage: coverImage,
+                coverTitle: blog.title,
+                mapSnapshot: nil,
+                dayInfoLine1: nil,
+                dayInfoLine2: nil,
+                placeStop: nil,
+                dayTitle: nil
+            )
+        )
+
         for (dayIdx, day) in blog.days.enumerated() {
-            let dayTitle = blog.days.count > 1 ? "Day \(dayIdx + 1)" : blog.title
+            // This text is the "new day" cue shown on the first place slide.
+            // Place slides should no longer repeat the blog title (cover slide already carries it).
+            let dayTitleForPlace = blog.days.count > 1 ? "Day \(dayIdx + 1)" : nil
+
+            // Load place hero images first so we can draw photo markers on the map snapshot.
+            var markerImagesByStopId: [UUID: UIImage] = [:]
+            var placeSlidesForDay: [CarouselSlide] = []
+            placeSlidesForDay.reserveCapacity(day.placeStops.count)
+
             for stop in day.placeStops {
                 let heroPhoto = stop.photos.first { $0.isIncluded }
-                var image: UIImage?
+                var heroImage: UIImage?
                 if let localId = heroPhoto?.localIdentifier {
-                    image = await loadAssetImage(identifier: localId, size: CGSize(width: exportWidth, height: exportHeight))
+                    heroImage = await loadAssetImage(
+                        identifier: localId,
+                        size: CGSize(width: exportWidth, height: exportHeight)
+                    )
                 }
-                result.append(CarouselSlide(
-                    id: stop.id.uuidString,
-                    placeStop: stop,
-                    dayTitle: dayTitle,
-                    heroImage: image
-                ))
+
+                if let heroImage {
+                    markerImagesByStopId[stop.id] = heroImage
+                }
+
+                placeSlidesForDay.append(
+                    CarouselSlide(
+                        id: stop.id.uuidString,
+                        kind: .placeStop,
+                        isSelected: true,
+                        heroImage: heroImage,
+                        coverTitle: nil,
+                        mapSnapshot: nil,
+                        dayInfoLine1: nil,
+                        dayInfoLine2: nil,
+                        placeStop: stop,
+                        dayTitle: dayTitleForPlace
+                    )
+                )
             }
+
+            let mapSnapshot = await MapSnapshotHelper.generatePhotoRouteSnapshot(
+                for: day.placeStops,
+                markerImagesByStopId: markerImagesByStopId,
+                size: CGSize(width: exportWidth, height: exportHeight),
+                // Slightly tighter framing so route/markers read better in exported social slides.
+                regionPadding: 0.04
+            )
+
+            // Map route slide — must come before the first "Day X" place slide.
+            result.append(
+                CarouselSlide(
+                    id: "map-\(day.id.uuidString)",
+                    kind: .mapRoute,
+                    isSelected: true,
+                    heroImage: nil,
+                    coverTitle: nil,
+                    mapSnapshot: mapSnapshot,
+                    dayInfoLine1: "Day \(day.dayIndex)",
+                    dayInfoLine2: day.shortDateText,
+                    placeStop: nil,
+                    dayTitle: nil
+                )
+            )
+
+            result.append(contentsOf: placeSlidesForDay)
         }
+
         slides = result
         isLoading = false
     }
@@ -447,18 +656,17 @@ struct SocialPostStudioSheet: View {
                 Text(title)
                     .font(.system(size: 16, weight: .semibold))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.9)
                     .multilineTextAlignment(.leading)
                 Text(subtitle)
                     .font(.system(size: 12, weight: .regular))
                     .lineLimit(2)
-                    .minimumScaleFactor(0.9)
                     .opacity(0.75)
                     .multilineTextAlignment(.leading)
             }
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minHeight: 72, alignment: .leading)
         .padding(.vertical, 14)
         .padding(.horizontal, 18)
         .background(Color(white: 0.18))

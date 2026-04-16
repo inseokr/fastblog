@@ -3245,8 +3245,7 @@ struct RecapBlogPageView: View {
                     subtitle: "Post, Story, Reel exports",
                     icon: "rectangle.stack",
                     iconColor: .white,
-                    titleColor: .white,
-                    subtitleColor: .white
+                    titleColor: .white
                 ) {
                     showShareYourBlogSheet = false
                     showSocialPostStudio = true
