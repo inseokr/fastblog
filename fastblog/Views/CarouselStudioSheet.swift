@@ -331,9 +331,15 @@ struct SocialPostStudioSheet: View {
             .navigationTitle("Social Post Studio")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                        .fontWeight(.semibold)
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14))
+                            .foregroundColor(.white)
+                    }
+                    .accessibilityLabel("Close")
                 }
             }
             .preferredColorScheme(.dark)
