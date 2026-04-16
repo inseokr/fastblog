@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
+    var excludedActivityTypes: [UIActivity.ActivityType]? = nil
     var onComplete: ((Bool) -> Void)? = nil
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
@@ -38,6 +39,7 @@ struct ShareSheet: UIViewControllerRepresentable {
             return item
         }
         let vc = UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+        vc.excludedActivityTypes = excludedActivityTypes
         vc.completionWithItemsHandler = { _, completed, _, _ in
             onComplete?(completed)
         }

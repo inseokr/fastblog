@@ -78,7 +78,6 @@ struct BlogSettingsSheet: View {
     @State private var showRestorePlaces = false
     @State private var showCustomDeletePopup = false
     @State private var showWritingStyle = false
-    @State private var showCarouselStudio = false
     @State private var showNearbyShareHost = false
     @State private var showNearbyShareUnavailableAlert = false
     @State private var isExportingBackup = false
@@ -119,7 +118,6 @@ struct BlogSettingsSheet: View {
                 .sheet(isPresented: $showCoverChange, onDismiss: handleCoverPickerDismiss) { coverPhotoPicker }
                 .sheet(isPresented: $showRestorePlaces) { restorePlacesSheet }
                 .sheet(isPresented: $showWritingStyle) { StoryWritingStyleSheet() }
-                .sheet(isPresented: $showCarouselStudio) { CarouselStudioSheet(blog: draft) }
                 .alert("Delete Blog?", isPresented: $showDeleteConfirmation) { deleteAlertButtons } message: { deleteAlertMessage }
                 .overlay { customDeletePopup }
                 .alert("Remove from Cloud?", isPresented: $showRemoveFromCloudConfirmation) { removeCloudAlertButtons } message: { removeCloudAlertMessage }
@@ -223,11 +221,6 @@ struct BlogSettingsSheet: View {
                 } label: {
                     Label("Rescan All Moments", systemImage: "arrow.clockwise.circle")
                 }
-            }
-            Button {
-                showCarouselStudio = true
-            } label: {
-                Label("Carousel Studio", systemImage: "rectangle.stack")
             }
         }
     }

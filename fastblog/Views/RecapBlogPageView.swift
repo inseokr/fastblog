@@ -250,6 +250,7 @@ struct RecapBlogPageView: View {
     @State private var shareYourBlogSheetPhase: ShareYourBlogSheetPhase = .menu
     @State private var shareSheetPresentationDetent: PresentationDetent = .height(492) // updated to shareMenuDetentHeight on appear
     @State private var showVideoExportOptions = false
+    @State private var showSocialPostStudio = false
     @State private var blogVideoShareURL: URL? = nil
     @State private var showBlogVideoShareSheet = false
     @State private var showCloudSharingComingSoonAlert = false
@@ -914,6 +915,9 @@ struct RecapBlogPageView: View {
                 if let url = blogVideoShareURL {
                     ShareSheet(items: [url])
                 }
+            }
+            .sheet(isPresented: $showSocialPostStudio) {
+                SocialPostStudioSheet(blog: draft)
             }
             .sheet(isPresented: $showBlogSettings) {
                 BlogSettingsSheet(
@@ -3237,6 +3241,18 @@ struct RecapBlogPageView: View {
 
             VStack(spacing: 0) {
                 shareOptionRow(
+                    title: "Social Post Studio",
+                    subtitle: "Post, Story, Reel exports",
+                    icon: "rectangle.stack",
+                    iconColor: .white,
+                    titleColor: .white,
+                    subtitleColor: .white
+                ) {
+                    showShareYourBlogSheet = false
+                    showSocialPostStudio = true
+                }
+                Divider().padding(.leading, 52)
+                shareOptionRow(
                     title: "Export as PDF",
                     subtitle: "Create a printable storybook",
                     icon: "doc.richtext"
@@ -3415,22 +3431,25 @@ Your blog remains private unless you choose to share it.
         title: String,
         subtitle: String,
         icon: String,
+        iconColor: Color = .primary,
+        titleColor: Color = .primary,
+        subtitleColor: Color = .secondary,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: icon)
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(iconColor)
                     .frame(width: 28)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.primary)
+                        .foregroundColor(titleColor)
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(subtitleColor)
                 }
                 Spacer()
             }
