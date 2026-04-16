@@ -605,8 +605,8 @@ struct SocialPostStudioSheet: View {
                     heroImage: nil,
                     coverTitle: nil,
                     mapSnapshot: mapSnapshot,
-                    dayInfoLine1: "Day \(day.dayIndex)",
-                    dayInfoLine2: day.shortDateText,
+                    dayInfoLine1: mapDayLine1(for: day.date),
+                    dayInfoLine2: mapDayLine2(for: day.date),
                     placeStop: nil,
                     dayTitle: nil
                 )
@@ -618,6 +618,28 @@ struct SocialPostStudioSheet: View {
         slides = result
         isLoading = false
     }
+
+    private func mapDayLine1(for date: Date) -> String {
+        Self.weekdayFormatter.string(from: date)
+    }
+
+    private func mapDayLine2(for date: Date) -> String {
+        Self.monthDayFormatter.string(from: date)
+    }
+
+    private static let weekdayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .current
+        formatter.dateFormat = "EEEE"
+        return formatter
+    }()
+
+    private static let monthDayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .current
+        formatter.dateFormat = "MMMM d"
+        return formatter
+    }()
 
     private func loadAssetImage(identifier: String, size: CGSize) async -> UIImage? {
         await withCheckedContinuation { continuation in
