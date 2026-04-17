@@ -111,6 +111,55 @@ struct CarouselSlide: Identifiable {
 
 // MARK: - Slide View
 
+/// Pure rendering component for a repositionable text block.
+/// The drag gesture intentionally lives in SlideTextEditorView (the full slide is the
+/// gesture target) so that the hit-test area always covers the whole slide regardless
+/// of where the block was dragged. SwiftUI's .offset() moves the view visually but
+/// does NOT move the hit-test frame, so a self-contained gesture would stop responding
+/// after the first drag. @GestureState also lives next to the state it updates,
+/// eliminating the one-frame race where newStoredOffset + finalTranslation = 2× offset.
+private struct DraggableTextBlock<Content: View>: View {
+    let isEditingText: Bool
+    let isSelected: Bool
+    /// Pre-computed display offset: storedOffset + liveTranslation (for selected block).
+    let offset: CGSize
+    let onTap: () -> Void
+    let content: () -> Content
+
+    init(isEditingText: Bool,
+         isSelected: Bool,
+         offset: CGSize,
+         onTap: @escaping () -> Void,
+         @ViewBuilder content: @escaping () -> Content) {
+        self.isEditingText = isEditingText
+        self.isSelected = isSelected
+        self.offset = offset
+        self.onTap = onTap
+        self.content = content
+    }
+
+    var body: some View {
+        content()
+            .overlay {
+                if isEditingText {
+                    RoundedRectangle(cornerRadius: 7)
+                        .strokeBorder(
+                            isSelected
+                                ? Color(red: 0.14, green: 0.52, blue: 1.0)
+                                : Color.white.opacity(0.35),
+                            style: isSelected
+                                ? StrokeStyle(lineWidth: 2.0)
+                                : StrokeStyle(lineWidth: 1.0, dash: [5, 3])
+                        )
+                        .padding(-6)
+                }
+            }
+            .animation(.easeInOut(duration: 0.15), value: isSelected)
+            .onTapGesture { onTap() }
+            .offset(offset)
+    }
+}
+
 struct CarouselSlideView: View {
     let slide: CarouselSlide
     let width: CGFloat
@@ -120,46 +169,15 @@ struct CarouselSlideView: View {
     var isEditingText: Bool = false
     /// Which text block is currently selected for editing (shown with a solid blue border).
     var selectedBlockID: TextBlockID? = nil
-    /// Called when the user taps (not drags) a text block to select it.
+    /// Called when the user taps a text block to select it.
     var onSelectBlock: ((TextBlockID) -> Void)? = nil
-    /// Called with committed offset when the primary-block drag ends.
-    var onDragEnded: ((CGSize) -> Void)? = nil
-    /// Called with committed offset when the secondary-block drag ends.
-    var onSecondaryDragEnded: ((CGSize) -> Void)? = nil
+    /// Live translation injected from the parent drag gesture (SlideTextEditorView).
+    /// Applied only to the block matching selectedBlockID so the selected block follows
+    /// the finger smoothly without any hit-test mismatch.
+    var liveDragTranslation: CGSize = .zero
 
     private var height: CGFloat { width / aspectRatio }
     private let heroImageScale: CGFloat = 1.12
-
-    @GestureState private var primaryDragOffset: CGSize = .zero
-    @GestureState private var secondaryDragOffset: CGSize = .zero
-
-    private var effectivePrimaryOffset: CGSize {
-        CGSize(width:  slide.textStyle.primary.offset.width  + primaryDragOffset.width,
-               height: slide.textStyle.primary.offset.height + primaryDragOffset.height)
-    }
-    private var effectiveSecondaryOffset: CGSize {
-        CGSize(width:  slide.textStyle.secondary.offset.width  + secondaryDragOffset.width,
-               height: slide.textStyle.secondary.offset.height + secondaryDragOffset.height)
-    }
-
-    private var primaryDragGesture: some Gesture {
-        DragGesture(minimumDistance: 3)
-            .updating($primaryDragOffset) { v, s, _ in s = v.translation }
-            .onEnded { v in
-                onDragEnded?(CGSize(
-                    width:  slide.textStyle.primary.offset.width  + v.translation.width,
-                    height: slide.textStyle.primary.offset.height + v.translation.height))
-            }
-    }
-    private var secondaryDragGesture: some Gesture {
-        DragGesture(minimumDistance: 3)
-            .updating($secondaryDragOffset) { v, s, _ in s = v.translation }
-            .onEnded { v in
-                onSecondaryDragEnded?(CGSize(
-                    width:  slide.textStyle.secondary.offset.width  + v.translation.width,
-                    height: slide.textStyle.secondary.offset.height + v.translation.height))
-            }
-    }
 
     var body: some View {
         ZStack {
@@ -196,11 +214,16 @@ struct CarouselSlideView: View {
                 }
             }
         }
-        // ── Draggable text overlays (natural-sized, no gesture conflict) ───
+        // ── Draggable text overlays ───────────────────────────────────
         // Cover title — centered
         .overlay {
             if slide.kind == .cover, let title = slide.coverTitle, !title.isEmpty {
-                textBlock(id: .primary) {
+                DraggableTextBlock(
+                    isEditingText: isEditingText,
+                    isSelected: selectedBlockID == .primary,
+                    offset: slide.textStyle.primary.offset + (selectedBlockID == .primary ? liveDragTranslation : .zero),
+                    onTap: { onSelectBlock?(.primary) }
+                ) {
                     Text(title)
                         .font(.system(size: width * 0.085 * slide.textStyle.primary.sizeScale,
                                       weight: .heavy,
@@ -210,13 +233,17 @@ struct CarouselSlideView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, width * 0.06)
                 }
-                .offset(effectivePrimaryOffset)
             }
         }
         // Map heading — top-leading
         .overlay(alignment: .topLeading) {
             if slide.kind == .mapRoute {
-                textBlock(id: .primary) {
+                DraggableTextBlock(
+                    isEditingText: isEditingText,
+                    isSelected: selectedBlockID == .primary,
+                    offset: slide.textStyle.primary.offset + (selectedBlockID == .primary ? liveDragTranslation : .zero),
+                    onTap: { onSelectBlock?(.primary) }
+                ) {
                     VStack(alignment: .leading, spacing: 4) {
                         if let l1 = slide.dayInfoLine1 {
                             Text(l1)
@@ -236,13 +263,17 @@ struct CarouselSlideView: View {
                     }
                     .padding(width * 0.055)
                 }
-                .offset(effectivePrimaryOffset)
             }
         }
         // Map story — bottom-leading
         .overlay(alignment: .bottomLeading) {
             if slide.kind == .mapRoute, let story = slide.dayStory, !story.isEmpty {
-                textBlock(id: .secondary) {
+                DraggableTextBlock(
+                    isEditingText: isEditingText,
+                    isSelected: selectedBlockID == .secondary,
+                    offset: slide.textStyle.secondary.offset + (selectedBlockID == .secondary ? liveDragTranslation : .zero),
+                    onTap: { onSelectBlock?(.secondary) }
+                ) {
                     Text(story)
                         .font(.system(size: width * 0.042 * slide.textStyle.secondary.sizeScale,
                                       design: slide.textStyle.secondary.fontDesign.design))
@@ -251,14 +282,18 @@ struct CarouselSlideView: View {
                         .multilineTextAlignment(.leading)
                         .padding(width * 0.055)
                 }
-                .offset(effectiveSecondaryOffset)
             }
         }
         // Place name + subtitle — top-leading
         .overlay(alignment: .topLeading) {
             if slide.kind == .placeStop {
                 if let placeStop = slide.placeStop {
-                    textBlock(id: .primary) {
+                    DraggableTextBlock(
+                        isEditingText: isEditingText,
+                        isSelected: selectedBlockID == .primary,
+                        offset: slide.textStyle.primary.offset + (selectedBlockID == .primary ? liveDragTranslation : .zero),
+                        onTap: { onSelectBlock?(.primary) }
+                    ) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(placeStop.placeTitle)
                                 .font(.system(size: width * 0.065 * slide.textStyle.primary.sizeScale,
@@ -276,7 +311,6 @@ struct CarouselSlideView: View {
                         }
                         .padding(width * 0.06)
                     }
-                    .offset(effectivePrimaryOffset)
                 } else {
                     Text("Missing place data")
                         .font(.system(size: width * 0.05, weight: .semibold))
@@ -288,7 +322,12 @@ struct CarouselSlideView: View {
         // Place caption — bottom-leading
         .overlay(alignment: .bottomLeading) {
             if slide.kind == .placeStop, let caption = slide.caption, !caption.isEmpty {
-                textBlock(id: .secondary) {
+                DraggableTextBlock(
+                    isEditingText: isEditingText,
+                    isSelected: selectedBlockID == .secondary,
+                    offset: slide.textStyle.secondary.offset + (selectedBlockID == .secondary ? liveDragTranslation : .zero),
+                    onTap: { onSelectBlock?(.secondary) }
+                ) {
                     Text(caption)
                         .font(.system(size: width * 0.044 * slide.textStyle.secondary.sizeScale,
                                       design: slide.textStyle.secondary.fontDesign.design))
@@ -298,7 +337,6 @@ struct CarouselSlideView: View {
                         .padding(.horizontal, width * 0.06)
                         .padding(.vertical, width * 0.03)
                 }
-                .offset(effectiveSecondaryOffset)
             }
         }
         // ── Chrome ────────────────────────────────────────────────────
@@ -323,54 +361,12 @@ struct CarouselSlideView: View {
                     .foregroundColor(.white)
             }
         }
-        // Auto-select whichever block starts moving — fires exactly once per drag gesture
-        // (only when @GestureState transitions from .zero to non-zero) so the parent state
-        // update doesn't happen on every frame, preventing flicker/re-render during drag.
-        .onChange(of: primaryDragOffset) { old, new in
-            if old == .zero && new != .zero && isEditingText { onSelectBlock?(.primary) }
-        }
-        .onChange(of: secondaryDragOffset) { old, new in
-            if old == .zero && new != .zero && isEditingText { onSelectBlock?(.secondary) }
-        }
         .frame(width: width, height: height)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .opacity(slide.isSelected ? 1.0 : 0.72)
         .contentShape(RoundedRectangle(cornerRadius: 16))
         .onTapGesture { if showsSelectionChrome { onToggleSelection() } }
         .animation(.easeInOut(duration: 0.2), value: slide.isSelected)
-    }
-
-    // MARK: - Text Block Helper
-
-    /// Applies edit chrome and gestures to a text block.
-    /// Drag is always active when editing so a single touch both selects and starts dragging.
-    /// Each gesture is applied independently so their opaque types never collide in a ternary.
-    private func textBlock<Content: View>(id: TextBlockID,
-                                          @ViewBuilder content: () -> Content) -> some View {
-        let isSelected = selectedBlockID == id
-        let applyPrimary   = isEditingText && id == .primary
-        let applySecondary = isEditingText && id == .secondary
-
-        return content()
-            .overlay {
-                if isEditingText {
-                    RoundedRectangle(cornerRadius: 7)
-                        .strokeBorder(
-                            isSelected
-                                ? Color(red: 0.14, green: 0.52, blue: 1.0)
-                                : Color.white.opacity(0.35),
-                            style: isSelected
-                                ? StrokeStyle(lineWidth: 2.0)
-                                : StrokeStyle(lineWidth: 1.0, dash: [5, 3])
-                        )
-                        .padding(-6)
-                }
-            }
-            .animation(.easeInOut(duration: 0.15), value: isSelected)
-            .onTapGesture { onSelectBlock?(id) }
-            // Each gesture is applied as an independent optional so their concrete types stay separate.
-            .gesture(applyPrimary   ? primaryDragGesture   : nil)
-            .gesture(applySecondary ? secondaryDragGesture : nil)
     }
 
     // MARK: - Backgrounds
@@ -408,6 +404,9 @@ struct SlideTextEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedBlock: TextBlockID = .primary
+    /// Live translation from the full-slide DragGesture. Injected into CarouselSlideView
+    /// so the selected block follows the finger without any hit-test mismatch.
+    @GestureState private var liveDragTranslation: CGSize = .zero
 
     // MARK: Helpers
 
@@ -450,7 +449,7 @@ struct SlideTextEditorView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Text("Tap a text block to select it, then drag to reposition")
+                Text("Select a block below, then drag anywhere on the slide to reposition")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -465,12 +464,27 @@ struct SlideTextEditorView: View {
                     showsSelectionChrome: false,
                     isEditingText: true,
                     selectedBlockID: selectedBlock,
-                        onSelectBlock: { selectedBlock = $0 },
-                        onDragEnded:          { slide.textStyle.primary.offset = $0 },
-                        onSecondaryDragEnded: { slide.textStyle.secondary.offset = $0 }
-                    )
-                    .shadow(color: .black.opacity(0.5), radius: 16, x: 0, y: 6)
-                    .padding(.horizontal, 20)
+                    onSelectBlock: { selectedBlock = $0 },
+                    liveDragTranslation: liveDragTranslation
+                )
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 4)
+                        .updating($liveDragTranslation) { value, state, _ in
+                            state = value.translation
+                        }
+                        .onEnded { value in
+                            let d = value.translation
+                            if selectedBlock == .primary {
+                                slide.textStyle.primary.offset.width  += d.width
+                                slide.textStyle.primary.offset.height += d.height
+                            } else {
+                                slide.textStyle.secondary.offset.width  += d.width
+                                slide.textStyle.secondary.offset.height += d.height
+                            }
+                        }
+                )
+                .shadow(color: .black.opacity(0.5), radius: 16, x: 0, y: 6)
+                .padding(.horizontal, 20)
 
                     Spacer()
 
@@ -947,10 +961,16 @@ struct SocialPostStudioSheet: View {
     }
 }
 
-// MARK: - CGFloat helper
+// MARK: - Numeric helpers
 
 private extension CGFloat {
     func rounded(toPlaces places: Int) -> CGFloat {
         let d = pow(10.0, CGFloat(places)); return (self * d).rounded() / d
+    }
+}
+
+private extension CGSize {
+    static func + (lhs: CGSize, rhs: CGSize) -> CGSize {
+        CGSize(width: lhs.width + rhs.width, height: lhs.height + rhs.height)
     }
 }
