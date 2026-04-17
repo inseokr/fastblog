@@ -60,7 +60,11 @@ struct TextBlockStyle: Equatable {
     var sizeScale: CGFloat = 1.0      // multiplier, 0.6 – 1.8
     var textColor: StudioTextColor = .white
     var fontDesign: StudioFontDesign = .default
-    var offset: CGSize = .zero
+    /// The block's desired center in slide-local coordinates (points).
+    /// `nil` means use the natural anchor position.
+    /// Storing absolute center — not a displacement from the anchor — makes the value
+    /// meaningful across slides with different text lengths.
+    var center: CGPoint? = nil
 }
 
 /// Holds per-block styles for a slide. Each block is independently styled and draggable.
@@ -100,6 +104,10 @@ struct CarouselSlide: Identifiable {
     var photoCaption: String?
     var dayStory: String?
     var textStyle: TextOverlayStyle = TextOverlayStyle()
+    /// When true, the primary text block (title / heading / place name) is hidden on this slide.
+    var isPrimaryHidden: Bool = false
+    /// When true, the secondary text block (story / caption) is hidden on this slide.
+    var isSecondaryHidden: Bool = false
 
     var caption: String? {
         guard kind == .placeStop, let placeStop else { return nil }
@@ -126,7 +134,8 @@ private struct DraggableTextBlock<Content: View>: View {
     let id: TextBlockID
     let isEditingText: Bool
     let isSelected: Bool
-    @Binding var savedOffset: CGSize
+    /// Desired center of the block in slide-local coordinates. `nil` = natural anchor position.
+    @Binding var anchoredCenter: CGPoint?
     /// Slide rect in its local coord space (e.g. `(0, 0, slideW, slideH)`), used to clamp drags.
     let slideBounds: CGRect
     var onSelect: () -> Void = {}
@@ -135,17 +144,22 @@ private struct DraggableTextBlock<Content: View>: View {
     let content: () -> Content
 
     @GestureState private var liveDrag: CGSize = .zero
-    /// Block frame when at its natural (anchor-based) position — captured once so text
-    /// reflow or ring changes later don't re-derive it mid-session.
+    /// Block frame at its natural (anchor-based) position — captured once on first appear.
     @State private var naturalRect: CGRect?
+
+    /// Offset to apply for the current `anchoredCenter`, relative to the natural anchor.
+    private var displayOffset: CGSize {
+        guard let center = anchoredCenter, let natural = naturalRect else { return .zero }
+        return CGSize(width: center.x - natural.midX, height: center.y - natural.midY)
+    }
 
     var body: some View {
         content()
             .background(naturalRectCapture)
             .overlay(editingRing)
             .contentShape(Rectangle())
-            .offset(x: savedOffset.width + liveDrag.width,
-                    y: savedOffset.height + liveDrag.height)
+            .offset(x: displayOffset.width + liveDrag.width,
+                    y: displayOffset.height + liveDrag.height)
             .highPriorityGesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .updating($liveDrag) { value, state, _ in
@@ -157,10 +171,16 @@ private struct DraggableTextBlock<Content: View>: View {
                     }
                     .onEnded { value in
                         let proposed = CGSize(
-                            width: savedOffset.width + value.translation.width,
-                            height: savedOffset.height + value.translation.height
+                            width: displayOffset.width + value.translation.width,
+                            height: displayOffset.height + value.translation.height
                         )
-                        savedOffset = clamped(proposed: proposed)
+                        let clampedOffset = clamped(proposed: proposed)
+                        if let natural = naturalRect {
+                            anchoredCenter = CGPoint(
+                                x: natural.midX + clampedOffset.width,
+                                y: natural.midY + clampedOffset.height
+                            )
+                        }
                         onDragEnd()
                     },
                 including: isEditingText ? .all : .subviews
@@ -176,9 +196,10 @@ private struct DraggableTextBlock<Content: View>: View {
                     guard naturalRect == nil else { return }
                     let current = geo.frame(in: .named(studioSlideCoordSpace))
                     guard current.width > 0, current.height > 0 else { return }
+                    // Strip any existing offset so we always store the un-displaced rect.
                     naturalRect = current.offsetBy(
-                        dx: -savedOffset.width,
-                        dy: -savedOffset.height
+                        dx: -displayOffset.width,
+                        dy: -displayOffset.height
                     )
                 }
         }
@@ -231,8 +252,8 @@ struct CarouselSlideView: View {
     var selectedBlockID: TextBlockID? = nil
     /// Called when the user taps a text block to select it.
     var onSelectBlock: ((TextBlockID) -> Void)? = nil
-    /// Edit-mode write-back: commit a block's new offset. Nil in read-only (preview/export) use.
-    var onUpdateBlockOffset: ((TextBlockID, CGSize) -> Void)? = nil
+    /// Edit-mode write-back: commit a block's new center. Nil in read-only (preview/export) use.
+    var onUpdateBlockCenter: ((TextBlockID, CGPoint?) -> Void)? = nil
     /// Fires on drag-start — the editor uses it to lock horizontal slide paging.
     var onBlockDragStart: (() -> Void)? = nil
     /// Fires on drag-end — the editor uses it to release the paging lock.
@@ -242,15 +263,15 @@ struct CarouselSlideView: View {
     private let heroImageScale: CGFloat = 1.12
     private var slideBounds: CGRect { CGRect(x: 0, y: 0, width: width, height: height) }
 
-    /// Binding for the block's committed offset. Reads from `slide.textStyle.*`; writes
-    /// go through `onUpdateBlockOffset` (nil-callback in read-only contexts makes it a no-op).
-    private func offsetBinding(for id: TextBlockID) -> Binding<CGSize> {
+    /// Binding for the block's committed center. Reads from `slide.textStyle.*`; writes
+    /// go through `onUpdateBlockCenter` (nil-callback in read-only contexts makes it a no-op).
+    private func centerBinding(for id: TextBlockID) -> Binding<CGPoint?> {
         Binding(
             get: {
-                id == .primary ? slide.textStyle.primary.offset
-                               : slide.textStyle.secondary.offset
+                id == .primary ? slide.textStyle.primary.center
+                               : slide.textStyle.secondary.center
             },
-            set: { newOffset in onUpdateBlockOffset?(id, newOffset) }
+            set: { newCenter in onUpdateBlockCenter?(id, newCenter) }
         )
     }
 
@@ -266,10 +287,12 @@ struct CarouselSlideView: View {
 
             case .mapRoute:
                 mapRouteBackground
-                LinearGradient(colors: [.black.opacity(0.6), .clear],
-                               startPoint: .top, endPoint: .init(x: 0.5, y: 0.45))
-                    .frame(width: width, height: height)
-                if slide.dayStory != nil {
+                if !slide.isPrimaryHidden {
+                    LinearGradient(colors: [.black.opacity(0.6), .clear],
+                                   startPoint: .top, endPoint: .init(x: 0.5, y: 0.45))
+                        .frame(width: width, height: height)
+                }
+                if slide.dayStory != nil, !slide.isSecondaryHidden {
                     LinearGradient(colors: [.clear, .black.opacity(0.65)],
                                    startPoint: .init(x: 0.5, y: 0.52), endPoint: .bottom)
                         .frame(width: width, height: height)
@@ -278,11 +301,13 @@ struct CarouselSlideView: View {
             case .placeStop:
                 coverBackground
                 // Top gradient: protects place name text
-                LinearGradient(colors: [.black.opacity(0.65), .clear],
-                               startPoint: .top, endPoint: .init(x: 0.5, y: 0.42))
-                    .frame(width: width, height: height)
+                if !slide.isPrimaryHidden {
+                    LinearGradient(colors: [.black.opacity(0.65), .clear],
+                                   startPoint: .top, endPoint: .init(x: 0.5, y: 0.42))
+                        .frame(width: width, height: height)
+                }
                 // Bottom gradient: protects caption text (only when caption exists)
-                if slide.caption != nil {
+                if slide.caption != nil, !slide.isSecondaryHidden {
                     LinearGradient(colors: [.clear, .black.opacity(0.72)],
                                    startPoint: .init(x: 0.5, y: 0.58), endPoint: .bottom)
                         .frame(width: width, height: height)
@@ -292,12 +317,12 @@ struct CarouselSlideView: View {
         // ── Draggable text overlays ───────────────────────────────────
         // Cover title — centered
         .overlay {
-            if slide.kind == .cover, let title = slide.coverTitle, !title.isEmpty {
+            if slide.kind == .cover, !slide.isPrimaryHidden, let title = slide.coverTitle, !title.isEmpty {
                 DraggableTextBlock(
                     id: .primary,
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .primary,
-                    savedOffset: offsetBinding(for: .primary),
+                    anchoredCenter: centerBinding(for: .primary),
                     slideBounds: slideBounds,
                     onSelect: { onSelectBlock?(.primary) },
                     onDragStart: { onBlockDragStart?() },
@@ -316,12 +341,12 @@ struct CarouselSlideView: View {
         }
         // Map heading — top-leading
         .overlay(alignment: .topLeading) {
-            if slide.kind == .mapRoute {
+            if slide.kind == .mapRoute, !slide.isPrimaryHidden {
                 DraggableTextBlock(
                     id: .primary,
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .primary,
-                    savedOffset: offsetBinding(for: .primary),
+                    anchoredCenter: centerBinding(for: .primary),
                     slideBounds: slideBounds,
                     onSelect: { onSelectBlock?(.primary) },
                     onDragStart: { onBlockDragStart?() },
@@ -350,12 +375,12 @@ struct CarouselSlideView: View {
         }
         // Map story — bottom-leading
         .overlay(alignment: .bottomLeading) {
-            if slide.kind == .mapRoute, let story = slide.dayStory, !story.isEmpty {
+            if slide.kind == .mapRoute, !slide.isSecondaryHidden, let story = slide.dayStory, !story.isEmpty {
                 DraggableTextBlock(
                     id: .secondary,
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .secondary,
-                    savedOffset: offsetBinding(for: .secondary),
+                    anchoredCenter: centerBinding(for: .secondary),
                     slideBounds: slideBounds,
                     onSelect: { onSelectBlock?(.secondary) },
                     onDragStart: { onBlockDragStart?() },
@@ -373,13 +398,13 @@ struct CarouselSlideView: View {
         }
         // Place name + subtitle — top-leading
         .overlay(alignment: .topLeading) {
-            if slide.kind == .placeStop {
+            if slide.kind == .placeStop, !slide.isPrimaryHidden {
                 if let placeStop = slide.placeStop {
                     DraggableTextBlock(
                         id: .primary,
                         isEditingText: isEditingText,
                         isSelected: selectedBlockID == .primary,
-                        savedOffset: offsetBinding(for: .primary),
+                        anchoredCenter: centerBinding(for: .primary),
                         slideBounds: slideBounds,
                         onSelect: { onSelectBlock?(.primary) },
                         onDragStart: { onBlockDragStart?() },
@@ -412,12 +437,12 @@ struct CarouselSlideView: View {
         }
         // Place caption — bottom-leading
         .overlay(alignment: .bottomLeading) {
-            if slide.kind == .placeStop, let caption = slide.caption, !caption.isEmpty {
+            if slide.kind == .placeStop, !slide.isSecondaryHidden, let caption = slide.caption, !caption.isEmpty {
                 DraggableTextBlock(
                     id: .secondary,
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .secondary,
-                    savedOffset: offsetBinding(for: .secondary),
+                    anchoredCenter: centerBinding(for: .secondary),
                     slideBounds: slideBounds,
                     onSelect: { onSelectBlock?(.secondary) },
                     onDragStart: { onBlockDragStart?() },
@@ -496,7 +521,7 @@ struct CarouselSlideView: View {
 private struct SlideEditPage: View {
     @Binding var slide: CarouselSlide
     let aspectRatio: CGFloat
-    let selectedBlock: TextBlockID
+    let selectedBlock: TextBlockID?
     let onSelectBlock: (TextBlockID) -> Void
     /// While true, the slide pager's horizontal scrolling is disabled (text drag / tap on a block).
     @Binding var locksHorizontalSlidePaging: Bool
@@ -513,11 +538,11 @@ private struct SlideEditPage: View {
             isEditingText: true,
             selectedBlockID: selectedBlock,
             onSelectBlock: { onSelectBlock($0) },
-            onUpdateBlockOffset: { id, newOffset in
+            onUpdateBlockCenter: { id, newCenter in
                 if id == .primary {
-                    slide.textStyle.primary.offset = newOffset
+                    slide.textStyle.primary.center = newCenter
                 } else {
-                    slide.textStyle.secondary.offset = newOffset
+                    slide.textStyle.secondary.center = newCenter
                 }
             },
             onBlockDragStart: { locksHorizontalSlidePaging = true },
@@ -540,9 +565,11 @@ struct SlideTextEditorView: View {
     @State private var currentIndex: Int = 0
     /// Drives the paged `ScrollView`; optional to match `scrollPosition(id:)`.
     @State private var scrollPageID: Int?
-    @State private var selectedBlock: TextBlockID = .primary
+    @State private var selectedBlock: TextBlockID? = nil
     /// Disables horizontal slide paging while the user touches a text block (see `SlideEditPage`).
     @State private var locksHorizontalSlidePaging = false
+    /// Briefly true after "Apply to all slides" to show a confirmation flash.
+    @State private var didApplyToAll = false
 
     // MARK: Helpers
 
@@ -554,22 +581,18 @@ struct SlideTextEditorView: View {
     private var slideHeight: CGFloat { slideWidth / aspectRatio }
 
     private var availableBlocks: [TextBlockID] {
+        var blocks: [TextBlockID] = []
         switch slide.kind {
-        case .cover:     return [.primary]
-        case .mapRoute:  return slide.dayStory?.isEmpty == false ? [.primary, .secondary] : [.primary]
-        case .placeStop: return slide.caption != nil ? [.primary, .secondary] : [.primary]
+        case .cover:
+            if !slide.isPrimaryHidden { blocks.append(.primary) }
+        case .mapRoute:
+            if !slide.isPrimaryHidden { blocks.append(.primary) }
+            if !slide.isSecondaryHidden, slide.dayStory?.isEmpty == false { blocks.append(.secondary) }
+        case .placeStop:
+            if !slide.isPrimaryHidden { blocks.append(.primary) }
+            if !slide.isSecondaryHidden, slide.caption != nil { blocks.append(.secondary) }
         }
-    }
-
-    private func blockLabel(_ id: TextBlockID) -> String {
-        switch (slide.kind, id) {
-        case (.cover, _):              return "Title"
-        case (.mapRoute, .primary):    return "Heading"
-        case (.mapRoute, .secondary):  return "Story"
-        case (.placeStop, .primary):   return "Place Name"
-        case (.placeStop, .secondary): return "Caption"
-        default:                       return "Text"
-        }
+        return blocks
     }
 
     private var currentStyle: TextBlockStyle {
@@ -577,8 +600,38 @@ struct SlideTextEditorView: View {
     }
 
     private func updateStyle(_ update: (inout TextBlockStyle) -> Void) {
+        guard let selectedBlock else { return }
         if selectedBlock == .secondary { update(&slides[currentIndex].textStyle.secondary) }
         else { update(&slides[currentIndex].textStyle.primary) }
+    }
+
+    /// Hides the currently selected block on this slide. The deletion is reversible via
+    /// the toolbar "reset" button, which also unhides both blocks for the current slide.
+    private func deleteSelectedBlock() {
+        guard let selectedBlock else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if selectedBlock == .primary {
+                slides[currentIndex].isPrimaryHidden = true
+            } else {
+                slides[currentIndex].isSecondaryHidden = true
+            }
+        }
+        // Clear selection after deleting the block.
+        self.selectedBlock = availableBlocks.first
+    }
+
+    /// Copies this slide's full text style (font design, color, size, position) to every
+    /// slide in the carousel, for both blocks. Hidden flags are left alone so per-slide
+    /// deletions survive.
+    private func applyStyleToAllSlides() {
+        let primary = slides[currentIndex].textStyle.primary
+        let secondary = slides[currentIndex].textStyle.secondary
+        withAnimation(.easeInOut(duration: 0.2)) {
+            for i in slides.indices {
+                slides[i].textStyle.primary   = primary
+                slides[i].textStyle.secondary = secondary
+            }
+        }
     }
 
     // MARK: Body
@@ -586,7 +639,7 @@ struct SlideTextEditorView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Text("Drag a block to reposition · Swipe to change slides")
+                Text("Tap a block to select · Drag to reposition · Swipe to change slides")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -670,13 +723,16 @@ struct SlideTextEditorView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
-                            slides[currentIndex].textStyle.primary.offset = .zero
-                            slides[currentIndex].textStyle.secondary.offset = .zero
+                            slides[currentIndex].textStyle.primary.center = nil
+                            slides[currentIndex].textStyle.secondary.center = nil
+                            slides[currentIndex].isPrimaryHidden = false
+                            slides[currentIndex].isSecondaryHidden = false
                         }
+                        selectedBlock = nil
                     } label: {
                         Image(systemName: "arrow.counterclockwise")
                     }
-                    .accessibilityLabel("Reset positions")
+                    .accessibilityLabel("Reset slide")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }.fontWeight(.semibold)
@@ -685,7 +741,7 @@ struct SlideTextEditorView: View {
             .onChange(of: scrollPageID) { _, newID in
                 guard let newID else { return }
                 if newID != currentIndex { currentIndex = newID }
-                if !availableBlocks.contains(selectedBlock) { selectedBlock = .primary }
+                selectedBlock = nil
             }
         }
         .preferredColorScheme(.dark)
@@ -693,7 +749,7 @@ struct SlideTextEditorView: View {
         .onAppear {
             currentIndex = initialIndex
             scrollPageID = initialIndex
-            if !availableBlocks.contains(selectedBlock) { selectedBlock = .primary }
+            selectedBlock = nil
         }
     }
 
@@ -702,40 +758,46 @@ struct SlideTextEditorView: View {
     @ViewBuilder
     private var textFormattingToolbar: some View {
         VStack(spacing: 0) {
-            // Block selector tab bar (map: Heading/Story). Place slides: tap blocks on the slide — no tabs.
-            if availableBlocks.count > 1, slide.kind != .placeStop {
-                HStack(spacing: 0) {
-                    ForEach(availableBlocks, id: \.self) { blockID in
-                        let isActive = selectedBlock == blockID
-                        Button { withAnimation(.easeInOut(duration: 0.15)) { selectedBlock = blockID } } label: {
-                            Text(blockLabel(blockID))
-                                .font(.system(size: 13, weight: isActive ? .semibold : .regular))
-                                .foregroundColor(isActive ? .white : .white.opacity(0.45))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .background(
-                                    isActive
-                                        ? Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.25)
-                                        : Color.clear
-                                )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .background(Color(white: 0.14))
-                .overlay(alignment: .bottom) {
-                    Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
-                }
-            }
-
             VStack(spacing: 16) {
-                if slide.kind != .placeStop {
-                    HStack {
-                        Text(blockLabel(selectedBlock))
+                // Slide-level actions: delete the selected block, or push this slide's
+                // visual style (font / color / size) to every slide in the carousel.
+                HStack(spacing: 12) {
+                    Button {
+                        deleteSelectedBlock()
+                    } label: {
+                        Label("Delete", systemImage: "trash")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
-                        Spacer()
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14).padding(.vertical, 7)
+                            .background(Color.red.opacity(0.3))
+                            .clipShape(Capsule())
+                            .overlay(Capsule().strokeBorder(Color.red.opacity(0.5), lineWidth: 1))
                     }
+                    .buttonStyle(.plain)
+                    .disabled(selectedBlock == nil)
+                    .opacity(selectedBlock != nil ? 1 : 0.4)
+
+                    Spacer()
+
+                    Button {
+                        applyStyleToAllSlides()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { didApplyToAll = true }
+                        Task {
+                            try? await Task.sleep(for: .milliseconds(1400))
+                            withAnimation(.easeOut(duration: 0.25)) { didApplyToAll = false }
+                        }
+                    } label: {
+                        Label(didApplyToAll ? "Applied!" : "Apply to all slides",
+                              systemImage: didApplyToAll ? "checkmark" : "wand.and.stars")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14).padding(.vertical, 7)
+                            .background(didApplyToAll ? Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.45) : Color.white.opacity(0.12))
+                            .clipShape(Capsule())
+                            .overlay(Capsule().strokeBorder(didApplyToAll ? Color(red: 0.04, green: 0.52, blue: 1.0) : Color.white.opacity(0.2), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: didApplyToAll)
                 }
 
                 // Font design pills
