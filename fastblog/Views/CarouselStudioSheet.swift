@@ -1140,7 +1140,7 @@ struct SocialPostStudioSheet: View {
 
             let mapSnap = await MapSnapshotHelper.generatePhotoRouteSnapshot(
                 for: day.placeStops, markerImagesByStopId: markerImages,
-                size: CGSize(width: exportWidth, height: exportHeight), regionPadding: 0.04)
+                size: CGSize(width: exportWidth, height: exportHeight), regionPadding: 0.015)
 
             let bestStory = [day.dayNarrative, day.dayCaption]
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }

@@ -156,10 +156,25 @@ class MapSnapshotHelper {
         guard !entries.isEmpty else { return nil }
 
         let coords = entries.map(\.coord)
-        let region = region(for: coords, padding: regionPadding)
+        let boundingRegion = region(for: coords, padding: regionPadding)
+
+        // Shift the viewport center 25 % toward the first stop so the start of the
+        // route sits more prominently in frame.  The span is unchanged so all later
+        // stops remain fully inside the snapshot.
+        let displayRegion: MKCoordinateRegion = {
+            let first = entries[0].coord
+            let biasedLat = boundingRegion.center.latitude
+                + (first.latitude  - boundingRegion.center.latitude)  * 0.25
+            let biasedLon = boundingRegion.center.longitude
+                + (first.longitude - boundingRegion.center.longitude) * 0.25
+            return MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: biasedLat, longitude: biasedLon),
+                span: boundingRegion.span
+            )
+        }()
 
         let options = MKMapSnapshotter.Options()
-        options.region = region
+        options.region = displayRegion
         options.size = size
         options.scale = UIScreen.main.scale
         options.mapType = .standard
@@ -408,9 +423,10 @@ class MapSnapshotHelper {
     }
 
     private static func clampMarkerDiameter(size: CGSize) -> CGFloat {
-        // Tuned for 9:16 and 4:5 exports: big enough to read, small enough to avoid pill collisions.
-        let raw = min(size.width, size.height) * 0.085
-        return min(max(raw, 44), 64)
+        // Scaled generously so markers read clearly at both full export (1080 px) and
+        // the small in-app preview (~260 px), where the image is scaled down ~4×.
+        let raw = min(size.width, size.height) * 0.13
+        return min(max(raw, 64), 140)
     }
 
     private static func drawPhotoMarker(
@@ -500,10 +516,10 @@ class MapSnapshotHelper {
 
         // Scale typography and spacing proportionally with the marker so everything
         // looks consistent whether rendering a small preview or a full 1080 px export.
-        let fontSize = max(11, markerRadius * 0.34)
-        let padH = max(8, markerRadius * 0.30)
-        let padV = max(4, markerRadius * 0.18)
-        let maxLabelWidth = min(canvasSize.width * 0.38, markerRadius * 7)
+        let fontSize = max(13, markerRadius * 0.42)
+        let padH = max(10, markerRadius * 0.34)
+        let padV = max(5, markerRadius * 0.22)
+        let maxLabelWidth = min(canvasSize.width * 0.44, markerRadius * 10)
 
         let font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
         let paragraph = NSMutableParagraphStyle()
