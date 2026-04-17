@@ -257,6 +257,14 @@ private struct DraggableTextBlock<Content: View>: View {
     }
 }
 
+private func mapRouteStoryVisible(_ slide: CarouselSlide) -> Bool {
+    !(slide.dayStory ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+}
+
+private func placeCaptionVisible(_ slide: CarouselSlide) -> Bool {
+    !(slide.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+}
+
 struct CarouselSlideView: View {
     let slide: CarouselSlide
     let width: CGFloat
@@ -308,7 +316,7 @@ struct CarouselSlideView: View {
                                    startPoint: .top, endPoint: .init(x: 0.5, y: 0.45))
                         .frame(width: width, height: height)
                 }
-                if (slide.dayStory?.isEmpty == false || isEditingText), !slide.isSecondaryHidden {
+                if mapRouteStoryVisible(slide), !slide.isSecondaryHidden {
                     LinearGradient(colors: [.clear, .black.opacity(0.65)],
                                    startPoint: .init(x: 0.5, y: 0.52), endPoint: .bottom)
                         .frame(width: width, height: height)
@@ -322,8 +330,8 @@ struct CarouselSlideView: View {
                                    startPoint: .top, endPoint: .init(x: 0.5, y: 0.42))
                         .frame(width: width, height: height)
                 }
-                // Bottom gradient: protects caption text (shows when editing even if empty)
-                if (slide.caption != nil || isEditingText), !slide.isSecondaryHidden {
+                // Bottom gradient: only when caption text is present
+                if placeCaptionVisible(slide), !slide.isSecondaryHidden {
                     LinearGradient(colors: [.clear, .black.opacity(0.72)],
                                    startPoint: .init(x: 0.5, y: 0.58), endPoint: .bottom)
                         .frame(width: width, height: height)
@@ -391,8 +399,8 @@ struct CarouselSlideView: View {
         }
         // Map story — bottom-leading
         .overlay(alignment: .bottomLeading) {
-            let storyText = slide.dayStory ?? ""
-            if slide.kind == .mapRoute, !slide.isSecondaryHidden, isEditingText || !storyText.isEmpty {
+            let storyText = (slide.dayStory ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if slide.kind == .mapRoute, !slide.isSecondaryHidden, !storyText.isEmpty {
                 DraggableTextBlock(
                     id: .secondary,
                     isEditingText: isEditingText,
@@ -403,11 +411,10 @@ struct CarouselSlideView: View {
                     onDragStart: { onBlockDragStart?() },
                     onDragEnd: { onBlockDragEnd?() }
                 ) {
-                    Text(storyText.isEmpty ? "Day story…" : storyText)
+                    Text(storyText)
                         .font(.system(size: width * 0.042 * slide.textStyle.secondary.sizeScale,
                                       design: slide.textStyle.secondary.fontDesign.design))
-                        .foregroundColor(slide.textStyle.secondary.textColor.color.opacity(storyText.isEmpty ? 0.4 : 0.88))
-                        .italic(storyText.isEmpty)
+                        .foregroundColor(slide.textStyle.secondary.textColor.color.opacity(0.88))
                         .lineLimit(4)
                         .multilineTextAlignment(.leading)
                         .padding(width * 0.038)
@@ -455,8 +462,8 @@ struct CarouselSlideView: View {
         }
         // Place caption — bottom-leading
         .overlay(alignment: .bottomLeading) {
-            let captionText = slide.caption ?? ""
-            if slide.kind == .placeStop, !slide.isSecondaryHidden, isEditingText || !captionText.isEmpty {
+            let captionText = (slide.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if slide.kind == .placeStop, !slide.isSecondaryHidden, !captionText.isEmpty {
                 DraggableTextBlock(
                     id: .secondary,
                     isEditingText: isEditingText,
@@ -467,11 +474,10 @@ struct CarouselSlideView: View {
                     onDragStart: { onBlockDragStart?() },
                     onDragEnd: { onBlockDragEnd?() }
                 ) {
-                    Text(captionText.isEmpty ? "Caption…" : captionText)
+                    Text(captionText)
                         .font(.system(size: width * 0.044 * slide.textStyle.secondary.sizeScale,
                                       design: slide.textStyle.secondary.fontDesign.design))
-                        .foregroundColor(slide.textStyle.secondary.textColor.color.opacity(captionText.isEmpty ? 0.4 : 0.85))
-                        .italic(captionText.isEmpty)
+                        .foregroundColor(slide.textStyle.secondary.textColor.color.opacity(0.85))
                         .lineLimit(4)
                         .multilineTextAlignment(.leading)
                         .padding(width * 0.038)
