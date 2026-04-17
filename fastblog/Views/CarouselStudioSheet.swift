@@ -573,14 +573,28 @@ struct SlideTextEditorView: View {
 
     // MARK: Helpers
 
-    private var slide: CarouselSlide { slides[currentIndex] }
+    private var currentSlide: CarouselSlide? {
+        guard slides.indices.contains(currentIndex) else { return nil }
+        return slides[currentIndex]
+    }
 
-    /// Slide preview width: screen width minus horizontal margins.
-    /// Avoids GeometryReader (which can cause double-render flicker in fullScreenCover).
-    private var slideWidth: CGFloat { UIScreen.main.bounds.width - 48 }
-    private var slideHeight: CGFloat { slideWidth / aspectRatio }
+    /// Computes a slide height that fits between top controls and bottom toolbar.
+    /// This prevents Story/Reel previews from pushing controls out of the visible area.
+    private func adaptiveSlideHeight(containerSize: CGSize) -> CGFloat {
+        let width = max(220, containerSize.width - 48)
+        let naturalHeight = width / aspectRatio
+        let reservedTopChrome: CGFloat = 178
+        let reservedBottomToolbar: CGFloat = 220
+        let verticalMargin: CGFloat = 16
+        let maxAvailableHeight = max(
+            220,
+            containerSize.height - reservedTopChrome - reservedBottomToolbar - verticalMargin
+        )
+        return min(naturalHeight, maxAvailableHeight)
+    }
 
     private var availableBlocks: [TextBlockID] {
+        guard let slide = currentSlide else { return [] }
         var blocks: [TextBlockID] = []
         switch slide.kind {
         case .cover:
@@ -596,11 +610,31 @@ struct SlideTextEditorView: View {
     }
 
     private var currentStyle: TextBlockStyle {
-        selectedBlock == .secondary ? slide.textStyle.secondary : slide.textStyle.primary
+        guard let slide = currentSlide else { return TextBlockStyle() }
+        return selectedBlock == .secondary ? slide.textStyle.secondary : slide.textStyle.primary
+    }
+
+    private var hasValidCurrentIndex: Bool {
+        slides.indices.contains(currentIndex)
+    }
+
+    private func clampCurrentIndexIfNeeded() {
+        guard !slides.isEmpty else {
+            currentIndex = 0
+            scrollPageID = nil
+            selectedBlock = nil
+            return
+        }
+        let clamped = min(max(currentIndex, 0), slides.count - 1)
+        if clamped != currentIndex {
+            currentIndex = clamped
+            scrollPageID = clamped
+            selectedBlock = nil
+        }
     }
 
     private func updateStyle(_ update: (inout TextBlockStyle) -> Void) {
-        guard let selectedBlock else { return }
+        guard let selectedBlock, hasValidCurrentIndex else { return }
         if selectedBlock == .secondary { update(&slides[currentIndex].textStyle.secondary) }
         else { update(&slides[currentIndex].textStyle.primary) }
     }
@@ -608,7 +642,7 @@ struct SlideTextEditorView: View {
     /// Hides the currently selected block on this slide. The deletion is reversible via
     /// the toolbar "reset" button, which also unhides both blocks for the current slide.
     private func deleteSelectedBlock() {
-        guard let selectedBlock else { return }
+        guard let selectedBlock, hasValidCurrentIndex else { return }
         withAnimation(.easeInOut(duration: 0.2)) {
             if selectedBlock == .primary {
                 slides[currentIndex].isPrimaryHidden = true
@@ -624,97 +658,116 @@ struct SlideTextEditorView: View {
     /// slide in the carousel, for both blocks. Hidden flags are left alone so per-slide
     /// deletions survive.
     private func applyStyleToAllSlides() {
+        clampCurrentIndexIfNeeded()
+        guard hasValidCurrentIndex else { return }
         let primary = slides[currentIndex].textStyle.primary
         let secondary = slides[currentIndex].textStyle.secondary
-        withAnimation(.easeInOut(duration: 0.2)) {
-            for i in slides.indices {
-                slides[i].textStyle.primary   = primary
-                slides[i].textStyle.secondary = secondary
-            }
+        // Batch in local memory, then assign once to avoid N large @State writes.
+        // Each slide carries image payloads, so repeated per-index mutations can spike memory.
+        var updatedSlides = slides
+        for i in updatedSlides.indices {
+            updatedSlides[i].textStyle.primary = primary
+            updatedSlides[i].textStyle.secondary = secondary
         }
+        slides = updatedSlides
     }
 
     // MARK: Body
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                Text("Tap a block to select · Drag to reposition · Swipe to change slides")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 14)
-                    .padding(.bottom, 10)
+            GeometryReader { rootGeo in
+                let editorSlideHeight = adaptiveSlideHeight(containerSize: rootGeo.size)
+                VStack(spacing: 0) {
+                    if slides.isEmpty {
+                        ContentUnavailableView(
+                            "No slides available",
+                            systemImage: "photo.on.rectangle.angled",
+                            description: Text("Close and reopen editor after slides finish loading.")
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding()
+                    } else {
+                        Text("Tap a block to select · Drag to reposition · Swipe to change slides")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                            .padding(.top, 12)
+                            .padding(.bottom, 8)
 
-                // Slide navigation
-                HStack(spacing: 16) {
-                    Button {
-                        guard currentIndex > 0 else { return }
-                        withAnimation(.easeInOut(duration: 0.22)) {
-                            currentIndex -= 1
-                            scrollPageID = currentIndex
-                        }
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(currentIndex > 0 ? .white : .white.opacity(0.2))
-                            .frame(width: 36, height: 36)
-                            .background(Color.white.opacity(currentIndex > 0 ? 0.12 : 0.05))
-                            .clipShape(Circle())
-                    }
-                    .disabled(currentIndex == 0)
-
-                    Text("\(currentIndex + 1) / \(slides.count)")
-                        .font(.system(size: 13, weight: .medium, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.55))
-                        .frame(minWidth: 52)
-
-                    Button {
-                        guard currentIndex < slides.count - 1 else { return }
-                        withAnimation(.easeInOut(duration: 0.22)) {
-                            currentIndex += 1
-                            scrollPageID = currentIndex
-                        }
-                    } label: {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(currentIndex < slides.count - 1 ? .white : .white.opacity(0.2))
-                            .frame(width: 36, height: 36)
-                            .background(Color.white.opacity(currentIndex < slides.count - 1 ? 0.12 : 0.05))
-                            .clipShape(Circle())
-                    }
-                    .disabled(currentIndex == slides.count - 1)
-                }
-                .padding(.bottom, 10)
-
-                GeometryReader { geo in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: 0) {
-                            ForEach(slides.indices, id: \.self) { i in
-                                SlideEditPage(
-                                    slide: $slides[i],
-                                    aspectRatio: aspectRatio,
-                                    selectedBlock: selectedBlock,
-                                    onSelectBlock: { selectedBlock = $0 },
-                                    locksHorizontalSlidePaging: $locksHorizontalSlidePaging
-                                )
-                                .frame(width: geo.size.width)
-                                .id(i)
+                        // Slide navigation
+                        HStack(spacing: 16) {
+                            Button {
+                                guard currentIndex > 0 else { return }
+                                withAnimation(.easeInOut(duration: 0.22)) {
+                                    currentIndex -= 1
+                                    scrollPageID = currentIndex
+                                }
+                            } label: {
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(currentIndex > 0 ? .white : .white.opacity(0.2))
+                                    .frame(width: 36, height: 36)
+                                    .background(Color.white.opacity(currentIndex > 0 ? 0.12 : 0.05))
+                                    .clipShape(Circle())
                             }
+                            .disabled(currentIndex == 0)
+
+                            Text("\(currentIndex + 1) / \(slides.count)")
+                                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.55))
+                                .frame(minWidth: 52)
+
+                            Button {
+                                guard currentIndex < slides.count - 1 else { return }
+                                withAnimation(.easeInOut(duration: 0.22)) {
+                                    currentIndex += 1
+                                    scrollPageID = currentIndex
+                                }
+                            } label: {
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(currentIndex < slides.count - 1 ? .white : .white.opacity(0.2))
+                                    .frame(width: 36, height: 36)
+                                    .background(Color.white.opacity(currentIndex < slides.count - 1 ? 0.12 : 0.05))
+                                    .clipShape(Circle())
+                            }
+                            .disabled(currentIndex == slides.count - 1)
                         }
-                        .scrollTargetLayout()
+                        .padding(.bottom, 8)
+
+                        GeometryReader { slideGeo in
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                LazyHStack(spacing: 0) {
+                                    ForEach(slides.indices, id: \.self) { i in
+                                        SlideEditPage(
+                                            slide: $slides[i],
+                                            aspectRatio: aspectRatio,
+                                            selectedBlock: selectedBlock,
+                                            onSelectBlock: { selectedBlock = $0 },
+                                            locksHorizontalSlidePaging: $locksHorizontalSlidePaging
+                                        )
+                                        .frame(width: slideGeo.size.width)
+                                        .id(i)
+                                    }
+                                }
+                                .scrollTargetLayout()
+                            }
+                            .scrollTargetBehavior(.paging)
+                            .scrollPosition(id: $scrollPageID)
+                            .scrollDisabled(locksHorizontalSlidePaging)
+                            .animation(.easeInOut(duration: 0.22), value: currentIndex)
+                        }
+                        .frame(height: editorSlideHeight)
                     }
-                    .scrollTargetBehavior(.paging)
-                    .scrollPosition(id: $scrollPageID)
-                    .scrollDisabled(locksHorizontalSlidePaging)
-                    .animation(.easeInOut(duration: 0.22), value: currentIndex)
+                    Spacer(minLength: 0)
                 }
-                .frame(height: slideHeight)
-
-                Spacer()
-
-                textFormattingToolbar
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if !slides.isEmpty {
+                        textFormattingToolbar
+                    }
+                }
             }
             .background(Color(red: 5/255, green: 10/255, blue: 48/255).ignoresSafeArea())
             .navigationTitle("Edit Slides")
@@ -722,6 +775,7 @@ struct SlideTextEditorView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button {
+                        guard hasValidCurrentIndex else { return }
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
                             slides[currentIndex].textStyle.primary.center = nil
                             slides[currentIndex].textStyle.secondary.center = nil
@@ -742,6 +796,9 @@ struct SlideTextEditorView: View {
                 guard let newID else { return }
                 if newID != currentIndex { currentIndex = newID }
                 selectedBlock = nil
+            }
+            .onChange(of: slides.count) { _, _ in
+                clampCurrentIndexIfNeeded()
             }
         }
         .preferredColorScheme(.dark)
@@ -974,6 +1031,7 @@ struct SocialPostStudioSheet: View {
                 HStack(spacing: 12) {
                     ForEach(ExportFormat.allCases) { format in modeCard(for: format).id(format.id) }
                 }
+                .scrollTargetLayout()
                 .padding(.horizontal, 20).padding(.vertical, 4)
             }
             .scrollTargetBehavior(.viewAligned)
