@@ -111,82 +111,112 @@ struct CarouselSlide: Identifiable {
 
 // MARK: - Slide View
 
-/// Name for the slide-local coordinate space used for block hit-testing during drag.
+/// Named coordinate space for the slide, used when measuring each block's natural
+/// (anchor-based) frame so drags can be clamped to the slide bounds.
 private let studioSlideCoordSpace = "studio.slide.space"
 
-/// Per-block layout frame reported up to the editor so slide-level drag gesture
-/// knows whether the finger landed on a text block (accounting for any saved offset).
-private struct BlockFrameInfo: Equatable {
-    let id: TextBlockID
-    let rect: CGRect
-}
-
-private struct BlockFramesKey: PreferenceKey {
-    static var defaultValue: [BlockFrameInfo] = []
-    static func reduce(value: inout [BlockFrameInfo], nextValue: () -> [BlockFrameInfo]) {
-        value.append(contentsOf: nextValue())
-    }
-}
-
-/// Pure rendering component for a repositionable text block.
-/// The drag gesture itself lives on the enclosing slide (see SlideEditPage). That keeps
-/// hit-testing correct after a block is moved, because SwiftUI's .offset() is visual-only
-/// and does NOT move the gesture's hit-test frame. Each block publishes its layout frame
-/// via BlockFramesKey so the slide-level gesture can require that the touch actually
-/// starts inside a block's visible bounds before engaging.
+/// Repositionable text block. The drag gesture lives on the block itself; SwiftUI's
+/// `.offset()` is visually displacing AND hit-testable, so the on-screen rect is the
+/// one that receives touches — no external hit catchers required.
+///
+/// `savedOffset` is the committed displacement (written on drag-end after clamping to
+/// `slideBounds`). `liveDrag` is the in-flight translation held in gesture state so it
+/// auto-resets on gesture end and there is no one-frame snap between end and commit.
 private struct DraggableTextBlock<Content: View>: View {
     let id: TextBlockID
     let isEditingText: Bool
     let isSelected: Bool
-    /// Final visual offset for this block: savedOffset + (liveDrag if active).
-    let displayOffset: CGSize
-    let onTap: () -> Void
+    @Binding var savedOffset: CGSize
+    /// Slide rect in its local coord space (e.g. `(0, 0, slideW, slideH)`), used to clamp drags.
+    let slideBounds: CGRect
+    var onSelect: () -> Void = {}
+    var onDragStart: () -> Void = {}
+    var onDragEnd: () -> Void = {}
     let content: () -> Content
 
-    init(id: TextBlockID,
-         isEditingText: Bool,
-         isSelected: Bool,
-         displayOffset: CGSize,
-         onTap: @escaping () -> Void,
-         @ViewBuilder content: @escaping () -> Content) {
-        self.id = id
-        self.isEditingText = isEditingText
-        self.isSelected = isSelected
-        self.displayOffset = displayOffset
-        self.onTap = onTap
-        self.content = content
-    }
+    @GestureState private var liveDrag: CGSize = .zero
+    /// Block frame when at its natural (anchor-based) position — captured once so text
+    /// reflow or ring changes later don't re-derive it mid-session.
+    @State private var naturalRect: CGRect?
 
     var body: some View {
         content()
-            .background {
-                GeometryReader { geo in
-                    Color.clear.preference(
-                        key: BlockFramesKey.self,
-                        value: [BlockFrameInfo(
-                            id: id,
-                            rect: geo.frame(in: .named(studioSlideCoordSpace))
-                        )]
+            .background(naturalRectCapture)
+            .overlay(editingRing)
+            .contentShape(Rectangle())
+            .offset(x: savedOffset.width + liveDrag.width,
+                    y: savedOffset.height + liveDrag.height)
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                    .updating($liveDrag) { value, state, _ in
+                        state = value.translation
+                    }
+                    .onChanged { _ in
+                        onDragStart()
+                        onSelect()
+                    }
+                    .onEnded { value in
+                        let proposed = CGSize(
+                            width: savedOffset.width + value.translation.width,
+                            height: savedOffset.height + value.translation.height
+                        )
+                        savedOffset = clamped(proposed: proposed)
+                        onDragEnd()
+                    },
+                including: isEditingText ? .all : .subviews
+            )
+            .animation(.easeInOut(duration: 0.15), value: isSelected)
+    }
+
+    @ViewBuilder
+    private var naturalRectCapture: some View {
+        GeometryReader { geo in
+            Color.clear
+                .onAppear {
+                    guard naturalRect == nil else { return }
+                    let current = geo.frame(in: .named(studioSlideCoordSpace))
+                    guard current.width > 0, current.height > 0 else { return }
+                    naturalRect = current.offsetBy(
+                        dx: -savedOffset.width,
+                        dy: -savedOffset.height
                     )
                 }
-            }
-            .overlay {
-                if isEditingText {
-                    RoundedRectangle(cornerRadius: 7)
-                        .strokeBorder(
-                            isSelected
-                                ? Color(red: 0.14, green: 0.52, blue: 1.0)
-                                : Color.white.opacity(0.35),
-                            style: isSelected
-                                ? StrokeStyle(lineWidth: 2.0)
-                                : StrokeStyle(lineWidth: 1.0, dash: [5, 3])
-                        )
-                        .padding(-6)
-                }
-            }
-            .animation(.easeInOut(duration: 0.15), value: isSelected)
-            .onTapGesture { onTap() }
-            .offset(displayOffset)
+        }
+    }
+
+    @ViewBuilder
+    private var editingRing: some View {
+        if isEditingText {
+            RoundedRectangle(cornerRadius: 7)
+                .strokeBorder(
+                    isSelected
+                        ? Color(red: 0.14, green: 0.52, blue: 1.0)
+                        : Color.white.opacity(0.35),
+                    style: isSelected
+                        ? StrokeStyle(lineWidth: 2.0)
+                        : StrokeStyle(lineWidth: 1.0, dash: [5, 3])
+                )
+                .padding(-6)
+        }
+    }
+
+    /// Constrains the proposed offset so the block's visual rect stays inside `slideBounds`.
+    private func clamped(proposed: CGSize) -> CGSize {
+        guard let natural = naturalRect,
+              slideBounds.width > 0, slideBounds.height > 0
+        else { return proposed }
+
+        let inset: CGFloat = 6
+        let bounds = slideBounds.insetBy(dx: inset, dy: inset)
+        let visual = natural.offsetBy(dx: proposed.width, dy: proposed.height)
+
+        var dx: CGFloat = 0
+        var dy: CGFloat = 0
+        if visual.minX < bounds.minX { dx += bounds.minX - visual.minX }
+        if visual.minY < bounds.minY { dy += bounds.minY - visual.minY }
+        if visual.maxX > bounds.maxX { dx -= visual.maxX - bounds.maxX }
+        if visual.maxY > bounds.maxY { dy -= visual.maxY - bounds.maxY }
+        return CGSize(width: proposed.width + dx, height: proposed.height + dy)
     }
 }
 
@@ -201,22 +231,27 @@ struct CarouselSlideView: View {
     var selectedBlockID: TextBlockID? = nil
     /// Called when the user taps a text block to select it.
     var onSelectBlock: ((TextBlockID) -> Void)? = nil
-    /// The block currently being dragged (nil when idle). Set by the enclosing editor
-    /// via its slide-level drag gesture so only the touched block follows the finger.
-    var activeDragBlock: TextBlockID? = nil
-    /// Live translation injected from the parent drag gesture (SlideEditPage). Applied
-    /// only to the block matching activeDragBlock so there is no hit-test mismatch.
-    var liveDragTranslation: CGSize = .zero
+    /// Edit-mode write-back: commit a block's new offset. Nil in read-only (preview/export) use.
+    var onUpdateBlockOffset: ((TextBlockID, CGSize) -> Void)? = nil
+    /// Fires on drag-start — the editor uses it to lock horizontal slide paging.
+    var onBlockDragStart: (() -> Void)? = nil
+    /// Fires on drag-end — the editor uses it to release the paging lock.
+    var onBlockDragEnd: (() -> Void)? = nil
 
     private var height: CGFloat { width / aspectRatio }
     private let heroImageScale: CGFloat = 1.12
+    private var slideBounds: CGRect { CGRect(x: 0, y: 0, width: width, height: height) }
 
-    private func displayOffset(for id: TextBlockID) -> CGSize {
-        let base = (id == .primary) ? slide.textStyle.primary.offset
-                                    : slide.textStyle.secondary.offset
-        guard activeDragBlock == id else { return base }
-        return CGSize(width: base.width + liveDragTranslation.width,
-                      height: base.height + liveDragTranslation.height)
+    /// Binding for the block's committed offset. Reads from `slide.textStyle.*`; writes
+    /// go through `onUpdateBlockOffset` (nil-callback in read-only contexts makes it a no-op).
+    private func offsetBinding(for id: TextBlockID) -> Binding<CGSize> {
+        Binding(
+            get: {
+                id == .primary ? slide.textStyle.primary.offset
+                               : slide.textStyle.secondary.offset
+            },
+            set: { newOffset in onUpdateBlockOffset?(id, newOffset) }
+        )
     }
 
     var body: some View {
@@ -262,8 +297,11 @@ struct CarouselSlideView: View {
                     id: .primary,
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .primary,
-                    displayOffset: displayOffset(for: .primary),
-                    onTap: { onSelectBlock?(.primary) }
+                    savedOffset: offsetBinding(for: .primary),
+                    slideBounds: slideBounds,
+                    onSelect: { onSelectBlock?(.primary) },
+                    onDragStart: { onBlockDragStart?() },
+                    onDragEnd: { onBlockDragEnd?() }
                 ) {
                     Text(title)
                         .font(.system(size: width * 0.085 * slide.textStyle.primary.sizeScale,
@@ -283,8 +321,11 @@ struct CarouselSlideView: View {
                     id: .primary,
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .primary,
-                    displayOffset: displayOffset(for: .primary),
-                    onTap: { onSelectBlock?(.primary) }
+                    savedOffset: offsetBinding(for: .primary),
+                    slideBounds: slideBounds,
+                    onSelect: { onSelectBlock?(.primary) },
+                    onDragStart: { onBlockDragStart?() },
+                    onDragEnd: { onBlockDragEnd?() }
                 ) {
                     VStack(alignment: .leading, spacing: 4) {
                         if let l1 = slide.dayInfoLine1 {
@@ -314,8 +355,11 @@ struct CarouselSlideView: View {
                     id: .secondary,
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .secondary,
-                    displayOffset: displayOffset(for: .secondary),
-                    onTap: { onSelectBlock?(.secondary) }
+                    savedOffset: offsetBinding(for: .secondary),
+                    slideBounds: slideBounds,
+                    onSelect: { onSelectBlock?(.secondary) },
+                    onDragStart: { onBlockDragStart?() },
+                    onDragEnd: { onBlockDragEnd?() }
                 ) {
                     Text(story)
                         .font(.system(size: width * 0.042 * slide.textStyle.secondary.sizeScale,
@@ -335,8 +379,11 @@ struct CarouselSlideView: View {
                         id: .primary,
                         isEditingText: isEditingText,
                         isSelected: selectedBlockID == .primary,
-                        displayOffset: displayOffset(for: .primary),
-                        onTap: { onSelectBlock?(.primary) }
+                        savedOffset: offsetBinding(for: .primary),
+                        slideBounds: slideBounds,
+                        onSelect: { onSelectBlock?(.primary) },
+                        onDragStart: { onBlockDragStart?() },
+                        onDragEnd: { onBlockDragEnd?() }
                     ) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(placeStop.placeTitle)
@@ -370,8 +417,11 @@ struct CarouselSlideView: View {
                     id: .secondary,
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .secondary,
-                    displayOffset: displayOffset(for: .secondary),
-                    onTap: { onSelectBlock?(.secondary) }
+                    savedOffset: offsetBinding(for: .secondary),
+                    slideBounds: slideBounds,
+                    onSelect: { onSelectBlock?(.secondary) },
+                    onDragStart: { onBlockDragStart?() },
+                    onDragEnd: { onBlockDragEnd?() }
                 ) {
                     Text(caption)
                         .font(.system(size: width * 0.044 * slide.textStyle.secondary.sizeScale,
@@ -441,87 +491,17 @@ struct CarouselSlideView: View {
     }
 }
 
-// MARK: - Per-slide edit page (owns its own @GestureState)
+// MARK: - Per-slide edit page
 
 private struct SlideEditPage: View {
     @Binding var slide: CarouselSlide
     let aspectRatio: CGFloat
     let selectedBlock: TextBlockID
     let onSelectBlock: (TextBlockID) -> Void
-
-    /// Latest layout frames for each text block in the slide's coordinate space.
-    /// Used to decide whether a drag's startLocation landed on a block (after
-    /// accounting for the block's saved offset).
-    @State private var blockFrames: [TextBlockID: CGRect] = [:]
-    /// The block the current drag is repositioning. Set on the first onChanged fire
-    /// (once SwiftUI confirms the gesture) iff the finger started inside a block.
-    @State private var activeDragBlock: TextBlockID? = nil
-    /// Live translation from the slide-level DragGesture. Auto-resets to .zero when
-    /// the gesture ends (that's what @GestureState buys us), eliminating the
-    /// one-frame snap-back flicker between gesture-end and savedOffset commit.
-    @GestureState private var liveDrag: CGSize = .zero
+    /// While true, the slide pager's horizontal scrolling is disabled (text drag / tap on a block).
+    @Binding var locksHorizontalSlidePaging: Bool
 
     private var slideWidth: CGFloat { UIScreen.main.bounds.width - 48 }
-
-    /// liveDrag should only affect the view while we've actually armed a drag
-    /// (finger started on a block). Before arming — and for stray touches that
-    /// never hit a block — this stays .zero so nothing visibly moves.
-    private var effectiveLiveDrag: CGSize {
-        activeDragBlock == nil ? .zero : liveDrag
-    }
-
-    private func savedOffset(for id: TextBlockID) -> CGSize {
-        id == .primary ? slide.textStyle.primary.offset : slide.textStyle.secondary.offset
-    }
-
-    /// Visual rect of a block = its layout rect shifted by its committed offset.
-    /// Padded out slightly so the user can grab near the edge/stroke without missing.
-    private func visualRect(for id: TextBlockID) -> CGRect? {
-        guard let natural = blockFrames[id] else { return nil }
-        let off = savedOffset(for: id)
-        return natural
-            .offsetBy(dx: off.width, dy: off.height)
-            .insetBy(dx: -8, dy: -8)
-    }
-
-    /// Render order for the drag catchers: selected block last so it wins when
-    /// two blocks have been dragged into overlap.
-    private var orderedBlockIDs: [TextBlockID] {
-        let keys = Array(blockFrames.keys)
-        return keys.filter { $0 != selectedBlock } + keys.filter { $0 == selectedBlock }
-    }
-
-    private func commitDrag(for id: TextBlockID, delta: CGSize) {
-        if id == .primary {
-            slide.textStyle.primary.offset.width  += delta.width
-            slide.textStyle.primary.offset.height += delta.height
-        } else {
-            slide.textStyle.secondary.offset.width  += delta.width
-            slide.textStyle.secondary.offset.height += delta.height
-        }
-    }
-
-    /// Drag gesture for a specific block's invisible hit-catcher. Lives on the
-    /// catcher (not the slide) so the enclosing TabView can still paginate when
-    /// the finger lands outside any block.
-    private func dragGesture(for id: TextBlockID) -> some Gesture {
-        DragGesture(minimumDistance: 4, coordinateSpace: .named(studioSlideCoordSpace))
-            .updating($liveDrag) { value, state, _ in
-                state = value.translation
-            }
-            .onChanged { _ in
-                if activeDragBlock == nil {
-                    activeDragBlock = id
-                    onSelectBlock(id)
-                }
-            }
-            .onEnded { value in
-                if activeDragBlock != nil {
-                    commitDrag(for: id, delta: value.translation)
-                }
-                activeDragBlock = nil
-            }
-    }
 
     var body: some View {
         CarouselSlideView(
@@ -533,31 +513,17 @@ private struct SlideEditPage: View {
             isEditingText: true,
             selectedBlockID: selectedBlock,
             onSelectBlock: { onSelectBlock($0) },
-            activeDragBlock: activeDragBlock,
-            liveDragTranslation: effectiveLiveDrag
+            onUpdateBlockOffset: { id, newOffset in
+                if id == .primary {
+                    slide.textStyle.primary.offset = newOffset
+                } else {
+                    slide.textStyle.secondary.offset = newOffset
+                }
+            },
+            onBlockDragStart: { locksHorizontalSlidePaging = true },
+            onBlockDragEnd: { locksHorizontalSlidePaging = false }
         )
         .coordinateSpace(.named(studioSlideCoordSpace))
-        .onPreferenceChange(BlockFramesKey.self) { infos in
-            var dict: [TextBlockID: CGRect] = [:]
-            for info in infos { dict[info.id] = info.rect }
-            blockFrames = dict
-        }
-        // Per-block invisible hit-catchers. Confining the draggable region to
-        // each block's current visual rect means touches elsewhere on the slide
-        // fall through to the enclosing TabView, which can paginate normally.
-        // .highPriorityGesture so the catcher wins over TabView's paging gesture
-        // the moment the finger starts on a block.
-        .overlay {
-            ForEach(orderedBlockIDs, id: \.self) { id in
-                if let rect = visualRect(for: id) {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .frame(width: rect.width, height: rect.height)
-                        .position(x: rect.midX, y: rect.midY)
-                        .highPriorityGesture(dragGesture(for: id))
-                }
-            }
-        }
         .shadow(color: .black.opacity(0.5), radius: 16, x: 0, y: 6)
         .padding(.horizontal, 20)
     }
@@ -572,7 +538,11 @@ struct SlideTextEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var currentIndex: Int = 0
+    /// Drives the paged `ScrollView`; optional to match `scrollPosition(id:)`.
+    @State private var scrollPageID: Int?
     @State private var selectedBlock: TextBlockID = .primary
+    /// Disables horizontal slide paging while the user touches a text block (see `SlideEditPage`).
+    @State private var locksHorizontalSlidePaging = false
 
     // MARK: Helpers
 
@@ -628,7 +598,10 @@ struct SlideTextEditorView: View {
                 HStack(spacing: 16) {
                     Button {
                         guard currentIndex > 0 else { return }
-                        withAnimation(.easeInOut(duration: 0.22)) { currentIndex -= 1 }
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            currentIndex -= 1
+                            scrollPageID = currentIndex
+                        }
                     } label: {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 15, weight: .semibold))
@@ -646,7 +619,10 @@ struct SlideTextEditorView: View {
 
                     Button {
                         guard currentIndex < slides.count - 1 else { return }
-                        withAnimation(.easeInOut(duration: 0.22)) { currentIndex += 1 }
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            currentIndex += 1
+                            scrollPageID = currentIndex
+                        }
                     } label: {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 15, weight: .semibold))
@@ -659,20 +635,29 @@ struct SlideTextEditorView: View {
                 }
                 .padding(.bottom, 10)
 
-                TabView(selection: $currentIndex) {
-                    ForEach(slides.indices, id: \.self) { i in
-                        SlideEditPage(
-                            slide: $slides[i],
-                            aspectRatio: aspectRatio,
-                            selectedBlock: selectedBlock,
-                            onSelectBlock: { selectedBlock = $0 }
-                        )
-                        .tag(i)
+                GeometryReader { geo in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: 0) {
+                            ForEach(slides.indices, id: \.self) { i in
+                                SlideEditPage(
+                                    slide: $slides[i],
+                                    aspectRatio: aspectRatio,
+                                    selectedBlock: selectedBlock,
+                                    onSelectBlock: { selectedBlock = $0 },
+                                    locksHorizontalSlidePaging: $locksHorizontalSlidePaging
+                                )
+                                .frame(width: geo.size.width)
+                                .id(i)
+                            }
+                        }
+                        .scrollTargetLayout()
                     }
+                    .scrollTargetBehavior(.paging)
+                    .scrollPosition(id: $scrollPageID)
+                    .scrollDisabled(locksHorizontalSlidePaging)
+                    .animation(.easeInOut(duration: 0.22), value: currentIndex)
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
                 .frame(height: slideHeight)
-                .animation(.easeInOut(duration: 0.22), value: currentIndex)
 
                 Spacer()
 
@@ -697,7 +682,9 @@ struct SlideTextEditorView: View {
                     Button("Done") { dismiss() }.fontWeight(.semibold)
                 }
             }
-            .onChange(of: currentIndex) { _, _ in
+            .onChange(of: scrollPageID) { _, newID in
+                guard let newID else { return }
+                if newID != currentIndex { currentIndex = newID }
                 if !availableBlocks.contains(selectedBlock) { selectedBlock = .primary }
             }
         }
@@ -705,6 +692,7 @@ struct SlideTextEditorView: View {
         .dynamicTypeSize(.medium)
         .onAppear {
             currentIndex = initialIndex
+            scrollPageID = initialIndex
             if !availableBlocks.contains(selectedBlock) { selectedBlock = .primary }
         }
     }
@@ -714,8 +702,8 @@ struct SlideTextEditorView: View {
     @ViewBuilder
     private var textFormattingToolbar: some View {
         VStack(spacing: 0) {
-            // Block selector tab bar (only when there are 2 blocks)
-            if availableBlocks.count > 1 {
+            // Block selector tab bar (map: Heading/Story). Place slides: tap blocks on the slide — no tabs.
+            if availableBlocks.count > 1, slide.kind != .placeStop {
                 HStack(spacing: 0) {
                     ForEach(availableBlocks, id: \.self) { blockID in
                         let isActive = selectedBlock == blockID
@@ -741,12 +729,13 @@ struct SlideTextEditorView: View {
             }
 
             VStack(spacing: 16) {
-                // Active block label
-                HStack {
-                    Text(blockLabel(selectedBlock))
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
-                    Spacer()
+                if slide.kind != .placeStop {
+                    HStack {
+                        Text(blockLabel(selectedBlock))
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
+                        Spacer()
+                    }
                 }
 
                 // Font design pills
