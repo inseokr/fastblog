@@ -111,35 +111,65 @@ struct CarouselSlide: Identifiable {
 
 // MARK: - Slide View
 
+/// Name for the slide-local coordinate space used for block hit-testing during drag.
+private let studioSlideCoordSpace = "studio.slide.space"
+
+/// Per-block layout frame reported up to the editor so slide-level drag gesture
+/// knows whether the finger landed on a text block (accounting for any saved offset).
+private struct BlockFrameInfo: Equatable {
+    let id: TextBlockID
+    let rect: CGRect
+}
+
+private struct BlockFramesKey: PreferenceKey {
+    static var defaultValue: [BlockFrameInfo] = []
+    static func reduce(value: inout [BlockFrameInfo], nextValue: () -> [BlockFrameInfo]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
 /// Pure rendering component for a repositionable text block.
-/// The drag gesture intentionally lives in SlideTextEditorView (the full slide is the
-/// gesture target) so that the hit-test area always covers the whole slide regardless
-/// of where the block was dragged. SwiftUI's .offset() moves the view visually but
-/// does NOT move the hit-test frame, so a self-contained gesture would stop responding
-/// after the first drag. @GestureState also lives next to the state it updates,
-/// eliminating the one-frame race where newStoredOffset + finalTranslation = 2× offset.
+/// The drag gesture itself lives on the enclosing slide (see SlideEditPage). That keeps
+/// hit-testing correct after a block is moved, because SwiftUI's .offset() is visual-only
+/// and does NOT move the gesture's hit-test frame. Each block publishes its layout frame
+/// via BlockFramesKey so the slide-level gesture can require that the touch actually
+/// starts inside a block's visible bounds before engaging.
 private struct DraggableTextBlock<Content: View>: View {
+    let id: TextBlockID
     let isEditingText: Bool
     let isSelected: Bool
-    /// Pre-computed display offset: storedOffset + liveTranslation (for selected block).
-    let offset: CGSize
+    /// Final visual offset for this block: savedOffset + (liveDrag if active).
+    let displayOffset: CGSize
     let onTap: () -> Void
     let content: () -> Content
 
-    init(isEditingText: Bool,
+    init(id: TextBlockID,
+         isEditingText: Bool,
          isSelected: Bool,
-         offset: CGSize,
+         displayOffset: CGSize,
          onTap: @escaping () -> Void,
          @ViewBuilder content: @escaping () -> Content) {
+        self.id = id
         self.isEditingText = isEditingText
         self.isSelected = isSelected
-        self.offset = offset
+        self.displayOffset = displayOffset
         self.onTap = onTap
         self.content = content
     }
 
     var body: some View {
         content()
+            .background {
+                GeometryReader { geo in
+                    Color.clear.preference(
+                        key: BlockFramesKey.self,
+                        value: [BlockFrameInfo(
+                            id: id,
+                            rect: geo.frame(in: .named(studioSlideCoordSpace))
+                        )]
+                    )
+                }
+            }
             .overlay {
                 if isEditingText {
                     RoundedRectangle(cornerRadius: 7)
@@ -156,7 +186,7 @@ private struct DraggableTextBlock<Content: View>: View {
             }
             .animation(.easeInOut(duration: 0.15), value: isSelected)
             .onTapGesture { onTap() }
-            .offset(offset)
+            .offset(displayOffset)
     }
 }
 
@@ -171,13 +201,23 @@ struct CarouselSlideView: View {
     var selectedBlockID: TextBlockID? = nil
     /// Called when the user taps a text block to select it.
     var onSelectBlock: ((TextBlockID) -> Void)? = nil
-    /// Live translation injected from the parent drag gesture (SlideTextEditorView).
-    /// Applied only to the block matching selectedBlockID so the selected block follows
-    /// the finger smoothly without any hit-test mismatch.
+    /// The block currently being dragged (nil when idle). Set by the enclosing editor
+    /// via its slide-level drag gesture so only the touched block follows the finger.
+    var activeDragBlock: TextBlockID? = nil
+    /// Live translation injected from the parent drag gesture (SlideEditPage). Applied
+    /// only to the block matching activeDragBlock so there is no hit-test mismatch.
     var liveDragTranslation: CGSize = .zero
 
     private var height: CGFloat { width / aspectRatio }
     private let heroImageScale: CGFloat = 1.12
+
+    private func displayOffset(for id: TextBlockID) -> CGSize {
+        let base = (id == .primary) ? slide.textStyle.primary.offset
+                                    : slide.textStyle.secondary.offset
+        guard activeDragBlock == id else { return base }
+        return CGSize(width: base.width + liveDragTranslation.width,
+                      height: base.height + liveDragTranslation.height)
+    }
 
     var body: some View {
         ZStack {
@@ -219,9 +259,10 @@ struct CarouselSlideView: View {
         .overlay {
             if slide.kind == .cover, let title = slide.coverTitle, !title.isEmpty {
                 DraggableTextBlock(
+                    id: .primary,
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .primary,
-                    offset: slide.textStyle.primary.offset + (selectedBlockID == .primary ? liveDragTranslation : .zero),
+                    displayOffset: displayOffset(for: .primary),
                     onTap: { onSelectBlock?(.primary) }
                 ) {
                     Text(title)
@@ -239,9 +280,10 @@ struct CarouselSlideView: View {
         .overlay(alignment: .topLeading) {
             if slide.kind == .mapRoute {
                 DraggableTextBlock(
+                    id: .primary,
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .primary,
-                    offset: slide.textStyle.primary.offset + (selectedBlockID == .primary ? liveDragTranslation : .zero),
+                    displayOffset: displayOffset(for: .primary),
                     onTap: { onSelectBlock?(.primary) }
                 ) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -269,9 +311,10 @@ struct CarouselSlideView: View {
         .overlay(alignment: .bottomLeading) {
             if slide.kind == .mapRoute, let story = slide.dayStory, !story.isEmpty {
                 DraggableTextBlock(
+                    id: .secondary,
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .secondary,
-                    offset: slide.textStyle.secondary.offset + (selectedBlockID == .secondary ? liveDragTranslation : .zero),
+                    displayOffset: displayOffset(for: .secondary),
                     onTap: { onSelectBlock?(.secondary) }
                 ) {
                     Text(story)
@@ -289,9 +332,10 @@ struct CarouselSlideView: View {
             if slide.kind == .placeStop {
                 if let placeStop = slide.placeStop {
                     DraggableTextBlock(
+                        id: .primary,
                         isEditingText: isEditingText,
                         isSelected: selectedBlockID == .primary,
-                        offset: slide.textStyle.primary.offset + (selectedBlockID == .primary ? liveDragTranslation : .zero),
+                        displayOffset: displayOffset(for: .primary),
                         onTap: { onSelectBlock?(.primary) }
                     ) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -323,9 +367,10 @@ struct CarouselSlideView: View {
         .overlay(alignment: .bottomLeading) {
             if slide.kind == .placeStop, let caption = slide.caption, !caption.isEmpty {
                 DraggableTextBlock(
+                    id: .secondary,
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .secondary,
-                    offset: slide.textStyle.secondary.offset + (selectedBlockID == .secondary ? liveDragTranslation : .zero),
+                    displayOffset: displayOffset(for: .secondary),
                     onTap: { onSelectBlock?(.secondary) }
                 ) {
                     Text(caption)
@@ -396,36 +441,164 @@ struct CarouselSlideView: View {
     }
 }
 
+// MARK: - Per-slide edit page (owns its own @GestureState)
+
+private struct SlideEditPage: View {
+    @Binding var slide: CarouselSlide
+    let aspectRatio: CGFloat
+    let selectedBlock: TextBlockID
+    let onSelectBlock: (TextBlockID) -> Void
+
+    /// Latest layout frames for each text block in the slide's coordinate space.
+    /// Used to decide whether a drag's startLocation landed on a block (after
+    /// accounting for the block's saved offset).
+    @State private var blockFrames: [TextBlockID: CGRect] = [:]
+    /// The block the current drag is repositioning. Set on the first onChanged fire
+    /// (once SwiftUI confirms the gesture) iff the finger started inside a block.
+    @State private var activeDragBlock: TextBlockID? = nil
+    /// Live translation from the slide-level DragGesture. Auto-resets to .zero when
+    /// the gesture ends (that's what @GestureState buys us), eliminating the
+    /// one-frame snap-back flicker between gesture-end and savedOffset commit.
+    @GestureState private var liveDrag: CGSize = .zero
+
+    private var slideWidth: CGFloat { UIScreen.main.bounds.width - 48 }
+
+    /// liveDrag should only affect the view while we've actually armed a drag
+    /// (finger started on a block). Before arming — and for stray touches that
+    /// never hit a block — this stays .zero so nothing visibly moves.
+    private var effectiveLiveDrag: CGSize {
+        activeDragBlock == nil ? .zero : liveDrag
+    }
+
+    private func savedOffset(for id: TextBlockID) -> CGSize {
+        id == .primary ? slide.textStyle.primary.offset : slide.textStyle.secondary.offset
+    }
+
+    /// Visual rect of a block = its layout rect shifted by its committed offset.
+    /// Padded out slightly so the user can grab near the edge/stroke without missing.
+    private func visualRect(for id: TextBlockID) -> CGRect? {
+        guard let natural = blockFrames[id] else { return nil }
+        let off = savedOffset(for: id)
+        return natural
+            .offsetBy(dx: off.width, dy: off.height)
+            .insetBy(dx: -8, dy: -8)
+    }
+
+    /// Render order for the drag catchers: selected block last so it wins when
+    /// two blocks have been dragged into overlap.
+    private var orderedBlockIDs: [TextBlockID] {
+        let keys = Array(blockFrames.keys)
+        return keys.filter { $0 != selectedBlock } + keys.filter { $0 == selectedBlock }
+    }
+
+    private func commitDrag(for id: TextBlockID, delta: CGSize) {
+        if id == .primary {
+            slide.textStyle.primary.offset.width  += delta.width
+            slide.textStyle.primary.offset.height += delta.height
+        } else {
+            slide.textStyle.secondary.offset.width  += delta.width
+            slide.textStyle.secondary.offset.height += delta.height
+        }
+    }
+
+    /// Drag gesture for a specific block's invisible hit-catcher. Lives on the
+    /// catcher (not the slide) so the enclosing TabView can still paginate when
+    /// the finger lands outside any block.
+    private func dragGesture(for id: TextBlockID) -> some Gesture {
+        DragGesture(minimumDistance: 4, coordinateSpace: .named(studioSlideCoordSpace))
+            .updating($liveDrag) { value, state, _ in
+                state = value.translation
+            }
+            .onChanged { _ in
+                if activeDragBlock == nil {
+                    activeDragBlock = id
+                    onSelectBlock(id)
+                }
+            }
+            .onEnded { value in
+                if activeDragBlock != nil {
+                    commitDrag(for: id, delta: value.translation)
+                }
+                activeDragBlock = nil
+            }
+    }
+
+    var body: some View {
+        CarouselSlideView(
+            slide: slide,
+            width: slideWidth,
+            aspectRatio: aspectRatio,
+            onToggleSelection: {},
+            showsSelectionChrome: false,
+            isEditingText: true,
+            selectedBlockID: selectedBlock,
+            onSelectBlock: { onSelectBlock($0) },
+            activeDragBlock: activeDragBlock,
+            liveDragTranslation: effectiveLiveDrag
+        )
+        .coordinateSpace(.named(studioSlideCoordSpace))
+        .onPreferenceChange(BlockFramesKey.self) { infos in
+            var dict: [TextBlockID: CGRect] = [:]
+            for info in infos { dict[info.id] = info.rect }
+            blockFrames = dict
+        }
+        // Per-block invisible hit-catchers. Confining the draggable region to
+        // each block's current visual rect means touches elsewhere on the slide
+        // fall through to the enclosing TabView, which can paginate normally.
+        // .highPriorityGesture so the catcher wins over TabView's paging gesture
+        // the moment the finger starts on a block.
+        .overlay {
+            ForEach(orderedBlockIDs, id: \.self) { id in
+                if let rect = visualRect(for: id) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .frame(width: rect.width, height: rect.height)
+                        .position(x: rect.midX, y: rect.midY)
+                        .highPriorityGesture(dragGesture(for: id))
+                }
+            }
+        }
+        .shadow(color: .black.opacity(0.5), radius: 16, x: 0, y: 6)
+        .padding(.horizontal, 20)
+    }
+}
+
 // MARK: - Full-Screen Text Editor
 
 struct SlideTextEditorView: View {
-    @Binding var slide: CarouselSlide
+    @Binding var slides: [CarouselSlide]
+    let initialIndex: Int
     let aspectRatio: CGFloat
     @Environment(\.dismiss) private var dismiss
 
+    @State private var currentIndex: Int = 0
     @State private var selectedBlock: TextBlockID = .primary
-    /// Live translation from the full-slide DragGesture. Injected into CarouselSlideView
-    /// so the selected block follows the finger without any hit-test mismatch.
-    @GestureState private var liveDragTranslation: CGSize = .zero
 
     // MARK: Helpers
 
+    private var slide: CarouselSlide { slides[currentIndex] }
+
+    /// Slide preview width: screen width minus horizontal margins.
+    /// Avoids GeometryReader (which can cause double-render flicker in fullScreenCover).
+    private var slideWidth: CGFloat { UIScreen.main.bounds.width - 48 }
+    private var slideHeight: CGFloat { slideWidth / aspectRatio }
+
     private var availableBlocks: [TextBlockID] {
         switch slide.kind {
-        case .cover:   return [.primary]
-        case .mapRoute: return slide.dayStory?.isEmpty == false ? [.primary, .secondary] : [.primary]
+        case .cover:     return [.primary]
+        case .mapRoute:  return slide.dayStory?.isEmpty == false ? [.primary, .secondary] : [.primary]
         case .placeStop: return slide.caption != nil ? [.primary, .secondary] : [.primary]
         }
     }
 
     private func blockLabel(_ id: TextBlockID) -> String {
         switch (slide.kind, id) {
-        case (.cover, _):         return "Title"
-        case (.mapRoute, .primary):   return "Heading"
-        case (.mapRoute, .secondary): return "Story"
-        case (.placeStop, .primary):  return "Place Name"
+        case (.cover, _):              return "Title"
+        case (.mapRoute, .primary):    return "Heading"
+        case (.mapRoute, .secondary):  return "Story"
+        case (.placeStop, .primary):   return "Place Name"
         case (.placeStop, .secondary): return "Caption"
-        default: return "Text"
+        default:                       return "Text"
         }
     }
 
@@ -434,14 +607,8 @@ struct SlideTextEditorView: View {
     }
 
     private func updateStyle(_ update: (inout TextBlockStyle) -> Void) {
-        if selectedBlock == .secondary { update(&slide.textStyle.secondary) }
-        else { update(&slide.textStyle.primary) }
-    }
-
-    /// Slide preview width: screen width minus horizontal margins.
-    /// Avoids GeometryReader (which can cause double-render flicker in fullScreenCover).
-    private var slideWidth: CGFloat {
-        UIScreen.main.bounds.width - 48
+        if selectedBlock == .secondary { update(&slides[currentIndex].textStyle.secondary) }
+        else { update(&slides[currentIndex].textStyle.primary) }
     }
 
     // MARK: Body
@@ -449,73 +616,98 @@ struct SlideTextEditorView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Text("Select a block below, then drag anywhere on the slide to reposition")
+                Text("Drag a block to reposition · Swipe to change slides")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
-                    .padding(.vertical, 14)
+                    .padding(.top, 14)
+                    .padding(.bottom, 10)
 
-                CarouselSlideView(
-                    slide: slide,
-                    width: slideWidth,
-                    aspectRatio: aspectRatio,
-                    onToggleSelection: {},
-                    showsSelectionChrome: false,
-                    isEditingText: true,
-                    selectedBlockID: selectedBlock,
-                    onSelectBlock: { selectedBlock = $0 },
-                    liveDragTranslation: liveDragTranslation
-                )
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 4)
-                        .updating($liveDragTranslation) { value, state, _ in
-                            state = value.translation
-                        }
-                        .onEnded { value in
-                            let d = value.translation
-                            if selectedBlock == .primary {
-                                slide.textStyle.primary.offset.width  += d.width
-                                slide.textStyle.primary.offset.height += d.height
-                            } else {
-                                slide.textStyle.secondary.offset.width  += d.width
-                                slide.textStyle.secondary.offset.height += d.height
-                            }
-                        }
-                )
-                .shadow(color: .black.opacity(0.5), radius: 16, x: 0, y: 6)
-                .padding(.horizontal, 20)
+                // Slide navigation
+                HStack(spacing: 16) {
+                    Button {
+                        guard currentIndex > 0 else { return }
+                        withAnimation(.easeInOut(duration: 0.22)) { currentIndex -= 1 }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(currentIndex > 0 ? .white : .white.opacity(0.2))
+                            .frame(width: 36, height: 36)
+                            .background(Color.white.opacity(currentIndex > 0 ? 0.12 : 0.05))
+                            .clipShape(Circle())
+                    }
+                    .disabled(currentIndex == 0)
 
-                    Spacer()
+                    Text("\(currentIndex + 1) / \(slides.count)")
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.55))
+                        .frame(minWidth: 52)
 
-                    textFormattingToolbar
+                    Button {
+                        guard currentIndex < slides.count - 1 else { return }
+                        withAnimation(.easeInOut(duration: 0.22)) { currentIndex += 1 }
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(currentIndex < slides.count - 1 ? .white : .white.opacity(0.2))
+                            .frame(width: 36, height: 36)
+                            .background(Color.white.opacity(currentIndex < slides.count - 1 ? 0.12 : 0.05))
+                            .clipShape(Circle())
+                    }
+                    .disabled(currentIndex == slides.count - 1)
                 }
-                .background(Color(red: 5/255, green: 10/255, blue: 48/255).ignoresSafeArea())
-                .navigationTitle("Edit Text")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
-                                slide.textStyle.primary.offset = .zero
-                                slide.textStyle.secondary.offset = .zero
-                            }
-                        } label: {
-                            Image(systemName: "arrow.counterclockwise")
+                .padding(.bottom, 10)
+
+                TabView(selection: $currentIndex) {
+                    ForEach(slides.indices, id: \.self) { i in
+                        SlideEditPage(
+                            slide: $slides[i],
+                            aspectRatio: aspectRatio,
+                            selectedBlock: selectedBlock,
+                            onSelectBlock: { selectedBlock = $0 }
+                        )
+                        .tag(i)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(height: slideHeight)
+                .animation(.easeInOut(duration: 0.22), value: currentIndex)
+
+                Spacer()
+
+                textFormattingToolbar
+            }
+            .background(Color(red: 5/255, green: 10/255, blue: 48/255).ignoresSafeArea())
+            .navigationTitle("Edit Slides")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
+                            slides[currentIndex].textStyle.primary.offset = .zero
+                            slides[currentIndex].textStyle.secondary.offset = .zero
                         }
-                        .accessibilityLabel("Reset positions")
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
                     }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { dismiss() }.fontWeight(.semibold)
-                    }
+                    .accessibilityLabel("Reset positions")
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }.fontWeight(.semibold)
                 }
             }
-            .preferredColorScheme(.dark)
-            .dynamicTypeSize(.medium)
-            .onAppear {
+            .onChange(of: currentIndex) { _, _ in
                 if !availableBlocks.contains(selectedBlock) { selectedBlock = .primary }
             }
         }
+        .preferredColorScheme(.dark)
+        .dynamicTypeSize(.medium)
+        .onAppear {
+            currentIndex = initialIndex
+            if !availableBlocks.contains(selectedBlock) { selectedBlock = .primary }
+        }
+    }
 
     // MARK: - Formatting toolbar
 
@@ -640,13 +832,15 @@ struct SocialPostStudioSheet: View {
         case post, story, reel
         var id: String { rawValue }
         var title: String { switch self { case .post: "Post"; case .story: "Story"; case .reel: "Reel" } }
-        var icon: String { switch self { case .post: "rectangle.portrait"; case .story: "sparkles.rectangle.stack"; case .reel: "play.rectangle" } }
+        var icon: String { switch self { case .post: "rectangle.portrait"; case .story: "sparkles.rectangle.stack"; case .reel: "film" } }
         var subtitle: String { switch self {
             case .post:  "Classic feed format for photo carousels"
-            case .story: "Full-screen portrait layout for story posts"
-            case .reel:  "Vertical cover format for short-form videos"
+            case .story: "Full-screen portrait for story posts"
+            case .reel:  "Pick one slide as your Reel cover (9:16)"
         } }
         var aspectRatio: CGFloat { switch self { case .post: 4.0/5.0; case .story, .reel: 9.0/16.0 } }
+        /// Reel exports a single cover image rather than a sequence.
+        var isSingleSlide: Bool { self == .reel }
     }
 
     private struct EditableSlideRef: Identifiable {
@@ -669,7 +863,10 @@ struct SocialPostStudioSheet: View {
     private let exportWidth: CGFloat = 1080
     private var exportHeight: CGFloat { exportWidth / exportFormat.aspectRatio }
     private var previewWidth: CGFloat { previewHeight * exportFormat.aspectRatio }
-    private var selectedSlides: [CarouselSlide] { slides.filter { $0.isSelected } }
+    private var selectedSlides: [CarouselSlide] {
+        let sel = slides.filter { $0.isSelected }
+        return exportFormat.isSingleSlide ? Array(sel.prefix(1)) : sel
+    }
 
     var body: some View {
         NavigationStack {
@@ -707,14 +904,17 @@ struct SocialPostStudioSheet: View {
             Button("OK", role: .cancel) {}
         } message: { Text(savedAlertMessage) }
         .fullScreenCover(item: $editingSlideRef) { ref in
-            SlideTextEditorView(slide: $slides[ref.index], aspectRatio: exportFormat.aspectRatio)
+            SlideTextEditorView(slides: $slides, initialIndex: ref.index, aspectRatio: exportFormat.aspectRatio)
         }
     }
 
     // MARK: - Layout
 
     private var savedAlertMessage: String {
-        "Saved \(selectedSlides.count) \(exportFormat.title.lowercased()) slides. You can post them now or refine later."
+        if exportFormat.isSingleSlide {
+            return "Saved your Reel cover. You can post it now or refine later."
+        }
+        return "Saved \(selectedSlides.count) \(exportFormat.title.lowercased()) slides. You can post them now or refine later."
     }
 
     private var modeSelector: some View {
@@ -771,9 +971,15 @@ struct SocialPostStudioSheet: View {
     private var slidePreviewAndExport: some View {
         VStack(spacing: 0) {
             modeSelector.padding(.top, 14)
-            Text("\(selectedSlides.count) of \(slides.count) slides selected")
-                .font(.subheadline).foregroundColor(.secondary)
-                .padding(.top, 10).padding(.bottom, 12)
+            Group {
+                if exportFormat.isSingleSlide {
+                    Text("Tap any slide to use it as your Reel cover")
+                } else {
+                    Text("\(selectedSlides.count) of \(slides.count) slides selected")
+                }
+            }
+            .font(.subheadline).foregroundColor(.secondary)
+            .padding(.top, 10).padding(.bottom, 12)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 14) {
@@ -790,14 +996,18 @@ struct SocialPostStudioSheet: View {
                 Button { Task { await saveToPhotos() } } label: {
                     exportButtonLabel(icon: "photo.on.rectangle.angled",
                                       title: "Save to Photos",
-                                      subtitle: "Save your \(exportFormat.title.lowercased()) slides, then publish or refine.")
+                                      subtitle: exportFormat.isSingleSlide
+                                          ? "Save your Reel cover, then post it to Instagram or TikTok."
+                                          : "Save your \(exportFormat.title.lowercased()) slides, then publish or refine.")
                 }
                 .disabled(isRendering || selectedSlides.isEmpty)
 
                 Button { Task { await shareViaSheet() } } label: {
                     exportButtonLabel(icon: "square.and.arrow.up",
                                       title: "Share…",
-                                      subtitle: "Send your \(exportFormat.title.lowercased()) slides to any app (including Canva).")
+                                      subtitle: exportFormat.isSingleSlide
+                                          ? "Send your Reel cover to any app (including Canva)."
+                                          : "Send your \(exportFormat.title.lowercased()) slides to any app (including Canva).")
                 }
                 .disabled(isRendering || selectedSlides.isEmpty)
             }
@@ -813,7 +1023,14 @@ struct SocialPostStudioSheet: View {
                 width: previewWidth,
                 aspectRatio: exportFormat.aspectRatio,
                 onToggleSelection: {
-                    withAnimation(.easeInOut(duration: 0.2)) { slides[index].isSelected.toggle() }
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        if exportFormat.isSingleSlide {
+                            // Radio behavior: selecting any slide deselects the others.
+                            for i in slides.indices { slides[i].isSelected = (i == index) }
+                        } else {
+                            slides[index].isSelected.toggle()
+                        }
+                    }
                 },
                 showsSelectionChrome: true
             )
@@ -885,6 +1102,10 @@ struct SocialPostStudioSheet: View {
             result.append(contentsOf: placeSlides)
         }
 
+        if exportFormat.isSingleSlide {
+            // Reel: keep only the cover slide selected by default.
+            for i in result.indices { result[i].isSelected = (i == 0) }
+        }
         slides = result
         isLoading = false
     }
