@@ -73,6 +73,20 @@ struct TextOverlayStyle: Equatable {
     var secondary: TextBlockStyle = TextBlockStyle()  // story / caption
 }
 
+private extension TextBlockStyle {
+    /// Copies font, color, and size from `source`; leaves `center` unchanged.
+    mutating func mergeTypography(from source: TextBlockStyle) {
+        fontDesign = source.fontDesign
+        textColor = source.textColor
+        sizeScale = source.sizeScale
+    }
+
+    /// Copies `center` from `source`; leaves typography unchanged.
+    mutating func mergeLayout(from source: TextBlockStyle) {
+        center = source.center
+    }
+}
+
 private struct DiagonalRoundedBadgeShape: Shape {
     let radius: CGFloat
     func path(in rect: CGRect) -> Path {
@@ -192,17 +206,19 @@ private struct DraggableTextBlock<Content: View>: View {
     private var naturalRectCapture: some View {
         GeometryReader { geo in
             Color.clear
-                .onAppear {
-                    guard naturalRect == nil else { return }
-                    let current = geo.frame(in: .named(studioSlideCoordSpace))
-                    guard current.width > 0, current.height > 0 else { return }
-                    // Strip any existing offset so we always store the un-displaced rect.
-                    naturalRect = current.offsetBy(
-                        dx: -displayOffset.width,
-                        dy: -displayOffset.height
-                    )
-                }
+                .onAppear { captureNaturalRect(from: geo) }
+                .onChange(of: geo.size) { _, _ in captureNaturalRect(from: geo) }
         }
+    }
+
+    private func captureNaturalRect(from geo: GeometryProxy) {
+        guard naturalRect == nil else { return }
+        let current = geo.frame(in: .named(studioSlideCoordSpace))
+        guard current.width > 0, current.height > 0 else { return }
+        naturalRect = current.offsetBy(
+            dx: -displayOffset.width,
+            dy: -displayOffset.height
+        )
     }
 
     @ViewBuilder
@@ -217,7 +233,7 @@ private struct DraggableTextBlock<Content: View>: View {
                         ? StrokeStyle(lineWidth: 2.0)
                         : StrokeStyle(lineWidth: 1.0, dash: [5, 3])
                 )
-                .padding(-6)
+                .padding(-3)
         }
     }
 
@@ -292,7 +308,7 @@ struct CarouselSlideView: View {
                                    startPoint: .top, endPoint: .init(x: 0.5, y: 0.45))
                         .frame(width: width, height: height)
                 }
-                if slide.dayStory != nil, !slide.isSecondaryHidden {
+                if (slide.dayStory?.isEmpty == false || isEditingText), !slide.isSecondaryHidden {
                     LinearGradient(colors: [.clear, .black.opacity(0.65)],
                                    startPoint: .init(x: 0.5, y: 0.52), endPoint: .bottom)
                         .frame(width: width, height: height)
@@ -306,8 +322,8 @@ struct CarouselSlideView: View {
                                    startPoint: .top, endPoint: .init(x: 0.5, y: 0.42))
                         .frame(width: width, height: height)
                 }
-                // Bottom gradient: protects caption text (only when caption exists)
-                if slide.caption != nil, !slide.isSecondaryHidden {
+                // Bottom gradient: protects caption text (shows when editing even if empty)
+                if (slide.caption != nil || isEditingText), !slide.isSecondaryHidden {
                     LinearGradient(colors: [.clear, .black.opacity(0.72)],
                                    startPoint: .init(x: 0.5, y: 0.58), endPoint: .bottom)
                         .frame(width: width, height: height)
@@ -335,7 +351,7 @@ struct CarouselSlideView: View {
                         .foregroundColor(slide.textStyle.primary.textColor.color)
                         .lineLimit(3)
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, width * 0.06)
+                        .padding(.horizontal, width * 0.038)
                 }
             }
         }
@@ -369,13 +385,14 @@ struct CarouselSlideView: View {
                                 .lineLimit(1)
                         }
                     }
-                    .padding(width * 0.055)
+                    .padding(width * 0.038)
                 }
             }
         }
         // Map story — bottom-leading
         .overlay(alignment: .bottomLeading) {
-            if slide.kind == .mapRoute, !slide.isSecondaryHidden, let story = slide.dayStory, !story.isEmpty {
+            let storyText = slide.dayStory ?? ""
+            if slide.kind == .mapRoute, !slide.isSecondaryHidden, isEditingText || !storyText.isEmpty {
                 DraggableTextBlock(
                     id: .secondary,
                     isEditingText: isEditingText,
@@ -386,13 +403,14 @@ struct CarouselSlideView: View {
                     onDragStart: { onBlockDragStart?() },
                     onDragEnd: { onBlockDragEnd?() }
                 ) {
-                    Text(story)
+                    Text(storyText.isEmpty ? "Day story…" : storyText)
                         .font(.system(size: width * 0.042 * slide.textStyle.secondary.sizeScale,
                                       design: slide.textStyle.secondary.fontDesign.design))
-                        .foregroundColor(slide.textStyle.secondary.textColor.color.opacity(0.88))
+                        .foregroundColor(slide.textStyle.secondary.textColor.color.opacity(storyText.isEmpty ? 0.4 : 0.88))
+                        .italic(storyText.isEmpty)
                         .lineLimit(4)
                         .multilineTextAlignment(.leading)
-                        .padding(width * 0.055)
+                        .padding(width * 0.038)
                 }
             }
         }
@@ -425,19 +443,20 @@ struct CarouselSlideView: View {
                                     .lineLimit(1)
                             }
                         }
-                        .padding(width * 0.06)
+                        .padding(width * 0.038)
                     }
                 } else {
                     Text("Missing place data")
                         .font(.system(size: width * 0.05, weight: .semibold))
                         .foregroundColor(.white.opacity(0.9))
-                        .padding(width * 0.06)
+                        .padding(width * 0.038)
                 }
             }
         }
         // Place caption — bottom-leading
         .overlay(alignment: .bottomLeading) {
-            if slide.kind == .placeStop, !slide.isSecondaryHidden, let caption = slide.caption, !caption.isEmpty {
+            let captionText = slide.caption ?? ""
+            if slide.kind == .placeStop, !slide.isSecondaryHidden, isEditingText || !captionText.isEmpty {
                 DraggableTextBlock(
                     id: .secondary,
                     isEditingText: isEditingText,
@@ -448,14 +467,14 @@ struct CarouselSlideView: View {
                     onDragStart: { onBlockDragStart?() },
                     onDragEnd: { onBlockDragEnd?() }
                 ) {
-                    Text(caption)
+                    Text(captionText.isEmpty ? "Caption…" : captionText)
                         .font(.system(size: width * 0.044 * slide.textStyle.secondary.sizeScale,
                                       design: slide.textStyle.secondary.fontDesign.design))
-                        .foregroundColor(slide.textStyle.secondary.textColor.color.opacity(0.85))
+                        .foregroundColor(slide.textStyle.secondary.textColor.color.opacity(captionText.isEmpty ? 0.4 : 0.85))
+                        .italic(captionText.isEmpty)
                         .lineLimit(4)
                         .multilineTextAlignment(.leading)
-                        .padding(.horizontal, width * 0.06)
-                        .padding(.vertical, width * 0.03)
+                        .padding(width * 0.038)
                 }
             }
         }
@@ -521,12 +540,22 @@ struct CarouselSlideView: View {
 private struct SlideEditPage: View {
     @Binding var slide: CarouselSlide
     let aspectRatio: CGFloat
+    /// Width of the paging cell (used with `maxHeight` so the slide scales like the old screen-based math).
+    let layoutWidth: CGFloat
+    /// Maximum height the slide can occupy — used to scale width down for tall formats (e.g. 9:16).
+    let maxHeight: CGFloat
     let selectedBlock: TextBlockID?
     let onSelectBlock: (TextBlockID) -> Void
+    /// Called immediately before committing a new text-block center (drag end) so the parent can record undo.
+    let recordUndoSnapshot: () -> Void
     /// While true, the slide pager's horizontal scrolling is disabled (text drag / tap on a block).
     @Binding var locksHorizontalSlidePaging: Bool
 
-    private var slideWidth: CGFloat { UIScreen.main.bounds.width - 48 }
+    private var slideWidth: CGFloat {
+        let fromLayout = max(220, layoutWidth - 48)
+        let fromHeight = maxHeight * aspectRatio
+        return min(fromLayout, fromHeight)
+    }
 
     var body: some View {
         CarouselSlideView(
@@ -539,6 +568,7 @@ private struct SlideEditPage: View {
             selectedBlockID: selectedBlock,
             onSelectBlock: { onSelectBlock($0) },
             onUpdateBlockCenter: { id, newCenter in
+                recordUndoSnapshot()
                 if id == .primary {
                     slide.textStyle.primary.center = newCenter
                 } else {
@@ -568,29 +598,18 @@ struct SlideTextEditorView: View {
     @State private var selectedBlock: TextBlockID? = nil
     /// Disables horizontal slide paging while the user touches a text block (see `SlideEditPage`).
     @State private var locksHorizontalSlidePaging = false
-    /// Briefly true after "Apply to all slides" to show a confirmation flash.
+    /// Briefly true after a bulk "Apply to…" action to show a confirmation flash.
     @State private var didApplyToAll = false
+    /// Prior `slides` arrays for incremental undo (shallow copy; `UIImage` refs unchanged).
+    @State private var undoStack: [[CarouselSlide]] = []
+
+    private let maxUndoSteps = 40
 
     // MARK: Helpers
 
     private var currentSlide: CarouselSlide? {
         guard slides.indices.contains(currentIndex) else { return nil }
         return slides[currentIndex]
-    }
-
-    /// Computes a slide height that fits between top controls and bottom toolbar.
-    /// This prevents Story/Reel previews from pushing controls out of the visible area.
-    private func adaptiveSlideHeight(containerSize: CGSize) -> CGFloat {
-        let width = max(220, containerSize.width - 48)
-        let naturalHeight = width / aspectRatio
-        let reservedTopChrome: CGFloat = 178
-        let reservedBottomToolbar: CGFloat = 220
-        let verticalMargin: CGFloat = 16
-        let maxAvailableHeight = max(
-            220,
-            containerSize.height - reservedTopChrome - reservedBottomToolbar - verticalMargin
-        )
-        return min(naturalHeight, maxAvailableHeight)
     }
 
     private var availableBlocks: [TextBlockID] {
@@ -601,10 +620,10 @@ struct SlideTextEditorView: View {
             if !slide.isPrimaryHidden { blocks.append(.primary) }
         case .mapRoute:
             if !slide.isPrimaryHidden { blocks.append(.primary) }
-            if !slide.isSecondaryHidden, slide.dayStory?.isEmpty == false { blocks.append(.secondary) }
+            if !slide.isSecondaryHidden { blocks.append(.secondary) }
         case .placeStop:
             if !slide.isPrimaryHidden { blocks.append(.primary) }
-            if !slide.isSecondaryHidden, slide.caption != nil { blocks.append(.secondary) }
+            if !slide.isSecondaryHidden { blocks.append(.secondary) }
         }
         return blocks
     }
@@ -635,14 +654,43 @@ struct SlideTextEditorView: View {
 
     private func updateStyle(_ update: (inout TextBlockStyle) -> Void) {
         guard let selectedBlock, hasValidCurrentIndex else { return }
+        pushUndoSnapshot()
         if selectedBlock == .secondary { update(&slides[currentIndex].textStyle.secondary) }
         else { update(&slides[currentIndex].textStyle.primary) }
     }
 
-    /// Hides the currently selected block on this slide. The deletion is reversible via
-    /// the toolbar "reset" button, which also unhides both blocks for the current slide.
+    private func pushUndoSnapshot() {
+        undoStack.append(slides)
+        if undoStack.count > maxUndoSteps {
+            undoStack.removeFirst(undoStack.count - maxUndoSteps)
+        }
+    }
+
+    private func undoLastChange() {
+        guard let previous = undoStack.popLast() else { return }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
+            slides = previous
+        }
+        clampCurrentIndexIfNeeded()
+        syncSelectionAfterUndo()
+    }
+
+    /// Clears or adjusts the selected text block if undo restored a state where it is not available.
+    private func syncSelectionAfterUndo() {
+        guard currentSlide != nil else {
+            selectedBlock = nil
+            return
+        }
+        guard let block = selectedBlock else { return }
+        if !availableBlocks.contains(block) {
+            selectedBlock = availableBlocks.first
+        }
+    }
+
+    /// Hides the currently selected block on this slide. Undo restores the prior `slides` snapshot.
     private func deleteSelectedBlock() {
         guard let selectedBlock, hasValidCurrentIndex else { return }
+        pushUndoSnapshot()
         withAnimation(.easeInOut(duration: 0.2)) {
             if selectedBlock == .primary {
                 slides[currentIndex].isPrimaryHidden = true
@@ -654,30 +702,51 @@ struct SlideTextEditorView: View {
         self.selectedBlock = availableBlocks.first
     }
 
-    /// Copies this slide's full text style (font design, color, size, position) to every
-    /// slide in the carousel, for both blocks. Hidden flags are left alone so per-slide
-    /// deletions survive.
-    private func applyStyleToAllSlides() {
+    /// Copies font design, color, and size from the current slide to every slide (all kinds),
+    /// for primary and secondary separately. Does not change dragged positions.
+    private func applyTypographyToAllSlides() {
         clampCurrentIndexIfNeeded()
         guard hasValidCurrentIndex else { return }
-        let primary = slides[currentIndex].textStyle.primary
-        let secondary = slides[currentIndex].textStyle.secondary
-        // Batch in local memory, then assign once to avoid N large @State writes.
-        // Each slide carries image payloads, so repeated per-index mutations can spike memory.
+        pushUndoSnapshot()
+        let refPrimary = slides[currentIndex].textStyle.primary
+        let refSecondary = slides[currentIndex].textStyle.secondary
         var updatedSlides = slides
         for i in updatedSlides.indices {
-            updatedSlides[i].textStyle.primary = primary
-            updatedSlides[i].textStyle.secondary = secondary
+            updatedSlides[i].textStyle.primary.mergeTypography(from: refPrimary)
+            updatedSlides[i].textStyle.secondary.mergeTypography(from: refSecondary)
         }
         slides = updatedSlides
+    }
+
+    /// Copies primary/secondary text block centers from the current photo slide to every
+    /// `placeStop` slide. No-op if the current slide is not a photo slide.
+    private func applyPhotoLayoutToAllPlaceStops() {
+        clampCurrentIndexIfNeeded()
+        guard hasValidCurrentIndex, slides[currentIndex].kind == .placeStop else { return }
+        pushUndoSnapshot()
+        let refPrimary = slides[currentIndex].textStyle.primary
+        let refSecondary = slides[currentIndex].textStyle.secondary
+        var updatedSlides = slides
+        for i in updatedSlides.indices where updatedSlides[i].kind == .placeStop {
+            updatedSlides[i].textStyle.primary.mergeLayout(from: refPrimary)
+            updatedSlides[i].textStyle.secondary.mergeLayout(from: refSecondary)
+        }
+        slides = updatedSlides
+    }
+
+    private func flashAppliedConfirmation() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { didApplyToAll = true }
+        Task {
+            try? await Task.sleep(for: .milliseconds(1400))
+            withAnimation(.easeOut(duration: 0.25)) { didApplyToAll = false }
+        }
     }
 
     // MARK: Body
 
     var body: some View {
         NavigationStack {
-            GeometryReader { rootGeo in
-                let editorSlideHeight = adaptiveSlideHeight(containerSize: rootGeo.size)
+            GeometryReader { _ in
                 VStack(spacing: 0) {
                     if slides.isEmpty {
                         ContentUnavailableView(
@@ -738,17 +807,26 @@ struct SlideTextEditorView: View {
                         .padding(.bottom, 8)
 
                         GeometryReader { slideGeo in
+                            let slotW = slideGeo.size.width
+                            let slotH = slideGeo.size.height
                             ScrollView(.horizontal, showsIndicators: false) {
                                 LazyHStack(spacing: 0) {
                                     ForEach(slides.indices, id: \.self) { i in
-                                        SlideEditPage(
-                                            slide: $slides[i],
-                                            aspectRatio: aspectRatio,
-                                            selectedBlock: selectedBlock,
-                                            onSelectBlock: { selectedBlock = $0 },
-                                            locksHorizontalSlidePaging: $locksHorizontalSlidePaging
-                                        )
-                                        .frame(width: slideGeo.size.width)
+                                        VStack(spacing: 0) {
+                                            Spacer(minLength: 0)
+                                            SlideEditPage(
+                                                slide: $slides[i],
+                                                aspectRatio: aspectRatio,
+                                                layoutWidth: slotW,
+                                                maxHeight: slotH,
+                                                selectedBlock: selectedBlock,
+                                                onSelectBlock: { selectedBlock = $0 },
+                                                recordUndoSnapshot: { pushUndoSnapshot() },
+                                                locksHorizontalSlidePaging: $locksHorizontalSlidePaging
+                                            )
+                                            Spacer(minLength: 0)
+                                        }
+                                        .frame(width: slotW, height: slotH)
                                         .id(i)
                                     }
                                 }
@@ -759,10 +837,10 @@ struct SlideTextEditorView: View {
                             .scrollDisabled(locksHorizontalSlidePaging)
                             .animation(.easeInOut(duration: 0.22), value: currentIndex)
                         }
-                        .frame(height: editorSlideHeight)
+                        .frame(maxHeight: .infinity)
                     }
-                    Spacer(minLength: 0)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if !slides.isEmpty {
                         textFormattingToolbar
@@ -775,18 +853,13 @@ struct SlideTextEditorView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button {
-                        guard hasValidCurrentIndex else { return }
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
-                            slides[currentIndex].textStyle.primary.center = nil
-                            slides[currentIndex].textStyle.secondary.center = nil
-                            slides[currentIndex].isPrimaryHidden = false
-                            slides[currentIndex].isSecondaryHidden = false
-                        }
-                        selectedBlock = nil
+                        undoLastChange()
                     } label: {
-                        Image(systemName: "arrow.counterclockwise")
+                        Image(systemName: "arrow.uturn.backward")
                     }
-                    .accessibilityLabel("Reset slide")
+                    .disabled(undoStack.isEmpty)
+                    .opacity(undoStack.isEmpty ? 0.35 : 1)
+                    .accessibilityLabel("Undo")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }.fontWeight(.semibold)
@@ -807,6 +880,7 @@ struct SlideTextEditorView: View {
             currentIndex = initialIndex
             scrollPageID = initialIndex
             selectedBlock = nil
+            undoStack = []
         }
     }
 
@@ -816,8 +890,8 @@ struct SlideTextEditorView: View {
     private var textFormattingToolbar: some View {
         VStack(spacing: 0) {
             VStack(spacing: 16) {
-                // Slide-level actions: delete the selected block, or push this slide's
-                // visual style (font / color / size) to every slide in the carousel.
+                // Slide-level actions: delete the selected block, or bulk-apply typography /
+                // photo text positions from the current slide.
                 HStack(spacing: 12) {
                     Button {
                         deleteSelectedBlock()
@@ -836,15 +910,23 @@ struct SlideTextEditorView: View {
 
                     Spacer()
 
-                    Button {
-                        applyStyleToAllSlides()
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { didApplyToAll = true }
-                        Task {
-                            try? await Task.sleep(for: .milliseconds(1400))
-                            withAnimation(.easeOut(duration: 0.25)) { didApplyToAll = false }
+                    Menu {
+                        Button {
+                            applyTypographyToAllSlides()
+                            flashAppliedConfirmation()
+                        } label: {
+                            Label("Typography to all slides", systemImage: "textformat")
+                        }
+                        if currentSlide?.kind == .placeStop {
+                            Button {
+                                applyPhotoLayoutToAllPlaceStops()
+                                flashAppliedConfirmation()
+                            } label: {
+                                Label("Positions to all photo slides", systemImage: "arrow.up.left.and.arrow.down.right")
+                            }
                         }
                     } label: {
-                        Label(didApplyToAll ? "Applied!" : "Apply to all slides",
+                        Label(didApplyToAll ? "Applied!" : "Apply to…",
                               systemImage: didApplyToAll ? "checkmark" : "wand.and.stars")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundColor(.white)
