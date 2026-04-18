@@ -9,8 +9,17 @@ import SwiftUI
 import UIKit
 
 struct PlaceCaptionEditSheet: View {
+    /// Matches `PlaceStopRowView` / `PlacePhotoModalView` AI story accent.
+    private static let funAISparkleGradient = LinearGradient(
+        colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
     let placeTitle: String
     let placeSubtitle: String?
+    /// MK POI category raw string for this stop (optional tone hint for on-device “AI story”).
+    var placeCategory: String? = nil
     let photos: [RecapPhoto]
     @Binding var caption: String
     /// Bindings for per-photo captions (strip lists every displayable selected photo).
@@ -23,13 +32,21 @@ struct PlaceCaptionEditSheet: View {
     var onEnhance: ((String) async -> String)? = nil
     /// Called after AI successfully applies a result (so caller can mark overallStoryIsManual = false).
     var onEnhanceApplied: (() -> Void)? = nil
+    /// Called after “AI story” writes a **per-photo** caption; use to mark that photo’s caption as AI (not overall place story).
+    var onFunPhotoInsightApplied: ((UUID) -> Void)? = nil
     /// Pure translation — no AI story generation.
     var onTranslate: ((String) async -> String)? = nil
     /// Parent presents `EditPlaceStopNameSheet` (same as blog edit-mode place row).
     var onRequestEditPlaceName: (() -> Void)? = nil
+    /// When true, the place story was typed by the user — hide on-device place “AI story”.
+    var overallStoryIsManual: Bool = false
+    /// Produces up to two sentences for the **place** caption using full stop context (tags, photo captions, daypart).
+    var onGeneratePlaceAIShortStory: (() async -> String)? = nil
     @State private var editedText: String = ""
     @State private var isEnhancing = false
     @State private var isTranslating = false
+    @State private var isGeneratingAIShortStory = false
+    @State private var selectedPhotoHasVisionTagsForAIStory = false
     @State private var showEnhanceStylePicker = false
     @State private var showWritingStyleSheet = false
     @AppStorage(StoryWritingStyle.presetStorageKey) private var stylePresetId: String = ""
@@ -252,6 +269,78 @@ struct PlaceCaptionEditSheet: View {
             .frame(minHeight: captionTextEditorMinHeight, maxHeight: .infinity)
             .padding(.horizontal, 20)
 
+            if LocalLLMStoryCaptionGenerator.isCapable, selectedPhotoHasVisionTagsForAIStory, let photo = selectedPhotoForFunAI,
+               !photoCaptionBlocksAIShortStory(photo: photo) {
+                HStack {
+                    Spacer(minLength: 0)
+                    if isGeneratingAIShortStory {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle())
+                                .scaleEffect(0.75)
+                            Text("Thinking…")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Button {
+                            runFunPhotoInsight(photo: photo)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "sparkles")
+                                    .font(.caption)
+                                    .foregroundStyle(Self.funAISparkleGradient)
+                                Text("AI story")
+                                    .font(.caption)
+                                    .foregroundStyle(Self.funAISparkleGradient)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isEnhancing || isTranslating || isGeneratingAIShortStory)
+                        .accessibilityLabel("Generate up to two sentences from on-device photo tags")
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 6)
+                .padding(.bottom, 2)
+            }
+
+            if LocalLLMStoryCaptionGenerator.isCapable,
+               captionThumbnailSelection == .placeCaption,
+               onGeneratePlaceAIShortStory != nil,
+               !placeCaptionBlocksAIShortStory {
+                HStack {
+                    Spacer(minLength: 0)
+                    if isGeneratingAIShortStory {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle())
+                                .scaleEffect(0.75)
+                            Text("Thinking…")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Button(action: runPlaceAIShortStory) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "sparkles")
+                                    .font(.caption)
+                                    .foregroundStyle(Self.funAISparkleGradient)
+                                Text("AI story")
+                                    .font(.caption)
+                                    .foregroundStyle(Self.funAISparkleGradient)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isEnhancing || isTranslating || isGeneratingAIShortStory)
+                        .accessibilityLabel("Generate up to two sentences for this place from trip context")
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 6)
+                .padding(.bottom, 2)
+            }
+
             if !trimmedEditedText.isEmpty {
                 HStack(spacing: 16) {
                     Button(role: .destructive) {
@@ -274,10 +363,15 @@ struct PlaceCaptionEditSheet: View {
                                 originalDraft = nil
                             }
                         } label: {
-                            Label("", systemImage: "arrow.uturn.backward")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.uturn.backward")
+                                    .font(.caption)
+                                Text("Revert")
+                                    .font(.caption)
+                            }
+                            .foregroundColor(.secondary)
                         }
+                        .accessibilityLabel("Revert caption")
                     }
 
                     if let translate = onTranslate {
@@ -301,7 +395,7 @@ struct PlaceCaptionEditSheet: View {
                                 }
                             }
                         }
-                        .disabled(isEnhancing || isTranslating)
+                        .disabled(isEnhancing || isTranslating || isGeneratingAIShortStory)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -363,6 +457,24 @@ struct PlaceCaptionEditSheet: View {
         // Do not attach `.animation(value: expandedPhotoPreviewId)` here — it fights nested
         // `withAnimation` + zoom state and can trigger AttributeGraph cycles when the overlay appears.
         .preferredColorScheme(.dark)
+        .task(id: captionThumbnailSelection) {
+            switch captionThumbnailSelection {
+            case .placeCaption:
+                await MainActor.run { selectedPhotoHasVisionTagsForAIStory = false }
+            case .photo(let pid):
+                guard LocalLLMStoryCaptionGenerator.isCapable,
+                      let p = captionStripPhotos.first(where: { $0.id == pid }) else {
+                    await MainActor.run { selectedPhotoHasVisionTagsForAIStory = false }
+                    return
+                }
+                let has = await StoryCaptionService.shared.photoHasAnalyzedVisionTags(photo: p)
+                await MainActor.run {
+                    if case .photo(let cur) = captionThumbnailSelection, cur == pid {
+                        selectedPhotoHasVisionTagsForAIStory = has
+                    }
+                }
+            }
+        }
         .onAppear {
             initialPlaceCaption = caption
             draftPlaceCaption = caption
@@ -614,7 +726,79 @@ struct PlaceCaptionEditSheet: View {
             ?? "Custom"
     }
 
+    /// Photo strip selection is a concrete photo — used for on-device “fun AI” line (not the place row).
+    private var selectedPhotoForFunAI: RecapPhoto? {
+        guard case .photo(let id) = captionThumbnailSelection else { return nil }
+        return captionStripPhotos.first(where: { $0.id == id })
+    }
+
+    private var placeCaptionBlocksAIShortStory: Bool {
+        overallStoryIsManual && !editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func photoCaptionBlocksAIShortStory(photo: RecapPhoto) -> Bool {
+        photo.captionIsManual && !editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func runFunPhotoInsight(photo: RecapPhoto) {
+        guard LocalLLMStoryCaptionGenerator.isCapable,
+              selectedPhotoHasVisionTagsForAIStory,
+              !photoCaptionBlocksAIShortStory(photo: photo) else { return }
+        if originalDraft == nil { originalDraft = editedText }
+        isGeneratingAIShortStory = true
+        DispatchQueue.main.async { isFocused = false }
+        let hintRaw = editedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let photoId = photo.id
+        Task {
+            let text = await StoryCaptionService.shared.generateFunPhotoInsight(
+                photo: photo,
+                placeName: placeTitle,
+                placeSubtitle: placeSubtitle,
+                placeCategoryMK: placeCategory,
+                visitTimeZone: nil,
+                userCaptionHint: hintRaw.isEmpty ? nil : hintRaw
+            )
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            await MainActor.run {
+                isGeneratingAIShortStory = false
+                guard selectedPhotoForFunAI?.id == photoId else { return }
+                if !trimmed.isEmpty {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        editedText = trimmed
+                    }
+                    flushCurrentDraftFromEditor()
+                    onFunPhotoInsightApplied?(photoId)
+                }
+            }
+        }
+    }
+
+    private func runPlaceAIShortStory() {
+        guard let gen = onGeneratePlaceAIShortStory,
+              LocalLLMStoryCaptionGenerator.isCapable,
+              !placeCaptionBlocksAIShortStory else { return }
+        if originalDraft == nil { originalDraft = editedText }
+        isGeneratingAIShortStory = true
+        DispatchQueue.main.async { isFocused = false }
+        Task {
+            let text = await gen()
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            await MainActor.run {
+                isGeneratingAIShortStory = false
+                guard captionThumbnailSelection == .placeCaption else { return }
+                if !trimmed.isEmpty {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        editedText = trimmed
+                    }
+                    flushCurrentDraftFromEditor()
+                    onEnhanceApplied?()
+                }
+            }
+        }
+    }
+
     private func runEnhance(_ enhance: @escaping (String) async -> String, preset: StoryWritingStylePreset?) {
+        guard !isGeneratingAIShortStory else { return }
         if let preset {
             stylePresetId = preset.id
             UserDefaults.standard.set(preset.prompt, forKey: StoryWritingStyle.storageKey)
@@ -633,6 +817,7 @@ struct PlaceCaptionEditSheet: View {
     }
 
     private func runTranslate(_ translate: @escaping (String) async -> String) {
+        guard !isGeneratingAIShortStory else { return }
         if originalDraft == nil { originalDraft = editedText }
         let textToTranslate = editedText
         isTranslating = true

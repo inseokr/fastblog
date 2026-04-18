@@ -66,6 +66,13 @@ enum TextBlockID: Equatable, Hashable {
     case secondary  // map story / place caption
 }
 
+/// Visual layout variant for place-stop slides (named to avoid conflict with PanoramaPlayerView.SlideLayout).
+enum CarouselSlideLayout: String, CaseIterable, Identifiable {
+    case single  // one full-bleed hero photo (default)
+    case pip     // hero photo + 2–3 inset PIP thumbnails in the corner
+    var id: String { rawValue }
+}
+
 /// Categories in the bottom style tab bar. Selecting one opens a drop-up panel
 /// with horizontally-scrollable options for that category.
 private enum StyleCategory: String, CaseIterable, Identifiable {
@@ -158,6 +165,15 @@ struct CarouselSlide: Identifiable {
     var isPrimaryHidden: Bool = false
     /// When true, the secondary text block (story / caption) is hidden on this slide.
     var isSecondaryHidden: Bool = false
+    /// Layout variant — only meaningful for `.placeStop` slides.
+    var layout: CarouselSlideLayout = .single
+    /// Additional photo thumbnails used when `layout == .pip`. Pre-loaded at export size.
+    var pipImages: [UIImage] = []
+    /// Normalized position offset for the PIP cluster, stored as a fraction of slide dimensions.
+    /// `.zero` keeps the cluster at its default top-trailing anchor position.
+    var pipOffset: CGSize = .zero
+    /// 1-based sequential stop number across all days, shown as a badge before the place name.
+    var stopIndex: Int? = nil
 
     var caption: String? {
         guard kind == .placeStop, let placeStop else { return nil }
@@ -354,6 +370,8 @@ struct CarouselSlideView: View {
     var onBlockDragStart: (() -> Void)? = nil
     /// Fires on drag-end — the editor uses it to release the paging lock.
     var onBlockDragEnd: (() -> Void)? = nil
+    /// Edit-mode write-back: commit a new PIP cluster offset. Nil in read-only (preview/export) use.
+    var onUpdatePIPOffset: ((CGSize) -> Void)? = nil
 
     private var height: CGFloat { width / aspectRatio }
     private let heroImageScale: CGFloat = 1.12
@@ -368,6 +386,13 @@ struct CarouselSlideView: View {
                                : slide.textStyle.secondary.offset
             },
             set: { newOffset in onUpdateBlockOffset?(id, newOffset) }
+        )
+    }
+
+    private var pipOffsetBinding: Binding<CGSize> {
+        Binding(
+            get: { slide.pipOffset },
+            set: { onUpdatePIPOffset?($0) }
         )
     }
 
@@ -513,12 +538,21 @@ struct CarouselSlideView: View {
                         onDragEnd: { onBlockDragEnd?() }
                     ) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(placeStop.placeTitle)
-                                .font(.system(size: width * 0.065 * slide.textStyle.primary.sizeScale,
-                                              weight: .bold,
-                                              design: slide.textStyle.primary.fontDesign.design))
-                                .foregroundColor(slide.textStyle.primary.textColor.color)
-                                .lineLimit(2)
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                if let idx = slide.stopIndex {
+                                    Text("\(idx)")
+                                        .font(.system(size: width * 0.05 * slide.textStyle.primary.sizeScale,
+                                                      weight: .heavy,
+                                                      design: slide.textStyle.primary.fontDesign.design))
+                                        .foregroundColor(slide.textStyle.primary.textColor.color.opacity(0.7))
+                                }
+                                Text(placeStop.placeTitle)
+                                    .font(.system(size: width * 0.065 * slide.textStyle.primary.sizeScale,
+                                                  weight: .bold,
+                                                  design: slide.textStyle.primary.fontDesign.design))
+                                    .foregroundColor(slide.textStyle.primary.textColor.color)
+                                    .lineLimit(2)
+                            }
                             if let sub = placeStop.placeSubtitle, !sub.isEmpty {
                                 Text(sub)
                                     .font(.system(size: width * 0.048 * slide.textStyle.primary.sizeScale,
@@ -562,6 +596,20 @@ struct CarouselSlideView: View {
                         .padding(width * 0.038)
                 }
                 .padding(studioTextBlockEdgeInset)
+            }
+        }
+        // PIP thumbnail cluster — top-trailing, only for placeStop pip layout
+        .overlay(alignment: .topTrailing) {
+            if slide.kind == .placeStop, slide.layout == .pip, !slide.pipImages.isEmpty {
+                DraggablePIPCluster(
+                    savedOffset: pipOffsetBinding,
+                    slideBounds: slideBounds,
+                    onDragStart: { onBlockDragStart?() },
+                    onDragEnd: { onBlockDragEnd?() },
+                    images: slide.pipImages,
+                    slideWidth: width
+                )
+                .transition(.scale(scale: 0.85).combined(with: .opacity))
             }
         }
         // ── Chrome ────────────────────────────────────────────────────
@@ -621,6 +669,123 @@ struct CarouselSlideView: View {
     }
 }
 
+// MARK: - PIP Cluster
+
+/// Stacked photo thumbnails rendered in the top-trailing corner for PIP layout.
+/// Up to 3 images are shown; each has a white border, drop shadow, and a small
+/// alternating rotation for an editorial "spread" feel.
+private struct PIPClusterView: View {
+    let images: [UIImage]
+    let slideWidth: CGFloat
+
+    private var thumbW: CGFloat { slideWidth * 0.30 }
+    private var thumbH: CGFloat { thumbW * 0.72 }
+    private let rotations: [Double] = [1.5, -1.0, 1.8]
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 5) {
+            ForEach(Array(images.prefix(3).enumerated()), id: \.offset) { idx, image in
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: thumbW, height: thumbH)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(.white, lineWidth: 2.2)
+                    )
+                    .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
+                    .rotationEffect(.degrees(rotations[idx % rotations.count]))
+            }
+        }
+        .padding(.top, slideWidth * 0.06)
+        .padding(.trailing, slideWidth * 0.05)
+    }
+}
+
+// MARK: - Draggable PIP Cluster
+
+/// Wraps `PIPClusterView` with a drag gesture so the user can reposition the
+/// thumbnail stack anywhere on the slide. The committed position is stored as a
+/// normalized fraction of `slideBounds` (same convention as `TextBlockStyle.offset`)
+/// so it renders correctly at every output size (editor / preview / export).
+private struct DraggablePIPCluster: View {
+    @Binding var savedOffset: CGSize
+    let slideBounds: CGRect
+    var onDragStart: () -> Void = {}
+    var onDragEnd: () -> Void = {}
+    let images: [UIImage]
+    let slideWidth: CGFloat
+
+    @GestureState private var liveDrag: CGSize = .zero
+    @State private var naturalRect: CGRect?
+
+    private var savedPointOffset: CGSize {
+        CGSize(width: savedOffset.width * slideBounds.width,
+               height: savedOffset.height * slideBounds.height)
+    }
+
+    var body: some View {
+        PIPClusterView(images: images, slideWidth: slideWidth)
+            .background(naturalRectCapture)
+            .contentShape(Rectangle())
+            .offset(x: savedPointOffset.width + liveDrag.width,
+                    y: savedPointOffset.height + liveDrag.height)
+            .gesture(
+                DragGesture(minimumDistance: 4, coordinateSpace: .local)
+                    .updating($liveDrag) { value, state, _ in state = value.translation }
+                    .onChanged { _ in onDragStart() }
+                    .onEnded { value in
+                        let proposed = CGSize(
+                            width: savedPointOffset.width + value.translation.width,
+                            height: savedPointOffset.height + value.translation.height
+                        )
+                        let clamped = clampedOffset(proposed)
+                        savedOffset = CGSize(
+                            width: slideBounds.width > 0 ? clamped.width / slideBounds.width : 0,
+                            height: slideBounds.height > 0 ? clamped.height / slideBounds.height : 0
+                        )
+                        onDragEnd()
+                    }
+            )
+    }
+
+    @ViewBuilder
+    private var naturalRectCapture: some View {
+        GeometryReader { geo in
+            Color.clear
+                .onAppear { captureNaturalRect(from: geo) }
+                .onChange(of: geo.size) { _, _ in captureNaturalRect(from: geo) }
+                .onChange(of: slideBounds) { _, _ in captureNaturalRect(from: geo) }
+        }
+    }
+
+    private func captureNaturalRect(from geo: GeometryProxy) {
+        let current = geo.frame(in: .named(studioSlideCoordSpace))
+        guard current.width > 0, current.height > 0 else { return }
+        let activeOffset = CGSize(
+            width: savedPointOffset.width + liveDrag.width,
+            height: savedPointOffset.height + liveDrag.height
+        )
+        naturalRect = current.offsetBy(dx: -activeOffset.width, dy: -activeOffset.height)
+    }
+
+    private func clampedOffset(_ proposed: CGSize) -> CGSize {
+        guard let natural = naturalRect,
+              slideBounds.width > 0, slideBounds.height > 0
+        else { return proposed }
+        let bounds = slideBounds.insetBy(dx: studioTextBlockEdgeInset, dy: studioTextBlockEdgeInset)
+        let visual = natural.offsetBy(dx: proposed.width, dy: proposed.height)
+        var dx: CGFloat = 0
+        var dy: CGFloat = 0
+        if visual.minX < bounds.minX { dx += bounds.minX - visual.minX }
+        if visual.minY < bounds.minY { dy += bounds.minY - visual.minY }
+        if visual.maxX > bounds.maxX { dx -= visual.maxX - bounds.maxX }
+        if visual.maxY > bounds.maxY { dy -= visual.maxY - bounds.maxY }
+        return CGSize(width: proposed.width + dx, height: proposed.height + dy)
+    }
+}
+
 // MARK: - Per-slide edit page
 
 private struct SlideEditPage: View {
@@ -664,7 +829,11 @@ private struct SlideEditPage: View {
                 }
             },
             onBlockDragStart: { locksHorizontalSlidePaging = true },
-            onBlockDragEnd: { locksHorizontalSlidePaging = false }
+            onBlockDragEnd: { locksHorizontalSlidePaging = false },
+            onUpdatePIPOffset: { newOffset in
+                recordUndoSnapshot()
+                slide.pipOffset = newOffset
+            }
         )
         .coordinateSpace(.named(studioSlideCoordSpace))
         .shadow(color: .black.opacity(0.5), radius: 16, x: 0, y: 6)
@@ -1687,6 +1856,32 @@ struct SocialPostStudioSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
 
+            // Layout toggle — only for placeStop slides with multiple photos loaded
+            if slide.kind == .placeStop, !slide.pipImages.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(CarouselSlideLayout.allCases) { layout in
+                        let isActive = slide.layout == layout
+                        Button {
+                            setLayout(layout, forSlideAt: index)
+                        } label: {
+                            Image(systemName: layout == .single ? "rectangle.portrait" : "pip")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(isActive ? .white : .white.opacity(0.45))
+                                .padding(.horizontal, 12).padding(.vertical, 7)
+                                .background(isActive
+                                    ? Color(red: 0.04, green: 0.52, blue: 1.0)
+                                    : Color.white.opacity(0.1))
+                                .clipShape(Capsule())
+                                .overlay(Capsule().strokeBorder(
+                                    isActive ? Color.white.opacity(0.35) : Color.white.opacity(0.1),
+                                    lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .animation(.easeInOut(duration: 0.15), value: isActive)
+                    }
+                }
+            }
+
             Button { editingSlideRef = EditableSlideRef(index: index) } label: {
                 Label("Edit", systemImage: "pencil")
                     .font(.system(size: 13, weight: .semibold))
@@ -1697,6 +1892,24 @@ struct SocialPostStudioSheet: View {
                     .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Layout
+
+    /// Sets the layout for the slide at `index` and syncs sibling-slide selection.
+    /// When switching to `.pip`, sibling slides for the same place stop are deselected
+    /// because their photos are already visible in the PIP cluster. Switching back to
+    /// `.single` re-selects them so they appear as individual slides again.
+    private func setLayout(_ layout: CarouselSlideLayout, forSlideAt index: Int) {
+        guard slides.indices.contains(index), slides[index].kind == .placeStop else { return }
+        let stopID = slides[index].placeStop?.id
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+            slides[index].layout = layout
+            for i in slides.indices where i != index {
+                guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
+                slides[i].isSelected = (layout == .single)
+            }
         }
     }
 
@@ -1715,6 +1928,8 @@ struct SocialPostStudioSheet: View {
                                         coverTitle: blog.title))
         }
 
+        var globalStopIndex = 0
+
         for (dayIdx, day) in blog.days.enumerated() {
             let dayNumber = dayIdx + 1
             var markerImages: [UUID: UIImage] = [:]
@@ -1723,16 +1938,37 @@ struct SocialPostStudioSheet: View {
             for stop in day.placeStops {
                 let included = stop.photos.filter { $0.isIncluded }
                 guard !included.isEmpty else { continue }
-                for (photoIdx, photo) in included.enumerated() {
-                    var hero: UIImage?
+
+                globalStopIndex += 1
+                let stopIdx = globalStopIndex
+
+                // Load all included photos for this stop upfront so we can populate PIP images.
+                var stopImages: [UIImage?] = []
+                for photo in included {
+                    var img: UIImage?
                     if let localId = photo.localIdentifier {
-                        hero = await loadAssetImage(identifier: localId,
-                                                    size: CGSize(width: exportWidth, height: exportHeight))
+                        img = await loadAssetImage(identifier: localId,
+                                                   size: CGSize(width: exportWidth, height: exportHeight))
                     }
-                    if photoIdx == 0, let img = hero { markerImages[stop.id] = img }
+                    stopImages.append(img)
+                }
+
+                if let firstImg = stopImages.first ?? nil {
+                    markerImages[stop.id] = firstImg
+                }
+
+                for (photoIdx, photo) in included.enumerated() {
+                    let hero = stopImages[photoIdx]
+                    // PIP images = all other loaded images from this stop (up to 3).
+                    let pipImages: [UIImage] = stopImages.enumerated()
+                        .filter { $0.offset != photoIdx }
+                        .compactMap { $0.element }
+                        .prefix(3)
+                        .map { $0 }
                     placeSlides.append(CarouselSlide(
                         id: "\(stop.id.uuidString)-\(photo.id.uuidString)", kind: .placeStop,
-                        isSelected: true, heroImage: hero, placeStop: stop, photoCaption: photo.caption))
+                        isSelected: true, heroImage: hero, placeStop: stop,
+                        photoCaption: photo.caption, pipImages: pipImages, stopIndex: stopIdx))
                 }
             }
 

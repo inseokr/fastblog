@@ -105,6 +105,13 @@ struct PlacePhotoModalView: View {
         case google
     }
 
+    /// Same gradient as `PlaceStopRowView` “Generate story” (sparkles + caption).
+    private static let aiStoryGenerationForegroundGradient = LinearGradient(
+        colors: [Color(red: 0.8, green: 0.5, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
     private static let navigationChooserSuppressedKey = "placePhotoNavigationChooserSuppressed"
     private static let navigationChooserPreferredAppKey = "placePhotoNavigationChooserPreferredApp"
 
@@ -153,6 +160,9 @@ struct PlacePhotoModalView: View {
 
     @State private var currentPhotoId: UUID
     @State private var isGeneratingCaption = false
+    /// On-device “AI story” for the current photo caption (LLM capable **and** Vision tags present).
+    @State private var isGeneratingFunPhotoInsight = false
+    @State private var currentPhotoHasVisionTagsForAIStory = false
     @State private var isTranslatingCaption = false
     @State private var showEnhanceStylePicker = false
     @State private var showWritingStyleSheet = false
@@ -811,6 +821,21 @@ struct PlacePhotoModalView: View {
                 // Place Title is same for all photos in this modal
             }
         }
+        .task(id: currentPhotoId) {
+            let id = currentPhotoId
+            guard LocalLLMStoryCaptionGenerator.isCapable,
+                  let p = photos.first(where: { $0.id == id }) else {
+                await MainActor.run {
+                    if currentPhotoId == id { currentPhotoHasVisionTagsForAIStory = false }
+                }
+                return
+            }
+            let has = await StoryCaptionService.shared.photoHasAnalyzedVisionTags(photo: p)
+            await MainActor.run {
+                guard currentPhotoId == id else { return }
+                currentPhotoHasVisionTagsForAIStory = has
+            }
+        }
         .onChange(of: photos) { oldPhotos, newPhotos in
             // If the currently-displayed photo was just hidden, navigate to the nearest remaining photo.
             guard !newPhotos.contains(where: { $0.id == currentPhotoId }) else { return }
@@ -830,7 +855,7 @@ struct PlacePhotoModalView: View {
                 try? await Task.sleep(nanoseconds: 400_000_000)
                 guard !Task.isCancelled else { return }
                 photoCaption(currentPhotoId).wrappedValue = newValue
-                if !isGeneratingCaption {
+                if !isGeneratingCaption && !isGeneratingFunPhotoInsight {
                     onPhotoCaptionManuallyEdited?(currentPhotoId)
                 }
             }
@@ -1006,6 +1031,39 @@ struct PlacePhotoModalView: View {
                             .lineLimit(2...6)
                             .padding(12)
 
+                        if LocalLLMStoryCaptionGenerator.isCapable && currentPhotoHasVisionTagsForAIStory && !photoCaptionBlocksAIShortStory {
+                            HStack {
+                                Spacer(minLength: 0)
+                                if isGeneratingFunPhotoInsight {
+                                    HStack(spacing: 6) {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.85)))
+                                            .scaleEffect(0.75)
+                                        Text("Thinking…")
+                                            .font(.caption)
+                                            .foregroundColor(.white.opacity(0.75))
+                                    }
+                                } else {
+                                    Button(action: runFunPhotoInsightForCurrentPhoto) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "sparkles")
+                                                .font(.caption)
+                                                .foregroundStyle(Self.aiStoryGenerationForegroundGradient)
+                                            Text("AI story")
+                                                .font(.caption)
+                                                .foregroundStyle(Self.aiStoryGenerationForegroundGradient)
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(isGeneratingCaption || isGeneratingFunPhotoInsight)
+                                    .accessibilityLabel("Generate up to two sentences from on-device photo tags")
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.top, 4)
+                            .padding(.bottom, 2)
+                        }
+
                         // Action bar — mirrors place story sheet layout
                         let trimmed = editedCaptionText.trimmingCharacters(in: .whitespacesAndNewlines)
                         if !trimmed.isEmpty {
@@ -1030,10 +1088,15 @@ struct PlacePhotoModalView: View {
                                             captionOriginalDraftByPhotoId.removeValue(forKey: currentPhotoId)
                                         }
                                     } label: {
-                                        Label("", systemImage: "arrow.uturn.backward")
-                                            .font(.subheadline)
-                                            .foregroundColor(.white.opacity(0.75))
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "arrow.uturn.backward")
+                                                .font(.caption)
+                                            Text("Revert")
+                                                .font(.caption)
+                                        }
+                                        .foregroundColor(.white.opacity(0.75))
                                     }
+                                    .accessibilityLabel("Revert caption")
                                 }
                             }
                             .padding(.horizontal, 12)
@@ -1341,7 +1404,7 @@ struct PlacePhotoModalView: View {
     }
 
     private func runEnhanceForCurrentPhoto(preset: StoryWritingStylePreset?) {
-        guard let generate = onGenerateCaption, let photo = currentPhoto else { return }
+        guard !isGeneratingFunPhotoInsight, let generate = onGenerateCaption, let photo = currentPhoto else { return }
         if let preset {
             stylePresetId = preset.id
             UserDefaults.standard.set(preset.prompt, forKey: StoryWritingStyle.storageKey)
@@ -1364,6 +1427,7 @@ struct PlacePhotoModalView: View {
     }
 
     private func runTranslateForCurrentPhoto(_ translate: @escaping (String) async -> String) {
+        guard !isGeneratingFunPhotoInsight else { return }
         let photoId = currentPhotoId
         if captionOriginalDraftByPhotoId[photoId] == nil {
             captionOriginalDraftByPhotoId[photoId] = editedCaptionText
@@ -1376,6 +1440,50 @@ struct PlacePhotoModalView: View {
                 editedCaptionText = text
                 photoCaption(photoId).wrappedValue = text
                 isTranslatingCaption = false
+            }
+        }
+    }
+
+    /// True when the traveler already has a hand-written caption for this photo (hide on-device “AI story”).
+    private var photoCaptionBlocksAIShortStory: Bool {
+        guard let p = currentPhoto else { return false }
+        return p.captionIsManual && !editedCaptionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Short grounded blurb from on-device Vision tags + place/daypart (only when capable, tags exist, and no manual caption).
+    private func runFunPhotoInsightForCurrentPhoto() {
+        guard !isGeneratingCaption,
+              LocalLLMStoryCaptionGenerator.isCapable,
+              currentPhotoHasVisionTagsForAIStory,
+              !photoCaptionBlocksAIShortStory,
+              let photo = currentPhoto else { return }
+        let photoId = currentPhotoId
+        if captionOriginalDraftByPhotoId[photoId] == nil {
+            captionOriginalDraftByPhotoId[photoId] = editedCaptionText
+        }
+        isGeneratingFunPhotoInsight = true
+        isCaptionFocused = false
+        let hintRaw = editedCaptionText.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            let text = await StoryCaptionService.shared.generateFunPhotoInsight(
+                photo: photo,
+                placeName: editedPlaceTitle,
+                placeSubtitle: effectivePlaceSubtitle,
+                placeCategoryMK: initialPlaceCategory,
+                visitTimeZone: effectiveTimeZone,
+                userCaptionHint: hintRaw.isEmpty ? nil : hintRaw
+            )
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            await MainActor.run {
+                isGeneratingFunPhotoInsight = false
+                guard currentPhotoId == photoId else { return }
+                if !trimmed.isEmpty {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        editedCaptionText = trimmed
+                    }
+                    photoCaption(photoId).wrappedValue = trimmed
+                    onAICaptionApplied?(photoId)
+                }
             }
         }
     }

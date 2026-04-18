@@ -146,6 +146,95 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
         return 2
     }
 
+    // MARK: - Fun photo insight (grounded blurb; UI shown only when `isCapable` and Vision tags exist)
+
+    /// Up to two blog-style sentences from on-device tags + place metadata. Returns empty when `tags` is empty.
+    func generateFunPhotoInsight(
+        tags: [String],
+        placeName: String,
+        placeSubtitle: String?,
+        visitDaypart: String,
+        userCaptionHint: String?,
+        categoryID: PlaceCategoryID
+    ) async -> String {
+        guard !tags.isEmpty else { return "" }
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if let result = await generateFunPhotoInsightWithLLM(
+                tags: tags,
+                placeName: placeName,
+                placeSubtitle: placeSubtitle,
+                visitDaypart: visitDaypart,
+                userCaptionHint: userCaptionHint,
+                categoryID: categoryID
+            ) {
+                return result
+            }
+        }
+#endif
+        return Self.funPhotoInsightTagFallback(tags: tags, placeName: placeName, visitDaypart: visitDaypart)
+    }
+
+    private static func funPhotoInsightTagFallback(tags: [String], placeName: String, visitDaypart: String) -> String {
+        let tagPart = tags.prefix(6).joined(separator: ", ")
+        let place = placeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !tagPart.isEmpty {
+            let suffix = place.isEmpty ? "" : " — \(place)"
+            let timeSuffix = visitDaypart.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : " (\(visitDaypart))"
+            return "The frame picks up \(tagPart)\(suffix)\(timeSuffix)."
+        }
+        return ""
+    }
+
+    /// Place-level “AI story”: aggregated tags + photo captions + place metadata; max two sentences.
+    func generatePlaceLevelAIShortStory(
+        tags: [String],
+        photoCaptions: [String],
+        placeName: String,
+        placeSubtitle: String?,
+        categoryID: PlaceCategoryID,
+        visitDaypart: String,
+        photoCount: Int
+    ) async -> String {
+#if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if let result = await generatePlaceLevelAIShortStoryWithLLM(
+                tags: tags,
+                photoCaptions: photoCaptions,
+                placeName: placeName,
+                placeSubtitle: placeSubtitle,
+                categoryID: categoryID,
+                visitDaypart: visitDaypart,
+                photoCount: photoCount
+            ) {
+                return result
+            }
+        }
+#endif
+        return Self.placeLevelAIShortStoryFallback(
+            tags: tags,
+            photoCaptions: photoCaptions,
+            placeName: placeName,
+            visitDaypart: visitDaypart
+        )
+    }
+
+    private static func placeLevelAIShortStoryFallback(
+        tags: [String],
+        photoCaptions: [String],
+        placeName: String,
+        visitDaypart: String
+    ) -> String {
+        let place = placeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tagLine = tags.prefix(4).joined(separator: ", ")
+        let time = visitDaypart.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !place.isEmpty, !tagLine.isEmpty {
+            return time.isEmpty ? "\(place): \(tagLine)." : "\(place) on a \(time) — \(tagLine)."
+        }
+        if !place.isEmpty { return time.isEmpty ? "\(place) — a stop worth saving." : "\(place), \(time)." }
+        return ""
+    }
+
     // MARK: - Narrative Generation (LLM-only, no template fallback)
 
     /// Generates a 4–6 line narrative for a place visit. Returns nil when LLM is unavailable.
@@ -825,6 +914,123 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             print("[LLM] runSession — error: \(error)")
             return nil
         }
+    }
+
+    @available(iOS 26.0, *)
+    private func generateFunPhotoInsightWithLLM(
+        tags: [String],
+        placeName: String,
+        placeSubtitle: String?,
+        visitDaypart: String,
+        userCaptionHint: String?,
+        categoryID: PlaceCategoryID
+    ) async -> String? {
+        let importantTags = Array(tags.prefix(12))
+        let tagsLine = "Photo tags (on-device Vision / image analysis): \(importantTags.joined(separator: ", "))."
+        let trimmedPlace = placeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let placeLine: String
+        if trimmedPlace.isEmpty {
+            placeLine = ""
+        } else if let sub = placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines), !sub.isEmpty {
+            placeLine = "\nPlace name and area from the trip: \(trimmedPlace), \(sub)."
+        } else {
+            placeLine = "\nPlace name from the trip: \(trimmedPlace)."
+        }
+        let trimmedDaypart = visitDaypart.trimmingCharacters(in: .whitespacesAndNewlines)
+        let timeLine = trimmedDaypart.isEmpty ? "" : "\nApproximate time of day at capture (local): \(trimmedDaypart). Do not mention clock times or exact dates."
+        let hintLine: String
+        if let h = userCaptionHint?.trimmingCharacters(in: .whitespacesAndNewlines), !h.isEmpty {
+            hintLine = "\nTraveler draft (optional tone only; must not contradict the tags): \"\(h)\""
+        } else {
+            hintLine = ""
+        }
+        let categoryBlock: String
+        if categoryID == .unknown {
+            categoryBlock = ""
+        } else {
+            categoryBlock = "\n\nPlace category hint for tone (do not invent specifics beyond tags + place name):\n" + categoryModifier(for: categoryID)
+        }
+
+        let instructions = """
+            You write travel-blog microcopy: warm, readable, a little vivid — but never speculative. \
+            Use ONLY facts supported by the photo tags, place name/area, optional place category hint, and approximate daypart (never clock times or exact dates). \
+            Tags come from on-device Vision analysis — they are the ground truth for what appears in the image. \
+            Do not invent people, relationships, events, business names, dish names, or landmarks not clearly supported. \
+            At most two sentences total. Short clauses, blog cadence — not stiff, not marketing fluff. \
+            No hashtags or emoji. No first person (no "I", "we", "my"). \
+            Output only the two sentences (or one if that fits the evidence). No preamble or quotation marks.
+            """ + categoryBlock
+
+        let prompt = """
+            Turn the hints below into a tiny travel-blog moment — only what the evidence supports.\(hintLine)
+
+            \(tagsLine)\(placeLine)\(timeLine)
+
+            Maximum two sentences. Every phrase must be traceable to the tags, place lines, category hint, or daypart.
+            """
+
+        return await runSession(instructions: instructions, prompt: prompt)
+    }
+
+    @available(iOS 26.0, *)
+    private func generatePlaceLevelAIShortStoryWithLLM(
+        tags: [String],
+        photoCaptions: [String],
+        placeName: String,
+        placeSubtitle: String?,
+        categoryID: PlaceCategoryID,
+        visitDaypart: String,
+        photoCount: Int
+    ) async -> String? {
+        let tagsLine = tags.isEmpty
+            ? "Aggregated on-device photo tags: none."
+            : "Aggregated on-device photo tags: \(tags.prefix(16).joined(separator: ", "))."
+        let caps = photoCaptions.prefix(6)
+        let captionsBlock = caps.isEmpty
+            ? "Existing photo captions from this stop: none."
+            : "Existing photo captions from this stop (may be empty or AI — treat only as optional hints, never override clear tag facts):\n"
+                + caps.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+        let trimmedPlace = placeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let placeLine: String
+        if trimmedPlace.isEmpty {
+            placeLine = ""
+        } else if let sub = placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines), !sub.isEmpty {
+            placeLine = "\nPlace: \(trimmedPlace), \(sub)."
+        } else {
+            placeLine = "\nPlace: \(trimmedPlace)."
+        }
+        let countLine = photoCount > 1 ? "\nThis stop has \(photoCount) photos in the trip." : "\nThis stop has one photo in the trip."
+        let trimmedDaypart = visitDaypart.trimmingCharacters(in: .whitespacesAndNewlines)
+        let daypartLine = trimmedDaypart.isEmpty ? "" : "\nApproximate time of day for the visit (from capture times): \(trimmedDaypart). Do not mention clock times or exact dates."
+        let categoryBlock: String
+        if categoryID == .unknown {
+            categoryBlock = ""
+        } else {
+            categoryBlock = "\n\nPlace category hint (tone only; do not invent specifics):\n" + categoryModifier(for: categoryID)
+        }
+
+        let instructions = """
+            You write very short travel-blog blurbs for a single stop on a trip. \
+            Use the aggregated photo tags, optional existing photo captions, place name/area, photo count, and approximate daypart. \
+            Tags are from on-device Vision — they outrank vague caption text if there is ever a conflict. \
+            Do not invent people, events, business names, or details not supported by the hints. \
+            At most two sentences. Warm, readable blog voice — not marketing, not a list of tags. \
+            No hashtags or emoji. No first person (no "I", "we", "my"). \
+            Never output clock times or full calendar dates — daypart words only when timing matters. \
+            Output only the two sentences (or one). No preamble or quotation marks.
+            """ + categoryBlock
+
+        let prompt = """
+            Summarise this stop in a tiny travel-blog moment using only the evidence below.
+
+            \(tagsLine)
+            \(captionsBlock)
+            \(placeLine)\(countLine)\(daypartLine)
+
+            Maximum two sentences. Stay grounded in the hints.
+            """
+
+        return await runSession(instructions: instructions, prompt: prompt)
     }
 
 #endif

@@ -4242,6 +4242,7 @@ Your blog remains private unless you choose to share it.
         PlaceCaptionEditSheet(
             placeTitle: stop.placeTitle,
             placeSubtitle: stop.placeSubtitle,
+            placeCategory: stop.placeCategory,
             photos: stop.includedPhotos,
             caption: bindingForOverallStory(dayId: item.dayId, stopId: item.stopId),
             photoCaption: { bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: $0) },
@@ -4279,12 +4280,23 @@ Your blog remains private unless you choose to share it.
                 AppAnalytics.track(.blogStoryAIStory(blogId: blogId.uuidString))
                 markOverallStoryAI(dayId: item.dayId, stopId: item.stopId)
             } : nil,
+            onFunPhotoInsightApplied: LocalLLMStoryCaptionGenerator.isCapable ? { photoId in
+                markPhotoCaptionAI(dayId: item.dayId, stopId: item.stopId, photoId: photoId)
+            } : nil,
             onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
                 await StoryCaptionService.shared.translateText(userText: userText)
             } : nil,
             onRequestEditPlaceName: {
                 showEditNameForStop = stop
-            }
+            },
+            overallStoryIsManual: stop.overallStoryIsManual,
+            onGeneratePlaceAIShortStory: LocalLLMStoryCaptionGenerator.isCapable
+                ? {
+                    guard let currentStop = placeStop(dayId: item.dayId, stopId: item.stopId),
+                          let dayDate = draft.days.first(where: { $0.id == item.dayId })?.date else { return "" }
+                    return await StoryCaptionService.shared.generatePlaceLevelAIShortStory(stop: currentStop, dayDate: dayDate)
+                }
+                : nil
         )
     }
 
@@ -4293,6 +4305,8 @@ Your blog remains private unless you choose to share it.
             photo: photo,
             placeTitle: stop.placeTitle,
             placeSubtitle: stop.placeSubtitle,
+            placeCategory: stop.placeCategory,
+            captionIsManual: photo.captionIsManual,
             caption: bindingForPhotoCaption(dayId: item.dayId, stopId: item.stopId, photoId: item.photoId),
             onSave: {
                 photoCaptionEditItem = nil
