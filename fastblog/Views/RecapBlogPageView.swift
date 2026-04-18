@@ -433,6 +433,28 @@ struct RecapBlogPageView: View {
                     .zIndex(127)
             }
 
+            if let day = fullScreenMapDay {
+                FullScreenMapView(day: day, onDismiss: {
+                    fullScreenMapDay = nil
+                    fullScreenMapFocusedPlaceId = nil
+                }, onCaptionSaved: { stopId, photoId, newCaption in
+                    bindingForPhotoCaption(dayId: day.id, stopId: stopId, photoId: photoId).wrappedValue = newCaption
+                    persistRecapBlogDetail()
+                    syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: false, photoId: photoId)
+                }, onPlaceNameSaved: { stopId, name, category, coordinate, subtitleLine in
+                    updatePlaceTitle(
+                        stopId: stopId,
+                        to: name,
+                        category: category,
+                        coordinate: coordinate,
+                        placeSubtitleLine: subtitleLine
+                    )
+                }, initialFocusedPlaceId: fullScreenMapFocusedPlaceId)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                    .zIndex(145)
+            }
+
             if let item = placeCaptionEditItem, let stop = placeStop(dayId: item.dayId, stopId: item.stopId) {
                 placeCaptionEditLayer(item: item, stop: stop)
                     .transition(.opacity)
@@ -494,6 +516,7 @@ struct RecapBlogPageView: View {
         .animation(.easeOut(duration: 0.22), value: placeCaptionEditItem?.id)
         .animation(.easeOut(duration: 0.22), value: dayCaptionEditItem?.id)
         .animation(.easeInOut(duration: 0.22), value: showPanorama)
+        .animation(.easeInOut(duration: 0.28), value: fullScreenMapDay?.id)
         .animation(.easeInOut(duration: 0.38), value: placePhotoModalItem?.id)
         .animation(.spring(response: 0.28, dampingFraction: 0.9), value: revealRecapNavigationDuringPhotoDismiss)
         .animation(.easeOut(duration: 0.22), value: photoCaptionEditItem?.id)
@@ -1120,25 +1143,7 @@ struct RecapBlogPageView: View {
                 EditBlogPhotoFlowView(blogId: blogId, onDismiss: { showEditPhotoFlow = false })
                     .environmentObject(createdRecapStore)
             }
-            .fullScreenCover(item: $fullScreenMapDay) { day in
-                FullScreenMapView(day: day, onDismiss: {
-                    fullScreenMapDay = nil
-                    fullScreenMapFocusedPlaceId = nil
-                }, onCaptionSaved: { stopId, photoId, newCaption in
-                    // Write the edited caption back into the draft and persist it
-                    bindingForPhotoCaption(dayId: day.id, stopId: stopId, photoId: photoId).wrappedValue = newCaption
-                    persistRecapBlogDetail()
-                    syncStoryToCloudIfNeeded(stopId: stopId, isPlaceNote: false, photoId: photoId)
-                }, onPlaceNameSaved: { stopId, name, category, coordinate, subtitleLine in
-                    updatePlaceTitle(
-                        stopId: stopId,
-                        to: name,
-                        category: category,
-                        coordinate: coordinate,
-                        placeSubtitleLine: subtitleLine
-                    )
-                }, initialFocusedPlaceId: fullScreenMapFocusedPlaceId)
-            }
+            
             .sheet(isPresented: $showRestorePlaces) {
                 RemovedPlacesSheet(draft: $draft, selectedDayIndex: $selectedDayIndex) {
                     persistRecapBlogDetail()
@@ -3164,8 +3169,9 @@ struct RecapBlogPageView: View {
     }
 
     private var shareMenuDetentHeight: CGFloat {
-        // 3 rows: storybook PDF, Bloggo, slideshow video → 492
-        492
+        // Primary card (3 rows: Social Post Studio, Slideshow Video, PDF)
+        // + secondary card (1 row: Share with Bloggo) with a gap between them.
+        510
     }
 
     private var shareText: String {
@@ -3239,52 +3245,58 @@ struct RecapBlogPageView: View {
             .padding(.top, 12)
             .padding(.bottom, 18)
 
-            VStack(spacing: 0) {
-                shareOptionRow(
-                    title: "Social Post Studio",
-                    subtitle: "Post, Story, Reel exports",
-                    icon: "rectangle.stack",
-                    iconColor: .white,
-                    titleColor: .white
-                ) {
-                    showShareYourBlogSheet = false
-                    showSocialPostStudio = true
-                }
-                Divider().padding(.leading, 52)
-                shareOptionRow(
-                    title: "Export as PDF",
-                    subtitle: "Create a printable storybook",
-                    icon: "doc.richtext"
-                ) {
-                    showShareYourBlogSheet = false
-                    showStoryModePDFOptions = true
-                }
-                Divider().padding(.leading, 52)
-                shareOptionRow(
-                    title: "Share with Bloggo",
-                    subtitle: "Open instantly in the app",
-                    icon: "qrcode"
-                ) {
-                    if authService.isSignedIn {
-                        pendingBloggoQRSheetAfterShareDismiss = true
+            VStack(spacing: 14) {
+                VStack(spacing: 0) {
+                    shareOptionRow(
+                        title: "Post to Social",
+                        subtitle: "Create posts, stories, reels",
+                        icon: "rectangle.stack",
+                        iconColor: .white,
+                        titleColor: .white
+                    ) {
                         showShareYourBlogSheet = false
-                    } else {
-                        shareYourBlogSheetPhase = .guestBloggoQR
+                        showSocialPostStudio = true
+                    }
+                    Divider().padding(.leading, 52)
+                    shareOptionRow(
+                        title: "Create video",
+                        subtitle: "Turn your blog into a video",
+                        icon: "video.badge.plus"
+                    ) {
+                        showShareYourBlogSheet = false
+                        showVideoExportOptions = true
+                    }
+                    Divider().padding(.leading, 52)
+                    shareOptionRow(
+                        title: "Export as PDF",
+                        subtitle: "Save as a storybook",
+                        icon: "doc.richtext"
+                    ) {
+                        showShareYourBlogSheet = false
+                        showStoryModePDFOptions = true
                     }
                 }
-                .opacity(!authService.isSignedIn ? 0.4 : 1)
-                Divider().padding(.leading, 52)
-                shareOptionRow(
-                    title: "Export Slideshow Video",
-                    subtitle: "Full blog slideshow video",
-                    icon: "video.badge.plus"
-                ) {
-                    showShareYourBlogSheet = false
-                    showVideoExportOptions = true
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .appChromeCornerRadius(14)
+
+                VStack(spacing: 0) {
+                    shareOptionRow(
+                        title: "Share with Bloggo",
+                        subtitle: "Open instantly in the app",
+                        icon: "qrcode"
+                    ) {
+                        if authService.isSignedIn {
+                            pendingBloggoQRSheetAfterShareDismiss = true
+                            showShareYourBlogSheet = false
+                        } else {
+                            shareYourBlogSheetPhase = .guestBloggoQR
+                        }
+                    }
+                    .opacity(!authService.isSignedIn ? 0.4 : 1)
                 }
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .appChromeCornerRadius(14)
             }
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .appChromeCornerRadius(14)
             .padding(.horizontal, 20)
 
             Spacer(minLength: 18)

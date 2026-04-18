@@ -156,7 +156,21 @@ class MapSnapshotHelper {
         guard !entries.isEmpty else { return nil }
 
         let coords = entries.map(\.coord)
-        let boundingRegion = region(for: coords, padding: regionPadding)
+        let baseRegion = region(for: coords, padding: regionPadding)
+
+        // Inflate the span proportionally so the photo markers and their place-name
+        // pills always stay comfortably inside the frame.  Markers take ~13 % of the
+        // min canvas dimension and the pill sits just below them, so we need a
+        // meaningful margin on every side regardless of how far apart the stops are.
+        let markerFraction = Double(clampMarkerDiameter(size: size) / max(1, min(size.width, size.height)))
+        let pillFraction = 0.12  // approximate pill height + gap, as a fraction of min dimension
+        // Multiplier >1 so both axes grow; applied to span, so padding scales with the trip size.
+        let inflateFactor = 1.0 + (markerFraction + pillFraction) * 2.0
+        let inflatedSpan = MKCoordinateSpan(
+            latitudeDelta: baseRegion.span.latitudeDelta * inflateFactor,
+            longitudeDelta: baseRegion.span.longitudeDelta * inflateFactor
+        )
+        let boundingRegion = MKCoordinateRegion(center: baseRegion.center, span: inflatedSpan)
 
         // Shift the viewport center 25 % toward the first stop so the start of the
         // route sits more prominently in frame.  The span is unchanged so all later

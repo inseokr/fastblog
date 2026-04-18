@@ -33,18 +33,29 @@ enum StudioFontDesign: String, CaseIterable, Identifiable {
 }
 
 enum StudioTextColor: String, CaseIterable, Identifiable {
-    case white, cream, yellow, orange, cyan, pink
+    case white, cream, yellow, orange, red, pink, magenta, purple,
+         blue, cyan, teal, mint, green, brown, gray, black
 
     var id: String { rawValue }
 
     var color: Color {
         switch self {
-        case .white:  return .white
-        case .cream:  return Color(red: 1.0, green: 0.97, blue: 0.88)
-        case .yellow: return Color(red: 1.0, green: 0.92, blue: 0.30)
-        case .orange: return Color(red: 1.0, green: 0.62, blue: 0.20)
-        case .cyan:   return Color(red: 0.38, green: 0.92, blue: 1.00)
-        case .pink:   return Color(red: 1.0, green: 0.40, blue: 0.70)
+        case .white:   return .white
+        case .cream:   return Color(red: 1.00, green: 0.97, blue: 0.88)
+        case .yellow:  return Color(red: 1.00, green: 0.92, blue: 0.30)
+        case .orange:  return Color(red: 1.00, green: 0.62, blue: 0.20)
+        case .red:     return Color(red: 1.00, green: 0.29, blue: 0.29)
+        case .pink:    return Color(red: 1.00, green: 0.40, blue: 0.70)
+        case .magenta: return Color(red: 0.93, green: 0.27, blue: 0.83)
+        case .purple:  return Color(red: 0.66, green: 0.40, blue: 1.00)
+        case .blue:    return Color(red: 0.30, green: 0.55, blue: 1.00)
+        case .cyan:    return Color(red: 0.38, green: 0.92, blue: 1.00)
+        case .teal:    return Color(red: 0.20, green: 0.78, blue: 0.78)
+        case .mint:    return Color(red: 0.56, green: 0.95, blue: 0.78)
+        case .green:   return Color(red: 0.36, green: 0.85, blue: 0.45)
+        case .brown:   return Color(red: 0.72, green: 0.53, blue: 0.38)
+        case .gray:    return Color(red: 0.62, green: 0.64, blue: 0.68)
+        case .black:   return Color(red: 0.08, green: 0.08, blue: 0.10)
         }
     }
 }
@@ -55,16 +66,41 @@ enum TextBlockID: Equatable, Hashable {
     case secondary  // map story / place caption
 }
 
+/// Categories in the bottom style tab bar. Selecting one opens a drop-up panel
+/// with horizontally-scrollable options for that category.
+private enum StyleCategory: String, CaseIterable, Identifiable {
+    case color = "Color"
+    case font  = "Font Style"
+    case size  = "Font Size"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .color: return "paintpalette.fill"
+        case .font:  return "textformat"
+        case .size:  return "textformat.size"
+        }
+    }
+}
+
 /// Style settings for a single independent text block.
 struct TextBlockStyle: Equatable {
     var sizeScale: CGFloat = 1.0      // multiplier, 0.6 – 1.8
     var textColor: StudioTextColor = .white
     var fontDesign: StudioFontDesign = .default
-    /// The block's desired center in slide-local coordinates (points).
-    /// `nil` means use the natural anchor position.
-    /// Storing absolute center — not a displacement from the anchor — makes the value
-    /// meaningful across slides with different text lengths.
-    var center: CGPoint? = nil
+    /// Normalized displacement from the block's natural anchor position, expressed as
+    /// a fraction of the slide's own dimensions (e.g. `width = 0.10` ⇒ 10% of the slide
+    /// width to the right of the anchor). `.zero` means the block sits at its layout
+    /// anchor (e.g. centered / top-leading).
+    ///
+    /// Storing a normalized fraction (rather than absolute points) keeps the position
+    /// consistent across surfaces of different sizes — the editor renders slides at
+    /// ~297pt wide, but the studio preview renders 4:5 Post at ~260pt and 9:16 Story/Reel
+    /// at ~183pt. Absolute-point offsets captured in the editor would land in different
+    /// relative spots on each preview (and could push the block out of the clipped slide
+    /// entirely on Story/Reel), making it look like edits "didn't apply."
+    var offset: CGSize = .zero
 }
 
 /// Holds per-block styles for a slide. Each block is independently styled and draggable.
@@ -74,16 +110,16 @@ struct TextOverlayStyle: Equatable {
 }
 
 private extension TextBlockStyle {
-    /// Copies font, color, and size from `source`; leaves `center` unchanged.
+    /// Copies font, color, and size from `source`; leaves `offset` unchanged.
     mutating func mergeTypography(from source: TextBlockStyle) {
         fontDesign = source.fontDesign
         textColor = source.textColor
         sizeScale = source.sizeScale
     }
 
-    /// Copies `center` from `source`; leaves typography unchanged.
+    /// Copies `offset` from `source`; leaves typography unchanged.
     mutating func mergeLayout(from source: TextBlockStyle) {
-        center = source.center
+        offset = source.offset
     }
 }
 
@@ -137,6 +173,21 @@ struct CarouselSlide: Identifiable {
 /// (anchor-based) frame so drags can be clamped to the slide bounds.
 private let studioSlideCoordSpace = "studio.slide.space"
 
+/// Edge inset (in points) used in two places that **must stay in sync**:
+/// 1. `DraggableTextBlock.clamped(proposed:)` shrinks the allowed slide area by
+///    this much, so the block can never be dragged flush against the slide edge.
+/// 2. Each anchored overlay (top/bottom-leading) in `CarouselSlideView` pads its
+///    draggable block by the same amount so the block's *natural* (anchor) rect
+///    already sits inside that clamp region.
+///
+/// Keeping these equal means a fresh slide — where `savedOffset == .zero` — already
+/// renders at the exact position the clamp would push it to. That eliminates the
+/// small "snap" users used to see on their first tap: `DragGesture` uses
+/// `minimumDistance: 0`, so a tap fires `.onEnded` with zero translation, and the
+/// clamp would otherwise rewrite `savedOffset` from 0 to this inset amount,
+/// visibly nudging the block ~6pt inward on first tap only.
+private let studioTextBlockEdgeInset: CGFloat = 6
+
 /// Repositionable text block. The drag gesture lives on the block itself; SwiftUI's
 /// `.offset()` is visually displacing AND hit-testable, so the on-screen rect is the
 /// one that receives touches — no external hit catchers required.
@@ -148,8 +199,11 @@ private struct DraggableTextBlock<Content: View>: View {
     let id: TextBlockID
     let isEditingText: Bool
     let isSelected: Bool
-    /// Desired center of the block in slide-local coordinates. `nil` = natural anchor position.
-    @Binding var anchoredCenter: CGPoint?
+    /// Committed displacement from the block's natural anchor, expressed as a normalized
+    /// fraction of `slideBounds` (e.g. `width = 0.10` ⇒ 10% of slide width to the right).
+    /// We multiply by `slideBounds` at render time so the same stored offset lands in the
+    /// same relative spot at any rendering size (editor / preview / export).
+    @Binding var savedOffset: CGSize
     /// Slide rect in its local coord space (e.g. `(0, 0, slideW, slideH)`), used to clamp drags.
     let slideBounds: CGRect
     var onSelect: () -> Void = {}
@@ -158,13 +212,15 @@ private struct DraggableTextBlock<Content: View>: View {
     let content: () -> Content
 
     @GestureState private var liveDrag: CGSize = .zero
-    /// Block frame at its natural (anchor-based) position — captured once on first appear.
+    /// Block frame at its natural (anchor-based) position in the slide coord space,
+    /// used only for drag clamping. Captured once at `.zero` offset.
     @State private var naturalRect: CGRect?
 
-    /// Offset to apply for the current `anchoredCenter`, relative to the natural anchor.
-    private var displayOffset: CGSize {
-        guard let center = anchoredCenter, let natural = naturalRect else { return .zero }
-        return CGSize(width: center.x - natural.midX, height: center.y - natural.midY)
+    /// `savedOffset` converted from a normalized fraction into absolute points for the
+    /// current `slideBounds`. This is what `.offset()` actually consumes.
+    private var savedPointOffset: CGSize {
+        CGSize(width: savedOffset.width * slideBounds.width,
+               height: savedOffset.height * slideBounds.height)
     }
 
     var body: some View {
@@ -172,8 +228,8 @@ private struct DraggableTextBlock<Content: View>: View {
             .background(naturalRectCapture)
             .overlay(editingRing)
             .contentShape(Rectangle())
-            .offset(x: displayOffset.width + liveDrag.width,
-                    y: displayOffset.height + liveDrag.height)
+            .offset(x: savedPointOffset.width + liveDrag.width,
+                    y: savedPointOffset.height + liveDrag.height)
             .highPriorityGesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .updating($liveDrag) { value, state, _ in
@@ -184,17 +240,18 @@ private struct DraggableTextBlock<Content: View>: View {
                         onSelect()
                     }
                     .onEnded { value in
-                        let proposed = CGSize(
-                            width: displayOffset.width + value.translation.width,
-                            height: displayOffset.height + value.translation.height
+                        let proposedPoints = CGSize(
+                            width: savedPointOffset.width + value.translation.width,
+                            height: savedPointOffset.height + value.translation.height
                         )
-                        let clampedOffset = clamped(proposed: proposed)
-                        if let natural = naturalRect {
-                            anchoredCenter = CGPoint(
-                                x: natural.midX + clampedOffset.width,
-                                y: natural.midY + clampedOffset.height
-                            )
-                        }
+                        let clampedPoints = clamped(proposed: proposedPoints)
+                        // Store back in normalized form so the offset survives rendering
+                        // at the smaller preview / export sizes (Story/Reel previews are
+                        // ~62% of the editor slide width, so absolute points would drift).
+                        savedOffset = CGSize(
+                            width: slideBounds.width > 0 ? clampedPoints.width / slideBounds.width : 0,
+                            height: slideBounds.height > 0 ? clampedPoints.height / slideBounds.height : 0
+                        )
                         onDragEnd()
                     },
                 including: isEditingText ? .all : .subviews
@@ -208,17 +265,32 @@ private struct DraggableTextBlock<Content: View>: View {
             Color.clear
                 .onAppear { captureNaturalRect(from: geo) }
                 .onChange(of: geo.size) { _, _ in captureNaturalRect(from: geo) }
+                // Story/Reel (9:16) slides resize when the formatting toolbar
+                // opens/closes. The block's own intrinsic size does not always
+                // change with the slide, so we must also recapture on
+                // `slideBounds` changes — otherwise the cached natural rect
+                // stays in the old coord space, and drag clamping writes a
+                // committed offset that doesn't match the live rendering.
+                .onChange(of: slideBounds) { _, _ in captureNaturalRect(from: geo) }
         }
     }
 
+    /// Stores the block's natural (un-offset) frame in slide coords. `.frame(in: .named(...))`
+    /// reports post-offset position, so we subtract whatever point-offset is currently applied
+    /// (savedPointOffset + liveDrag) to recover the natural rect.
+    ///
+    /// We recapture on every size/bounds change (not just once) because the slide can
+    /// resize mid-session on 9:16 formats when the toolbar grows or collapses. A stale
+    /// natural rect makes `clamped(proposed:)` reject otherwise-valid drags and causes
+    /// committed offsets to render in the wrong spot, which reads as "my move didn't save."
     private func captureNaturalRect(from geo: GeometryProxy) {
-        guard naturalRect == nil else { return }
         let current = geo.frame(in: .named(studioSlideCoordSpace))
         guard current.width > 0, current.height > 0 else { return }
-        naturalRect = current.offsetBy(
-            dx: -displayOffset.width,
-            dy: -displayOffset.height
+        let activeOffset = CGSize(
+            width: savedPointOffset.width + liveDrag.width,
+            height: savedPointOffset.height + liveDrag.height
         )
+        naturalRect = current.offsetBy(dx: -activeOffset.width, dy: -activeOffset.height)
     }
 
     @ViewBuilder
@@ -243,8 +315,8 @@ private struct DraggableTextBlock<Content: View>: View {
               slideBounds.width > 0, slideBounds.height > 0
         else { return proposed }
 
-        let inset: CGFloat = 6
-        let bounds = slideBounds.insetBy(dx: inset, dy: inset)
+        let bounds = slideBounds.insetBy(dx: studioTextBlockEdgeInset,
+                                         dy: studioTextBlockEdgeInset)
         let visual = natural.offsetBy(dx: proposed.width, dy: proposed.height)
 
         var dx: CGFloat = 0
@@ -276,8 +348,8 @@ struct CarouselSlideView: View {
     var selectedBlockID: TextBlockID? = nil
     /// Called when the user taps a text block to select it.
     var onSelectBlock: ((TextBlockID) -> Void)? = nil
-    /// Edit-mode write-back: commit a block's new center. Nil in read-only (preview/export) use.
-    var onUpdateBlockCenter: ((TextBlockID, CGPoint?) -> Void)? = nil
+    /// Edit-mode write-back: commit a block's new offset. Nil in read-only (preview/export) use.
+    var onUpdateBlockOffset: ((TextBlockID, CGSize) -> Void)? = nil
     /// Fires on drag-start — the editor uses it to lock horizontal slide paging.
     var onBlockDragStart: (() -> Void)? = nil
     /// Fires on drag-end — the editor uses it to release the paging lock.
@@ -287,15 +359,15 @@ struct CarouselSlideView: View {
     private let heroImageScale: CGFloat = 1.12
     private var slideBounds: CGRect { CGRect(x: 0, y: 0, width: width, height: height) }
 
-    /// Binding for the block's committed center. Reads from `slide.textStyle.*`; writes
-    /// go through `onUpdateBlockCenter` (nil-callback in read-only contexts makes it a no-op).
-    private func centerBinding(for id: TextBlockID) -> Binding<CGPoint?> {
+    /// Binding for the block's committed offset. Reads from `slide.textStyle.*`; writes
+    /// go through `onUpdateBlockOffset` (nil-callback in read-only contexts makes it a no-op).
+    private func offsetBinding(for id: TextBlockID) -> Binding<CGSize> {
         Binding(
             get: {
-                id == .primary ? slide.textStyle.primary.center
-                               : slide.textStyle.secondary.center
+                id == .primary ? slide.textStyle.primary.offset
+                               : slide.textStyle.secondary.offset
             },
-            set: { newCenter in onUpdateBlockCenter?(id, newCenter) }
+            set: { newOffset in onUpdateBlockOffset?(id, newOffset) }
         )
     }
 
@@ -346,7 +418,7 @@ struct CarouselSlideView: View {
                     id: .primary,
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .primary,
-                    anchoredCenter: centerBinding(for: .primary),
+                    savedOffset: offsetBinding(for: .primary),
                     slideBounds: slideBounds,
                     onSelect: { onSelectBlock?(.primary) },
                     onDragStart: { onBlockDragStart?() },
@@ -370,7 +442,7 @@ struct CarouselSlideView: View {
                     id: .primary,
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .primary,
-                    anchoredCenter: centerBinding(for: .primary),
+                    savedOffset: offsetBinding(for: .primary),
                     slideBounds: slideBounds,
                     onSelect: { onSelectBlock?(.primary) },
                     onDragStart: { onBlockDragStart?() },
@@ -395,6 +467,10 @@ struct CarouselSlideView: View {
                     }
                     .padding(width * 0.038)
                 }
+                // Nudge the block inward by the same amount the clamp enforces,
+                // so a fresh `savedOffset == .zero` already renders at the
+                // clamp's resting position (no visible snap on first tap).
+                .padding(studioTextBlockEdgeInset)
             }
         }
         // Map story — bottom-leading
@@ -405,7 +481,7 @@ struct CarouselSlideView: View {
                     id: .secondary,
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .secondary,
-                    anchoredCenter: centerBinding(for: .secondary),
+                    savedOffset: offsetBinding(for: .secondary),
                     slideBounds: slideBounds,
                     onSelect: { onSelectBlock?(.secondary) },
                     onDragStart: { onBlockDragStart?() },
@@ -419,6 +495,7 @@ struct CarouselSlideView: View {
                         .multilineTextAlignment(.leading)
                         .padding(width * 0.038)
                 }
+                .padding(studioTextBlockEdgeInset)
             }
         }
         // Place name + subtitle — top-leading
@@ -429,7 +506,7 @@ struct CarouselSlideView: View {
                         id: .primary,
                         isEditingText: isEditingText,
                         isSelected: selectedBlockID == .primary,
-                        anchoredCenter: centerBinding(for: .primary),
+                        savedOffset: offsetBinding(for: .primary),
                         slideBounds: slideBounds,
                         onSelect: { onSelectBlock?(.primary) },
                         onDragStart: { onBlockDragStart?() },
@@ -452,11 +529,13 @@ struct CarouselSlideView: View {
                         }
                         .padding(width * 0.038)
                     }
+                    .padding(studioTextBlockEdgeInset)
                 } else {
                     Text("Missing place data")
                         .font(.system(size: width * 0.05, weight: .semibold))
                         .foregroundColor(.white.opacity(0.9))
                         .padding(width * 0.038)
+                        .padding(studioTextBlockEdgeInset)
                 }
             }
         }
@@ -468,7 +547,7 @@ struct CarouselSlideView: View {
                     id: .secondary,
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .secondary,
-                    anchoredCenter: centerBinding(for: .secondary),
+                    savedOffset: offsetBinding(for: .secondary),
                     slideBounds: slideBounds,
                     onSelect: { onSelectBlock?(.secondary) },
                     onDragStart: { onBlockDragStart?() },
@@ -482,6 +561,7 @@ struct CarouselSlideView: View {
                         .multilineTextAlignment(.leading)
                         .padding(width * 0.038)
                 }
+                .padding(studioTextBlockEdgeInset)
             }
         }
         // ── Chrome ────────────────────────────────────────────────────
@@ -552,7 +632,9 @@ private struct SlideEditPage: View {
     let maxHeight: CGFloat
     let selectedBlock: TextBlockID?
     let onSelectBlock: (TextBlockID) -> Void
-    /// Called immediately before committing a new text-block center (drag end) so the parent can record undo.
+    /// Called when the user taps the slide background (outside any text block) — used to deselect.
+    let onDeselect: () -> Void
+    /// Called immediately before committing a new text-block offset (drag end) so the parent can record undo.
     let recordUndoSnapshot: () -> Void
     /// While true, the slide pager's horizontal scrolling is disabled (text drag / tap on a block).
     @Binding var locksHorizontalSlidePaging: Bool
@@ -573,12 +655,12 @@ private struct SlideEditPage: View {
             isEditingText: true,
             selectedBlockID: selectedBlock,
             onSelectBlock: { onSelectBlock($0) },
-            onUpdateBlockCenter: { id, newCenter in
+            onUpdateBlockOffset: { id, newOffset in
                 recordUndoSnapshot()
                 if id == .primary {
-                    slide.textStyle.primary.center = newCenter
+                    slide.textStyle.primary.offset = newOffset
                 } else {
-                    slide.textStyle.secondary.center = newCenter
+                    slide.textStyle.secondary.offset = newOffset
                 }
             },
             onBlockDragStart: { locksHorizontalSlidePaging = true },
@@ -587,6 +669,10 @@ private struct SlideEditPage: View {
         .coordinateSpace(.named(studioSlideCoordSpace))
         .shadow(color: .black.opacity(0.5), radius: 16, x: 0, y: 6)
         .padding(.horizontal, 20)
+        // Tap anywhere on the slide outside a text block deselects. Taps on a block
+        // are consumed by its `highPriorityGesture` drag, so this only fires for
+        // taps on the slide background / margins.
+        .onTapGesture { onDeselect() }
     }
 }
 
@@ -598,18 +684,71 @@ struct SlideTextEditorView: View {
     let aspectRatio: CGFloat
     @Environment(\.dismiss) private var dismiss
 
-    @State private var currentIndex: Int = 0
+    @State private var currentIndex: Int
     /// Drives the paged `ScrollView`; optional to match `scrollPosition(id:)`.
+    /// Seeded in `init` to `initialIndex` so the very first layout pass of the paging
+    /// ScrollView already has the correct target page. Without this the ScrollView lays
+    /// out at offset 0 first, then tries to scroll once `.onAppear`/`.task` sets the ID —
+    /// which races with the `fullScreenCover` present animation and (especially for 9:16
+    /// Story/Reel slides) lands a few points off-center.
     @State private var scrollPageID: Int?
     @State private var selectedBlock: TextBlockID? = nil
+    /// Which style category (Color / Font Style / Font Size) is currently open in
+    /// the drop-up panel. `nil` collapses the panel and only the category tab bar is shown.
+    @State private var activeStyleCategory: StyleCategory? = nil
     /// Disables horizontal slide paging while the user touches a text block (see `SlideEditPage`).
     @State private var locksHorizontalSlidePaging = false
     /// Briefly true after a bulk "Apply to…" action to show a confirmation flash.
     @State private var didApplyToAll = false
     /// Prior `slides` arrays for incremental undo (shallow copy; `UIImage` refs unchanged).
     @State private var undoStack: [[CarouselSlide]] = []
+    /// True after the first non-zero slot width has been observed and the initial page
+    /// has been force-reasserted. Until this is true we ignore `scrollPageID` write-backs
+    /// from the ScrollView, which would otherwise pull us to page 0 during the 0→real
+    /// width transition (the default content offset (0) maps to page 0 once pages get
+    /// real widths, so SwiftUI writes `scrollPageID = 0` back through the binding).
+    @State private var didPerformInitialScroll = false
+
+    init(slides: Binding<[CarouselSlide]>, initialIndex: Int, aspectRatio: CGFloat) {
+        self._slides = slides
+        self.initialIndex = initialIndex
+        self.aspectRatio = aspectRatio
+        self._currentIndex = State(initialValue: initialIndex)
+        self._scrollPageID = State(initialValue: initialIndex)
+    }
 
     private let maxUndoSteps = 40
+
+    /// Reserved height for the bottom editing chrome in its "resting" states:
+    /// the hint (before any block is tapped) and the collapsed formatting
+    /// toolbar (action bar + category tab bar with no drop-up panel open).
+    ///
+    /// This value is critical for the tap-to-select drag gesture:
+    /// `DraggableTextBlock` uses `DragGesture(minimumDistance: 0)`, so a tap
+    /// starts the gesture. Selecting the block inside `.onChanged` swaps the
+    /// hint for the toolbar — if *that* changed the reserved height, the
+    /// slide would shift, the finger's position in the slide's local coord
+    /// space would change, and `.onEnded` would commit a non-zero
+    /// translation, drifting the block a few points on every tap.
+    /// Keeping hint + collapsed toolbar at the *same* height prevents that.
+    ///
+    /// Sized to fit the collapsed toolbar: action bar (~44pt) + category tab
+    /// bar (~65pt) ≈ 109pt, plus a small safety margin.
+    private let bottomChromeCollapsed: CGFloat = 116
+
+    /// Reserved height when a style drop-up panel (Color / Font Style / Font
+    /// Size) is expanded. The extra ~60pt houses the panel's horizontally
+    /// scrolling option strip. Toggling a category is a tap on the toolbar
+    /// (not on the slide), so it's safe to grow the reserve here — the
+    /// slide's own drag gesture is not in flight.
+    private let bottomChromeExpanded: CGFloat = 176
+
+    /// Current inset height. Drives the `.safeAreaInset` frame so the chrome
+    /// is only as tall as it needs to be — eliminates the ~60pt of dead gray
+    /// that previously sat above Delete / Apply to… when no panel was open.
+    private var currentChromeHeight: CGFloat {
+        activeStyleCategory == nil ? bottomChromeCollapsed : bottomChromeExpanded
+    }
 
     // MARK: Helpers
 
@@ -724,7 +863,7 @@ struct SlideTextEditorView: View {
         slides = updatedSlides
     }
 
-    /// Copies primary/secondary text block centers from the current photo slide to every
+    /// Copies primary/secondary text block offsets from the current photo slide to every
     /// `placeStop` slide. No-op if the current slide is not a photo slide.
     private func applyPhotoLayoutToAllPlaceStops() {
         clampCurrentIndexIfNeeded()
@@ -752,7 +891,35 @@ struct SlideTextEditorView: View {
 
     var body: some View {
         NavigationStack {
-            GeometryReader { _ in
+            GeometryReader { outerGeo in
+                // Stable slide slot height. Derived from the outer width and aspect
+                // ratio, then capped to fit the outer height minus a reserve for the
+                // chevron nav row and the worst-case chrome height (`bottomChromeExpanded`).
+                // Sizing against the *expanded* chrome means `slotH` stays constant
+                // when the user opens or closes a style drop-up panel — the extra
+                // space when the panel is collapsed is absorbed by the top/bottom
+                // Spacers around the slide.
+                let outerW = outerGeo.size.width
+                let outerH = outerGeo.size.height
+                let slideContentW = max(220, outerW - 48)
+                let idealSlotH = slideContentW / aspectRatio
+                let navRowReserve: CGFloat = 72
+                // The bottom `safeAreaInset` reserves pts for the editing chrome.
+                // `outerGeo` still reports the full container height (SwiftUI's
+                // GeometryReader is not affected by the inset), so we must
+                // subtract the reserve here ourselves. Without this, a 9:16
+                // Story/Reel slide sizes against `outerH - 72` and ends up taller
+                // than the VStack's usable area — the slide pushes the chevron
+                // row and toolbar straight off the bottom of the screen.
+                //
+                // We intentionally subtract the *expanded* chrome height, not the
+                // current one, so the slide is sized for the worst case and its
+                // size stays constant when the user expands a drop-up panel.
+                // When the panel is collapsed, the extra space is absorbed by
+                // the top/bottom Spacers around the slide.
+                let maxSlotH = max(260, outerH - navRowReserve - bottomChromeExpanded)
+                let slotH = min(idealSlotH, maxSlotH)
+
                 VStack(spacing: 0) {
                     if slides.isEmpty {
                         ContentUnavailableView(
@@ -763,15 +930,80 @@ struct SlideTextEditorView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .padding()
                     } else {
-                        Text("Tap a block to select · Drag to reposition · Swipe to change slides")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 24)
-                            .padding(.top, 12)
-                            .padding(.bottom, 8)
+                        // Top spacer mirrors the bottom one so the slide + chevron
+                        // row read as a single unit centered in the available area
+                        // (above the bottom toolbar inset). For 4:5 Post slides this
+                        // creates symmetric breathing room top/bottom; for 9:16
+                        // Story/Reel the slide already fills the available height,
+                        // so the spacer collapses to zero.
+                        Spacer(minLength: 0)
 
-                        // Slide navigation
+                        GeometryReader { slideGeo in
+                            let slotW = slideGeo.size.width
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                // HStack (not LazyHStack): .scrollPosition(id:) needs every
+                                // page's size to be known up front when jumping to a non-zero
+                                // initial index, otherwise SwiftUI estimates widths for
+                                // unmaterialized pages and lands a few points off-center.
+                                // Slide count is small (<= ~20), so eager layout is fine.
+                                HStack(spacing: 0) {
+                                    ForEach(slides.indices, id: \.self) { i in
+                                        VStack(spacing: 0) {
+                                            Spacer(minLength: 0)
+                                            SlideEditPage(
+                                                slide: $slides[i],
+                                                aspectRatio: aspectRatio,
+                                                layoutWidth: slotW,
+                                                maxHeight: slotH,
+                                            selectedBlock: selectedBlock,
+                                            onSelectBlock: { selectedBlock = $0 },
+                                            onDeselect: { selectedBlock = nil },
+                                            recordUndoSnapshot: { pushUndoSnapshot() },
+                                                locksHorizontalSlidePaging: $locksHorizontalSlidePaging
+                                            )
+                                            Spacer(minLength: 0)
+                                        }
+                                        .frame(width: slotW, height: slotH)
+                                        .id(i)
+                                    }
+                                }
+                                .scrollTargetLayout()
+                            }
+                            .scrollTargetBehavior(.paging)
+                            .scrollPosition(id: $scrollPageID, anchor: .center)
+                            .scrollDisabled(locksHorizontalSlidePaging)
+                            .animation(.easeInOut(duration: 0.22), value: currentIndex)
+                            // Reassert the current page whenever the slot width changes
+                            // (sheet-present animation, rotation, toolbar settling). Without
+                            // this, the initial `scrollPosition` can land while slotW == 0
+                            // and the slide ends up slightly off-center.
+                            .onChange(of: slotW) { _, newWidth in
+                                guard newWidth > 0 else { return }
+                                if !didPerformInitialScroll {
+                                    // First real width: force a re-scroll to `initialIndex`.
+                                    // The ScrollView may have already written `scrollPageID = 0`
+                                    // back through the binding (and thus set `currentIndex = 0`)
+                                    // during the 0→real width transition, so we restore from
+                                    // `initialIndex` and null the ID first to guarantee the
+                                    // `scrollPosition(id:)` modifier performs a fresh scroll.
+                                    currentIndex = initialIndex
+                                    scrollPageID = nil
+                                    DispatchQueue.main.async {
+                                        scrollPageID = initialIndex
+                                        didPerformInitialScroll = true
+                                    }
+                                } else if hasValidCurrentIndex {
+                                    scrollPageID = currentIndex
+                                }
+                            }
+                        }
+                        .frame(height: slotH)
+
+                        // Slide navigation sits directly beneath the slide (not
+                        // pushed all the way to the bottom of the sheet). The
+                        // `Spacer` below absorbs any vertical change from the
+                        // bottom-inset chrome so the slide + chevrons stay pinned
+                        // in place when the user taps a block.
                         HStack(spacing: 16) {
                             Button {
                                 guard currentIndex > 0 else { return }
@@ -810,46 +1042,61 @@ struct SlideTextEditorView: View {
                             }
                             .disabled(currentIndex == slides.count - 1)
                         }
-                        .padding(.bottom, 8)
+                        .padding(.top, 8)
 
-                        GeometryReader { slideGeo in
-                            let slotW = slideGeo.size.width
-                            let slotH = slideGeo.size.height
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                LazyHStack(spacing: 0) {
-                                    ForEach(slides.indices, id: \.self) { i in
-                                        VStack(spacing: 0) {
-                                            Spacer(minLength: 0)
-                                            SlideEditPage(
-                                                slide: $slides[i],
-                                                aspectRatio: aspectRatio,
-                                                layoutWidth: slotW,
-                                                maxHeight: slotH,
-                                                selectedBlock: selectedBlock,
-                                                onSelectBlock: { selectedBlock = $0 },
-                                                recordUndoSnapshot: { pushUndoSnapshot() },
-                                                locksHorizontalSlidePaging: $locksHorizontalSlidePaging
-                                            )
-                                            Spacer(minLength: 0)
-                                        }
-                                        .frame(width: slotW, height: slotH)
-                                        .id(i)
-                                    }
-                                }
-                                .scrollTargetLayout()
-                            }
-                            .scrollTargetBehavior(.paging)
-                            .scrollPosition(id: $scrollPageID)
-                            .scrollDisabled(locksHorizontalSlidePaging)
-                            .animation(.easeInOut(duration: 0.22), value: currentIndex)
-                        }
-                        .frame(maxHeight: .infinity)
+                        Spacer(minLength: 0)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Tapping anywhere outside a text block dismisses the editing menu.
+                // The inner `DraggableTextBlock` uses `highPriorityGesture` and `SlideEditPage`
+                // has its own `.onTapGesture` — both consume taps before this outer handler,
+                // so this only fires for "empty" areas (margins, chevron-row gaps, backdrop).
+                // The bottom editing toolbar lives in the `safeAreaInset` below, so it is
+                // outside this gesture's scope and remains fully interactive.
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if selectedBlock != nil { selectedBlock = nil }
+                }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if !slides.isEmpty {
-                        textFormattingToolbar
+                        // Bottom chrome height is dynamic:
+                        //   • Hint + collapsed toolbar use `bottomChromeCollapsed`
+                        //     (~116pt) — same height so transitioning between
+                        //     them doesn't shift the slide during the tap-to-
+                        //     select drag gesture (see `bottomChromeCollapsed`).
+                        //   • Expanded drop-up panel uses `bottomChromeExpanded`
+                        //     (~176pt). This shift is safe because it's
+                        //     triggered by a tap on the toolbar's category
+                        //     buttons, not on the slide itself.
+                        //
+                        // Painting differs by state:
+                        //   • Hint: no backdrop, so the dark-blue main
+                        //     background shows through — avoids the "tall gray
+                        //     slab" the fixed reserve used to produce.
+                        //   • Toolbar: gray backdrop that extends into the
+                        //     bottom safe area so chrome meets the screen edge
+                        //     without a dark-blue gap above the home indicator.
+                        ZStack(alignment: .bottom) {
+                            if selectedBlock != nil {
+                                Color(white: 0.08)
+                                    .ignoresSafeArea(edges: .bottom)
+                                    .transition(.opacity)
+                            }
+
+                            if selectedBlock == nil {
+                                emptySelectionHint
+                                    .frame(maxWidth: .infinity)
+                                    .transition(.opacity)
+                            } else {
+                                textFormattingToolbar
+                                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                            }
+                        }
+                        .frame(height: currentChromeHeight)
+                        .animation(.easeInOut(duration: 0.22), value: selectedBlock)
+                        .animation(.spring(response: 0.32, dampingFraction: 0.82),
+                                   value: activeStyleCategory)
                     }
                 }
             }
@@ -858,13 +1105,15 @@ struct SlideTextEditorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                    let canUndo = !undoStack.isEmpty
                     Button {
                         undoLastChange()
                     } label: {
                         Image(systemName: "arrow.uturn.backward")
+                            .opacity(canUndo ? 1 : 0.3)
+                            .animation(.easeInOut(duration: 0.18), value: canUndo)
                     }
-                    .disabled(undoStack.isEmpty)
-                    .opacity(undoStack.isEmpty ? 0.35 : 1)
+                    .disabled(!canUndo)
                     .accessibilityLabel("Undo")
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -873,6 +1122,12 @@ struct SlideTextEditorView: View {
             }
             .onChange(of: scrollPageID) { _, newID in
                 guard let newID else { return }
+                // Ignore ScrollView write-backs until the initial scroll has been
+                // asserted. During the 0→real width transition, SwiftUI can write
+                // `scrollPageID = 0` back through the binding (the default content
+                // offset now maps to page 0 once pages get real widths), which would
+                // otherwise yank `currentIndex` away from `initialIndex`.
+                guard didPerformInitialScroll else { return }
                 if newID != currentIndex { currentIndex = newID }
                 selectedBlock = nil
             }
@@ -882,141 +1137,315 @@ struct SlideTextEditorView: View {
         }
         .preferredColorScheme(.dark)
         .dynamicTypeSize(.medium)
+        // `currentIndex` and `scrollPageID` are seeded in `init`, so the ScrollView lays
+        // out on the correct page from the very first frame. We only need to reset the
+        // per-session editor state here.
         .onAppear {
-            currentIndex = initialIndex
-            scrollPageID = initialIndex
             selectedBlock = nil
+            activeStyleCategory = nil
             undoStack = []
+        }
+        .onChange(of: selectedBlock) { _, newValue in
+            // Closing a block's selection also collapses the style drop-up.
+            if newValue == nil { activeStyleCategory = nil }
         }
     }
 
     // MARK: - Formatting toolbar
 
+    /// Bottom hint shown before the user taps a text block. Once a block is
+    /// selected, this is swapped for `textFormattingToolbar`. Rendered without
+    /// a backdrop — the surrounding safe-area-inset region keeps its height
+    /// reserved for layout stability, but letting the main dark-blue
+    /// background show through avoids the "tall empty gray slab" look that a
+    /// full-height painted backdrop produced in the hint state.
+    private var emptySelectionHint: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "hand.tap")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundColor(.white.opacity(0.55))
+
+            VStack(spacing: 4) {
+                Text("Tap a block to edit")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.88))
+                Text("Drag to reposition · Swipe to change slides")
+                    .font(.system(size: 13))
+                    .foregroundColor(.white.opacity(0.55))
+            }
+            .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 32)
+    }
+
     @ViewBuilder
     private var textFormattingToolbar: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 16) {
-                // Slide-level actions: delete the selected block, or bulk-apply typography /
-                // photo text positions from the current slide.
-                HStack(spacing: 12) {
+            // Slide-level actions: delete the selected block, or bulk-apply typography /
+            // photo text positions from the current slide.
+            HStack(spacing: 12) {
+                Button {
+                    deleteSelectedBlock()
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(Color.red.opacity(0.3))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().strokeBorder(Color.red.opacity(0.5), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled(selectedBlock == nil)
+                .opacity(selectedBlock != nil ? 1 : 0.4)
+
+                Spacer()
+
+                Menu {
                     Button {
-                        deleteSelectedBlock()
+                        applyTypographyToAllSlides()
+                        flashAppliedConfirmation()
                     } label: {
-                        Label("Delete", systemImage: "trash")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 14).padding(.vertical, 7)
-                            .background(Color.red.opacity(0.3))
-                            .clipShape(Capsule())
-                            .overlay(Capsule().strokeBorder(Color.red.opacity(0.5), lineWidth: 1))
+                        Label("Typography to all slides", systemImage: "textformat")
                     }
-                    .buttonStyle(.plain)
-                    .disabled(selectedBlock == nil)
-                    .opacity(selectedBlock != nil ? 1 : 0.4)
-
-                    Spacer()
-
-                    Menu {
+                    if currentSlide?.kind == .placeStop {
                         Button {
-                            applyTypographyToAllSlides()
+                            applyPhotoLayoutToAllPlaceStops()
                             flashAppliedConfirmation()
                         } label: {
-                            Label("Typography to all slides", systemImage: "textformat")
+                            Label("Positions to all photo slides", systemImage: "arrow.up.left.and.arrow.down.right")
                         }
-                        if currentSlide?.kind == .placeStop {
-                            Button {
-                                applyPhotoLayoutToAllPlaceStops()
-                                flashAppliedConfirmation()
-                            } label: {
-                                Label("Positions to all photo slides", systemImage: "arrow.up.left.and.arrow.down.right")
+                    }
+                } label: {
+                    Label(didApplyToAll ? "Applied!" : "Apply to…",
+                          systemImage: didApplyToAll ? "checkmark" : "wand.and.stars")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(didApplyToAll ? Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.45) : Color.white.opacity(0.12))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().strokeBorder(didApplyToAll ? Color(red: 0.04, green: 0.52, blue: 1.0) : Color.white.opacity(0.2), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: didApplyToAll)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 6)
+            .background(Color(white: 0.08))
+
+            // Drop-up panel: horizontally-scrollable options for the active category.
+            // Collapses when `activeStyleCategory == nil`.
+            if let category = activeStyleCategory {
+                styleDropUpPanel(for: category)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .bottom).combined(with: .opacity),
+                        removal: .opacity))
+            }
+
+            // Category tab bar — always visible when a block is selected.
+            styleCategoryTabBar
+        }
+        .background(Color(white: 0.08))
+        .animation(.spring(response: 0.32, dampingFraction: 0.82), value: activeStyleCategory)
+    }
+
+    // MARK: Drop-up panels
+
+    @ViewBuilder
+    private func styleDropUpPanel(for category: StyleCategory) -> some View {
+        Group {
+            switch category {
+            case .color: colorOptionsStrip
+            case .font:  fontOptionsStrip
+            case .size:  sizeOptionsStrip
+            }
+        }
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .background(Color(white: 0.11))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.white.opacity(0.06))
+                .frame(height: 1)
+        }
+    }
+
+    private var colorOptionsStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                ForEach(StudioTextColor.allCases) { tc in
+                    let isActive = currentStyle.textColor == tc
+                    Button { updateStyle { $0.textColor = tc } } label: {
+                        Circle()
+                            .fill(tc.color)
+                            .frame(width: 36, height: 36)
+                            .overlay {
+                                // For very light fills we'd lose the edge against the dark
+                                // panel; a thin outline keeps every swatch readable.
+                                Circle().strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
                             }
-                        }
-                    } label: {
-                        Label(didApplyToAll ? "Applied!" : "Apply to…",
-                              systemImage: didApplyToAll ? "checkmark" : "wand.and.stars")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 14).padding(.vertical, 7)
-                            .background(didApplyToAll ? Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.45) : Color.white.opacity(0.12))
-                            .clipShape(Capsule())
-                            .overlay(Capsule().strokeBorder(didApplyToAll ? Color(red: 0.04, green: 0.52, blue: 1.0) : Color.white.opacity(0.2), lineWidth: 1))
+                            .overlay {
+                                if isActive {
+                                    Circle().strokeBorder(Color.white, lineWidth: 2.5).padding(-3)
+                                }
+                            }
+                            .shadow(color: .black.opacity(0.35), radius: 3)
+                            // `.padding(4)` reserves the halo space in layout so the
+                            // active-state ring doesn't get clipped by the ScrollView.
+                            .padding(4)
+                            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isActive)
                     }
                     .buttonStyle(.plain)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: didApplyToAll)
-                }
-
-                // Font design pills
-                HStack(spacing: 8) {
-                    ForEach(StudioFontDesign.allCases) { design in
-                        let isActive = currentStyle.fontDesign == design
-                        Button { updateStyle { $0.fontDesign = design } } label: {
-                            Text(design.rawValue)
-                                .font(.system(size: 13, weight: .semibold, design: design.design))
-                                .foregroundColor(isActive ? .white : .white.opacity(0.45))
-                                .padding(.horizontal, 14).padding(.vertical, 7)
-                                .background(isActive
-                                            ? Color(red: 0.04, green: 0.52, blue: 1.0)
-                                            : Color.white.opacity(0.1))
-                                .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .animation(.easeInOut(duration: 0.15), value: isActive)
-                    }
-                    Spacer()
-                }
-
-                // Color swatches + size
-                HStack(alignment: .center, spacing: 0) {
-                    ForEach(StudioTextColor.allCases) { tc in
-                        let isActive = currentStyle.textColor == tc
-                        Button { updateStyle { $0.textColor = tc } } label: {
-                            Circle()
-                                .fill(tc.color)
-                                .frame(width: 30, height: 30)
-                                .overlay {
-                                    if isActive {
-                                        Circle().strokeBorder(Color.white, lineWidth: 2.5).padding(1)
-                                    }
-                                }
-                                .shadow(color: .black.opacity(0.35), radius: 3)
-                                .scaleEffect(isActive ? 1.15 : 1.0)
-                                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isActive)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.trailing, 7)
-                    }
-
-                    Spacer()
-
-                    HStack(spacing: 8) {
-                        Button {
-                            updateStyle { $0.sizeScale = max(0.6, ($0.sizeScale - 0.1).rounded(toPlaces: 1)) }
-                        } label: {
-                            Image(systemName: "minus")
-                                .font(.system(size: 15, weight: .bold)).foregroundColor(.white)
-                                .frame(width: 38, height: 38).background(Color.white.opacity(0.12))
-                                .clipShape(Circle())
-                        }
-
-                        Text("\(Int((currentStyle.sizeScale * 100).rounded()))%")
-                            .font(.system(size: 13, weight: .medium, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.8))
-                            .frame(width: 44, alignment: .center)
-
-                        Button {
-                            updateStyle { $0.sizeScale = min(1.8, ($0.sizeScale + 0.1).rounded(toPlaces: 1)) }
-                        } label: {
-                            Image(systemName: "plus")
-                                .font(.system(size: 15, weight: .bold)).foregroundColor(.white)
-                                .frame(width: 38, height: 38).background(Color.white.opacity(0.12))
-                                .clipShape(Circle())
-                        }
-                    }
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 18)
-            .background(Color(white: 0.08))
+            .padding(.horizontal, 14)
+        }
+        .scrollClipDisabled()
+    }
+
+    private var fontOptionsStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(StudioFontDesign.allCases) { design in
+                    let isActive = currentStyle.fontDesign == design
+                    Button { updateStyle { $0.fontDesign = design } } label: {
+                        Text(design.rawValue)
+                            .font(.system(size: 14, weight: .semibold, design: design.design))
+                            .foregroundColor(isActive ? .white : .white.opacity(0.55))
+                            .padding(.horizontal, 16).padding(.vertical, 9)
+                            .background(isActive
+                                        ? Color(red: 0.04, green: 0.52, blue: 1.0)
+                                        : Color.white.opacity(0.1))
+                            .clipShape(Capsule())
+                            .overlay(Capsule().strokeBorder(
+                                isActive ? Color.white.opacity(0.35) : Color.white.opacity(0.08),
+                                lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .animation(.easeInOut(duration: 0.15), value: isActive)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
+        }
+        .scrollClipDisabled()
+    }
+
+    /// Font-size panel: horizontally-scrollable row of preset sizes labeled in
+    /// "nominal" points (reference base = 20pt, scale × 20 ≈ classic iOS sizes
+    /// 12 / 14 / 16 / … / 36). The slide text itself is still driven by a
+    /// multiplicative `sizeScale` so every block kind stays in proportion.
+    private var sizeOptionsStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Self.sizePresetScales, id: \.self) { scale in
+                    let isActive = abs(currentStyle.sizeScale - scale) < 0.001
+                    Button {
+                        updateStyle { $0.sizeScale = scale }
+                    } label: {
+                        Text("\(Self.displayPoints(for: scale))")
+                            .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                            .foregroundColor(isActive ? .white : .white.opacity(0.6))
+                            .frame(minWidth: 44)
+                            .padding(.horizontal, 12).padding(.vertical, 9)
+                            .background(isActive
+                                        ? Color(red: 0.04, green: 0.52, blue: 1.0)
+                                        : Color.white.opacity(0.1))
+                            .clipShape(Capsule())
+                            .overlay(Capsule().strokeBorder(
+                                isActive ? Color.white.opacity(0.35) : Color.white.opacity(0.08),
+                                lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .animation(.easeInOut(duration: 0.15), value: isActive)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
+        }
+        .scrollClipDisabled()
+    }
+
+    /// Preset size scales shown in the drop-up strip. 60%–180% in 10% steps,
+    /// matching the allowed range for `sizeScale`.
+    private static let sizePresetScales: [CGFloat] = stride(from: 0.6, through: 1.8, by: 0.1).map {
+        CGFloat(($0 * 10).rounded() / 10)
+    }
+
+    /// Reference base so 100% shows as "20" (a natural mid-range iOS text size).
+    /// The slide's actual rendered size still varies per block kind — this label
+    /// is just a familiar, monotonic readout users can read like a font picker.
+    private static let sizeReferencePoints: CGFloat = 20
+
+    private static func displayPoints(for scale: CGFloat) -> Int {
+        Int((scale * sizeReferencePoints).rounded())
+    }
+
+    // MARK: Category tab bar
+
+    private var styleCategoryTabBar: some View {
+        HStack(spacing: 0) {
+            ForEach(StyleCategory.allCases) { cat in
+                styleCategoryButton(cat)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
+        .background(Color(white: 0.08))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.white.opacity(0.06))
+                .frame(height: 1)
+        }
+    }
+
+    @ViewBuilder
+    private func styleCategoryButton(_ cat: StyleCategory) -> some View {
+        let isActive = activeStyleCategory == cat
+        Button {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                activeStyleCategory = isActive ? nil : cat
+            }
+        } label: {
+            VStack(spacing: 4) {
+                categoryIcon(for: cat, isActive: isActive)
+                Text(cat.rawValue)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(isActive ? .white : .white.opacity(0.55))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Category icon. For Color, we show the live swatch instead of a generic palette glyph
+    /// so users can see the currently-chosen color at a glance.
+    @ViewBuilder
+    private func categoryIcon(for cat: StyleCategory, isActive: Bool) -> some View {
+        switch cat {
+        case .color:
+            Circle()
+                .fill(currentStyle.textColor.color)
+                .frame(width: 22, height: 22)
+                .overlay(Circle().strokeBorder(
+                    isActive ? Color.white : Color.white.opacity(0.35),
+                    lineWidth: isActive ? 2 : 1))
+                .shadow(color: .black.opacity(0.35), radius: 2)
+        case .font:
+            Text("Aa")
+                .font(.system(size: 16, weight: .bold, design: currentStyle.fontDesign.design))
+                .foregroundColor(isActive ? .white : .white.opacity(0.65))
+                .frame(width: 22, height: 22)
+        case .size:
+            Image(systemName: cat.icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(isActive ? .white : .white.opacity(0.65))
+                .frame(width: 22, height: 22)
         }
     }
 }
@@ -1113,11 +1542,18 @@ struct SocialPostStudioSheet: View {
         return "Saved \(selectedSlides.count) \(exportFormat.title.lowercased()) slides. You can post them now or refine later."
     }
 
+    /// Horizontally-scrollable mode picker. Every card uses the same layout
+    /// (icon + title + aspect pill + subtitle) at the same fixed width so the
+    /// three options read as a consistent row; the selected card is
+    /// differentiated only by its blue gradient + heavier shadow, not by
+    /// size. Paged scroll snaps to the selected card when it changes.
     private var modeSelector: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    ForEach(ExportFormat.allCases) { format in modeCard(for: format).id(format.id) }
+                    ForEach(ExportFormat.allCases) { format in
+                        modeCard(for: format).id(format.id)
+                    }
                 }
                 .scrollTargetLayout()
                 .padding(.horizontal, 20).padding(.vertical, 4)
@@ -1130,6 +1566,9 @@ struct SocialPostStudioSheet: View {
         }
     }
 
+    /// All three mode cards share this fixed-width layout (equal-sized
+    /// when unselected). The selected state only changes the background
+    /// gradient, border, and shadow — the structure stays identical.
     private func modeCard(for format: ExportFormat) -> some View {
         let isSel = exportFormat == format
         return Button {
@@ -1137,31 +1576,44 @@ struct SocialPostStudioSheet: View {
         } label: {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    Image(systemName: format.icon).font(.system(size: 18, weight: .semibold))
-                    Text(format.title).font(.headline.weight(.semibold))
+                    Image(systemName: format.icon)
+                        .font(.system(size: 18, weight: .semibold))
+                    Text(format.title)
+                        .font(.headline.weight(.semibold))
                     Spacer(minLength: 0)
-                    Text(format.aspectRatio == (4.0/5.0) ? "4:5" : "9:16")
+                    Text(format.aspectRatio == (4.0 / 5.0) ? "4:5" : "9:16")
                         .font(.caption.weight(.semibold))
                         .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(Color.white.opacity(isSel ? 0.28 : 0.14)).clipShape(Capsule())
+                        .background(Color.white.opacity(isSel ? 0.28 : 0.14))
+                        .clipShape(Capsule())
                 }
-                Text(format.subtitle).font(.subheadline).foregroundColor(.white.opacity(0.86))
+                Text(format.subtitle)
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(isSel ? 0.88 : 0.7))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundColor(.white)
             .padding(.horizontal, 14).padding(.vertical, 14)
             .frame(width: 230, alignment: .leading)
-            .background(LinearGradient(
-                colors: isSel ? [Color(red:0.14,green:0.5,blue:1), Color(red:0.24,green:0.71,blue:1)]
-                              : [Color(white:0.2), Color(white:0.14)],
-                startPoint: .topLeading, endPoint: .bottomTrailing))
+            .background(
+                LinearGradient(
+                    colors: isSel
+                        ? [Color(red: 0.14, green: 0.5, blue: 1),
+                           Color(red: 0.24, green: 0.71, blue: 1)]
+                        : [Color(white: 0.2), Color(white: 0.14)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing))
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color.white.opacity(isSel ? 0.35 : 0.12), lineWidth: isSel ? 1.2 : 1))
-            .shadow(color: .black.opacity(isSel ? 0.26 : 0.12), radius: isSel ? 12 : 6, x: 0, y: 5)
+            .shadow(color: .black.opacity(isSel ? 0.26 : 0.12),
+                    radius: isSel ? 12 : 6, x: 0, y: 5)
         }
         .buttonStyle(.plain)
         .scrollTransition(.animated.threshold(.visible(0.75))) { c, p in
-            c.scaleEffect(p.isIdentity ? 1 : 0.96).opacity(p.isIdentity ? 1 : 0.86)
+            c.scaleEffect(p.isIdentity ? 1 : 0.96)
+             .opacity(p.isIdentity ? 1 : 0.86)
         }
     }
 
