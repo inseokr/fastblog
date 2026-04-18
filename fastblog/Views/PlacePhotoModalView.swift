@@ -1091,7 +1091,12 @@ struct PlacePhotoModalView: View {
         // Prefer double-tap semantics over single-tap when the user taps quickly.
         let tapGesture = doubleTap.exclusively(before: singleTap)
 
-        return HorizontalScrollablePhotoView(photo: photo)
+        // With multiple photos, TabView paging must win horizontal drags. `HorizontalPanOverlay` would otherwise
+        // capture them for in-photo pan on wide shots (see HorizontalScrollablePhotoView).
+        return HorizontalScrollablePhotoView(
+            photo: photo,
+            allowsIntrinsicHorizontalPan: photos.count <= 1
+        )
             .ignoresSafeArea()
             .contentShape(Rectangle())
             .highPriorityGesture(tapGesture)
@@ -1978,6 +1983,9 @@ private struct EditPlaceNameSheet: View {
 /// Landscape images are fit to screen height and can be panned left/right.
 private struct HorizontalScrollablePhotoView: View {
     let photo: RecapPhoto
+    /// When false, wide shots are shown center-cropped without the UIKit pan overlay so a parent `TabView` can page.
+    /// Single-photo viewers and zoom overlay still allow full pan via zoom mode.
+    var allowsIntrinsicHorizontalPan: Bool = true
     @State private var loadedImage: UIImage?
     @State private var panOffsetX: CGFloat = 0
     @State private var liveDragX: CGFloat = 0
@@ -2019,7 +2027,7 @@ private struct HorizontalScrollablePhotoView: View {
             .frame(width: screenW, height: screenH)
             .clipped()
             .overlay(
-                canPan
+                canPan && allowsIntrinsicHorizontalPan
                 ? HorizontalPanOverlay(
                     onChanged: { liveDragX = $0 },
                     onEnded: { tx in

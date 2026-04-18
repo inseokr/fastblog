@@ -4270,16 +4270,6 @@ Your blog remains private unless you choose to share it.
             onTranslate: LocalLLMStoryCaptionGenerator.isCapable ? { userText in
                 await StoryCaptionService.shared.translateText(userText: userText)
             } : nil,
-            onRequestFullPhotoView: { photoId in
-                placePhotoModalItem = PlacePhotoModalItem(
-                    dayId: item.dayId,
-                    stopId: item.stopId,
-                    initialPhotoId: photoId,
-                    openInCaptionEditor: true,
-                    hideChromeDoneFromCaptionEditorSheet: true
-                )
-            },
-            activePhotoModalToken: placePhotoModalItem?.id,
             onRequestEditPlaceName: {
                 showEditNameForStop = stop
             }

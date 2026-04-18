@@ -60,7 +60,11 @@ struct ScrollMetricsReportingTextEditor: UIViewRepresentable {
                 }
             }
         } else if uiView.isFirstResponder {
-            uiView.resignFirstResponder()
+            // Defer resign so we never call UIKit first-responder churn synchronously inside
+            // SwiftUI's `updateUIView` pass (keyboard + safe-area updates can create AttributeGraph cycles).
+            DispatchQueue.main.async { [weak uiView] in
+                uiView?.resignFirstResponder()
+            }
         }
         // Avoid publishing every `updateUIView` pass (keyboard / safe-area animation can thrash bindings
         // and make the caret or overlays flicker). Scroll and text changes still publish via delegate.

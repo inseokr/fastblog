@@ -13,7 +13,7 @@ struct PlaceCaptionEditSheet: View {
     let placeSubtitle: String?
     let photos: [RecapPhoto]
     @Binding var caption: String
-    /// Bindings for per-photo captions (only the first three displayable thumbnails are shown in the strip).
+    /// Bindings for per-photo captions (strip lists every displayable selected photo).
     var photoCaption: (UUID) -> Binding<String>
     /// `placeCaptionChanged` / `changedPhotoIds` reflect edits vs. values when the sheet opened.
     var onSave: (_ placeCaptionChanged: Bool, _ changedPhotoIds: Set<UUID>) -> Void
@@ -25,10 +25,6 @@ struct PlaceCaptionEditSheet: View {
     var onEnhanceApplied: (() -> Void)? = nil
     /// Pure translation — no AI story generation.
     var onTranslate: ((String) async -> String)? = nil
-    /// Parent presents recap `PlacePhotoModalView` for this photo id (e.g. sets `placePhotoModalItem`).
-    var onRequestFullPhotoView: ((UUID) -> Void)? = nil
-    /// Match `PlacePhotoModalItem.id` while that modal is presented; when it becomes nil, local drafts reload from bindings.
-    var activePhotoModalToken: String? = nil
     /// Parent presents `EditPlaceStopNameSheet` (same as blog edit-mode place row).
     var onRequestEditPlaceName: (() -> Void)? = nil
     @State private var editedText: String = ""
@@ -42,9 +38,6 @@ struct PlaceCaptionEditSheet: View {
     @State private var isFocused: Bool = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.colorScheme) private var colorScheme
-
-    /// Restore caption focus after full-screen photo modal dismisses if it was focused before open.
-    @State private var restoreCaptionKeyboardAfterPhotoModal = false
 
     /// Matches kebab `PlaceStopActionSheet` “Edit Caption & Details” row (`text.alignleft`).
     private enum CaptionThumbnailSelection: Equatable {
@@ -62,10 +55,17 @@ struct PlaceCaptionEditSheet: View {
     private let thumbnailCorner: CGFloat = 10
     private let thumbnailStroke: CGFloat = 2
 
-    /// Up to three photos that still resolve to real pixels (omits removed / missing library assets so the strip never shows gradient placeholders).
+    /// Included photos that still resolve to real pixels (omits removed / missing library assets so the strip never shows gradient placeholders).
     private var captionStripPhotos: [RecapPhoto] {
-        Array(photos.filter(\.hasDisplayableLocalBacking).prefix(3))
+        photos.filter(\.hasDisplayableLocalBacking)
     }
+
+    /// When set, shows a large preview of that strip photo (second tap on the selected photo thumbnail).
+    @State private var expandedPhotoPreviewId: UUID?
+    @State private var expandedPhotoPreviewScale: CGFloat = 1.0
+    @State private var expandedPhotoPreviewOffset: CGSize = .zero
+    @GestureState private var expandedPhotoPreviewPinch: CGFloat = 1.0
+    @GestureState private var expandedPhotoPreviewDrag: CGSize = .zero
 
     /// Horizontal inset for typed text inside the rounded editor (both sides).
     /// Also used as `textContainerInset` in ScrollMetricsReportingTextEditor so placeholder aligns exactly.
@@ -104,9 +104,9 @@ struct PlaceCaptionEditSheet: View {
         captionThumbnailSelection == .placeCaption ? 2 : 3
     }
 
-    /// Caption editor uses a **fixed** height (scrolls inside). It must not expand with spare vertical space,
-    /// or the thumbnail strip can end up under the keyboard on small phones at large Dynamic Type sizes.
-    private var captionTextEditorFixedHeight: CGFloat {
+    /// Minimum height for the caption editor (scrolls inside). Grows to fill space down to the thumbnail strip
+    /// so the gap isn’t wasted; still scrolls when the keyboard leaves less room than this.
+    private var captionTextEditorMinHeight: CGFloat {
         let w = UIScreen.main.bounds.width
         let narrowPhone = w < 400
         let belowLargePhoneWidth = w < 428
@@ -203,32 +203,11 @@ struct PlaceCaptionEditSheet: View {
         }
     }
 
-    @ViewBuilder
     private var placeCaptionTitleHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Group {
-                if case .photo(let photoId) = captionThumbnailSelection {
-                    VStack(alignment: .leading, spacing: 4) {
-                        placeTitleRowWithEditNameControl
-                        placeSubtitleIfAny
-                        if onRequestFullPhotoView != nil {
-                            Button {
-                                presentFullPhotoViewer(for: photoId)
-                            } label: {
-                                Text("View full photo")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(Color(uiColor: .systemBlue))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("View full photo")
-                        }
-                    }
-                } else {
-                    VStack(alignment: .leading, spacing: 4) {
-                        placeTitleRowWithEditNameControl
-                        placeSubtitleIfAny
-                    }
-                }
+            VStack(alignment: .leading, spacing: 4) {
+                placeTitleRowWithEditNameControl
+                placeSubtitleIfAny
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -270,7 +249,7 @@ struct PlaceCaptionEditSheet: View {
                         .allowsHitTesting(false)
                 }
             }
-            .frame(height: captionTextEditorFixedHeight)
+            .frame(minHeight: captionTextEditorMinHeight, maxHeight: .infinity)
             .padding(.horizontal, 20)
 
             if !trimmedEditedText.isEmpty {
@@ -329,8 +308,6 @@ struct PlaceCaptionEditSheet: View {
                 .padding(.vertical, 12)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
-
-            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(uiColor: .systemBackground).ignoresSafeArea())
@@ -376,6 +353,15 @@ struct PlaceCaptionEditSheet: View {
             .padding(.vertical, 12)
             .background(Color(uiColor: .systemBackground))
         }
+        .overlay {
+            if let id = expandedPhotoPreviewId,
+               let photo = captionStripPhotos.first(where: { $0.id == id }) {
+                expandedPhotoPreviewOverlay(photo: photo)
+                    .transition(.opacity)
+            }
+        }
+        // Do not attach `.animation(value: expandedPhotoPreviewId)` here — it fights nested
+        // `withAnimation` + zoom state and can trigger AttributeGraph cycles when the overlay appears.
         .preferredColorScheme(.dark)
         .onAppear {
             initialPlaceCaption = caption
@@ -392,49 +378,51 @@ struct PlaceCaptionEditSheet: View {
                 isFocused = true
             }
         }
-        .onChange(of: activePhotoModalToken) { oldValue, newValue in
-            if oldValue != nil && newValue == nil {
-                refreshDraftFromBindings()
-                if restoreCaptionKeyboardAfterPhotoModal {
-                    restoreCaptionKeyboardAfterPhotoModal = false
-                    DispatchQueue.main.async {
-                        isFocused = true
-                    }
-                }
-            }
+    }
+
+    private func resetExpandedPhotoPreviewTransform() {
+        expandedPhotoPreviewScale = 1.0
+        expandedPhotoPreviewOffset = .zero
+    }
+
+    private func dismissExpandedPhotoPreview() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            expandedPhotoPreviewId = nil
+            expandedPhotoPreviewScale = 1.0
+            expandedPhotoPreviewOffset = .zero
+        }
+    }
+
+    private func presentExpandedPhotoPreview(id: UUID) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            expandedPhotoPreviewScale = 1.0
+            expandedPhotoPreviewOffset = .zero
+            expandedPhotoPreviewId = id
+        }
+        // Avoid toggling keyboard focus in the same turn as overlay presentation (see ScrollMetricsReportingTextEditor).
+        DispatchQueue.main.async {
+            isFocused = false
         }
     }
 
     private func requestEditPlaceName(openEditor: @escaping () -> Void) {
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) {
+            expandedPhotoPreviewId = nil
+            resetExpandedPhotoPreviewTransform()
+        }
         syncDraftToUnderlyingBindings()
         isFocused = false
         openEditor()
     }
 
-    /// Pushes in-memory drafts into the recap bindings so `PlacePhotoModalView` sees the latest text.
+    /// Pushes in-memory drafts into the recap bindings before opening another editor (e.g. rename place).
     private func syncDraftToUnderlyingBindings() {
         flushCurrentDraftFromEditor()
         caption = draftPlaceCaption
         for p in captionStripPhotos {
             photoCaption(p.id).wrappedValue = draftPhotoCaptions[p.id] ?? ""
-        }
-    }
-
-    /// After the full-screen photo viewer dismisses, pull caption text from bindings (modal may have edited them).
-    private func refreshDraftFromBindings() {
-        draftPlaceCaption = caption
-        for p in captionStripPhotos {
-            draftPhotoCaptions[p.id] = photoCaption(p.id).wrappedValue
-        }
-        if case .photo(let id) = captionThumbnailSelection,
-           !captionStripPhotos.contains(where: { $0.id == id }) {
-            captionThumbnailSelection = .placeCaption
-        }
-        switch captionThumbnailSelection {
-        case .placeCaption:
-            editedText = draftPlaceCaption
-        case .photo(let id):
-            editedText = draftPhotoCaptions[id] ?? ""
         }
     }
 
@@ -447,20 +435,22 @@ struct PlaceCaptionEditSheet: View {
         }
     }
 
-    private func presentFullPhotoViewer(for photoId: UUID) {
-        guard let openFull = onRequestFullPhotoView else { return }
-        syncDraftToUnderlyingBindings()
-        restoreCaptionKeyboardAfterPhotoModal = isFocused
-        isFocused = false
-        openFull(photoId)
-    }
-
     private func selectThumbnail(_ newSelection: CaptionThumbnailSelection) {
         if newSelection == captionThumbnailSelection {
-            if case .photo(let photoId) = newSelection {
-                presentFullPhotoViewer(for: photoId)
+            if case .photo(let id) = newSelection {
+                if expandedPhotoPreviewId == id {
+                    dismissExpandedPhotoPreview()
+                } else {
+                    presentExpandedPhotoPreview(id: id)
+                }
             }
             return
+        }
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) {
+            expandedPhotoPreviewId = nil
+            resetExpandedPhotoPreviewTransform()
         }
         flushCurrentDraftFromEditor()
         captionThumbnailSelection = newSelection
@@ -470,6 +460,106 @@ struct PlaceCaptionEditSheet: View {
         case .photo(let id):
             editedText = draftPhotoCaptions[id] ?? ""
         }
+    }
+
+    /// Double-tap zooms in at 1×; when zoomed, double-tap resets. Single tap at 1× closes; single tap when zoomed resets zoom.
+    private func expandedPhotoPreviewImageTapGesture() -> some Gesture {
+        let doubleTap = TapGesture(count: 2).onEnded {
+            if expandedPhotoPreviewScale <= 1.05 {
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    expandedPhotoPreviewScale = 2.5
+                    expandedPhotoPreviewOffset = .zero
+                }
+            } else {
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    expandedPhotoPreviewScale = 1.0
+                    expandedPhotoPreviewOffset = .zero
+                }
+            }
+        }
+        let singleTap = TapGesture(count: 1).onEnded {
+            if expandedPhotoPreviewScale <= 1.05 {
+                dismissExpandedPhotoPreview()
+            } else {
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    expandedPhotoPreviewScale = 1.0
+                    expandedPhotoPreviewOffset = .zero
+                }
+            }
+        }
+        return doubleTap.exclusively(before: singleTap)
+    }
+
+    @ViewBuilder
+    private func expandedPhotoPreviewOverlay(photo: RecapPhoto) -> some View {
+        let scale = max(1.0, expandedPhotoPreviewScale * expandedPhotoPreviewPinch)
+        let offset = CGSize(
+            width: expandedPhotoPreviewOffset.width + expandedPhotoPreviewDrag.width,
+            height: expandedPhotoPreviewOffset.height + expandedPhotoPreviewDrag.height
+        )
+
+        ZStack(alignment: .topTrailing) {
+            Color.black.opacity(0.82)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    dismissExpandedPhotoPreview()
+                }
+
+            RecapPhotoThumbnail(
+                photo: photo,
+                cornerRadius: 12,
+                showIcon: false,
+                targetSize: CGSize(width: 1600, height: 1600)
+            )
+            .aspectRatio(contentMode: .fit)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 56)
+            .scaleEffect(scale)
+            .offset(offset)
+            .contentShape(Rectangle())
+            .gesture(
+                SimultaneousGesture(
+                    MagnificationGesture()
+                        .updating($expandedPhotoPreviewPinch) { current, state, _ in state = current }
+                        .onEnded { value in
+                            let newScale = max(1.0, min(5.0, expandedPhotoPreviewScale * value))
+                            if newScale <= 1.05 {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    expandedPhotoPreviewScale = 1.0
+                                    expandedPhotoPreviewOffset = .zero
+                                }
+                            } else {
+                                expandedPhotoPreviewScale = newScale
+                            }
+                        },
+                    DragGesture(minimumDistance: 5)
+                        .updating($expandedPhotoPreviewDrag) { value, state, _ in state = value.translation }
+                        .onEnded { value in
+                            expandedPhotoPreviewOffset = CGSize(
+                                width: expandedPhotoPreviewOffset.width + value.translation.width,
+                                height: expandedPhotoPreviewOffset.height + value.translation.height
+                            )
+                        }
+                )
+            )
+            .highPriorityGesture(expandedPhotoPreviewImageTapGesture())
+
+            Button {
+                dismissExpandedPhotoPreview()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 32))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, Color.black.opacity(0.45))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 12)
+            .padding(.trailing, 16)
+            .accessibilityLabel("Close photo preview")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
     }
 
     private var placeCaptionThumbnailCell: some View {
