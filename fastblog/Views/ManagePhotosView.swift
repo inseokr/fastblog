@@ -9,7 +9,7 @@ import Photos
 
 /// iOS Photos-style grid view to include/exclude photos for a place stop.
 /// Normal mode: scrollable 3-column grid; tap a photo to view full-screen.
-/// Select mode: drag up/down across the grid to range-select; scroll locks during drag.
+/// Select mode: same scrollable grid; tap a photo to toggle include/exclude (like the iOS camera roll).
 struct ManagePhotosView: View {
     let placeTitle: String
     @Binding var photos: [RecapPhoto]
@@ -25,12 +25,6 @@ struct ManagePhotosView: View {
     @State private var didPrimeGridCache = false
     @State private var existingPhotoLibraryAssetIds: Set<String> = []
     @State private var visiblePhotoCount: Int = 0
-
-    // Drag-selection state
-    @State private var cellFrames: [UUID: CGRect] = [:]
-    @State private var dragStartIndex: Int?
-    @State private var dragTargetIsIncluded: Bool?
-    @State private var dragInitialInclusionById: [UUID: Bool] = [:]
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -164,6 +158,8 @@ struct ManagePhotosView: View {
                         .foregroundColor(.secondary)
                         .padding(.bottom, 16)
                 }
+                // Spacer fills the stack; don't steal scroll/taps from the grid underneath.
+                .allowsHitTesting(false)
             }
 
             // Bottom-corner action buttons (hidden in select mode and full-screen photo)
@@ -318,75 +314,10 @@ struct ManagePhotosView: View {
                         }
                     )
                     .onAppear { maybeLoadMoreIfNeeded(currentPhoto: photo) }
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear.preference(
-                                key: ManagePhotoGridCellFrameKey.self,
-                                value: [photo.id: geo.frame(in: .named("managePhotoGrid"))]
-                            )
-                        }
-                    )
                 }
             }
             .padding(2)
         }
-        .coordinateSpace(name: "managePhotoGrid")
-        .onPreferenceChange(ManagePhotoGridCellFrameKey.self) { cellFrames = $0 }
-        // Scroll off in select mode so vertical drag is unambiguously for range-select.
-        .scrollDisabled(isSelectMode)
-        // Use .gesture (not simultaneous) so it doesn't compete with ScrollView's pan.
-        // In normal mode the guard returns early, so scroll works freely.
-        .gesture(
-            DragGesture(minimumDistance: 8, coordinateSpace: .named("managePhotoGrid"))
-                .onChanged { value in
-                    guard isSelectMode else { return }
-                    if dragStartIndex == nil {
-                        guard let startIdx = photoIndex(at: value.startLocation) else { return }
-                        beginRangeSelection(at: startIdx)
-                    }
-                    if let currentIdx = photoIndex(at: value.location) {
-                        applyRangeSelection(currentIndex: currentIdx)
-                    }
-                }
-                .onEnded { _ in endRangeSelection() }
-        )
-    }
-
-    // MARK: - Drag selection helpers
-
-    private func photoIndex(at location: CGPoint) -> Int? {
-        for (idx, photo) in manageGridPhotos.enumerated() {
-            if let frame = cellFrames[photo.id], frame.contains(location) { return idx }
-        }
-        return nil
-    }
-
-    private func beginRangeSelection(at index: Int) {
-        guard manageGridPhotos.indices.contains(index) else { return }
-        dragStartIndex = index
-        dragInitialInclusionById = Dictionary(uniqueKeysWithValues: photos.map { ($0.id, $0.isIncluded) })
-        dragTargetIsIncluded = !manageGridPhotos[index].isIncluded
-        applyRangeSelection(currentIndex: index)
-    }
-
-    private func applyRangeSelection(currentIndex: Int) {
-        guard let start = dragStartIndex,
-              let target = dragTargetIsIncluded,
-              manageGridPhotos.indices.contains(currentIndex) else { return }
-        let lower = min(start, currentIndex)
-        let upper = max(start, currentIndex)
-        let rangeIds = Set(manageGridPhotos[lower...upper].map(\.id))
-        for idx in photos.indices {
-            let id = photos[idx].id
-            let initial = dragInitialInclusionById[id] ?? photos[idx].isIncluded
-            photos[idx].isIncluded = rangeIds.contains(id) ? target : initial
-        }
-    }
-
-    private func endRangeSelection() {
-        dragStartIndex = nil
-        dragTargetIsIncluded = nil
-        dragInitialInclusionById = [:]
     }
 
     private func toggleInclusion(for photo: RecapPhoto) {
@@ -396,13 +327,6 @@ struct ManagePhotosView: View {
 }
 
 // MARK: - Grid Cell
-
-private struct ManagePhotoGridCellFrameKey: PreferenceKey {
-    static var defaultValue: [UUID: CGRect] = [:]
-    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
-    }
-}
 
 private struct ManagePhotoGridCell: View {
     let photo: RecapPhoto
@@ -473,6 +397,8 @@ private struct ManagePhotoGridCell: View {
                         .padding(6)
                 }
             }
+            // Full tile is tappable (avoids tiny/incorrect hit regions from nested GeometryReader + overlays).
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
