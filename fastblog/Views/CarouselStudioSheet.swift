@@ -1,6 +1,7 @@
 // CarouselStudioSheet.swift
 // fastblog
 
+import PDFKit
 import Photos
 import SwiftUI
 
@@ -116,15 +117,15 @@ enum SlideBlockID: Equatable, Hashable {
 /// Visual layout variant for place-stop slides (named to avoid conflict with PanoramaPlayerView.SlideLayout).
 enum CarouselSlideLayout: String, CaseIterable, Identifiable {
     case single  // one full-bleed hero photo (default)
-    case pip     // hero photo + 2–3 inset PIP thumbnails in the corner
+    case pip     // hero photo + 2–3 inset PIP thumbnails (default: top-trailing stack)
     var id: String { rawValue }
 }
 
 /// How inset PIP thumbnails are arranged when `CarouselSlideLayout` is `.pip`.
 enum CarouselPIPClusterStackStyle: String, CaseIterable, Identifiable {
-    /// Thumbnails stacked top-to-bottom along the trailing edge (default).
+    /// Thumbnails stacked top-to-bottom along the trailing edge (default; anchored top-trailing).
     case vertical
-    /// Thumbnails in a row, growing toward the leading edge from the corner.
+    /// Thumbnails in a row, growing toward the leading edge from the top-trailing corner.
     case horizontal
     var id: String { rawValue }
 }
@@ -528,19 +529,16 @@ private func isSlideHiddenBySiblingPIP(at index: Int, in slides: [CarouselSlide]
 private let studioSlideCoordSpace = "studio.slide.space"
 
 /// Edge inset (in points) used in two places that **must stay in sync**:
-/// 1. `DraggableTextBlock.clamped(proposed:)` shrinks the allowed slide area by
-///    this much, so the block can never be dragged flush against the slide edge.
-/// 2. Each anchored overlay (top/bottom-leading) in `CarouselSlideView` pads its
-///    draggable block by the same amount so the block's *natural* (anchor) rect
-///    already sits inside that clamp region.
+/// 1. `DraggableTextBlock.clamped(proposed:)` / `DraggablePIPCluster.clampedOffset`
+///    shrink the allowed slide area so the block's visual rect stays inside the slide.
+/// 2. Each anchored overlay in `CarouselSlideView` pads its draggable block by the
+///    same amount so the block's *natural* (anchor) rect already sits inside that
+///    clamp region — avoiding a first-tap "nudge" when `savedOffset == .zero`.
 ///
-/// Keeping these equal means a fresh slide — where `savedOffset == .zero` — already
-/// renders at the exact position the clamp would push it to. That eliminates the
-/// small "snap" users used to see on their first tap: `DragGesture` uses
-/// `minimumDistance: 0`, so a tap fires `.onEnded` with zero translation, and the
-/// clamp would otherwise rewrite `savedOffset` from 0 to this inset amount,
-/// visibly nudging the block ~6pt inward on first tap only.
-private let studioTextBlockEdgeInset: CGFloat = 6
+/// Set to `0` so blocks can sit flush on the left/right/top/bottom edges. Rubber-band
+/// on finger lift is avoided by clamping the **displayed** offset during the gesture
+/// (`displayPointOffset`), not only on `onEnded`.
+private let studioTextBlockEdgeInset: CGFloat = 0
 
 /// Repositionable text block. The drag gesture lives on the block itself; SwiftUI's
 /// `.offset()` is visually displacing AND hit-testable, so the on-screen rect is the
@@ -590,13 +588,21 @@ private struct DraggableTextBlock<Content: View>: View {
                height: savedOffset.height * slideBounds.height)
     }
 
+    /// In-slide offset actually applied (clamped every frame). Using raw `liveDrag`
+    /// here made blocks follow the finger past valid bounds, then snap inward on lift.
+    private var displayPointOffset: CGSize {
+        clamped(proposed: CGSize(
+            width: savedPointOffset.width + liveDrag.width,
+            height: savedPointOffset.height + liveDrag.height
+        ))
+    }
+
     var body: some View {
         content()
             .background(naturalRectCapture)
             .overlay(editingRing)
             .contentShape(Rectangle())
-            .offset(x: savedPointOffset.width + liveDrag.width,
-                    y: savedPointOffset.height + liveDrag.height)
+            .offset(x: displayPointOffset.width, y: displayPointOffset.height)
             .highPriorityGesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .updating($liveDrag) { value, state, _ in
@@ -730,6 +736,38 @@ private func placeSubtitleVisible(_ slide: CarouselSlide) -> Bool {
     return !sub.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 }
 
+/// PIP cluster default placement and clamping rules.
+///
+/// The cluster has **no internal padding** so its measured frame equals the visible
+/// thumbnail rect. That makes two things work correctly at the same time:
+///   1. Drag-clamping in `DraggablePIPCluster.clampedOffset` uses the visible rect,
+///      so the user can drag PIP **all the way to the slide's top-right corner**
+///      (Edit Slides complaint: "PIP can't get closer to the right corner").
+///   2. At default `pipOffset == .zero`, the visible thumb hugs the slide's
+///      top-trailing corner — no hidden padding pushing it inward (Social Post
+///      Studio complaint: "PIP got cut on top" was actually PIP being shoved
+///      down by `top + rotation` padding).
+///
+/// Rotation (`rotationEffect`) and the drop `shadow` extend a few points beyond
+/// the visible thumb. Outside the editor, callers must allow that bleed:
+///   - `SlideEditPage` clips to the rounded slide outline (small corner trim is
+///     acceptable and looks intentional).
+///   - `SocialPostStudioSheet` adds generous `previewCardBleedInsets` around
+///     each preview card so the strip's `clipShape` doesn't shave the rotation/shadow.
+
+extension View {
+    /// Applies `clipShape` only when `active` — used to clip photo/gradient backgrounds
+    /// to the postcard outline while leaving PIP shadows / rotations unclipped.
+    @ViewBuilder
+    fileprivate func clipCarouselPostcardOutline(_ active: Bool) -> some View {
+        if active {
+            self.clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        } else {
+            self
+        }
+    }
+}
+
 struct CarouselSlideView: View {
     let slide: CarouselSlide
     let width: CGFloat
@@ -758,6 +796,10 @@ struct CarouselSlideView: View {
     /// Social Post Studio only: tap the cover image (behind title chrome) to pick another blog photo
     /// without mutating the saved blog cover.
     var onCoverImageTap: (() -> Void)? = nil
+    /// When `true` (default), text + PIP are clipped with the slide’s rounded-rect outline
+    /// (export + full-screen editor). When `false`, only the photo/gradient stack is clipped;
+    /// overlays can draw past that outline (e.g. PIP shadows) — used for small studio previews.
+    var clipsFloatingContentToRoundedSlideOutline: Bool = true
 
     private var height: CGFloat { width / aspectRatio }
     private let heroImageScale: CGFloat = 1.12
@@ -785,7 +827,9 @@ struct CarouselSlideView: View {
         )
     }
 
-    var body: some View {
+    /// Photo, map snapshot, gradients, and (in PIP edit mode) the hero tap catcher.
+    @ViewBuilder
+    private var slideBackgroundStack: some View {
         ZStack {
             // ── Backgrounds ───────────────────────────────────────────
             switch slide.kind {
@@ -841,6 +885,17 @@ struct CarouselSlideView: View {
                             TapGesture().onEnded { onTapHeroBackdrop?() }
                         )
                 }
+            }
+        }
+    }
+
+    var body: some View {
+        Group {
+            if clipsFloatingContentToRoundedSlideOutline {
+                slideBackgroundStack
+            } else {
+                slideBackgroundStack
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
         }
         // ── Draggable text overlays ───────────────────────────────────
@@ -1068,7 +1123,7 @@ struct CarouselSlideView: View {
                 .padding(studioTextBlockEdgeInset)
             }
         }
-        // PIP thumbnail cluster — top-trailing, only for placeStop pip layout
+        // PIP thumbnail cluster — top-trailing (same anchor in Edit Slides + Social Post Studio)
         .overlay(alignment: .topTrailing) {
             if slide.kind == .placeStop, slide.layout == .pip, !slide.pipImages.isEmpty {
                 DraggablePIPCluster(
@@ -1113,7 +1168,7 @@ struct CarouselSlideView: View {
             }
         }
         .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipCarouselPostcardOutline(clipsFloatingContentToRoundedSlideOutline)
         .opacity(slide.isSelected ? 1.0 : 0.72)
         .contentShape(RoundedRectangle(cornerRadius: 16))
         .onTapGesture { if showsSelectionChrome { onToggleSelection() } }
@@ -1196,8 +1251,8 @@ private struct PIPClusterView: View {
                 HStack(alignment: .bottom, spacing: 5) { pipThumbnails }
             }
         }
-        .padding(.top, slideWidth * 0.06)
-        .padding(.trailing, slideWidth * 0.05)
+        // No internal top/trailing padding: cluster frame = visible thumbs, so the user can drag
+        // PIP all the way into the top-right corner and the studio default sits flush to it.
         .animation(.easeInOut(duration: 0.2), value: stackStyle)
     }
 
@@ -1257,6 +1312,15 @@ private struct DraggablePIPCluster: View {
                height: savedOffset.height * slideBounds.height)
     }
 
+    /// Same idea as `DraggableTextBlock.displayPointOffset` — clamp during drag so
+    /// release does not rubber-band away from where the block visually sat.
+    private var displayPointOffset: CGSize {
+        clampedOffset(CGSize(
+            width: savedPointOffset.width + liveDrag.width,
+            height: savedPointOffset.height + liveDrag.height
+        ))
+    }
+
     var body: some View {
         PIPClusterView(images: images,
                        pipPhotoIDs: pipPhotoIDs,
@@ -1268,8 +1332,7 @@ private struct DraggablePIPCluster: View {
             .background(naturalRectCapture)
             .overlay(selectionRing)
             .contentShape(Rectangle())
-            .offset(x: savedPointOffset.width + liveDrag.width,
-                    y: savedPointOffset.height + liveDrag.height)
+            .offset(x: displayPointOffset.width, y: displayPointOffset.height)
             // Use minimumDistance: 0 in the editor so taps can select the
             // cluster (mirrors `DraggableTextBlock`'s gesture). Outside the
             // editor, keep the original 4pt threshold so PIP never accidentally
@@ -1305,11 +1368,8 @@ private struct DraggablePIPCluster: View {
     @ViewBuilder
     private var selectionRing: some View {
         if isEditingText {
-            // `PIPClusterView` includes internal `.padding(.top, slideWidth*0.06)` and
-            // `.padding(.trailing, slideWidth*0.05)` to offset the thumbnail stack from
-            // the slide's top-right corner. The overlay sits on the padded frame, so we
-            // counter those insets here to keep a uniform 4pt of breathing room around
-            // the tiles on all four sides.
+            // Cluster frame is the visible thumb rect; expand the ring by a few points so
+            // it visually hugs the tiles without sitting on top of them.
             let ringBreathing: CGFloat = 4
             RoundedRectangle(cornerRadius: 10)
                 .strokeBorder(
@@ -1320,12 +1380,7 @@ private struct DraggablePIPCluster: View {
                         ? StrokeStyle(lineWidth: 2.0)
                         : StrokeStyle(lineWidth: 1.0, dash: [5, 3])
                 )
-                .padding(EdgeInsets(
-                    top: slideWidth * 0.06 - ringBreathing,
-                    leading: -ringBreathing,
-                    bottom: -ringBreathing,
-                    trailing: slideWidth * 0.05 - ringBreathing
-                ))
+                .padding(-ringBreathing)
         }
     }
 
@@ -1693,6 +1748,61 @@ struct SlideTextEditorView: View {
         undoStack.append(slides)
         if undoStack.count > maxUndoSteps {
             undoStack.removeFirst(undoStack.count - maxUndoSteps)
+        }
+    }
+
+    /// Single vs multi-photo layout for the current place-stop slide. Keeps sibling
+    /// slide `isSelected` flags aligned with `SocialPostStudioSheet.setLayout` so
+    /// export and the preview strip stay consistent.
+    private func setPlaceStopLayout(_ layout: CarouselSlideLayout) {
+        guard hasValidCurrentIndex, slides[currentIndex].kind == .placeStop else { return }
+        let index = currentIndex
+        let stopID = slides[index].placeStop?.id
+        pushUndoSnapshot()
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+            slides[index].layout = layout
+            for i in slides.indices where i != index {
+                guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
+                slides[i].isSelected = (layout == .single)
+            }
+        }
+        if layout == .pip {
+            selectedBlock = .pipCluster
+            activeStyleCategory = nil
+        } else {
+            if selectedBlock == .pipCluster { selectedBlock = nil }
+            activePIPCategory = nil
+        }
+        clampCurrentIndexIfNeeded()
+    }
+
+    @ViewBuilder
+    private var placeStopLayoutToggleChrome: some View {
+        if let slide = currentSlide,
+           slide.kind == .placeStop,
+           !slide.pipImages.isEmpty {
+            HStack(spacing: 6) {
+                ForEach(CarouselSlideLayout.allCases) { layout in
+                    let isActive = slide.layout == layout
+                    Button {
+                        setPlaceStopLayout(layout)
+                    } label: {
+                        Image(systemName: layout == .single ? "rectangle.portrait" : "pip")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(isActive ? .white : .white.opacity(0.45))
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(isActive
+                                ? Color(red: 0.04, green: 0.52, blue: 1.0)
+                                : Color.white.opacity(0.1))
+                            .clipShape(Capsule())
+                            .overlay(Capsule().strokeBorder(
+                                isActive ? Color.white.opacity(0.35) : Color.white.opacity(0.1),
+                                lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .animation(.easeInOut(duration: 0.15), value: isActive)
+                }
+            }
         }
     }
 
@@ -2533,6 +2643,9 @@ struct SlideTextEditorView: View {
                     .foregroundColor(.white.opacity(0.55))
             }
             .multilineTextAlignment(.center)
+
+            placeStopLayoutToggleChrome
+                .padding(.top, 10)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 32)
@@ -2571,6 +2684,8 @@ struct SlideTextEditorView: View {
                 }
                 .buttonStyle(.plain)
                 .animation(.spring(response: 0.3, dampingFraction: 0.7), value: didApplyToAll)
+
+                placeStopLayoutToggleChrome
 
                 Spacer()
 
@@ -2674,6 +2789,8 @@ struct SlideTextEditorView: View {
     private var pipClusterToolbar: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
+                placeStopLayoutToggleChrome
+
                 // Swap promotes the first PIP thumbnail into the hero slot and
                 // demotes the current hero into the cluster — a one-tap way to
                 // change which cluster photo is "featured". Add/remove lives in
@@ -3675,7 +3792,7 @@ struct SocialPostStudioSheet: View {
     @State private var showStudioCoverPicker = false
     @Environment(\.dismiss) private var dismiss
 
-    private let previewHeight: CGFloat = 380
+    private let previewHeight: CGFloat = 450
     private let exportWidth: CGFloat = 1080
     private var exportHeight: CGFloat { exportWidth / exportFormat.aspectRatio }
     private var previewWidth: CGFloat { previewHeight * exportFormat.aspectRatio }
@@ -3690,17 +3807,39 @@ struct SocialPostStudioSheet: View {
         return exportFormat.isSingleSlide ? Array(sel.prefix(1)) : sel
     }
 
+    /// Disables export menu actions when there is nothing to export or work is in flight.
+    private var exportActionsDisabled: Bool {
+        isLoading || slides.isEmpty || selectedSlides.isEmpty || isRendering
+    }
+
     var body: some View {
         NavigationStack {
-            Group {
-                if isLoading {
-                    VStack(spacing: 16) { ProgressView(); Text("Preparing slides…").foregroundColor(.secondary) }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if slides.isEmpty {
-                    Text("No places found in this blog.").foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    slidePreviewAndExport
+            ZStack {
+                Group {
+                    if isLoading {
+                        VStack(spacing: 16) { ProgressView(); Text("Preparing slides…").foregroundColor(.secondary) }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if slides.isEmpty {
+                        Text("No places found in this blog.").foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        slidePreviewAndExport
+                    }
+                }
+                if isRendering {
+                    Color.black.opacity(0.45)
+                        .ignoresSafeArea()
+                        .allowsHitTesting(true)
+                    VStack(spacing: 14) {
+                        ProgressView()
+                            .scaleEffect(1.1)
+                            .tint(.white)
+                        Text("Preparing export…")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.white.opacity(0.9))
+                    }
+                    .padding(28)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
             }
             .background(Color(uiColor: .systemGroupedBackground))
@@ -3711,6 +3850,31 @@ struct SocialPostStudioSheet: View {
                     Button { dismiss() } label: {
                         Image(systemName: "xmark").font(.system(size: 14)).foregroundColor(.white)
                     }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            Task { await shareViaSheet() }
+                        } label: {
+                            Label("Share to TikTok, Instagram, Facebook…", systemImage: "square.and.arrow.up")
+                        }
+                        Button {
+                            Task { await saveToPhotos() }
+                        } label: {
+                            Label("Save to Photos", systemImage: "photo.on.rectangle.angled")
+                        }
+                        Button {
+                            Task { await exportSlidesPDFAndShare() }
+                        } label: {
+                            Label("Export as PDF", systemImage: "doc.richtext")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    .disabled(exportActionsDisabled)
+                    .accessibilityLabel("Export and share")
                 }
             }
             .preferredColorScheme(.dark)
@@ -3874,29 +4038,22 @@ struct SocialPostStudioSheet: View {
                 }
             }
 
-            Spacer()
-
-            VStack(spacing: 10) {
-                Button { Task { await saveToPhotos() } } label: {
-                    exportButtonLabel(icon: "photo.on.rectangle.angled",
-                                      title: "Save to Photos",
-                                      subtitle: exportFormat.isSingleSlide
-                                          ? "Save your Reel cover, then post it to Instagram or TikTok."
-                                          : "Save your \(exportFormat.title.lowercased()) slides, then publish or refine.")
-                }
-                .disabled(isRendering || selectedSlides.isEmpty)
-
-                Button { Task { await shareViaSheet() } } label: {
-                    exportButtonLabel(icon: "square.and.arrow.up",
-                                      title: "Share…",
-                                      subtitle: exportFormat.isSingleSlide
-                                          ? "Send your Reel cover to any app (including Canva)."
-                                          : "Send your \(exportFormat.title.lowercased()) slides to any app (including Canva).")
-                }
-                .disabled(isRendering || selectedSlides.isEmpty)
-            }
-            .padding(.horizontal, 20).padding(.bottom, 16)
+            Spacer(minLength: 0)
         }
+        .padding(.bottom, 12)
+    }
+
+    /// Space around the preview slide before the card `clipShape` so PIP rotation, drop
+    /// shadow, and the selection checkmark are less likely to be cut off in the strip.
+    private func previewCardBleedInsets(slide: CarouselSlide) -> EdgeInsets {
+        let isPIPPreview = slide.kind == .placeStop && slide.layout == .pip && !slide.pipImages.isEmpty
+        if isPIPPreview {
+            // PIP visible thumb hugs the slide's top-trailing corner; rotation + drop shadow
+            // (~12pt) extend past slide bounds, so give the strip clip plenty of room above
+            // and to the right of the slide. Bottom/leading just need normal shadow room.
+            return EdgeInsets(top: 22, leading: 10, bottom: 14, trailing: 24)
+        }
+        return EdgeInsets(top: 10, leading: 8, bottom: 10, trailing: 10)
     }
 
     @ViewBuilder
@@ -3919,10 +4076,14 @@ struct SocialPostStudioSheet: View {
                 showsSelectionChrome: true,
                 onCoverImageTap: (index == 0 && slide.kind == .cover)
                     ? { showStudioCoverPicker = true }
-                    : nil
+                    : nil,
+                clipsFloatingContentToRoundedSlideOutline: false
             )
             .frame(width: previewWidth)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            // Extra margin before the card clip so PIP shadows / slight rotations stay visible
+            // in the horizontal preview strip (the slide’s photo stack is still rounded inside).
+            .padding(previewCardBleedInsets(slide: slide))
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
 
             HStack(spacing: 8) {
@@ -4114,28 +4275,6 @@ struct SocialPostStudioSheet: View {
 
     // MARK: - Export
 
-    @ViewBuilder
-    private func exportButtonLabel(icon: String, title: String, subtitle: String) -> some View {
-        HStack(spacing: 12) {
-            if isRendering { ProgressView().tint(.white) }
-            else { Image(systemName: icon).font(.system(size: 18)) }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 16, weight: .semibold)).lineLimit(1)
-                Text(subtitle).font(.system(size: 12)).lineLimit(2).opacity(0.75)
-            }
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(minHeight: 62, alignment: .leading)
-        .padding(.vertical, 11).padding(.horizontal, 18)
-        .background(Color(white: 0.18)).foregroundColor(.white)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
-        )
-    }
-
     @MainActor private func saveToPhotos() async {
         isRendering = true; defer { isRendering = false }
         for image in renderSlides() { UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil) }
@@ -4154,6 +4293,32 @@ struct SocialPostStudioSheet: View {
             try? data.write(to: url); urls.append(url)
         }
         shareItems = urls; showShareSheet = true
+    }
+
+    /// One PDF page per rendered studio slide; written under a dedicated temp folder so `cleanupTempFiles` removes only that directory.
+    @MainActor private func exportSlidesPDFAndShare() async {
+        isRendering = true
+        defer { isRendering = false }
+        let images = renderSlides()
+        guard !images.isEmpty else { return }
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("carousel-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let safeTitle = blog.title
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseName = safeTitle.isEmpty ? "Social_Post_Studio" : safeTitle
+        let pdfURL = tempDir.appendingPathComponent("\(baseName)_slides.pdf")
+        let doc = PDFDocument()
+        for (idx, image) in images.enumerated() {
+            if idx % 2 == 0 { await Task.yield() }
+            guard let page = PDFPage(image: image) else { continue }
+            doc.insert(page, at: doc.pageCount)
+        }
+        guard doc.pageCount > 0, doc.write(to: pdfURL) else { return }
+        shareItems = [pdfURL]
+        showShareSheet = true
     }
 
     @MainActor private func renderSlides() -> [UIImage] {
