@@ -56,7 +56,7 @@ enum StoryBookBuilder {
                     for: day.placeStops,
                     size: screenSize,
                     regionPadding: 0.05,
-                    showPlaceNames: false
+                    showPlaceNames: true
                 )
             }
 

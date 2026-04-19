@@ -4,6 +4,28 @@
 import Photos
 import SwiftUI
 
+// MARK: - Asset loading
+
+/// Loads a `PHAsset` image by local identifier at the requested size. Shared
+/// between `SocialPostStudioSheet` (initial slide load) and `SlideTextEditorView`
+/// (loading a new photo into the PIP cluster via the "Add photo" picker). Kept
+/// at file scope so both callers use identical request options and there's no
+/// duplicated photo-framework boilerplate to drift out of sync.
+private func loadCarouselAssetImage(identifier: String, size: CGSize) async -> UIImage? {
+    await withCheckedContinuation { cont in
+        let fetch = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil)
+        guard let asset = fetch.firstObject else { cont.resume(returning: nil); return }
+        let opts = PHImageRequestOptions()
+        opts.deliveryMode = .highQualityFormat
+        opts.isNetworkAccessAllowed = true
+        opts.isSynchronous = false
+        PHImageManager.default().requestImage(for: asset, targetSize: size,
+                                              contentMode: .aspectFill, options: opts) { img, _ in
+            cont.resume(returning: img)
+        }
+    }
+}
+
 // MARK: - Model
 
 enum CarouselSlideKind {
@@ -60,10 +82,14 @@ enum StudioTextColor: String, CaseIterable, Identifiable {
     }
 }
 
-/// Identifies which of a slide's two text blocks is active in the editor.
-enum TextBlockID: Equatable, Hashable {
+/// Identifies which block in a slide is active in the editor. Text blocks
+/// (`.primary`, `.secondary`) are independent draggable text layers; the
+/// `.pipCluster` block is the stacked multi-photo cluster that replaces a
+/// single hero when `slide.layout == .pip`.
+enum SlideBlockID: Equatable, Hashable {
     case primary    // cover title / map heading / place name+subtitle
     case secondary  // map story / place caption
+    case pipCluster // stacked PIP photo thumbnails (multi-photo mode)
 }
 
 /// Visual layout variant for place-stop slides (named to avoid conflict with PanoramaPlayerView.SlideLayout).
@@ -73,20 +99,114 @@ enum CarouselSlideLayout: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// How inset PIP thumbnails are arranged when `CarouselSlideLayout` is `.pip`.
+enum CarouselPIPClusterStackStyle: String, CaseIterable, Identifiable {
+    /// Thumbnails stacked top-to-bottom along the trailing edge (default).
+    case vertical
+    /// Thumbnails in a row, growing toward the leading edge from the corner.
+    case horizontal
+    var id: String { rawValue }
+}
+
+/// Pill-shaped backdrop behind a text block. Tapping the block in the editor
+/// cycles through these states (default → dark → light → default …). Purely
+/// visual — dragging the block never changes this (see tap-vs-drag threshold
+/// in `DraggableTextBlock`).
+enum StudioTextBackground: String, CaseIterable {
+    case none, darkPill, lightPill
+
+    func next() -> StudioTextBackground {
+        switch self {
+        case .none:      return .darkPill
+        case .darkPill:  return .lightPill
+        case .lightPill: return .none
+        }
+    }
+}
+
 /// Categories in the bottom style tab bar. Selecting one opens a drop-up panel
 /// with horizontally-scrollable options for that category.
 private enum StyleCategory: String, CaseIterable, Identifiable {
-    case color = "Color"
-    case font  = "Font Style"
-    case size  = "Font Size"
+    case color  = "Color"
+    case font   = "Font Style"
+    case size   = "Font Size"
+    case format = "Format"
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
-        case .color: return "paintpalette.fill"
-        case .font:  return "textformat"
-        case .size:  return "textformat.size"
+        case .color:  return "paintpalette.fill"
+        case .font:   return "textformat"
+        case .size:   return "textformat.size"
+        case .format: return "bold.italic.underline"
+        }
+    }
+}
+
+/// Categories in the bottom tab bar when the PIP photo cluster is selected.
+/// Reorder opens the inset drag-to-reorder module for the cluster stack; Border
+/// picks the outline color painted around each thumbnail.
+/// Add and remove are separate scrollable pills — see `pipAddPhotosTabButton` /
+/// `pipRemovePhotosTabButton`.
+private enum PIPStyleCategory: String, CaseIterable, Identifiable {
+    case order  = "Reorder"
+    case border = "Border"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .order:  return "arrow.up.arrow.down"
+        case .border: return "paintpalette.fill"
+        }
+    }
+}
+
+/// Case transformation applied to the rendered text. `none` leaves the text
+/// exactly as the user typed it (the default); the others apply `.textCase()`
+/// without mutating the underlying string.
+enum StudioTextCase: String, CaseIterable, Identifiable {
+    case none, upper, lower
+
+    var id: String { rawValue }
+
+    var textCase: Text.Case? {
+        switch self {
+        case .none:  return nil
+        case .upper: return .uppercase
+        case .lower: return .lowercase
+        }
+    }
+}
+
+/// User-chosen multiline alignment. `.natural` means "use the block's
+/// built-in alignment" (center for cover titles, leading for everything
+/// else) — the value a freshly-initialized style should have so we don't
+/// silently change how existing blogs render.
+enum StudioTextAlignment: String, CaseIterable, Identifiable {
+    case natural, leading, center, trailing
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .natural:  return "text.alignleft"
+        case .leading:  return "text.alignleft"
+        case .center:   return "text.aligncenter"
+        case .trailing: return "text.alignright"
+        }
+    }
+
+    /// Maps to a VStack/HStack `HorizontalAlignment` so a multi-line stack
+    /// (e.g. place name + subtitle) actually shifts its rows — the outer
+    /// stack owns row placement, not `multilineTextAlignment`.
+    func stackAlignment(fallback: HorizontalAlignment) -> HorizontalAlignment {
+        switch self {
+        case .natural:  return fallback
+        case .leading:  return .leading
+        case .center:   return .center
+        case .trailing: return .trailing
         }
     }
 }
@@ -96,6 +216,20 @@ struct TextBlockStyle: Equatable {
     var sizeScale: CGFloat = 1.0      // multiplier, 0.6 – 1.8
     var textColor: StudioTextColor = .white
     var fontDesign: StudioFontDesign = .default
+    // Format toggles from the Format drop-up panel. Each is a simple
+    // additive modifier applied at render time — defaults of `false` /
+    // `.natural` preserve the exact visual each text block had before
+    // this feature shipped.
+    var isBold: Bool = false
+    var isItalic: Bool = false
+    var isUnderlined: Bool = false
+    var isStrikethrough: Bool = false
+    var textCase: StudioTextCase = .none
+    var alignment: StudioTextAlignment = .natural
+    /// Pill backdrop behind the text. Default `.none` preserves the original
+    /// "text only" look for every pre-existing slide; cycled by tapping the
+    /// block in the editor.
+    var background: StudioTextBackground = .none
     /// Normalized displacement from the block's natural anchor position, expressed as
     /// a fraction of the slide's own dimensions (e.g. `width = 0.10` ⇒ 10% of the slide
     /// width to the right of the anchor). `.zero` means the block sits at its layout
@@ -116,17 +250,149 @@ struct TextOverlayStyle: Equatable {
     var secondary: TextBlockStyle = TextBlockStyle()  // story / caption
 }
 
+extension TextOverlayStyle {
+    /// Starting typography for `.placeStop` slides in the social-post studio.
+    /// The Font-Size readout is `sizeScale × 20pt`, so `0.7` snaps exactly
+    /// to the 14pt marker used across the place name / caption (primary
+    /// block) and the "city, country" subtitle (secondary block).
+    static let placeStopDefault: TextOverlayStyle = {
+        var style = TextOverlayStyle()
+        style.primary.sizeScale = 0.7
+        style.secondary.sizeScale = 0.7
+        return style
+    }()
+}
+
 private extension TextBlockStyle {
-    /// Copies font, color, and size from `source`; leaves `offset` unchanged.
+    /// Copies font, color, size, and all Format-panel toggles from `source`;
+    /// leaves `offset` unchanged. Format toggles are treated as typography so
+    /// "Apply typography to all slides" pulls a consistent look across every
+    /// slide in the carousel.
     mutating func mergeTypography(from source: TextBlockStyle) {
         fontDesign = source.fontDesign
         textColor = source.textColor
         sizeScale = source.sizeScale
+        isBold = source.isBold
+        isItalic = source.isItalic
+        isUnderlined = source.isUnderlined
+        isStrikethrough = source.isStrikethrough
+        textCase = source.textCase
+        alignment = source.alignment
+        background = source.background
     }
 
     /// Copies `offset` from `source`; leaves typography unchanged.
     mutating func mergeLayout(from source: TextBlockStyle) {
         offset = source.offset
+    }
+
+    /// Resolves the user's alignment choice. `.natural` falls back to the
+    /// block's built-in default (`fallback`), so pre-existing slides render
+    /// identically until the user explicitly picks a new alignment.
+    func resolvedMultilineAlignment(fallback: TextAlignment) -> TextAlignment {
+        switch alignment {
+        case .natural:  return fallback
+        case .leading:  return .leading
+        case .center:   return .center
+        case .trailing: return .trailing
+        }
+    }
+}
+
+/// Applies the Format-panel toggles (bold/italic/underline/strikethrough/case)
+/// to any `Text` view. Alignment is handled separately by the caller because
+/// `multilineTextAlignment` is sensitive to the surrounding VStack's alignment
+/// and the text block's anchor (leading / center).
+private struct StudioTextFormatModifier: ViewModifier {
+    let style: TextBlockStyle
+
+    func body(content: Content) -> some View {
+        content
+            .italic(style.isItalic)
+            .underline(style.isUnderlined)
+            .strikethrough(style.isStrikethrough)
+            .textCase(style.textCase.textCase)
+    }
+}
+
+private extension View {
+    /// Apply the Format-panel italic / underline / strikethrough / case modifiers.
+    /// Bold and alignment are applied at the call site because they interact
+    /// with the specific `Font` and layout being used.
+    func studioTextFormat(_ style: TextBlockStyle) -> some View {
+        modifier(StudioTextFormatModifier(style: style))
+    }
+}
+
+/// Returns the rendered font weight: if the user toggled Bold, override the
+/// natural weight with `.black` for heading-level text (or `.bold` for
+/// body-level text). Otherwise use the block's natural weight.
+private func studioFontWeight(base: Font.Weight, isBold: Bool) -> Font.Weight {
+    guard isBold else { return base }
+    switch base {
+    case .heavy, .black: return .black
+    case .bold:          return .black
+    case .semibold:      return .bold
+    default:             return .bold
+    }
+}
+
+/// Resolves the foreground color for a text layer. When the block's pill
+/// backdrop is active we force white (on dark pill) or black (on light pill)
+/// regardless of the user's picked `textColor`, so the text stays readable
+/// against the pill. `naturalOpacity` preserves the per-row hierarchy (e.g.
+/// subtitle at 0.8) whether or not a pill is showing.
+private func studioEffectiveForegroundColor(_ style: TextBlockStyle,
+                                            naturalOpacity: Double = 1.0) -> Color {
+    switch style.background {
+    case .none:      return style.textColor.color.opacity(naturalOpacity)
+    case .darkPill:  return Color.white.opacity(naturalOpacity)
+    case .lightPill: return Color.black.opacity(naturalOpacity)
+    }
+}
+
+/// Paints a rounded-rect pill behind text content when the block's
+/// `background` is set. When `.none`, the modifier is a no-op (no padding,
+/// no fill) so slides that have never touched the pill feature render
+/// identically to before.
+private struct StudioTextPillBackground: ViewModifier {
+    let style: TextBlockStyle
+    let cornerRadius: CGFloat
+    let hPadding: CGFloat
+    let vPadding: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, style.background == .none ? 0 : hPadding)
+            .padding(.vertical, style.background == .none ? 0 : vPadding)
+            .background(fill)
+    }
+
+    @ViewBuilder
+    private var fill: some View {
+        switch style.background {
+        case .none:
+            Color.clear
+        case .darkPill:
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.black.opacity(0.75))
+        case .lightPill:
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.white.opacity(0.75))
+        }
+    }
+}
+
+private extension View {
+    /// Apply the optional rounded-pill backdrop for a text block.
+    func studioTextPill(_ style: TextBlockStyle,
+                        cornerRadius: CGFloat,
+                        hPadding: CGFloat,
+                        vPadding: CGFloat) -> some View {
+        modifier(StudioTextPillBackground(style: style,
+                                          cornerRadius: cornerRadius,
+                                          hPadding: hPadding,
+                                          vPadding: vPadding))
     }
 }
 
@@ -169,9 +435,33 @@ struct CarouselSlide: Identifiable {
     var layout: CarouselSlideLayout = .single
     /// Additional photo thumbnails used when `layout == .pip`. Pre-loaded at export size.
     var pipImages: [UIImage] = []
+    /// Parallel array to `pipImages` holding the `RecapPhoto.id` of each thumbnail.
+    /// Nil entries are allowed for legacy callers that didn't track IDs; the editor
+    /// only uses them to compute the "available to add" set, so a missing ID simply
+    /// excludes that slot from that calculation (it never crashes).
+    var pipPhotoIDs: [UUID] = []
     /// Normalized position offset for the PIP cluster, stored as a fraction of slide dimensions.
     /// `.zero` keeps the cluster at its default top-trailing anchor position.
     var pipOffset: CGSize = .zero
+    /// Outline color painted around each PIP thumbnail. Defaults to white to
+    /// preserve the classic "photo print" look; users can change it per slide
+    /// in the edit toolbar when the PIP cluster is selected.
+    var pipBorderColor: StudioTextColor = .white
+    /// Whether the PIP thumbnail outline is drawn at all. When `false`, each
+    /// thumbnail renders without a border regardless of `pipBorderColor`. Users
+    /// toggle this via the "no border" option at the start of the Border
+    /// color strip.
+    var pipBorderEnabled: Bool = true
+    /// How many PIP thumbnails to render (1 ... 3). Clamped at render time
+    /// against the number of available images, so this can be lowered without
+    /// discarding image data — raising it back restores the earlier photos.
+    var pipVisibleCount: Int = 3
+    /// Row vs column layout for the inset PIP thumbnails (`.pip` only).
+    var pipClusterStackStyle: CarouselPIPClusterStackStyle = .vertical
+    /// `RecapPhoto.id` of the current hero photo. Lets the "Add photo" picker
+    /// exclude it from the available list so users don't duplicate the hero
+    /// into the cluster.
+    var heroPhotoID: UUID? = nil
     /// 1-based sequential stop number across all days, shown as a badge before the place name.
     var stopIndex: Int? = nil
 
@@ -180,6 +470,25 @@ struct CarouselSlide: Identifiable {
         return [photoCaption, placeStop.placeNarrative, placeStop.overallStory, placeStop.noteText]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty }
+    }
+}
+
+/// Returns `true` when the slide at `index` is a `.placeStop` slide in `.single`
+/// layout whose photo is already represented inside a sibling's PIP cluster
+/// (same `placeStop.id`, `layout == .pip`). The preview and export pipelines
+/// hide these so activating multi-photo collapses the stop down to its single
+/// PIP slide; flipping the sibling back to `.single` resurfaces them.
+private func isSlideHiddenBySiblingPIP(at index: Int, in slides: [CarouselSlide]) -> Bool {
+    guard slides.indices.contains(index) else { return false }
+    let slide = slides[index]
+    guard slide.kind == .placeStop,
+          slide.layout == .single,
+          let stopID = slide.placeStop?.id else { return false }
+    return slides.contains { other in
+        other.id != slide.id &&
+        other.kind == .placeStop &&
+        other.layout == .pip &&
+        other.placeStop?.id == stopID
     }
 }
 
@@ -212,7 +521,7 @@ private let studioTextBlockEdgeInset: CGFloat = 6
 /// `slideBounds`). `liveDrag` is the in-flight translation held in gesture state so it
 /// auto-resets on gesture end and there is no one-frame snap between end and commit.
 private struct DraggableTextBlock<Content: View>: View {
-    let id: TextBlockID
+    let id: SlideBlockID
     let isEditingText: Bool
     let isSelected: Bool
     /// Committed displacement from the block's natural anchor, expressed as a normalized
@@ -225,12 +534,25 @@ private struct DraggableTextBlock<Content: View>: View {
     var onSelect: () -> Void = {}
     var onDragStart: () -> Void = {}
     var onDragEnd: () -> Void = {}
+    /// Fires on gesture-end when the user lifted their finger without moving
+    /// more than `tapSlop` points — i.e. it was a tap, not a drag. Used by
+    /// the editor to cycle the block's pill backdrop without reacting to
+    /// drag motion.
+    var onTap: () -> Void = {}
     let content: () -> Content
 
     @GestureState private var liveDrag: CGSize = .zero
     /// Block frame at its natural (anchor-based) position in the slide coord space,
     /// used only for drag clamping. Captured once at `.zero` offset.
     @State private var naturalRect: CGRect?
+    /// Snapshot of `isSelected` taken at the first `onChanged` of a gesture, used
+    /// so taps only cycle the pill backdrop when the block was *already* selected
+    /// before the finger went down. Without this, tapping an unselected block
+    /// would both select it AND cycle its pill style in one gesture.
+    @State private var wasSelectedAtGestureStart: Bool = false
+    /// True from first `onChanged` until `onEnded` — gates the snapshot above so
+    /// we only capture on press-start, not on every drag update.
+    @State private var didBeginGesture: Bool = false
 
     /// `savedOffset` converted from a normalized fraction into absolute points for the
     /// current `slideBounds`. This is what `.offset()` actually consumes.
@@ -252,22 +574,43 @@ private struct DraggableTextBlock<Content: View>: View {
                         state = value.translation
                     }
                     .onChanged { _ in
+                        if !didBeginGesture {
+                            didBeginGesture = true
+                            wasSelectedAtGestureStart = isSelected
+                        }
                         onDragStart()
                         onSelect()
                     }
                     .onEnded { value in
-                        let proposedPoints = CGSize(
-                            width: savedPointOffset.width + value.translation.width,
-                            height: savedPointOffset.height + value.translation.height
-                        )
-                        let clampedPoints = clamped(proposed: proposedPoints)
-                        // Store back in normalized form so the offset survives rendering
-                        // at the smaller preview / export sizes (Story/Reel previews are
-                        // ~62% of the editor slide width, so absolute points would drift).
-                        savedOffset = CGSize(
-                            width: slideBounds.width > 0 ? clampedPoints.width / slideBounds.width : 0,
-                            height: slideBounds.height > 0 ? clampedPoints.height / slideBounds.height : 0
-                        )
+                        // Finger lifted with almost no movement → treat as a tap.
+                        // We route taps to `onTap` (e.g. cycle pill backdrop) and
+                        // *don't* rewrite `savedOffset`, so a tap can never nudge
+                        // the block's committed position.
+                        let tapSlop: CGFloat = 6
+                        let moved = max(abs(value.translation.width),
+                                        abs(value.translation.height))
+                        let beganSelected = wasSelectedAtGestureStart
+                        didBeginGesture = false
+                        wasSelectedAtGestureStart = false
+                        if moved < tapSlop {
+                            // Only cycle the pill backdrop if the block was already
+                            // selected before this tap. A first tap on an unselected
+                            // block just selects it — it must not also flip the style.
+                            if beganSelected { onTap() }
+                        } else {
+                            let proposedPoints = CGSize(
+                                width: savedPointOffset.width + value.translation.width,
+                                height: savedPointOffset.height + value.translation.height
+                            )
+                            let clampedPoints = clamped(proposed: proposedPoints)
+                            // Store back in normalized form so the offset survives rendering
+                            // at the smaller preview / export sizes (Story/Reel previews are
+                            // ~62% of the editor slide width, so absolute points would drift).
+                            savedOffset = CGSize(
+                                width: slideBounds.width > 0 ? clampedPoints.width / slideBounds.width : 0,
+                                height: slideBounds.height > 0 ? clampedPoints.height / slideBounds.height : 0
+                            )
+                        }
                         onDragEnd()
                     },
                 including: isEditingText ? .all : .subviews
@@ -349,8 +692,12 @@ private func mapRouteStoryVisible(_ slide: CarouselSlide) -> Bool {
     !(slide.dayStory ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 }
 
-private func placeCaptionVisible(_ slide: CarouselSlide) -> Bool {
-    !(slide.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+/// Whether the place-stop slide has any top-leading secondary text to show.
+/// The secondary block renders the place subtitle (city, country) at the top —
+/// so the top gradient is gated on that, not on the primary block.
+private func placeSubtitleVisible(_ slide: CarouselSlide) -> Bool {
+    guard let sub = slide.placeStop?.placeSubtitle else { return false }
+    return !sub.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 }
 
 struct CarouselSlideView: View {
@@ -361,17 +708,23 @@ struct CarouselSlideView: View {
     let showsSelectionChrome: Bool
     var isEditingText: Bool = false
     /// Which text block is currently selected for editing (shown with a solid blue border).
-    var selectedBlockID: TextBlockID? = nil
-    /// Called when the user taps a text block to select it.
-    var onSelectBlock: ((TextBlockID) -> Void)? = nil
+    var selectedBlockID: SlideBlockID? = nil
+    /// Called when the user taps a block (text or PIP cluster) to select it.
+    var onSelectBlock: ((SlideBlockID) -> Void)? = nil
     /// Edit-mode write-back: commit a block's new offset. Nil in read-only (preview/export) use.
-    var onUpdateBlockOffset: ((TextBlockID, CGSize) -> Void)? = nil
+    var onUpdateBlockOffset: ((SlideBlockID, CGSize) -> Void)? = nil
     /// Fires on drag-start — the editor uses it to lock horizontal slide paging.
     var onBlockDragStart: (() -> Void)? = nil
     /// Fires on drag-end — the editor uses it to release the paging lock.
     var onBlockDragEnd: (() -> Void)? = nil
+    /// Fires on a true tap (no drag motion) — the editor uses it to cycle
+    /// the block's pill backdrop without reacting to accidental drag motion.
+    var onBlockTap: ((SlideBlockID) -> Void)? = nil
     /// Edit-mode write-back: commit a new PIP cluster offset. Nil in read-only (preview/export) use.
     var onUpdatePIPOffset: ((CGSize) -> Void)? = nil
+    /// Multi-photo layout only: fired when the user taps the large hero backdrop (areas not covered
+    /// by text blocks or the PIP cluster). Opens the hero-swap picker in `SlideTextEditorView`.
+    var onTapHeroBackdrop: (() -> Void)? = nil
 
     private var height: CGFloat { width / aspectRatio }
     private let heroImageScale: CGFloat = 1.12
@@ -379,11 +732,14 @@ struct CarouselSlideView: View {
 
     /// Binding for the block's committed offset. Reads from `slide.textStyle.*`; writes
     /// go through `onUpdateBlockOffset` (nil-callback in read-only contexts makes it a no-op).
-    private func offsetBinding(for id: TextBlockID) -> Binding<CGSize> {
+    private func offsetBinding(for id: SlideBlockID) -> Binding<CGSize> {
         Binding(
             get: {
-                id == .primary ? slide.textStyle.primary.offset
-                               : slide.textStyle.secondary.offset
+                switch id {
+                case .primary:    return slide.textStyle.primary.offset
+                case .secondary:  return slide.textStyle.secondary.offset
+                case .pipCluster: return slide.pipOffset
+                }
             },
             set: { newOffset in onUpdateBlockOffset?(id, newOffset) }
         )
@@ -421,17 +777,28 @@ struct CarouselSlideView: View {
 
             case .placeStop:
                 coverBackground
-                // Top gradient: protects place name text
-                if !slide.isPrimaryHidden {
+                // Top gradient: only when the city/country subtitle is present
+                if placeSubtitleVisible(slide), !slide.isSecondaryHidden {
                     LinearGradient(colors: [.black.opacity(0.65), .clear],
                                    startPoint: .top, endPoint: .init(x: 0.5, y: 0.42))
                         .frame(width: width, height: height)
                 }
-                // Bottom gradient: only when caption text is present
-                if placeCaptionVisible(slide), !slide.isSecondaryHidden {
+                // Bottom gradient: protects the place name + caption
+                if !slide.isPrimaryHidden {
                     LinearGradient(colors: [.clear, .black.opacity(0.72)],
                                    startPoint: .init(x: 0.5, y: 0.58), endPoint: .bottom)
                         .frame(width: width, height: height)
+                }
+                // Sits above the imagery but below all text/PIP overlays (they are `.overlay`s
+                // applied after this `ZStack`). Taps choose the large hero backdrop only; blocks
+                // on top keep their own gestures.
+                if isEditingText, slide.layout == .pip, onTapHeroBackdrop != nil {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .frame(width: width, height: height)
+                        .highPriorityGesture(
+                            TapGesture().onEnded { onTapHeroBackdrop?() }
+                        )
                 }
             }
         }
@@ -447,15 +814,23 @@ struct CarouselSlideView: View {
                     slideBounds: slideBounds,
                     onSelect: { onSelectBlock?(.primary) },
                     onDragStart: { onBlockDragStart?() },
-                    onDragEnd: { onBlockDragEnd?() }
+                    onDragEnd: { onBlockDragEnd?() },
+                    onTap: { onBlockTap?(.primary) }
                 ) {
                     Text(title)
                         .font(.system(size: width * 0.085 * slide.textStyle.primary.sizeScale,
-                                      weight: .heavy,
+                                      weight: studioFontWeight(base: .heavy,
+                                                               isBold: slide.textStyle.primary.isBold),
                                       design: slide.textStyle.primary.fontDesign.design))
-                        .foregroundColor(slide.textStyle.primary.textColor.color)
+                        .foregroundColor(studioEffectiveForegroundColor(slide.textStyle.primary))
                         .lineLimit(3)
-                        .multilineTextAlignment(.center)
+                        .multilineTextAlignment(
+                            slide.textStyle.primary.resolvedMultilineAlignment(fallback: .center))
+                        .studioTextFormat(slide.textStyle.primary)
+                        .studioTextPill(slide.textStyle.primary,
+                                        cornerRadius: width * 0.055,
+                                        hPadding: width * 0.04,
+                                        vPadding: width * 0.022)
                         .padding(.horizontal, width * 0.038)
                 }
             }
@@ -471,25 +846,40 @@ struct CarouselSlideView: View {
                     slideBounds: slideBounds,
                     onSelect: { onSelectBlock?(.primary) },
                     onDragStart: { onBlockDragStart?() },
-                    onDragEnd: { onBlockDragEnd?() }
+                    onDragEnd: { onBlockDragEnd?() },
+                    onTap: { onBlockTap?(.primary) }
                 ) {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: slide.textStyle.primary.alignment.stackAlignment(fallback: .leading),
+                           spacing: 4) {
                         if let l1 = slide.dayInfoLine1 {
                             Text(l1)
                                 .font(.system(size: width * 0.075 * slide.textStyle.primary.sizeScale,
-                                              weight: .heavy,
+                                              weight: studioFontWeight(base: .heavy,
+                                                                       isBold: slide.textStyle.primary.isBold),
                                               design: slide.textStyle.primary.fontDesign.design))
-                                .foregroundColor(slide.textStyle.primary.textColor.color)
+                                .foregroundColor(studioEffectiveForegroundColor(slide.textStyle.primary))
+                                .multilineTextAlignment(
+                                    slide.textStyle.primary.resolvedMultilineAlignment(fallback: .leading))
+                                .studioTextFormat(slide.textStyle.primary)
                         }
                         if let l2 = slide.dayInfoLine2 {
                             Text(l2)
                                 .font(.system(size: width * 0.038 * slide.textStyle.primary.sizeScale,
-                                              weight: .semibold,
+                                              weight: studioFontWeight(base: .semibold,
+                                                                       isBold: slide.textStyle.primary.isBold),
                                               design: slide.textStyle.primary.fontDesign.design))
-                                .foregroundColor(slide.textStyle.primary.textColor.color.opacity(0.88))
+                                .foregroundColor(studioEffectiveForegroundColor(slide.textStyle.primary,
+                                                                                naturalOpacity: 0.88))
                                 .lineLimit(1)
+                                .multilineTextAlignment(
+                                    slide.textStyle.primary.resolvedMultilineAlignment(fallback: .leading))
+                                .studioTextFormat(slide.textStyle.primary)
                         }
                     }
+                    .studioTextPill(slide.textStyle.primary,
+                                    cornerRadius: width * 0.045,
+                                    hPadding: width * 0.032,
+                                    vPadding: width * 0.02)
                     .padding(width * 0.038)
                 }
                 // Nudge the block inward by the same amount the clamp enforces,
@@ -510,21 +900,31 @@ struct CarouselSlideView: View {
                     slideBounds: slideBounds,
                     onSelect: { onSelectBlock?(.secondary) },
                     onDragStart: { onBlockDragStart?() },
-                    onDragEnd: { onBlockDragEnd?() }
+                    onDragEnd: { onBlockDragEnd?() },
+                    onTap: { onBlockTap?(.secondary) }
                 ) {
                     Text(storyText)
                         .font(.system(size: width * 0.042 * slide.textStyle.secondary.sizeScale,
+                                      weight: studioFontWeight(base: .regular,
+                                                               isBold: slide.textStyle.secondary.isBold),
                                       design: slide.textStyle.secondary.fontDesign.design))
-                        .foregroundColor(slide.textStyle.secondary.textColor.color.opacity(0.88))
+                        .foregroundColor(studioEffectiveForegroundColor(slide.textStyle.secondary,
+                                                                        naturalOpacity: 0.88))
                         .lineLimit(4)
-                        .multilineTextAlignment(.leading)
+                        .multilineTextAlignment(
+                            slide.textStyle.secondary.resolvedMultilineAlignment(fallback: .leading))
+                        .studioTextFormat(slide.textStyle.secondary)
+                        .studioTextPill(slide.textStyle.secondary,
+                                        cornerRadius: width * 0.038,
+                                        hPadding: width * 0.03,
+                                        vPadding: width * 0.018)
                         .padding(width * 0.038)
                 }
                 .padding(studioTextBlockEdgeInset)
             }
         }
-        // Place name + subtitle — top-leading
-        .overlay(alignment: .topLeading) {
+        // Place name + caption — bottom-leading
+        .overlay(alignment: .bottomLeading) {
             if slide.kind == .placeStop, !slide.isPrimaryHidden {
                 if let placeStop = slide.placeStop {
                     DraggableTextBlock(
@@ -535,32 +935,53 @@ struct CarouselSlideView: View {
                         slideBounds: slideBounds,
                         onSelect: { onSelectBlock?(.primary) },
                         onDragStart: { onBlockDragStart?() },
-                        onDragEnd: { onBlockDragEnd?() }
+                        onDragEnd: { onBlockDragEnd?() },
+                        onTap: { onBlockTap?(.primary) }
                     ) {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: slide.textStyle.primary.alignment.stackAlignment(fallback: .leading),
+                               spacing: 4) {
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 if let idx = slide.stopIndex {
                                     Text("\(idx)")
                                         .font(.system(size: width * 0.05 * slide.textStyle.primary.sizeScale,
-                                                      weight: .heavy,
+                                                      weight: studioFontWeight(base: .heavy,
+                                                                               isBold: slide.textStyle.primary.isBold),
                                                       design: slide.textStyle.primary.fontDesign.design))
-                                        .foregroundColor(slide.textStyle.primary.textColor.color.opacity(0.7))
+                                        .foregroundColor(studioEffectiveForegroundColor(slide.textStyle.primary,
+                                                                                         naturalOpacity: 0.7))
+                                        .studioTextFormat(slide.textStyle.primary)
                                 }
                                 Text(placeStop.placeTitle)
                                     .font(.system(size: width * 0.065 * slide.textStyle.primary.sizeScale,
-                                                  weight: .bold,
+                                                  weight: studioFontWeight(base: .bold,
+                                                                           isBold: slide.textStyle.primary.isBold),
                                                   design: slide.textStyle.primary.fontDesign.design))
-                                    .foregroundColor(slide.textStyle.primary.textColor.color)
+                                    .foregroundColor(studioEffectiveForegroundColor(slide.textStyle.primary))
                                     .lineLimit(2)
+                                    .multilineTextAlignment(
+                                        slide.textStyle.primary.resolvedMultilineAlignment(fallback: .leading))
+                                    .studioTextFormat(slide.textStyle.primary)
                             }
-                            if let sub = placeStop.placeSubtitle, !sub.isEmpty {
-                                Text(sub)
-                                    .font(.system(size: width * 0.048 * slide.textStyle.primary.sizeScale,
+                            let primaryCaption = (slide.caption ?? "")
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !primaryCaption.isEmpty {
+                                Text(primaryCaption)
+                                    .font(.system(size: width * 0.044 * slide.textStyle.primary.sizeScale,
+                                                  weight: studioFontWeight(base: .regular,
+                                                                           isBold: slide.textStyle.primary.isBold),
                                                   design: slide.textStyle.primary.fontDesign.design))
-                                    .foregroundColor(slide.textStyle.primary.textColor.color.opacity(0.8))
-                                    .lineLimit(1)
+                                    .foregroundColor(studioEffectiveForegroundColor(slide.textStyle.primary,
+                                                                                    naturalOpacity: 0.85))
+                                    .lineLimit(3)
+                                    .multilineTextAlignment(
+                                        slide.textStyle.primary.resolvedMultilineAlignment(fallback: .leading))
+                                    .studioTextFormat(slide.textStyle.primary)
                             }
                         }
+                        .studioTextPill(slide.textStyle.primary,
+                                        cornerRadius: width * 0.045,
+                                        hPadding: width * 0.032,
+                                        vPadding: width * 0.02)
                         .padding(width * 0.038)
                     }
                     .padding(studioTextBlockEdgeInset)
@@ -573,10 +994,11 @@ struct CarouselSlideView: View {
                 }
             }
         }
-        // Place caption — bottom-leading
-        .overlay(alignment: .bottomLeading) {
-            let captionText = (slide.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if slide.kind == .placeStop, !slide.isSecondaryHidden, !captionText.isEmpty {
+        // Place subtitle (city, country) — top-leading
+        .overlay(alignment: .topLeading) {
+            let subtitleText = (slide.placeStop?.placeSubtitle ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if slide.kind == .placeStop, !slide.isSecondaryHidden, !subtitleText.isEmpty {
                 DraggableTextBlock(
                     id: .secondary,
                     isEditingText: isEditingText,
@@ -585,14 +1007,24 @@ struct CarouselSlideView: View {
                     slideBounds: slideBounds,
                     onSelect: { onSelectBlock?(.secondary) },
                     onDragStart: { onBlockDragStart?() },
-                    onDragEnd: { onBlockDragEnd?() }
+                    onDragEnd: { onBlockDragEnd?() },
+                    onTap: { onBlockTap?(.secondary) }
                 ) {
-                    Text(captionText)
-                        .font(.system(size: width * 0.044 * slide.textStyle.secondary.sizeScale,
+                    Text(subtitleText)
+                        .font(.system(size: width * 0.048 * slide.textStyle.secondary.sizeScale,
+                                      weight: studioFontWeight(base: .regular,
+                                                               isBold: slide.textStyle.secondary.isBold),
                                       design: slide.textStyle.secondary.fontDesign.design))
-                        .foregroundColor(slide.textStyle.secondary.textColor.color.opacity(0.85))
-                        .lineLimit(4)
-                        .multilineTextAlignment(.leading)
+                        .foregroundColor(studioEffectiveForegroundColor(slide.textStyle.secondary,
+                                                                        naturalOpacity: 0.85))
+                        .lineLimit(1)
+                        .multilineTextAlignment(
+                            slide.textStyle.secondary.resolvedMultilineAlignment(fallback: .leading))
+                        .studioTextFormat(slide.textStyle.secondary)
+                        .studioTextPill(slide.textStyle.secondary,
+                                        cornerRadius: width * 0.038,
+                                        hPadding: width * 0.03,
+                                        vPadding: width * 0.018)
                         .padding(width * 0.038)
                 }
                 .padding(studioTextBlockEdgeInset)
@@ -606,8 +1038,14 @@ struct CarouselSlideView: View {
                     slideBounds: slideBounds,
                     onDragStart: { onBlockDragStart?() },
                     onDragEnd: { onBlockDragEnd?() },
+                    onSelect: { onSelectBlock?(.pipCluster) },
                     images: slide.pipImages,
-                    slideWidth: width
+                    slideWidth: width,
+                    borderColor: slide.pipBorderEnabled ? slide.pipBorderColor.color : .clear,
+                    visibleCount: slide.pipVisibleCount,
+                    stackStyle: slide.pipClusterStackStyle,
+                    isEditingText: isEditingText,
+                    isSelected: selectedBlockID == .pipCluster
                 )
                 .transition(.scale(scale: 0.85).combined(with: .opacity))
             }
@@ -672,34 +1110,58 @@ struct CarouselSlideView: View {
 // MARK: - PIP Cluster
 
 /// Stacked photo thumbnails rendered in the top-trailing corner for PIP layout.
-/// Up to 3 images are shown; each has a white border, drop shadow, and a small
-/// alternating rotation for an editorial "spread" feel.
+/// Up to 3 images can be shown (clamped by `visibleCount`); each has a user-
+/// configurable outline color, drop shadow, and a small alternating rotation
+/// for an editorial "spread" feel.
 private struct PIPClusterView: View {
     let images: [UIImage]
     let slideWidth: CGFloat
+    /// Outline color painted around each thumbnail. Defaults to white.
+    var borderColor: Color = .white
+    /// Maximum number of thumbnails to render (1 ... 3). Further clamped by
+    /// the number of supplied images, so at most `min(images.count, visibleCount)`
+    /// tiles ever appear.
+    var visibleCount: Int = 3
+    var stackStyle: CarouselPIPClusterStackStyle = .vertical
 
     private var thumbW: CGFloat { slideWidth * 0.30 }
     private var thumbH: CGFloat { thumbW * 0.72 }
     private let rotations: [Double] = [1.5, -1.0, 1.8]
 
+    private var shownImages: [(Int, UIImage)] {
+        let clamped = max(0, min(visibleCount, min(images.count, 3)))
+        return Array(images.prefix(clamped).enumerated())
+    }
+
     var body: some View {
-        VStack(alignment: .trailing, spacing: 5) {
-            ForEach(Array(images.prefix(3).enumerated()), id: \.offset) { idx, image in
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: thumbW, height: thumbH)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(.white, lineWidth: 2.2)
-                    )
-                    .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
-                    .rotationEffect(.degrees(rotations[idx % rotations.count]))
+        Group {
+            switch stackStyle {
+            case .vertical:
+                VStack(alignment: .trailing, spacing: 5) { pipThumbnails }
+            case .horizontal:
+                HStack(alignment: .bottom, spacing: 5) { pipThumbnails }
             }
         }
         .padding(.top, slideWidth * 0.06)
         .padding(.trailing, slideWidth * 0.05)
+        .animation(.easeInOut(duration: 0.2), value: stackStyle)
+    }
+
+    @ViewBuilder
+    private var pipThumbnails: some View {
+        ForEach(shownImages, id: \.0) { idx, image in
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: thumbW, height: thumbH)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(borderColor, lineWidth: 2.2)
+                )
+                .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
+                .rotationEffect(.degrees(rotations[idx % rotations.count]))
+        }
     }
 }
 
@@ -709,13 +1171,27 @@ private struct PIPClusterView: View {
 /// thumbnail stack anywhere on the slide. The committed position is stored as a
 /// normalized fraction of `slideBounds` (same convention as `TextBlockStyle.offset`)
 /// so it renders correctly at every output size (editor / preview / export).
+///
+/// In editor mode (`isEditingText`), the cluster also behaves like a text block:
+/// a tap (gesture with <`tapSlop` movement) selects it so the PIP-specific
+/// toolbar can show, and a blue ring is drawn around the bounding rect while
+/// selected. Drags reposition as before, with no selection side-effects.
 private struct DraggablePIPCluster: View {
     @Binding var savedOffset: CGSize
     let slideBounds: CGRect
     var onDragStart: () -> Void = {}
     var onDragEnd: () -> Void = {}
+    var onSelect: () -> Void = {}
     let images: [UIImage]
     let slideWidth: CGFloat
+    var borderColor: Color = .white
+    var visibleCount: Int = 3
+    var stackStyle: CarouselPIPClusterStackStyle = .vertical
+    /// True while the slide is in the full-screen text editor; enables the
+    /// selection ring and routes taps through `onSelect`.
+    var isEditingText: Bool = false
+    /// True when `selectedBlock == .pipCluster` in the editor.
+    var isSelected: Bool = false
 
     @GestureState private var liveDrag: CGSize = .zero
     @State private var naturalRect: CGRect?
@@ -726,28 +1202,73 @@ private struct DraggablePIPCluster: View {
     }
 
     var body: some View {
-        PIPClusterView(images: images, slideWidth: slideWidth)
+        PIPClusterView(images: images,
+                       slideWidth: slideWidth,
+                       borderColor: borderColor,
+                       visibleCount: visibleCount,
+                       stackStyle: stackStyle)
             .background(naturalRectCapture)
+            .overlay(selectionRing)
             .contentShape(Rectangle())
             .offset(x: savedPointOffset.width + liveDrag.width,
                     y: savedPointOffset.height + liveDrag.height)
-            .gesture(
-                DragGesture(minimumDistance: 4, coordinateSpace: .local)
+            // Use minimumDistance: 0 in the editor so taps can select the
+            // cluster (mirrors `DraggableTextBlock`'s gesture). Outside the
+            // editor, keep the original 4pt threshold so PIP never accidentally
+            // swallows taps meant for the slide selection chrome.
+            .highPriorityGesture(
+                DragGesture(minimumDistance: isEditingText ? 0 : 4,
+                            coordinateSpace: .local)
                     .updating($liveDrag) { value, state, _ in state = value.translation }
                     .onChanged { _ in onDragStart() }
                     .onEnded { value in
-                        let proposed = CGSize(
-                            width: savedPointOffset.width + value.translation.width,
-                            height: savedPointOffset.height + value.translation.height
-                        )
-                        let clamped = clampedOffset(proposed)
-                        savedOffset = CGSize(
-                            width: slideBounds.width > 0 ? clamped.width / slideBounds.width : 0,
-                            height: slideBounds.height > 0 ? clamped.height / slideBounds.height : 0
-                        )
+                        let tapSlop: CGFloat = 6
+                        let moved = max(abs(value.translation.width),
+                                        abs(value.translation.height))
+                        if moved < tapSlop {
+                            if isEditingText { onSelect() }
+                        } else {
+                            let proposed = CGSize(
+                                width: savedPointOffset.width + value.translation.width,
+                                height: savedPointOffset.height + value.translation.height
+                            )
+                            let clamped = clampedOffset(proposed)
+                            savedOffset = CGSize(
+                                width: slideBounds.width > 0 ? clamped.width / slideBounds.width : 0,
+                                height: slideBounds.height > 0 ? clamped.height / slideBounds.height : 0
+                            )
+                        }
                         onDragEnd()
                     }
             )
+            .animation(.easeInOut(duration: 0.15), value: isSelected)
+    }
+
+    @ViewBuilder
+    private var selectionRing: some View {
+        if isEditingText {
+            // `PIPClusterView` includes internal `.padding(.top, slideWidth*0.06)` and
+            // `.padding(.trailing, slideWidth*0.05)` to offset the thumbnail stack from
+            // the slide's top-right corner. The overlay sits on the padded frame, so we
+            // counter those insets here to keep a uniform 4pt of breathing room around
+            // the tiles on all four sides.
+            let ringBreathing: CGFloat = 4
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(
+                    isSelected
+                        ? Color(red: 0.14, green: 0.52, blue: 1.0)
+                        : Color.white.opacity(0.35),
+                    style: isSelected
+                        ? StrokeStyle(lineWidth: 2.0)
+                        : StrokeStyle(lineWidth: 1.0, dash: [5, 3])
+                )
+                .padding(EdgeInsets(
+                    top: slideWidth * 0.06 - ringBreathing,
+                    leading: -ringBreathing,
+                    bottom: -ringBreathing,
+                    trailing: slideWidth * 0.05 - ringBreathing
+                ))
+        }
     }
 
     @ViewBuilder
@@ -757,6 +1278,7 @@ private struct DraggablePIPCluster: View {
                 .onAppear { captureNaturalRect(from: geo) }
                 .onChange(of: geo.size) { _, _ in captureNaturalRect(from: geo) }
                 .onChange(of: slideBounds) { _, _ in captureNaturalRect(from: geo) }
+            .onChange(of: stackStyle) { _, _ in captureNaturalRect(from: geo) }
         }
     }
 
@@ -795,14 +1317,19 @@ private struct SlideEditPage: View {
     let layoutWidth: CGFloat
     /// Maximum height the slide can occupy — used to scale width down for tall formats (e.g. 9:16).
     let maxHeight: CGFloat
-    let selectedBlock: TextBlockID?
-    let onSelectBlock: (TextBlockID) -> Void
+    let selectedBlock: SlideBlockID?
+    let onSelectBlock: (SlideBlockID) -> Void
     /// Called when the user taps the slide background (outside any text block) — used to deselect.
     let onDeselect: () -> Void
     /// Called immediately before committing a new text-block offset (drag end) so the parent can record undo.
     let recordUndoSnapshot: () -> Void
     /// While true, the slide pager's horizontal scrolling is disabled (text drag / tap on a block).
     @Binding var locksHorizontalSlidePaging: Bool
+    /// Present the hero swap sheet (PIP layout): user tapped the large backdrop photo.
+    /// Passes the pager index so swaps stay tied to this page if the sheet stays open while scrolling.
+    let onRequestHeroSwap: (Int) -> Void
+    /// Which horizontal page this edit surface represents (`slides` index).
+    let slidePageIndex: Int
 
     private var slideWidth: CGFloat {
         let fromLayout = max(220, layoutWidth - 48)
@@ -822,17 +1349,39 @@ private struct SlideEditPage: View {
             onSelectBlock: { onSelectBlock($0) },
             onUpdateBlockOffset: { id, newOffset in
                 recordUndoSnapshot()
-                if id == .primary {
-                    slide.textStyle.primary.offset = newOffset
-                } else {
-                    slide.textStyle.secondary.offset = newOffset
+                switch id {
+                case .primary:    slide.textStyle.primary.offset = newOffset
+                case .secondary:  slide.textStyle.secondary.offset = newOffset
+                case .pipCluster: slide.pipOffset = newOffset
                 }
             },
             onBlockDragStart: { locksHorizontalSlidePaging = true },
             onBlockDragEnd: { locksHorizontalSlidePaging = false },
+            onBlockTap: { id in
+                // Tap-to-cycle: default → dark pill → light pill → default.
+                // Guarded by the drag-vs-tap threshold in `DraggableTextBlock`
+                // so drags never flip the backdrop mid-reposition. PIP taps
+                // don't cycle anything — their tap is already consumed by
+                // `onSelect` on the cluster, which routes through `onSelectBlock`.
+                guard id == .primary || id == .secondary else { return }
+                recordUndoSnapshot()
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    if id == .primary {
+                        slide.textStyle.primary.background =
+                            slide.textStyle.primary.background.next()
+                    } else {
+                        slide.textStyle.secondary.background =
+                            slide.textStyle.secondary.background.next()
+                    }
+                }
+            },
             onUpdatePIPOffset: { newOffset in
                 recordUndoSnapshot()
                 slide.pipOffset = newOffset
+            },
+            onTapHeroBackdrop: {
+                guard slide.kind == .placeStop, slide.layout == .pip else { return }
+                onRequestHeroSwap(slidePageIndex)
             }
         )
         .coordinateSpace(.named(studioSlideCoordSpace))
@@ -861,10 +1410,23 @@ struct SlideTextEditorView: View {
     /// which races with the `fullScreenCover` present animation and (especially for 9:16
     /// Story/Reel slides) lands a few points off-center.
     @State private var scrollPageID: Int?
-    @State private var selectedBlock: TextBlockID? = nil
+    @State private var selectedBlock: SlideBlockID? = nil
     /// Which style category (Color / Font Style / Font Size) is currently open in
     /// the drop-up panel. `nil` collapses the panel and only the category tab bar is shown.
     @State private var activeStyleCategory: StyleCategory? = nil
+    /// Which PIP category (Photos / Border) is currently open. Parallels
+    /// `activeStyleCategory` but for the photo-cluster toolbar that shows when
+    /// `selectedBlock == .pipCluster`. Kept separate from `activeStyleCategory`
+    /// so switching between a text block and the PIP block resets panel state.
+    @State private var activePIPCategory: PIPStyleCategory? = nil
+    /// True while the "Add photo" picker sheet is presented. Nil-able to work
+    /// with `.sheet(isPresented:)`. The picker reads `currentSlide?.placeStop`
+    /// and the exclusion set live, so no extra context needs to be captured.
+    @State private var showsAddPhotoPicker: Bool = false
+    /// PIP layout: pick another place photo to feature as the large backdrop.
+    @State private var showsHeroPhotoSwapSheet: Bool = false
+    /// Slide index captured when opening `showsHeroPhotoSwapSheet` (stable if user changes pages).
+    @State private var heroSwapSlideIndex: Int?
     /// Disables horizontal slide paging while the user touches a text block (see `SlideEditPage`).
     @State private var locksHorizontalSlidePaging = false
     /// Briefly true after a bulk "Apply to…" action to show a confirmation flash.
@@ -912,11 +1474,40 @@ struct SlideTextEditorView: View {
     /// slide's own drag gesture is not in flight.
     private let bottomChromeExpanded: CGFloat = 176
 
+    /// Extra-tall chrome while the PIP "Photos" stack-order drop-up is open — hosts the
+    /// drag-to-reorder list inside an inset card without covering the slide to
+    /// the top of the screen.
+    private let bottomChromePIPReorder: CGFloat = 392
+
+    /// Reserve subtracted from available height when computing `maxSlotH` for the
+    /// slide pager. Matches pre–PIP-reorder behavior (`bottomChromeExpanded`) for
+    /// all cases except while the tall PIP reorder drop-up is visible (multi-image),
+    /// where we temporarily reserve `bottomChromePIPReorder` so the slide + chevrons
+    /// stay above the actual inset without permanently shrinking the editor by 392pt
+    /// when reorder is closed.
+    private var slotSizingBottomReserve: CGFloat {
+        if activePIPCategory == .order,
+           let slide = currentSlide,
+           slide.layout == .pip {
+            let images = slide.pipImages
+            let visible = min(max(0, slide.pipVisibleCount), images.count)
+            if visible > 1 { return bottomChromePIPReorder }
+        }
+        return bottomChromeExpanded
+    }
+
     /// Current inset height. Drives the `.safeAreaInset` frame so the chrome
     /// is only as tall as it needs to be — eliminates the ~60pt of dead gray
     /// that previously sat above Delete / Apply to… when no panel was open.
     private var currentChromeHeight: CGFloat {
-        activeStyleCategory == nil ? bottomChromeCollapsed : bottomChromeExpanded
+        if activePIPCategory == .order {
+            let images = currentSlide?.pipImages ?? []
+            let visible = min(max(0, currentSlide?.pipVisibleCount ?? 0), images.count)
+            if visible <= 1 { return bottomChromeExpanded }
+            return bottomChromePIPReorder
+        }
+        let expanded = activeStyleCategory != nil || activePIPCategory != nil
+        return expanded ? bottomChromeExpanded : bottomChromeCollapsed
     }
 
     // MARK: Helpers
@@ -926,9 +1517,27 @@ struct SlideTextEditorView: View {
         return slides[currentIndex]
     }
 
-    private var availableBlocks: [TextBlockID] {
+    /// Slides the editor's swipe pager should actually render — mirrors the
+    /// filter used by the preview/export pipelines so a place-stop slide that
+    /// has been "folded into" a sibling's PIP cluster (same stop, `.pip`
+    /// layout) doesn't reappear here. Without this, flipping a stop to
+    /// multi-photo in the preview grid and then tapping Edit would still let
+    /// the user swipe across the very slides that were just collapsed away.
+    private var visibleSlideIndices: [Int] {
+        slides.indices.filter { !isSlideHiddenBySiblingPIP(at: $0, in: slides) }
+    }
+
+    /// Position (0-based) of `currentIndex` within `visibleSlideIndices`, or `nil`
+    /// if the current slide is somehow hidden. Drives the chevron counter so the
+    /// user sees "page 2 of 4" over visible pages rather than "3 of 7" where
+    /// three of those pages don't exist in the pager.
+    private var currentVisiblePosition: Int? {
+        visibleSlideIndices.firstIndex(of: currentIndex)
+    }
+
+    private var availableBlocks: [SlideBlockID] {
         guard let slide = currentSlide else { return [] }
-        var blocks: [TextBlockID] = []
+        var blocks: [SlideBlockID] = []
         switch slide.kind {
         case .cover:
             if !slide.isPrimaryHidden { blocks.append(.primary) }
@@ -938,8 +1547,18 @@ struct SlideTextEditorView: View {
         case .placeStop:
             if !slide.isPrimaryHidden { blocks.append(.primary) }
             if !slide.isSecondaryHidden { blocks.append(.secondary) }
+            if slide.layout == .pip, !slide.pipImages.isEmpty {
+                blocks.append(.pipCluster)
+            }
         }
         return blocks
+    }
+
+    /// True when the selected block is the PIP photo cluster rather than a text block.
+    /// Drives the toolbar branching below — text blocks use the typography chrome,
+    /// the PIP cluster uses a dedicated delete / swap / count / border color chrome.
+    private var isPIPClusterSelected: Bool {
+        selectedBlock == .pipCluster
     }
 
     private var currentStyle: TextBlockStyle {
@@ -962,6 +1581,17 @@ struct SlideTextEditorView: View {
         if clamped != currentIndex {
             currentIndex = clamped
             scrollPageID = clamped
+            selectedBlock = nil
+        }
+        // If the target slide is now hidden (e.g. an undo re-activated a sibling's
+        // PIP cluster), jump to the closest visible slide so the pager never sits
+        // on a page that isn't in the `ForEach`.
+        let visible = visibleSlideIndices
+        guard !visible.isEmpty else { return }
+        if !visible.contains(currentIndex) {
+            let nearest = visible.min(by: { abs($0 - currentIndex) < abs($1 - currentIndex) }) ?? visible[0]
+            currentIndex = nearest
+            scrollPageID = nearest
             selectedBlock = nil
         }
     }
@@ -1002,18 +1632,323 @@ struct SlideTextEditorView: View {
     }
 
     /// Hides the currently selected block on this slide. Undo restores the prior `slides` snapshot.
+    /// For the PIP cluster this reverts the slide to the single-hero layout, which also
+    /// re-selects sibling slides that were deselected when the cluster was created.
     private func deleteSelectedBlock() {
         guard let selectedBlock, hasValidCurrentIndex else { return }
         pushUndoSnapshot()
-        withAnimation(.easeInOut(duration: 0.2)) {
-            if selectedBlock == .primary {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            switch selectedBlock {
+            case .primary:
                 slides[currentIndex].isPrimaryHidden = true
-            } else {
+            case .secondary:
                 slides[currentIndex].isSecondaryHidden = true
+            case .pipCluster:
+                revertPIPClusterToSingle(slideIndex: currentIndex)
             }
         }
         // Clear selection after deleting the block.
         self.selectedBlock = availableBlocks.first
+        // Collapse any open drop-up when the cluster disappears — the category tabs
+        // for a different block type won't match the panel content.
+        self.activePIPCategory = nil
+    }
+
+    /// Reverts a place-stop slide back to the single-photo layout. Mirrors the
+    /// sibling-sync logic in `SocialPostStudioSheet.setLayout(.single, ...)`:
+    /// sibling slides that were auto-deselected when `.pip` activated are
+    /// re-selected so every photo is visible again as its own slide.
+    private func revertPIPClusterToSingle(slideIndex: Int) {
+        guard slides.indices.contains(slideIndex) else { return }
+        guard slides[slideIndex].kind == .placeStop else { return }
+        let stopID = slides[slideIndex].placeStop?.id
+        slides[slideIndex].layout = .single
+        // Reset the cluster's positional offset so re-enabling PIP later starts clean.
+        slides[slideIndex].pipOffset = .zero
+        for i in slides.indices where i != slideIndex {
+            guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
+            slides[i].isSelected = true
+        }
+    }
+
+    /// Rotates the PIP cluster's photos so the current hero moves into the cluster and
+    /// the first PIP thumbnail takes its place. Gives users a one-tap way to promote a
+    /// cluster photo without leaving the editor. Rotates `pipPhotoIDs` alongside
+    /// `pipImages` so the hero ID stays aligned with the hero image.
+    private func swapPIPPhotos() {
+        guard hasValidCurrentIndex,
+              slides[currentIndex].layout == .pip,
+              !slides[currentIndex].pipImages.isEmpty,
+              let hero = slides[currentIndex].heroImage else { return }
+        pushUndoSnapshot()
+        var pip = slides[currentIndex].pipImages
+        var pipIDs = slides[currentIndex].pipPhotoIDs
+        let promoted = pip.removeFirst()
+        let promotedID: UUID? = pipIDs.isEmpty ? nil : pipIDs.removeFirst()
+        pip.append(hero)
+        if let heroID = slides[currentIndex].heroPhotoID {
+            pipIDs.append(heroID)
+        }
+        withAnimation(.easeInOut(duration: 0.22)) {
+            slides[currentIndex].heroImage = promoted
+            slides[currentIndex].heroPhotoID = promotedID
+            slides[currentIndex].pipImages = pip
+            slides[currentIndex].pipPhotoIDs = pipIDs
+        }
+    }
+
+    /// Replaces the large hero backdrop with another included photo from the same place.
+    /// If the picked photo already lives in the PIP strip, performs a straight swap with
+    /// the current hero (images + IDs). Otherwise loads the asset and moves the former
+    /// hero into the cluster the same way a new add would (hidden fourth slot allowed).
+    private func swapHeroWithPlacePhoto(_ photo: RecapPhoto, slideIndex slideIdx: Int) {
+        guard slides.indices.contains(slideIdx),
+              slides[slideIdx].layout == .pip,
+              slides[slideIdx].kind == .placeStop else { return }
+        if photo.id == slides[slideIdx].heroPhotoID { return }
+        pushUndoSnapshot()
+
+        if let pipIdx = slides[slideIdx].pipPhotoIDs.firstIndex(of: photo.id) {
+            let pipImg = slides[slideIdx].pipImages[pipIdx]
+            let pipPID = slides[slideIdx].pipPhotoIDs[pipIdx]
+            let oldHero = slides[slideIdx].heroImage
+            let oldHID = slides[slideIdx].heroPhotoID
+
+            withAnimation(.easeInOut(duration: 0.22)) {
+                slides[slideIdx].heroImage = pipImg
+                slides[slideIdx].heroPhotoID = pipPID
+                slides[slideIdx].pipImages[pipIdx] = oldHero ?? pipImg
+                slides[slideIdx].pipPhotoIDs[pipIdx] = oldHID ?? pipPID
+            }
+            return
+        }
+
+        Task {
+            let targetSize = CGSize(width: 1080, height: 1080)
+            guard let localId = photo.localIdentifier,
+                  let loaded = await loadCarouselAssetImage(identifier: localId, size: targetSize)
+            else { return }
+            await MainActor.run {
+                guard slides.indices.contains(slideIdx),
+                      slides[slideIdx].layout == .pip else { return }
+                let oldHero = slides[slideIdx].heroImage
+                let oldHID = slides[slideIdx].heroPhotoID
+
+                slides[slideIdx].heroImage = loaded
+                slides[slideIdx].heroPhotoID = photo.id
+
+                guard let oImg = oldHero, let oid = oldHID else { return }
+
+                var imgs = slides[slideIdx].pipImages
+                var ids = slides[slideIdx].pipPhotoIDs
+                let vc = slides[slideIdx].pipVisibleCount
+                let insertAt = max(0, min(vc, imgs.count))
+                imgs.insert(oImg, at: insertAt)
+                ids.insert(oid, at: insertAt)
+
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    slides[slideIdx].pipImages = imgs
+                    slides[slideIdx].pipPhotoIDs = ids
+                    slides[slideIdx].pipVisibleCount = min(3, vc + 1)
+                }
+            }
+        }
+    }
+
+    /// Sets `pipVisibleCount` on the current slide (clamped 1 ... 3). Retained
+    /// for internal callers (e.g. `addPIPPhotoToCluster`). The explicit 1/2/3
+    /// count pills that used to live in the Photos drop-up were removed — the
+    /// Reorder tab hosts drag-to-reorder, and count is driven indirectly
+    /// via the Add / Remove pills in `pipCategoryTabBar`.
+    private func setPIPVisibleCount(_ count: Int) {
+        guard hasValidCurrentIndex,
+              slides[currentIndex].layout == .pip else { return }
+        let clamped = min(max(count, 1), 3)
+        guard slides[currentIndex].pipVisibleCount != clamped else { return }
+        pushUndoSnapshot()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            slides[currentIndex].pipVisibleCount = clamped
+        }
+    }
+
+    /// Applies a drag-reorder gesture from `List.onMove` (in the Reorder tab
+    /// module) to both the visible image array and the parallel
+    /// photo-ID array, so the PIP cluster on the slide redraws in the new
+    /// order immediately. `source` and `destination` follow SwiftUI's
+    /// `move(fromOffsets:toOffset:)` semantics: indices are in the visible
+    /// range and `destination` is the slot the items should land *in front
+    /// of* — passing `visible` moves them to the end of the visible range.
+    /// Indices outside the visible range are rejected so a stale drag
+    /// triggered just as the cluster size changes can't mangle the arrays.
+    private func reorderPIPPhotos(fromOffsets source: IndexSet,
+                                  toOffset destination: Int) {
+        guard hasValidCurrentIndex,
+              slides[currentIndex].layout == .pip else { return }
+        let slide = slides[currentIndex]
+        let visible = min(max(0, slide.pipVisibleCount), slide.pipImages.count)
+        guard visible > 1 else { return }
+        guard source.allSatisfy({ (0..<visible).contains($0) }),
+              (0...visible).contains(destination) else { return }
+        pushUndoSnapshot()
+        withAnimation(.easeInOut(duration: 0.22)) {
+            slides[currentIndex].pipImages.move(fromOffsets: source,
+                                                toOffset: destination)
+            // Keep the parallel ID array in step. Only perform the move when
+            // the IDs fully cover the visible range — otherwise the caller
+            // has a shorter IDs array (legacy slides), and skipping the move
+            // leaves it untouched rather than indexing out of range.
+            if slides[currentIndex].pipPhotoIDs.count >= visible {
+                slides[currentIndex].pipPhotoIDs.move(fromOffsets: source,
+                                                     toOffset: destination)
+            }
+        }
+    }
+
+    /// Removes the bottom-most photo from the current cluster (the last
+    /// visible slot) and drops `pipVisibleCount` by one. Inverse of
+    /// `addPIPPhotoToCluster` — symmetry means Add-then-Remove cleanly walks
+    /// the user back to where they started.
+    private func removeLastPIPPhoto() {
+        guard hasValidCurrentIndex,
+              slides[currentIndex].layout == .pip else { return }
+        let slide = slides[currentIndex]
+        let visible = min(max(0, slide.pipVisibleCount), slide.pipImages.count)
+        guard visible > 0 else { return }
+        pushUndoSnapshot()
+        let removeAt = visible - 1
+        withAnimation(.easeInOut(duration: 0.22)) {
+            slides[currentIndex].pipImages.remove(at: removeAt)
+            if removeAt < slides[currentIndex].pipPhotoIDs.count {
+                slides[currentIndex].pipPhotoIDs.remove(at: removeAt)
+            }
+            slides[currentIndex].pipVisibleCount = max(1, visible - 1)
+        }
+    }
+
+    /// Sets `pipBorderColor` on the current slide. Used by the Border color drop-up.
+    /// Also re-enables the border, so tapping any color swatch after "no border"
+    /// immediately paints the outline back in.
+    private func setPIPBorderColor(_ color: StudioTextColor) {
+        guard hasValidCurrentIndex,
+              slides[currentIndex].layout == .pip else { return }
+        let slide = slides[currentIndex]
+        guard slide.pipBorderColor != color || !slide.pipBorderEnabled else { return }
+        pushUndoSnapshot()
+        slides[currentIndex].pipBorderColor = color
+        slides[currentIndex].pipBorderEnabled = true
+    }
+
+    /// Turns off the PIP thumbnail outline on the current slide. `pipBorderColor`
+    /// is preserved so users can flip the border back on by tapping any color
+    /// swatch without losing their previous selection.
+    private func disablePIPBorder() {
+        guard hasValidCurrentIndex,
+              slides[currentIndex].layout == .pip else { return }
+        guard slides[currentIndex].pipBorderEnabled else { return }
+        pushUndoSnapshot()
+        slides[currentIndex].pipBorderEnabled = false
+    }
+
+    /// Vertical vs horizontal stacking for the PIP thumbnail column — driven from
+    /// the "Style" menu in `pipStyleMenuButton`.
+    private func applyPIPClusterStackStyle(_ style: CarouselPIPClusterStackStyle) {
+        guard hasValidCurrentIndex,
+              slides[currentIndex].layout == .pip else { return }
+        guard slides[currentIndex].pipClusterStackStyle != style else { return }
+        pushUndoSnapshot()
+        slides[currentIndex].pipClusterStackStyle = style
+    }
+
+    // MARK: - Add photo
+
+    /// Photos belonging to the current slide's place stop that are eligible to
+    /// be added to the PIP cluster. Excludes:
+    ///   • the current hero photo (would duplicate what's already the big image)
+    ///   • any photo currently visible in the cluster (`pipPhotoIDs[0..<pipVisibleCount]`)
+    ///   • photos the user has marked as not-included for this place
+    ///
+    /// Photos that are *loaded but hidden* (because the user reduced the count)
+    /// are intentionally still shown — "Add photo" gives a single path to
+    /// bringing them back whether they're already in `pipImages` or have to be
+    /// freshly loaded from the Photos library.
+    private var availableAddablePhotos: [RecapPhoto] {
+        guard let slide = currentSlide, let placeStop = slide.placeStop else { return [] }
+        let visibleCount = max(0, min(slide.pipVisibleCount, slide.pipPhotoIDs.count))
+        let visibleIDs = Set(slide.pipPhotoIDs.prefix(visibleCount))
+        return placeStop.photos.filter { photo in
+            guard photo.isIncluded else { return false }
+            if let heroID = slide.heroPhotoID, photo.id == heroID { return false }
+            return !visibleIDs.contains(photo.id)
+        }
+    }
+
+    /// True when the cluster has room for another photo AND at least one
+    /// eligible source photo exists. Drives the "Add photo" vs "Swap photos"
+    /// label on the primary PIP action button.
+    private var canAddPIPPhoto: Bool {
+        guard let slide = currentSlide else { return false }
+        guard slide.pipVisibleCount < 3 else { return false }
+        return !availableAddablePhotos.isEmpty
+    }
+
+    /// Adds `photo` to the current slide's PIP cluster. If the photo is already
+    /// loaded in a hidden slot we simply move it forward (no image reload); if
+    /// it's fresh we load its image and append a new slot. In both cases
+    /// `pipVisibleCount` is bumped so the newly-added photo is visible.
+    private func addPIPPhotoToCluster(_ photo: RecapPhoto) {
+        guard hasValidCurrentIndex,
+              slides[currentIndex].layout == .pip else { return }
+        pushUndoSnapshot()
+
+        let slideIdx = currentIndex
+        var images = slides[slideIdx].pipImages
+        var ids = slides[slideIdx].pipPhotoIDs
+        let visibleCount = max(0, min(slides[slideIdx].pipVisibleCount, ids.count))
+
+        // If the picked photo is already loaded somewhere in pipImages (hidden
+        // slot, or simply later in the array), move it into the first position
+        // beyond the current visible range so it appears on the next render.
+        if let existingIdx = ids.firstIndex(of: photo.id) {
+            if existingIdx != visibleCount {
+                let img = images.remove(at: existingIdx)
+                let id = ids.remove(at: existingIdx)
+                let insertAt = min(visibleCount, images.count)
+                images.insert(img, at: insertAt)
+                ids.insert(id, at: insertAt)
+            }
+            withAnimation(.easeInOut(duration: 0.22)) {
+                slides[slideIdx].pipImages = images
+                slides[slideIdx].pipPhotoIDs = ids
+                slides[slideIdx].pipVisibleCount = min(3, visibleCount + 1)
+            }
+            return
+        }
+
+        // Otherwise: load the image off-main, then append and bump visibleCount.
+        // `guard` above ensured `layout == .pip`, but by the time the async load
+        // returns the user may have navigated away or toggled the layout — we
+        // re-check inside the Task before committing.
+        Task {
+            let targetSize = CGSize(width: 1080, height: 1080)
+            guard let localId = photo.localIdentifier,
+                  let loaded = await loadCarouselAssetImage(identifier: localId, size: targetSize) else {
+                return
+            }
+            await MainActor.run {
+                guard slides.indices.contains(slideIdx),
+                      slides[slideIdx].layout == .pip else { return }
+                var imgs = slides[slideIdx].pipImages
+                var ids2 = slides[slideIdx].pipPhotoIDs
+                let insertAt = max(0, min(slides[slideIdx].pipVisibleCount, imgs.count))
+                imgs.insert(loaded, at: insertAt)
+                ids2.insert(photo.id, at: insertAt)
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    slides[slideIdx].pipImages = imgs
+                    slides[slideIdx].pipPhotoIDs = ids2
+                    slides[slideIdx].pipVisibleCount = min(3, slides[slideIdx].pipVisibleCount + 1)
+                }
+            }
+        }
     }
 
     /// Copies font design, color, and size from the current slide to every slide (all kinds),
@@ -1058,35 +1993,31 @@ struct SlideTextEditorView: View {
 
     // MARK: Body
 
-    var body: some View {
-        NavigationStack {
-            GeometryReader { outerGeo in
+    @ViewBuilder
+    private func slideEditorGeometryContent(outerSize: CGSize) -> some View {
                 // Stable slide slot height. Derived from the outer width and aspect
                 // ratio, then capped to fit the outer height minus a reserve for the
-                // chevron nav row and the worst-case chrome height (`bottomChromeExpanded`).
-                // Sizing against the *expanded* chrome means `slotH` stays constant
-                // when the user opens or closes a style drop-up panel — the extra
-                // space when the panel is collapsed is absorbed by the top/bottom
-                // Spacers around the slide.
-                let outerW = outerGeo.size.width
-                let outerH = outerGeo.size.height
+                // chevron nav row and bottom chrome (`slotSizingBottomReserve`).
+                // Uses `bottomChromeExpanded` by default (same as pre–PIP-reorder).
+                // Only while the tall PIP reorder panel is open do we reserve the
+                // larger height so the slide does not sit under the reorder card.
+                let outerW = outerSize.width
+                let outerH = outerSize.height
                 let slideContentW = max(220, outerW - 48)
                 let idealSlotH = slideContentW / aspectRatio
                 let navRowReserve: CGFloat = 72
                 // The bottom `safeAreaInset` reserves pts for the editing chrome.
-                // `outerGeo` still reports the full container height (SwiftUI's
+                // The outer geometry still reports the full container height (SwiftUI's
                 // GeometryReader is not affected by the inset), so we must
                 // subtract the reserve here ourselves. Without this, a 9:16
                 // Story/Reel slide sizes against `outerH - 72` and ends up taller
                 // than the VStack's usable area — the slide pushes the chevron
                 // row and toolbar straight off the bottom of the screen.
                 //
-                // We intentionally subtract the *expanded* chrome height, not the
-                // current one, so the slide is sized for the worst case and its
-                // size stays constant when the user expands a drop-up panel.
-                // When the panel is collapsed, the extra space is absorbed by
-                // the top/bottom Spacers around the slide.
-                let maxSlotH = max(260, outerH - navRowReserve - bottomChromeExpanded)
+                // Style drop-ups use `bottomChromeExpanded` in this reserve so `slotH`
+                // stays constant when toggling Color / Font / Size panels (toolbar tap,
+                // not slide gesture). Spacers absorb the difference vs collapsed chrome.
+                let maxSlotH = max(260, outerH - navRowReserve - slotSizingBottomReserve)
                 let slotH = min(idealSlotH, maxSlotH)
 
                 VStack(spacing: 0) {
@@ -1116,7 +2047,12 @@ struct SlideTextEditorView: View {
                                 // unmaterialized pages and lands a few points off-center.
                                 // Slide count is small (<= ~20), so eager layout is fine.
                                 HStack(spacing: 0) {
-                                    ForEach(slides.indices, id: \.self) { i in
+                                    // Only paginate through visible slides so pages that
+                                    // have been collapsed into a sibling's PIP cluster don't
+                                    // reappear here. `.id(i)` keeps raw slide indices as page
+                                    // IDs — `scrollPageID` and `currentIndex` stay indices
+                                    // into `slides`, matching the rest of the editor's state.
+                                    ForEach(visibleSlideIndices, id: \.self) { i in
                                         VStack(spacing: 0) {
                                             Spacer(minLength: 0)
                                             SlideEditPage(
@@ -1124,11 +2060,19 @@ struct SlideTextEditorView: View {
                                                 aspectRatio: aspectRatio,
                                                 layoutWidth: slotW,
                                                 maxHeight: slotH,
-                                            selectedBlock: selectedBlock,
-                                            onSelectBlock: { selectedBlock = $0 },
-                                            onDeselect: { selectedBlock = nil },
-                                            recordUndoSnapshot: { pushUndoSnapshot() },
-                                                locksHorizontalSlidePaging: $locksHorizontalSlidePaging
+                                                selectedBlock: selectedBlock,
+                                                onSelectBlock: { selectedBlock = $0 },
+                                                onDeselect: { selectedBlock = nil },
+                                                recordUndoSnapshot: { pushUndoSnapshot() },
+                                                locksHorizontalSlidePaging: $locksHorizontalSlidePaging,
+                                                onRequestHeroSwap: { idx in
+                                                    // Drop text/PIP selection and bottom chrome so the swap sheet
+                                                    // is the only focus (case `nil` no longer forces the sheet closed).
+                                                    selectedBlock = nil
+                                                    heroSwapSlideIndex = idx
+                                                    showsHeroPhotoSwapSheet = true
+                                                },
+                                                slidePageIndex: i
                                             )
                                             Spacer(minLength: 0)
                                         }
@@ -1167,49 +2111,57 @@ struct SlideTextEditorView: View {
                             }
                         }
                         .frame(height: slotH)
+                        .animation(.easeInOut(duration: 0.22), value: slotSizingBottomReserve)
 
                         // Slide navigation sits directly beneath the slide (not
                         // pushed all the way to the bottom of the sheet). The
                         // `Spacer` below absorbs any vertical change from the
                         // bottom-inset chrome so the slide + chevrons stay pinned
                         // in place when the user taps a block.
+                        // Chevrons walk the visible-slide list, not raw `slides.indices`,
+                        // so collapsed PIP siblings are skipped over exactly the way the
+                        // swipe gesture skips them.
+                        let visibleIndices = visibleSlideIndices
+                        let visiblePos = currentVisiblePosition
+                        let canGoPrev = (visiblePos ?? 0) > 0
+                        let canGoNext = visiblePos.map { $0 < visibleIndices.count - 1 } ?? false
                         HStack(spacing: 16) {
                             Button {
-                                guard currentIndex > 0 else { return }
+                                guard let pos = visiblePos, pos > 0 else { return }
                                 withAnimation(.easeInOut(duration: 0.22)) {
-                                    currentIndex -= 1
+                                    currentIndex = visibleIndices[pos - 1]
                                     scrollPageID = currentIndex
                                 }
                             } label: {
                                 Image(systemName: "chevron.left")
                                     .font(.system(size: 15, weight: .semibold))
-                                    .foregroundColor(currentIndex > 0 ? .white : .white.opacity(0.2))
+                                    .foregroundColor(canGoPrev ? .white : .white.opacity(0.2))
                                     .frame(width: 36, height: 36)
-                                    .background(Color.white.opacity(currentIndex > 0 ? 0.12 : 0.05))
+                                    .background(Color.white.opacity(canGoPrev ? 0.12 : 0.05))
                                     .clipShape(Circle())
                             }
-                            .disabled(currentIndex == 0)
+                            .disabled(!canGoPrev)
 
-                            Text("\(currentIndex + 1) / \(slides.count)")
+                            Text("\((visiblePos ?? 0) + 1) / \(max(visibleIndices.count, 1))")
                                 .font(.system(size: 13, weight: .medium, design: .monospaced))
                                 .foregroundColor(.white.opacity(0.55))
                                 .frame(minWidth: 52)
 
                             Button {
-                                guard currentIndex < slides.count - 1 else { return }
+                                guard let pos = visiblePos, pos < visibleIndices.count - 1 else { return }
                                 withAnimation(.easeInOut(duration: 0.22)) {
-                                    currentIndex += 1
+                                    currentIndex = visibleIndices[pos + 1]
                                     scrollPageID = currentIndex
                                 }
                             } label: {
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 15, weight: .semibold))
-                                    .foregroundColor(currentIndex < slides.count - 1 ? .white : .white.opacity(0.2))
+                                    .foregroundColor(canGoNext ? .white : .white.opacity(0.2))
                                     .frame(width: 36, height: 36)
-                                    .background(Color.white.opacity(currentIndex < slides.count - 1 ? 0.12 : 0.05))
+                                    .background(Color.white.opacity(canGoNext ? 0.12 : 0.05))
                                     .clipShape(Circle())
                             }
-                            .disabled(currentIndex == slides.count - 1)
+                            .disabled(!canGoNext)
                         }
                         .padding(.top, 8)
 
@@ -1234,10 +2186,9 @@ struct SlideTextEditorView: View {
                         //     (~116pt) — same height so transitioning between
                         //     them doesn't shift the slide during the tap-to-
                         //     select drag gesture (see `bottomChromeCollapsed`).
-                        //   • Expanded drop-up panel uses `bottomChromeExpanded`
-                        //     (~176pt). This shift is safe because it's
-                        //     triggered by a tap on the toolbar's category
-                        //     buttons, not on the slide itself.
+                        //   • Text style drop-ups use `bottomChromeExpanded` (~176pt).
+                        //   • PIP reorder (2+ visible photos) uses `bottomChromePIPReorder`
+                        //     (~392pt). That resize is toolbar-triggered, not slide drag.
                         //
                         // Painting differs by state:
                         //   • Hint: no backdrop, so the dark-blue main
@@ -1257,6 +2208,9 @@ struct SlideTextEditorView: View {
                                 emptySelectionHint
                                     .frame(maxWidth: .infinity)
                                     .transition(.opacity)
+                            } else if isPIPClusterSelected {
+                                pipClusterToolbar
+                                    .transition(.opacity.combined(with: .move(edge: .bottom)))
                             } else {
                                 textFormattingToolbar
                                     .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -1266,8 +2220,16 @@ struct SlideTextEditorView: View {
                         .animation(.easeInOut(duration: 0.22), value: selectedBlock)
                         .animation(.spring(response: 0.32, dampingFraction: 0.82),
                                    value: activeStyleCategory)
+                        .animation(.spring(response: 0.32, dampingFraction: 0.82),
+                                   value: activePIPCategory)
                     }
                 }
+    }
+
+    var body: some View {
+        NavigationStack {
+            GeometryReader { outerGeo in
+                slideEditorGeometryContent(outerSize: outerGeo.size)
             }
             .background(Color(red: 5/255, green: 10/255, blue: 48/255).ignoresSafeArea())
             .navigationTitle("Edit Slides")
@@ -1297,7 +2259,12 @@ struct SlideTextEditorView: View {
                 // offset now maps to page 0 once pages get real widths), which would
                 // otherwise yank `currentIndex` away from `initialIndex`.
                 guard didPerformInitialScroll else { return }
-                if newID != currentIndex { currentIndex = newID }
+                if newID != currentIndex {
+                    currentIndex = newID
+                    // Hero swap is tied to a slide index; dismiss if the user pages away.
+                    showsHeroPhotoSwapSheet = false
+                    heroSwapSlideIndex = nil
+                }
                 selectedBlock = nil
             }
             .onChange(of: slides.count) { _, _ in
@@ -1305,18 +2272,67 @@ struct SlideTextEditorView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .dynamicTypeSize(.medium)
         // `currentIndex` and `scrollPageID` are seeded in `init`, so the ScrollView lays
         // out on the correct page from the very first frame. We only need to reset the
         // per-session editor state here.
         .onAppear {
             selectedBlock = nil
             activeStyleCategory = nil
+            activePIPCategory = nil
             undoStack = []
         }
         .onChange(of: selectedBlock) { _, newValue in
-            // Closing a block's selection also collapses the style drop-up.
-            if newValue == nil { activeStyleCategory = nil }
+            // Switching selection (or deselecting entirely) collapses whichever
+            // drop-up was open so the panel content always matches the block type.
+            switch newValue {
+            case nil:
+                activeStyleCategory = nil
+                activePIPCategory = nil
+                showsAddPhotoPicker = false
+            case .pipCluster:
+                activeStyleCategory = nil
+            case .primary, .secondary:
+                activePIPCategory = nil
+                showsAddPhotoPicker = false
+                showsHeroPhotoSwapSheet = false
+                heroSwapSlideIndex = nil
+            }
+        }
+        .sheet(isPresented: $showsAddPhotoPicker) {
+            if let placeStop = currentSlide?.placeStop {
+                AddPIPPhotoPickerSheet(
+                    placeStop: placeStop,
+                    availablePhotos: availableAddablePhotos,
+                    onPick: { photo in
+                        addPIPPhotoToCluster(photo)
+                        showsAddPhotoPicker = false
+                    }
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
+        }
+        .sheet(isPresented: $showsHeroPhotoSwapSheet) {
+            if let idx = heroSwapSlideIndex,
+               slides.indices.contains(idx),
+               let stop = slides[idx].placeStop,
+               slides[idx].layout == .pip {
+                SwapHeroPhotoSheet(
+                    placeStop: stop,
+                    heroPhotoID: slides[idx].heroPhotoID,
+                    photos: stop.photos.filter(\.isIncluded),
+                    onPick: { photo in
+                        swapHeroWithPlacePhoto(photo, slideIndex: idx)
+                        heroSwapSlideIndex = nil
+                        showsHeroPhotoSwapSheet = false
+                    }
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
+        }
+        .onChange(of: showsHeroPhotoSwapSheet) { _, open in
+            if !open { heroSwapSlideIndex = nil }
         }
     }
 
@@ -1351,26 +2367,9 @@ struct SlideTextEditorView: View {
     @ViewBuilder
     private var textFormattingToolbar: some View {
         VStack(spacing: 0) {
-            // Slide-level actions: delete the selected block, or bulk-apply typography /
-            // photo text positions from the current slide.
+            // Slide-level actions: bulk-apply typography / photo text positions from the
+            // current slide (left), delete the selected block (right).
             HStack(spacing: 12) {
-                Button {
-                    deleteSelectedBlock()
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 14).padding(.vertical, 7)
-                        .background(Color.red.opacity(0.3))
-                        .clipShape(Capsule())
-                        .overlay(Capsule().strokeBorder(Color.red.opacity(0.5), lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-                .disabled(selectedBlock == nil)
-                .opacity(selectedBlock != nil ? 1 : 0.4)
-
-                Spacer()
-
                 Menu {
                     Button {
                         applyTypographyToAllSlides()
@@ -1398,10 +2397,26 @@ struct SlideTextEditorView: View {
                 }
                 .buttonStyle(.plain)
                 .animation(.spring(response: 0.3, dampingFraction: 0.7), value: didApplyToAll)
+
+                Spacer()
+
+                Button {
+                    deleteSelectedBlock()
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(Color.red.opacity(0.3))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().strokeBorder(Color.red.opacity(0.5), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled(selectedBlock == nil)
+                .opacity(selectedBlock != nil ? 1 : 0.4)
             }
             .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 6)
+            .padding(.vertical, 6)
             .background(Color(white: 0.08))
 
             // Drop-up panel: horizontally-scrollable options for the active category.
@@ -1420,17 +2435,449 @@ struct SlideTextEditorView: View {
         .animation(.spring(response: 0.32, dampingFraction: 0.82), value: activeStyleCategory)
     }
 
+    // MARK: - PIP cluster toolbar
+
+    /// Bottom chrome shown when the multi-photo PIP cluster is selected. Mirrors
+    /// the visual language of `textFormattingToolbar` (action row + drop-up +
+    /// category tab bar) but with photo-specific actions and categories so the
+    /// user doesn't see irrelevant typography controls.
+    ///
+    /// Top row: Delete (removes the cluster, reverts the slide to its single
+    /// hero layout) and Swap (rotates the hero into the cluster, promoting the
+    /// first PIP thumbnail). Below that: the Reorder / Border drop-up (when open)
+    /// and the PIP category tab bar.
+    @ViewBuilder
+    private var pipClusterToolbar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                // Swap promotes the first PIP thumbnail into the hero slot and
+                // demotes the current hero into the cluster — a one-tap way to
+                // change which cluster photo is "featured". Add/remove lives in
+                // the scrollable category bar (`pipAddPhotosTabButton` /
+                // `pipRemovePhotosTabButton`);
+                // the Reorder tab opens the drag-to-reorder module.
+                Button {
+                    swapPIPPhotos()
+                } label: {
+                    Label("Swap photos", systemImage: "arrow.2.squarepath")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(Color.white.opacity(0.12))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled((currentSlide?.pipImages.isEmpty ?? true))
+                .opacity((currentSlide?.pipImages.isEmpty ?? true) ? 0.4 : 1.0)
+
+                Spacer()
+
+                Button {
+                    deleteSelectedBlock()
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(Color.red.opacity(0.3))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().strokeBorder(Color.red.opacity(0.5), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
+            .background(Color(white: 0.08))
+
+            if let category = activePIPCategory {
+                pipDropUpPanel(for: category)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .bottom).combined(with: .opacity),
+                        removal: .opacity))
+            }
+
+            pipCategoryTabBar
+        }
+        .background(Color(white: 0.08))
+        .animation(.spring(response: 0.32, dampingFraction: 0.82), value: activePIPCategory)
+    }
+
+    @ViewBuilder
+    private func pipDropUpPanel(for category: PIPStyleCategory) -> some View {
+        Group {
+            switch category {
+            case .order:
+                pipReorderModulePanel
+            case .border:
+                pipBorderColorOptionsStrip
+            }
+        }
+        .padding(.vertical, category == .border ? 6 : 0)
+        .frame(maxWidth: .infinity)
+        .background(category == .border ? Color(white: 0.11) : Color.clear)
+        .overlay(alignment: .top) {
+            if category == .border {
+                Rectangle()
+                    .fill(Color.white.opacity(0.06))
+                    .frame(height: 1)
+            }
+        }
+    }
+
+    /// Inset “module” card for the Reorder tab: drag-to-reorder `List` in the
+    /// bottom chrome with horizontal margins and rounded corners so the slide
+    /// (and nav bar) stay visible — not a full-screen takeover.
+    @ViewBuilder
+    private var pipReorderModulePanel: some View {
+        let images = currentSlide?.pipImages ?? []
+        let visible = min(max(0, currentSlide?.pipVisibleCount ?? 0), images.count)
+        let orderedTiles: [(index: Int, image: UIImage)] =
+            (0..<visible).map { ($0, images[$0]) }
+
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Reorder")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.white)
+                Text("Drag a photo to change the order")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white.opacity(0.55))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+
+            if orderedTiles.count <= 1 {
+                VStack(spacing: 10) {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.35))
+                    Text(visible == 0 ? "No photos in cluster" : "Add another photo to reorder")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white.opacity(0.55))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 18)
+            } else {
+                List {
+                    ForEach(orderedTiles, id: \.index) { tile in
+                        PIPReorderOverlayRow(
+                            image: tile.image,
+                            position: tile.index + 1
+                        )
+                        .listRowInsets(EdgeInsets(
+                            top: 6, leading: 16, bottom: 6, trailing: 16
+                        ))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                    }
+                    .onMove(perform: reorderPIPPhotos)
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .environment(\.editMode, .constant(.active))
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color(red: 0.09, green: 0.10, blue: 0.14))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+        )
+        .padding(.horizontal, 14)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
+    }
+
+    /// Border-color drop-up: same color set as the text color panel so users
+    /// can match cluster outline to an accent color they've used on text.
+    /// The first swatch is a "no border" toggle (circle with a diagonal
+    /// slash) that turns off the outline entirely without discarding the
+    /// currently-selected color.
+    private var pipBorderColorOptionsStrip: some View {
+        let active = currentSlide?.pipBorderColor ?? .white
+        let borderOff = !(currentSlide?.pipBorderEnabled ?? true)
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                Button { disablePIPBorder() } label: {
+                    pipBorderNoneSwatch(isActive: borderOff)
+                }
+                .buttonStyle(.plain)
+
+                ForEach(StudioTextColor.allCases) { tc in
+                    let isActive = !borderOff && tc == active
+                    Button { setPIPBorderColor(tc) } label: {
+                        Circle()
+                            .fill(tc.color)
+                            .frame(width: 36, height: 36)
+                            .overlay {
+                                Circle().strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+                            }
+                            .overlay {
+                                if isActive {
+                                    Circle().strokeBorder(Color.white, lineWidth: 2.5).padding(-3)
+                                }
+                            }
+                            .shadow(color: .black.opacity(0.35), radius: 3)
+                            .padding(4)
+                            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isActive)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 14)
+        }
+        .scrollClipDisabled()
+    }
+
+    /// "No border" swatch — a dark circle with a diagonal line across it,
+    /// matching the prohibition / "none" idiom used elsewhere in iOS. Rendered
+    /// to the same 36pt footprint as the color swatches so the row aligns.
+    @ViewBuilder
+    private func pipBorderNoneSwatch(isActive: Bool) -> some View {
+        ZStack {
+            Circle()
+                .fill(Color(white: 0.14))
+                .frame(width: 36, height: 36)
+                .overlay {
+                    Circle().strokeBorder(Color.white.opacity(0.35), lineWidth: 1.2)
+                }
+            // Diagonal slash drawn as a rounded capsule so it reads clearly
+            // against the dark fill at this size.
+            Capsule()
+                .fill(Color.white.opacity(0.85))
+                .frame(width: 30, height: 2.4)
+                .rotationEffect(.degrees(-45))
+        }
+        .overlay {
+            if isActive {
+                Circle().strokeBorder(Color.white, lineWidth: 2.5)
+                    .frame(width: 36, height: 36)
+                    .padding(-3)
+            }
+        }
+        .shadow(color: .black.opacity(0.35), radius: 3)
+        .padding(4)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isActive)
+    }
+
+    /// Category tab bar for the PIP cluster. Leading pills scroll with the row:
+    /// **Add Photos** opens the picker when there is room and eligible picks;
+    /// **Remove** drops the bottom-most photo when two or more thumbnails are
+    /// visible (each button disables independently). Then: Reorder / Border
+    /// drop-ups, and Style. Mirrors `styleCategoryTabBar`'s layout so the row
+    /// heights align.
+    private var pipCategoryTabBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    pipAddPhotosTabButton
+                    pipRemovePhotosTabButton
+                }
+                ForEach(PIPStyleCategory.allCases) { cat in
+                    pipCategoryButton(cat)
+                }
+                pipStyleMenuButton
+            }
+            .padding(.horizontal, 12)
+        }
+        .scrollClipDisabled()
+        .padding(.top, 6)
+        .padding(.bottom, 8)
+        .background(Color(white: 0.08))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.white.opacity(0.06))
+                .frame(height: 1)
+        }
+    }
+
+    /// Stack direction (vertical column vs horizontal row) for the PIP cluster.
+    @ViewBuilder
+    private var pipStyleMenuButton: some View {
+        let current = currentSlide?.pipClusterStackStyle ?? .vertical
+        Menu {
+            Button {
+                applyPIPClusterStackStyle(.vertical)
+            } label: {
+                HStack {
+                    Text("Vertical stack")
+                    Spacer(minLength: 8)
+                    if current == .vertical {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+            Button {
+                applyPIPClusterStackStyle(.horizontal)
+            } label: {
+                HStack {
+                    Text("Horizontal stack")
+                    Spacer(minLength: 8)
+                    if current == .horizontal {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: "rectangle.split.3x1")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white.opacity(0.75))
+                    .frame(width: 22, height: 22)
+                Text("Style")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.55))
+                    .lineLimit(1)
+            }
+            .frame(width: Self.categoryButtonWidth)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Leading **Add Photos** pill in `pipCategoryTabBar`: opens the picker when
+    /// the cluster has fewer than three visible slots and at least one eligible
+    /// library photo exists.
+    @ViewBuilder
+    private var pipAddPhotosTabButton: some View {
+        let visible = currentSlide?.pipVisibleCount ?? 0
+        let canAdd = visible < 3 && !availableAddablePhotos.isEmpty
+
+        Button {
+            showsAddPhotoPicker = true
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(canAdd
+                        ? Color(red: 0.28, green: 0.64, blue: 1.0)
+                        : .white.opacity(0.3))
+                    .frame(width: 22, height: 22)
+                Text("Add Photos")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(canAdd ? .white : .white.opacity(0.35))
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.78)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(width: Self.categoryButtonWidth)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!canAdd)
+        .animation(.easeInOut(duration: 0.18), value: canAdd)
+    }
+
+    /// Leading **Remove** pill: drops the bottom-most visible photo when two or
+    /// more thumbnails are shown (disabled at a single-photo cluster).
+    @ViewBuilder
+    private var pipRemovePhotosTabButton: some View {
+        let visible = currentSlide?.pipVisibleCount ?? 0
+        let canRemove = visible > 1
+
+        Button {
+            removeLastPIPPhoto()
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: "minus.circle.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(canRemove
+                        ? Color(red: 1.0, green: 0.45, blue: 0.45)
+                        : .white.opacity(0.3))
+                    .frame(width: 22, height: 22)
+                Text("Remove")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(canRemove ? .white : .white.opacity(0.35))
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.78)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(width: Self.categoryButtonWidth)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!canRemove)
+        .animation(.easeInOut(duration: 0.18), value: canRemove)
+    }
+
+    @ViewBuilder
+    private func pipCategoryButton(_ cat: PIPStyleCategory) -> some View {
+        let isActive = activePIPCategory == cat
+        Button {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                activePIPCategory = isActive ? nil : cat
+            }
+        } label: {
+            VStack(spacing: 4) {
+                pipCategoryIcon(for: cat, isActive: isActive)
+                Text(cat.rawValue)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(isActive ? .white : .white.opacity(0.55))
+                    .lineLimit(1)
+            }
+            .frame(width: Self.categoryButtonWidth)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func pipCategoryIcon(for cat: PIPStyleCategory, isActive: Bool) -> some View {
+        switch cat {
+        case .order:
+            Image(systemName: "arrow.up.arrow.down")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(isActive ? .white : .white.opacity(0.75))
+                .frame(width: 22, height: 22)
+        case .border:
+            let borderOff = !(currentSlide?.pipBorderEnabled ?? true)
+            ZStack {
+                Circle()
+                    .fill(borderOff
+                          ? Color(white: 0.14)
+                          : (currentSlide?.pipBorderColor ?? .white).color)
+                    .frame(width: 22, height: 22)
+                    .overlay(Circle().strokeBorder(
+                        isActive ? Color.white : Color.white.opacity(0.35),
+                        lineWidth: isActive ? 2 : 1))
+                if borderOff {
+                    Capsule()
+                        .fill(Color.white.opacity(0.85))
+                        .frame(width: 18, height: 1.6)
+                        .rotationEffect(.degrees(-45))
+                }
+            }
+            .shadow(color: .black.opacity(0.35), radius: 2)
+        }
+    }
+
     // MARK: Drop-up panels
 
     @ViewBuilder
     private func styleDropUpPanel(for category: StyleCategory) -> some View {
         Group {
             switch category {
-            case .color: colorOptionsStrip
-            case .font:  fontOptionsStrip
-            case .size:  sizeOptionsStrip
+            case .color:  colorOptionsStrip
+            case .font:   fontOptionsStrip
+            case .size:   sizeOptionsStrip
+            case .format: formatOptionsStrip
             }
         }
+        // Fixed height keeps the whole toolbar a constant size while the bottom
+        // chrome is bottom-aligned in its slot — otherwise Font Size vs Format
+        // (and other strips) had different intrinsic heights and the Apply row jumped.
+        .frame(height: Self.styleDropUpContentHeight, alignment: .center)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
         .background(Color(white: 0.11))
@@ -1469,7 +2916,8 @@ struct SlideTextEditorView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
         }
         .scrollClipDisabled()
     }
@@ -1502,33 +2950,156 @@ struct SlideTextEditorView: View {
         .scrollClipDisabled()
     }
 
-    /// Font-size panel: horizontally-scrollable row of preset sizes labeled in
-    /// "nominal" points (reference base = 20pt, scale × 20 ≈ classic iOS sizes
-    /// 12 / 14 / 16 / … / 36). The slide text itself is still driven by a
+    /// Font-size panel: continuous slider plus −/+ steppers that surface the
+    /// nominal point size (reference base = 20pt, scale × 20 ≈ classic iOS
+    /// sizes 12 / 13 / … / 36). The slide text itself is still driven by a
     /// multiplicative `sizeScale` so every block kind stays in proportion.
+    /// The slider snaps to 0.05 increments so every thumb position maps to
+    /// a whole-point readout, and one drag collapses into a single undo step.
     private var sizeOptionsStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        HStack(spacing: 14) {
+            Slider(
+                value: Binding<CGFloat>(
+                    get: { currentStyle.sizeScale },
+                    set: { newValue in setSizeScaleLive(newValue) }
+                ),
+                in: Self.sizeScaleMin...Self.sizeScaleMax,
+                step: Self.sizeScaleStep,
+                onEditingChanged: { editing in
+                    if editing { pushUndoSnapshot() }
+                }
+            )
+            .tint(Color(red: 0.04, green: 0.52, blue: 1.0))
+
             HStack(spacing: 8) {
-                ForEach(Self.sizePresetScales, id: \.self) { scale in
-                    let isActive = abs(currentStyle.sizeScale - scale) < 0.001
-                    Button {
-                        updateStyle { $0.sizeScale = scale }
-                    } label: {
-                        Text("\(Self.displayPoints(for: scale))")
-                            .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                            .foregroundColor(isActive ? .white : .white.opacity(0.6))
-                            .frame(minWidth: 44)
-                            .padding(.horizontal, 12).padding(.vertical, 9)
-                            .background(isActive
-                                        ? Color(red: 0.04, green: 0.52, blue: 1.0)
-                                        : Color.white.opacity(0.1))
-                            .clipShape(Capsule())
-                            .overlay(Capsule().strokeBorder(
-                                isActive ? Color.white.opacity(0.35) : Color.white.opacity(0.08),
-                                lineWidth: 1))
+                sizeStepperButton(systemName: "minus",
+                                  isEnabled: currentStyle.sizeScale > Self.sizeScaleMin + 0.0005) {
+                    adjustSizeScale(by: -Self.sizeScaleStep)
+                }
+
+                Text("\(Self.displayPoints(for: currentStyle.sizeScale))")
+                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.white)
+                    .frame(minWidth: 30)
+                    .monospacedDigit()
+                    .contentTransition(.numericText(value: Double(currentStyle.sizeScale)))
+                    .animation(.easeInOut(duration: 0.15), value: currentStyle.sizeScale)
+
+                sizeStepperButton(systemName: "plus",
+                                  isEnabled: currentStyle.sizeScale < Self.sizeScaleMax - 0.0005) {
+                    adjustSizeScale(by: Self.sizeScaleStep)
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 6)
+    }
+
+    /// Circular −/+ button used inside the font-size strip. Matches the
+    /// muted white-fill chrome of the other panels' pill buttons, and dims
+    /// when the scale has hit its minimum/maximum so the range is obvious.
+    @ViewBuilder
+    private func sizeStepperButton(systemName: String,
+                                   isEnabled: Bool,
+                                   action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(isEnabled ? .white : .white.opacity(0.3))
+                .frame(width: 30, height: 30)
+                .background(Color.white.opacity(isEnabled ? 0.12 : 0.06))
+                .clipShape(Circle())
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+    }
+
+    /// Writes a new `sizeScale` without pushing a new undo snapshot — used
+    /// from the slider's binding so a single drag coalesces into one undo
+    /// step (the snapshot is taken in `onEditingChanged` when the drag
+    /// starts).
+    private func setSizeScaleLive(_ rawScale: CGFloat) {
+        guard let selectedBlock, hasValidCurrentIndex else { return }
+        let clamped = min(max(rawScale, Self.sizeScaleMin), Self.sizeScaleMax)
+        let snapped = (clamped / Self.sizeScaleStep).rounded() * Self.sizeScaleStep
+        guard abs(snapped - currentStyle.sizeScale) > 0.0001 else { return }
+        if selectedBlock == .secondary {
+            slides[currentIndex].textStyle.secondary.sizeScale = snapped
+        } else {
+            slides[currentIndex].textStyle.primary.sizeScale = snapped
+        }
+    }
+
+    /// Tap handler for the −/+ stepper buttons. Each tap is its own undo
+    /// step, matching how every other toolbar tap behaves.
+    private func adjustSizeScale(by delta: CGFloat) {
+        let next = currentStyle.sizeScale + delta
+        let clamped = min(max(next, Self.sizeScaleMin), Self.sizeScaleMax)
+        let snapped = (clamped / Self.sizeScaleStep).rounded() * Self.sizeScaleStep
+        guard abs(snapped - currentStyle.sizeScale) > 0.0001 else { return }
+        updateStyle { $0.sizeScale = snapped }
+    }
+
+    /// Continuous font-size slider range. The matching display readout is
+    /// computed via `displayPoints(for:)`, so min = 12pt and max = 36pt.
+    private static let sizeScaleMin: CGFloat = 0.6
+    private static let sizeScaleMax: CGFloat = 1.8
+    /// One display point = 0.05 scale units (since reference base = 20pt),
+    /// so every slider position lines up with a whole-number readout.
+    private static let sizeScaleStep: CGFloat = 0.05
+
+    /// Format panel: horizontally-scrollable row of style toggles
+    /// (Bold / Italic / Underline), a three-way text-case cycle (aA), and
+    /// three alignment options. Each button writes directly to
+    /// `currentStyle` via `updateStyle`, so one tap = one undo step.
+    private var formatOptionsStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                formatToggleButton(
+                    label: "B",
+                    font: .system(size: 16, weight: .bold),
+                    isActive: currentStyle.isBold
+                ) { updateStyle { $0.isBold.toggle() } }
+
+                formatToggleButton(
+                    label: "I",
+                    font: .system(size: 16, weight: .semibold).italic(),
+                    isActive: currentStyle.isItalic
+                ) { updateStyle { $0.isItalic.toggle() } }
+
+                formatToggleButton(
+                    label: "U",
+                    font: .system(size: 16, weight: .semibold),
+                    underline: true,
+                    isActive: currentStyle.isUnderlined
+                ) { updateStyle { $0.isUnderlined.toggle() } }
+
+                // aA case cycle: none → UPPER → lower → none
+                formatToggleButton(
+                    label: "aA",
+                    font: .system(size: 14, weight: .semibold),
+                    isActive: currentStyle.textCase != .none
+                ) {
+                    updateStyle { style in
+                        switch style.textCase {
+                        case .none:  style.textCase = .upper
+                        case .upper: style.textCase = .lower
+                        case .lower: style.textCase = .none
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .animation(.easeInOut(duration: 0.15), value: isActive)
+                }
+
+                // Visual divider between style toggles and alignment group.
+                Rectangle()
+                    .fill(Color.white.opacity(0.12))
+                    .frame(width: 1, height: 22)
+                    .padding(.horizontal, 4)
+
+                ForEach([StudioTextAlignment.leading,
+                         .center,
+                         .trailing], id: \.self) { align in
+                    alignmentButton(align)
                 }
             }
             .padding(.horizontal, 20)
@@ -1537,10 +3108,61 @@ struct SlideTextEditorView: View {
         .scrollClipDisabled()
     }
 
-    /// Preset size scales shown in the drop-up strip. 60%–180% in 10% steps,
-    /// matching the allowed range for `sizeScale`.
-    private static let sizePresetScales: [CGFloat] = stride(from: 0.6, through: 1.8, by: 0.1).map {
-        CGFloat(($0 * 10).rounded() / 10)
+    /// Shared pill button used for B / I / U / S / aA. `font` carries the
+    /// weight + italic trait so we can mimic the label's style at rest, and
+    /// the `underline` / `strikethrough` flags let the U / S pills display
+    /// with their respective decoration applied to the label letter.
+    @ViewBuilder
+    private func formatToggleButton(label: String,
+                                    font: Font,
+                                    underline: Bool = false,
+                                    strikethrough: Bool = false,
+                                    isActive: Bool,
+                                    action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(font)
+                .underline(underline)
+                .strikethrough(strikethrough)
+                .foregroundColor(isActive ? .white : .white.opacity(0.6))
+                .frame(minWidth: 44, minHeight: 34)
+                .padding(.horizontal, 4)
+                .background(isActive
+                            ? Color(red: 0.04, green: 0.52, blue: 1.0)
+                            : Color.white.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(isActive ? Color.white.opacity(0.35) : Color.white.opacity(0.08),
+                                  lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.15), value: isActive)
+    }
+
+    /// Alignment pill. Tapping the already-active alignment resets to `.natural`,
+    /// which falls back to the block's built-in default (center for cover
+    /// titles, leading for everything else). That gives users a clean way to
+    /// undo their alignment choice without needing a separate "reset" control.
+    @ViewBuilder
+    private func alignmentButton(_ align: StudioTextAlignment) -> some View {
+        let isActive = currentStyle.alignment == align
+        Button {
+            updateStyle { $0.alignment = isActive ? .natural : align }
+        } label: {
+            Image(systemName: align.icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(isActive ? .white : .white.opacity(0.6))
+                .frame(minWidth: 44, minHeight: 34)
+                .background(isActive
+                            ? Color(red: 0.04, green: 0.52, blue: 1.0)
+                            : Color.white.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(isActive ? Color.white.opacity(0.35) : Color.white.opacity(0.08),
+                                  lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.15), value: isActive)
     }
 
     /// Reference base so 100% shows as "20" (a natural mid-range iOS text size).
@@ -1554,13 +3176,28 @@ struct SlideTextEditorView: View {
 
     // MARK: Category tab bar
 
+    /// The category tab bar is horizontally scrollable so additional
+    /// categories (now 4: Color / Font Style / Font Size / Format) can grow
+    /// without cramping the buttons. Buttons use a fixed intrinsic width so
+    /// their labels never truncate; if the row doesn't fit on narrower
+    /// devices (e.g. iPhone SE), users scroll horizontally.
     private var styleCategoryTabBar: some View {
-        HStack(spacing: 0) {
-            ForEach(StyleCategory.allCases) { cat in
-                styleCategoryButton(cat)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                ForEach(StyleCategory.allCases) { cat in
+                    styleCategoryButton(cat)
+                }
+                Spacer(minLength: 0)
             }
+            .padding(.horizontal, 12)
+            // Match the ScrollView's visible width so the Spacers above expand and
+            // center the fixed-width category buttons. If a future 5th category
+            // pushes the intrinsic content past this width, `containerRelativeFrame`
+            // still lets the ScrollView take over and scroll horizontally.
+            .containerRelativeFrame(.horizontal)
         }
-        .padding(.horizontal, 12)
+        .scrollClipDisabled()
         .padding(.top, 6)
         .padding(.bottom, 8)
         .background(Color(white: 0.08))
@@ -1570,6 +3207,14 @@ struct SlideTextEditorView: View {
                 .frame(height: 1)
         }
     }
+
+    /// Intrinsic width for each category button. Fixed (rather than
+    /// `maxWidth: .infinity`) so adding a 5th category later just
+    /// overflows the bar and enables horizontal scrolling — no per-button
+    /// squeezing or truncation.
+    private static let categoryButtonWidth: CGFloat = 86
+    /// Inner height for the style drop-up content (swatches, slider, format row).
+    private static let styleDropUpContentHeight: CGFloat = 56
 
     @ViewBuilder
     private func styleCategoryButton(_ cat: StyleCategory) -> some View {
@@ -1584,8 +3229,11 @@ struct SlideTextEditorView: View {
                 Text(cat.rawValue)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(isActive ? .white : .white.opacity(0.55))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
             }
-            .frame(maxWidth: .infinity)
+            .frame(width: Self.categoryButtonWidth)
             .padding(.vertical, 6)
             .contentShape(Rectangle())
         }
@@ -1615,6 +3263,21 @@ struct SlideTextEditorView: View {
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(isActive ? .white : .white.opacity(0.65))
                 .frame(width: 22, height: 22)
+        case .format:
+            // "B" glyph reflects the Bold toggle's on/off state so the tab
+            // hints at the current formatting without forcing the user to
+            // open the panel. Using a text glyph (rather than SF Symbol)
+            // lets it pick up the chosen font design too.
+            Text("B")
+                .font(.system(size: 16, weight: .heavy,
+                              design: currentStyle.fontDesign.design))
+                .italic(currentStyle.isItalic)
+                .underline(currentStyle.isUnderlined)
+                .strikethrough(currentStyle.isStrikethrough)
+                .foregroundColor(isActive ? .white : .white.opacity(0.65))
+                .multilineTextAlignment(.center)
+                .frame(width: 22, height: 22)
+                .clipped()
         }
     }
 }
@@ -1651,14 +3314,24 @@ struct SocialPostStudioSheet: View {
     @State private var showShareSheet = false
     @State private var showSavedAlert = false
     @State private var editingSlideRef: EditableSlideRef? = nil
+    /// After `.pip` hides sibling place-stop cards, re-scroll so the slide the user
+    /// tapped stays centered instead of the strip keeping a stale content offset.
+    @State private var previewRecenterAfterPIPIndex: Int?
+    @State private var previewRecenterAfterPIPNonce: Int = 0
     @Environment(\.dismiss) private var dismiss
 
-    private let previewHeight: CGFloat = 325
+    private let previewHeight: CGFloat = 380
     private let exportWidth: CGFloat = 1080
     private var exportHeight: CGFloat { exportWidth / exportFormat.aspectRatio }
     private var previewWidth: CGFloat { previewHeight * exportFormat.aspectRatio }
     private var selectedSlides: [CarouselSlide] {
-        let sel = slides.filter { $0.isSelected }
+        // Exclude slides hidden by a sibling's PIP cluster so their photo
+        // doesn't get exported twice (once inside the cluster, once as its
+        // own slide) even if the user flips "Select all" while PIP is on.
+        let sel = slides.enumerated().compactMap { idx, slide -> CarouselSlide? in
+            guard !isSlideHiddenBySiblingPIP(at: idx, in: slides) else { return nil }
+            return slide.isSelected ? slide : nil
+        }
         return exportFormat.isSingleSlide ? Array(sel.prefix(1)) : sel
     }
 
@@ -1687,7 +3360,6 @@ struct SocialPostStudioSheet: View {
             }
             .preferredColorScheme(.dark)
         }
-        .dynamicTypeSize(.medium)
         .task { await loadSlides() }
         .onChange(of: exportFormat) { _, _ in Task { await loadSlides() } }
         .sheet(isPresented: $showShareSheet, onDismiss: cleanupTempFiles) {
@@ -1792,20 +3464,49 @@ struct SocialPostStudioSheet: View {
             Group {
                 if exportFormat.isSingleSlide {
                     Text("Tap any slide to use it as your Reel cover")
+                        .font(.subheadline).foregroundColor(.secondary)
                 } else {
-                    Text("\(selectedSlides.count) of \(slides.count) slides selected")
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            let shouldDeselectAll = selectedSlides.count > 0
+                            for i in slides.indices {
+                                slides[i].isSelected = !shouldDeselectAll
+                            }
+                        }
+                    } label: {
+                        Text(selectedSlides.isEmpty ? "Select all" : "Deselect all")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .font(.subheadline).foregroundColor(.secondary)
             .padding(.top, 10).padding(.bottom, 12)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
-                    ForEach(slides.indices, id: \.self) { index in
-                        slideCard(slide: slides[index], index: index)
+            ScrollViewReader { previewScrollProxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        ForEach(slides.indices, id: \.self) { index in
+                            if !isSlideHiddenBySiblingPIP(at: index, in: slides) {
+                                slideCard(slide: slides[index], index: index)
+                                    .id(index)
+                                    .transition(.asymmetric(
+                                        insertion: .opacity.combined(with: .scale(scale: 0.92)),
+                                        removal: .opacity.combined(with: .scale(scale: 0.92))))
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20).padding(.vertical, 6)
+                }
+                .onChange(of: previewRecenterAfterPIPNonce) { _, _ in
+                    guard let idx = previewRecenterAfterPIPIndex else { return }
+                    previewRecenterAfterPIPIndex = nil
+                    DispatchQueue.main.async {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            previewScrollProxy.scrollTo(idx, anchor: .center)
+                        }
                     }
                 }
-                .padding(.horizontal, 20).padding(.vertical, 6)
             }
 
             Spacer()
@@ -1856,42 +3557,47 @@ struct SocialPostStudioSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
 
-            // Layout toggle — only for placeStop slides with multiple photos loaded
-            if slide.kind == .placeStop, !slide.pipImages.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(CarouselSlideLayout.allCases) { layout in
-                        let isActive = slide.layout == layout
-                        Button {
-                            setLayout(layout, forSlideAt: index)
-                        } label: {
-                            Image(systemName: layout == .single ? "rectangle.portrait" : "pip")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(isActive ? .white : .white.opacity(0.45))
-                                .padding(.horizontal, 12).padding(.vertical, 7)
-                                .background(isActive
-                                    ? Color(red: 0.04, green: 0.52, blue: 1.0)
-                                    : Color.white.opacity(0.1))
-                                .clipShape(Capsule())
-                                .overlay(Capsule().strokeBorder(
-                                    isActive ? Color.white.opacity(0.35) : Color.white.opacity(0.1),
-                                    lineWidth: 1))
+            HStack(spacing: 8) {
+                Button { editingSlideRef = EditableSlideRef(index: index) } label: {
+                    Label("Edit", systemImage: "pencil")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 18).padding(.vertical, 8)
+                        .background(Color.white.opacity(0.15))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+
+                Spacer(minLength: 0)
+
+                // Layout toggle — only for placeStop slides with multiple photos loaded
+                if slide.kind == .placeStop, !slide.pipImages.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(CarouselSlideLayout.allCases) { layout in
+                            let isActive = slide.layout == layout
+                            Button {
+                                setLayout(layout, forSlideAt: index)
+                            } label: {
+                                Image(systemName: layout == .single ? "rectangle.portrait" : "pip")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(isActive ? .white : .white.opacity(0.45))
+                                    .padding(.horizontal, 12).padding(.vertical, 7)
+                                    .background(isActive
+                                        ? Color(red: 0.04, green: 0.52, blue: 1.0)
+                                        : Color.white.opacity(0.1))
+                                    .clipShape(Capsule())
+                                    .overlay(Capsule().strokeBorder(
+                                        isActive ? Color.white.opacity(0.35) : Color.white.opacity(0.1),
+                                        lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                            .animation(.easeInOut(duration: 0.15), value: isActive)
                         }
-                        .buttonStyle(.plain)
-                        .animation(.easeInOut(duration: 0.15), value: isActive)
                     }
                 }
             }
-
-            Button { editingSlideRef = EditableSlideRef(index: index) } label: {
-                Label("Edit", systemImage: "pencil")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 18).padding(.vertical, 8)
-                    .background(Color.white.opacity(0.15))
-                    .clipShape(Capsule())
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
+            .frame(width: previewWidth)
         }
     }
 
@@ -1910,6 +3616,10 @@ struct SocialPostStudioSheet: View {
                 guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
                 slides[i].isSelected = (layout == .single)
             }
+        }
+        if layout == .pip {
+            previewRecenterAfterPIPIndex = index
+            previewRecenterAfterPIPNonce += 1
         }
     }
 
@@ -1960,15 +3670,26 @@ struct SocialPostStudioSheet: View {
                 for (photoIdx, photo) in included.enumerated() {
                     let hero = stopImages[photoIdx]
                     // PIP images = all other loaded images from this stop (up to 3).
-                    let pipImages: [UIImage] = stopImages.enumerated()
-                        .filter { $0.offset != photoIdx }
-                        .compactMap { $0.element }
+                    // We zip image + photo ID so the editor can compute the
+                    // "available to add" set (photos at this place that aren't
+                    // currently shown in the cluster) without a second lookup.
+                    let pipPairs: [(UIImage, UUID)] = included.enumerated()
+                        .compactMap { (idx, candidate) -> (UIImage, UUID)? in
+                            guard idx != photoIdx, let img = stopImages[idx] else { return nil }
+                            return (img, candidate.id)
+                        }
                         .prefix(3)
                         .map { $0 }
+                    let pipImages: [UIImage] = pipPairs.map(\.0)
+                    let pipPhotoIDs: [UUID] = pipPairs.map(\.1)
                     placeSlides.append(CarouselSlide(
                         id: "\(stop.id.uuidString)-\(photo.id.uuidString)", kind: .placeStop,
                         isSelected: true, heroImage: hero, placeStop: stop,
-                        photoCaption: photo.caption, pipImages: pipImages, stopIndex: stopIdx))
+                        photoCaption: photo.caption,
+                        textStyle: .placeStopDefault,
+                        pipImages: pipImages,
+                        pipPhotoIDs: pipPhotoIDs, heroPhotoID: photo.id,
+                        stopIndex: stopIdx))
                 }
             }
 
@@ -1996,18 +3717,7 @@ struct SocialPostStudioSheet: View {
     }
 
     private func loadAssetImage(identifier: String, size: CGSize) async -> UIImage? {
-        await withCheckedContinuation { cont in
-            let fetch = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil)
-            guard let asset = fetch.firstObject else { cont.resume(returning: nil); return }
-            let opts = PHImageRequestOptions()
-            opts.deliveryMode = .highQualityFormat
-            opts.isNetworkAccessAllowed = true
-            opts.isSynchronous = false
-            PHImageManager.default().requestImage(for: asset, targetSize: size,
-                                                  contentMode: .aspectFill, options: opts) { img, _ in
-                cont.resume(returning: img)
-            }
-        }
+        await loadCarouselAssetImage(identifier: identifier, size: size)
     }
 
     // MARK: - Export
@@ -2028,6 +3738,10 @@ struct SocialPostStudioSheet: View {
         .padding(.vertical, 14).padding(.horizontal, 18)
         .background(Color(white: 0.18)).foregroundColor(.white)
         .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+        )
     }
 
     @MainActor private func saveToPhotos() async {
@@ -2064,6 +3778,254 @@ struct SocialPostStudioSheet: View {
             try? FileManager.default.removeItem(at: url.deletingLastPathComponent()); break
         }
         shareItems = []
+    }
+}
+
+// MARK: - Add-photo picker
+
+/// Sheet presented from the PIP cluster toolbar when the user taps "Add photo".
+/// Shows a grid of the place's photos that aren't currently visible in the
+/// cluster. Tapping a tile commits the selection and dismisses the sheet.
+///
+/// Kept intentionally lightweight: no multi-select, no search, no quality
+/// Bottom sheet: tap the large hero backdrop in PIP edit mode to pick another
+/// included photo from the same place as the featured (full-bleed) image.
+private struct SwapHeroPhotoSheet: View {
+    let placeStop: PlaceStop
+    let heroPhotoID: UUID?
+    let photos: [RecapPhoto]
+    let onPick: (RecapPhoto) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8)
+    ]
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if photos.isEmpty {
+                    ContentUnavailableView(
+                        "No photos",
+                        systemImage: "photo",
+                        description: Text("Add photos to this place in your trip to swap the backdrop.")
+                    )
+                } else if photos.count == 1 {
+                    ContentUnavailableView(
+                        "Add another photo",
+                        systemImage: "photo.on.rectangle.angled",
+                        description: Text("When this place has more than one photo, you can choose which one appears large behind the layout.")
+                    )
+                } else {
+                    ScrollView {
+                        Text("Choose which photo fills the background. The current backdrop moves into the small photo strip.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 10)
+
+                        LazyVGrid(columns: columns, spacing: 10) {
+                            ForEach(photos) { photo in
+                                let isFeatured = photo.id == heroPhotoID
+                                ZStack(alignment: .topTrailing) {
+                                    AddPIPPhotoTile(photo: photo)
+                                        .opacity(isFeatured ? 0.55 : 1)
+                                    if isFeatured {
+                                        Text("Main")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 6).padding(.vertical, 3)
+                                            .background(Color(red: 0.14, green: 0.52, blue: 1.0).opacity(0.95))
+                                            .clipShape(Capsule())
+                                            .padding(6)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    guard !isFeatured else { return }
+                                    onPick(photo)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
+                    }
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 2) {
+                        Text("Swap main photo")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text(placeStop.placeTitle)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .accessibilityLabel("Close")
+                }
+            }
+        }
+    }
+}
+
+/// Presented from the PIP toolbar when the user taps **Add Photos**. The caller
+/// supplies the filtered eligible list; this sheet only renders thumbnails (same
+/// lightweight flow as hero swap — no full Photos picker).
+private struct AddPIPPhotoPickerSheet: View {
+    let placeStop: PlaceStop
+    let availablePhotos: [RecapPhoto]
+    let onPick: (RecapPhoto) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8)
+    ]
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if availablePhotos.isEmpty {
+                    ContentUnavailableView(
+                        "No more photos",
+                        systemImage: "photo.stack",
+                        description: Text("Every photo from this place is already in the cluster.")
+                    )
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: 8) {
+                            ForEach(availablePhotos) { photo in
+                                AddPIPPhotoTile(photo: photo)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { onPick(photo) }
+                            }
+                        }
+                        .padding(16)
+                    }
+                }
+            }
+            .navigationTitle("Add photo")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 2) {
+                        Text("Add photo")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text(placeStop.placeTitle)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .accessibilityLabel("Close")
+                }
+            }
+        }
+    }
+}
+
+/// Row used inside the Reorder tab `List`. The photo reads as a 72×72 thumbnail, with
+/// a large position badge alongside and a dotted "card" background that
+/// visually separates rows. We deliberately skip any move controls inside
+/// the row because the parent List is in edit mode, so SwiftUI renders its
+/// own drag handle on the trailing edge and handles the drag gesture for us.
+/// Anything drawn *inside* the row (including a trailing icon) would fight
+/// the handle's hit target and confuse users.
+private struct PIPReorderOverlayRow: View {
+    let image: UIImage
+    let position: Int
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Text("\(position)")
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+                .frame(width: 28, alignment: .center)
+                .monospacedDigit()
+
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 72, height: 72)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
+                )
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+}
+
+/// Square thumbnail for a single `RecapPhoto`. Loads the PHAsset image on
+/// appear at a modest grid size — `AddPIPPhotoPickerSheet` re-loads at full
+/// resolution when the user actually picks the photo, so we optimize for fast
+/// grid population here.
+private struct AddPIPPhotoTile: View {
+    let photo: RecapPhoto
+    @State private var image: UIImage? = nil
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Color(white: 0.15))
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                if let img = image {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Image(systemName: "photo")
+                        .font(.system(size: 22))
+                        .foregroundColor(.white.opacity(0.35))
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+            )
+            .task { await loadThumbnail() }
+    }
+
+    private func loadThumbnail() async {
+        guard image == nil, let localId = photo.localIdentifier else { return }
+        let loaded = await loadCarouselAssetImage(
+            identifier: localId,
+            size: CGSize(width: 320, height: 320)
+        )
+        await MainActor.run { self.image = loaded }
     }
 }
 

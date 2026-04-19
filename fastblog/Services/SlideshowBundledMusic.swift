@@ -41,13 +41,25 @@ enum SlideshowBundledMusicLibrary {
         if stem.hasPrefix(namePrefix) {
             let suffix = String(stem.dropFirst(namePrefix.count))
             let raw = suffix.replacingOccurrences(of: "_", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-            return raw.isEmpty ? stem : raw.localizedCapitalized
+            let cleaned = stripTrailingIDTokens(raw)
+            return cleaned.isEmpty ? stem : cleaned.localizedCapitalized
         }
         let raw = stem
             .replacingOccurrences(of: "_", with: " ")
             .replacingOccurrences(of: "-", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return raw.isEmpty ? stem : raw.localizedCapitalized
+        let cleaned = stripTrailingIDTokens(raw)
+        return cleaned.isEmpty ? stem : cleaned.localizedCapitalized
+    }
+
+    /// Strips trailing numeric tokens from filenames (e.g. Pixabay/Freesound IDs like `-181963`).
+    /// Also drops any trailing Finder-style duplicate counters such as a lone " 2".
+    private static func stripTrailingIDTokens(_ input: String) -> String {
+        var words = input.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        while let last = words.last, !last.isEmpty, last.allSatisfy({ $0.isNumber }) {
+            words.removeLast()
+        }
+        return words.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

@@ -48,7 +48,7 @@ struct BlogVideoExportOptionsSheet: View {
                 }
                 .background(Color(uiColor: .systemGroupedBackground))
             }
-            .navigationTitle("Slideshow Video")
+            .navigationTitle("Video Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

@@ -11,7 +11,9 @@ class MapSnapshotHelper {
     /// Marker numbers match each stop's 1-based position in the original array
     /// so they line up with the numbered list in the PDF.
     /// - Parameters:
-    ///   - showPlaceNames: When true, draws each stop's `placeTitle` beside its marker (Story Mode map pages).
+    ///   - showPlaceNames: When true, draws each stop's `placeTitle` in a white pill
+    ///     directly below its marker (Story Mode map pages — matches the Social Post
+    ///     Studio map slide styling).
     static func generateSnapshot(
         for placeStops: [PlaceStop],
         size: CGSize = CGSize(width: 600, height: 300),
@@ -88,16 +90,19 @@ class MapSnapshotHelper {
                     markerColor = .systemBlue
                 }
 
+                drawMarker(at: point, number: entry.displayNumber, color: markerColor, context: context)
+
                 if showPlaceNames {
-                    drawPlaceNameLabel(
-                        besideMarkerCenter: point,
+                    // Match the Social Post Studio map slide: white capsule pill directly
+                    // under the marker. `drawMarker` uses a 14 pt radius.
+                    drawPlaceNamePillUnderMarker(
+                        at: point,
+                        markerRadius: 14,
                         title: entry.placeTitle,
                         context: context,
                         canvasSize: snapshot.image.size
                     )
                 }
-
-                drawMarker(at: point, number: entry.displayNumber, color: markerColor, context: context)
             }
 
             let finalImage = UIGraphicsGetImageFromCurrentImageContext()
@@ -345,94 +350,6 @@ class MapSnapshotHelper {
         
         text.draw(in: textRect, withAttributes: attributes)
         
-        context.restoreGState()
-    }
-
-    /// Renders a truncated place title in a pill anchored to a marker.
-    private static func drawPlaceNameLabel(
-        besideMarkerCenter point: CGPoint,
-        title: String,
-        context: CGContext,
-        canvasSize: CGSize
-    ) {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        let markerRadius: CGFloat = 14
-        let maxLabelWidth = min(240, canvasSize.width * 0.42)
-        let font = UIFont.systemFont(ofSize: 12, weight: .semibold)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byTruncatingTail
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: UIColor.white,
-            .paragraphStyle: paragraph
-        ]
-        let textRect = (trimmed as NSString).boundingRect(
-            with: CGSize(width: maxLabelWidth, height: 80),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: attributes,
-            context: nil
-        )
-        let padH: CGFloat = 8
-        let padV: CGFloat = 4
-        let labelW = min(textRect.width + padH * 2, maxLabelWidth + padH * 2)
-        let labelH = ceil(textRect.height) + padV * 2
-        // Prefer placing label to the right, otherwise flip to the left to keep clear marker-to-label alignment.
-        let rightOriginX = point.x + markerRadius + 6
-        let leftOriginX = point.x - markerRadius - 6 - labelW
-        let fitsRight = rightOriginX + labelW <= canvasSize.width - 8
-        let fitsLeft = leftOriginX >= 8
-        let isRightSide: Bool
-        var originX: CGFloat
-        if fitsRight || (!fitsLeft && point.x <= canvasSize.width * 0.5) {
-            isRightSide = true
-            originX = rightOriginX
-        } else {
-            isRightSide = false
-            originX = leftOriginX
-        }
-        var origin = CGPoint(x: originX, y: point.y - labelH / 2)
-
-        // Keep label inside the image.
-        let margin: CGFloat = 8
-        if origin.x + labelW > canvasSize.width - margin {
-            origin.x = max(margin, canvasSize.width - margin - labelW)
-        }
-        origin.y = min(max(origin.y, margin), canvasSize.height - margin - labelH)
-
-        let bgRect = CGRect(origin: origin, size: CGSize(width: labelW, height: labelH))
-        context.saveGState()
-
-        // Draw a tiny connector so the label clearly points to the marker.
-        let connectorStartX = isRightSide ? point.x + markerRadius : point.x - markerRadius
-        let connectorEndX = isRightSide ? bgRect.minX : bgRect.maxX
-        context.setStrokeColor(UIColor.black.withAlphaComponent(0.65).cgColor)
-        context.setLineWidth(1.5)
-        context.setLineCap(.round)
-        context.move(to: CGPoint(x: connectorStartX, y: point.y))
-        context.addLine(to: CGPoint(x: connectorEndX, y: point.y))
-        context.strokePath()
-
-        context.setShadow(offset: CGSize(width: 0, height: 1), blur: 3, color: UIColor.black.withAlphaComponent(0.35).cgColor)
-        context.setFillColor(UIColor.black.withAlphaComponent(0.72).cgColor)
-        let path = UIBezierPath(roundedRect: bgRect, cornerRadius: 6).cgPath
-        context.addPath(path)
-        context.fillPath()
-        context.setShadow(offset: .zero, blur: 0, color: nil)
-
-        let drawTextRect = CGRect(
-            x: origin.x + padH,
-            y: origin.y + padV,
-            width: labelW - padH * 2,
-            height: labelH - padV * 2
-        )
-        (trimmed as NSString).draw(
-            with: drawTextRect,
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: attributes,
-            context: nil
-        )
         context.restoreGState()
     }
 
