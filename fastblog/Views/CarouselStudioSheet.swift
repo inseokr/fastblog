@@ -793,8 +793,8 @@ struct CarouselSlideView: View {
     /// Multi-photo layout only: fired when the user taps the large hero backdrop (areas not covered
     /// by text blocks or the PIP cluster). Opens the hero-swap picker in `SlideTextEditorView`.
     var onTapHeroBackdrop: (() -> Void)? = nil
-    /// Social Post Studio only: tap the cover image (behind title chrome) to pick another blog photo
-    /// without mutating the saved blog cover.
+    /// When set, tapping the cover hero (behind title chrome) runs this — e.g. studio cover picker
+    /// in Social Post Studio preview, or the same picker from Carousel Studio (`SlideTextEditorView`).
     var onCoverImageTap: (() -> Void)? = nil
     /// When `true` (default), text + PIP are clipped with the slide’s rounded-rect outline
     /// (export + full-screen editor). When `false`, only the photo/gradient stack is clipped;
@@ -838,12 +838,17 @@ struct CarouselSlideView: View {
                 LinearGradient(colors: [.black.opacity(0.72), .black.opacity(0.3), .clear],
                                startPoint: .bottom, endPoint: .top)
                     .frame(width: width, height: height)
-                if showsSelectionChrome, onCoverImageTap != nil {
+                if onCoverImageTap != nil, showsSelectionChrome || isEditingText {
                     Color.clear
                         .contentShape(Rectangle())
                         .frame(width: width, height: height)
                         .highPriorityGesture(
-                            TapGesture().onEnded { onCoverImageTap?() }
+                            TapGesture().onEnded {
+                                #if DEBUG
+                                print("[CarouselStudio] CarouselSlideView: cover hero tap")
+                                #endif
+                                onCoverImageTap?()
+                            }
                         )
                 }
 
@@ -1161,17 +1166,28 @@ struct CarouselSlideView: View {
         }
         .overlay {
             if showsSelectionChrome && !slide.isSelected {
-                Color.black.opacity(0.45)
-                Text("Not Selected")
-                    .font(.system(size: width * 0.05, weight: .semibold))
-                    .foregroundColor(.white)
+                ZStack {
+                    Color.black.opacity(0.45)
+                    Text("Not Selected")
+                        .font(.system(size: width * 0.05, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                // Dim sits above the hero tap catcher; without this, taps never reach
+                // `onCoverImageTap` when the cover slide is deselected.
+                .allowsHitTesting(!(slide.kind == .cover && onCoverImageTap != nil))
             }
         }
         .frame(width: width, height: height)
         .clipCarouselPostcardOutline(clipsFloatingContentToRoundedSlideOutline)
         .opacity(slide.isSelected ? 1.0 : 0.72)
         .contentShape(RoundedRectangle(cornerRadius: 16))
-        .onTapGesture { if showsSelectionChrome { onToggleSelection() } }
+        // Social Post Studio: cover `onCoverImageTap` sits inside the photo stack. A parent
+        // `onTapGesture` here would compete with (and often swallow) that tap, so omit the
+        // card-wide toggle when changing the studio cover from the hero — use the checkmark.
+        .optionalOnTapGesture(
+            isEnabled: showsSelectionChrome && !(slide.kind == .cover && onCoverImageTap != nil),
+            perform: onToggleSelection
+        )
         .animation(.easeInOut(duration: 0.2), value: slide.isSelected)
     }
 
@@ -1199,6 +1215,19 @@ struct CarouselSlideView: View {
             }
         }
         .frame(width: width, height: height).clipped()
+    }
+}
+
+private extension View {
+    /// Applies `onTapGesture` only when `isEnabled` is true, so other tap targets on the same
+    /// card (e.g. cover hero → studio cover picker) are not blocked by a parent tap handler.
+    @ViewBuilder
+    func optionalOnTapGesture(isEnabled: Bool, perform action: @escaping () -> Void) -> some View {
+        if isEnabled {
+            self.onTapGesture(perform: action)
+        } else {
+            self
+        }
     }
 }
 
@@ -1442,6 +1471,8 @@ private struct SlideEditPage: View {
     /// Present the hero swap sheet (PIP layout): user tapped the large backdrop photo.
     /// Passes the pager index so swaps stay tied to this page if the sheet stays open while scrolling.
     let onRequestHeroSwap: (Int) -> Void
+    /// Cover slide only: open the blog photo grid to change the slide hero (studio / editor).
+    let onRequestStudioCoverPhotoPick: (() -> Void)?
     /// Which horizontal page this edit surface represents (`slides` index).
     let slidePageIndex: Int
 
@@ -1496,15 +1527,18 @@ private struct SlideEditPage: View {
             onTapHeroBackdrop: {
                 guard slide.kind == .placeStop, slide.layout == .pip else { return }
                 onRequestHeroSwap(slidePageIndex)
-            }
+            },
+            onCoverImageTap: (slide.kind == .cover ? onRequestStudioCoverPhotoPick : nil)
         )
         .coordinateSpace(.named(studioSlideCoordSpace))
         .shadow(color: .black.opacity(0.5), radius: 16, x: 0, y: 6)
         .padding(.horizontal, 20)
-        // Tap anywhere on the slide outside a text block deselects. Taps on a block
-        // are consumed by its `highPriorityGesture` drag, so this only fires for
-        // taps on the slide background / margins.
-        .onTapGesture { onDeselect() }
+        // Tap anywhere on the slide outside a text block deselects. Omit when the cover
+        // hero has its own tap target so that gesture is not swallowed by this parent.
+        .optionalOnTapGesture(
+            isEnabled: !(slide.kind == .cover && onRequestStudioCoverPhotoPick != nil),
+            perform: onDeselect
+        )
     }
 }
 
@@ -1526,6 +1560,8 @@ struct SlideTextEditorView: View {
     let exportActions: SlideTextEditorExportActions
     /// Mirrors parent `SocialPostStudioSheet.isRendering` so export progress covers the editor when presented in `fullScreenCover`.
     @Binding var exportInProgress: Bool
+    /// When set (e.g. from `SocialPostStudioSheet`), the cover slide can change its hero via the same picker as the studio preview.
+    let onRequestStudioCoverPhotoPick: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
 
     @State private var currentIndex: Int
@@ -1587,13 +1623,15 @@ struct SlideTextEditorView: View {
         initialIndex: Int,
         aspectRatio: CGFloat,
         exportActions: SlideTextEditorExportActions,
-        exportInProgress: Binding<Bool>
+        exportInProgress: Binding<Bool>,
+        onRequestStudioCoverPhotoPick: (() -> Void)? = nil
     ) {
         self._slides = slides
         self.initialIndex = initialIndex
         self.aspectRatio = aspectRatio
         self.exportActions = exportActions
         self._exportInProgress = exportInProgress
+        self.onRequestStudioCoverPhotoPick = onRequestStudioCoverPhotoPick
         self._currentIndex = State(initialValue: initialIndex)
         self._scrollPageID = State(initialValue: initialIndex)
     }
@@ -2348,6 +2386,7 @@ struct SlideTextEditorView: View {
                                                     heroSwapSlideIndex = idx
                                                     showsHeroPhotoSwapSheet = true
                                                 },
+                                                onRequestStudioCoverPhotoPick: onRequestStudioCoverPhotoPick,
                                                 slidePageIndex: i
                                             )
                                             Spacer(minLength: 0)
@@ -2583,6 +2622,11 @@ struct SlideTextEditorView: View {
                     heroSwapSlideIndex = nil
                 }
                 selectedBlock = nil
+                #if DEBUG
+                if slides.indices.contains(newID), slides[newID].kind == .cover {
+                    print("[CarouselStudio] scrollPageID → cover slide at index \(newID)")
+                }
+                #endif
             }
             .onChange(of: slides.count) { _, _ in
                 clampCurrentIndexIfNeeded()
@@ -2620,6 +2664,11 @@ struct SlideTextEditorView: View {
             showsTextEditLine = false
         }
         .onChange(of: selectedBlock) { _, newValue in
+            #if DEBUG
+            if slides.indices.contains(currentIndex), slides[currentIndex].kind == .cover {
+                print("[CarouselStudio] cover slide selectedBlock → \(String(describing: newValue))")
+            }
+            #endif
             // Switching selection (or deselecting entirely) collapses whichever
             // drop-up was open so the panel content always matches the block type.
             pipClusterSizeSliderUndoPrimed = false
@@ -3913,7 +3962,13 @@ struct SocialPostStudioSheet: View {
                         initialIndex: 0,
                         aspectRatio: exportFormat.aspectRatio,
                         exportActions: makeEditorExportActions(),
-                        exportInProgress: $isRendering
+                        exportInProgress: $isRendering,
+                        onRequestStudioCoverPhotoPick: {
+                            #if DEBUG
+                            print("[CarouselStudio] opening cover picker (Edit Slides / Carousel Studio)")
+                            #endif
+                            showStudioCoverPicker = true
+                        }
                     )
                 }
             } else {
@@ -4000,7 +4055,13 @@ struct SocialPostStudioSheet: View {
                 initialIndex: ref.index,
                 aspectRatio: exportFormat.aspectRatio,
                 exportActions: makeEditorExportActions(),
-                exportInProgress: $isRendering
+                exportInProgress: $isRendering,
+                onRequestStudioCoverPhotoPick: {
+                    #if DEBUG
+                    print("[CarouselStudio] opening cover picker (from slide editor sheet)")
+                    #endif
+                    showStudioCoverPicker = true
+                }
             )
         }
         .sheet(isPresented: $showStudioCoverPicker) {
@@ -4012,6 +4073,13 @@ struct SocialPostStudioSheet: View {
                     Task { await applyStudioCoverFromPick(photo) }
                 }
             )
+        }
+        .onChange(of: showStudioCoverPicker) { _, isPresented in
+            #if DEBUG
+            if isPresented {
+                print("[CarouselStudio] cover photo picker sheet presented")
+            }
+            #endif
         }
     }
 
