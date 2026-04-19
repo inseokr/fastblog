@@ -153,8 +153,8 @@ private enum PlaceSlideCaptionTarget { case none }
 private enum StyleCategory: String, CaseIterable, Identifiable {
     case color  = "Color"
     case font   = "Font Style"
-    case size   = "Font Size"
     case format = "Format"
+    case size   = "Font Size"
 
     var id: String { rawValue }
 
@@ -663,9 +663,14 @@ private struct DraggableTextBlock<Content: View>: View {
         }
     }
 
-    /// Stores the block's natural (un-offset) frame in slide coords. `.frame(in: .named(...))`
-    /// reports post-offset position, so we subtract whatever point-offset is currently applied
-    /// (savedPointOffset + liveDrag) to recover the natural rect.
+    /// Stores the block's natural (un-offset) frame in slide coords.
+    ///
+    /// SwiftUI's `.offset()` modifier is **visual-only** — it shifts how the view is
+    /// rendered on screen, but it does NOT change the view's layout frame. This means
+    /// `geo.frame(in: .named(studioSlideCoordSpace))` always returns the block's
+    /// natural (anchor-based) layout position regardless of the current `savedOffset`
+    /// or in-flight `liveDrag`. We store it directly as `naturalRect` with no further
+    /// adjustment needed.
     ///
     /// We recapture on every size/bounds change (not just once) because the slide can
     /// resize mid-session on 9:16 formats when the toolbar grows or collapses. A stale
@@ -674,11 +679,7 @@ private struct DraggableTextBlock<Content: View>: View {
     private func captureNaturalRect(from geo: GeometryProxy) {
         let current = geo.frame(in: .named(studioSlideCoordSpace))
         guard current.width > 0, current.height > 0 else { return }
-        let activeOffset = CGSize(
-            width: savedPointOffset.width + liveDrag.width,
-            height: savedPointOffset.height + liveDrag.height
-        )
-        naturalRect = current.offsetBy(dx: -activeOffset.width, dy: -activeOffset.height)
+        naturalRect = current
     }
 
     @ViewBuilder
