@@ -3773,6 +3773,8 @@ struct SocialPostStudioSheet: View {
     }
 
     let blog: RecapBlogDetail
+    /// When `true`, the sheet is **Edit Slides** after load (Share → Post to Social), not Social Post Studio.
+    var opensInEditMode: Bool = false
 
     @State private var slides: [CarouselSlide] = []
     @State private var exportFormat: ExportFormat = .post
@@ -3813,71 +3815,97 @@ struct SocialPostStudioSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Group {
-                    if isLoading {
-                        VStack(spacing: 16) { ProgressView(); Text("Preparing slides…").foregroundColor(.secondary) }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if slides.isEmpty {
-                        Text("No places found in this blog.").foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        slidePreviewAndExport
-                    }
-                }
-                if isRendering {
-                    Color.black.opacity(0.45)
-                        .ignoresSafeArea()
-                        .allowsHitTesting(true)
-                    VStack(spacing: 14) {
+        Group {
+            if opensInEditMode {
+                if isLoading {
+                    VStack(spacing: 16) {
                         ProgressView()
-                            .scaleEffect(1.1)
-                            .tint(.white)
-                        Text("Preparing export…")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.white.opacity(0.9))
+                        Text("Preparing slides…").foregroundColor(.secondary)
                     }
-                    .padding(28)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(red: 5/255, green: 10/255, blue: 48/255))
+                    .preferredColorScheme(.dark)
+                } else if slides.isEmpty {
+                    Text("No places found in this blog.")
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(red: 5/255, green: 10/255, blue: 48/255))
+                        .preferredColorScheme(.dark)
+                } else {
+                    SlideTextEditorView(
+                        slides: $slides,
+                        initialIndex: 0,
+                        aspectRatio: exportFormat.aspectRatio
+                    )
+                }
+            } else {
+                NavigationStack {
+                    ZStack {
+                        Group {
+                            if isLoading {
+                                VStack(spacing: 16) { ProgressView(); Text("Preparing slides…").foregroundColor(.secondary) }
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            } else if slides.isEmpty {
+                                Text("No places found in this blog.").foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            } else {
+                                slidePreviewAndExport
+                            }
+                        }
+                        if isRendering {
+                            Color.black.opacity(0.45)
+                                .ignoresSafeArea()
+                                .allowsHitTesting(true)
+                            VStack(spacing: 14) {
+                                ProgressView()
+                                    .scaleEffect(1.1)
+                                    .tint(.white)
+                                Text("Preparing export…")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundColor(.white.opacity(0.9))
+                            }
+                            .padding(28)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        }
+                    }
+                    .background(Color(uiColor: .systemGroupedBackground))
+                    .navigationTitle("Social Post Studio")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button { dismiss() } label: {
+                                Image(systemName: "xmark").font(.system(size: 14)).foregroundColor(.white)
+                            }
+                        }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Menu {
+                                Button {
+                                    Task { await shareViaSheet() }
+                                } label: {
+                                    Label("Share to TikTok, Instagram, Facebook…", systemImage: "square.and.arrow.up")
+                                }
+                                Button {
+                                    Task { await saveToPhotos() }
+                                } label: {
+                                    Label("Save to Photos", systemImage: "photo.on.rectangle.angled")
+                                }
+                                Button {
+                                    Task { await exportSlidesPDFAndShare() }
+                                } label: {
+                                    Label("Export as PDF", systemImage: "doc.richtext")
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+                            .disabled(exportActionsDisabled)
+                            .accessibilityLabel("Export and share")
+                        }
+                    }
+                    .preferredColorScheme(.dark)
                 }
             }
-            .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("Social Post Studio")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark").font(.system(size: 14)).foregroundColor(.white)
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button {
-                            Task { await shareViaSheet() }
-                        } label: {
-                            Label("Share to TikTok, Instagram, Facebook…", systemImage: "square.and.arrow.up")
-                        }
-                        Button {
-                            Task { await saveToPhotos() }
-                        } label: {
-                            Label("Save to Photos", systemImage: "photo.on.rectangle.angled")
-                        }
-                        Button {
-                            Task { await exportSlidesPDFAndShare() }
-                        } label: {
-                            Label("Export as PDF", systemImage: "doc.richtext")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.white)
-                    }
-                    .disabled(exportActionsDisabled)
-                    .accessibilityLabel("Export and share")
-                }
-            }
-            .preferredColorScheme(.dark)
         }
         .task { await loadSlides() }
         .onChange(of: exportFormat) { _, _ in Task { await loadSlides() } }

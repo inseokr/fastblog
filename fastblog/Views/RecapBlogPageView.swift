@@ -940,7 +940,7 @@ struct RecapBlogPageView: View {
                 }
             }
             .sheet(isPresented: $showSocialPostStudio) {
-                SocialPostStudioSheet(blog: draft)
+                SocialPostStudioSheet(blog: draft, opensInEditMode: true)
             }
             .sheet(isPresented: $showBlogSettings) {
                 BlogSettingsSheet(
