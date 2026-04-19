@@ -1510,10 +1510,22 @@ private struct SlideEditPage: View {
 
 // MARK: - Full-Screen Text Editor
 
+/// Share / save / PDF from the editor nav bar — implemented by `SocialPostStudioSheet`.
+struct SlideTextEditorExportActions {
+    let share: () async -> Void
+    let saveToPhotos: () async -> Void
+    let exportPDF: () async -> Void
+    let exportActionsDisabled: () -> Bool
+}
+
 struct SlideTextEditorView: View {
     @Binding var slides: [CarouselSlide]
     let initialIndex: Int
     let aspectRatio: CGFloat
+    /// Nav bar `…` menu (share / save / PDF); parent owns sheets, alerts, and export rendering.
+    let exportActions: SlideTextEditorExportActions
+    /// Mirrors parent `SocialPostStudioSheet.isRendering` so export progress covers the editor when presented in `fullScreenCover`.
+    @Binding var exportInProgress: Bool
     @Environment(\.dismiss) private var dismiss
 
     @State private var currentIndex: Int
@@ -1570,10 +1582,18 @@ struct SlideTextEditorView: View {
     /// safe-area changes to the nested `safeAreaInset`, causing the keyboard to overlay the toolbar.
     @State private var keyboardHeight: CGFloat = 0
 
-    init(slides: Binding<[CarouselSlide]>, initialIndex: Int, aspectRatio: CGFloat) {
+    init(
+        slides: Binding<[CarouselSlide]>,
+        initialIndex: Int,
+        aspectRatio: CGFloat,
+        exportActions: SlideTextEditorExportActions,
+        exportInProgress: Binding<Bool>
+    ) {
         self._slides = slides
         self.initialIndex = initialIndex
         self.aspectRatio = aspectRatio
+        self.exportActions = exportActions
+        self._exportInProgress = exportInProgress
         self._currentIndex = State(initialValue: initialIndex)
         self._scrollPageID = State(initialValue: initialIndex)
     }
@@ -2501,23 +2521,51 @@ struct SlideTextEditorView: View {
                 slideEditorGeometryContent(outerSize: outerGeo.size)
             }
             .background(Color(red: 5/255, green: 10/255, blue: 48/255).ignoresSafeArea())
-            .navigationTitle("Edit Slides")
+            .navigationTitle("Carousel Studio")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                    Button("Exit") { dismiss() }
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                ToolbarItemGroup(placement: .topBarTrailing) {
                     let canUndo = !undoStack.isEmpty
                     Button {
                         undoLastChange()
                     } label: {
                         Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
                             .opacity(canUndo ? 1 : 0.3)
                             .animation(.easeInOut(duration: 0.18), value: canUndo)
                     }
                     .disabled(!canUndo)
                     .accessibilityLabel("Undo")
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }.fontWeight(.semibold)
+
+                    Menu {
+                        Button {
+                            Task { await exportActions.share() }
+                        } label: {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                        }
+                        Button {
+                            Task { await exportActions.saveToPhotos() }
+                        } label: {
+                            Label("Save to Photos", systemImage: "photo.on.rectangle.angled")
+                        }
+                        Button {
+                            Task { await exportActions.exportPDF() }
+                        } label: {
+                            Label("Export as PDF", systemImage: "doc.richtext")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    .disabled(exportActions.exportActionsDisabled())
+                    .accessibilityLabel("Share and export")
                 }
             }
             .onChange(of: scrollPageID) { _, newID in
@@ -2541,6 +2589,25 @@ struct SlideTextEditorView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .overlay {
+            if exportInProgress {
+                ZStack {
+                    Color.black.opacity(0.45)
+                        .ignoresSafeArea()
+                        .allowsHitTesting(true)
+                    VStack(spacing: 14) {
+                        ProgressView()
+                            .scaleEffect(1.1)
+                            .tint(.white)
+                        Text("Preparing export…")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.white.opacity(0.9))
+                    }
+                    .padding(28)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+            }
+        }
         // `currentIndex` and `scrollPageID` are seeded in `init`, so the ScrollView lays
         // out on the correct page from the very first frame. We only need to reset the
         // per-session editor state here.
@@ -3814,6 +3881,15 @@ struct SocialPostStudioSheet: View {
         isLoading || slides.isEmpty || selectedSlides.isEmpty || isRendering
     }
 
+    private func makeEditorExportActions() -> SlideTextEditorExportActions {
+        SlideTextEditorExportActions(
+            share: { await shareViaSheet() },
+            saveToPhotos: { await saveToPhotos() },
+            exportPDF: { await exportSlidesPDFAndShare() },
+            exportActionsDisabled: { exportActionsDisabled }
+        )
+    }
+
     var body: some View {
         Group {
             if opensInEditMode {
@@ -3835,7 +3911,9 @@ struct SocialPostStudioSheet: View {
                     SlideTextEditorView(
                         slides: $slides,
                         initialIndex: 0,
-                        aspectRatio: exportFormat.aspectRatio
+                        aspectRatio: exportFormat.aspectRatio,
+                        exportActions: makeEditorExportActions(),
+                        exportInProgress: $isRendering
                     )
                 }
             } else {
@@ -3917,7 +3995,13 @@ struct SocialPostStudioSheet: View {
             Button("OK", role: .cancel) {}
         } message: { Text(savedAlertMessage) }
         .fullScreenCover(item: $editingSlideRef) { ref in
-            SlideTextEditorView(slides: $slides, initialIndex: ref.index, aspectRatio: exportFormat.aspectRatio)
+            SlideTextEditorView(
+                slides: $slides,
+                initialIndex: ref.index,
+                aspectRatio: exportFormat.aspectRatio,
+                exportActions: makeEditorExportActions(),
+                exportInProgress: $isRendering
+            )
         }
         .sheet(isPresented: $showStudioCoverPicker) {
             SocialPostStudioCoverPickerSheet(
