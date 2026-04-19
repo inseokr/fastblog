@@ -4327,19 +4327,10 @@ struct TripCarouselCard: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 13)
                     .padding(.vertical, 8)
-                    .background(
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.45, green: 0.18, blue: 0.98),
-                                Color(red: 0.04, green: 0.52, blue: 1.0)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
+                    .background(Color.blue)
                     .clipShape(Capsule())
                     .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
-                    .shadow(color: Color(red: 0.25, green: 0.35, blue: 0.98).opacity(0.65), radius: 14, x: 0, y: 4)
+                    .shadow(color: Color.blue.opacity(0.5), radius: 14, x: 0, y: 4)
                     .padding(10)
                     .transition(.scale.combined(with: .opacity))
                 }

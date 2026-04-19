@@ -116,6 +116,8 @@ class MapSnapshotHelper {
 
     /// Static photo-route snapshot for Social Post Studio.
     /// - Photos: one circular photo marker per place (uses `markerImagesByStopId`).
+    /// - Start / end: green **START** (or **START & END** if one stop) and orange **END** pills
+    ///   above the photo, matching `MapDayView`; middle stops keep a numbered corner badge.
     /// - Labels: place name "pills" rendered *under* the photo markers.
     /// - Route stroke: always blue (matches the Studio requirement).
     static func generatePhotoRouteSnapshot(
@@ -266,8 +268,11 @@ class MapSnapshotHelper {
                     at: point,
                     markerDiameter: markerDiameter,
                     image: image,
-                    number: entry.displayNumber,
+                    displayNumber: entry.displayNumber,
+                    isFirst: isFirst,
+                    isLast: isLast,
                     borderColor: borderColor,
+                    canvasSize: snapshot.image.size,
                     context: context
                 )
 
@@ -364,8 +369,11 @@ class MapSnapshotHelper {
         at center: CGPoint,
         markerDiameter: CGFloat,
         image: UIImage,
-        number: Int,
+        displayNumber: Int,
+        isFirst: Bool,
+        isLast: Bool,
         borderColor: UIColor,
+        canvasSize: CGSize,
         context: CGContext
     ) {
         let radius = markerDiameter / 2
@@ -392,11 +400,108 @@ class MapSnapshotHelper {
         context.strokePath()
         context.restoreGState()
 
-        // Order number badge (top-leading corner)
+        // Match `MapDayView.PlaceMarkerView`: START / END (or START & END) pills above the
+        // photo for endpoints; numbered navy badge only for middle stops.
+        if isFirst || isLast {
+            let pillText: String
+            let fill: UIColor
+            if isFirst && isLast {
+                pillText = "START & END"
+                fill = .systemGreen
+            } else if isFirst {
+                pillText = "START"
+                fill = .systemGreen
+            } else {
+                pillText = "END"
+                fill = .systemOrange
+            }
+            drawStartEndPillAbovePhotoMarker(
+                photoCircleRect: rect,
+                text: pillText,
+                fillColor: fill,
+                canvasSize: canvasSize,
+                context: context
+            )
+        } else {
+            drawOrderNumberBadgeOnPhoto(
+                photoCircleRect: rect,
+                number: displayNumber,
+                markerDiameter: markerDiameter,
+                context: context
+            )
+        }
+    }
+
+    /// Green / orange capsule above the circular photo — same role as `startEndBadge` in `MapDayView`.
+    private static func drawStartEndPillAbovePhotoMarker(
+        photoCircleRect: CGRect,
+        text: String,
+        fillColor: UIColor,
+        canvasSize: CGSize,
+        context: CGContext
+    ) {
+        let markerRadius = photoCircleRect.width / 2
+        let fontSize = max(10, min(markerRadius * 0.36, 22))
+        let padH = max(7, markerRadius * 0.28)
+        let padV = max(3, markerRadius * 0.14)
+        let font = UIFont.systemFont(ofSize: fontSize, weight: .heavy)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: UIColor.white
+        ]
+        let size = (text as NSString).size(withAttributes: attrs)
+        let labelW = size.width + padH * 2
+        let labelH = size.height + padV * 2
+        let cornerRadius = labelH / 2
+        let gap = max(4, markerRadius * 0.12)
+
+        let margin = max(6, markerRadius * 0.2)
+        var originX = photoCircleRect.midX - labelW / 2
+        originX = min(max(originX, margin), canvasSize.width - margin - labelW)
+
+        var originY = photoCircleRect.minY - gap - labelH
+        if originY < margin {
+            originY = margin
+        }
+
+        let pillRect = CGRect(x: originX, y: originY, width: labelW, height: labelH)
+
+        context.saveGState()
+        context.setShadow(
+            offset: CGSize(width: 0, height: max(1, markerRadius * 0.08)),
+            blur: max(3, markerRadius * 0.25),
+            color: UIColor.black.withAlphaComponent(0.4).cgColor
+        )
+        let path = UIBezierPath(roundedRect: pillRect, cornerRadius: cornerRadius).cgPath
+        context.addPath(path)
+        context.setFillColor(fillColor.withAlphaComponent(0.95).cgColor)
+        context.fillPath()
+        context.setShadow(offset: .zero, blur: 0, color: nil)
+        context.setStrokeColor(UIColor.white.withAlphaComponent(0.8).cgColor)
+        context.setLineWidth(max(1, markerRadius * 0.06))
+        context.addPath(path)
+        context.strokePath()
+
+        let drawTextRect = CGRect(
+            x: pillRect.minX + padH,
+            y: pillRect.minY + padV,
+            width: pillRect.width - padH * 2,
+            height: pillRect.height - padV * 2
+        )
+        (text as NSString).draw(in: drawTextRect, withAttributes: attrs)
+        context.restoreGState()
+    }
+
+    private static func drawOrderNumberBadgeOnPhoto(
+        photoCircleRect: CGRect,
+        number: Int,
+        markerDiameter: CGFloat,
+        context: CGContext
+    ) {
         let badgeRadius = max(10, markerDiameter * 0.22)
         let badgeCenter = CGPoint(
-            x: rect.minX + badgeRadius * 0.9,
-            y: rect.minY + badgeRadius * 0.9
+            x: photoCircleRect.minX + badgeRadius * 0.9,
+            y: photoCircleRect.minY + badgeRadius * 0.9
         )
         let badgeRect = CGRect(
             x: badgeCenter.x - badgeRadius,
@@ -406,7 +511,6 @@ class MapSnapshotHelper {
         )
 
         context.saveGState()
-        // Dark navy badge — neutral, doesn't compete with the photo or the border colour.
         context.setShadow(offset: CGSize(width: 0, height: 1), blur: 3,
                           color: UIColor.black.withAlphaComponent(0.5).cgColor)
         context.setFillColor(UIColor(red: 0.04, green: 0.06, blue: 0.18, alpha: 0.92).cgColor)
@@ -424,12 +528,12 @@ class MapSnapshotHelper {
             .font: font,
             .foregroundColor: UIColor.white
         ]
-        let size = (text as NSString).size(withAttributes: attrs)
+        let textSize = (text as NSString).size(withAttributes: attrs)
         let drawRect = CGRect(
-            x: badgeCenter.x - size.width / 2,
-            y: badgeCenter.y - size.height / 2,
-            width: size.width,
-            height: size.height
+            x: badgeCenter.x - textSize.width / 2,
+            y: badgeCenter.y - textSize.height / 2,
+            width: textSize.width,
+            height: textSize.height
         )
         (text as NSString).draw(in: drawRect, withAttributes: attrs)
         context.restoreGState()
