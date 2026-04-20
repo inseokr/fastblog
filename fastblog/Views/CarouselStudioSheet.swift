@@ -3632,13 +3632,13 @@ struct SlideTextEditorView: View {
                                                     heroSwapSlideIndex = idx
                                                     showsHeroPhotoSwapSheet = true
                                                 },
-                                                onRequestSplitBottomPick: { idx in
+                                                onRequestSplitBottomPick: { _ in
                                                     // Now selects the slot; Replace button in the
                                                     // action toolbar opens the picker explicitly.
                                                     selectedBlock = nil
                                                     selectedSplitSlot = .bottom
                                                 },
-                                                onRequestSplitTopSelect: { idx in
+                                                onRequestSplitTopSelect: { _ in
                                                     selectedBlock = nil
                                                     selectedSplitSlot = .top
                                                 },
