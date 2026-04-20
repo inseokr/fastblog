@@ -1936,9 +1936,24 @@ struct SlideTextEditorView: View {
 
     // MARK: Helpers
 
+    /// Slide index the horizontal pager is showing (or last reported). Prefer
+    /// `scrollPageID` when it still names a rendered page — after swiping,
+    /// `currentIndex` can lag until `onChange(scrollPageID)` runs, which made
+    /// the PIP toggle apply to the wrong photo for non-first place slides.
+    private var editorPagerFocusedSlideIndex: Int {
+        if let sid = scrollPageID,
+           slides.indices.contains(sid),
+           visibleSlideIndices.contains(sid) {
+            return sid
+        }
+        guard slides.indices.contains(currentIndex) else { return max(0, slides.count - 1) }
+        return currentIndex
+    }
+
     private var currentSlide: CarouselSlide? {
-        guard slides.indices.contains(currentIndex) else { return nil }
-        return slides[currentIndex]
+        let idx = editorPagerFocusedSlideIndex
+        guard slides.indices.contains(idx) else { return nil }
+        return slides[idx]
     }
 
     /// Slides the editor's swipe pager should actually render — mirrors the
@@ -1956,7 +1971,7 @@ struct SlideTextEditorView: View {
     /// user sees "page 2 of 4" over visible pages rather than "3 of 7" where
     /// three of those pages don't exist in the pager.
     private var currentVisiblePosition: Int? {
-        visibleSlideIndices.firstIndex(of: currentIndex)
+        visibleSlideIndices.firstIndex(of: editorPagerFocusedSlideIndex)
     }
 
     private var availableBlocks: [SlideBlockID] {
@@ -2013,11 +2028,39 @@ struct SlideTextEditorView: View {
         let visible = visibleSlideIndices
         guard !visible.isEmpty else { return }
         if !visible.contains(currentIndex) {
-            let nearest = visible.min(by: { abs($0 - currentIndex) < abs($1 - currentIndex) }) ?? visible[0]
+            // Stable tie-break: equal distance → prefer the earlier slide (deterministic
+            // vs `min(by:)` on ties, which felt random when leaving a hidden sibling).
+            let nearest = visible.min(by: { a, b in
+                let da = abs(a - currentIndex)
+                let db = abs(b - currentIndex)
+                if da != db { return da < db }
+                return a < b
+            }) ?? visible[0]
             currentIndex = nearest
             scrollPageID = nearest
             selectedBlock = nil
         }
+    }
+
+    /// After the visible page list changes (e.g. PIP hides sibling singles), `scrollPosition`
+    /// can briefly report an id that is no longer a rendered page, or snap the wrong
+    /// way. Re-align `currentIndex` + binding to the slide the user was editing.
+    private func reassertEditorPagerToSlide(at index: Int) {
+        guard slides.indices.contains(index),
+              visibleSlideIndices.contains(index) else { return }
+        currentIndex = index
+        // Nil pulse matches the initial-width workaround: forces `scrollPosition(id:)`
+        // to re-resolve after sibling pages disappear from the left (offset drift).
+        scrollPageID = nil
+        DispatchQueue.main.async {
+            guard visibleSlideIndices.contains(index) else { return }
+            scrollPageID = index
+        }
+    }
+
+    /// Stable string so `onChange` runs when the pager's page set changes (PIP collapse, etc.).
+    private var visibleSlideIndicesTag: String {
+        visibleSlideIndices.map(String.init).joined(separator: ",")
     }
 
     private var canExcludeCurrentSlide: Bool {
@@ -2079,8 +2122,9 @@ struct SlideTextEditorView: View {
     /// slide `isSelected` flags aligned with `SocialPostStudioSheet.setLayout` so
     /// export and the preview strip stay consistent.
     private func setPlaceStopLayout(_ layout: CarouselSlideLayout) {
-        guard hasValidCurrentIndex, slides[currentIndex].kind == .placeStop else { return }
-        let index = currentIndex
+        let index = editorPagerFocusedSlideIndex
+        guard slides.indices.contains(index), slides[index].kind == .placeStop else { return }
+        currentIndex = index
         let stopID = slides[index].placeStop?.id
         pushUndoSnapshot()
         withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
@@ -2098,6 +2142,7 @@ struct SlideTextEditorView: View {
             activePIPCategory = nil
         }
         clampCurrentIndexIfNeeded()
+        reassertEditorPagerToSlide(at: index)
     }
 
     @ViewBuilder
@@ -2660,7 +2705,7 @@ struct SlideTextEditorView: View {
                                         .frame(width: slotW, height: slotH)
                                         .id(i)
                                         .onLongPressGesture(minimumDuration: 0.5) {
-                                            guard i == currentIndex, canExcludeCurrentSlide else { return }
+                                            guard i == editorPagerFocusedSlideIndex, canExcludeCurrentSlide else { return }
                                             performExcludeFromStudio()
                                         }
                                     }
@@ -2982,18 +3027,42 @@ struct SlideTextEditorView: View {
                 // offset now maps to page 0 once pages get real widths), which would
                 // otherwise yank `currentIndex` away from `initialIndex`.
                 guard didPerformInitialScroll else { return }
-                if newID != currentIndex {
-                    currentIndex = newID
-                    // Hero swap is tied to a slide index; dismiss if the user pages away.
-                    showsHeroPhotoSwapSheet = false
-                    heroSwapSlideIndex = nil
+                // When PIP collapses sibling slides out of the pager, `scrollPosition` can
+                // still emit an id for a page that no longer exists in `ForEach` — ignore
+                // those writes and snap the binding back to the editor's slide.
+                guard visibleSlideIndices.contains(newID) else {
+                    DispatchQueue.main.async {
+                        if scrollPageID != currentIndex {
+                            scrollPageID = currentIndex
+                        }
+                    }
+                    return
                 }
+                guard newID != currentIndex else { return }
+                currentIndex = newID
+                // Hero swap is tied to a slide index; dismiss if the user pages away.
+                showsHeroPhotoSwapSheet = false
+                heroSwapSlideIndex = nil
                 selectedBlock = nil
                 #if DEBUG
                 if slides.indices.contains(newID), slides[newID].kind == .cover {
                     print("[CarouselStudio] scrollPageID → cover slide at index \(newID)")
                 }
                 #endif
+            }
+            .onChange(of: visibleSlideIndicesTag) { _, _ in
+                guard didPerformInitialScroll, !slides.isEmpty else { return }
+                // Pager content identity changed (e.g. enabling PIP removed earlier siblings).
+                // Keep `currentIndex` aligned with what `scrollPosition` still claims, then
+                // re-scroll so the centered page matches that id (avoids wrong hero after PIP).
+                if let sid = scrollPageID, visibleSlideIndices.contains(sid) {
+                    currentIndex = sid
+                }
+                guard visibleSlideIndices.contains(currentIndex) else {
+                    clampCurrentIndexIfNeeded()
+                    return
+                }
+                reassertEditorPagerToSlide(at: currentIndex)
             }
             .onChange(of: slides.count) { _, _ in
                 clampCurrentIndexIfNeeded()
