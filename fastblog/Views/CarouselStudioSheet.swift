@@ -174,6 +174,13 @@ enum SlideBlockID: Equatable, Hashable {
 enum CarouselSlideLayout: String, CaseIterable, Identifiable {
     case single  // one full-bleed hero photo (default)
     case pip     // hero photo + 2–3 inset PIP thumbnails (default: top-trailing stack)
+    case split   // top hero + bottom companion photo
+    var id: String { rawValue }
+}
+
+enum CarouselSplitDividerStyle: String, CaseIterable, Identifiable {
+    case straight
+    case curve
     var id: String { rawValue }
 }
 
@@ -496,6 +503,19 @@ private struct DiagonalRoundedBadgeShape: Shape {
     }
 }
 
+private struct CurvedSplitDividerShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        path.addCurve(
+            to: CGPoint(x: rect.maxX, y: rect.midY),
+            control1: CGPoint(x: rect.width * 0.28, y: rect.midY - min(20, rect.height * 0.45)),
+            control2: CGPoint(x: rect.width * 0.72, y: rect.midY + min(20, rect.height * 0.45))
+        )
+        return path
+    }
+}
+
 struct CarouselSlide: Identifiable {
     let id: String
     let kind: CarouselSlideKind
@@ -548,6 +568,12 @@ struct CarouselSlide: Identifiable {
     /// exclude it from the available list so users don't duplicate the hero
     /// into the cluster.
     var heroPhotoID: UUID? = nil
+    /// Optional second photo shown in the bottom half when `layout == .split`.
+    var splitBottomImage: UIImage? = nil
+    /// `RecapPhoto.id` of `splitBottomImage`.
+    var splitBottomPhotoID: UUID? = nil
+    /// Visual style for the top/bottom split seam.
+    var splitDividerStyle: CarouselSplitDividerStyle = .curve
     /// 1-based sequential stop number across all days; when set, a white POI marker is shown before the place name.
     var stopIndex: Int? = nil
 
@@ -560,10 +586,10 @@ struct CarouselSlide: Identifiable {
 }
 
 /// Returns `true` when the slide at `index` is a `.placeStop` slide in `.single`
-/// layout whose photo is already represented inside a sibling's PIP cluster
-/// (same `placeStop.id`, `layout == .pip`). The preview and export pipelines
-/// hide these so activating multi-photo collapses the stop down to its single
-/// PIP slide; flipping the sibling back to `.single` resurfaces them.
+/// layout whose photo is already represented inside a sibling's grouped mode
+/// (`.pip` or `.split`) for the same stop. The preview and export pipelines
+/// hide these so activating grouped layout collapses the stop down to one slide;
+/// flipping the sibling back to `.single` resurfaces them.
 private func isSlideHiddenBySiblingPIP(at index: Int, in slides: [CarouselSlide]) -> Bool {
     guard slides.indices.contains(index) else { return false }
     let slide = slides[index]
@@ -571,10 +597,17 @@ private func isSlideHiddenBySiblingPIP(at index: Int, in slides: [CarouselSlide]
           slide.layout == .single,
           let stopID = slide.placeStop?.id else { return false }
     return slides.contains { other in
-        other.id != slide.id &&
-        other.kind == .placeStop &&
-        other.layout == .pip &&
-        other.placeStop?.id == stopID
+        guard other.id != slide.id,
+              other.kind == .placeStop,
+              other.placeStop?.id == stopID else { return false }
+        if other.layout == .pip {
+            return true
+        }
+        if other.layout == .split {
+            guard let hiddenPhotoID = other.splitBottomPhotoID else { return false }
+            return hiddenPhotoID == slide.heroPhotoID
+        }
+        return false
     }
 }
 
@@ -707,16 +740,21 @@ private func buildPlaceCarouselSlideForStudio(
 private let studioSlideCoordSpace = "studio.slide.space"
 
 /// Edge inset (in points) used in two places that **must stay in sync**:
-/// 1. `DraggableTextBlock.clamped(proposed:)` / `DraggablePIPCluster.clampedOffset`
-///    shrink the allowed slide area so the block's visual rect stays inside the slide.
-/// 2. Each anchored overlay in `CarouselSlideView` pads its draggable block by the
+/// 1. `DraggableTextBlock.clamped(proposed:)` shrinks the allowed slide area so the
+///    block's visual rect stays inside the slide.
+/// 2. Each anchored overlay in `CarouselSlideView` pads its draggable text block by the
 ///    same amount so the block's *natural* (anchor) rect already sits inside that
 ///    clamp region — avoiding a first-tap "nudge" when `savedOffset == .zero`.
 ///
-/// Set to `0` so blocks can sit flush on the left/right/top/bottom edges. Rubber-band
+/// Set to `0` so text blocks can sit flush on the left/right/top/bottom edges. Rubber-band
 /// on finger lift is avoided by clamping the **displayed** offset during the gesture
 /// (`displayPointOffset`), not only on `onEnded`.
 private let studioTextBlockEdgeInset: CGFloat = 0
+
+/// Inset of the PIP thumbnail cluster from the slide edges (default placement + drag clamp).
+/// Kept separate from `studioTextBlockEdgeInset` so place titles can stay edge-to-edge
+/// while PIP sits slightly inside the postcard border.
+private let studioPIPClusterEdgeInset: CGFloat = 10
 
 /// Repositionable text block. The drag gesture lives on the block itself; SwiftUI's
 /// `.offset()` is visually displacing AND hit-testable, so the on-screen rect is the
@@ -917,14 +955,11 @@ private func placeSubtitleVisible(_ slide: CarouselSlide) -> Bool {
 /// PIP cluster default placement and clamping rules.
 ///
 /// The cluster has **no internal padding** so its measured frame equals the visible
-/// thumbnail rect. That makes two things work correctly at the same time:
-///   1. Drag-clamping in `DraggablePIPCluster.clampedOffset` uses the visible rect,
-///      so the user can drag PIP **all the way to the slide's top-right corner**
-///      (Edit Slides complaint: "PIP can't get closer to the right corner").
-///   2. At default `pipOffset == .zero`, the visible thumb hugs the slide's
-///      top-trailing corner — no hidden padding pushing it inward (Social Post
-///      Studio complaint: "PIP got cut on top" was actually PIP being shoved
-///      down by `top + rotation` padding).
+/// thumbnail rect (good for hit-testing and drag math). Default placement and drag limits
+/// use `studioPIPClusterEdgeInset`: `CarouselSlideView` pads the top-trailing overlay by
+/// that amount so `pipOffset == .zero` sits slightly inside the slide border, and
+/// `DraggablePIPCluster.clampedOffset` insets `slideBounds` by the same value so drags
+/// cannot push the cluster flush against the edge (rotation/shadow still need bleed; see below).
 ///
 /// Rotation (`rotationEffect`) and the drop `shadow` extend a few points beyond
 /// the visible thumb. Outside the editor, callers must allow that bleed:
@@ -971,6 +1006,8 @@ struct CarouselSlideView: View {
     /// Multi-photo layout only: fired when the user taps the large hero backdrop (areas not covered
     /// by text blocks or the PIP cluster). Opens the hero-swap picker in `SlideTextEditorView`.
     var onTapHeroBackdrop: (() -> Void)? = nil
+    /// Split layout only: fired when the user taps the bottom slot to choose a second photo.
+    var onTapSplitBottomSlot: (() -> Void)? = nil
     /// When set, tapping the cover hero (behind title chrome) runs this — e.g. studio cover picker
     /// in Social Post Studio preview, or the same picker from Carousel Studio (`SlideTextEditorView`).
     var onCoverImageTap: (() -> Void)? = nil
@@ -1054,7 +1091,7 @@ struct CarouselSlideView: View {
                 }
 
             case .placeStop:
-                coverBackground
+                placeStopBackground
                 // Top gradient: only when the city/country subtitle is present
                 if placeSubtitleVisible(slide), !slide.isSecondaryHidden {
                     LinearGradient(colors: [.black.opacity(0.65), .clear],
@@ -1076,6 +1113,15 @@ struct CarouselSlideView: View {
                         .frame(width: width, height: height)
                         .highPriorityGesture(
                             TapGesture().onEnded { onTapHeroBackdrop?() }
+                        )
+                }
+                if isEditingText, slide.layout == .split, onTapSplitBottomSlot != nil {
+                    Color.clear
+                        .frame(width: width, height: height * 0.5)
+                        .position(x: width * 0.5, y: height * 0.75)
+                        .contentShape(Rectangle())
+                        .highPriorityGesture(
+                            TapGesture().onEnded { onTapSplitBottomSlot?() }
                         )
                 }
             }
@@ -1338,6 +1384,7 @@ struct CarouselSlideView: View {
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .pipCluster
                 )
+                .padding(studioPIPClusterEdgeInset)
                 .transition(.scale(scale: 0.85).combined(with: .opacity))
             }
         }
@@ -1408,6 +1455,72 @@ struct CarouselSlideView: View {
             }
         }
         .frame(width: width, height: height).clipped()
+    }
+
+    @ViewBuilder
+    private var placeStopBackground: some View {
+        if slide.layout == .split {
+            splitPlaceStopBackground
+        } else {
+            coverBackground
+        }
+    }
+
+    private var splitPlaceStopBackground: some View {
+        ZStack {
+            VStack(spacing: 0) {
+                Group {
+                    if let image = slide.heroImage {
+                        Image(uiImage: image).resizable().scaledToFill()
+                    } else {
+                        Color(white: 0.16)
+                    }
+                }
+                .frame(width: width, height: height * 0.5)
+                .clipped()
+
+                Group {
+                    if let bottom = slide.splitBottomImage {
+                        Image(uiImage: bottom).resizable().scaledToFill()
+                    } else {
+                        ZStack {
+                            Color(white: 0.13)
+                            if isEditingText {
+                                VStack(spacing: 6) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: width * 0.08, weight: .semibold))
+                                    Text("Tap to pick second photo")
+                                        .font(.system(size: width * 0.04, weight: .semibold))
+                                }
+                                .foregroundColor(.white.opacity(0.72))
+                            }
+                        }
+                    }
+                }
+                .frame(width: width, height: height * 0.5)
+                .clipped()
+            }
+
+            splitDividerOverlay
+        }
+        .frame(width: width, height: height)
+        .clipped()
+    }
+
+    private var splitDividerOverlay: some View {
+        Group {
+            if slide.splitDividerStyle == .straight {
+                Rectangle()
+                    .fill(.white.opacity(0.92))
+                    .frame(width: width, height: 2)
+                    .shadow(color: .black.opacity(0.28), radius: 2, x: 0, y: 1)
+            } else {
+                CurvedSplitDividerShape()
+                    .stroke(.white.opacity(0.92), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .frame(width: width, height: 36)
+                    .shadow(color: .black.opacity(0.28), radius: 2, x: 0, y: 1)
+            }
+        }
     }
 }
 
@@ -1643,7 +1756,7 @@ private struct DraggablePIPCluster: View {
         guard let natural = naturalRect,
               slideBounds.width > 0, slideBounds.height > 0
         else { return proposed }
-        let bounds = slideBounds.insetBy(dx: studioTextBlockEdgeInset, dy: studioTextBlockEdgeInset)
+        let bounds = slideBounds.insetBy(dx: studioPIPClusterEdgeInset, dy: studioPIPClusterEdgeInset)
         let visual = natural.offsetBy(dx: proposed.width, dy: proposed.height)
         var dx: CGFloat = 0
         var dy: CGFloat = 0
@@ -1675,6 +1788,8 @@ private struct SlideEditPage: View {
     /// Present the hero swap sheet (PIP layout): user tapped the large backdrop photo.
     /// Passes the pager index so swaps stay tied to this page if the sheet stays open while scrolling.
     let onRequestHeroSwap: (Int) -> Void
+    /// Present the split-bottom picker (split layout): user tapped the bottom slot.
+    let onRequestSplitBottomPick: (Int) -> Void
     /// Cover slide only: open the blog photo grid to change the slide hero (studio / editor).
     let onRequestStudioCoverPhotoPick: (() -> Void)?
     /// Which horizontal page this edit surface represents (`slides` index).
@@ -1731,6 +1846,10 @@ private struct SlideEditPage: View {
             onTapHeroBackdrop: {
                 guard slide.kind == .placeStop, slide.layout == .pip else { return }
                 onRequestHeroSwap(slidePageIndex)
+            },
+            onTapSplitBottomSlot: {
+                guard slide.kind == .placeStop, slide.layout == .split else { return }
+                onRequestSplitBottomPick(slidePageIndex)
             },
             onCoverImageTap: (slide.kind == .cover ? onRequestStudioCoverPhotoPick : nil)
         )
@@ -1793,6 +1912,10 @@ struct SlideTextEditorView: View {
     @State private var showsHeroPhotoSwapSheet: Bool = false
     /// Slide index captured when opening `showsHeroPhotoSwapSheet` (stable if user changes pages).
     @State private var heroSwapSlideIndex: Int?
+    /// Split layout: pick the optional second photo for the bottom half.
+    @State private var showsSplitBottomPhotoPicker: Bool = false
+    /// Slide index captured when opening `showsSplitBottomPhotoPicker`.
+    @State private var splitBottomPickSlideIndex: Int?
     /// Ensures `pushUndoSnapshot()` runs once at the start of a PIP size drag (coalesced undo).
     @State private var pipClusterSizeSliderUndoPrimed = false
     /// Disables horizontal slide paging while the user touches a text block (see `SlideEditPage`).
@@ -2147,9 +2270,13 @@ struct SlideTextEditorView: View {
         layoutTxn.disablesAnimations = true
         withTransaction(layoutTxn) {
             slides[index].layout = layout
+            if layout == .split {
+                slides[index].splitBottomImage = nil
+                slides[index].splitBottomPhotoID = nil
+            }
             for i in slides.indices where i != index {
                 guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
-                slides[i].isSelected = (layout == .single)
+                slides[i].isSelected = (layout != .pip)
             }
         }
         if layout == .pip {
@@ -2160,6 +2287,9 @@ struct SlideTextEditorView: View {
         } else {
             if selectedBlock == .pipCluster { selectedBlock = nil }
             activePIPCategory = nil
+            if layout == .split {
+                autoFillSplitBottomIfTwoPhotos(slideIndex: index)
+            }
         }
         clampCurrentIndexIfNeeded()
         // Re-pin immediately: deferring only to `onChange(visibleSlideIndicesTag)` let
@@ -2168,33 +2298,128 @@ struct SlideTextEditorView: View {
         reassertEditorPagerToSlide(at: index)
     }
 
+    private func layoutIcon(_ layout: CarouselSlideLayout) -> String {
+        switch layout {
+        case .single: return "rectangle.portrait"
+        case .pip: return "pip"
+        case .split: return "rectangle.split.1x2"
+        }
+    }
+
+    private func layoutLabel(_ layout: CarouselSlideLayout) -> String {
+        switch layout {
+        case .single: return "Single"
+        case .pip:    return "PIP"
+        case .split:  return "Split"
+        }
+    }
+
+    // MARK: - Persistent mode selector rows
+
+    /// Segmented control row always shown above the toolbar chrome whenever
+    /// the current slide is a place-stop with multi-photo data. Keeps the
+    /// Single / PIP / Split toggle in a consistent position regardless of
+    /// which block (or none) is selected.
     @ViewBuilder
-    private var placeStopLayoutToggleChrome: some View {
-        if let slide = currentSlide,
-           slide.kind == .placeStop,
-           !slide.pipImages.isEmpty {
-            HStack(spacing: 6) {
-                ForEach(CarouselSlideLayout.allCases) { layout in
+    private var modeSelectRow: some View {
+        if let slide = currentSlide, slide.kind == .placeStop, !slide.pipImages.isEmpty {
+            let layouts = CarouselSlideLayout.allCases
+            HStack(spacing: 0) {
+                ForEach(Array(layouts.enumerated()), id: \.element.id) { index, layout in
                     let isActive = slide.layout == layout
                     Button {
                         setPlaceStopLayout(layout)
                     } label: {
-                        Image(systemName: layout == .single ? "rectangle.portrait" : "pip")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(isActive ? .white : .white.opacity(0.45))
-                            .padding(.horizontal, 12).padding(.vertical, 7)
-                            .background(isActive
-                                ? Color(red: 0.04, green: 0.52, blue: 1.0)
-                                : Color.white.opacity(0.1))
-                            .clipShape(Capsule())
-                            .overlay(Capsule().strokeBorder(
-                                isActive ? Color.white.opacity(0.35) : Color.white.opacity(0.1),
-                                lineWidth: 1))
+                        HStack(spacing: 5) {
+                            Image(systemName: layoutIcon(layout))
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(layoutLabel(layout))
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .foregroundColor(isActive ? .white : .white.opacity(0.45))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 32)
+                        .background(
+                            isActive ? Color(red: 0.04, green: 0.52, blue: 1.0) : Color.clear
+                        )
+                        .animation(.easeInOut(duration: 0.15), value: isActive)
                     }
                     .buttonStyle(.plain)
-                    .animation(.easeInOut(duration: 0.15), value: isActive)
+
+                    if index < layouts.count - 1 {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.12))
+                            .frame(width: 1, height: 20)
+                    }
                 }
             }
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+            )
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+            .background(Color(white: 0.08))
+            .overlay(alignment: .top) {
+                Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+            }
+        }
+    }
+
+    /// Tool strip shown below `modeSelectRow` only when split layout is
+    /// active — Swap and Border divider controls.
+    @ViewBuilder
+    private var splitToolsRow: some View {
+        if let slide = currentSlide, slide.kind == .placeStop, slide.layout == .split {
+            HStack(spacing: 8) {
+                Button {
+                    swapSplitTopBottom(slideIndex: currentIndex)
+                } label: {
+                    Label("Swap", systemImage: "arrow.up.arrow.down")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.88))
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(Color.white.opacity(0.12))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+
+                Menu {
+                    ForEach(CarouselSplitDividerStyle.allCases) { style in
+                        Button {
+                            setSplitDividerStyle(style)
+                        } label: {
+                            Label(
+                                style == .straight ? "Straight border" : "Curved border",
+                                systemImage: style == .straight ? "line.3.horizontal" : "scribble"
+                            )
+                        }
+                    }
+                } label: {
+                    Label("Border", systemImage: "line.3.crossed.swirl.circle")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.88))
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(Color.white.opacity(0.12))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
+            .background(Color(white: 0.10))
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+            }
+            .transition(.asymmetric(
+                insertion: .move(edge: .top).combined(with: .opacity),
+                removal: .opacity))
         }
     }
 
@@ -2507,6 +2732,117 @@ struct SlideTextEditorView: View {
         slides[currentIndex].pipClusterStackStyle = style
     }
 
+    private func availableSplitBottomPhotos(for slideIndex: Int) -> [RecapPhoto] {
+        guard slides.indices.contains(slideIndex) else { return [] }
+        let slide = slides[slideIndex]
+        guard let stop = slide.placeStop else { return [] }
+        return stop.photos.filter { photo in
+            guard photo.isIncluded else { return false }
+            if let heroID = slide.heroPhotoID, photo.id == heroID { return false }
+            return true
+        }
+    }
+
+    private func setSplitDividerStyle(_ style: CarouselSplitDividerStyle) {
+        guard hasValidCurrentIndex, slides[currentIndex].layout == .split else { return }
+        guard slides[currentIndex].splitDividerStyle != style else { return }
+        pushUndoSnapshot()
+        slides[currentIndex].splitDividerStyle = style
+    }
+
+    private func clearSplitBottomPhoto(slideIndex: Int) {
+        guard slides.indices.contains(slideIndex), slides[slideIndex].layout == .split else { return }
+        pushUndoSnapshot()
+        let stopID = slides[slideIndex].placeStop?.id
+        let previousBottomID = slides[slideIndex].splitBottomPhotoID
+        withAnimation(.easeInOut(duration: 0.2)) {
+            slides[slideIndex].splitBottomImage = nil
+            slides[slideIndex].splitBottomPhotoID = nil
+            if let stopID, let previousBottomID {
+                for i in slides.indices where i != slideIndex {
+                    guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
+                    if slides[i].heroPhotoID == previousBottomID {
+                        slides[i].isSelected = true
+                    }
+                }
+            }
+        }
+    }
+
+    private func autoFillSplitBottomIfTwoPhotos(slideIndex: Int) {
+        guard slides.indices.contains(slideIndex),
+              slides[slideIndex].layout == .split,
+              let stop = slides[slideIndex].placeStop else { return }
+        let included = stop.photos.filter(\.isIncluded)
+        guard included.count == 2 else { return }
+        guard let heroID = slides[slideIndex].heroPhotoID else { return }
+        guard let partner = included.first(where: { $0.id != heroID }) else { return }
+        // If we've already got this exact pair set, keep it.
+        if slides[slideIndex].splitBottomPhotoID == partner.id,
+           slides[slideIndex].splitBottomImage != nil { return }
+        setSplitBottomPhoto(partner, slideIndex: slideIndex)
+    }
+
+    private func setSplitBottomPhoto(_ photo: RecapPhoto, slideIndex: Int) {
+        guard slides.indices.contains(slideIndex),
+              slides[slideIndex].layout == .split else { return }
+        if slides[slideIndex].splitBottomPhotoID == photo.id { return }
+        pushUndoSnapshot()
+        let stopID = slides[slideIndex].placeStop?.id
+        let previousBottomID = slides[slideIndex].splitBottomPhotoID
+        Task {
+            let target = CGSize(width: 1080, height: 1080)
+            guard let image = await loadRecapPhotoUIImage(photo: photo, size: target) else { return }
+            await MainActor.run {
+                guard slides.indices.contains(slideIndex),
+                      slides[slideIndex].layout == .split else { return }
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    slides[slideIndex].splitBottomImage = image
+                    slides[slideIndex].splitBottomPhotoID = photo.id
+                    if let stopID {
+                        for i in slides.indices where i != slideIndex {
+                            guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
+                            if let previousBottomID, slides[i].heroPhotoID == previousBottomID {
+                                slides[i].isSelected = true
+                            }
+                            if slides[i].heroPhotoID == photo.id {
+                                slides[i].isSelected = false
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func swapSplitTopBottom(slideIndex: Int) {
+        guard slides.indices.contains(slideIndex),
+              slides[slideIndex].layout == .split,
+              let bottomImage = slides[slideIndex].splitBottomImage,
+              let bottomID = slides[slideIndex].splitBottomPhotoID else { return }
+        pushUndoSnapshot()
+        let stopID = slides[slideIndex].placeStop?.id
+        let oldHeroImage = slides[slideIndex].heroImage
+        let oldHeroID = slides[slideIndex].heroPhotoID
+        withAnimation(.easeInOut(duration: 0.22)) {
+            slides[slideIndex].heroImage = bottomImage
+            slides[slideIndex].heroPhotoID = bottomID
+            slides[slideIndex].splitBottomImage = oldHeroImage
+            slides[slideIndex].splitBottomPhotoID = oldHeroID
+            if let stopID {
+                for i in slides.indices where i != slideIndex {
+                    guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
+                    if slides[i].heroPhotoID == bottomID {
+                        slides[i].isSelected = true
+                    }
+                    if let oldHeroID, slides[i].heroPhotoID == oldHeroID {
+                        slides[i].isSelected = false
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Add photo
 
     /// Photos belonging to the current slide's place stop that are eligible to
@@ -2720,6 +3056,16 @@ struct SlideTextEditorView: View {
                                                     heroSwapSlideIndex = idx
                                                     showsHeroPhotoSwapSheet = true
                                                 },
+                                                onRequestSplitBottomPick: { idx in
+                                                    selectedBlock = nil
+                                                    let options = availableSplitBottomPhotos(for: idx)
+                                                    if options.count == 1, let only = options.first {
+                                                        setSplitBottomPhoto(only, slideIndex: idx)
+                                                    } else {
+                                                        splitBottomPickSlideIndex = idx
+                                                        showsSplitBottomPhotoPicker = true
+                                                    }
+                                                },
                                                 onRequestStudioCoverPhotoPick: onRequestStudioCoverPhotoPick,
                                                 slidePageIndex: i
                                             )
@@ -2863,6 +3209,13 @@ struct SlideTextEditorView: View {
                         // pushes the toolbar above the keyboard without changing its
                         // visual appearance.
                         VStack(spacing: 0) {
+                            // Mode selector + split tools are slide-level controls,
+                            // always in the same position above the block toolbar.
+                            modeSelectRow
+                            splitToolsRow
+                                .animation(.spring(response: 0.32, dampingFraction: 0.82),
+                                           value: currentSlide?.layout)
+
                             ZStack(alignment: .bottom) {
                                 if selectedBlock != nil {
                                     Color(white: 0.08)
@@ -3088,6 +3441,8 @@ struct SlideTextEditorView: View {
                 // Hero swap is tied to a slide index; dismiss if the user pages away.
                 showsHeroPhotoSwapSheet = false
                 heroSwapSlideIndex = nil
+                showsSplitBottomPhotoPicker = false
+                splitBottomPickSlideIndex = nil
                 selectedBlock = nil
                 #if DEBUG
                 if slides.indices.contains(newID), slides[newID].kind == .cover {
@@ -3169,6 +3524,8 @@ struct SlideTextEditorView: View {
                 showsAddPhotoPicker = false
                 showsHeroPhotoSwapSheet = false
                 heroSwapSlideIndex = nil
+                showsSplitBottomPhotoPicker = false
+                splitBottomPickSlideIndex = nil
             }
         }
         .onChange(of: activePIPCategory) { _, _ in
@@ -3218,6 +3575,33 @@ struct SlideTextEditorView: View {
         .onChange(of: showsHeroPhotoSwapSheet) { _, open in
             if !open { heroSwapSlideIndex = nil }
         }
+        .sheet(isPresented: $showsSplitBottomPhotoPicker) {
+            if let idx = splitBottomPickSlideIndex,
+               slides.indices.contains(idx),
+               let stop = slides[idx].placeStop,
+               slides[idx].layout == .split {
+                SplitBottomPhotoPickerSheet(
+                    placeStop: stop,
+                    selectedPhotoID: slides[idx].splitBottomPhotoID,
+                    availablePhotos: availableSplitBottomPhotos(for: idx),
+                    onPick: { photo in
+                        setSplitBottomPhoto(photo, slideIndex: idx)
+                        splitBottomPickSlideIndex = nil
+                        showsSplitBottomPhotoPicker = false
+                    },
+                    onClear: {
+                        clearSplitBottomPhoto(slideIndex: idx)
+                        splitBottomPickSlideIndex = nil
+                        showsSplitBottomPhotoPicker = false
+                    }
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
+        }
+        .onChange(of: showsSplitBottomPhotoPicker) { _, open in
+            if !open { splitBottomPickSlideIndex = nil }
+        }
     }
 
     // MARK: - Formatting toolbar
@@ -3243,9 +3627,6 @@ struct SlideTextEditorView: View {
                     .foregroundColor(.white.opacity(0.55))
             }
             .multilineTextAlignment(.center)
-
-            placeStopLayoutToggleChrome
-                .padding(.top, 10)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 32)
@@ -3284,8 +3665,6 @@ struct SlideTextEditorView: View {
                 }
                 .buttonStyle(.plain)
                 .animation(.spring(response: 0.3, dampingFraction: 0.7), value: didApplyToAll)
-
-                placeStopLayoutToggleChrome
 
                 Spacer()
 
@@ -3389,8 +3768,6 @@ struct SlideTextEditorView: View {
     private var pipClusterToolbar: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                placeStopLayoutToggleChrome
-
                 // Swap promotes the first PIP thumbnail into the hero slot and
                 // demotes the current hero into the cluster — a one-tap way to
                 // change which cluster photo is "featured". Add/remove lives in
@@ -3746,7 +4123,7 @@ struct SlideTextEditorView: View {
             }
         } label: {
             VStack(spacing: 4) {
-                Image(systemName: "rectangle.split.3x1")
+                Image(systemName: "rectangle.split.1x2")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(.white.opacity(0.75))
                     .frame(width: 22, height: 22)
@@ -4925,7 +5302,7 @@ struct SocialPostStudioSheet: View {
                             Button {
                                 setLayout(layout, forSlideAt: index)
                             } label: {
-                                Image(systemName: layout == .single ? "rectangle.portrait" : "pip")
+                                Image(systemName: layoutIcon(layout))
                                     .font(.system(size: 13, weight: .semibold))
                                     .foregroundColor(isActive ? .white : .white.opacity(0.45))
                                     .padding(.horizontal, 12).padding(.vertical, 7)
@@ -4962,14 +5339,55 @@ struct SocialPostStudioSheet: View {
         layoutTxn.disablesAnimations = true
         withTransaction(layoutTxn) {
             slides[index].layout = layout
+            if layout == .split {
+                slides[index].splitBottomImage = nil
+                slides[index].splitBottomPhotoID = nil
+            }
             for i in slides.indices where i != index {
                 guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
-                slides[i].isSelected = (layout == .single)
+                slides[i].isSelected = (layout != .pip)
             }
         }
         if layout == .pip {
             previewRecenterAfterPIPIndex = index
             previewRecenterAfterPIPNonce += 1
+        } else if layout == .split {
+            autoFillSplitBottomIfTwoPhotos(forSlideAt: index)
+        }
+    }
+
+    private func layoutIcon(_ layout: CarouselSlideLayout) -> String {
+        switch layout {
+        case .single: return "rectangle.portrait"
+        case .pip: return "pip"
+        case .split: return "rectangle.split.1x2"
+        }
+    }
+
+    private func autoFillSplitBottomIfTwoPhotos(forSlideAt index: Int) {
+        guard slides.indices.contains(index),
+              slides[index].layout == .split,
+              let stop = slides[index].placeStop else { return }
+        let included = stop.photos.filter(\.isIncluded)
+        guard included.count == 2 else { return }
+        guard let heroID = slides[index].heroPhotoID else { return }
+        guard let other = included.first(where: { $0.id != heroID }) else { return }
+        slides[index].splitBottomPhotoID = other.id
+        if let pipIdx = slides[index].pipPhotoIDs.firstIndex(of: other.id),
+           slides[index].pipImages.indices.contains(pipIdx) {
+            slides[index].splitBottomImage = slides[index].pipImages[pipIdx]
+        }
+        // Keep only the chosen second photo collapsed in split mode.
+        let stopID = slides[index].placeStop?.id
+        if let stopID {
+            for i in slides.indices where i != index {
+                guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
+                if slides[i].heroPhotoID == other.id {
+                    slides[i].isSelected = false
+                } else {
+                    slides[i].isSelected = true
+                }
+            }
         }
     }
 
@@ -5589,6 +6007,83 @@ private struct AddPIPPhotoPickerSheet: View {
     }
 }
 
+private struct SplitBottomPhotoPickerSheet: View {
+    let placeStop: PlaceStop
+    let selectedPhotoID: UUID?
+    let availablePhotos: [RecapPhoto]
+    let onPick: (RecapPhoto) -> Void
+    let onClear: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8)
+    ]
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if availablePhotos.isEmpty {
+                    ContentUnavailableView(
+                        "No eligible photos",
+                        systemImage: "photo.stack",
+                        description: Text("This place needs at least one extra included photo to fill the bottom slot.")
+                    )
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: 8) {
+                            ForEach(availablePhotos) { photo in
+                                let isCurrent = photo.id == selectedPhotoID
+                                AddPIPPhotoTile(photo: photo)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .strokeBorder(
+                                                isCurrent ? Color(red: 0.14, green: 0.52, blue: 1.0) : Color.clear,
+                                                lineWidth: 2
+                                            )
+                                    )
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { onPick(photo) }
+                            }
+                        }
+                        .padding(16)
+                    }
+                }
+            }
+            .navigationTitle("Bottom photo")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 2) {
+                        Text("Pick bottom photo")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text(placeStop.placeTitle)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                if selectedPhotoID != nil {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Clear") {
+                            onClear()
+                        }
+                    }
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .accessibilityLabel("Close")
+                }
+            }
+        }
+    }
+}
+
 /// Row used inside the Reorder tab `List`. The photo reads as a 72×72 thumbnail, with
 /// a large position badge alongside and a dotted "card" background that
 /// visually separates rows. We deliberately skip any move controls inside
@@ -5924,7 +6419,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
         let placeSubtitle: String
         let slideIndices: [Int]   // indices into `slides` for this stop
         let thumbnailImage: UIImage?
-        let isInPIPMode: Bool     // true when the first slide's layout == .pip
+        let activeLayout: CarouselSlideLayout
         let isEnabled: Bool       // true when any slide for this stop is selected
         let photoCount: Int       // total photos loaded for this stop
     }
@@ -5942,7 +6437,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
             let first = slides[indices[0]]
             guard let stop = first.placeStop else { return nil }
             let isEnabled = indices.contains { slides[$0].isSelected }
-            let isInPIPMode = first.layout == .pip
+            let activeLayout = first.layout
             let photoCount = 1 + first.pipImages.count  // hero + available PIPs
             return PhotoGroup(
                 id: sid,
@@ -5950,7 +6445,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
                 placeSubtitle: stop.placeSubtitle ?? "",
                 slideIndices: indices,
                 thumbnailImage: first.heroImage,
-                isInPIPMode: isInPIPMode,
+                activeLayout: activeLayout,
                 isEnabled: isEnabled,
                 photoCount: photoCount
             )
@@ -5960,7 +6455,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
     /// Contribution of one group toward the total slide count.
     private func slideContribution(of group: PhotoGroup) -> Int {
         guard group.isEnabled else { return 0 }
-        return group.isInPIPMode ? 1 : group.slideIndices.count
+        return group.activeLayout == .single ? group.slideIndices.count : 1
     }
 
     private var totalSelectedCount: Int {
@@ -5981,7 +6476,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
 
     private func toggleGroupPIP(_ group: PhotoGroup) {
         guard let firstIdx = group.slideIndices.first else { return }
-        let newLayout: CarouselSlideLayout = group.isInPIPMode ? .single : .pip
+        let newLayout: CarouselSlideLayout = group.activeLayout == .single ? .pip : .single
         var txn = Transaction(); txn.disablesAnimations = true
         withTransaction(txn) {
             slides[firstIdx].layout = newLayout
@@ -6108,13 +6603,13 @@ private struct CarouselPhotoGroupPickerSheet: View {
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) { toggleGroupPIP(group) }
                 } label: {
-                    Image(systemName: group.isInPIPMode ? "pip" : "rectangle.portrait")
+                    Image(systemName: layoutIcon(group.activeLayout))
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(group.isInPIPMode ? .white : Color(uiColor: .tertiaryLabel))
+                        .foregroundColor(group.activeLayout == .single ? Color(uiColor: .tertiaryLabel) : .white)
                         .padding(.horizontal, 10).padding(.vertical, 6)
-                        .background(group.isInPIPMode
-                                    ? Color(red: 0.04, green: 0.52, blue: 1.0)
-                                    : Color(uiColor: .systemFill))
+                        .background(group.activeLayout == .single
+                                    ? Color(uiColor: .systemFill)
+                                    : Color(red: 0.04, green: 0.52, blue: 1.0))
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -6132,6 +6627,14 @@ private struct CarouselPhotoGroupPickerSheet: View {
             .labelsHidden()
         }
         .padding(.vertical, 2)
+    }
+
+    private func layoutIcon(_ layout: CarouselSlideLayout) -> String {
+        switch layout {
+        case .single: return "rectangle.portrait"
+        case .pip: return "pip"
+        case .split: return "rectangle.split.1x2"
+        }
     }
 }
 
