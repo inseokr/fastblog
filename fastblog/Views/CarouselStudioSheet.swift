@@ -974,14 +974,24 @@ struct CarouselSlideView: View {
     /// When set, tapping the cover hero (behind title chrome) runs this — e.g. studio cover picker
     /// in Social Post Studio preview, or the same picker from Carousel Studio (`SlideTextEditorView`).
     var onCoverImageTap: (() -> Void)? = nil
-    /// When `true` (default), text + PIP are clipped with the slide’s rounded-rect outline
-    /// (export + full-screen editor). When `false`, only the photo/gradient stack is clipped;
-    /// overlays can draw past that outline (e.g. PIP shadows) — used for small studio previews.
+    /// When `true` (default), floating overlays use the slide’s rounded-rect outline. For
+    /// `.placeStop` + `.pip`, only the **background** stack is clipped so the inset cluster
+    /// (rotation + shadow) is not shaved off; other kinds still get one outer clip. When
+    /// `false`, only the photo/gradient stack is clipped — used for small studio previews.
     var clipsFloatingContentToRoundedSlideOutline: Bool = true
 
     private var height: CGFloat { width / aspectRatio }
     private let heroImageScale: CGFloat = 1.12
     private var slideBounds: CGRect { CGRect(x: 0, y: 0, width: width, height: height) }
+
+    /// When `clipsFloatingContentToRoundedSlideOutline` is on, the default is one
+    /// final `clipShape` around **everything** (text + PIP). PIP sits in the top-trailing
+    /// corner with rotation/shadow, so that clip often removes the whole cluster. Clip
+    /// only the photo/gradient stack for `.pip` place slides instead; keep the outer clip
+    /// for all other layouts (matches studio preview, which passes `clips… = false`).
+    private var pipClusterNeedsUnclippedFloatingChrome: Bool {
+        slide.kind == .placeStop && slide.layout == .pip && !slide.pipImages.isEmpty
+    }
 
     /// Binding for the block's committed offset. Reads from `slide.textStyle.*`; writes
     /// go through `onUpdateBlockOffset` (nil-callback in read-only contexts makes it a no-op).
@@ -1074,7 +1084,10 @@ struct CarouselSlideView: View {
 
     var body: some View {
         Group {
-            if clipsFloatingContentToRoundedSlideOutline {
+            if clipsFloatingContentToRoundedSlideOutline && pipClusterNeedsUnclippedFloatingChrome {
+                slideBackgroundStack
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            } else if clipsFloatingContentToRoundedSlideOutline {
                 slideBackgroundStack
             } else {
                 slideBackgroundStack
@@ -1356,7 +1369,9 @@ struct CarouselSlideView: View {
             }
         }
         .frame(width: width, height: height)
-        .clipCarouselPostcardOutline(clipsFloatingContentToRoundedSlideOutline)
+        .clipCarouselPostcardOutline(
+            clipsFloatingContentToRoundedSlideOutline && !pipClusterNeedsUnclippedFloatingChrome
+        )
         .opacity(slide.isSelected ? 1.0 : 0.72)
         .contentShape(RoundedRectangle(cornerRadius: 16))
         // Social Post Studio: cover `onCoverImageTap` sits inside the photo stack. A parent
@@ -4885,8 +4900,15 @@ struct SocialPostStudioSheet: View {
         for i in indices {
             guard let hid = slides[i].heroPhotoID else { continue }
             let pipIDs = Array(orderedPresentIDs.filter { $0 != hid }.prefix(3))
-            slides[i].pipImages = pipIDs.compactMap { cache[$0] }
-            slides[i].pipPhotoIDs = pipIDs
+            // Keep `pipPhotoIDs` and `pipImages` index-aligned: `compactMap` on images
+            // alone shifts thumbnails when any neighbor fails to load, so the cluster
+            // can show the wrong photo next to each id (and SwiftUI reuse looks worse).
+            let pipAligned: [(UUID, UIImage)] = pipIDs.compactMap { pid in
+                guard let img = cache[pid] else { return nil }
+                return (pid, img)
+            }
+            slides[i].pipPhotoIDs = pipAligned.map(\.0)
+            slides[i].pipImages = pipAligned.map(\.1)
             if slides[i].layout == .pip, slides[i].pipImages.isEmpty {
                 slides[i].layout = .single
             }
