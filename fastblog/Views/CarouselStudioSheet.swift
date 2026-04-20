@@ -522,6 +522,128 @@ private func isSlideHiddenBySiblingPIP(at index: Int, in slides: [CarouselSlide]
     }
 }
 
+// MARK: - Carousel Studio photo exclusion (Social Post Studio)
+
+private func studioExclusionKey(stop: UUID, photo: UUID) -> String { "\(stop.uuidString)|\(photo.uuidString)" }
+
+private func parseStudioExclusionKey(_ key: String) -> (stop: UUID, photo: UUID)? {
+    let parts = key.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+    guard parts.count == 2,
+          let stop = UUID(uuidString: parts[0]),
+          let photo = UUID(uuidString: parts[1]) else { return nil }
+    return (stop, photo)
+}
+
+private func globalStopIndexInBlog(blog: RecapBlogDetail, stopID: UUID) -> Int? {
+    var n = 0
+    for day in blog.days {
+        for stop in day.placeStops {
+            let inc = stop.photos.filter(\.isIncluded)
+            guard !inc.isEmpty else { continue }
+            n += 1
+            if stop.id == stopID { return n }
+        }
+    }
+    return nil
+}
+
+private func freshPlaceStop(stopID: UUID, blog: RecapBlogDetail) -> PlaceStop? {
+    for day in blog.days {
+        if let s = day.placeStops.first(where: { $0.id == stopID }) { return s }
+    }
+    return nil
+}
+
+private func expectedPlaceTuples(day: RecapBlogDay, excludedKeys: Set<String>) -> [(stop: UUID, photo: UUID)] {
+    var out: [(stop: UUID, photo: UUID)] = []
+    for stop in day.placeStops {
+        for p in stop.photos where p.isIncluded {
+            if excludedKeys.contains(studioExclusionKey(stop: stop.id, photo: p.id)) { continue }
+            out.append((stop: stop.id, photo: p.id))
+        }
+    }
+    return out
+}
+
+private func insertIndexForPlacePhotoInDay(
+    day: RecapBlogDay,
+    stopID: UUID,
+    photoID: UUID,
+    slides: [CarouselSlide],
+    excludedKeys: Set<String>
+) -> Int {
+    let expected = expectedPlaceTuples(day: day, excludedKeys: excludedKeys)
+    guard let targetSlot = expected.firstIndex(where: { $0.stop == stopID && $0.photo == photoID }) else {
+        return slides.count
+    }
+    let mapSlideId = "map-\(day.id.uuidString)"
+    guard let mapIdx = slides.firstIndex(where: { $0.id == mapSlideId }) else { return slides.count }
+    let afterMap = slides.index(after: mapIdx)
+    let nextMap = slides[afterMap...].firstIndex(where: { $0.kind == .mapRoute }) ?? slides.endIndex
+    let dayPlaceRange = afterMap..<nextMap
+    var matched = 0
+    for s in 0..<targetSlot {
+        let slot = expected[s]
+        if slides[dayPlaceRange].contains(where: {
+            $0.kind == .placeStop && $0.placeStop?.id == slot.stop && $0.heroPhotoID == slot.photo
+        }) {
+            matched += 1
+        }
+    }
+    return afterMap + matched
+}
+
+/// Builds one place-stop carousel slide (hero + PIP payload) matching `loadSlides` rules.
+private func buildPlaceCarouselSlideForStudio(
+    blog: RecapBlogDetail,
+    stop: PlaceStop,
+    photo: RecapPhoto,
+    excludedKeys: Set<String>,
+    exportWidth: CGFloat,
+    exportHeight: CGFloat
+) async -> CarouselSlide? {
+    let included = stop.photos.filter { $0.isIncluded }
+        .filter { !excludedKeys.contains(studioExclusionKey(stop: stop.id, photo: $0.id)) }
+    guard let photoIdx = included.firstIndex(where: { $0.id == photo.id }) else { return nil }
+    guard let stopIdx = globalStopIndexInBlog(blog: blog, stopID: stop.id) else { return nil }
+
+    var stopImages: [UIImage?] = []
+    for p in included {
+        var img: UIImage?
+        if let localId = p.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines), !localId.isEmpty {
+            img = await loadCarouselAssetImage(identifier: localId,
+                                               size: CGSize(width: exportWidth, height: exportHeight))
+        }
+        if img == nil {
+            img = await loadRecapPhotoUIImage(photo: p, size: CGSize(width: exportWidth, height: exportHeight))
+        }
+        stopImages.append(img)
+    }
+
+    let hero = stopImages[photoIdx]
+    let pipPairs: [(UIImage, UUID)] = included.enumerated()
+        .compactMap { (idx, candidate) -> (UIImage, UUID)? in
+            guard idx != photoIdx, let img = stopImages[idx] else { return nil }
+            return (img, candidate.id)
+        }
+        .prefix(3)
+        .map { $0 }
+    let heroPhoto = included[photoIdx]
+    return CarouselSlide(
+        id: "\(stop.id.uuidString)-\(heroPhoto.id.uuidString)",
+        kind: .placeStop,
+        isSelected: true,
+        heroImage: hero,
+        placeStop: stop,
+        photoCaption: heroPhoto.caption,
+        textStyle: .placeStopDefault,
+        pipImages: pipPairs.map(\.0),
+        pipPhotoIDs: pipPairs.map(\.1),
+        heroPhotoID: heroPhoto.id,
+        stopIndex: stopIdx
+    )
+}
+
 // MARK: - Slide View
 
 /// Named coordinate space for the slide, used when measuring each block's natural
@@ -1617,6 +1739,19 @@ struct SlideTextEditorView: View {
     /// Needed because `fullScreenCover` + `GeometryReader` doesn't propagate keyboard
     /// safe-area changes to the nested `safeAreaInset`, causing the keyboard to overlay the toolbar.
     @State private var keyboardHeight: CGFloat = 0
+    /// When set, the editor can remove the current place slide from the carousel (Social Post Studio).
+    let onExcludePlaceFromStudio: ((Int) -> Void)?
+    /// When set, the editor can remove a day-map slide from the carousel.
+    let onExcludeMapFromStudio: ((Int) -> Void)?
+    /// Opens the excluded-photo gallery (parent-owned sheet).
+    let onOpenExcludedPhotos: (() -> Void)?
+    /// Count of photos excluded this session — drives the **Excluded** toolbar affordance.
+    let excludedFromStudioCount: Int
+
+    /// Persisted preference: skip the remove-slide confirmation alert.
+    @AppStorage("blogify.studioSkipExcludeConfirm") private var skipExcludeConfirm = false
+    /// True while the slide-exclusion confirmation overlay is visible.
+    @State private var showExcludeConfirmOverlay = false
 
     init(
         slides: Binding<[CarouselSlide]>,
@@ -1624,7 +1759,11 @@ struct SlideTextEditorView: View {
         aspectRatio: CGFloat,
         exportActions: SlideTextEditorExportActions,
         exportInProgress: Binding<Bool>,
-        onRequestStudioCoverPhotoPick: (() -> Void)? = nil
+        onRequestStudioCoverPhotoPick: (() -> Void)? = nil,
+        onExcludePlaceFromStudio: ((Int) -> Void)? = nil,
+        onExcludeMapFromStudio: ((Int) -> Void)? = nil,
+        onOpenExcludedPhotos: (() -> Void)? = nil,
+        excludedFromStudioCount: Int = 0
     ) {
         self._slides = slides
         self.initialIndex = initialIndex
@@ -1632,6 +1771,10 @@ struct SlideTextEditorView: View {
         self.exportActions = exportActions
         self._exportInProgress = exportInProgress
         self.onRequestStudioCoverPhotoPick = onRequestStudioCoverPhotoPick
+        self.onExcludePlaceFromStudio = onExcludePlaceFromStudio
+        self.onExcludeMapFromStudio = onExcludeMapFromStudio
+        self.onOpenExcludedPhotos = onOpenExcludedPhotos
+        self.excludedFromStudioCount = excludedFromStudioCount
         self._currentIndex = State(initialValue: initialIndex)
         self._scrollPageID = State(initialValue: initialIndex)
     }
@@ -1793,6 +1936,47 @@ struct SlideTextEditorView: View {
             scrollPageID = nearest
             selectedBlock = nil
         }
+    }
+
+    private var canExcludeCurrentSlide: Bool {
+        guard hasValidCurrentIndex else { return false }
+        let kind = slides[currentIndex].kind
+        return (kind == .placeStop && onExcludePlaceFromStudio != nil) ||
+               (kind == .mapRoute && onExcludeMapFromStudio != nil)
+    }
+
+    /// Initiates exclusion of the current slide: shows confirmation unless the user opted out.
+    private func performExcludeFromStudio() {
+        guard canExcludeCurrentSlide else { return }
+        if skipExcludeConfirm {
+            commitExclude(at: currentIndex)
+        } else {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                showExcludeConfirmOverlay = true
+            }
+        }
+    }
+
+    /// Commits the exclusion of the slide at `idx`; keeps pager index valid.
+    private func commitExclude(at idx: Int) {
+        guard slides.indices.contains(idx) else { return }
+        let kind = slides[idx].kind
+        pushUndoSnapshot()
+        if kind == .placeStop, let onExclude = onExcludePlaceFromStudio {
+            onExclude(idx)
+        } else if kind == .mapRoute, let onExclude = onExcludeMapFromStudio {
+            onExclude(idx)
+        } else {
+            return
+        }
+        if idx < currentIndex {
+            currentIndex -= 1
+        } else if idx == currentIndex {
+            currentIndex = min(idx, max(0, slides.count - 1))
+        }
+        scrollPageID = currentIndex
+        selectedBlock = nil
+        clampCurrentIndexIfNeeded()
     }
 
     private func updateStyle(_ update: (inout TextBlockStyle) -> Void) {
@@ -2393,6 +2577,10 @@ struct SlideTextEditorView: View {
                                         }
                                         .frame(width: slotW, height: slotH)
                                         .id(i)
+                                        .onLongPressGesture(minimumDuration: 0.5) {
+                                            guard i == currentIndex, canExcludeCurrentSlide else { return }
+                                            performExcludeFromStudio()
+                                        }
                                     }
                                 }
                                 .scrollTargetLayout()
@@ -2554,11 +2742,80 @@ struct SlideTextEditorView: View {
                 }
     }
 
+    @ViewBuilder
+    private var excludeConfirmOverlay: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.55)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.easeOut(duration: 0.2)) { showExcludeConfirmOverlay = false }
+                }
+            VStack(spacing: 20) {
+                VStack(spacing: 6) {
+                    let isMap = slides.indices.contains(currentIndex) && slides[currentIndex].kind == .mapRoute
+                    Text(isMap ? "Remove map slide?" : "Remove this slide?")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.white)
+                    Text(isMap
+                         ? "The day map will be excluded from the carousel."
+                         : "This photo slide will be excluded from the carousel.")
+                        .font(.system(size: 14))
+                        .foregroundColor(.white.opacity(0.65))
+                        .multilineTextAlignment(.center)
+                }
+                Toggle(isOn: $skipExcludeConfirm) {
+                    Text("Don't ask again")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.8))
+                }
+                .tint(Color(red: 0.04, green: 0.52, blue: 1.0))
+                HStack(spacing: 12) {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.2)) { showExcludeConfirmOverlay = false }
+                    } label: {
+                        Text("Cancel")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.white.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    Button {
+                        let idx = currentIndex
+                        withAnimation(.easeOut(duration: 0.2)) { showExcludeConfirmOverlay = false }
+                        commitExclude(at: idx)
+                    } label: {
+                        Text("Remove")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color(red: 1.0, green: 0.27, blue: 0.23))
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                }
+            }
+            .padding(24)
+            .background(Color(white: 0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.bottom, 40)
+        }
+        .transition(.opacity)
+    }
+
     var body: some View {
         NavigationStack {
-            GeometryReader { outerGeo in
-                slideEditorGeometryContent(outerSize: outerGeo.size)
+            ZStack(alignment: .bottom) {
+                GeometryReader { outerGeo in
+                    slideEditorGeometryContent(outerSize: outerGeo.size)
+                }
+                if showExcludeConfirmOverlay {
+                    excludeConfirmOverlay
+                }
             }
+            .animation(.easeInOut(duration: 0.22), value: showExcludeConfirmOverlay)
             .background(Color(red: 5/255, green: 10/255, blue: 48/255).ignoresSafeArea())
             .navigationTitle("Carousel Studio")
             .navigationBarTitleDisplayMode(.inline)
@@ -2582,7 +2839,27 @@ struct SlideTextEditorView: View {
                     .disabled(!canUndo)
                     .accessibilityLabel("Undo")
 
+                    if excludedFromStudioCount > 0, let onOpenExcluded = onOpenExcludedPhotos {
+                        Button {
+                            onOpenExcluded()
+                        } label: {
+                            Text("Excluded (\(excludedFromStudioCount))")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                        .accessibilityLabel("Excluded photos, \(excludedFromStudioCount)")
+                    }
+
                     Menu {
+                        if canExcludeCurrentSlide {
+                            Button(role: .destructive) {
+                                performExcludeFromStudio()
+                            } label: {
+                                let isMap = slides.indices.contains(currentIndex) && slides[currentIndex].kind == .mapRoute
+                                Label(isMap ? "Remove map from carousel" : "Remove from carousel",
+                                      systemImage: "minus.circle")
+                            }
+                        }
                         Button {
                             Task { await exportActions.share() }
                         } label: {
@@ -3908,6 +4185,9 @@ struct SocialPostStudioSheet: View {
     /// Never written back to the blog draft — studio / export only.
     @State private var studioCoverPhotoID: UUID? = nil
     @State private var showStudioCoverPicker = false
+    /// Place photos removed from this session’s carousel (not the blog draft). Keys: `studioExclusionKey`.
+    @State private var excludedStudioPhotoKeys: Set<String> = []
+    @State private var showExcludedPhotosSheet = false
     @Environment(\.dismiss) private var dismiss
 
     private let previewHeight: CGFloat = 450
@@ -3968,7 +4248,11 @@ struct SocialPostStudioSheet: View {
                             print("[CarouselStudio] opening cover picker (Edit Slides / Carousel Studio)")
                             #endif
                             showStudioCoverPicker = true
-                        }
+                        },
+                        onExcludePlaceFromStudio: { idx in excludePlaceSlide(at: idx) },
+                        onExcludeMapFromStudio: { idx in excludeMapSlide(at: idx) },
+                        onOpenExcludedPhotos: { showExcludedPhotosSheet = true },
+                        excludedFromStudioCount: excludedStudioPhotoKeys.count
                     )
                 }
             } else {
@@ -4010,7 +4294,17 @@ struct SocialPostStudioSheet: View {
                                 Image(systemName: "xmark").font(.system(size: 14)).foregroundColor(.white)
                             }
                         }
-                        ToolbarItem(placement: .topBarTrailing) {
+                        ToolbarItemGroup(placement: .topBarTrailing) {
+                            if !excludedStudioPhotoKeys.isEmpty {
+                                Button {
+                                    showExcludedPhotosSheet = true
+                                } label: {
+                                    Text("Excluded (\(excludedStudioPhotoKeys.count))")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.white)
+                                }
+                                .accessibilityLabel("Excluded photos")
+                            }
                             Menu {
                                 Button {
                                     Task { await shareViaSheet() }
@@ -4061,7 +4355,11 @@ struct SocialPostStudioSheet: View {
                     print("[CarouselStudio] opening cover picker (from slide editor sheet)")
                     #endif
                     showStudioCoverPicker = true
-                }
+                },
+                onExcludePlaceFromStudio: { idx in excludePlaceSlide(at: idx) },
+                onExcludeMapFromStudio: { idx in excludeMapSlide(at: idx) },
+                onOpenExcludedPhotos: { showExcludedPhotosSheet = true },
+                excludedFromStudioCount: excludedStudioPhotoKeys.count
             )
         }
         .sheet(isPresented: $showStudioCoverPicker) {
@@ -4071,6 +4369,15 @@ struct SocialPostStudioSheet: View {
                 onPick: { photo in
                     showStudioCoverPicker = false
                     Task { await applyStudioCoverFromPick(photo) }
+                }
+            )
+        }
+        .sheet(isPresented: $showExcludedPhotosSheet) {
+            StudioExcludedPhotosGallerySheet(
+                blog: blog,
+                excludedKeys: excludedStudioPhotoKeys,
+                onRestore: { stopID, photoID in
+                    restoreExcludedPhoto(stopID: stopID, photoID: photoID)
                 }
             )
         }
@@ -4239,32 +4546,38 @@ struct SocialPostStudioSheet: View {
     @ViewBuilder
     private func slideCard(slide: CarouselSlide, index: Int) -> some View {
         VStack(spacing: 10) {
-            CarouselSlideView(
-                slide: slide,
-                width: previewWidth,
-                aspectRatio: exportFormat.aspectRatio,
-                onToggleSelection: {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        if exportFormat.isSingleSlide {
-                            // Radio behavior: selecting any slide deselects the others.
-                            for i in slides.indices { slides[i].isSelected = (i == index) }
-                        } else {
-                            slides[index].isSelected.toggle()
+            SwipeUpToRemoveCard(
+                slideKey: slide.id,
+                isEnabled: slide.kind == .placeStop,
+                onRemove: { excludePlaceSlide(at: index) }
+            ) {
+                CarouselSlideView(
+                    slide: slide,
+                    width: previewWidth,
+                    aspectRatio: exportFormat.aspectRatio,
+                    onToggleSelection: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if exportFormat.isSingleSlide {
+                                // Radio behavior: selecting any slide deselects the others.
+                                for i in slides.indices { slides[i].isSelected = (i == index) }
+                            } else {
+                                slides[index].isSelected.toggle()
+                            }
                         }
-                    }
-                },
-                showsSelectionChrome: true,
-                onCoverImageTap: (index == 0 && slide.kind == .cover)
-                    ? { showStudioCoverPicker = true }
-                    : nil,
-                clipsFloatingContentToRoundedSlideOutline: false
-            )
-            .frame(width: previewWidth)
-            // Extra margin before the card clip so PIP shadows / slight rotations stay visible
-            // in the horizontal preview strip (the slide’s photo stack is still rounded inside).
-            .padding(previewCardBleedInsets(slide: slide))
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
+                    },
+                    showsSelectionChrome: true,
+                    onCoverImageTap: (index == 0 && slide.kind == .cover)
+                        ? { showStudioCoverPicker = true }
+                        : nil,
+                    clipsFloatingContentToRoundedSlideOutline: false
+                )
+                .frame(width: previewWidth)
+                // Extra margin before the card clip so PIP shadows / slight rotations stay visible
+                // in the horizontal preview strip (the slide’s photo stack is still rounded inside).
+                .padding(previewCardBleedInsets(slide: slide))
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
+            }
 
             HStack(spacing: 8) {
                 Button { editingSlideRef = EditableSlideRef(index: index) } label: {
@@ -4277,6 +4590,25 @@ struct SocialPostStudioSheet: View {
                         .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
+
+                if slide.kind == .placeStop {
+                    Menu {
+                        Button(role: .destructive) {
+                            excludePlaceSlide(at: index)
+                        } label: {
+                            Label("Remove from carousel", systemImage: "minus.circle")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.9))
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .background(Color.white.opacity(0.12))
+                            .clipShape(Capsule())
+                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.22), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 Spacer(minLength: 0)
 
@@ -4332,6 +4664,116 @@ struct SocialPostStudioSheet: View {
         }
     }
 
+    // MARK: - Studio photo exclusion
+
+    /// Removes a day-map slide from the carousel for this session.
+    @MainActor
+    private func excludeMapSlide(at index: Int) {
+        guard slides.indices.contains(index),
+              slides[index].kind == .mapRoute else { return }
+        slides.remove(at: index)
+    }
+
+    /// Removes a place photo slide from the carousel and remembers it so the user can add it back later.
+    @MainActor
+    private func excludePlaceSlide(at index: Int) {
+        guard slides.indices.contains(index),
+              slides[index].kind == .placeStop,
+              let stop = slides[index].placeStop,
+              let hid = slides[index].heroPhotoID else { return }
+        excludedStudioPhotoKeys.insert(studioExclusionKey(stop: stop.id, photo: hid))
+        slides.remove(at: index)
+        Task { await rebuildPIPPayloadsForStop(stopID: stop.id) }
+    }
+
+    private func restoreExcludedPhoto(stopID: UUID, photoID: UUID) {
+        let key = studioExclusionKey(stop: stopID, photo: photoID)
+        guard excludedStudioPhotoKeys.contains(key),
+              let stop = freshPlaceStop(stopID: stopID, blog: blog),
+              let photo = stop.photos.first(where: { $0.id == photoID }),
+              photo.isIncluded,
+              let day = blog.days.first(where: { d in d.placeStops.contains(where: { $0.id == stopID }) })
+        else { return }
+
+        var newExcluded = excludedStudioPhotoKeys
+        newExcluded.remove(key)
+        let insertAt = insertIndexForPlacePhotoInDay(
+            day: day, stopID: stopID, photoID: photoID,
+            slides: slides, excludedKeys: newExcluded
+        )
+        let ew = exportWidth
+        let eh = exportHeight
+
+        Task {
+            let slide = await buildPlaceCarouselSlideForStudio(
+                blog: blog, stop: stop, photo: photo,
+                excludedKeys: newExcluded,
+                exportWidth: ew, exportHeight: eh
+            )
+            await MainActor.run {
+                guard let slide else { return }
+                excludedStudioPhotoKeys = newExcluded
+                let bounded = min(max(0, insertAt), slides.count)
+                slides.insert(slide, at: bounded)
+            }
+            await rebuildPIPPayloadsForStop(stopID: stopID)
+            await MainActor.run {
+                if excludedStudioPhotoKeys.isEmpty { showExcludedPhotosSheet = false }
+            }
+        }
+    }
+
+    @MainActor
+    private func rebuildPIPPayloadsForStop(stopID: UUID) async {
+        guard let stop = freshPlaceStop(stopID: stopID, blog: blog) else { return }
+        let included = stop.photos.filter { $0.isIncluded }.filter {
+            !excludedStudioPhotoKeys.contains(studioExclusionKey(stop: stop.id, photo: $0.id))
+        }
+        let indices = slides.indices.filter { slides[$0].kind == .placeStop && slides[$0].placeStop?.id == stopID }
+        guard !indices.isEmpty else { return }
+
+        for i in indices {
+            slides[i].placeStop = stop
+        }
+
+        if included.count <= 1 {
+            for i in indices {
+                slides[i].layout = .single
+                slides[i].pipImages = []
+                slides[i].pipPhotoIDs = []
+            }
+            return
+        }
+
+        let orderedPresentIDs = included.map(\.id).filter { pid in
+            indices.contains { slides[$0].heroPhotoID == pid }
+        }
+
+        var cache: [UUID: UIImage] = [:]
+        for pid in Set(orderedPresentIDs) {
+            guard let p = included.first(where: { $0.id == pid }) else { continue }
+            var img: UIImage?
+            if let localId = p.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines), !localId.isEmpty {
+                img = await loadCarouselAssetImage(identifier: localId,
+                                                   size: CGSize(width: exportWidth, height: exportHeight))
+            }
+            if img == nil {
+                img = await loadRecapPhotoUIImage(photo: p, size: CGSize(width: exportWidth, height: exportHeight))
+            }
+            if let img { cache[pid] = img }
+        }
+
+        for i in indices {
+            guard let hid = slides[i].heroPhotoID else { continue }
+            let pipIDs = Array(orderedPresentIDs.filter { $0 != hid }.prefix(3))
+            slides[i].pipImages = pipIDs.compactMap { cache[$0] }
+            slides[i].pipPhotoIDs = pipIDs
+            if slides[i].layout == .pip, slides[i].pipImages.isEmpty {
+                slides[i].layout = .single
+            }
+        }
+    }
+
     // MARK: - Load
 
     private func loadCoverHeroImageForStudio() async -> UIImage? {
@@ -4365,6 +4807,7 @@ struct SocialPostStudioSheet: View {
     }
 
     private func loadSlides() async {
+        let excludedSnapshot = await MainActor.run { excludedStudioPhotoKeys }
         var result: [CarouselSlide] = []
 
         let coverImg = await loadCoverHeroImageForStudio()
@@ -4380,6 +4823,7 @@ struct SocialPostStudioSheet: View {
 
             for stop in day.placeStops {
                 let included = stop.photos.filter { $0.isIncluded }
+                    .filter { !excludedSnapshot.contains(studioExclusionKey(stop: stop.id, photo: $0.id)) }
                 guard !included.isEmpty else { continue }
 
                 globalStopIndex += 1
@@ -4863,6 +5307,210 @@ private struct AddPIPPhotoTile: View {
             size: CGSize(width: 320, height: 320)
         )
         await MainActor.run { self.image = loaded }
+    }
+}
+
+// MARK: - Preview strip swipe-up to remove
+
+/// Wraps a preview slide card with a swipe-up gesture that removes the slide.
+/// Designed to coexist with the parent horizontal `ScrollView`, the card's tap
+/// (selection toggle), and the in-card buttons (Edit, ⋯). Vertical-dominant
+/// drags (`|dy| > |dx|`) past `activationSlop` claim the gesture and reveal a
+/// "Release to remove" pill; horizontal-dominant drags are ignored so the
+/// outer ScrollView keeps paging. Reset cleanly via `slideKey` so a stale
+/// in-flight drag from a removed slide can never linger on a reused card slot.
+private struct SwipeUpToRemoveCard<Content: View>: View {
+    /// Stable identity (e.g. `CarouselSlide.id`); changing this resets the wrapper's drag state.
+    let slideKey: String
+    let isEnabled: Bool
+    let onRemove: () -> Void
+    @ViewBuilder var content: () -> Content
+
+    @State private var dragHeight: CGFloat = 0
+    /// True once the user moves enough vertically to "claim" the gesture for swipe-up.
+    @State private var isVerticalSwipe: Bool = false
+    @State private var didTrigger: Bool = false
+
+    private let activationSlop: CGFloat = 8
+    private let triggerThreshold: CGFloat = 90
+    private let maxPull: CGFloat = 180
+
+    var body: some View {
+        let liftedBy = max(0, -dragHeight)
+        let progress = min(1, liftedBy / triggerThreshold)
+        ZStack(alignment: .top) {
+            content()
+                .offset(y: dragHeight)
+                .scaleEffect(1.0 - progress * 0.04, anchor: .center)
+                .opacity(1.0 - progress * 0.35)
+
+            if isEnabled, liftedBy > activationSlop {
+                Label(progress >= 1 ? "Release to remove" : "Swipe up to remove",
+                      systemImage: progress >= 1 ? "arrow.up.circle.fill" : "arrow.up.circle")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        (progress >= 1 ? Color.red : Color.black.opacity(0.7))
+                            .clipShape(Capsule())
+                    )
+                    .offset(y: dragHeight - 24)
+                    .opacity(progress)
+                    .allowsHitTesting(false)
+                    .animation(.easeInOut(duration: 0.15), value: progress >= 1)
+            }
+        }
+        .contentShape(Rectangle())
+        .gesture(swipeGesture, including: isEnabled ? .all : .none)
+        .animation(.spring(response: 0.32, dampingFraction: 0.78), value: dragHeight)
+        .onChange(of: slideKey) { _, _ in
+            dragHeight = 0
+            isVerticalSwipe = false
+            didTrigger = false
+        }
+    }
+
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 6)
+            .onChanged { value in
+                guard !didTrigger else { return }
+                let dy = value.translation.height
+                let dx = value.translation.width
+
+                if !isVerticalSwipe {
+                    // Lock to vertical-up only if movement is clearly vertical, otherwise let
+                    // the outer horizontal ScrollView keep ownership.
+                    guard dy < -activationSlop, abs(dy) > abs(dx) else { return }
+                    isVerticalSwipe = true
+                }
+
+                guard isVerticalSwipe else { return }
+                dragHeight = max(min(dy, 0), -maxPull)
+            }
+            .onEnded { _ in
+                guard !didTrigger else { return }
+                let shouldRemove = isVerticalSwipe && dragHeight <= -triggerThreshold
+                isVerticalSwipe = false
+                if shouldRemove {
+                    didTrigger = true
+                    let impact = UIImpactFeedbackGenerator(style: .medium)
+                    impact.impactOccurred()
+                    onRemove()
+                    dragHeight = 0
+                } else {
+                    dragHeight = 0
+                }
+            }
+    }
+}
+
+// MARK: - Excluded photos gallery (Carousel Studio)
+
+private struct StudioExcludedPhotoThumb: View {
+    let photo: RecapPhoto
+    @State private var image: UIImage?
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Color(white: 0.2))
+            .aspectRatio(4.0 / 5.0, contentMode: .fit)
+            .overlay {
+                if let img = image {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Image(systemName: "photo")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .task {
+                let loaded = await loadRecapPhotoUIImage(photo: photo, size: CGSize(width: 400, height: 500))
+                await MainActor.run { image = loaded }
+            }
+    }
+}
+
+/// Grid of thumbnails for place photos removed from the carousel this session; **Add back** restores a slide.
+private struct StudioExcludedPhotosGallerySheet: View {
+    let blog: RecapBlogDetail
+    let excludedKeys: Set<String>
+    let onRestore: (UUID, UUID) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private struct Item: Identifiable {
+        let id: String
+        let stopID: UUID
+        let photoID: UUID
+        let placeTitle: String
+        let photo: RecapPhoto
+    }
+
+    private var items: [Item] {
+        excludedKeys.compactMap { key -> Item? in
+            guard let (stopID, photoID) = parseStudioExclusionKey(key) else { return nil }
+            guard let stop = freshPlaceStop(stopID: stopID, blog: blog),
+                  let photo = stop.photos.first(where: { $0.id == photoID }),
+                  photo.isIncluded else { return nil }
+            return Item(id: key, stopID: stopID, photoID: photoID, placeTitle: stop.placeTitle, photo: photo)
+        }
+        .sorted { lhs, rhs in
+            lhs.placeTitle.localizedCaseInsensitiveCompare(rhs.placeTitle) == .orderedAscending
+        }
+    }
+
+    private let gridColumns = [GridItem(.adaptive(minimum: 108), spacing: 14)]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                if items.isEmpty {
+                    Text("Nothing here — excluded photos appear after you remove a place slide from the carousel.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 40)
+                } else {
+                    LazyVGrid(columns: gridColumns, spacing: 16) {
+                        ForEach(items) { item in
+                            VStack(alignment: .leading, spacing: 10) {
+                                StudioExcludedPhotoThumb(photo: item.photo)
+                                Text(item.placeTitle)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundColor(.primary)
+                                    .lineLimit(2)
+                                Button {
+                                    onRestore(item.stopID, item.photoID)
+                                } label: {
+                                    Text("Add back")
+                                        .font(.subheadline.weight(.semibold))
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                            .padding(12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                            )
+                        }
+                    }
+                    .padding(18)
+                }
+            }
+            .navigationTitle("Excluded photos")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }
 
