@@ -13,15 +13,51 @@ import SwiftUI
 /// at file scope so both callers use identical request options and there's no
 /// duplicated photo-framework boilerplate to drift out of sync.
 private func loadCarouselAssetImage(identifier: String, size: CGSize) async -> UIImage? {
-    await withCheckedContinuation { cont in
-        let fetch = PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil)
-        guard let asset = fetch.firstObject else { cont.resume(returning: nil); return }
+    let trimmed = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+        #if DEBUG
+        print("[CarouselStudio] loadCarouselAssetImage: empty localIdentifier after trim")
+        #endif
+        return nil
+    }
+    // `PHImageManager` expects a size in **pixels**; logical export points × screen scale
+    // avoids undersized / odd results on older devices. Cap the long edge to limit memory.
+    let scale = await MainActor.run { max(1.0, UIScreen.main.scale) }
+    let rawW = max(1, size.width * scale)
+    let rawH = max(1, size.height * scale)
+    let maxPixel: CGFloat = 3072
+    let target: CGSize = {
+        guard rawW > maxPixel || rawH > maxPixel else {
+            return CGSize(width: rawW, height: rawH)
+        }
+        let r = maxPixel / max(rawW, rawH)
+        return CGSize(width: floor(rawW * r), height: floor(rawH * r))
+    }()
+
+    return await withCheckedContinuation { cont in
+        let fetch = PHAsset.fetchAssets(withLocalIdentifiers: [trimmed], options: nil)
+        guard let asset = fetch.firstObject else {
+            #if DEBUG
+            print("[CarouselStudio] loadCarouselAssetImage: no PHAsset for id prefix \(trimmed.prefix(16))…")
+            #endif
+            cont.resume(returning: nil)
+            return
+        }
         let opts = PHImageRequestOptions()
         opts.deliveryMode = .highQualityFormat
         opts.isNetworkAccessAllowed = true
         opts.isSynchronous = false
-        PHImageManager.default().requestImage(for: asset, targetSize: size,
-                                              contentMode: .aspectFill, options: opts) { img, _ in
+        opts.resizeMode = .fast
+        PHImageManager.default().requestImage(for: asset, targetSize: target,
+                                              contentMode: .aspectFill, options: opts) { img, info in
+            #if DEBUG
+            if img == nil {
+                let err = info?[PHImageErrorKey] as? Error
+                let cancelled = (info?[PHImageCancelledKey] as? Bool) ?? false
+                let degraded = info?[PHImageResultIsDegradedKey] as? Bool
+                print("[CarouselStudio] loadCarouselAssetImage: nil image cancelled=\(cancelled) degraded=\(String(describing: degraded)) err=\(String(describing: err)) target=\(target)")
+            }
+            #endif
             cont.resume(returning: img)
         }
     }
@@ -32,18 +68,38 @@ private func loadCarouselAssetImage(identifier: String, size: CGSize) async -> U
 private func loadRecapPhotoUIImage(photo: RecapPhoto, size: CGSize) async -> UIImage? {
     if let lid = photo.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines), !lid.isEmpty {
         if lid.hasPrefix(AppCapturePhotoService.prefix) {
-            return await MainActor.run {
+            let img = await MainActor.run {
                 AppCapturePhotoService.shared.loadImage(identifier: lid)
             }
+            #if DEBUG
+            if img == nil { print("[CarouselStudio] loadRecapPhotoUIImage: AppCapture nil photo=\(photo.id)") }
+            #endif
+            return img
         }
-        return await loadCarouselAssetImage(identifier: lid, size: size)
+        let img = await loadCarouselAssetImage(identifier: lid, size: size)
+        #if DEBUG
+        if img == nil { print("[CarouselStudio] loadRecapPhotoUIImage: Photos nil photo=\(photo.id) localId.prefix=\(lid.prefix(12))…") }
+        #endif
+        return img
     }
-    guard let cloud = photo.cloudURL?.trimmingCharacters(in: .whitespacesAndNewlines), !cloud.isEmpty else { return nil }
+    guard let cloud = photo.cloudURL?.trimmingCharacters(in: .whitespacesAndNewlines), !cloud.isEmpty else {
+        #if DEBUG
+        print("[CarouselStudio] loadRecapPhotoUIImage: no local id or cloud photo=\(photo.id)")
+        #endif
+        return nil
+    }
     do {
         let signedURL = try await APIManager.shared.fetchSignedPhotoURL(permanentURL: cloud)
         let (data, _) = try await URLSession.shared.data(from: signedURL)
-        return UIImage(data: data)
+        let img = UIImage(data: data)
+        #if DEBUG
+        if img == nil { print("[CarouselStudio] loadRecapPhotoUIImage: cloud data not UIImage photo=\(photo.id)") }
+        #endif
+        return img
     } catch {
+        #if DEBUG
+        print("[CarouselStudio] loadRecapPhotoUIImage: cloud error photo=\(photo.id) \(error.localizedDescription)")
+        #endif
         return nil
     }
 }
@@ -1347,6 +1403,17 @@ private extension View {
     func optionalOnTapGesture(isEnabled: Bool, perform action: @escaping () -> Void) -> some View {
         if isEnabled {
             self.onTapGesture(perform: action)
+        } else {
+            self
+        }
+    }
+
+    /// Attaches a gesture only when needed. `simultaneousGesture` is required so vertical
+    /// swipe-up can coexist with a parent horizontal `ScrollView` (`.gesture` loses to it).
+    @ViewBuilder
+    func studioPreviewStripSwipeGesture<G: Gesture>(_ isEnabled: Bool, _ gesture: G) -> some View {
+        if isEnabled {
+            self.simultaneousGesture(gesture)
         } else {
             self
         }
@@ -2852,12 +2919,20 @@ struct SlideTextEditorView: View {
 
                     Menu {
                         if canExcludeCurrentSlide {
-                            Button(role: .destructive) {
-                                performExcludeFromStudio()
-                            } label: {
-                                let isMap = slides.indices.contains(currentIndex) && slides[currentIndex].kind == .mapRoute
-                                Label(isMap ? "Remove map from carousel" : "Remove from carousel",
-                                      systemImage: "minus.circle")
+                            let isMap = slides.indices.contains(currentIndex) && slides[currentIndex].kind == .mapRoute
+                            Section {
+                                Button(role: .destructive) {
+                                    performExcludeFromStudio()
+                                } label: {
+                                    Label(isMap ? "Remove map from carousel" : "Remove from carousel",
+                                          systemImage: "minus.circle")
+                                }
+                            } footer: {
+                                if isMap {
+                                    Text("You can also press and hold the map slide to remove it.")
+                                } else {
+                                    Text("You can also press and hold this slide. In the studio preview, long-press the photo card or swipe up.")
+                                }
                             }
                         }
                         Button {
@@ -4188,6 +4263,8 @@ struct SocialPostStudioSheet: View {
     /// Place photos removed from this session’s carousel (not the blog draft). Keys: `studioExclusionKey`.
     @State private var excludedStudioPhotoKeys: Set<String> = []
     @State private var showExcludedPhotosSheet = false
+    /// One-time dismissible tip for removing place photos from the preview strip (`UserDefaults`).
+    @AppStorage("carouselStudio.removePlacePhotoTip.dismissed") private var removePlacePhotoTipDismissed = false
     @Environment(\.dismiss) private var dismiss
 
     private let previewHeight: CGFloat = 450
@@ -4499,6 +4576,8 @@ struct SocialPostStudioSheet: View {
             }
             .padding(.top, 10).padding(.bottom, 12)
 
+            removePlacePhotoTipBanner
+
             ScrollViewReader { previewScrollProxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 14) {
@@ -4528,6 +4607,46 @@ struct SocialPostStudioSheet: View {
             Spacer(minLength: 0)
         }
         .padding(.bottom, 12)
+    }
+
+    private var hasPlaceStopInPreviewStrip: Bool {
+        slides.contains { $0.kind == .placeStop }
+    }
+
+    @ViewBuilder
+    private var removePlacePhotoTipBanner: some View {
+        if !removePlacePhotoTipDismissed, hasPlaceStopInPreviewStrip {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "hand.point.up.left.fill")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 1)
+                Text("Remove a place photo from this carousel: swipe up on its card, long-press the card, or tap ⋯ then Remove from carousel. In the full editor, press and hold the slide or use ⋯ above. Nothing is deleted from your trip.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 6)
+                Button {
+                    removePlacePhotoTipDismissed = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss tip")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(uiColor: .tertiarySystemFill))
+            )
+            .padding(.horizontal, 20)
+            .padding(.bottom, 8)
+        }
     }
 
     /// Space around the preview slide before the card `clipShape` so PIP rotation, drop
@@ -4830,18 +4949,29 @@ struct SocialPostStudioSheet: View {
                 let stopIdx = globalStopIndex
 
                 // Load all included photos for this stop upfront so we can populate PIP images.
+                // Use `loadRecapPhotoUIImage` (same as cover) so cloud URLs + AppCapture ids work
+                // when `localIdentifier` is missing — `loadSlides` previously only called Photos for
+                // local assets, which blanked place slides and map markers on some devices/sync states.
                 var stopImages: [UIImage?] = []
+                let exportSize = CGSize(width: exportWidth, height: exportHeight)
                 for photo in included {
-                    var img: UIImage?
-                    if let localId = photo.localIdentifier {
-                        img = await loadAssetImage(identifier: localId,
-                                                   size: CGSize(width: exportWidth, height: exportHeight))
+                    let img = await loadRecapPhotoUIImage(photo: photo, size: exportSize)
+                    #if DEBUG
+                    if img == nil {
+                        let hasLocal = !(photo.localIdentifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        let hasCloud = !(photo.cloudURL ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        print("[CarouselStudio] loadSlides: nil hero photo=\(photo.id) stop=\(stop.id) includedLocal=\(hasLocal) includedCloud=\(hasCloud)")
                     }
+                    #endif
                     stopImages.append(img)
                 }
 
-                if let firstImg = stopImages.first ?? nil {
+                if let firstImg = stopImages.compactMap({ $0 }).first {
                     markerImages[stop.id] = firstImg
+                } else {
+                    #if DEBUG
+                    print("[CarouselStudio] loadSlides: no marker image for stop=\(stop.id) place=\(stop.placeTitle) (all \(included.count) loads nil)")
+                    #endif
                 }
 
                 for (photoIdx, photo) in included.enumerated() {
@@ -5331,9 +5461,11 @@ private struct SwipeUpToRemoveCard<Content: View>: View {
     @State private var isVerticalSwipe: Bool = false
     @State private var didTrigger: Bool = false
 
-    private let activationSlop: CGFloat = 8
-    private let triggerThreshold: CGFloat = 90
+    private let activationSlop: CGFloat = 10
+    private let triggerThreshold: CGFloat = 72
     private let maxPull: CGFloat = 180
+    /// If horizontal motion clearly dominates, cancel so the strip scrolls normally.
+    private let horizontalCancelSlop: CGFloat = 22
 
     var body: some View {
         let liftedBy = max(0, -dragHeight)
@@ -5362,7 +5494,16 @@ private struct SwipeUpToRemoveCard<Content: View>: View {
             }
         }
         .contentShape(Rectangle())
-        .gesture(swipeGesture, including: isEnabled ? .all : .none)
+        .studioPreviewStripSwipeGesture(isEnabled, swipeGesture)
+        .contextMenu {
+            if isEnabled {
+                Button(role: .destructive) {
+                    onRemove()
+                } label: {
+                    Label("Remove from carousel", systemImage: "minus.circle")
+                }
+            }
+        }
         .animation(.spring(response: 0.32, dampingFraction: 0.78), value: dragHeight)
         .onChange(of: slideKey) { _, _ in
             dragHeight = 0
@@ -5372,24 +5513,39 @@ private struct SwipeUpToRemoveCard<Content: View>: View {
     }
 
     private var swipeGesture: some Gesture {
-        DragGesture(minimumDistance: 6)
+        DragGesture(minimumDistance: 4)
             .onChanged { value in
-                guard !didTrigger else { return }
+                guard isEnabled, !didTrigger else { return }
                 let dy = value.translation.height
                 let dx = value.translation.width
 
+                // Strong horizontal pan → user is scrolling the strip; abandon swipe-remove.
+                if abs(dx) > horizontalCancelSlop, abs(dx) > abs(dy) * 1.15 {
+                    if isVerticalSwipe || dragHeight != 0 {
+                        isVerticalSwipe = false
+                        dragHeight = 0
+                    }
+                    return
+                }
+
                 if !isVerticalSwipe {
-                    // Lock to vertical-up only if movement is clearly vertical, otherwise let
-                    // the outer horizontal ScrollView keep ownership.
-                    guard dy < -activationSlop, abs(dy) > abs(dx) else { return }
+                    // Start on clear upward intent; slightly looser than |dy|>|dx| so diagonals still work.
+                    guard dy < -activationSlop else { return }
+                    guard abs(dy) >= abs(dx) - 4 else { return }
                     isVerticalSwipe = true
                 }
 
                 guard isVerticalSwipe else { return }
+                // Mid-gesture: bail if user steers hard sideways.
+                if abs(dx) > abs(dy) + 28, abs(dx) > 26 {
+                    isVerticalSwipe = false
+                    dragHeight = 0
+                    return
+                }
                 dragHeight = max(min(dy, 0), -maxPull)
             }
             .onEnded { _ in
-                guard !didTrigger else { return }
+                guard isEnabled, !didTrigger else { return }
                 let shouldRemove = isVerticalSwipe && dragHeight <= -triggerThreshold
                 isVerticalSwipe = false
                 if shouldRemove {
@@ -5434,7 +5590,7 @@ private struct StudioExcludedPhotoThumb: View {
     }
 }
 
-/// Grid of thumbnails for place photos removed from the carousel this session; **Add back** restores a slide.
+/// Grid of thumbnails for place photos removed from the carousel this session; **Revert** restores a slide.
 private struct StudioExcludedPhotosGallerySheet: View {
     let blog: RecapBlogDetail
     let excludedKeys: Set<String>
@@ -5486,7 +5642,7 @@ private struct StudioExcludedPhotosGallerySheet: View {
                                 Button {
                                     onRestore(item.stopID, item.photoID)
                                 } label: {
-                                    Text("Add back")
+                                    Text("Revert")
                                         .font(.subheadline.weight(.semibold))
                                         .frame(maxWidth: .infinity)
                                 }

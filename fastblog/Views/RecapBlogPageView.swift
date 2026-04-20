@@ -3248,8 +3248,8 @@ struct RecapBlogPageView: View {
             VStack(spacing: 14) {
                 VStack(spacing: 0) {
                     shareOptionRow(
-                        title: "Post to Social",
-                        subtitle: "Create posts, stories, reels",
+                        title: "Post to Social - Carousel Studio",
+                        subtitle: "TikTok, Facebook, etc.",
                         icon: "rectangle.stack",
                         iconColor: .white,
                         titleColor: .white
