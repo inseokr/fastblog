@@ -1829,6 +1829,8 @@ struct SlideTextEditorView: View {
     let onOpenExcludedPhotos: (() -> Void)?
     /// Count of photos excluded this session — drives the **Excluded** toolbar affordance.
     let excludedFromStudioCount: Int
+    /// Opens the photo-group manager (bulk PIP / enable–disable per place stop).
+    let onOpenPhotoGroupPicker: (() -> Void)?
 
     /// Persisted preference: skip the remove-slide confirmation alert.
     @AppStorage("blogify.studioSkipExcludeConfirm") private var skipExcludeConfirm = false
@@ -1845,7 +1847,8 @@ struct SlideTextEditorView: View {
         onExcludePlaceFromStudio: ((Int) -> Void)? = nil,
         onExcludeMapFromStudio: ((Int) -> Void)? = nil,
         onOpenExcludedPhotos: (() -> Void)? = nil,
-        excludedFromStudioCount: Int = 0
+        excludedFromStudioCount: Int = 0,
+        onOpenPhotoGroupPicker: (() -> Void)? = nil
     ) {
         self._slides = slides
         self.initialIndex = initialIndex
@@ -1857,8 +1860,17 @@ struct SlideTextEditorView: View {
         self.onExcludeMapFromStudio = onExcludeMapFromStudio
         self.onOpenExcludedPhotos = onOpenExcludedPhotos
         self.excludedFromStudioCount = excludedFromStudioCount
+        self.onOpenPhotoGroupPicker = onOpenPhotoGroupPicker
         self._currentIndex = State(initialValue: initialIndex)
         self._scrollPageID = State(initialValue: initialIndex)
+    }
+
+    /// Number of visible (non-PIP-hidden) selected slides — used to badge the
+    /// photo-group picker button when the count exceeds TikTok's 34-slide limit.
+    private var visibleSelectedSlideCount: Int {
+        slides.enumerated().filter { idx, slide in
+            !isSlideHiddenBySiblingPIP(at: idx, in: slides) && slide.isSelected
+        }.count
     }
 
     private let maxUndoSteps = 40
@@ -2991,6 +3003,28 @@ struct SlideTextEditorView: View {
                                 .foregroundColor(.white)
                         }
                         .accessibilityLabel("Excluded photos, \(excludedFromStudioCount)")
+                    }
+
+                    if let onOpenPicker = onOpenPhotoGroupPicker {
+                        let count = visibleSelectedSlideCount
+                        let isOver = count > 34
+                        Button { onOpenPicker() } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: isOver
+                                      ? "exclamationmark.triangle.fill"
+                                      : "rectangle.3.group")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(isOver ? .orange : .white)
+                                if isOver {
+                                    Text("\(count)")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundColor(.orange)
+                                }
+                            }
+                        }
+                        .accessibilityLabel(isOver
+                            ? "Manage photo groups — \(count) slides, over TikTok limit"
+                            : "Manage photo groups")
                     }
 
                     Menu {
@@ -4366,6 +4400,11 @@ struct SocialPostStudioSheet: View {
     /// Place photos removed from this session’s carousel (not the blog draft). Keys: `studioExclusionKey`.
     @State private var excludedStudioPhotoKeys: Set<String> = []
     @State private var showExcludedPhotosSheet = false
+    /// Photo-group manager: bulk PIP / enable–disable per place stop.
+    @State private var showPhotoGroupPicker = false
+    /// Fired after load when the selected slide count still exceeds 34 after auto-PIP.
+    @State private var showTikTokOverflowAlert = false
+    @State private var tikTokOverflowRemainingCount = 0
     /// One-time dismissible tip for removing place photos from the preview strip (`UserDefaults`).
     @AppStorage("carouselStudio.removePlacePhotoTip.dismissed") private var removePlacePhotoTipDismissed = false
     @Environment(\.dismiss) private var dismiss
@@ -4432,7 +4471,8 @@ struct SocialPostStudioSheet: View {
                         onExcludePlaceFromStudio: { idx in excludePlaceSlide(at: idx) },
                         onExcludeMapFromStudio: { idx in excludeMapSlide(at: idx) },
                         onOpenExcludedPhotos: { showExcludedPhotosSheet = true },
-                        excludedFromStudioCount: excludedStudioPhotoKeys.count
+                        excludedFromStudioCount: excludedStudioPhotoKeys.count,
+                        onOpenPhotoGroupPicker: { showPhotoGroupPicker = true }
                     )
                 }
             } else {
@@ -4523,6 +4563,15 @@ struct SocialPostStudioSheet: View {
         .alert("Slides Saved!", isPresented: $showSavedAlert) {
             Button("OK", role: .cancel) {}
         } message: { Text(savedAlertMessage) }
+        .alert("Too Many Slides for TikTok", isPresented: $showTikTokOverflowAlert) {
+            Button("Manage Photo Groups") { showPhotoGroupPicker = true }
+            Button("Continue Anyway", role: .cancel) {}
+        } message: {
+            Text("TikTok supports up to 34 photos per carousel. You have \(tikTokOverflowRemainingCount) slides selected. Use the photo group manager to trim down.")
+        }
+        .sheet(isPresented: $showPhotoGroupPicker) {
+            CarouselPhotoGroupPickerSheet(slides: $slides)
+        }
         .fullScreenCover(item: $editingSlideRef) { ref in
             SlideTextEditorView(
                 slides: $slides,
@@ -4539,7 +4588,8 @@ struct SocialPostStudioSheet: View {
                 onExcludePlaceFromStudio: { idx in excludePlaceSlide(at: idx) },
                 onExcludeMapFromStudio: { idx in excludeMapSlide(at: idx) },
                 onOpenExcludedPhotos: { showExcludedPhotosSheet = true },
-                excludedFromStudioCount: excludedStudioPhotoKeys.count
+                excludedFromStudioCount: excludedStudioPhotoKeys.count,
+                onOpenPhotoGroupPicker: { showPhotoGroupPicker = true }
             )
         }
         .sheet(isPresented: $showStudioCoverPicker) {
@@ -4661,20 +4711,28 @@ struct SocialPostStudioSheet: View {
                 if exportFormat.isSingleSlide {
                     Text("Tap any slide to use it as your Reel cover")
                         .font(.subheadline).foregroundColor(.secondary)
+                        .padding(.horizontal, 20)
                 } else {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            let shouldDeselectAll = selectedSlides.count > 0
-                            for i in slides.indices {
-                                slides[i].isSelected = !shouldDeselectAll
+                    HStack(spacing: 8) {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                let shouldDeselectAll = selectedSlides.count > 0
+                                for i in slides.indices {
+                                    slides[i].isSelected = !shouldDeselectAll
+                                }
                             }
+                        } label: {
+                            Text(selectedSlides.isEmpty ? "Select all" : "Deselect all")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.secondary)
                         }
-                    } label: {
-                        Text(selectedSlides.isEmpty ? "Select all" : "Deselect all")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.secondary)
+                        .buttonStyle(.plain)
+
+                        Spacer(minLength: 0)
+
+                        studioSlideCountBadge
                     }
-                    .buttonStyle(.plain)
+                    .padding(.horizontal, 20)
                 }
             }
             .padding(.top, 10).padding(.bottom, 12)
@@ -4714,6 +4772,36 @@ struct SocialPostStudioSheet: View {
 
     private var hasPlaceStopInPreviewStrip: Bool {
         slides.contains { $0.kind == .placeStop }
+    }
+
+    /// Pill showing the selected slide count; tapping it opens the photo-group manager.
+    /// Turns orange with a warning icon when the count exceeds TikTok's 34-slide limit.
+    private var studioSlideCountBadge: some View {
+        let count = selectedSlides.count
+        let isOver = count > 34
+        return Button { showPhotoGroupPicker = true } label: {
+            HStack(spacing: 5) {
+                if isOver {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.orange)
+                }
+                Text("\(count) slide\(count == 1 ? "" : "s")")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(isOver ? .orange : .secondary)
+                Image(systemName: "rectangle.3.group")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(isOver ? .orange : Color(uiColor: .tertiaryLabel))
+            }
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background((isOver ? Color.orange : Color.white).opacity(0.1))
+            .clipShape(Capsule())
+            .overlay(Capsule().strokeBorder(
+                (isOver ? Color.orange : Color.white).opacity(isOver ? 0.35 : 0.15),
+                lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.2), value: isOver)
     }
 
     @ViewBuilder
@@ -4887,6 +4975,42 @@ struct SocialPostStudioSheet: View {
         if layout == .pip {
             previewRecenterAfterPIPIndex = index
             previewRecenterAfterPIPNonce += 1
+        }
+    }
+
+    // MARK: - TikTok overflow management
+
+    /// Enables PIP for the first slide of every multi-photo place stop that is still in `.single` mode.
+    private func autoEnablePIPForAllGroups() {
+        var seenStopIDs = Set<UUID>()
+        var txn = Transaction(); txn.disablesAnimations = true
+        withTransaction(txn) {
+            for i in slides.indices {
+                guard slides[i].kind == .placeStop,
+                      !slides[i].pipImages.isEmpty,
+                      slides[i].layout == .single,
+                      let stopID = slides[i].placeStop?.id,
+                      !seenStopIDs.contains(stopID) else { continue }
+                seenStopIDs.insert(stopID)
+                slides[i].layout = .pip
+                for j in slides.indices where j != i {
+                    guard slides[j].kind == .placeStop,
+                          slides[j].placeStop?.id == stopID else { continue }
+                    slides[j].isSelected = false
+                }
+            }
+        }
+    }
+
+    /// Called after `loadSlides()` completes. If selected slide count > 34 (TikTok limit),
+    /// first auto-enables PIP for every multi-photo stop, then alerts if still over limit.
+    private func checkTikTokOverflow() {
+        guard !exportFormat.isSingleSlide, selectedSlides.count > 34 else { return }
+        autoEnablePIPForAllGroups()
+        let remaining = selectedSlides.count
+        if remaining > 34 {
+            tikTokOverflowRemainingCount = remaining
+            showTikTokOverflowAlert = true
         }
     }
 
@@ -5135,6 +5259,7 @@ struct SocialPostStudioSheet: View {
         }
         slides = result
         isLoading = false
+        checkTikTokOverflow()
     }
 
     private func loadAssetImage(identifier: String, size: CGSize) async -> UIImage? {
@@ -5781,6 +5906,237 @@ private struct StudioExcludedPhotosGallerySheet: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Photo group picker
+
+/// Sheet that lists every place stop as a "photo group" with controls to:
+/// - Toggle the whole group in/out of the exported carousel (select/deselect all its slides)
+/// - Switch between full (one slide per photo) and PIP (one slide with inset thumbnails) mode
+/// A running slide count vs the TikTok 34-slide limit guides the user toward the right shape.
+private struct CarouselPhotoGroupPickerSheet: View {
+    @Binding var slides: [CarouselSlide]
+    @Environment(\.dismiss) private var dismiss
+
+    private let tiktokLimit = 34
+
+    // MARK: - Group model
+
+    private struct PhotoGroup: Identifiable {
+        let id: UUID              // placeStop.id
+        let placeName: String
+        let placeSubtitle: String
+        let slideIndices: [Int]   // indices into `slides` for this stop
+        let thumbnailImage: UIImage?
+        let isInPIPMode: Bool     // true when the first slide's layout == .pip
+        let isEnabled: Bool       // true when any slide for this stop is selected
+        let photoCount: Int       // total photos loaded for this stop
+    }
+
+    private var photoGroups: [PhotoGroup] {
+        var order: [UUID] = []
+        var byStop: [UUID: [Int]] = [:]
+        for (i, slide) in slides.enumerated() {
+            guard slide.kind == .placeStop, let sid = slide.placeStop?.id else { continue }
+            if byStop[sid] == nil { order.append(sid); byStop[sid] = [] }
+            byStop[sid]!.append(i)
+        }
+        return order.compactMap { sid -> PhotoGroup? in
+            guard let indices = byStop[sid], !indices.isEmpty else { return nil }
+            let first = slides[indices[0]]
+            guard let stop = first.placeStop else { return nil }
+            let isEnabled = indices.contains { slides[$0].isSelected }
+            let isInPIPMode = first.layout == .pip
+            let photoCount = 1 + first.pipImages.count  // hero + available PIPs
+            return PhotoGroup(
+                id: sid,
+                placeName: stop.placeTitle,
+                placeSubtitle: stop.placeSubtitle ?? "",
+                slideIndices: indices,
+                thumbnailImage: first.heroImage,
+                isInPIPMode: isInPIPMode,
+                isEnabled: isEnabled,
+                photoCount: photoCount
+            )
+        }
+    }
+
+    /// Contribution of one group toward the total slide count.
+    private func slideContribution(of group: PhotoGroup) -> Int {
+        guard group.isEnabled else { return 0 }
+        return group.isInPIPMode ? 1 : group.slideIndices.count
+    }
+
+    private var totalSelectedCount: Int {
+        let coverAndMap = slides.enumerated().filter { idx, slide in
+            (slide.kind == .cover || slide.kind == .mapRoute) &&
+            !isSlideHiddenBySiblingPIP(at: idx, in: slides) &&
+            slide.isSelected
+        }.count
+        return coverAndMap + photoGroups.reduce(0) { $0 + slideContribution(of: $1) }
+    }
+
+    // MARK: - Mutations
+
+    private func toggleGroupEnabled(_ group: PhotoGroup) {
+        let newEnabled = !group.isEnabled
+        for i in group.slideIndices { slides[i].isSelected = newEnabled }
+    }
+
+    private func toggleGroupPIP(_ group: PhotoGroup) {
+        guard let firstIdx = group.slideIndices.first else { return }
+        let newLayout: CarouselSlideLayout = group.isInPIPMode ? .single : .pip
+        var txn = Transaction(); txn.disablesAnimations = true
+        withTransaction(txn) {
+            slides[firstIdx].layout = newLayout
+            for i in group.slideIndices where i != firstIdx {
+                slides[i].isSelected = (newLayout == .single)
+            }
+        }
+    }
+
+    // MARK: - Body
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    countBanner
+                }
+
+                let groups = photoGroups
+                if groups.isEmpty {
+                    Section {
+                        Text("No photo groups found.")
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Section("Photo Groups") {
+                        ForEach(groups) { group in
+                            groupRow(group)
+                        }
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle("Manage Photo Groups")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    // MARK: - Count banner
+
+    private var countBanner: some View {
+        let count = totalSelectedCount
+        let isOver = count > tiktokLimit
+        return HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill((isOver ? Color.orange : Color.green).opacity(0.15))
+                    .frame(width: 44, height: 44)
+                Image(systemName: isOver ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(isOver ? Color.orange : Color.green)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(count) slide\(count == 1 ? "" : "s") selected")
+                    .font(.headline)
+                Text(isOver
+                     ? "TikTok allows up to \(tiktokLimit) — remove some groups or enable PIP"
+                     : "Within TikTok's \(tiktokLimit)-slide limit")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 4)
+        .animation(.easeInOut(duration: 0.2), value: isOver)
+        .animation(.easeInOut(duration: 0.2), value: count)
+    }
+
+    // MARK: - Group row
+
+    @ViewBuilder
+    private func groupRow(_ group: PhotoGroup) -> some View {
+        let contrib = slideContribution(of: group)
+        HStack(spacing: 12) {
+            // Thumbnail
+            Group {
+                if let img = group.thumbnailImage {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Color(uiColor: .systemFill)
+                        .overlay(
+                            Image(systemName: "photo")
+                                .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                        )
+                }
+            }
+            .frame(width: 56, height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .opacity(group.isEnabled ? 1.0 : 0.4)
+
+            // Place info
+            VStack(alignment: .leading, spacing: 3) {
+                Text(group.placeName.isEmpty ? "Unnamed place" : group.placeName)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                if !group.placeSubtitle.isEmpty {
+                    Text(group.placeSubtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Text(group.isEnabled
+                     ? (contrib == 1 ? "1 slide" : "\(contrib) slides")
+                     : "excluded")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(group.isEnabled
+                                     ? Color(red: 0.04, green: 0.52, blue: 1.0)
+                                     : Color(uiColor: .tertiaryLabel))
+            }
+            .opacity(group.isEnabled ? 1.0 : 0.5)
+
+            Spacer(minLength: 0)
+
+            // PIP toggle (only for stops with multiple photos)
+            if group.photoCount > 1 {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { toggleGroupPIP(group) }
+                } label: {
+                    Image(systemName: group.isInPIPMode ? "pip" : "rectangle.portrait")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(group.isInPIPMode ? .white : Color(uiColor: .tertiaryLabel))
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(group.isInPIPMode
+                                    ? Color(red: 0.04, green: 0.52, blue: 1.0)
+                                    : Color(uiColor: .systemFill))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(!group.isEnabled)
+                .opacity(group.isEnabled ? 1.0 : 0.4)
+            }
+
+            // Include / exclude toggle
+            Toggle("", isOn: Binding(
+                get: { group.isEnabled },
+                set: { _ in
+                    withAnimation(.easeInOut(duration: 0.2)) { toggleGroupEnabled(group) }
+                }
+            ))
+            .labelsHidden()
+        }
+        .padding(.vertical, 2)
     }
 }
 
