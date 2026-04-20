@@ -47,7 +47,13 @@ final class ProfileMapViewModel: ObservableObject {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if !query.isEmpty {
             trips = trips.filter { blog in
-                blog.title.lowercased().contains(query) || (blog.countryName?.lowercased().contains(query) ?? false)
+                if blog.title.lowercased().contains(query) { return true }
+                if blog.countryName?.lowercased().contains(query) ?? false { return true }
+                guard let trip = store.tripDraft(for: blog.sourceTripId) else { return false }
+                let city = trip.cityWithMostPhotosDisplayName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let drop: Set<String> = ["", "new place", "unknown place"]
+                guard !drop.contains(city) else { return false }
+                return city.contains(query)
             }
         }
         

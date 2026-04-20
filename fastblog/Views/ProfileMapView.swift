@@ -332,8 +332,30 @@ extension Collection {
     }
 }
 
+// MARK: - Map card location (city / country)
+
+private func profileMapTrimmedLine(_ s: String?) -> String? {
+    guard let t = s?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
+    return t
+}
+
+/// City for map cards: from the linked trip draft’s photo-location vote; omits placeholders and duplicates of country.
+private func profileMapCardCityLine(blog: CreatedRecapBlog, trip: TripDraft?) -> String? {
+    guard let trip else { return nil }
+    let raw = trip.cityWithMostPhotosDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !raw.isEmpty else { return nil }
+    let placeholders: Set<String> = ["New Place", "Unknown Place"]
+    if placeholders.contains(raw) { return nil }
+    if let country = profileMapTrimmedLine(blog.countryName),
+       raw.caseInsensitiveCompare(country) == .orderedSame {
+        return nil
+    }
+    return raw
+}
+
 // MARK: - ProfileMapCardView (Bottom List Item)
 private struct ProfileMapCardView: View {
+    @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     let blog: CreatedRecapBlog
     let isSelected: Bool
     let onTap: () -> Void
@@ -389,12 +411,34 @@ private struct ProfileMapCardView: View {
                 .foregroundColor(.white)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
-            
-            if let country = blog.countryName {
-                Text(country)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.white.opacity(0.85))
+
+            let trip = createdRecapStore.tripDraft(for: blog.sourceTripId)
+            let cityLine = profileMapCardCityLine(blog: blog, trip: trip)
+            let countryLine = profileMapTrimmedLine(blog.countryName)
+
+            Group {
+                if let cityLine, let countryLine, cityLine.caseInsensitiveCompare(countryLine) != .orderedSame {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(cityLine)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.88))
+                        Text(countryLine)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.72))
+                    }
+                } else if let cityLine {
+                    Text(cityLine)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white.opacity(0.85))
+                } else if let countryLine {
+                    Text(countryLine)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white.opacity(0.85))
+                }
             }
 
             // Trip duration (and places) directly under the country info
@@ -506,8 +550,13 @@ struct CountryMapView: View {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !query.isEmpty else { return sortedBlogs }
         return sortedBlogs.filter { blog in
-            blog.title.lowercased().contains(query)
-                || (blog.countryName?.lowercased().contains(query) ?? false)
+            if blog.title.lowercased().contains(query) { return true }
+            if blog.countryName?.lowercased().contains(query) ?? false { return true }
+            guard let trip = createdRecapStore.tripDraft(for: blog.sourceTripId) else { return false }
+            let city = trip.cityWithMostPhotosDisplayName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let drop: Set<String> = ["", "new place", "unknown place"]
+            guard !drop.contains(city) else { return false }
+            return city.contains(query)
         }
     }
 
