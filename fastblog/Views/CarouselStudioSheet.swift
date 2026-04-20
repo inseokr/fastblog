@@ -1142,6 +1142,10 @@ struct CarouselSlideView: View {
     var onTapHeroBackdrop: (() -> Void)? = nil
     /// Split layout only: fired when the user taps the bottom slot to choose a second photo.
     var onTapSplitBottomSlot: (() -> Void)? = nil
+    /// Split layout only: fired when the user taps the top slot.
+    var onTapSplitTopSlot: (() -> Void)? = nil
+    /// Split layout only: which slot is currently selected — drives the highlight ring.
+    fileprivate var selectedSplitSlot: SplitRepositionSlot? = nil
     /// When set, tapping the cover hero (behind title chrome) runs this — e.g. studio cover picker
     /// in Social Post Studio preview, or the same picker from Carousel Studio (`SlideTextEditorView`).
     var onCoverImageTap: (() -> Void)? = nil
@@ -1249,14 +1253,16 @@ struct CarouselSlideView: View {
                             TapGesture().onEnded { onTapHeroBackdrop?() }
                         )
                 }
-                if isEditingText, slide.layout == .split, onTapSplitBottomSlot != nil {
-                    // Bottom-half tap target without `.position()` — centered frames are
-                    // easy to mis-hit-test across OS versions; VStack keeps the region
-                    // aligned with the split imagery on small phones.
+                if isEditingText, slide.layout == .split {
                     VStack(spacing: 0) {
+                        // Top half — selects top slot
                         Color.clear
+                            .contentShape(Rectangle())
                             .frame(width: width, height: height * 0.5)
-                            .allowsHitTesting(false)
+                            .highPriorityGesture(
+                                TapGesture().onEnded { onTapSplitTopSlot?() }
+                            )
+                        // Bottom half — selects bottom slot
                         Color.clear
                             .contentShape(Rectangle())
                             .frame(width: width, height: height * 0.5)
@@ -1265,6 +1271,27 @@ struct CarouselSlideView: View {
                             )
                     }
                     .frame(width: width, height: height)
+                }
+                // Selection ring for split photo slots.
+                if isEditingText, slide.layout == .split, let slot = selectedSplitSlot {
+                    VStack(spacing: 0) {
+                        RoundedRectangle(cornerRadius: 0)
+                            .strokeBorder(
+                                slot == .top ? Color.white.opacity(0.55) : Color.clear,
+                                lineWidth: 2
+                            )
+                            .frame(width: width, height: height * 0.5)
+                            .allowsHitTesting(false)
+                        RoundedRectangle(cornerRadius: 0)
+                            .strokeBorder(
+                                slot == .bottom ? Color.white.opacity(0.55) : Color.clear,
+                                lineWidth: 2
+                            )
+                            .frame(width: width, height: height * 0.5)
+                            .allowsHitTesting(false)
+                    }
+                    .frame(width: width, height: height)
+                    .animation(.easeInOut(duration: 0.15), value: slot)
                 }
             }
         }
