@@ -2026,6 +2026,17 @@ struct SlideTextEditorView: View {
     /// drag-to-reorder list inside an inset card without covering the slide to
     /// the top of the screen.
     private let bottomChromePIPReorder: CGFloat = 392
+    /// Reserve for the mode selector row so single-photo place groups keep the
+    /// same slide position as groups that can switch Single/PIP/Split.
+    private let modeSelectorReservedHeight: CGFloat = 46
+    /// Reserve for the split-only tools row so paging between Single/PIP/Split
+    /// does not shift the slide vertically.
+    private let splitToolsReservedHeight: CGFloat = 40
+    /// Combined reserve for mode row + split row — applied to every slide type
+    /// so cover / map / place slides share the same slide top position.
+    private var studioModeChromeReserve: CGFloat {
+        modeSelectorReservedHeight + splitToolsReservedHeight
+    }
 
     /// Extra height reserved when the inline text-edit line is visible (single field).
     private let bottomTextEditLineHeight: CGFloat = 54
@@ -2049,9 +2060,9 @@ struct SlideTextEditorView: View {
            slide.layout == .pip {
             let images = slide.pipImages
             let visible = min(max(0, slide.pipVisibleCount), images.count)
-            if visible > 1 { return bottomChromePIPReorder }
+            if visible > 1 { return bottomChromePIPReorder + studioModeChromeReserve }
         }
-        return bottomChromeExpanded + inlineEditorHeight
+        return bottomChromeExpanded + inlineEditorHeight + studioModeChromeReserve
     }
 
     /// Current inset height. Drives the `.safeAreaInset` frame so the chrome
@@ -2316,54 +2327,58 @@ struct SlideTextEditorView: View {
 
     // MARK: - Persistent mode selector rows
 
-    /// Segmented control row always shown above the toolbar chrome whenever
-    /// the current slide is a place-stop with multi-photo data. Keeps the
-    /// Single / PIP / Split toggle in a consistent position regardless of
-    /// which block (or none) is selected.
+    /// Row above the block toolbar: Single / PIP / Split for multi-photo place
+    /// stops; invisible height reserve for cover, map, and single-photo places
+    /// so every slide type shares the same vertical slide position.
     @ViewBuilder
     private var modeSelectRow: some View {
-        if let slide = currentSlide, slide.kind == .placeStop, !slide.pipImages.isEmpty {
-            let layouts = CarouselSlideLayout.allCases
-            HStack(spacing: 0) {
-                ForEach(Array(layouts.enumerated()), id: \.element.id) { index, layout in
-                    let isActive = slide.layout == layout
-                    Button {
-                        setPlaceStopLayout(layout)
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: layoutIcon(layout))
-                                .font(.system(size: 12, weight: .semibold))
-                            Text(layoutLabel(layout))
-                                .font(.system(size: 12, weight: .semibold))
-                        }
-                        .foregroundColor(isActive ? .white : .white.opacity(0.45))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 32)
-                        .background(
-                            isActive ? Color(red: 0.04, green: 0.52, blue: 1.0) : Color.clear
-                        )
-                        .animation(.easeInOut(duration: 0.15), value: isActive)
-                    }
-                    .buttonStyle(.plain)
+        if let slide = currentSlide {
+            switch slide.kind {
+            case .placeStop:
+                if !slide.pipImages.isEmpty {
+                    let layouts = CarouselSlideLayout.allCases
+                    HStack(spacing: 0) {
+                        ForEach(Array(layouts.enumerated()), id: \.element.id) { index, layout in
+                            let isActive = slide.layout == layout
+                            Button {
+                                setPlaceStopLayout(layout)
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: layoutIcon(layout))
+                                        .font(.system(size: 12, weight: .semibold))
+                                    Text(layoutLabel(layout))
+                                        .font(.system(size: 12, weight: .semibold))
+                                }
+                                .foregroundColor(isActive ? .white : .white.opacity(0.45))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .frame(maxWidth: .infinity)
+                                .frame(minHeight: 34)
+                                .background(
+                                    isActive ? Color(red: 0.04, green: 0.52, blue: 1.0) : Color.clear
+                                )
+                                .animation(.easeInOut(duration: 0.15), value: isActive)
+                            }
+                            .buttonStyle(.plain)
 
-                    if index < layouts.count - 1 {
-                        Rectangle()
-                            .fill(Color.white.opacity(0.12))
-                            .frame(width: 1, height: 20)
+                            if index < layouts.count - 1 {
+                                Rectangle()
+                                    .fill(Color.white.opacity(0.12))
+                                    .frame(width: 1, height: 20)
+                            }
+                        }
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
+                    .padding(.bottom, 8)
+                    .frame(height: modeSelectorReservedHeight)
+                } else {
+                    Color.clear
+                        .frame(height: modeSelectorReservedHeight)
                 }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
-            )
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
-            .background(Color(white: 0.08))
-            .overlay(alignment: .top) {
-                Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+            case .cover, .mapRoute:
+                Color.clear
+                    .frame(height: modeSelectorReservedHeight)
             }
         }
     }
@@ -2372,54 +2387,57 @@ struct SlideTextEditorView: View {
     /// active — Swap and Border divider controls.
     @ViewBuilder
     private var splitToolsRow: some View {
-        if let slide = currentSlide, slide.kind == .placeStop, slide.layout == .split {
-            HStack(spacing: 8) {
-                Button {
-                    swapSplitTopBottom(slideIndex: currentIndex)
-                } label: {
-                    Label("Swap", systemImage: "arrow.up.arrow.down")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.88))
-                        .padding(.horizontal, 10).padding(.vertical, 6)
-                        .background(Color.white.opacity(0.12))
-                        .clipShape(Capsule())
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
-                }
-                .buttonStyle(.plain)
+        if let slide = currentSlide {
+            switch slide.kind {
+            case .placeStop:
+                ZStack(alignment: .trailing) {
+                    if slide.layout == .split {
+                        HStack(spacing: 10) {
+                            Button {
+                                swapSplitTopBottom(slideIndex: currentIndex)
+                            } label: {
+                                Label("Swap", systemImage: "arrow.up.arrow.down")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.white.opacity(0.88))
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 4)
+                            }
+                            .buttonStyle(.plain)
 
-                Menu {
-                    ForEach(CarouselSplitDividerStyle.allCases) { style in
-                        Button {
-                            setSplitDividerStyle(style)
-                        } label: {
-                            Label(
-                                style == .straight ? "Straight border" : "Curved border",
-                                systemImage: style == .straight ? "line.3.horizontal" : "scribble"
-                            )
+                            Menu {
+                                ForEach(CarouselSplitDividerStyle.allCases) { style in
+                                    Button {
+                                        setSplitDividerStyle(style)
+                                    } label: {
+                                        Label(
+                                            style == .straight ? "Straight border" : "Curved border",
+                                            systemImage: style == .straight ? "line.3.horizontal" : "scribble"
+                                        )
+                                    }
+                                }
+                            } label: {
+                                Label("Border", systemImage: "line.3.crossed.swirl.circle")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.white.opacity(0.88))
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 4)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
-                } label: {
-                    Label("Border", systemImage: "line.3.crossed.swirl.circle")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.88))
-                        .padding(.horizontal, 10).padding(.vertical, 6)
-                        .background(Color.white.opacity(0.12))
-                        .clipShape(Capsule())
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
                 }
-                .buttonStyle(.plain)
-
-                Spacer()
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 6)
+                .frame(height: splitToolsReservedHeight)
+            case .cover, .mapRoute:
+                Color.clear
+                    .frame(height: splitToolsReservedHeight)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 6)
-            .background(Color(white: 0.10))
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
-            }
-            .transition(.asymmetric(
-                insertion: .move(edge: .top).combined(with: .opacity),
-                removal: .opacity))
         }
     }
 
@@ -3213,8 +3231,6 @@ struct SlideTextEditorView: View {
                             // always in the same position above the block toolbar.
                             modeSelectRow
                             splitToolsRow
-                                .animation(.spring(response: 0.32, dampingFraction: 0.82),
-                                           value: currentSlide?.layout)
 
                             ZStack(alignment: .bottom) {
                                 if selectedBlock != nil {
