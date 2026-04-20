@@ -2341,6 +2341,9 @@ struct SlideTextEditorView: View {
     @State private var showsSplitBottomPhotoPicker: Bool = false
     /// Slide index captured when opening `showsSplitBottomPhotoPicker`.
     @State private var splitBottomPickSlideIndex: Int?
+    /// Split layout: which photo slot (top / bottom) the user has selected for editing.
+    /// Nil means no split slot is selected; drives `splitPhotoActionToolbar` visibility.
+    @State private var selectedSplitSlot: SplitRepositionSlot?
     /// Split layout: full-screen pinch/pan framing editor.
     @State private var splitRepositionSession: SplitRepositionSession?
     /// Ensures `pushUndoSnapshot()` runs once at the start of a PIP size drag (coalesced undo).
@@ -3615,7 +3618,10 @@ struct SlideTextEditorView: View {
                                                 layoutWidth: slotW,
                                                 maxHeight: slotH,
                                                 selectedBlock: selectedBlock,
-                                                onSelectBlock: { selectedBlock = $0 },
+                                                onSelectBlock: {
+                                                    selectedBlock = $0
+                                                    selectedSplitSlot = nil
+                                                },
                                                 onDeselect: { selectedBlock = nil },
                                                 recordUndoSnapshot: { pushUndoSnapshot() },
                                                 locksHorizontalSlidePaging: $locksHorizontalSlidePaging,
@@ -3627,15 +3633,16 @@ struct SlideTextEditorView: View {
                                                     showsHeroPhotoSwapSheet = true
                                                 },
                                                 onRequestSplitBottomPick: { idx in
+                                                    // Now selects the slot; Replace button in the
+                                                    // action toolbar opens the picker explicitly.
                                                     selectedBlock = nil
-                                                    let options = availableSplitBottomPhotos(for: idx)
-                                                    if options.count == 1, let only = options.first {
-                                                        setSplitBottomPhoto(only, slideIndex: idx)
-                                                    } else {
-                                                        splitBottomPickSlideIndex = idx
-                                                        showsSplitBottomPhotoPicker = true
-                                                    }
+                                                    selectedSplitSlot = .bottom
                                                 },
+                                                onRequestSplitTopSelect: { idx in
+                                                    selectedBlock = nil
+                                                    selectedSplitSlot = .top
+                                                },
+                                                selectedSplitSlot: selectedSplitSlot,
                                                 onRequestStudioCoverPhotoPick: onRequestStudioCoverPhotoPick,
                                                 slidePageIndex: i
                                             )
@@ -3778,6 +3785,7 @@ struct SlideTextEditorView: View {
                 .contentShape(Rectangle())
                 .onTapGesture {
                     if selectedBlock != nil { selectedBlock = nil }
+                    if selectedSplitSlot != nil { selectedSplitSlot = nil }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if !slides.isEmpty {
@@ -4153,6 +4161,7 @@ struct SlideTextEditorView: View {
                 showsSplitBottomPhotoPicker = false
                 splitBottomPickSlideIndex = nil
                 selectedBlock = nil
+                selectedSplitSlot = nil
                 #if DEBUG
                 if slides.indices.contains(newID), slides[newID].kind == .cover {
                     print("[CarouselStudio] scrollPageID → cover slide at index \(newID)")
