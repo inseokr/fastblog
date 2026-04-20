@@ -4,6 +4,45 @@
 import PDFKit
 import Photos
 import SwiftUI
+import UIKit
+
+// MARK: - Carousel Studio chrome
+
+/// Shared accent for Carousel Studio toolbars and selection rings. Prefer this over
+/// `Color.accentColor` under `SlideTextEditorView`: the hierarchy applies
+/// `.tint(.white)` for nav items, and on older iOS `accentColor` follows that tint
+/// and reads as white instead of the intended blue.
+private enum CarouselStudioChrome {
+    static let accent = Color(red: 0.28, green: 0.64, blue: 1.0)
+    static let navigationBarUIColor = UIColor(red: 5.0 / 255.0, green: 10.0 / 255.0, blue: 48.0 / 255.0, alpha: 1.0)
+}
+
+/// Clears the default navigation bar bottom shadow/hairline on OS versions where
+/// SwiftUI's `toolbarBackground(_:for:)` still leaves a line above the content.
+private struct CarouselStudioNavigationBarHairlineDisabler: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> UIViewController {
+        let vc = UIViewController()
+        vc.view.isUserInteractionEnabled = false
+        vc.view.backgroundColor = .clear
+        return vc
+    }
+
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
+        DispatchQueue.main.async {
+            guard let nav = uiViewController.navigationController else { return }
+            let appearance = UINavigationBarAppearance()
+            appearance.configureWithOpaqueBackground()
+            appearance.backgroundColor = CarouselStudioChrome.navigationBarUIColor
+            appearance.shadowColor = .clear
+            appearance.shadowImage = UIImage()
+            nav.navigationBar.standardAppearance = appearance
+            nav.navigationBar.scrollEdgeAppearance = appearance
+            nav.navigationBar.compactAppearance = appearance
+            nav.navigationBar.compactScrollEdgeAppearance = appearance
+            nav.navigationBar.shadowImage = UIImage()
+        }
+    }
+}
 
 // MARK: - Asset loading
 
@@ -182,6 +221,70 @@ enum CarouselSplitDividerStyle: String, CaseIterable, Identifiable {
     case straight
     case curve
     var id: String { rawValue }
+}
+
+/// Pan/zoom for a photo in a fixed slot (split top/bottom). Values are resolution‑independent:
+/// `fillScale` ≥ 1 multiplies the minimum aspect‑fill scale; pans are −1…1 of the range at that scale.
+struct StudioImageFraming: Equatable {
+    var fillScale: CGFloat
+    var panX: CGFloat
+    var panY: CGFloat
+
+    static let neutral = StudioImageFraming(fillScale: 1, panX: 0, panY: 0)
+
+    func clamped() -> StudioImageFraming {
+        StudioImageFraming(
+            fillScale: min(max(fillScale, 1), 4),
+            panX: min(max(panX, -1), 1),
+            panY: min(max(panY, -1), 1)
+        )
+    }
+
+    /// `nil` when equivalent to aspect‑fill centered (default split appearance).
+    var storedFormOrNil: StudioImageFraming? {
+        let c = clamped()
+        if abs(c.fillScale - 1) < 0.001, abs(c.panX) < 0.001, abs(c.panY) < 0.001 { return nil }
+        return c
+    }
+
+    static func framedMetrics(
+        image: UIImage,
+        slotW: CGFloat,
+        slotH: CGFloat,
+        framing: StudioImageFraming
+    ) -> (rw: CGFloat, rh: CGFloat, offsetX: CGFloat, offsetY: CGFloat) {
+        let f = framing.clamped()
+        let iw = image.size.width
+        let ih = image.size.height
+        guard iw > 0, ih > 0, slotW > 0, slotH > 0 else {
+            return (max(slotW, 1), max(slotH, 1), 0, 0)
+        }
+        let sBase = max(slotW / iw, slotH / ih)
+        let s = sBase * f.fillScale
+        let rw = iw * s
+        let rh = ih * s
+        let excessX = max(0, (rw - slotW) * 0.5)
+        let excessY = max(0, (rh - slotH) * 0.5)
+        let offsetX = f.panX * excessX
+        let offsetY = f.panY * excessY
+        return (rw, rh, offsetX, offsetY)
+    }
+
+    static func clampFraming(_ framing: StudioImageFraming, image: UIImage, slotW: CGFloat, slotH: CGFloat) -> StudioImageFraming {
+        var f = framing.clamped()
+        let iw = image.size.width
+        let ih = image.size.height
+        guard iw > 0, ih > 0, slotW > 0, slotH > 0 else { return .neutral }
+        let sBase = max(slotW / iw, slotH / ih)
+        let s = sBase * f.fillScale
+        let rw = iw * s
+        let rh = ih * s
+        let excessX = max(0, (rw - slotW) * 0.5)
+        let excessY = max(0, (rh - slotH) * 0.5)
+        if excessX <= 0.5 { f.panX = 0 } else { f.panX = min(max(f.panX, -1), 1) }
+        if excessY <= 0.5 { f.panY = 0 } else { f.panY = min(max(f.panY, -1), 1) }
+        return f
+    }
 }
 
 /// How inset PIP thumbnails are arranged when `CarouselSlideLayout` is `.pip`.
@@ -574,6 +677,10 @@ struct CarouselSlide: Identifiable {
     var splitBottomPhotoID: UUID? = nil
     /// Visual style for the top/bottom split seam.
     var splitDividerStyle: CarouselSplitDividerStyle = .curve
+    /// Framing for the hero in the **top** split half (session‑local studio state).
+    var splitTopFraming: StudioImageFraming? = nil
+    /// Framing for `splitBottomImage` in the **bottom** split half.
+    var splitBottomFraming: StudioImageFraming? = nil
     /// 1-based sequential stop number across all days; when set, a white POI marker is shown before the place name.
     var stopIndex: Int? = nil
 
@@ -910,7 +1017,7 @@ private struct DraggableTextBlock<Content: View>: View {
             RoundedRectangle(cornerRadius: 7)
                 .strokeBorder(
                     isSelected
-                        ? Color(red: 0.14, green: 0.52, blue: 1.0)
+                        ? CarouselStudioChrome.accent
                         : Color.white.opacity(0.35),
                     style: isSelected
                         ? StrokeStyle(lineWidth: 2.0)
@@ -978,6 +1085,33 @@ extension View {
         } else {
             self
         }
+    }
+}
+
+/// One split half‑slot: optional framing (nil ⇒ neutral / default aspect‑fill).
+private struct SplitFramedPhotoInSlot: View {
+    let image: UIImage
+    var framing: StudioImageFraming?
+    let slotWidth: CGFloat
+    let slotHeight: CGFloat
+
+    var body: some View {
+        let f = framing ?? .neutral
+        let m = StudioImageFraming.framedMetrics(
+            image: image,
+            slotW: slotWidth,
+            slotH: slotHeight,
+            framing: f
+        )
+        ZStack {
+            Image(uiImage: image)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: m.rw, height: m.rh)
+                .position(x: slotWidth * 0.5 + m.offsetX, y: slotHeight * 0.5 + m.offsetY)
+        }
+        .frame(width: slotWidth, height: slotHeight)
+        .clipped()
     }
 }
 
@@ -1116,13 +1250,21 @@ struct CarouselSlideView: View {
                         )
                 }
                 if isEditingText, slide.layout == .split, onTapSplitBottomSlot != nil {
-                    Color.clear
-                        .frame(width: width, height: height * 0.5)
-                        .position(x: width * 0.5, y: height * 0.75)
-                        .contentShape(Rectangle())
-                        .highPriorityGesture(
-                            TapGesture().onEnded { onTapSplitBottomSlot?() }
-                        )
+                    // Bottom-half tap target without `.position()` — centered frames are
+                    // easy to mis-hit-test across OS versions; VStack keeps the region
+                    // aligned with the split imagery on small phones.
+                    VStack(spacing: 0) {
+                        Color.clear
+                            .frame(width: width, height: height * 0.5)
+                            .allowsHitTesting(false)
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .frame(width: width, height: height * 0.5)
+                            .highPriorityGesture(
+                                TapGesture().onEnded { onTapSplitBottomSlot?() }
+                            )
+                    }
+                    .frame(width: width, height: height)
                 }
             }
         }
@@ -1467,21 +1609,32 @@ struct CarouselSlideView: View {
     }
 
     private var splitPlaceStopBackground: some View {
-        ZStack {
+        let slotW = width
+        let slotH = height * 0.5
+        return ZStack {
             VStack(spacing: 0) {
                 Group {
                     if let image = slide.heroImage {
-                        Image(uiImage: image).resizable().scaledToFill()
+                        SplitFramedPhotoInSlot(
+                            image: image,
+                            framing: slide.splitTopFraming,
+                            slotWidth: slotW,
+                            slotHeight: slotH
+                        )
                     } else {
                         Color(white: 0.16)
+                            .frame(width: slotW, height: slotH)
                     }
                 }
-                .frame(width: width, height: height * 0.5)
-                .clipped()
 
                 Group {
                     if let bottom = slide.splitBottomImage {
-                        Image(uiImage: bottom).resizable().scaledToFill()
+                        SplitFramedPhotoInSlot(
+                            image: bottom,
+                            framing: slide.splitBottomFraming,
+                            slotWidth: slotW,
+                            slotHeight: slotH
+                        )
                     } else {
                         ZStack {
                             Color(white: 0.13)
@@ -1495,10 +1648,9 @@ struct CarouselSlideView: View {
                                 .foregroundColor(.white.opacity(0.72))
                             }
                         }
+                        .frame(width: slotW, height: slotH)
                     }
                 }
-                .frame(width: width, height: height * 0.5)
-                .clipped()
             }
 
             splitDividerOverlay
@@ -1520,6 +1672,15 @@ struct CarouselSlideView: View {
                     .frame(width: width, height: 36)
                     .shadow(color: .black.opacity(0.28), radius: 2, x: 0, y: 1)
             }
+        }
+        // SwiftUI's default behavior for an `if/else` inside `Group` is to
+        // crossfade old → new with the inherited transaction animation. With
+        // any ancestor easeInOut/spring scoping, the divider visibly fades
+        // when toggling Straight/Curve — strip transitions and animations.
+        .transition(.identity)
+        .transaction { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
         }
     }
 }
@@ -1720,7 +1881,7 @@ private struct DraggablePIPCluster: View {
             RoundedRectangle(cornerRadius: 10)
                 .strokeBorder(
                     isSelected
-                        ? Color(red: 0.14, green: 0.52, blue: 1.0)
+                        ? CarouselStudioChrome.accent
                         : Color.white.opacity(0.35),
                     style: isSelected
                         ? StrokeStyle(lineWidth: 2.0)
@@ -1865,6 +2026,232 @@ private struct SlideEditPage: View {
     }
 }
 
+// MARK: - Split photo reposition (Carousel Studio)
+
+private enum SplitRepositionSlot: String, CaseIterable, Identifiable {
+    case top, bottom
+    var id: String { rawValue }
+}
+
+private struct SplitRepositionSession: Identifiable {
+    let slideIndex: Int
+    let initialSlot: SplitRepositionSlot
+    var id: Int { slideIndex }
+}
+
+/// Full-screen pinch/pan editor for split top/bottom framing.
+private struct SplitPhotoRepositionCover: View {
+    @Binding var slides: [CarouselSlide]
+    let slideIndex: Int
+    let startingSlot: SplitRepositionSlot
+    /// Slide `width ÷ height` (same as `CarouselSlideView`'s `aspectRatio`).
+    let slideAspectRatio: CGFloat
+    let onClose: () -> Void
+    let onApply: (StudioImageFraming?, SplitRepositionSlot) -> Void
+
+    @State private var activeSlot: SplitRepositionSlot
+    @State private var working: StudioImageFraming = .neutral
+    @State private var pinchBase: CGFloat = 1
+    @State private var pinchActive = false
+    @State private var dragBasePanX: CGFloat = 0
+    @State private var dragBasePanY: CGFloat = 0
+    @State private var dragBaseFillScale: CGFloat = 1
+    @State private var dragHadLowExcessX = false
+    @State private var dragActive = false
+
+    init(
+        slides: Binding<[CarouselSlide]>,
+        slideIndex: Int,
+        startingSlot: SplitRepositionSlot,
+        slideAspectRatio: CGFloat,
+        onClose: @escaping () -> Void,
+        onApply: @escaping (StudioImageFraming?, SplitRepositionSlot) -> Void
+    ) {
+        _slides = slides
+        self.slideIndex = slideIndex
+        self.startingSlot = startingSlot
+        self.slideAspectRatio = slideAspectRatio
+        self.onClose = onClose
+        self.onApply = onApply
+        _activeSlot = State(initialValue: startingSlot)
+    }
+
+    private var slotAspectWH: CGFloat { max(slideAspectRatio * 2, 0.01) }
+
+    private var currentImage: UIImage? {
+        guard slides.indices.contains(slideIndex) else { return nil }
+        let s = slides[slideIndex]
+        return activeSlot == .top ? s.heroImage : s.splitBottomImage
+    }
+
+    private func loadWorkingFromSlide() {
+        guard slides.indices.contains(slideIndex) else {
+            working = .neutral
+            return
+        }
+        let s = slides[slideIndex]
+        let opt = activeSlot == .top ? s.splitTopFraming : s.splitBottomFraming
+        working = opt ?? .neutral
+    }
+
+    private func combinedGesture(slotW: CGFloat, slotH: CGFloat, image: UIImage) -> some Gesture {
+        let magnification = MagnificationGesture()
+            .onChanged { mag in
+                if !pinchActive {
+                    pinchBase = working.fillScale
+                    pinchActive = true
+                }
+                var w = working
+                w.fillScale = min(max(pinchBase * mag, 1), 4)
+                working = StudioImageFraming.clampFraming(w.clamped(), image: image, slotW: slotW, slotH: slotH)
+            }
+            .onEnded { _ in
+                pinchActive = false
+            }
+
+        let drag = DragGesture()
+            .onChanged { g in
+                if !dragActive {
+                    dragBasePanX = working.panX
+                    dragBasePanY = working.panY
+                    dragBaseFillScale = working.fillScale
+                    let mStart = StudioImageFraming.framedMetrics(
+                        image: image,
+                        slotW: slotW,
+                        slotH: slotH,
+                        framing: working.clamped()
+                    )
+                    let ex0 = max(0, (mStart.rw - slotW) * 0.5)
+                    dragHadLowExcessX = ex0 <= 0.5
+                    dragActive = true
+                }
+                var next = working.clamped()
+                // Portrait (or similar) in a wide split slot: no horizontal slack until zoomed.
+                // If the user drags mostly horizontally, grow fill slightly so left/right pan works.
+                if dragHadLowExcessX,
+                   abs(g.translation.width) > max(10, abs(g.translation.height) * 0.65) {
+                    let stretch = 1 + min(abs(g.translation.width) / max(slotW * 2, 200), 0.5) * 0.55
+                    next.fillScale = min(max(dragBaseFillScale * stretch, 1), 4)
+                }
+                next = StudioImageFraming.clampFraming(next, image: image, slotW: slotW, slotH: slotH)
+                let m = StudioImageFraming.framedMetrics(
+                    image: image,
+                    slotW: slotW,
+                    slotH: slotH,
+                    framing: next
+                )
+                let excessX = max(0, (m.rw - slotW) * 0.5)
+                let excessY = max(0, (m.rh - slotH) * 0.5)
+                if excessX > 0.5 {
+                    next.panX = dragBasePanX + g.translation.width / excessX
+                }
+                if excessY > 0.5 {
+                    next.panY = dragBasePanY + g.translation.height / excessY
+                }
+                working = StudioImageFraming.clampFraming(next, image: image, slotW: slotW, slotH: slotH)
+            }
+            .onEnded { _ in
+                dragActive = false
+            }
+
+        return SimultaneousGesture(magnification, drag)
+    }
+
+    var body: some View {
+        NavigationStack {
+            GeometryReader { geo in
+                let sideMargin: CGFloat = 20
+                let slotW = max(40, geo.size.width - sideMargin * 2)
+                let slotH = slotW / slotAspectWH
+
+                ZStack {
+                    Color(red: 8/255, green: 10/255, blue: 22/255).ignoresSafeArea()
+
+                    if let img = currentImage {
+                        VStack(spacing: 14) {
+                            Text("Pinch to zoom · drag to pan")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white.opacity(0.62))
+
+                            ZStack {
+                                SplitFramedPhotoInSlot(
+                                    image: img,
+                                    framing: working,
+                                    slotWidth: slotW,
+                                    slotHeight: slotH
+                                )
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .stroke(Color.white.opacity(0.92), lineWidth: 2)
+                                    .frame(width: slotW, height: slotH)
+                            }
+                            .frame(width: slotW, height: slotH)
+                            .contentShape(Rectangle())
+                            .highPriorityGesture(combinedGesture(slotW: slotW, slotH: slotH, image: img))
+
+                            Spacer(minLength: 0)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.top, 12)
+                    } else {
+                        VStack(spacing: 10) {
+                            Image(systemName: "photo")
+                                .font(.system(size: 40, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.35))
+                            Text(activeSlot == .bottom
+                                 ? "Pick a bottom photo first, or switch to Top."
+                                 : "No image in this slot.")
+                                .font(.subheadline.weight(.medium))
+                                .multilineTextAlignment(.center)
+                                .foregroundStyle(.white.opacity(0.55))
+                                .padding(.horizontal, 28)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .navigationTitle("Reposition")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: onClose)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        let out: StudioImageFraming? = working.storedFormOrNil == nil ? nil : working.clamped()
+                        onApply(out, activeSlot)
+                        onClose()
+                    }
+                    .fontWeight(.semibold)
+                }
+                ToolbarItem(placement: .bottomBar) {
+                    VStack(spacing: 10) {
+                        Picker("Photo", selection: $activeSlot) {
+                            Text("Top").tag(SplitRepositionSlot.top)
+                            Text("Bottom").tag(SplitRepositionSlot.bottom)
+                        }
+                        .pickerStyle(.segmented)
+                        Button("Reset") {
+                            pinchActive = false
+                            dragActive = false
+                            working = .neutral
+                        }
+                        .font(.subheadline.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .onAppear { loadWorkingFromSlide() }
+        .onChange(of: activeSlot) { _, _ in
+            pinchActive = false
+            dragActive = false
+            loadWorkingFromSlide()
+        }
+    }
+}
+
 // MARK: - Full-Screen Text Editor
 
 /// Share / save / PDF from the editor nav bar — implemented by `SocialPostStudioSheet`.
@@ -1916,6 +2303,8 @@ struct SlideTextEditorView: View {
     @State private var showsSplitBottomPhotoPicker: Bool = false
     /// Slide index captured when opening `showsSplitBottomPhotoPicker`.
     @State private var splitBottomPickSlideIndex: Int?
+    /// Split layout: full-screen pinch/pan framing editor.
+    @State private var splitRepositionSession: SplitRepositionSession?
     /// Ensures `pushUndoSnapshot()` runs once at the start of a PIP size drag (coalesced undo).
     @State private var pipClusterSizeSliderUndoPrimed = false
     /// Disables horizontal slide paging while the user touches a text block (see `SlideEditPage`).
@@ -2032,6 +2421,9 @@ struct SlideTextEditorView: View {
     /// Reserve for the split-only tools row so paging between Single/PIP/Split
     /// does not shift the slide vertically.
     private let splitToolsReservedHeight: CGFloat = 40
+    /// Active fill for rounded segment controls (layout mode row + split border).
+    /// Uses `CarouselStudioChrome.accent` so fills stay blue under `.tint(.white)`.
+    private let studioToolbarSegmentActiveColor = CarouselStudioChrome.accent
     /// Combined reserve for mode row + split row — applied to every slide type
     /// so cover / map / place slides share the same slide top position.
     private var studioModeChromeReserve: CGFloat {
@@ -2284,6 +2676,10 @@ struct SlideTextEditorView: View {
             if layout == .split {
                 slides[index].splitBottomImage = nil
                 slides[index].splitBottomPhotoID = nil
+                slides[index].splitBottomFraming = nil
+            } else {
+                slides[index].splitTopFraming = nil
+                slides[index].splitBottomFraming = nil
             }
             for i in slides.indices where i != index {
                 guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
@@ -2337,8 +2733,10 @@ struct SlideTextEditorView: View {
             case .placeStop:
                 if !slide.pipImages.isEmpty {
                     let layouts = CarouselSlideLayout.allCases
+                    let modeTrackCorner: CGFloat = 11
+                    let modeActiveCorner: CGFloat = 8
                     HStack(spacing: 0) {
-                        ForEach(Array(layouts.enumerated()), id: \.element.id) { index, layout in
+                        ForEach(Array(layouts.enumerated()), id: \.element.id) { _, layout in
                             let isActive = slide.layout == layout
                             Button {
                                 setPlaceStopLayout(layout)
@@ -2351,23 +2749,26 @@ struct SlideTextEditorView: View {
                                 }
                                 .foregroundColor(isActive ? .white : .white.opacity(0.45))
                                 .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
+                                .padding(.vertical, 6)
                                 .frame(maxWidth: .infinity)
-                                .frame(minHeight: 34)
-                                .background(
-                                    isActive ? Color(red: 0.04, green: 0.52, blue: 1.0) : Color.clear
-                                )
+                                .frame(minHeight: 32)
+                                .background {
+                                    if isActive {
+                                        RoundedRectangle(cornerRadius: modeActiveCorner, style: .continuous)
+                                            .fill(studioToolbarSegmentActiveColor)
+                                    }
+                                }
                                 .animation(.easeInOut(duration: 0.15), value: isActive)
                             }
                             .buttonStyle(.plain)
-
-                            if index < layouts.count - 1 {
-                                Rectangle()
-                                    .fill(Color.white.opacity(0.12))
-                                    .frame(width: 1, height: 20)
-                            }
                         }
                     }
+                    .padding(.horizontal, 3)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: modeTrackCorner, style: .continuous)
+                            .fill(Color.white.opacity(0.10))
+                    )
                     .padding(.horizontal, 20)
                     .padding(.top, 8)
                     .padding(.bottom, 8)
@@ -2394,7 +2795,24 @@ struct SlideTextEditorView: View {
                     if slide.layout == .split {
                         HStack(spacing: 10) {
                             Button {
-                                swapSplitTopBottom(slideIndex: currentIndex)
+                                let idx = editorPagerFocusedSlideIndex
+                                guard slides.indices.contains(idx), slides[idx].layout == .split else { return }
+                                splitRepositionSession = SplitRepositionSession(slideIndex: idx, initialSlot: .top)
+                            } label: {
+                                Label("Reposition", systemImage: "crop")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.white.opacity(0.88))
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 4)
+                            }
+                            .buttonStyle(.plain)
+
+                            Spacer(minLength: 8)
+
+                            Button {
+                                swapSplitTopBottom(slideIndex: editorPagerFocusedSlideIndex)
                             } label: {
                                 Label("Swap", systemImage: "arrow.up.arrow.down")
                                     .font(.system(size: 13, weight: .semibold))
@@ -2406,27 +2824,36 @@ struct SlideTextEditorView: View {
                             }
                             .buttonStyle(.plain)
 
-                            Menu {
+                            // Inline Straight / Curve toggle — avoids SwiftUI `Menu`’s
+                            // UIKit pull-down (label hides, popover appears, odd re-open
+                            // after selection) which felt broken next to Swap.
+                            HStack(spacing: 0) {
                                 ForEach(CarouselSplitDividerStyle.allCases) { style in
+                                    let active = slide.splitDividerStyle == style
                                     Button {
                                         setSplitDividerStyle(style)
                                     } label: {
-                                        Label(
-                                            style == .straight ? "Straight border" : "Curved border",
-                                            systemImage: style == .straight ? "line.3.horizontal" : "scribble"
+                                        HStack(spacing: 4) {
+                                            Image(systemName: style == .straight ? "line.3.horizontal" : "scribble")
+                                                .font(.system(size: 11, weight: .semibold))
+                                            Text(style == .straight ? "Straight" : "Curve")
+                                                .font(.system(size: 12, weight: .semibold))
+                                        }
+                                        .foregroundColor(active ? .white : .white.opacity(0.45))
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(
+                                            active ? studioToolbarSegmentActiveColor : Color.clear
                                         )
                                     }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(
+                                        style == .straight ? "Straight border" : "Curved border"
+                                    )
                                 }
-                            } label: {
-                                Label("Border", systemImage: "line.3.crossed.swirl.circle")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.white.opacity(0.88))
-                                    .lineLimit(1)
-                                    .fixedSize(horizontal: true, vertical: false)
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 4)
                             }
-                            .buttonStyle(.plain)
+                            .background(Color.white.opacity(0.10), in: Capsule())
+                            .clipShape(Capsule())
                         }
                     }
                 }
@@ -2434,6 +2861,15 @@ struct SlideTextEditorView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 6)
                 .frame(height: splitToolsReservedHeight)
+                // Hard-strip every transaction reaching this row so neither the
+                // implicit transitions on `Group { if/else }` nor any inherited
+                // animation from ancestors (keyboardHeight spring, selectedBlock
+                // easeInOut, etc.) can flash the Swap/Border buttons or replay
+                // the Menu label as the menu dismisses.
+                .transaction { transaction in
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
             case .cover, .mapRoute:
                 Color.clear
                     .frame(height: splitToolsReservedHeight)
@@ -2540,6 +2976,8 @@ struct SlideTextEditorView: View {
         // Reset the cluster's positional offset so re-enabling PIP later starts clean.
         slides[slideIndex].pipOffset = .zero
         slides[slideIndex].pipClusterSizeScale = 1.0
+        slides[slideIndex].splitTopFraming = nil
+        slides[slideIndex].splitBottomFraming = nil
         for i in slides.indices where i != slideIndex {
             guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
             slides[i].isSelected = true
@@ -2762,10 +3200,15 @@ struct SlideTextEditorView: View {
     }
 
     private func setSplitDividerStyle(_ style: CarouselSplitDividerStyle) {
-        guard hasValidCurrentIndex, slides[currentIndex].layout == .split else { return }
-        guard slides[currentIndex].splitDividerStyle != style else { return }
-        pushUndoSnapshot()
-        slides[currentIndex].splitDividerStyle = style
+        let idx = editorPagerFocusedSlideIndex
+        guard slides.indices.contains(idx), slides[idx].layout == .split else { return }
+        guard slides[idx].splitDividerStyle != style else { return }
+        var txn = Transaction()
+        txn.disablesAnimations = true
+        withTransaction(txn) {
+            pushUndoSnapshot()
+            slides[idx].splitDividerStyle = style
+        }
     }
 
     private func clearSplitBottomPhoto(slideIndex: Int) {
@@ -2776,6 +3219,7 @@ struct SlideTextEditorView: View {
         withAnimation(.easeInOut(duration: 0.2)) {
             slides[slideIndex].splitBottomImage = nil
             slides[slideIndex].splitBottomPhotoID = nil
+            slides[slideIndex].splitBottomFraming = nil
             if let stopID, let previousBottomID {
                 for i in slides.indices where i != slideIndex {
                     guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
@@ -2817,6 +3261,7 @@ struct SlideTextEditorView: View {
                 withAnimation(.easeInOut(duration: 0.22)) {
                     slides[slideIndex].splitBottomImage = image
                     slides[slideIndex].splitBottomPhotoID = photo.id
+                    slides[slideIndex].splitBottomFraming = nil
                     if let stopID {
                         for i in slides.indices where i != slideIndex {
                             guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
@@ -2842,11 +3287,15 @@ struct SlideTextEditorView: View {
         let stopID = slides[slideIndex].placeStop?.id
         let oldHeroImage = slides[slideIndex].heroImage
         let oldHeroID = slides[slideIndex].heroPhotoID
+        let oldTopFraming = slides[slideIndex].splitTopFraming
+        let oldBottomFraming = slides[slideIndex].splitBottomFraming
         withAnimation(.easeInOut(duration: 0.22)) {
             slides[slideIndex].heroImage = bottomImage
             slides[slideIndex].heroPhotoID = bottomID
             slides[slideIndex].splitBottomImage = oldHeroImage
             slides[slideIndex].splitBottomPhotoID = oldHeroID
+            slides[slideIndex].splitTopFraming = oldBottomFraming
+            slides[slideIndex].splitBottomFraming = oldTopFraming
             if let stopID {
                 for i in slides.indices where i != slideIndex {
                     guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
@@ -3292,7 +3741,7 @@ struct SlideTextEditorView: View {
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.white.opacity(0.8))
                 }
-                .tint(Color(red: 0.04, green: 0.52, blue: 1.0))
+                .tint(CarouselStudioChrome.accent)
                 HStack(spacing: 12) {
                     Button {
                         withAnimation(.easeOut(duration: 0.2)) { showExcludeConfirmOverlay = false }
@@ -3332,6 +3781,9 @@ struct SlideTextEditorView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
+                CarouselStudioNavigationBarHairlineDisabler()
+                    .frame(width: 0, height: 0)
+                    .allowsHitTesting(false)
                 GeometryReader { outerGeo in
                     slideEditorGeometryContent(outerSize: outerGeo.size)
                 }
@@ -3343,11 +3795,13 @@ struct SlideTextEditorView: View {
             .background(Color(red: 5/255, green: 10/255, blue: 48/255).ignoresSafeArea())
             .navigationTitle("Carousel Studio")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color(red: 5/255, green: 10/255, blue: 48/255), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Exit") { dismiss() }
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     let canUndo = !undoStack.isEmpty
@@ -3487,6 +3941,9 @@ struct SlideTextEditorView: View {
                 clampCurrentIndexIfNeeded()
             }
         }
+        // Bar-button labels (e.g. **Exit**) still pick up global/accent tint on some
+        // OS builds unless the navigation hierarchy sets an explicit toolbar tint.
+        .tint(.white)
         .preferredColorScheme(.dark)
         .overlay {
             if exportInProgress {
@@ -3533,8 +3990,10 @@ struct SlideTextEditorView: View {
                 activeStyleCategory = nil
                 activePIPCategory = nil
                 showsAddPhotoPicker = false
+                splitRepositionSession = nil
             case .pipCluster:
                 activeStyleCategory = nil
+                splitRepositionSession = nil
             case .primary, .secondary:
                 activePIPCategory = nil
                 showsAddPhotoPicker = false
@@ -3542,6 +4001,7 @@ struct SlideTextEditorView: View {
                 heroSwapSlideIndex = nil
                 showsSplitBottomPhotoPicker = false
                 splitBottomPickSlideIndex = nil
+                splitRepositionSession = nil
             }
         }
         .onChange(of: activePIPCategory) { _, _ in
@@ -3618,6 +4078,25 @@ struct SlideTextEditorView: View {
         .onChange(of: showsSplitBottomPhotoPicker) { _, open in
             if !open { splitBottomPickSlideIndex = nil }
         }
+        .fullScreenCover(item: $splitRepositionSession) { session in
+            SplitPhotoRepositionCover(
+                slides: $slides,
+                slideIndex: session.slideIndex,
+                startingSlot: session.initialSlot,
+                slideAspectRatio: aspectRatio,
+                onClose: { splitRepositionSession = nil },
+                onApply: { framing, slot in
+                    pushUndoSnapshot()
+                    guard slides.indices.contains(session.slideIndex) else { return }
+                    switch slot {
+                    case .top:
+                        slides[session.slideIndex].splitTopFraming = framing
+                    case .bottom:
+                        slides[session.slideIndex].splitBottomFraming = framing
+                    }
+                }
+            )
+        }
     }
 
     // MARK: - Formatting toolbar
@@ -3675,9 +4154,9 @@ struct SlideTextEditorView: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.white)
                         .padding(.horizontal, 14).padding(.vertical, 7)
-                        .background(didApplyToAll ? Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.45) : Color.white.opacity(0.12))
+                        .background(didApplyToAll ? CarouselStudioChrome.accent.opacity(0.45) : Color.white.opacity(0.12))
                         .clipShape(Capsule())
-                        .overlay(Capsule().strokeBorder(didApplyToAll ? Color(red: 0.04, green: 0.52, blue: 1.0) : Color.white.opacity(0.2), lineWidth: 1))
+                        .overlay(Capsule().strokeBorder(didApplyToAll ? CarouselStudioChrome.accent : Color.white.opacity(0.2), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
                 .animation(.spring(response: 0.3, dampingFraction: 0.7), value: didApplyToAll)
@@ -3739,7 +4218,7 @@ struct SlideTextEditorView: View {
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.white)
                             .padding(.horizontal, 14).padding(.vertical, 8)
-                            .background(Color(red: 0.04, green: 0.52, blue: 1.0))
+                            .background(CarouselStudioChrome.accent)
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -4170,7 +4649,7 @@ struct SlideTextEditorView: View {
                 Image(systemName: "plus.circle.fill")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(canAdd
-                        ? Color(red: 0.28, green: 0.64, blue: 1.0)
+                        ? CarouselStudioChrome.accent
                         : .white.opacity(0.3))
                     .frame(width: 22, height: 22)
                 Text("Add Photos")
@@ -4352,7 +4831,7 @@ struct SlideTextEditorView: View {
                             .foregroundColor(isActive ? .white : .white.opacity(0.55))
                             .padding(.horizontal, 16).padding(.vertical, 9)
                             .background(isActive
-                                        ? Color(red: 0.04, green: 0.52, blue: 1.0)
+                                        ? CarouselStudioChrome.accent
                                         : Color.white.opacity(0.1))
                             .clipShape(Capsule())
                             .overlay(Capsule().strokeBorder(
@@ -4388,7 +4867,7 @@ struct SlideTextEditorView: View {
                     if editing { pushUndoSnapshot() }
                 }
             )
-            .tint(Color(red: 0.04, green: 0.52, blue: 1.0))
+            .tint(CarouselStudioChrome.accent)
 
             HStack(spacing: 8) {
                 sizeStepperButton(systemName: "minus",
@@ -4547,7 +5026,7 @@ struct SlideTextEditorView: View {
                 .frame(minWidth: 44, minHeight: 34)
                 .padding(.horizontal, 4)
                 .background(isActive
-                            ? Color(red: 0.04, green: 0.52, blue: 1.0)
+                            ? CarouselStudioChrome.accent
                             : Color.white.opacity(0.1))
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -4573,7 +5052,7 @@ struct SlideTextEditorView: View {
                 .foregroundColor(isActive ? .white : .white.opacity(0.6))
                 .frame(minWidth: 44, minHeight: 34)
                 .background(isActive
-                            ? Color(red: 0.04, green: 0.52, blue: 1.0)
+                            ? CarouselStudioChrome.accent
                             : Color.white.opacity(0.1))
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -5323,7 +5802,7 @@ struct SocialPostStudioSheet: View {
                                     .foregroundColor(isActive ? .white : .white.opacity(0.45))
                                     .padding(.horizontal, 12).padding(.vertical, 7)
                                     .background(isActive
-                                        ? Color(red: 0.04, green: 0.52, blue: 1.0)
+                                        ? CarouselStudioChrome.accent
                                         : Color.white.opacity(0.1))
                                     .clipShape(Capsule())
                                     .overlay(Capsule().strokeBorder(
@@ -5358,6 +5837,10 @@ struct SocialPostStudioSheet: View {
             if layout == .split {
                 slides[index].splitBottomImage = nil
                 slides[index].splitBottomPhotoID = nil
+                slides[index].splitBottomFraming = nil
+            } else {
+                slides[index].splitTopFraming = nil
+                slides[index].splitBottomFraming = nil
             }
             for i in slides.indices where i != index {
                 guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
@@ -5389,6 +5872,7 @@ struct SocialPostStudioSheet: View {
         guard let heroID = slides[index].heroPhotoID else { return }
         guard let other = included.first(where: { $0.id != heroID }) else { return }
         slides[index].splitBottomPhotoID = other.id
+        slides[index].splitBottomFraming = nil
         if let pipIdx = slides[index].pipPhotoIDs.firstIndex(of: other.id),
            slides[index].pipImages.indices.contains(pipIdx) {
             slides[index].splitBottomImage = slides[index].pipImages[pipIdx]
@@ -5831,7 +6315,7 @@ private struct SocialPostStudioCoverPickerSheet: View {
                                         Image(systemName: "checkmark.circle.fill")
                                             .font(.system(size: 22))
                                             .symbolRenderingMode(.palette)
-                                            .foregroundStyle(.white, Color(red: 0.14, green: 0.52, blue: 1.0))
+                                            .foregroundStyle(.white, CarouselStudioChrome.accent)
                                             .padding(6)
                                     }
                                 }
@@ -5919,7 +6403,7 @@ private struct SwapHeroPhotoSheet: View {
                                             .font(.system(size: 10, weight: .bold))
                                             .foregroundStyle(.white)
                                             .padding(.horizontal, 6).padding(.vertical, 3)
-                                            .background(Color(red: 0.14, green: 0.52, blue: 1.0).opacity(0.95))
+                                            .background(CarouselStudioChrome.accent.opacity(0.95))
                                             .clipShape(Capsule())
                                             .padding(6)
                                     }
@@ -6038,6 +6522,19 @@ private struct SplitBottomPhotoPickerSheet: View {
         GridItem(.flexible(), spacing: 8)
     ]
 
+    private var gridHorizontalPadding: CGFloat { 16 }
+    /// Space between the nav title and the first grid row (not the sheet chrome above
+    /// the title — see `principalHeaderTopPadding`).
+    private var gridTopPadding: CGFloat {
+        UIScreen.main.bounds.height < 736 ? 8 : 12
+    }
+    private var gridBottomPadding: CGFloat { 16 }
+    /// Extra space under the sheet grabber / safe area before “Pick bottom photo”
+    /// (medium detent felt flush on small phones).
+    private var principalHeaderTopPadding: CGFloat {
+        UIScreen.main.bounds.height < 736 ? 10 : 14
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -6056,7 +6553,7 @@ private struct SplitBottomPhotoPickerSheet: View {
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                                             .strokeBorder(
-                                                isCurrent ? Color(red: 0.14, green: 0.52, blue: 1.0) : Color.clear,
+                                                isCurrent ? Color.white : Color.clear,
                                                 lineWidth: 2
                                             )
                                     )
@@ -6064,39 +6561,49 @@ private struct SplitBottomPhotoPickerSheet: View {
                                     .onTapGesture { onPick(photo) }
                             }
                         }
-                        .padding(16)
+                        .padding(.horizontal, gridHorizontalPadding)
+                        .padding(.top, gridTopPadding)
+                        .padding(.bottom, gridBottomPadding)
                     }
                 }
             }
-            .navigationTitle("Bottom photo")
+            .background(Color(red: 5/255, green: 10/255, blue: 48/255))
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color(red: 5/255, green: 10/255, blue: 48/255), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 2) {
                         Text("Pick bottom photo")
                             .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
                         Text(placeStop.placeTitle)
                             .font(.system(size: 11))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.white.opacity(0.62))
                             .lineLimit(1)
                     }
+                    .padding(.top, principalHeaderTopPadding)
                 }
                 if selectedPhotoID != nil {
                     ToolbarItem(placement: .navigationBarLeading) {
                         Button("Clear") {
                             onClear()
                         }
+                        .foregroundStyle(.white)
                     }
                 }
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
                     }
                     .accessibilityLabel("Close")
                 }
             }
         }
+        .tint(.white)
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -6144,10 +6651,10 @@ private struct PIPReorderOverlayRow: View {
     }
 }
 
-/// Square thumbnail for a single `RecapPhoto`. Loads the PHAsset image on
-/// appear at a modest grid size — `AddPIPPhotoPickerSheet` re-loads at full
-/// resolution when the user actually picks the photo, so we optimize for fast
-/// grid population here.
+/// Square thumbnail for a single `RecapPhoto`. Uses `loadRecapPhotoUIImage` so
+/// PH assets, AppCapture ids, and **cloud-only** rows (no `localIdentifier` yet)
+/// match what the editor loads when a photo is chosen — older devices / iCloud
+/// libraries were stuck on the placeholder when only `cloudURL` was populated.
 private struct AddPIPPhotoTile: View {
     let photo: RecapPhoto
     @State private var image: UIImage? = nil
@@ -6176,9 +6683,9 @@ private struct AddPIPPhotoTile: View {
     }
 
     private func loadThumbnail() async {
-        guard image == nil, let localId = photo.localIdentifier else { return }
-        let loaded = await loadCarouselAssetImage(
-            identifier: localId,
+        guard image == nil else { return }
+        let loaded = await loadRecapPhotoUIImage(
+            photo: photo,
             size: CGSize(width: 320, height: 320)
         )
         await MainActor.run { self.image = loaded }
@@ -6607,7 +7114,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
                      : "excluded")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(group.isEnabled
-                                     ? Color(red: 0.04, green: 0.52, blue: 1.0)
+                                     ? CarouselStudioChrome.accent
                                      : Color(uiColor: .tertiaryLabel))
             }
             .opacity(group.isEnabled ? 1.0 : 0.5)
@@ -6625,7 +7132,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
                         .padding(.horizontal, 10).padding(.vertical, 6)
                         .background(group.activeLayout == .single
                                     ? Color(uiColor: .systemFill)
-                                    : Color(red: 0.04, green: 0.52, blue: 1.0))
+                                    : CarouselStudioChrome.accent)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
