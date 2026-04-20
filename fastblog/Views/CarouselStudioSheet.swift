@@ -4501,6 +4501,94 @@ struct SlideTextEditorView: View {
         .animation(.spring(response: 0.32, dampingFraction: 0.82), value: showsTextEditLine)
     }
 
+    // MARK: - Split photo action toolbar
+
+    /// Bottom chrome shown when a split photo slot is selected. Provides Crop
+    /// (reposition), Replace (swap photo), and Remove (clear slot) actions for
+    /// the selected slot. Style matches `textFormattingToolbar`'s top action row.
+    @ViewBuilder
+    private var splitPhotoActionToolbar: some View {
+        if let slot = selectedSplitSlot,
+           let slide = currentSlide,
+           slide.layout == .split {
+            let isTop = slot == .top
+
+            HStack(spacing: 12) {
+                // Crop — opens the full-screen pinch/pan repositioner for the selected slot.
+                Button {
+                    let idx = editorPagerFocusedSlideIndex
+                    guard slides.indices.contains(idx), slides[idx].layout == .split else { return }
+                    splitRepositionSession = SplitRepositionSession(slideIndex: idx, initialSlot: slot)
+                } label: {
+                    Label("Crop", systemImage: "crop")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(Color.white.opacity(0.12))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+
+                // Replace — hero swap for top slot; SplitBottomPhotoPicker for bottom slot.
+                Button {
+                    let idx = editorPagerFocusedSlideIndex
+                    if isTop {
+                        selectedBlock = nil
+                        heroSwapSlideIndex = idx
+                        showsHeroPhotoSwapSheet = true
+                    } else {
+                        let options = availableSplitBottomPhotos(for: idx)
+                        if options.count == 1, let only = options.first {
+                            setSplitBottomPhoto(only, slideIndex: idx)
+                            selectedSplitSlot = nil
+                        } else {
+                            splitBottomPickSlideIndex = idx
+                            showsSplitBottomPhotoPicker = true
+                        }
+                    }
+                } label: {
+                    Label("Replace", systemImage: "photo.badge.arrow.up.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(Color.white.opacity(0.12))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                // Remove — disabled (grayed out) for top slot; clears bottom slot.
+                Button {
+                    guard !isTop else { return }
+                    clearSplitBottomPhoto(slideIndex: editorPagerFocusedSlideIndex)
+                    selectedSplitSlot = nil
+                } label: {
+                    Label("Remove", systemImage: "trash")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(isTop ? Color.white.opacity(0.06) : Color.red.opacity(0.3))
+                        .clipShape(Capsule())
+                        .overlay(
+                            Capsule().strokeBorder(
+                                isTop ? Color.white.opacity(0.1) : Color.red.opacity(0.5),
+                                lineWidth: 1
+                            )
+                        )
+                        .opacity(isTop ? 0.4 : 1.0)
+                }
+                .buttonStyle(.plain)
+                .disabled(isTop)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .background(Color(white: 0.08).ignoresSafeArea(edges: .bottom))
+        }
+    }
+
     // MARK: - PIP cluster toolbar
 
     /// Bottom chrome shown when the multi-photo PIP cluster is selected. Mirrors
