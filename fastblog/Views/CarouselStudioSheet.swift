@@ -3005,28 +3005,6 @@ struct SlideTextEditorView: View {
                         .accessibilityLabel("Excluded photos, \(excludedFromStudioCount)")
                     }
 
-                    if let onOpenPicker = onOpenPhotoGroupPicker {
-                        let count = visibleSelectedSlideCount
-                        let isOver = count > 34
-                        Button { onOpenPicker() } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: isOver
-                                      ? "exclamationmark.triangle.fill"
-                                      : "rectangle.3.group")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(isOver ? .orange : .white)
-                                if isOver {
-                                    Text("\(count)")
-                                        .font(.system(size: 13, weight: .bold))
-                                        .foregroundColor(.orange)
-                                }
-                            }
-                        }
-                        .accessibilityLabel(isOver
-                            ? "Manage photo groups — \(count) slides, over TikTok limit"
-                            : "Manage photo groups")
-                    }
-
                     Menu {
                         if canExcludeCurrentSlide {
                             let isMap = slides.indices.contains(currentIndex) && slides[currentIndex].kind == .mapRoute
@@ -3045,27 +3023,44 @@ struct SlideTextEditorView: View {
                                 }
                             }
                         }
+                        if let onOpenPicker = onOpenPhotoGroupPicker {
+                            let count = visibleSelectedSlideCount
+                            let isOver = count > 34
+                            Button { onOpenPicker() } label: {
+                                Label(
+                                    isOver
+                                        ? "Manage photo groups (\(count))"
+                                        : "Manage photo groups",
+                                    systemImage: isOver ? "exclamationmark.triangle.fill" : "rectangle.3.group"
+                                )
+                            }
+                            .accessibilityLabel(isOver
+                                ? "Manage photo groups — \(count) slides, over TikTok limit"
+                                : "Manage photo groups")
+                        }
                         Button {
                             Task { await exportActions.share() }
                         } label: {
                             Label("Share", systemImage: "square.and.arrow.up")
                         }
+                        .disabled(exportActions.exportActionsDisabled())
                         Button {
                             Task { await exportActions.saveToPhotos() }
                         } label: {
                             Label("Save to Photos", systemImage: "photo.on.rectangle.angled")
                         }
+                        .disabled(exportActions.exportActionsDisabled())
                         Button {
                             Task { await exportActions.exportPDF() }
                         } label: {
                             Label("Export as PDF", systemImage: "doc.richtext")
                         }
+                        .disabled(exportActions.exportActionsDisabled())
                     } label: {
                         Image(systemName: "ellipsis.circle")
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundColor(.white)
                     }
-                    .disabled(exportActions.exportActionsDisabled())
                     .accessibilityLabel("Share and export")
                 }
             }

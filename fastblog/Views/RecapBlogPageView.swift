@@ -1053,7 +1053,10 @@ struct RecapBlogPageView: View {
                         AppAnalytics.track(.blogPlaceChangeName(blogId: blogId.uuidString, placeId: item.stop.id.uuidString))
                         showEditNameForStop = item.stop
                     },
-                    onManagePhotos: { openManagePhotos(dayId: item.dayId, stopId: item.stop.id) },
+                    onManagePhotos: {
+                        AppAnalytics.track(.blogPlaceManagePhoto(blogId: blogId.uuidString, placeId: item.stop.id.uuidString))
+                        openManagePhotos(dayId: item.dayId, stopId: item.stop.id)
+                    },
                     onEditCaption: {
                         placeCaptionEditItem = PlaceCaptionEditItem(dayId: item.dayId, stopId: item.stop.id)
                     },
@@ -2654,10 +2657,6 @@ struct RecapBlogPageView: View {
                     },
                     onKebab: {
                         overflowStop = OverflowItem(dayId: day.id, stop: stop)
-                    },
-                    onManagePhotos: {
-                        AppAnalytics.track(.blogPlaceManagePhoto(blogId: blogId.uuidString, placeId: stop.id.uuidString))
-                        openManagePhotos(dayId: day.id, stopId: stop.id)
                     },
                     onRemovePhoto: { photoId in
                         removePhoto(dayId: day.id, stopId: stop.id, photoId: photoId)
