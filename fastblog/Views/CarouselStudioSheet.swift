@@ -2127,7 +2127,13 @@ struct SlideTextEditorView: View {
         currentIndex = index
         let stopID = slides[index].placeStop?.id
         pushUndoSnapshot()
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+        // Do **not** animate `slides` here: a spring on every sibling + `layout` drives
+        // heavy implicit transitions on each `SlideEditPage` while the pager's
+        // `ForEach` removes pages — reads as a violent flash. Commit layout in a
+        // non-animated transaction; animate only lightweight chrome below.
+        var layoutTxn = Transaction()
+        layoutTxn.disablesAnimations = true
+        withTransaction(layoutTxn) {
             slides[index].layout = layout
             for i in slides.indices where i != index {
                 guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
@@ -2135,13 +2141,18 @@ struct SlideTextEditorView: View {
             }
         }
         if layout == .pip {
-            selectedBlock = .pipCluster
             activeStyleCategory = nil
+            withAnimation(.easeOut(duration: 0.18)) {
+                selectedBlock = .pipCluster
+            }
         } else {
             if selectedBlock == .pipCluster { selectedBlock = nil }
             activePIPCategory = nil
         }
         clampCurrentIndexIfNeeded()
+        // Re-pin immediately: deferring only to `onChange(visibleSlideIndicesTag)` let
+        // `scrollPosition` / `scrollPageID` race for a frame and landed users on the
+        // wrong photo group (especially non-first photos at a stop).
         reassertEditorPagerToSlide(at: index)
     }
 
@@ -2704,18 +2715,23 @@ struct SlideTextEditorView: View {
                                         }
                                         .frame(width: slotW, height: slotH)
                                         .id(i)
+                                        .contentTransition(.identity)
                                         .onLongPressGesture(minimumDuration: 0.5) {
                                             guard i == editorPagerFocusedSlideIndex, canExcludeCurrentSlide else { return }
                                             performExcludeFromStudio()
                                         }
                                     }
                                 }
+                                // PIP collapses siblings → `visibleSlideIndices` changes. Suppress
+                                // implicit insert/remove animations on the page stack (they fight
+                                // `scrollPosition` and read as a strobe). Chevrons still use explicit
+                                // `withAnimation` when the user taps them.
+                                .animation(nil, value: visibleSlideIndicesTag)
                                 .scrollTargetLayout()
                             }
                             .scrollTargetBehavior(.paging)
                             .scrollPosition(id: $scrollPageID, anchor: .center)
                             .scrollDisabled(locksHorizontalSlidePaging)
-                            .animation(.easeInOut(duration: 0.22), value: currentIndex)
                             // Reassert the current page whenever the slot width changes
                             // (sheet-present animation, rotation, toolbar settling). Without
                             // this, the initial `scrollPosition` can land while slotW == 0
@@ -3062,6 +3078,9 @@ struct SlideTextEditorView: View {
                     clampCurrentIndexIfNeeded()
                     return
                 }
+                // Same-frame reassert: async deferred the scroll correction and allowed
+                // wrong centered pages. `setPlaceStopLayout` also reasserts; a second pass
+                // here covers undo / exclude when the visible list changes without PIP toggle.
                 reassertEditorPagerToSlide(at: currentIndex)
             }
             .onChange(of: slides.count) { _, _ in
@@ -4854,7 +4873,11 @@ struct SocialPostStudioSheet: View {
     private func setLayout(_ layout: CarouselSlideLayout, forSlideAt index: Int) {
         guard slides.indices.contains(index), slides[index].kind == .placeStop else { return }
         let stopID = slides[index].placeStop?.id
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+        // Match editor: avoid animating every slide property — preview strip cards
+        // would spring while rows disappear from the horizontal list (harsh flicker).
+        var layoutTxn = Transaction()
+        layoutTxn.disablesAnimations = true
+        withTransaction(layoutTxn) {
             slides[index].layout = layout
             for i in slides.indices where i != index {
                 guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
