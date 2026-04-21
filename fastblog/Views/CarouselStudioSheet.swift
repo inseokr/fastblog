@@ -608,13 +608,52 @@ private struct DiagonalRoundedBadgeShape: Shape {
 
 private struct CurvedSplitDividerShape: Shape {
     func path(in rect: CGRect) -> Path {
+        let curveHeight = min(20, rect.height * 0.45)
         var path = Path()
         path.move(to: CGPoint(x: rect.minX, y: rect.midY))
         path.addCurve(
             to: CGPoint(x: rect.maxX, y: rect.midY),
-            control1: CGPoint(x: rect.width * 0.28, y: rect.midY - min(20, rect.height * 0.45)),
-            control2: CGPoint(x: rect.width * 0.72, y: rect.midY + min(20, rect.height * 0.45))
+            control1: CGPoint(x: rect.width * 0.28, y: rect.midY - curveHeight),
+            control2: CGPoint(x: rect.width * 0.72, y: rect.midY + curveHeight)
         )
+        return path
+    }
+}
+
+/// Curved mask for the top split slot. The seam bows upward near the leading side
+/// and returns to the baseline so the slot edge is no longer perfectly straight.
+private struct CurvedSplitTopMaskShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let seamLift = min(16, rect.height * 0.16)
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addCurve(
+            to: CGPoint(x: rect.minX, y: rect.maxY),
+            control1: CGPoint(x: rect.width * 0.68, y: rect.maxY + seamLift * 0.25),
+            control2: CGPoint(x: rect.width * 0.24, y: rect.maxY - seamLift)
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// Curved mask for the bottom split slot. Mirrors the top seam so both photos
+/// appear carved by the same divider rather than two straight rectangles.
+private struct CurvedSplitBottomMaskShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let seamDrop = min(16, rect.height * 0.16)
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY),
+            control1: CGPoint(x: rect.width * 0.28, y: rect.minY - seamDrop),
+            control2: CGPoint(x: rect.width * 0.72, y: rect.minY + seamDrop * 0.25)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
         return path
     }
 }
@@ -1644,44 +1683,94 @@ struct CarouselSlideView: View {
     private var splitPlaceStopBackground: some View {
         let slotW = width
         let slotH = height * 0.5
+        let useCurvedMasks = slide.splitDividerStyle == .curve
         return ZStack {
             VStack(spacing: 0) {
                 Group {
-                    if let image = slide.heroImage {
-                        SplitFramedPhotoInSlot(
-                            image: image,
-                            framing: slide.splitTopFraming,
-                            slotWidth: slotW,
-                            slotHeight: slotH
-                        )
+                    if useCurvedMasks {
+                        Group {
+                            if let image = slide.heroImage {
+                                SplitFramedPhotoInSlot(
+                                    image: image,
+                                    framing: slide.splitTopFraming,
+                                    slotWidth: slotW,
+                                    slotHeight: slotH
+                                )
+                            } else {
+                                Color(white: 0.16)
+                                    .frame(width: slotW, height: slotH)
+                            }
+                        }
+                        .clipShape(CurvedSplitTopMaskShape())
                     } else {
-                        Color(white: 0.16)
-                            .frame(width: slotW, height: slotH)
+                        Group {
+                            if let image = slide.heroImage {
+                                SplitFramedPhotoInSlot(
+                                    image: image,
+                                    framing: slide.splitTopFraming,
+                                    slotWidth: slotW,
+                                    slotHeight: slotH
+                                )
+                            } else {
+                                Color(white: 0.16)
+                                    .frame(width: slotW, height: slotH)
+                            }
+                        }
                     }
                 }
 
                 Group {
-                    if let bottom = slide.splitBottomImage {
-                        SplitFramedPhotoInSlot(
-                            image: bottom,
-                            framing: slide.splitBottomFraming,
-                            slotWidth: slotW,
-                            slotHeight: slotH
-                        )
-                    } else {
-                        ZStack {
-                            Color(white: 0.13)
-                            if isEditingText {
-                                VStack(spacing: 6) {
-                                    Image(systemName: "plus.circle.fill")
-                                        .font(.system(size: width * 0.08, weight: .semibold))
-                                    Text("Tap to pick second photo")
-                                        .font(.system(size: width * 0.04, weight: .semibold))
+                    if useCurvedMasks {
+                        Group {
+                            if let bottom = slide.splitBottomImage {
+                                SplitFramedPhotoInSlot(
+                                    image: bottom,
+                                    framing: slide.splitBottomFraming,
+                                    slotWidth: slotW,
+                                    slotHeight: slotH
+                                )
+                            } else {
+                                ZStack {
+                                    Color(white: 0.13)
+                                    if isEditingText {
+                                        VStack(spacing: 6) {
+                                            Image(systemName: "plus.circle.fill")
+                                                .font(.system(size: width * 0.08, weight: .semibold))
+                                            Text("Tap to pick second photo")
+                                                .font(.system(size: width * 0.04, weight: .semibold))
+                                        }
+                                        .foregroundColor(.white.opacity(0.72))
+                                    }
                                 }
-                                .foregroundColor(.white.opacity(0.72))
+                                .frame(width: slotW, height: slotH)
                             }
                         }
-                        .frame(width: slotW, height: slotH)
+                        .clipShape(CurvedSplitBottomMaskShape())
+                    } else {
+                        Group {
+                            if let bottom = slide.splitBottomImage {
+                                SplitFramedPhotoInSlot(
+                                    image: bottom,
+                                    framing: slide.splitBottomFraming,
+                                    slotWidth: slotW,
+                                    slotHeight: slotH
+                                )
+                            } else {
+                                ZStack {
+                                    Color(white: 0.13)
+                                    if isEditingText {
+                                        VStack(spacing: 6) {
+                                            Image(systemName: "plus.circle.fill")
+                                                .font(.system(size: width * 0.08, weight: .semibold))
+                                            Text("Tap to pick second photo")
+                                                .font(.system(size: width * 0.04, weight: .semibold))
+                                        }
+                                        .foregroundColor(.white.opacity(0.72))
+                                    }
+                                }
+                                .frame(width: slotW, height: slotH)
+                            }
+                        }
                     }
                 }
             }
@@ -2534,6 +2623,7 @@ struct SlideTextEditorView: View {
         for idx in slides.indices {
             slides[idx].textStyle.primary.offset = .zero
             slides[idx].textStyle.secondary.offset = .zero
+            slides[idx].pipOffset = .zero
         }
     }
 
@@ -3191,7 +3281,7 @@ struct SlideTextEditorView: View {
         case (.mapRoute, .primary):   return slide.dayTitle ?? slide.dayInfoLine1 ?? ""
         case (.mapRoute, .secondary): return slide.dayStory ?? ""
         case (.placeStop, .primary):  return slide.placeStop?.placeTitle ?? ""
-        case (.placeStop, .secondary): return slide.photoCaption ?? slide.caption ?? ""
+        case (.placeStop, .secondary): return slide.placeStop?.placeSubtitle ?? ""
         default: return ""
         }
     }
@@ -3218,7 +3308,7 @@ struct SlideTextEditorView: View {
         case (.placeStop, .primary):
             slides[currentIndex].placeStop?.placeTitle = text
             slides[currentIndex].photoCaption = inlineCaptionDraft
-        case (.placeStop, .secondary): slides[currentIndex].photoCaption = text
+        case (.placeStop, .secondary): slides[currentIndex].placeStop?.placeSubtitle = text
         default: break
         }
         showsTextEditLine = false
@@ -3470,6 +3560,21 @@ struct SlideTextEditorView: View {
             guard photo.isIncluded else { return false }
             if let heroID = slide.heroPhotoID, photo.id == heroID { return false }
             return true
+        }
+    }
+
+    /// Opens the split-bottom picker flow for a slide. If only one candidate
+    /// photo exists, it auto-applies that photo instead of presenting a sheet.
+    private func presentSplitBottomPicker(for slideIndex: Int) {
+        guard slides.indices.contains(slideIndex),
+              slides[slideIndex].layout == .split else { return }
+        let options = availableSplitBottomPhotos(for: slideIndex)
+        if options.count == 1, let only = options.first {
+            setSplitBottomPhoto(only, slideIndex: slideIndex)
+            selectedSplitSlot = nil
+        } else {
+            splitBottomPickSlideIndex = slideIndex
+            showsSplitBottomPhotoPicker = true
         }
     }
 
@@ -3800,11 +3905,15 @@ struct SlideTextEditorView: View {
                                                     heroSwapSlideIndex = idx
                                                     showsHeroPhotoSwapSheet = true
                                                 },
-                                                onRequestSplitBottomPick: { _ in
-                                                    // Now selects the slot; Replace button in the
-                                                    // action toolbar opens the picker explicitly.
+                                                onRequestSplitBottomPick: { idx in
                                                     selectedBlock = nil
                                                     selectedSplitSlot = .bottom
+                                                    // Placeholder taps should immediately open picker
+                                                    // so "Tap to pick second photo" acts directly.
+                                                    if slides.indices.contains(idx),
+                                                       slides[idx].splitBottomImage == nil {
+                                                        presentSplitBottomPicker(for: idx)
+                                                    }
                                                 },
                                                 onRequestSplitTopSelect: { _ in
                                                     selectedBlock = nil
@@ -4897,14 +5006,7 @@ struct SlideTextEditorView: View {
                         heroSwapSlideIndex = idx
                         showsHeroPhotoSwapSheet = true
                     } else {
-                        let options = availableSplitBottomPhotos(for: idx)
-                        if options.count == 1, let only = options.first {
-                            setSplitBottomPhoto(only, slideIndex: idx)
-                            selectedSplitSlot = nil
-                        } else {
-                            splitBottomPickSlideIndex = idx
-                            showsSplitBottomPhotoPicker = true
-                        }
+                        presentSplitBottomPicker(for: idx)
                     }
                 } label: {
                     Label("Replace", systemImage: "photo.badge.arrow.up.fill")
