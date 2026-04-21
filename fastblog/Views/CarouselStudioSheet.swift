@@ -2547,6 +2547,8 @@ struct SlideTextEditorView: View {
     @State private var pipClusterSizeSliderUndoPrimed = false
     /// Disables horizontal slide paging while the user touches a text block (see `SlideEditPage`).
     @State private var locksHorizontalSlidePaging = false
+    /// One-shot guard so a swipe clears selection once per drag.
+    @State private var didClearSelectionForPagerDrag = false
     /// Briefly true after a bulk "Apply to…" action to show a confirmation flash.
     @State private var didApplyToAll = false
     /// Prior `slides` arrays for incremental undo (shallow copy; `UIImage` refs unchanged).
@@ -3036,10 +3038,12 @@ struct SlideTextEditorView: View {
     }
 
     private func updateStyle(_ update: (inout TextBlockStyle) -> Void) {
-        guard let selectedBlock, hasValidCurrentIndex else { return }
+        guard let selectedBlock else { return }
+        let focusedIndex = editorPagerFocusedSlideIndex
+        guard slides.indices.contains(focusedIndex) else { return }
         pushUndoSnapshot()
-        if selectedBlock == .secondary { update(&slides[currentIndex].textStyle.secondary) }
-        else { update(&slides[currentIndex].textStyle.primary) }
+        if selectedBlock == .secondary { update(&slides[focusedIndex].textStyle.secondary) }
+        else { update(&slides[focusedIndex].textStyle.primary) }
     }
 
     private func pushUndoSnapshot() {
@@ -3992,6 +3996,20 @@ struct SlideTextEditorView: View {
                             .scrollTargetBehavior(.paging)
                             .scrollPosition(id: $scrollPageID, anchor: .center)
                             .scrollDisabled(locksHorizontalSlidePaging)
+                            .simultaneousGesture(
+                                DragGesture(minimumDistance: 8)
+                                    .onChanged { _ in
+                                        guard !didClearSelectionForPagerDrag else { return }
+                                        didClearSelectionForPagerDrag = true
+                                        selectedBlock = nil
+                                        selectedSplitSlot = nil
+                                        activeStyleCategory = nil
+                                        activePIPCategory = nil
+                                    }
+                                    .onEnded { _ in
+                                        didClearSelectionForPagerDrag = false
+                                    }
+                            )
                             // Reassert the current page whenever the slot width changes
                             // (sheet-present animation, rotation, toolbar settling). Without
                             // this, the initial `scrollPosition` can land while slotW == 0
@@ -4490,6 +4508,7 @@ struct SlideTextEditorView: View {
                         ToolbarItem(placement: .cancellationAction) {
                             Button {
                                 carouselStudioExportHubPhase = .actions
+                                showCarouselStudioExportHub = false
                             } label: {
                                 Image(systemName: "chevron.left")
                             }
@@ -4556,11 +4575,9 @@ struct SlideTextEditorView: View {
                 carouselStudioExportHubPhase = .actions
                 showCarouselStudioExportHub = true
             } label: {
-                Image("CarouselStudioExportHub")
-                    .resizable()
-                    .renderingMode(.original)
-                    .scaledToFit()
-                    .frame(width: 30, height: 30)
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(.white)
             }
             .accessibilityLabel("Share, download, or export PDF")
         }
@@ -4619,6 +4636,8 @@ struct SlideTextEditorView: View {
                 splitBottomPickSlideIndex = nil
                 selectedBlock = nil
                 selectedSplitSlot = nil
+                activeStyleCategory = nil
+                activePIPCategory = nil
                 #if DEBUG
                 if slides.indices.contains(newID), slides[newID].kind == .cover {
                     print("[CarouselStudio] scrollPageID → cover slide at index \(newID)")
@@ -4660,6 +4679,8 @@ struct SlideTextEditorView: View {
                     splitBottomPickSlideIndex = nil
                     selectedBlock = nil
                     selectedSplitSlot = nil
+                    activeStyleCategory = nil
+                    activePIPCategory = nil
                 }
             }
         }
@@ -5477,6 +5498,8 @@ struct SlideTextEditorView: View {
     /// Stack direction (vertical column vs horizontal row) for the PIP cluster.
     @ViewBuilder
     private var pipStyleMenuButton: some View {
+        let visible = currentSlide?.pipVisibleCount ?? 0
+        let canUsePIPMultiPhotoControls = visible > 1
         let current = currentSlide?.pipClusterStackStyle ?? .vertical
         Menu {
             Button {
@@ -5505,11 +5528,15 @@ struct SlideTextEditorView: View {
             VStack(spacing: 4) {
                 Image(systemName: "rectangle.split.1x2")
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.white.opacity(0.75))
+                    .foregroundColor(canUsePIPMultiPhotoControls
+                        ? .white.opacity(0.75)
+                        : .white.opacity(0.35))
                     .frame(width: 22, height: 22)
                 Text("Style")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.55))
+                    .foregroundColor(canUsePIPMultiPhotoControls
+                        ? .white.opacity(0.55)
+                        : .white.opacity(0.35))
                     .lineLimit(1)
             }
             .frame(width: Self.categoryButtonWidth)
@@ -5517,6 +5544,7 @@ struct SlideTextEditorView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!canUsePIPMultiPhotoControls)
     }
 
     /// Leading **Add Photos** pill in `pipCategoryTabBar`: opens the picker when
@@ -5590,17 +5618,23 @@ struct SlideTextEditorView: View {
 
     @ViewBuilder
     private func pipCategoryButton(_ cat: PIPStyleCategory) -> some View {
+        let visible = currentSlide?.pipVisibleCount ?? 0
+        let canUsePIPMultiPhotoControls = visible > 1
+        let isDisabled = cat == .order && !canUsePIPMultiPhotoControls
         let isActive = activePIPCategory == cat
         Button {
+            guard !isDisabled else { return }
             withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
                 activePIPCategory = isActive ? nil : cat
             }
         } label: {
             VStack(spacing: 4) {
-                pipCategoryIcon(for: cat, isActive: isActive)
+                pipCategoryIcon(for: cat, isActive: isActive, isDisabled: isDisabled)
                 Text(cat.rawValue)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(isActive ? .white : .white.opacity(0.55))
+                    .foregroundColor(isDisabled
+                        ? .white.opacity(0.35)
+                        : (isActive ? .white : .white.opacity(0.55)))
                     .lineLimit(1)
             }
             .frame(width: Self.categoryButtonWidth)
@@ -5608,15 +5642,16 @@ struct SlideTextEditorView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(isDisabled)
     }
 
     @ViewBuilder
-    private func pipCategoryIcon(for cat: PIPStyleCategory, isActive: Bool) -> some View {
+    private func pipCategoryIcon(for cat: PIPStyleCategory, isActive: Bool, isDisabled: Bool = false) -> some View {
         switch cat {
         case .order:
             Image(systemName: "arrow.up.arrow.down")
                 .font(.system(size: 14, weight: .bold))
-                .foregroundColor(isActive ? .white : .white.opacity(0.75))
+                .foregroundColor(isDisabled ? .white.opacity(0.35) : (isActive ? .white : .white.opacity(0.75)))
                 .frame(width: 22, height: 22)
         case .border:
             let borderOff = !(currentSlide?.pipBorderEnabled ?? true)
@@ -5803,14 +5838,16 @@ struct SlideTextEditorView: View {
     /// step (the snapshot is taken in `onEditingChanged` when the drag
     /// starts).
     private func setSizeScaleLive(_ rawScale: CGFloat) {
-        guard let selectedBlock, hasValidCurrentIndex else { return }
+        guard let selectedBlock else { return }
+        let focusedIndex = editorPagerFocusedSlideIndex
+        guard slides.indices.contains(focusedIndex) else { return }
         let clamped = min(max(rawScale, Self.sizeScaleMin), Self.sizeScaleMax)
         let snapped = (clamped / Self.sizeScaleStep).rounded() * Self.sizeScaleStep
         guard abs(snapped - currentStyle.sizeScale) > 0.0001 else { return }
         if selectedBlock == .secondary {
-            slides[currentIndex].textStyle.secondary.sizeScale = snapped
+            slides[focusedIndex].textStyle.secondary.sizeScale = snapped
         } else {
-            slides[currentIndex].textStyle.primary.sizeScale = snapped
+            slides[focusedIndex].textStyle.primary.sizeScale = snapped
         }
     }
 
@@ -7537,12 +7574,6 @@ private struct SplitBottomPhotoPickerSheet: View {
         UIScreen.main.bounds.height < 736 ? 8 : 12
     }
     private var gridBottomPadding: CGFloat { 16 }
-    /// Extra space under the sheet grabber / safe area before the title.
-    /// (medium detent felt flush on small phones).
-    private var principalHeaderTopPadding: CGFloat {
-        UIScreen.main.bounds.height < 736 ? 10 : 14
-    }
-
     var body: some View {
         NavigationStack {
             Group {
@@ -7581,10 +7612,9 @@ private struct SplitBottomPhotoPickerSheet: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text("Select Bottom of photo")
+                    Text("Select bottom photo")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.white)
-                    .padding(.top, principalHeaderTopPadding)
                 }
                 if selectedPhotoID != nil {
                     ToolbarItem(placement: .topBarTrailing) {
