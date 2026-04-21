@@ -2296,6 +2296,8 @@ struct SlideTextEditorExportActions {
     let saveToPhotos: () async -> Void
     /// Saves rendered slides for the given indices (carousel order); used by Carousel Studio download picker.
     let saveToPhotosAtIndices: ([Int]) async -> Void
+    /// Exports rendered slides for the given indices as one PDF and opens the share sheet.
+    let exportPDFAtIndices: ([Int]) async -> Void
     let exportPDF: () async -> Void
     let exportActionsDisabled: () -> Bool
 }
@@ -2404,10 +2406,26 @@ struct SlideTextEditorView: View {
     @State private var carouselStudioExportHubPhase: CarouselStudioExportHubPhase = .actions
     /// Indices selected in the download-only picker (subset of `studioDownloadCandidateIndices`).
     @State private var downloadSlidePickSelection: Set<Int> = []
+    /// Download modal output type (radio-style selector in top-right toolbar).
+    @State private var downloadOutputMode: DownloadOutputMode = .photo
 
     private enum CarouselStudioExportHubPhase {
         case actions
         case pickDownloadSlides
+    }
+
+    private enum DownloadOutputMode: String, CaseIterable, Identifiable {
+        case photo
+        case pdf
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .photo: return "Photo"
+            case .pdf: return "PDF"
+            }
+        }
     }
 
     init(
@@ -2519,6 +2537,22 @@ struct SlideTextEditorView: View {
             downloadSlidePickSelection = [first]
         } else {
             downloadSlidePickSelection = []
+        }
+    }
+
+    /// Slide index the download grid should scroll to for “current slide” (matches `selectCurrentSlideOnlyForDownloadPick`).
+    private var downloadPickScrollToIndex: Int? {
+        let idx = editorPagerFocusedSlideIndex
+        if studioDownloadCandidateIndices.contains(idx) { return idx }
+        return studioDownloadCandidateIndices.first
+    }
+
+    private func scrollDownloadPickGridToCurrentSlide(using proxy: ScrollViewProxy) {
+        guard let idx = downloadPickScrollToIndex else { return }
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.28)) {
+                proxy.scrollTo(idx, anchor: .center)
+            }
         }
     }
 
@@ -4023,7 +4057,7 @@ struct SlideTextEditorView: View {
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: .infinity)
 
-                        Text("Share to social apps, save images to Photos, or export a PDF.")
+                        Text("Share to social apps, or download picks as photos or a PDF.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -4052,114 +4086,148 @@ struct SlideTextEditorView: View {
                         }
                         .buttonStyle(.bordered)
                         .disabled(exportActions.exportActionsDisabled() || studioDownloadCandidateIndices.isEmpty)
-
-                        Button {
-                            showCarouselStudioExportHub = false
-                            Task { await exportActions.exportPDF() }
-                        } label: {
-                            Label("Export as PDF", systemImage: "doc.richtext")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                        .disabled(exportActions.exportActionsDisabled())
                     }
                     .frame(maxWidth: .infinity, alignment: .top)
                     .padding(20)
                     .navigationBarTitleDisplayMode(.inline)
 
                 case .pickDownloadSlides:
-                    VStack(spacing: 0) {
-                        ScrollView {
-                            LazyVGrid(columns: gridColumns, spacing: 12) {
-                                ForEach(studioDownloadCandidateIndices, id: \.self) { idx in
-                                    let selected = downloadSlidePickSelection.contains(idx)
-                                    GeometryReader { geo in
-                                        let w = max(80, geo.size.width)
-                                        ZStack(alignment: .topTrailing) {
-                                            CarouselSlideView(
-                                                slide: slides[idx],
-                                                width: w,
-                                                aspectRatio: aspectRatio,
-                                                onToggleSelection: {},
-                                                showsSelectionChrome: false,
-                                                clipsFloatingContentToRoundedSlideOutline: false
-                                            )
-                                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                            if !selected {
+                    ScrollViewReader { proxy in
+                        VStack(spacing: 0) {
+                            VStack(spacing: 10) {
+                                HStack(spacing: 8) {
+                                    Button(action: selectAllSlidesForDownloadPick) {
+                                        Text("Select All")
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(downloadPickSelectionMatchesAll ? .white : .primary)
+                                            .frame(maxWidth: .infinity, minHeight: 40)
+                                            .background {
                                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                    .fill(Color.black.opacity(0.52))
-                                                    .allowsHitTesting(false)
+                                                    .fill(downloadPickSelectionMatchesAll ? CarouselStudioChrome.accent : Color(uiColor: .secondarySystemFill))
                                             }
-                                            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                                                .font(.title3)
-                                                .symbolRenderingMode(.palette)
-                                                .foregroundStyle(.white, selected ? CarouselStudioChrome.accent : .white.opacity(0.35))
-                                                .padding(6)
-                                        }
-                                        .contentShape(Rectangle())
-                                        .onTapGesture { toggleDownloadPick(for: idx) }
                                     }
-                                    .aspectRatio(aspectRatio, contentMode: .fit)
+                                    .buttonStyle(.plain)
+
+                                    Button {
+                                        selectCurrentSlideOnlyForDownloadPick()
+                                        scrollDownloadPickGridToCurrentSlide(using: proxy)
+                                    } label: {
+                                        Text("Current Slide")
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(downloadPickSelectionMatchesCurrentOnly ? .white : .primary)
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.9)
+                                            .frame(maxWidth: .infinity, minHeight: 40)
+                                            .background {
+                                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                    .fill(downloadPickSelectionMatchesCurrentOnly ? CarouselStudioChrome.accent : Color(uiColor: .secondarySystemFill))
+                                            }
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
+                                Text("Current: \(currentSlideQuickPickLabel)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                                HStack(spacing: 8) {
+                                    ForEach(DownloadOutputMode.allCases) { mode in
+                                        Button {
+                                            downloadOutputMode = mode
+                                        } label: {
+                                            Text(mode.label)
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(downloadOutputMode == mode ? .white : .primary)
+                                                .frame(maxWidth: .infinity, minHeight: 40)
+                                                .background {
+                                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                        .fill(downloadOutputMode == mode ? CarouselStudioChrome.accent : Color(uiColor: .secondarySystemFill))
+                                                }
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
                                 }
                             }
                             .padding(.horizontal, 16)
-                            .padding(.top, 8)
-                        }
+                            .padding(.top, 10)
+                            .padding(.bottom, 8)
 
-                        VStack(spacing: 10) {
-                            Button(action: selectAllSlidesForDownloadPick) {
-                                HStack(alignment: .center, spacing: 12) {
-                                    Image(systemName: downloadPickSelectionMatchesAll ? "checkmark.square.fill" : "square")
-                                        .font(.title3)
-                                        .foregroundStyle(downloadPickSelectionMatchesAll ? CarouselStudioChrome.accent : Color.secondary)
-                                    Text("Select All")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(.primary)
-                                        .multilineTextAlignment(.leading)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                            ScrollView {
+                                LazyVGrid(columns: gridColumns, spacing: 12) {
+                                    ForEach(studioDownloadCandidateIndices, id: \.self) { idx in
+                                        let selected = downloadSlidePickSelection.contains(idx)
+                                        GeometryReader { geo in
+                                            let w = max(80, geo.size.width)
+                                            ZStack(alignment: .topTrailing) {
+                                                CarouselSlideView(
+                                                    slide: slides[idx],
+                                                    width: w,
+                                                    aspectRatio: aspectRatio,
+                                                    onToggleSelection: {},
+                                                    showsSelectionChrome: false,
+                                                    clipsFloatingContentToRoundedSlideOutline: false
+                                                )
+                                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                                if !selected {
+                                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                        .fill(Color.black.opacity(0.52))
+                                                        .allowsHitTesting(false)
+                                                }
+                                                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                                                    .font(.title3)
+                                                    .symbolRenderingMode(.palette)
+                                                    .foregroundStyle(.white, selected ? CarouselStudioChrome.accent : .white.opacity(0.35))
+                                                    .padding(6)
+                                            }
+                                            .contentShape(Rectangle())
+                                            .onTapGesture { toggleDownloadPick(for: idx) }
+                                        }
+                                        .aspectRatio(aspectRatio, contentMode: .fit)
+                                        .id(idx)
+                                    }
                                 }
-                                .padding(.horizontal, 14)
-                                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                                .contentShape(Rectangle())
+                                .padding(.horizontal, 16)
+                                .padding(.top, 2)
                             }
-                            .buttonStyle(.bordered)
 
-                            Button(action: selectCurrentSlideOnlyForDownloadPick) {
-                                HStack(alignment: .center, spacing: 12) {
-                                    Image(systemName: downloadPickSelectionMatchesCurrentOnly ? "checkmark.square.fill" : "square")
-                                        .font(.title3)
-                                        .foregroundStyle(downloadPickSelectionMatchesCurrentOnly ? CarouselStudioChrome.accent : Color.secondary)
-                                    Text("Current Slide (\(currentSlideQuickPickLabel))")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(.primary)
-                                        .multilineTextAlignment(.leading)
-                                        .lineLimit(2)
-                                        .minimumScaleFactor(0.85)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                            VStack(spacing: 10) {
+                                Button {
+                                    let order = orderedPickedDownloadIndices()
+                                    guard !order.isEmpty else { return }
+                                    showCarouselStudioExportHub = false
+                                    Task {
+                                        if downloadOutputMode == .photo {
+                                            await exportActions.saveToPhotosAtIndices(order)
+                                        } else {
+                                            await exportActions.exportPDFAtIndices(order)
+                                        }
+                                    }
+                                } label: {
+                                    Text("Done")
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
                                 }
-                                .padding(.horizontal, 14)
-                                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                                .contentShape(Rectangle())
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.regular)
+                                .disabled(orderedPickedDownloadIndices().isEmpty || exportActions.exportActionsDisabled())
                             }
-                            .buttonStyle(.bordered)
-
-                            Button {
-                                let order = orderedPickedDownloadIndices()
-                                guard !order.isEmpty else { return }
-                                showCarouselStudioExportHub = false
-                                Task { await exportActions.saveToPhotosAtIndices(order) }
-                            } label: {
-                                Text("Done")
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 14)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(orderedPickedDownloadIndices().isEmpty || exportActions.exportActionsDisabled())
+                            .padding(16)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground))
                         }
-                        .padding(16)
-                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .onAppear {
+                            if downloadPickSelectionMatchesCurrentOnly {
+                                scrollDownloadPickGridToCurrentSlide(using: proxy)
+                            }
+                        }
+                        .onChange(of: downloadPickSelectionMatchesCurrentOnly) { _, isCurrentOnly in
+                            if isCurrentOnly {
+                                scrollDownloadPickGridToCurrentSlide(using: proxy)
+                            }
+                        }
                     }
-                    .navigationTitle("Download")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
@@ -4169,6 +4237,10 @@ struct SlideTextEditorView: View {
                                 Image(systemName: "chevron.left")
                             }
                             .accessibilityLabel("Back")
+                        }
+                        ToolbarItem(placement: .principal) {
+                            Text("Download")
+                                .font(.headline)
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -4235,18 +4307,6 @@ struct SlideTextEditorView: View {
                         }
                         .accessibilityLabel("Excluded photos, \(excludedFromStudioCount)")
                     }
-
-                    Button {
-                        saveCurrentSlideOnlyToPhotos()
-                    } label: {
-                        Image("CarouselStudioSaveCurrentSlide")
-                            .resizable()
-                            .renderingMode(.original)
-                            .scaledToFit()
-                            .frame(width: 24, height: 24)
-                    }
-                    .disabled(exportActions.exportActionsDisabled() || !visibleSlideIndices.contains(editorPagerFocusedSlideIndex))
-                    .accessibilityLabel("Save current slide to Photos")
 
                     Button {
                         carouselStudioExportHubPhase = .actions
@@ -5794,6 +5854,7 @@ struct SocialPostStudioSheet: View {
             share: { await shareViaSheet() },
             saveToPhotos: { await saveToPhotos() },
             saveToPhotosAtIndices: { indices in await saveToPhotos(atIndices: indices) },
+            exportPDFAtIndices: { indices in await exportSlidesPDFAndShare(atIndices: indices) },
             exportPDF: { await exportSlidesPDFAndShare() },
             exportActionsDisabled: { exportActionsDisabled }
         )
@@ -5899,11 +5960,6 @@ struct SocialPostStudioSheet: View {
                                 } label: {
                                     Label("Save to Photos", systemImage: "photo.on.rectangle.angled")
                                 }
-                                Button {
-                                    Task { await exportSlidesPDFAndShare() }
-                                } label: {
-                                    Label("Export as PDF", systemImage: "doc.richtext")
-                                }
                             } label: {
                                 Image(systemName: "ellipsis.circle")
                                     .font(.system(size: 18, weight: .semibold))
@@ -5943,7 +5999,9 @@ struct SocialPostStudioSheet: View {
                     } else {
                         navigatePreviewToSlideIndex = index
                     }
-                }
+                },
+                onExcludePlaceFromStudio: { idx in excludePlaceSlide(at: idx) },
+                onExcludeMapFromStudio: { idx in excludeMapSlide(at: idx) }
             )
         }
         .fullScreenCover(item: $editingSlideRef) { ref in
@@ -6771,9 +6829,14 @@ struct SocialPostStudioSheet: View {
 
     /// One PDF page per rendered studio slide; written under a dedicated temp folder so `cleanupTempFiles` removes only that directory.
     @MainActor private func exportSlidesPDFAndShare() async {
+        await exportSlidesPDFAndShare(atIndices: orderedExportSlideIndices())
+    }
+
+    /// One PDF page per rendered index (same render pipeline used by the download picker).
+    @MainActor private func exportSlidesPDFAndShare(atIndices indices: [Int]) async {
         isRendering = true
         defer { isRendering = false }
-        let images = renderSlides()
+        let images = renderSlides(atIndices: indices)
         guard !images.isEmpty else { return }
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("carousel-\(UUID().uuidString)", isDirectory: true)
@@ -7509,12 +7572,41 @@ private struct StudioExcludedPhotosGallerySheet: View {
 /// Each tile uses `CarouselSlideView` so text blocks, PIP, and split layouts match the real slide.
 /// Under each tile: ordinal plus a one-line label (`Cover`, `Map`, or the place name).
 /// Tapping a tile dismisses the sheet and asks the parent to scroll the preview or jump the editor pager.
+/// Long-press a place or map tile to remove it when the parent supplies exclusion callbacks.
 private struct CarouselPhotoGroupPickerSheet: View {
     @Binding var slides: [CarouselSlide]
     /// Must match the studio’s current export aspect (post / story / reel).
     let aspectRatio: CGFloat
     let onSelectSlide: (Int) -> Void
+    let onExcludePlaceFromStudio: ((Int) -> Void)?
+    let onExcludeMapFromStudio: ((Int) -> Void)?
     @Environment(\.dismiss) private var dismiss
+
+    @AppStorage("blogify.studioSkipExcludeConfirm") private var skipExcludeConfirm = false
+    @AppStorage("blogify.slidesManagementTip.dismissed") private var slidesManagementTipDismissed = false
+    @State private var pendingExcludeRawIndex: Int?
+
+    private var slidesManagementNavigationSubtitle: String {
+        if hasSlideRemovalActions {
+            "Tap a slide to open it · Touch and hold a place or map to remove"
+        } else {
+            "Tap a slide to open it in the editor"
+        }
+    }
+
+    init(
+        slides: Binding<[CarouselSlide]>,
+        aspectRatio: CGFloat,
+        onSelectSlide: @escaping (Int) -> Void,
+        onExcludePlaceFromStudio: ((Int) -> Void)? = nil,
+        onExcludeMapFromStudio: ((Int) -> Void)? = nil
+    ) {
+        _slides = slides
+        self.aspectRatio = aspectRatio
+        self.onSelectSlide = onSelectSlide
+        self.onExcludePlaceFromStudio = onExcludePlaceFromStudio
+        self.onExcludeMapFromStudio = onExcludeMapFromStudio
+    }
 
     private let gridColumns = [
         GridItem(.flexible(), spacing: 12),
@@ -7523,6 +7615,40 @@ private struct CarouselPhotoGroupPickerSheet: View {
 
     private var visibleSlideIndices: [Int] {
         slides.indices.filter { !isSlideHiddenBySiblingPIP(at: $0, in: slides) }
+    }
+
+    private var hasSlideRemovalActions: Bool {
+        onExcludePlaceFromStudio != nil || onExcludeMapFromStudio != nil
+    }
+
+    private func canExcludeSlide(at rawIndex: Int) -> Bool {
+        guard slides.indices.contains(rawIndex) else { return false }
+        switch slides[rawIndex].kind {
+        case .placeStop: return onExcludePlaceFromStudio != nil
+        case .mapRoute: return onExcludeMapFromStudio != nil
+        case .cover: return false
+        }
+    }
+
+    private func requestExclude(at rawIndex: Int) {
+        guard canExcludeSlide(at: rawIndex) else { return }
+        if skipExcludeConfirm {
+            performExclude(at: rawIndex)
+        } else {
+            pendingExcludeRawIndex = rawIndex
+        }
+    }
+
+    private func performExclude(at rawIndex: Int) {
+        guard slides.indices.contains(rawIndex) else { return }
+        switch slides[rawIndex].kind {
+        case .placeStop:
+            onExcludePlaceFromStudio?(rawIndex)
+        case .mapRoute:
+            onExcludeMapFromStudio?(rawIndex)
+        case .cover:
+            break
+        }
     }
 
     private func slideKindLabel(for slide: CarouselSlide) -> String {
@@ -7547,88 +7673,175 @@ private struct CarouselPhotoGroupPickerSheet: View {
 
     @ViewBuilder
     private func slideNavigatorTile(for slide: CarouselSlide) -> some View {
-        GeometryReader { geo in
-            let w = max(1, geo.size.width)
-            CarouselSlideView(
-                slide: slide,
-                width: w,
-                aspectRatio: aspectRatio,
-                onToggleSelection: {},
-                showsSelectionChrome: false,
-                clipsFloatingContentToRoundedSlideOutline: false
-            )
-            .allowsHitTesting(false)
-            .frame(width: w)
-            .padding(gridTileBleedInsets(slide: slide))
+        // Reserve height with aspect ratio first so `GeometryReader` cannot collapse/overlap the caption row below.
+        Color.clear
+            .aspectRatio(aspectRatio, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .overlay {
+                GeometryReader { geo in
+                    let w = max(1, geo.size.width)
+                    CarouselSlideView(
+                        slide: slide,
+                        width: w,
+                        aspectRatio: aspectRatio,
+                        onToggleSelection: {},
+                        showsSelectionChrome: false,
+                        clipsFloatingContentToRoundedSlideOutline: false
+                    )
+                    .allowsHitTesting(false)
+                    .frame(width: w)
+                    .padding(gridTileBleedInsets(slide: slide))
+                }
+            }
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
+    }
+
+    private var slidesManagementTipBody: String {
+        if hasSlideRemovalActions {
+            "Tap any slide to jump to it in the editor. Touch and hold a place or map slide, then choose Remove from carousel."
+        } else {
+            "Tap any slide to jump to it in the editor."
+        }
+    }
+
+    @ViewBuilder
+    private var slidesManagementTipBanner: some View {
+        if !slidesManagementTipDismissed {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Quick tips")
+                        .font(.subheadline.weight(.semibold))
+                    Text(slidesManagementTipBody)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Button("Got it") {
+                    slidesManagementTipDismissed = true
+                }
+                .font(.caption.weight(.semibold))
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                    .fill(Color(uiColor: .tertiarySystemFill))
             )
         }
-        .aspectRatio(aspectRatio, contentMode: .fit)
+    }
+
+    private var slidesManagementSlideCountLine: some View {
+        let visibleCount = visibleSlideIndices.count
+        return Text("\(visibleCount) slide\(visibleCount == 1 ? "" : "s")")
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 4)
+    }
+
+    @ViewBuilder
+    private func slidesManagementTileCell(ordinal: Int, rawIndex: Int, slide: CarouselSlide) -> some View {
+        Button {
+            onSelectSlide(rawIndex)
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                slideNavigatorTile(for: slide)
+                    .frame(maxWidth: .infinity)
+
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("\(ordinal + 1)")
+                        .font(.caption.weight(.bold).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                    Text(slideKindLabel(for: slide))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.top, 10)
+                .padding(.horizontal, 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            if canExcludeSlide(at: rawIndex) {
+                Button(role: .destructive) {
+                    requestExclude(at: rawIndex)
+                } label: {
+                    Label("Remove from carousel", systemImage: "minus.circle")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var slidesManagementGridOrEmpty: some View {
+        let indices = visibleSlideIndices
+        if indices.isEmpty {
+            Text("No slides in this carousel.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+        } else {
+            LazyVGrid(columns: gridColumns, spacing: 14) {
+                ForEach(Array(indices.enumerated()), id: \.element) { ordinal, rawIndex in
+                    let slide = slides[rawIndex]
+                    slidesManagementTileCell(ordinal: ordinal, rawIndex: rawIndex, slide: slide)
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+    }
+
+    private var slidesManagementScrollContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            slidesManagementTipBanner
+            slidesManagementSlideCountLine
+            slidesManagementGridOrEmpty
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    let visibleCount = visibleSlideIndices.count
-                    Text("\(visibleCount) slide\(visibleCount == 1 ? "" : "s")")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 4)
-
-                    let indices = visibleSlideIndices
-                    if indices.isEmpty {
-                        Text("No slides in this carousel.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 4)
-                    } else {
-                        LazyVGrid(columns: gridColumns, spacing: 14) {
-                            ForEach(Array(indices.enumerated()), id: \.element) { ordinal, rawIndex in
-                                let slide = slides[rawIndex]
-                                Button {
-                                    onSelectSlide(rawIndex)
-                                } label: {
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        slideNavigatorTile(for: slide)
-                                            .frame(maxWidth: .infinity)
-
-                                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                            Text("\(ordinal + 1)")
-                                                .font(.caption.weight(.bold).monospacedDigit())
-                                                .foregroundStyle(.secondary)
-                                                .frame(minWidth: 20, alignment: .leading)
-                                            Text(slideKindLabel(for: slide))
-                                                .font(.caption.weight(.semibold))
-                                                .foregroundStyle(.primary)
-                                                .lineLimit(1)
-                                                .truncationMode(.tail)
-                                            Spacer(minLength: 0)
-                                        }
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                    }
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.horizontal, 4)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                slidesManagementScrollContent
             }
             .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("Slides")
+            .navigationTitle("Slides Management")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationSubtitleIfAvailable(slidesManagementNavigationSubtitle)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
+                }
+            }
+            .alert("Remove this slide?", isPresented: Binding(
+                get: { pendingExcludeRawIndex != nil },
+                set: { if !$0 { pendingExcludeRawIndex = nil } }
+            )) {
+                Button("Cancel", role: .cancel) { pendingExcludeRawIndex = nil }
+                Button("Remove", role: .destructive) {
+                    if let i = pendingExcludeRawIndex {
+                        performExclude(at: i)
+                    }
+                    pendingExcludeRawIndex = nil
+                }
+            } message: {
+                if let i = pendingExcludeRawIndex, slides.indices.contains(i), slides[i].kind == .mapRoute {
+                    Text("The day map will be excluded from the carousel.")
+                } else {
+                    Text("This photo slide will be excluded from the carousel.")
                 }
             }
         }
@@ -7646,5 +7859,16 @@ private extension CGFloat {
 private extension CGSize {
     static func + (lhs: CGSize, rhs: CGSize) -> CGSize {
         CGSize(width: lhs.width + rhs.width, height: lhs.height + rhs.height)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func navigationSubtitleIfAvailable(_ subtitle: String) -> some View {
+        if #available(iOS 26.0, *) {
+            self.navigationSubtitle(subtitle)
+        } else {
+            self
+        }
     }
 }
