@@ -2599,7 +2599,7 @@ struct SlideTextEditorView: View {
     @State private var carouselStudioExportHubPhase: CarouselStudioExportHubPhase = .actions
     /// Indices selected in the download-only picker (subset of `studioDownloadCandidateIndices`).
     @State private var downloadSlidePickSelection: Set<Int> = []
-    /// Download modal output type (radio-style selector in top-right toolbar).
+    /// Download modal output type; trailing toolbar menu shows the active format icon (photo vs PDF).
     @State private var downloadOutputMode: DownloadOutputMode = .photo
 
     private enum CarouselStudioExportHubPhase {
@@ -2617,6 +2617,14 @@ struct SlideTextEditorView: View {
             switch self {
             case .photo: return "Photo"
             case .pdf: return "PDF"
+            }
+        }
+
+        /// Shown on the download sheet toolbar and in the format menu.
+        var systemImage: String {
+            switch self {
+            case .photo: return "photo"
+            case .pdf: return "doc.text.fill"
             }
         }
     }
@@ -4405,24 +4413,6 @@ struct SlideTextEditorView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-
-                                HStack(spacing: 8) {
-                                    ForEach(DownloadOutputMode.allCases) { mode in
-                                        Button {
-                                            downloadOutputMode = mode
-                                        } label: {
-                                            Text(mode.label)
-                                                .font(.subheadline.weight(.semibold))
-                                                .foregroundStyle(downloadOutputMode == mode ? .white : .primary)
-                                                .frame(maxWidth: .infinity, minHeight: 40)
-                                                .background {
-                                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                        .fill(downloadOutputMode == mode ? CarouselStudioChrome.accent : Color(uiColor: .secondarySystemFill))
-                                                }
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
                             }
                             .padding(.horizontal, 16)
                             .padding(.top, 10)
@@ -4517,6 +4507,33 @@ struct SlideTextEditorView: View {
                         ToolbarItem(placement: .principal) {
                             Text("Download")
                                 .font(.headline)
+                        }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Menu {
+                                Section("Export as") {
+                                    ForEach(DownloadOutputMode.allCases) { mode in
+                                        Button {
+                                            downloadOutputMode = mode
+                                        } label: {
+                                            HStack {
+                                                Label(mode.label, systemImage: mode.systemImage)
+                                                Spacer(minLength: 8)
+                                                if downloadOutputMode == mode {
+                                                    Image(systemName: "checkmark")
+                                                        .font(.body.weight(.semibold))
+                                                        .foregroundStyle(.secondary)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: downloadOutputMode.systemImage)
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .symbolRenderingMode(.hierarchical)
+                            }
+                            .accessibilityLabel("Download file type")
+                            .accessibilityValue(downloadOutputMode.label)
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
