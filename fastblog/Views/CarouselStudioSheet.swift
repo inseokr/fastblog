@@ -3033,7 +3033,7 @@ struct SlideTextEditorView: View {
     @State private var carouselStudioExportHubPhase: CarouselStudioExportHubPhase = .actions
     /// Indices selected in the download-only picker (subset of `studioDownloadCandidateIndices`).
     @State private var downloadSlidePickSelection: Set<Int> = []
-    /// Download modal output type (radio-style selector in top-right toolbar).
+    /// Download modal output type; trailing toolbar menu shows the active format icon (photo vs PDF).
     @State private var downloadOutputMode: DownloadOutputMode = .photo
 
     private enum CarouselStudioExportHubPhase {
@@ -3051,6 +3051,14 @@ struct SlideTextEditorView: View {
             switch self {
             case .photo: return "Photo"
             case .pdf: return "PDF"
+            }
+        }
+
+        /// Shown on the download sheet toolbar and in the format menu.
+        var systemImage: String {
+            switch self {
+            case .photo: return "photo"
+            case .pdf: return "doc.text.fill"
             }
         }
     }
@@ -5119,14 +5127,31 @@ struct SlideTextEditorView: View {
                                 .font(.headline)
                         }
                         ToolbarItem(placement: .topBarTrailing) {
-                            Picker("Output", selection: $downloadOutputMode) {
-                                ForEach(DownloadOutputMode.allCases) { mode in
-                                    Text(mode.label).tag(mode)
+                            Menu {
+                                Section("Export as") {
+                                    ForEach(DownloadOutputMode.allCases) { mode in
+                                        Button {
+                                            downloadOutputMode = mode
+                                        } label: {
+                                            HStack {
+                                                Label(mode.label, systemImage: mode.systemImage)
+                                                Spacer(minLength: 8)
+                                                if downloadOutputMode == mode {
+                                                    Image(systemName: "checkmark")
+                                                        .font(.body.weight(.semibold))
+                                                        .foregroundStyle(.secondary)
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
+                            } label: {
+                                Image(systemName: downloadOutputMode.systemImage)
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .symbolRenderingMode(.hierarchical)
                             }
-                            .pickerStyle(.segmented)
-                            .frame(width: 148)
-                            .accessibilityLabel("Download as Photo or PDF")
+                            .accessibilityLabel("Download file type")
+                            .accessibilityValue(downloadOutputMode.label)
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
