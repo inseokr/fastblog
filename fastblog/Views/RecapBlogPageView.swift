@@ -843,6 +843,16 @@ struct RecapBlogPageView: View {
                         .animation(.easeInOut(duration: 0.2), value: showBloggoQRSheet)
                         .zIndex(1000)
                 }
+                if showSocialPostStudio {
+                    SocialPostStudioSheet(
+                        blog: draft,
+                        opensInEditMode: true,
+                        onDismissFromParent: { showSocialPostStudio = false }
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
+                    .zIndex(1002)
+                }
             }
             .onReceive(createdRecapStore.objectWillChange) {
                 // Default `isEditMode` is true, so we must still merge background work (rate-limited geocoding per day)
@@ -902,6 +912,7 @@ struct RecapBlogPageView: View {
     private var shouldHideRecapNavigationBar: Bool {
         showStoryMode ||
         showPanorama ||
+        showSocialPostStudio ||
         placeCaptionEditItem != nil ||
         dayCaptionEditItem != nil ||
         (placePhotoModalItem != nil && !revealRecapNavigationDuringPhotoDismiss) ||
@@ -938,9 +949,6 @@ struct RecapBlogPageView: View {
                 if let url = blogVideoShareURL {
                     ShareSheet(items: [url])
                 }
-            }
-            .sheet(isPresented: $showSocialPostStudio) {
-                SocialPostStudioSheet(blog: draft, opensInEditMode: true)
             }
             .sheet(isPresented: $showBlogSettings) {
                 BlogSettingsSheet(

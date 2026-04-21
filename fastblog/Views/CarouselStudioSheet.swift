@@ -982,13 +982,19 @@ private struct DraggableTextBlock<Content: View>: View {
             Color.clear
                 .onAppear { captureNaturalRect(from: geo) }
                 .onChange(of: geo.size) { _, _ in captureNaturalRect(from: geo) }
-                // Story/Reel (9:16) slides resize when the formatting toolbar
-                // opens/closes. The block's own intrinsic size does not always
-                // change with the slide, so we must also recapture on
-                // `slideBounds` changes — otherwise the cached natural rect
-                // stays in the old coord space, and drag clamping writes a
-                // committed offset that doesn't match the live rendering.
-                .onChange(of: slideBounds) { _, _ in captureNaturalRect(from: geo) }
+                // Slides resize when the formatting toolbar opens/closes (9:16)
+                // or when the aspect ratio is switched (e.g. 9:16 → 4:5).
+                // The block's intrinsic size may not change, so `onChange(of: geo.size)`
+                // won't fire. We must recapture on `slideBounds` changes instead.
+                // Crucially, we nil `naturalRect` first: if the named coordinate space
+                // hasn't been committed yet in this render pass, `captureNaturalRect`
+                // returns a zero rect and bails out (guard), leaving `naturalRect = nil`.
+                // `clamped()` then returns the proposed offset unconstrained, which is
+                // far better than clamping against stale 9:16 coordinates on a 4:5 slide.
+                .onChange(of: slideBounds) { _, _ in
+                    naturalRect = nil
+                    captureNaturalRect(from: geo)
+                }
         }
     }
 
@@ -1924,7 +1930,10 @@ private struct DraggablePIPCluster: View {
             Color.clear
                 .onAppear { captureNaturalRect(from: geo) }
                 .onChange(of: geo.size) { _, _ in captureNaturalRect(from: geo) }
-                .onChange(of: slideBounds) { _, _ in captureNaturalRect(from: geo) }
+                .onChange(of: slideBounds) { _, _ in
+                    naturalRect = nil
+                    captureNaturalRect(from: geo)
+                }
             .onChange(of: stackStyle) { _, _ in captureNaturalRect(from: geo) }
             .onChange(of: pipSizeScale) { _, _ in captureNaturalRect(from: geo) }
         }
@@ -2372,12 +2381,14 @@ struct SlideTextEditorView: View {
     @State private var didPerformInitialScroll = false
     /// Inline copy editor opened from the "Text" button in the formatting toolbar.
     @State private var showsTextEditLine = false
+    /// When `true`, `commitInlineTextEdit` ran — skip draft revert in the text sheet's `onDismiss`.
+    @State private var inlineTextEditCommitted = false
     @State private var inlineTextDraft = ""
     /// Secondary draft for the place caption field shown beneath the place name
     /// when editing a placeStop primary block.
     @State private var inlineCaptionDraft = ""
-    @FocusState private var isInlineTextEditorFocused: Bool
-    @FocusState private var isInlineCaptionFocused: Bool
+    private enum InlineTextFocusField: Hashable { case main, caption }
+    @FocusState private var inlineTextFocusField: InlineTextFocusField?
     /// Which backing field receives caption edits for the current place-stop primary block.
     @State private var placeCaptionWriteTarget: PlaceSlideCaptionTarget = .none
     /// Tracks the on-screen keyboard height so the toolbar can be pushed above it.
@@ -2396,6 +2407,8 @@ struct SlideTextEditorView: View {
     let onOpenPhotoGroupPicker: (() -> Void)?
     /// When `true` (e.g. Reel export), the download picker only allows one slide at a time.
     let isSingleSlideDownloadMode: Bool
+    /// When embedded outside a dismissible presentation (e.g. recap overlay), Close calls this instead of `dismiss()`.
+    private let onDismissEditor: (() -> Void)?
 
     /// Persisted preference: skip the remove-slide confirmation alert.
     @AppStorage("blogify.studioSkipExcludeConfirm") private var skipExcludeConfirm = false
@@ -2441,7 +2454,8 @@ struct SlideTextEditorView: View {
         onOpenExcludedPhotos: (() -> Void)? = nil,
         excludedFromStudioCount: Int = 0,
         onOpenPhotoGroupPicker: (() -> Void)? = nil,
-        isSingleSlideDownloadMode: Bool = false
+        isSingleSlideDownloadMode: Bool = false,
+        onDismissEditor: (() -> Void)? = nil
     ) {
         self._slides = slides
         self.initialIndex = initialIndex
@@ -2457,6 +2471,7 @@ struct SlideTextEditorView: View {
         self.excludedFromStudioCount = excludedFromStudioCount
         self.onOpenPhotoGroupPicker = onOpenPhotoGroupPicker
         self.isSingleSlideDownloadMode = isSingleSlideDownloadMode
+        self.onDismissEditor = onDismissEditor
         self._currentIndex = State(initialValue: initialIndex)
         self._scrollPageID = State(initialValue: initialIndex)
     }
@@ -2624,16 +2639,6 @@ struct SlideTextEditorView: View {
         modeSelectorReservedHeight + splitToolsReservedHeight
     }
 
-    /// Extra height reserved when the inline text-edit line is visible (single field).
-    private let bottomTextEditLineHeight: CGFloat = 54
-    /// Extra height when two fields are shown (place name + caption).
-    private let bottomTextEditLineTallHeight: CGFloat = 100
-
-    /// Height of the inline editor based on how many fields are shown.
-    private var inlineEditorHeight: CGFloat {
-        showsTextEditLine ? (showsInlineCaptionField ? bottomTextEditLineTallHeight : bottomTextEditLineHeight) : 0
-    }
-
     /// Reserve subtracted from available height when computing `maxSlotH` for the
     /// slide pager. Matches pre–PIP-reorder behavior (`bottomChromeExpanded`) for
     /// all cases except while the tall PIP reorder drop-up is visible (multi-image),
@@ -2648,7 +2653,7 @@ struct SlideTextEditorView: View {
             let visible = min(max(0, slide.pipVisibleCount), images.count)
             if visible > 1 { return bottomChromePIPReorder + studioModeChromeReserve }
         }
-        return bottomChromeExpanded + inlineEditorHeight + studioModeChromeReserve
+        return bottomChromeExpanded + studioModeChromeReserve
     }
 
     /// Current inset height. Drives the `.safeAreaInset` frame so the chrome
@@ -2663,7 +2668,7 @@ struct SlideTextEditorView: View {
         }
         let expanded = activeStyleCategory != nil || activePIPCategory != nil
         let base = expanded ? bottomChromeExpanded : bottomChromeCollapsed
-        return base + inlineEditorHeight
+        return base
     }
 
     // MARK: Helpers
@@ -3141,6 +3146,7 @@ struct SlideTextEditorView: View {
             showsTextEditLine = false
             return
         }
+        inlineTextEditCommitted = true
         pushUndoSnapshot()
         let text = inlineTextDraft
         switch (slides[currentIndex].kind, block) {
@@ -3154,8 +3160,20 @@ struct SlideTextEditorView: View {
         default: break
         }
         showsTextEditLine = false
-        isInlineTextEditorFocused = false
-        isInlineCaptionFocused = false
+        inlineTextFocusField = nil
+    }
+
+    private func cancelInlineTextEdit() {
+#if DEBUG
+        print("[CarouselStudio][TextEdit] cancelInlineTextEdit()")
+#endif
+        inlineTextDraft = currentBlockText
+        if showsInlineCaptionField {
+            inlineCaptionDraft = currentSlide?.photoCaption ?? currentSlide?.caption ?? ""
+        }
+        inlineTextEditCommitted = true
+        showsTextEditLine = false
+        inlineTextFocusField = nil
     }
 
     /// Reverts a place-stop slide back to the single-photo layout. Mirrors the
@@ -3906,7 +3924,13 @@ struct SlideTextEditorView: View {
                 .onTapGesture {
                     if selectedBlock != nil { selectedBlock = nil }
                     if selectedSplitSlot != nil { selectedSplitSlot = nil }
+                    if showsTextEditLine {
+                        showsTextEditLine = false
+                        inlineTextFocusField = nil
+                    }
                 }
+                .opacity(showsTextEditLine ? 0.1 : 1.0)
+                .animation(.easeInOut(duration: 0.22), value: showsTextEditLine)
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if !slides.isEmpty {
                         // Bottom chrome height is dynamic:
@@ -3933,8 +3957,6 @@ struct SlideTextEditorView: View {
                         // pushes the toolbar above the keyboard without changing its
                         // visual appearance.
                         VStack(spacing: 0) {
-                            // Mode selector + split tools are slide-level controls,
-                            // always in the same position above the block toolbar.
                             modeSelectRow
                             splitToolsRow
 
@@ -3963,13 +3985,92 @@ struct SlideTextEditorView: View {
                                        value: activeStyleCategory)
                             .animation(.spring(response: 0.32, dampingFraction: 0.82),
                                        value: activePIPCategory)
+                            .animation(.spring(response: 0.32, dampingFraction: 0.82),
+                                       value: showsTextEditLine)
 
                             Color.clear
-                                .frame(height: keyboardHeight)
+                                .frame(height: showsTextEditLine ? 0 : keyboardHeight)
                         }
+                        .opacity(showsTextEditLine ? 0 : 1)
+                        .allowsHitTesting(!showsTextEditLine)
                         .animation(.spring(response: 0.32, dampingFraction: 0.82), value: keyboardHeight)
                     }
                 }
+    }
+
+    @ViewBuilder
+    private var inlineTextEditSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(showsInlineCaptionField ? "Place name" : "Text", text: $inlineTextDraft, axis: .vertical)
+                        .focused($inlineTextFocusField, equals: .main)
+                        .defaultFocus($inlineTextFocusField, .main)
+                        .lineLimit(1...6)
+                    if showsInlineCaptionField {
+                        TextField("Caption", text: $inlineCaptionDraft, axis: .vertical)
+                            .focused($inlineTextFocusField, equals: .caption)
+                            .lineLimit(1...8)
+                    }
+                }
+            }
+            .navigationTitle("Edit text")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { cancelInlineTextEdit() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { commitInlineTextEdit() }
+                }
+            }
+            .onAppear {
+#if DEBUG
+                print("[CarouselStudio][TextEdit] sheet onAppear; focusField=\(String(describing: inlineTextFocusField))")
+#endif
+                // On sheet presentation, focus can race with detent/layout setup.
+                // A two-pass focus request reliably raises the keyboard.
+                inlineTextFocusField = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    inlineTextFocusField = .main
+#if DEBUG
+                    print("[CarouselStudio][TextEdit] focus pass #1 (50ms); focusField=\(String(describing: inlineTextFocusField))")
+#endif
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    if inlineTextFocusField == nil {
+                        inlineTextFocusField = .main
+                    }
+#if DEBUG
+                    print("[CarouselStudio][TextEdit] focus pass #2 (200ms); focusField=\(String(describing: inlineTextFocusField))")
+#endif
+                }
+            }
+            .onDisappear {
+#if DEBUG
+                print("[CarouselStudio][TextEdit] sheet onDisappear; focusField=\(String(describing: inlineTextFocusField))")
+#endif
+            }
+            .onChange(of: inlineTextFocusField) { _, newValue in
+#if DEBUG
+                print("[CarouselStudio][TextEdit] inlineTextFocusField -> \(String(describing: newValue))")
+#endif
+            }
+            .task {
+                // Some devices/sheet transitions still drop initial focus; retry a few times.
+                for delay in [120_000_000, 280_000_000, 520_000_000] {
+                    try? await Task.sleep(nanoseconds: UInt64(delay))
+                    if !showsTextEditLine { break }
+                    if inlineTextFocusField == nil {
+                        inlineTextFocusField = .main
+                    }
+#if DEBUG
+                    print("[CarouselStudio][TextEdit] focus retry (\(delay)ns); focusField=\(String(describing: inlineTextFocusField))")
+#endif
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
     }
 
     @ViewBuilder
@@ -4275,7 +4376,11 @@ struct SlideTextEditorView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .topBarLeading) {
                     Button {
-                        dismiss()
+                        if let onDismissEditor {
+                            onDismissEditor()
+                        } else {
+                            dismiss()
+                        }
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 14, weight: .semibold))
@@ -4319,6 +4424,11 @@ struct SlideTextEditorView: View {
                             .frame(width: 24, height: 24)
                     }
                     .accessibilityLabel("Share, download, or export PDF")
+                }
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if onDismissEditor != nil {
+                    embeddedEditorHeader
                 }
             }
             .onChange(of: scrollPageID) { _, newID in
@@ -4395,8 +4505,31 @@ struct SlideTextEditorView: View {
         }
         // Bar-button labels still pick up global/accent tint on some OS builds unless
         // the navigation hierarchy sets an explicit toolbar tint.
+        .toolbar(.visible, for: .navigationBar)
         .tint(.white)
         .preferredColorScheme(.dark)
+        .onChange(of: showsTextEditLine) { _, isShowing in
+#if DEBUG
+            print("[CarouselStudio][TextEdit] showsTextEditLine -> \(isShowing)")
+#endif
+        }
+        .sheet(isPresented: $showsTextEditLine, onDismiss: {
+#if DEBUG
+            print("[CarouselStudio][TextEdit] sheet onDismiss; committed=\(inlineTextEditCommitted) focusField=\(String(describing: inlineTextFocusField))")
+#endif
+            if !inlineTextEditCommitted {
+                inlineTextDraft = currentBlockText
+                if showsInlineCaptionField {
+                    inlineCaptionDraft = currentSlide?.photoCaption ?? currentSlide?.caption ?? ""
+                }
+                inlineTextFocusField = nil
+            }
+            inlineTextEditCommitted = false
+        }, content: {
+            inlineTextEditSheet
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        })
         .sheet(isPresented: $showCarouselStudioExportHub, onDismiss: {
             carouselStudioExportHubPhase = .actions
         }, content: {
@@ -4556,6 +4689,72 @@ struct SlideTextEditorView: View {
         }
     }
 
+    @ViewBuilder
+    private var embeddedEditorHeader: some View {
+        let canUndo = !undoStack.isEmpty
+        ZStack {
+            Text("Carousel Studio")
+                .font(.headline)
+                .foregroundStyle(.white)
+                .allowsHitTesting(false)
+
+            HStack(spacing: 12) {
+                Button {
+                    onDismissEditor?()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close")
+
+                Button {
+                    undoLastChange()
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .opacity(canUndo ? 1 : 0.3)
+                }
+                .buttonStyle(.plain)
+                .disabled(!canUndo)
+                .accessibilityLabel("Undo")
+
+                Spacer()
+
+                if excludedFromStudioCount > 0, let onOpenExcluded = onOpenExcludedPhotos {
+                    Button {
+                        onOpenExcluded()
+                    } label: {
+                        Text("Excluded (\(excludedFromStudioCount))")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Excluded photos, \(excludedFromStudioCount)")
+                }
+
+                Button {
+                    carouselStudioExportHubPhase = .actions
+                    showCarouselStudioExportHub = true
+                } label: {
+                    Image("CarouselStudioExportHub")
+                        .resizable()
+                        .renderingMode(.original)
+                        .scaledToFit()
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Share, download, or export PDF")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color(red: 5/255, green: 10/255, blue: 48/255))
+    }
+
     // MARK: - Formatting toolbar
 
     /// Bottom hint shown before the user taps a text block. Once a block is
@@ -4589,6 +4788,8 @@ struct SlideTextEditorView: View {
         VStack(spacing: 0) {
             // Slide-level actions: bulk-apply typography / photo text positions from the
             // current slide (left), delete the selected block (right).
+            // Hidden while the text edit sheet is up (bottom chrome is removed then anyway).
+            if !showsTextEditLine {
             HStack(spacing: 12) {
                 Menu {
                     Button {
@@ -4638,67 +4839,21 @@ struct SlideTextEditorView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 6)
             .background(Color(white: 0.08))
+            }
 
-            // Inline text editor — appears above the drop-up panel when the "Text" button is tapped.
-            if showsTextEditLine {
-                HStack(alignment: .center, spacing: 10) {
-                    VStack(spacing: 6) {
-                        TextField(showsInlineCaptionField ? "Place name…" : "Edit text…", text: $inlineTextDraft)
-                            .focused($isInlineTextEditorFocused)
-                            .font(.system(size: 15))
-                            .foregroundColor(.white)
-                            .tint(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(Color.white.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                            .onSubmit { showsInlineCaptionField ? (isInlineCaptionFocused = true) : commitInlineTextEdit() }
-
-                        if showsInlineCaptionField {
-                            TextField("Caption…", text: $inlineCaptionDraft)
-                                .focused($isInlineCaptionFocused)
-                                .font(.system(size: 15))
-                                .foregroundColor(.white)
-                                .tint(.white)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
-                                .background(Color.white.opacity(0.1))
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                                .onSubmit { commitInlineTextEdit() }
-                        }
-                    }
-
-                    Button {
-                        commitInlineTextEdit()
-                    } label: {
-                        Text("Save")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 14).padding(.vertical, 8)
-                            .background(CarouselStudioChrome.accent)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
+            if !showsTextEditLine {
+                // Drop-up panel: horizontally-scrollable options for the active category.
+                // Collapses when `activeStyleCategory == nil`.
+                if let category = activeStyleCategory {
+                    styleDropUpPanel(for: category)
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .bottom).combined(with: .opacity),
+                            removal: .opacity))
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(Color(white: 0.08))
-                .transition(.asymmetric(
-                    insertion: .move(edge: .bottom).combined(with: .opacity),
-                    removal: .opacity))
-            }
 
-            // Drop-up panel: horizontally-scrollable options for the active category.
-            // Collapses when `activeStyleCategory == nil`.
-            if let category = activeStyleCategory {
-                styleDropUpPanel(for: category)
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .bottom).combined(with: .opacity),
-                        removal: .opacity))
+                // Category tab bar — always visible when a block is selected.
+                styleCategoryTabBar
             }
-
-            // Category tab bar — always visible when a block is selected.
-            styleCategoryTabBar
         }
         .background(Color(white: 0.08))
         .animation(.spring(response: 0.32, dampingFraction: 0.82), value: activeStyleCategory)
@@ -5632,13 +5787,15 @@ struct SlideTextEditorView: View {
         return Button {
             withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
                 if isActive {
-                    showsTextEditLine = false
-                    isInlineTextEditorFocused = false
+                    cancelInlineTextEdit()
                 } else {
+#if DEBUG
+                    print("[CarouselStudio][TextEdit] opening sheet from Text tab")
+#endif
+                    inlineTextEditCommitted = false
                     inlineTextDraft = currentBlockText
                     inlineCaptionDraft = currentSlide?.photoCaption ?? currentSlide?.caption ?? ""
                     showsTextEditLine = true
-                    isInlineTextEditorFocused = true
                 }
             }
         } label: {
@@ -5793,6 +5950,8 @@ struct SocialPostStudioSheet: View {
     let blog: RecapBlogDetail
     /// When `true`, the sheet is **Edit Slides** after load (Share → Post to Social), not Social Post Studio.
     var opensInEditMode: Bool = false
+    /// When the studio is embedded inline (not a system sheet), wire the nav Close button to this instead of `dismiss()`.
+    var onDismissFromParent: (() -> Void)? = nil
 
     @State private var slides: [CarouselSlide] = []
     @State private var exportFormat: ExportFormat = .post
@@ -5896,8 +6055,10 @@ struct SocialPostStudioSheet: View {
                         onOpenExcludedPhotos: { showExcludedPhotosSheet = true },
                         excludedFromStudioCount: excludedStudioPhotoKeys.count,
                         onOpenPhotoGroupPicker: { showPhotoGroupPicker = true },
-                        isSingleSlideDownloadMode: exportFormat.isSingleSlide
+                        isSingleSlideDownloadMode: exportFormat.isSingleSlide,
+                        onDismissEditor: onDismissFromParent
                     )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
                 NavigationStack {
