@@ -1252,10 +1252,16 @@ struct RecapBlogPageView: View {
             }
             .modifier(coreContentAlertsAndLifecycleModifier())
             .alert("Save as Draft?", isPresented: $showNewBlogExitConfirmation) {
-                Button("Save as Draft") {
-                    createdRecapStore.saveBlogDetail(draft, asDraft: true)
-                    createdRecapStore.showDraftSavedToast = true
-                    performDismiss()
+                if isDraft {
+                    Button("Exit Draft", role: .destructive) {
+                        performDismiss()
+                    }
+                } else {
+                    Button("Save as Draft") {
+                        createdRecapStore.saveBlogDetail(draft, asDraft: true)
+                        createdRecapStore.showDraftSavedToast = true
+                        performDismiss()
+                    }
                 }
                 Button("Exit", role: .destructive) {
                     createdRecapStore.removeLocalCopy(sourceTripId: blogId)
@@ -1263,13 +1269,23 @@ struct RecapBlogPageView: View {
                 }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("Would you like to save this blog as a draft and finish it later?")
+                if isDraft {
+                    Text("This blog is already a draft. Exit now?")
+                } else {
+                    Text("Would you like to save this blog as a draft and finish it later?")
+                }
             }
             .alert("Save as Draft?", isPresented: $showOverlayDraftExitConfirmation) {
-                Button("Save as Draft") {
-                    createdRecapStore.saveBlogDetail(draft, asDraft: true)
-                    createdRecapStore.showDraftSavedToast = true
-                    performDismiss()
+                if isDraft {
+                    Button("Exit Draft", role: .destructive) {
+                        performDismiss()
+                    }
+                } else {
+                    Button("Save as Draft") {
+                        createdRecapStore.saveBlogDetail(draft, asDraft: true)
+                        createdRecapStore.showDraftSavedToast = true
+                        performDismiss()
+                    }
                 }
                 Button("Discard changes", role: .destructive) {
                     if let snapshot = draftSnapshot {
@@ -1280,7 +1296,11 @@ struct RecapBlogPageView: View {
                 }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("You have unsaved changes. Save as a draft or discard changes before going back.")
+                if isDraft {
+                    Text("This blog is already a draft. Exit now or discard unsaved changes before going back.")
+                } else {
+                    Text("You have unsaved changes. Save as a draft or discard changes before going back.")
+                }
             }
     }
 

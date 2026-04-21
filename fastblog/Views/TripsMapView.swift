@@ -52,7 +52,7 @@ private struct TripDraftMapAnnotationView: View {
 
     private static let thumbSize: CGFloat = 64
     private static let titleMaxWidth: CGFloat = 100
-    private static let dotSize: CGFloat = 14
+    private static let dotSize: CGFloat = 17.5
 
     var body: some View {
         ZStack {

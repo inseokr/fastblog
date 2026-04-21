@@ -1506,7 +1506,7 @@ struct CarouselSlideView: View {
                                     Image(systemName: "mappin.circle.fill")
                                         .font(.system(size: width * 0.062 * slide.textStyle.primary.sizeScale,
                                                       weight: .medium))
-                                        .foregroundStyle(.white)
+                                        .foregroundStyle(studioEffectiveForegroundColor(slide.textStyle.primary))
                                         .symbolRenderingMode(.monochrome)
                                 }
                                 Text(placeStop.placeTitle)
@@ -2206,6 +2206,7 @@ private struct SplitPhotoRepositionCover: View {
     let slideAspectRatio: CGFloat
     let onClose: () -> Void
     let onApply: (StudioImageFraming?, SplitRepositionSlot) -> Void
+    let onRequestBottomPhotoPick: () -> Void
 
     @State private var activeSlot: SplitRepositionSlot
     @State private var working: StudioImageFraming = .neutral
@@ -2223,7 +2224,8 @@ private struct SplitPhotoRepositionCover: View {
         startingSlot: SplitRepositionSlot,
         slideAspectRatio: CGFloat,
         onClose: @escaping () -> Void,
-        onApply: @escaping (StudioImageFraming?, SplitRepositionSlot) -> Void
+        onApply: @escaping (StudioImageFraming?, SplitRepositionSlot) -> Void,
+        onRequestBottomPhotoPick: @escaping () -> Void
     ) {
         _slides = slides
         self.slideIndex = slideIndex
@@ -2231,6 +2233,7 @@ private struct SplitPhotoRepositionCover: View {
         self.slideAspectRatio = slideAspectRatio
         self.onClose = onClose
         self.onApply = onApply
+        self.onRequestBottomPhotoPick = onRequestBottomPhotoPick
         _activeSlot = State(initialValue: startingSlot)
     }
 
@@ -2350,13 +2353,27 @@ private struct SplitPhotoRepositionCover: View {
                                 Image(systemName: "photo")
                                     .font(.system(size: 40, weight: .medium))
                                     .foregroundStyle(.white.opacity(0.35))
-                                Text(activeSlot == .bottom
-                                     ? "Pick a bottom photo first, or switch to Top."
-                                     : "No image in this slot.")
-                                    .font(.subheadline.weight(.medium))
-                                    .multilineTextAlignment(.center)
-                                    .foregroundStyle(.white.opacity(0.55))
-                                    .padding(.horizontal, 28)
+                                if activeSlot == .bottom {
+                                    Button("Select Bottom Photo") {
+                                        onRequestBottomPhotoPick()
+                                    }
+                                    .buttonStyle(.plain)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                    .background(Color.white.opacity(0.12), in: Capsule())
+                                    .overlay(
+                                        Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 1)
+                                    )
+                                    .accessibilityLabel("Select Bottom Photo")
+                                } else {
+                                    Text("No image in this slot.")
+                                        .font(.subheadline.weight(.medium))
+                                        .multilineTextAlignment(.center)
+                                        .foregroundStyle(.white.opacity(0.55))
+                                        .padding(.horizontal, 28)
+                                }
                             }
                             .frame(maxWidth: .infinity, maxHeight: slotH)
                         }
@@ -3035,8 +3052,8 @@ struct SlideTextEditorView: View {
     /// Single vs multi-photo layout for the current place-stop slide. Keeps sibling
     /// slide `isSelected` flags aligned with `SocialPostStudioSheet.setLayout` so
     /// export and the preview strip stay consistent.
-    private func setPlaceStopLayout(_ layout: CarouselSlideLayout) {
-        let index = editorPagerFocusedSlideIndex
+    private func setPlaceStopLayout(_ layout: CarouselSlideLayout, for index: Int? = nil) {
+        let index = index ?? editorPagerFocusedSlideIndex
         guard slides.indices.contains(index), slides[index].kind == .placeStop else { return }
         currentIndex = index
         let stopID = slides[index].placeStop?.id
@@ -3092,7 +3109,7 @@ struct SlideTextEditorView: View {
     private func layoutLabel(_ layout: CarouselSlideLayout) -> String {
         switch layout {
         case .single: return "Single"
-        case .pip:    return "PIP"
+        case .pip:    return "Multi"
         case .split:  return "Split"
         }
     }
@@ -3109,13 +3126,14 @@ struct SlideTextEditorView: View {
             case .placeStop:
                 if !slide.pipImages.isEmpty {
                     let layouts = CarouselSlideLayout.allCases
+                    let focusedIndex = editorPagerFocusedSlideIndex
                     let modeTrackCorner: CGFloat = 11
                     let modeActiveCorner: CGFloat = 8
                     HStack(spacing: 0) {
                         ForEach(Array(layouts.enumerated()), id: \.element.id) { _, layout in
                             let isActive = slide.layout == layout
                             Button {
-                                setPlaceStopLayout(layout)
+                                setPlaceStopLayout(layout, for: focusedIndex)
                             } label: {
                                 HStack(spacing: 5) {
                                     Image(systemName: layoutIcon(layout))
@@ -3169,6 +3187,7 @@ struct SlideTextEditorView: View {
             case .placeStop:
                 ZStack(alignment: .trailing) {
                     if slide.layout == .split {
+                        let canSwapSplitPhotos = slide.splitBottomPhotoID != nil
                         HStack(spacing: 10) {
                             Button {
                                 let idx = editorPagerFocusedSlideIndex
@@ -3192,13 +3211,14 @@ struct SlideTextEditorView: View {
                             } label: {
                                 Label("Swap", systemImage: "arrow.up.arrow.down")
                                     .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.white.opacity(0.88))
+                                    .foregroundColor(.white.opacity(canSwapSplitPhotos ? 0.88 : 0.32))
                                     .lineLimit(1)
                                     .fixedSize(horizontal: true, vertical: false)
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 4)
                             }
                             .buttonStyle(.plain)
+                            .disabled(!canSwapSplitPhotos)
 
                             // Inline Straight / Curve toggle — avoids SwiftUI `Menu`’s
                             // UIKit pull-down (label hides, popover appears, odd re-open
@@ -3245,8 +3265,9 @@ struct SlideTextEditorView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.horizontal, 20)
-                .padding(.vertical, 6)
-                .frame(height: splitToolsReservedHeight)
+                .padding(.top, 4)
+                .padding(.bottom, 2)
+                .frame(height: splitToolsReservedHeight, alignment: .top)
                 // Hard-strip every transaction reaching this row so neither the
                 // implicit transitions on `Group { if/else }` nor any inherited
                 // animation from ancestors (keyboardHeight spring, selectedBlock
@@ -3335,6 +3356,9 @@ struct SlideTextEditorView: View {
         }
         inlineTextEditCommitted = true
         pushUndoSnapshot()
+        // Keep PIP cluster position stable when saving text edits. The text write path
+        // should never mutate inset-photo placement for `.pip` place-stop slides.
+        let preservedPIPOffset = slides[currentIndex].pipOffset
         let text = inlineTextDraft
         switch (slides[currentIndex].kind, block) {
         case (.cover, .primary):      slides[currentIndex].coverTitle = text
@@ -3345,6 +3369,9 @@ struct SlideTextEditorView: View {
             slides[currentIndex].photoCaption = inlineCaptionDraft
         case (.placeStop, .secondary): slides[currentIndex].placeStop?.placeSubtitle = text
         default: break
+        }
+        if slides[currentIndex].layout == .pip {
+            slides[currentIndex].pipOffset = preservedPIPOffset
         }
         showsTextEditLine = false
         inlineTextFocusField = nil
@@ -3698,7 +3725,6 @@ struct SlideTextEditorView: View {
               let bottomImage = slides[slideIndex].splitBottomImage,
               let bottomID = slides[slideIndex].splitBottomPhotoID else { return }
         pushUndoSnapshot()
-        let stopID = slides[slideIndex].placeStop?.id
         let oldHeroImage = slides[slideIndex].heroImage
         let oldHeroID = slides[slideIndex].heroPhotoID
         let oldTopFraming = slides[slideIndex].splitTopFraming
@@ -3710,17 +3736,6 @@ struct SlideTextEditorView: View {
             slides[slideIndex].splitBottomPhotoID = oldHeroID
             slides[slideIndex].splitTopFraming = oldBottomFraming
             slides[slideIndex].splitBottomFraming = oldTopFraming
-            if let stopID {
-                for i in slides.indices where i != slideIndex {
-                    guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
-                    if slides[i].heroPhotoID == bottomID {
-                        slides[i].isSelected = true
-                    }
-                    if let oldHeroID, slides[i].heroPhotoID == oldHeroID {
-                        slides[i].isSelected = false
-                    }
-                }
-            }
         }
     }
 
@@ -4171,13 +4186,13 @@ struct SlideTextEditorView: View {
                                         .transition(.opacity)
                                 }
 
-                                if selectedBlock == nil {
+                                if isPIPClusterSelected {
+                                    pipClusterToolbar
+                                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                                } else if selectedBlock == nil {
                                     emptySelectionHint
                                         .frame(maxWidth: .infinity)
                                         .transition(.opacity)
-                                } else if isPIPClusterSelected {
-                                    pipClusterToolbar
-                                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                                 } else {
                                     textFormattingToolbar
                                         .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -4286,11 +4301,10 @@ struct SlideTextEditorView: View {
                 switch carouselStudioExportHubPhase {
                 case .actions:
                     VStack(spacing: 18) {
-                        Image("CarouselStudioExportHub")
-                            .resizable()
-                            .renderingMode(.original)
-                            .scaledToFit()
-                            .frame(width: 48, height: 48)
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 48, weight: .regular))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.primary)
                             .frame(maxWidth: .infinity)
 
                         Text("Export")
@@ -4322,10 +4336,12 @@ struct SlideTextEditorView: View {
                         } label: {
                             Text("Download")
                                 .font(.headline)
+                                .foregroundStyle(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
                         .disabled(exportActions.exportActionsDisabled() || studioDownloadCandidateIndices.isEmpty)
                     }
                     .frame(maxWidth: .infinity, alignment: .top)
@@ -4494,7 +4510,63 @@ struct SlideTextEditorView: View {
         .presentationDragIndicator(.visible)
     }
 
-    var body: some View {
+    @ToolbarContentBuilder
+    private var editorToolbarContent: some ToolbarContent {
+        ToolbarItemGroup(placement: .topBarLeading) {
+            Button {
+                if let onDismissEditor {
+                    onDismissEditor()
+                } else {
+                    dismiss()
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .accessibilityLabel("Close")
+
+            let canUndo = !undoStack.isEmpty
+            Button {
+                undoLastChange()
+            } label: {
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(.white)
+                    .opacity(canUndo ? 1 : 0.3)
+                    .animation(.easeInOut(duration: 0.18), value: canUndo)
+            }
+            .disabled(!canUndo)
+            .accessibilityLabel("Undo")
+        }
+
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            if excludedFromStudioCount > 0, let onOpenExcluded = onOpenExcludedPhotos {
+                Button {
+                    onOpenExcluded()
+                } label: {
+                    Text("Excluded (\(excludedFromStudioCount))")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                .accessibilityLabel("Excluded photos, \(excludedFromStudioCount)")
+            }
+
+            Button {
+                carouselStudioExportHubPhase = .actions
+                showCarouselStudioExportHub = true
+            } label: {
+                Image("CarouselStudioExportHub")
+                    .resizable()
+                    .renderingMode(.original)
+                    .scaledToFit()
+                    .frame(width: 30, height: 30)
+            }
+            .accessibilityLabel("Share, download, or export PDF")
+        }
+    }
+
+    private var editorNavigationContent: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
                 CarouselStudioNavigationBarHairlineDisabler()
@@ -4513,59 +4585,7 @@ struct SlideTextEditorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color(red: 5/255, green: 10/255, blue: 48/255), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarLeading) {
-                    Button {
-                        if let onDismissEditor {
-                            onDismissEditor()
-                        } else {
-                            dismiss()
-                        }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
-                    .accessibilityLabel("Close")
-
-                    let canUndo = !undoStack.isEmpty
-                    Button {
-                        undoLastChange()
-                    } label: {
-                        Image(systemName: "arrow.uturn.backward")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                            .opacity(canUndo ? 1 : 0.3)
-                            .animation(.easeInOut(duration: 0.18), value: canUndo)
-                    }
-                    .disabled(!canUndo)
-                    .accessibilityLabel("Undo")
-                }
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    if excludedFromStudioCount > 0, let onOpenExcluded = onOpenExcludedPhotos {
-                        Button {
-                            onOpenExcluded()
-                        } label: {
-                            Text("Excluded (\(excludedFromStudioCount))")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
-                        .accessibilityLabel("Excluded photos, \(excludedFromStudioCount)")
-                    }
-
-                    Button {
-                        carouselStudioExportHubPhase = .actions
-                        showCarouselStudioExportHub = true
-                    } label: {
-                        Image("CarouselStudioExportHub")
-                            .resizable()
-                            .renderingMode(.original)
-                            .scaledToFit()
-                            .frame(width: 24, height: 24)
-                    }
-                    .accessibilityLabel("Share, download, or export PDF")
-                }
-            }
+            .toolbar { editorToolbarContent }
             .safeAreaInset(edge: .top, spacing: 0) {
                 if onDismissEditor != nil {
                     embeddedEditorHeader
@@ -4643,190 +4663,221 @@ struct SlideTextEditorView: View {
                 }
             }
         }
-        // Bar-button labels still pick up global/accent tint on some OS builds unless
-        // the navigation hierarchy sets an explicit toolbar tint.
-        .toolbar(.visible, for: .navigationBar)
-        .tint(.white)
-        .preferredColorScheme(.dark)
-        .onChange(of: showsTextEditLine) { _, isShowing in
-#if DEBUG
-            print("[CarouselStudio][TextEdit] showsTextEditLine -> \(isShowing)")
-#endif
-        }
-        .sheet(isPresented: $showsTextEditLine, onDismiss: {
-#if DEBUG
-            print("[CarouselStudio][TextEdit] sheet onDismiss; committed=\(inlineTextEditCommitted) focusField=\(String(describing: inlineTextFocusField))")
-#endif
-            if !inlineTextEditCommitted {
-                inlineTextDraft = currentBlockText
-                if showsInlineCaptionField {
-                    inlineCaptionDraft = currentSlide?.photoCaption ?? currentSlide?.caption ?? ""
+    }
+
+    private var editorBodyBase: some View {
+        editorNavigationContent
+            // Bar-button labels still pick up global/accent tint on some OS builds unless
+            // the navigation hierarchy sets an explicit toolbar tint.
+            .toolbar(.visible, for: .navigationBar)
+            .tint(.white)
+            .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder
+    private var exportProgressOverlay: some View {
+        if exportInProgress {
+            ZStack {
+                Color.black.opacity(0.45)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(true)
+                VStack(spacing: 14) {
+                    ProgressView()
+                        .scaleEffect(1.1)
+                        .tint(.white)
+                    Text("Preparing export…")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.white.opacity(0.9))
                 }
-                inlineTextFocusField = nil
+                .padding(28)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            inlineTextEditCommitted = false
-        }, content: {
-            inlineTextEditSheet
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        })
-        .sheet(isPresented: $showCarouselStudioExportHub, onDismiss: {
-            carouselStudioExportHubPhase = .actions
-        }, content: {
-            carouselStudioExportHubSheetContent
-        })
-        .overlay {
-            if exportInProgress {
-                ZStack {
-                    Color.black.opacity(0.45)
-                        .ignoresSafeArea()
-                        .allowsHitTesting(true)
-                    VStack(spacing: 14) {
-                        ProgressView()
-                            .scaleEffect(1.1)
-                            .tint(.white)
-                        Text("Preparing export…")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.white.opacity(0.9))
+        }
+    }
+
+    private var editorBodyWithPrimarySheets: some View {
+        editorBodyBase
+            .onChange(of: showsTextEditLine) { _, isShowing in
+#if DEBUG
+                print("[CarouselStudio][TextEdit] showsTextEditLine -> \(isShowing)")
+#endif
+            }
+            .sheet(isPresented: $showsTextEditLine, onDismiss: {
+#if DEBUG
+                print("[CarouselStudio][TextEdit] sheet onDismiss; committed=\(inlineTextEditCommitted) focusField=\(String(describing: inlineTextFocusField))")
+#endif
+                if !inlineTextEditCommitted {
+                    inlineTextDraft = currentBlockText
+                    if showsInlineCaptionField {
+                        inlineCaptionDraft = currentSlide?.photoCaption ?? currentSlide?.caption ?? ""
                     }
-                    .padding(28)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    inlineTextFocusField = nil
                 }
-            }
-        }
-        // `currentIndex` and `scrollPageID` are seeded in `init`, so the ScrollView lays
-        // out on the correct page from the very first frame. We only need to reset the
-        // per-session editor state here.
-        .onAppear {
-            selectedBlock = nil
-            activeStyleCategory = nil
-            activePIPCategory = nil
-            pipClusterSizeSliderUndoPrimed = false
-            undoStack = []
-            showsTextEditLine = false
-        }
-        .onChange(of: selectedBlock) { _, newValue in
-            #if DEBUG
-            if slides.indices.contains(currentIndex), slides[currentIndex].kind == .cover {
-                print("[CarouselStudio] cover slide selectedBlock → \(String(describing: newValue))")
-            }
-            #endif
-            // Switching selection (or deselecting entirely) collapses whichever
-            // drop-up was open so the panel content always matches the block type.
-            pipClusterSizeSliderUndoPrimed = false
-            showsTextEditLine = false
-            switch newValue {
-            case nil:
+                inlineTextEditCommitted = false
+            }, content: {
+                inlineTextEditSheet
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            })
+            .sheet(isPresented: $showCarouselStudioExportHub, onDismiss: {
+                carouselStudioExportHubPhase = .actions
+            }, content: {
+                carouselStudioExportHubSheetContent
+            })
+            .overlay { exportProgressOverlay }
+    }
+
+    var body: some View {
+        editorBodyWithSplitRepositionCover
+    }
+
+    private var editorBodyWithCommonLifecycle: some View {
+        editorBodyWithPrimarySheets
+            // `currentIndex` and `scrollPageID` are seeded in `init`, so the ScrollView lays
+            // out on the correct page from the very first frame. We only need to reset the
+            // per-session editor state here.
+            .onAppear {
+                selectedBlock = nil
                 activeStyleCategory = nil
                 activePIPCategory = nil
-                showsAddPhotoPicker = false
-                splitRepositionSession = nil
-            case .pipCluster:
-                activeStyleCategory = nil
-                splitRepositionSession = nil
-            case .primary, .secondary:
-                activePIPCategory = nil
-                showsAddPhotoPicker = false
-                showsHeroPhotoSwapSheet = false
-                heroSwapSlideIndex = nil
-                showsSplitBottomPhotoPicker = false
-                splitBottomPickSlideIndex = nil
-                splitRepositionSession = nil
+                pipClusterSizeSliderUndoPrimed = false
+                undoStack = []
+                showsTextEditLine = false
             }
-        }
-        .onChange(of: activePIPCategory) { _, _ in
-            pipClusterSizeSliderUndoPrimed = false
-        }
-        // Track keyboard height so the toolbar spacer can push content above the keyboard.
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notif in
-            guard let frame = notif.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
-            let newHeight = max(0, UIScreen.main.bounds.height - frame.minY)
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
-                keyboardHeight = newHeight
+            .onChange(of: selectedBlock) { _, newValue in
+                #if DEBUG
+                if slides.indices.contains(currentIndex), slides[currentIndex].kind == .cover {
+                    print("[CarouselStudio] cover slide selectedBlock → \(String(describing: newValue))")
+                }
+                #endif
+                // Switching selection (or deselecting entirely) collapses whichever
+                // drop-up was open so the panel content always matches the block type.
+                pipClusterSizeSliderUndoPrimed = false
+                showsTextEditLine = false
+                switch newValue {
+                case nil:
+                    activeStyleCategory = nil
+                    activePIPCategory = nil
+                    showsAddPhotoPicker = false
+                    splitRepositionSession = nil
+                case .pipCluster:
+                    activeStyleCategory = nil
+                    splitRepositionSession = nil
+                case .primary, .secondary:
+                    activePIPCategory = nil
+                    showsAddPhotoPicker = false
+                    showsHeroPhotoSwapSheet = false
+                    heroSwapSlideIndex = nil
+                    showsSplitBottomPhotoPicker = false
+                    splitBottomPickSlideIndex = nil
+                    splitRepositionSession = nil
+                }
             }
-        }
-        .sheet(isPresented: $showsAddPhotoPicker) {
-            if let placeStop = currentSlide?.placeStop {
-                AddPIPPhotoPickerSheet(
-                    placeStop: placeStop,
-                    availablePhotos: availableAddablePhotos,
-                    onPick: { photo in
-                        addPIPPhotoToCluster(photo)
-                        showsAddPhotoPicker = false
-                    }
-                )
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
+            .onChange(of: activePIPCategory) { _, _ in
+                pipClusterSizeSliderUndoPrimed = false
             }
-        }
-        .sheet(isPresented: $showsHeroPhotoSwapSheet) {
-            if let idx = heroSwapSlideIndex,
-               slides.indices.contains(idx),
-               let stop = slides[idx].placeStop,
-               slides[idx].layout == .pip {
-                SwapHeroPhotoSheet(
-                    placeStop: stop,
-                    heroPhotoID: slides[idx].heroPhotoID,
-                    photos: stop.photos.filter(\.isIncluded),
-                    onPick: { photo in
-                        swapHeroWithPlacePhoto(photo, slideIndex: idx)
-                        heroSwapSlideIndex = nil
-                        showsHeroPhotoSwapSheet = false
-                    }
-                )
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
+            // Track keyboard height so the toolbar spacer can push content above the keyboard.
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notif in
+                guard let frame = notif.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+                let newHeight = max(0, UIScreen.main.bounds.height - frame.minY)
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                    keyboardHeight = newHeight
+                }
             }
-        }
-        .onChange(of: showsHeroPhotoSwapSheet) { _, open in
-            if !open { heroSwapSlideIndex = nil }
-        }
-        .sheet(isPresented: $showsSplitBottomPhotoPicker) {
-            if let idx = splitBottomPickSlideIndex,
-               slides.indices.contains(idx),
-               let stop = slides[idx].placeStop,
-               slides[idx].layout == .split {
-                SplitBottomPhotoPickerSheet(
-                    placeStop: stop,
-                    selectedPhotoID: slides[idx].splitBottomPhotoID,
-                    availablePhotos: availableSplitBottomPhotos(for: idx),
-                    onPick: { photo in
-                        setSplitBottomPhoto(photo, slideIndex: idx)
-                        splitBottomPickSlideIndex = nil
-                        showsSplitBottomPhotoPicker = false
+    }
+
+    private var editorBodyWithPickers: some View {
+        editorBodyWithCommonLifecycle
+            .sheet(isPresented: $showsAddPhotoPicker) {
+                if let placeStop = currentSlide?.placeStop {
+                    AddPIPPhotoPickerSheet(
+                        placeStop: placeStop,
+                        availablePhotos: availableAddablePhotos,
+                        onPick: { photo in
+                            addPIPPhotoToCluster(photo)
+                            showsAddPhotoPicker = false
+                        }
+                    )
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+                }
+            }
+            .sheet(isPresented: $showsHeroPhotoSwapSheet) {
+                if let idx = heroSwapSlideIndex,
+                   slides.indices.contains(idx),
+                   let stop = slides[idx].placeStop,
+                   slides[idx].layout == .pip {
+                    SwapHeroPhotoSheet(
+                        placeStop: stop,
+                        heroPhotoID: slides[idx].heroPhotoID,
+                        photos: stop.photos.filter(\.isIncluded),
+                        onPick: { photo in
+                            swapHeroWithPlacePhoto(photo, slideIndex: idx)
+                            heroSwapSlideIndex = nil
+                            showsHeroPhotoSwapSheet = false
+                        }
+                    )
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+                }
+            }
+            .onChange(of: showsHeroPhotoSwapSheet) { _, open in
+                if !open { heroSwapSlideIndex = nil }
+            }
+            .sheet(isPresented: $showsSplitBottomPhotoPicker) {
+                if let idx = splitBottomPickSlideIndex,
+                   slides.indices.contains(idx),
+                   slides[idx].layout == .split {
+                    SplitBottomPhotoPickerSheet(
+                        selectedPhotoID: slides[idx].splitBottomPhotoID,
+                        availablePhotos: availableSplitBottomPhotos(for: idx),
+                        onPick: { photo in
+                            setSplitBottomPhoto(photo, slideIndex: idx)
+                            splitBottomPickSlideIndex = nil
+                            showsSplitBottomPhotoPicker = false
+                        },
+                        onClear: {
+                            clearSplitBottomPhoto(slideIndex: idx)
+                            splitBottomPickSlideIndex = nil
+                            showsSplitBottomPhotoPicker = false
+                        }
+                    )
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+                }
+            }
+            .onChange(of: showsSplitBottomPhotoPicker) { _, open in
+                if !open { splitBottomPickSlideIndex = nil }
+            }
+    }
+
+    private var editorBodyWithSplitRepositionCover: some View {
+        editorBodyWithPickers
+            .fullScreenCover(item: $splitRepositionSession) { session in
+                SplitPhotoRepositionCover(
+                    slides: $slides,
+                    slideIndex: session.slideIndex,
+                    startingSlot: session.initialSlot,
+                    slideAspectRatio: editorPreviewAspectRatio,
+                    onClose: { splitRepositionSession = nil },
+                    onApply: { framing, slot in
+                        pushUndoSnapshot()
+                        guard slides.indices.contains(session.slideIndex) else { return }
+                        switch slot {
+                        case .top:
+                            slides[session.slideIndex].splitTopFraming = framing
+                        case .bottom:
+                            slides[session.slideIndex].splitBottomFraming = framing
+                        }
                     },
-                    onClear: {
-                        clearSplitBottomPhoto(slideIndex: idx)
-                        splitBottomPickSlideIndex = nil
-                        showsSplitBottomPhotoPicker = false
+                    onRequestBottomPhotoPick: {
+                        splitRepositionSession = nil
+                        DispatchQueue.main.async {
+                            presentSplitBottomPicker(for: session.slideIndex)
+                        }
                     }
                 )
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
             }
-        }
-        .onChange(of: showsSplitBottomPhotoPicker) { _, open in
-            if !open { splitBottomPickSlideIndex = nil }
-        }
-        .fullScreenCover(item: $splitRepositionSession) { session in
-            SplitPhotoRepositionCover(
-                slides: $slides,
-                slideIndex: session.slideIndex,
-                startingSlot: session.initialSlot,
-                slideAspectRatio: editorPreviewAspectRatio,
-                onClose: { splitRepositionSession = nil },
-                onApply: { framing, slot in
-                    pushUndoSnapshot()
-                    guard slides.indices.contains(session.slideIndex) else { return }
-                    switch slot {
-                    case .top:
-                        slides[session.slideIndex].splitTopFraming = framing
-                    case .bottom:
-                        slides[session.slideIndex].splitBottomFraming = framing
-                    }
-                }
-            )
-        }
     }
 
     @ViewBuilder
@@ -4843,7 +4894,7 @@ struct SlideTextEditorView: View {
                     onDismissEditor?()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 28, height: 28)
                 }
@@ -4854,7 +4905,7 @@ struct SlideTextEditorView: View {
                     undoLastChange()
                 } label: {
                     Image(systemName: "arrow.uturn.backward")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 20, weight: .semibold))
                         .foregroundStyle(.white)
                         .opacity(canUndo ? 1 : 0.3)
                 }
@@ -4884,7 +4935,7 @@ struct SlideTextEditorView: View {
                         .resizable()
                         .renderingMode(.original)
                         .scaledToFit()
-                        .frame(width: 24, height: 24)
+                        .frame(width: 30, height: 30)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Share, download, or export PDF")
@@ -6283,7 +6334,7 @@ struct SocialPostStudioSheet: View {
             Button("View Slides") { showPhotoGroupPicker = true }
             Button("Continue Anyway", role: .cancel) {}
         } message: {
-            Text("TikTok supports up to 34 photos per carousel. You have \(tikTokOverflowRemainingCount) slides selected. Open the slide grid to review your deck, then deselect slides or use grouped layout (PIP) for stops with many photos.")
+            Text("TikTok supports up to 34 photos per carousel. You have \(tikTokOverflowRemainingCount) slides selected. Open the slide grid to review your deck, then deselect slides or use grouped layout (Multi) for stops with many photos.")
         }
         .sheet(isPresented: $showPhotoGroupPicker) {
             CarouselPhotoGroupPickerSheet(
@@ -7466,7 +7517,6 @@ private struct AddPIPPhotoPickerSheet: View {
 }
 
 private struct SplitBottomPhotoPickerSheet: View {
-    let placeStop: PlaceStop
     let selectedPhotoID: UUID?
     let availablePhotos: [RecapPhoto]
     let onPick: (RecapPhoto) -> Void
@@ -7487,7 +7537,7 @@ private struct SplitBottomPhotoPickerSheet: View {
         UIScreen.main.bounds.height < 736 ? 8 : 12
     }
     private var gridBottomPadding: CGFloat { 16 }
-    /// Extra space under the sheet grabber / safe area before “Pick bottom photo”
+    /// Extra space under the sheet grabber / safe area before the title.
     /// (medium detent felt flush on small phones).
     private var principalHeaderTopPadding: CGFloat {
         UIScreen.main.bounds.height < 736 ? 10 : 14
@@ -7531,26 +7581,20 @@ private struct SplitBottomPhotoPickerSheet: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    VStack(spacing: 2) {
-                        Text("Pick bottom photo")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.white)
-                        Text(placeStop.placeTitle)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.white.opacity(0.62))
-                            .lineLimit(1)
-                    }
+                    Text("Select Bottom of photo")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
                     .padding(.top, principalHeaderTopPadding)
                 }
                 if selectedPhotoID != nil {
-                    ToolbarItem(placement: .navigationBarLeading) {
+                    ToolbarItem(placement: .topBarTrailing) {
                         Button("Clear") {
                             onClear()
                         }
                         .foregroundStyle(.white)
                     }
                 }
-                ToolbarItem(placement: .cancellationAction) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button { dismiss() } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 14, weight: .semibold))
@@ -7902,9 +7946,9 @@ private struct CarouselPhotoGroupPickerSheet: View {
 
     private var slidesManagementNavigationSubtitle: String {
         if hasSlideRemovalActions {
-            "Tap a slide to open it · Touch and hold a place or map to remove"
+            "Tap a slide to open it in the editor."
         } else {
-            "Tap a slide to open it in the editor"
+            "Tap a slide to open it in the editor."
         }
     }
 
@@ -8012,7 +8056,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
 
     private var slidesManagementTipBody: String {
         if hasSlideRemovalActions {
-            "Tap any slide to jump to it in the editor. Touch and hold a place or map slide, then choose Remove from carousel."
+            "Tap any slide to jump to it in the editor. Touch and hold a slide. Then choose Remove from carousel."
         } else {
             "Tap any slide to jump to it in the editor."
         }

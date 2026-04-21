@@ -1089,22 +1089,8 @@ struct TripsView: View {
             .foregroundColor(.white.opacity(0.9))
             .padding(.horizontal, 28)
             .padding(.vertical, 13)
-            .background(
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.18, green: 0.40, blue: 0.78),
-                                Color(red: 0.25, green: 0.35, blue: 0.72)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-            )
+            .background(Color.blue)
             .clipShape(Capsule())
-            .shadow(color: Color.black.opacity(0.3), radius: 6, y: 3)
-            .shadow(color: Color(red: 0.2, green: 0.35, blue: 0.7).opacity(0.15), radius: 10, y: 2)
         }
     }
 
@@ -4341,7 +4327,7 @@ struct TripCarouselCard: View {
                     .stroke(
                         LinearGradient(
                             colors: isSelected
-                                ? [Color(red: 0.45, green: 0.18, blue: 0.98), Color(red: 0.04, green: 0.52, blue: 1.0)]
+                                ? [Color.blue, Color(red: 0.04, green: 0.52, blue: 1.0)]
                                 : [Color.clear, Color.clear],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
