@@ -2527,6 +2527,16 @@ struct SlideTextEditorView: View {
         abs(editorPreviewAspectRatio - Self.studioPreviewRatio916) < 0.001 ? "9:16" : "4:5"
     }
 
+    /// Re-centers draggable text layers at their natural anchors.
+    /// Called when preview ratio changes because offsets from the previous ratio
+    /// can leave blocks in awkward/stale positions on the new canvas.
+    private func reinitializeTextBoxPositionsAfterAspectChange() {
+        for idx in slides.indices {
+            slides[idx].textStyle.primary.offset = .zero
+            slides[idx].textStyle.secondary.offset = .zero
+        }
+    }
+
     private func toggleEditorPreviewAspect() {
         withAnimation(.easeInOut(duration: 0.22)) {
             if abs(editorPreviewAspectRatio - Self.studioPreviewRatio916) < 0.001 {
@@ -2534,6 +2544,11 @@ struct SlideTextEditorView: View {
             } else {
                 editorPreviewAspectRatio = Self.studioPreviewRatio916
             }
+            // Drop transient editor interaction state so the next ratio starts clean.
+            selectedBlock = nil
+            selectedSplitSlot = nil
+            locksHorizontalSlidePaging = false
+            reinitializeTextBoxPositionsAfterAspectChange()
         }
     }
 
@@ -3802,7 +3817,8 @@ struct SlideTextEditorView: View {
                                             Spacer(minLength: 0)
                                         }
                                         .frame(width: slotW, height: slotH)
-                                        .id(i)
+                                        // Recreate page-local drag geometry state on ratio changes.
+                                        .id("\(i)-\(editorPreviewAspectLabel)")
                                         .contentTransition(.identity)
                                         .onLongPressGesture(minimumDuration: 0.5) {
                                             guard i == editorPagerFocusedSlideIndex, canExcludeCurrentSlide else { return }
@@ -5938,6 +5954,9 @@ struct SocialPostStudioSheet: View {
 
     @State private var slides: [CarouselSlide] = []
     @State private var exportFormat: ExportFormat = .post
+    /// Per-format snapshot of each slide's text/pip offsets. Populated when the user
+    /// switches aspect ratios so switching back restores the previous layout.
+    @State private var savedFormatOffsets: [String: [(primary: CGSize, secondary: CGSize, pip: CGSize)]] = [:]
     @State private var isLoading = true
     @State private var isRendering = false
     @State private var shareItems: [Any] = []
@@ -6265,6 +6284,23 @@ struct SocialPostStudioSheet: View {
     private func modeCard(for format: ExportFormat) -> some View {
         let isSel = exportFormat == format
         return Button {
+            guard format != exportFormat else { return }
+            if format.aspectRatio != exportFormat.aspectRatio {
+                // Save current offsets for the format we're leaving.
+                savedFormatOffsets[exportFormat.rawValue] = slides.map {(
+                    primary: $0.textStyle.primary.offset,
+                    secondary: $0.textStyle.secondary.offset,
+                    pip: $0.pipOffset
+                )}
+                // Restore previously saved offsets for the incoming format, or reset to .zero.
+                let restored = savedFormatOffsets[format.rawValue]
+                for i in slides.indices {
+                    let r = restored.flatMap { $0.indices.contains(i) ? $0[i] : nil }
+                    slides[i].textStyle.primary.offset = r?.primary ?? .zero
+                    slides[i].textStyle.secondary.offset = r?.secondary ?? .zero
+                    slides[i].pipOffset = r?.pip ?? .zero
+                }
+            }
             withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) { exportFormat = format }
         } label: {
             VStack(alignment: .leading, spacing: 10) {
