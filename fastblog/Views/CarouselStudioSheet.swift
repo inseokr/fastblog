@@ -606,15 +606,24 @@ private struct DiagonalRoundedBadgeShape: Shape {
     }
 }
 
+private enum CurvedSplitSeamGeometry {
+    static let c1x: CGFloat = 0.28
+    static let c2x: CGFloat = 0.72
+
+    static func amplitude(for rect: CGRect) -> CGFloat {
+        min(22, max(10, rect.width * 0.038))
+    }
+}
+
 private struct CurvedSplitDividerShape: Shape {
     func path(in rect: CGRect) -> Path {
-        let curveHeight = min(20, rect.height * 0.45)
+        let curveHeight = min(CurvedSplitSeamGeometry.amplitude(for: rect), rect.height * 0.45)
         var path = Path()
         path.move(to: CGPoint(x: rect.minX, y: rect.midY))
         path.addCurve(
             to: CGPoint(x: rect.maxX, y: rect.midY),
-            control1: CGPoint(x: rect.width * 0.28, y: rect.midY - curveHeight),
-            control2: CGPoint(x: rect.width * 0.72, y: rect.midY + curveHeight)
+            control1: CGPoint(x: rect.width * CurvedSplitSeamGeometry.c1x, y: rect.midY - curveHeight),
+            control2: CGPoint(x: rect.width * CurvedSplitSeamGeometry.c2x, y: rect.midY + curveHeight)
         )
         return path
     }
@@ -624,15 +633,15 @@ private struct CurvedSplitDividerShape: Shape {
 /// and returns to the baseline so the slot edge is no longer perfectly straight.
 private struct CurvedSplitTopMaskShape: Shape {
     func path(in rect: CGRect) -> Path {
-        let seamLift = min(16, rect.height * 0.16)
+        let seamLift = CurvedSplitSeamGeometry.amplitude(for: rect)
         var path = Path()
         path.move(to: CGPoint(x: rect.minX, y: rect.minY))
         path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
         path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
         path.addCurve(
             to: CGPoint(x: rect.minX, y: rect.maxY),
-            control1: CGPoint(x: rect.width * 0.68, y: rect.maxY + seamLift * 0.25),
-            control2: CGPoint(x: rect.width * 0.24, y: rect.maxY - seamLift)
+            control1: CGPoint(x: rect.width * CurvedSplitSeamGeometry.c2x, y: rect.maxY + seamLift),
+            control2: CGPoint(x: rect.width * CurvedSplitSeamGeometry.c1x, y: rect.maxY - seamLift)
         )
         path.closeSubpath()
         return path
@@ -643,13 +652,13 @@ private struct CurvedSplitTopMaskShape: Shape {
 /// appear carved by the same divider rather than two straight rectangles.
 private struct CurvedSplitBottomMaskShape: Shape {
     func path(in rect: CGRect) -> Path {
-        let seamDrop = min(16, rect.height * 0.16)
+        let seamDrop = CurvedSplitSeamGeometry.amplitude(for: rect)
         var path = Path()
         path.move(to: CGPoint(x: rect.minX, y: rect.minY))
         path.addCurve(
             to: CGPoint(x: rect.maxX, y: rect.minY),
-            control1: CGPoint(x: rect.width * 0.28, y: rect.minY - seamDrop),
-            control2: CGPoint(x: rect.width * 0.72, y: rect.minY + seamDrop * 0.25)
+            control1: CGPoint(x: rect.width * CurvedSplitSeamGeometry.c1x, y: rect.minY - seamDrop),
+            control2: CGPoint(x: rect.width * CurvedSplitSeamGeometry.c2x, y: rect.minY + seamDrop)
         )
         path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
         path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
@@ -1684,8 +1693,11 @@ struct CarouselSlideView: View {
         let slotW = width
         let slotH = height * 0.5
         let useCurvedMasks = slide.splitDividerStyle == .curve
+        // Curved seams need vertical bleed so the bezier can travel above/below the
+        // nominal split line without flattening near the corners (especially bottom-left).
+        let seamBleed = useCurvedMasks ? min(22, max(10, slotW * 0.038)) : 0
         return ZStack {
-            VStack(spacing: 0) {
+            VStack(spacing: useCurvedMasks ? -seamBleed : 0) {
                 Group {
                     if useCurvedMasks {
                         Group {
@@ -1702,6 +1714,7 @@ struct CarouselSlideView: View {
                             }
                         }
                         .clipShape(CurvedSplitTopMaskShape())
+                        .frame(width: slotW, height: slotH + seamBleed)
                     } else {
                         Group {
                             if let image = slide.heroImage {
@@ -1716,6 +1729,7 @@ struct CarouselSlideView: View {
                                     .frame(width: slotW, height: slotH)
                             }
                         }
+                        .frame(width: slotW, height: slotH)
                     }
                 }
 
@@ -1746,6 +1760,7 @@ struct CarouselSlideView: View {
                             }
                         }
                         .clipShape(CurvedSplitBottomMaskShape())
+                        .frame(width: slotW, height: slotH + seamBleed)
                     } else {
                         Group {
                             if let bottom = slide.splitBottomImage {
@@ -1771,6 +1786,7 @@ struct CarouselSlideView: View {
                                 .frame(width: slotW, height: slotH)
                             }
                         }
+                        .frame(width: slotW, height: slotH)
                     }
                 }
             }
@@ -1789,10 +1805,18 @@ struct CarouselSlideView: View {
                     .frame(width: width, height: 2)
                     .shadow(color: .black.opacity(0.28), radius: 2, x: 0, y: 1)
             } else {
-                CurvedSplitDividerShape()
-                    .stroke(.white.opacity(0.92), style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .frame(width: width, height: 36)
-                    .shadow(color: .black.opacity(0.28), radius: 2, x: 0, y: 1)
+                ZStack {
+                    // Paper-edge feel: soft bright underpaint + warm paper core + tiny highlight.
+                    CurvedSplitDividerShape()
+                        .stroke(.white.opacity(0.42), style: StrokeStyle(lineWidth: 11, lineCap: .round))
+                    CurvedSplitDividerShape()
+                        .stroke(Color(red: 0.97, green: 0.95, blue: 0.90), style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                    CurvedSplitDividerShape()
+                        .stroke(.white.opacity(0.70), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                        .offset(y: -0.6)
+                }
+                .frame(width: width, height: 40)
+                .shadow(color: .black.opacity(0.30), radius: 2.8, x: 0, y: 1.2)
             }
         }
         // SwiftUI's default behavior for an `if/else` inside `Group` is to
@@ -2301,8 +2325,8 @@ private struct SplitPhotoRepositionCover: View {
                 ZStack {
                     Color(red: 8/255, green: 10/255, blue: 22/255).ignoresSafeArea()
 
-                    if let img = currentImage {
-                        VStack(spacing: 14) {
+                    VStack(spacing: 14) {
+                        if let img = currentImage {
                             Text("Pinch to zoom · drag to pan")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.white.opacity(0.62))
@@ -2321,26 +2345,43 @@ private struct SplitPhotoRepositionCover: View {
                             .frame(width: slotW, height: slotH)
                             .contentShape(Rectangle())
                             .highPriorityGesture(combinedGesture(slotW: slotW, slotH: slotH, image: img))
+                        } else {
+                            VStack(spacing: 10) {
+                                Image(systemName: "photo")
+                                    .font(.system(size: 40, weight: .medium))
+                                    .foregroundStyle(.white.opacity(0.35))
+                                Text(activeSlot == .bottom
+                                     ? "Pick a bottom photo first, or switch to Top."
+                                     : "No image in this slot.")
+                                    .font(.subheadline.weight(.medium))
+                                    .multilineTextAlignment(.center)
+                                    .foregroundStyle(.white.opacity(0.55))
+                                    .padding(.horizontal, 28)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: slotH)
+                        }
 
-                            Spacer(minLength: 0)
+                        // Keep slot selector directly below the photo area.
+                        Picker("Photo", selection: $activeSlot) {
+                            Text("Top").tag(SplitRepositionSlot.top)
+                            Text("Bottom").tag(SplitRepositionSlot.bottom)
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.top, 12)
-                    } else {
-                        VStack(spacing: 10) {
-                            Image(systemName: "photo")
-                                .font(.system(size: 40, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.35))
-                            Text(activeSlot == .bottom
-                                 ? "Pick a bottom photo first, or switch to Top."
-                                 : "No image in this slot.")
-                                .font(.subheadline.weight(.medium))
-                                .multilineTextAlignment(.center)
-                                .foregroundStyle(.white.opacity(0.55))
-                                .padding(.horizontal, 28)
+                        .pickerStyle(.segmented)
+                        .frame(width: slotW)
+
+                        Spacer(minLength: 0)
+
+                        // Standalone reset action.
+                        Button("Reset") {
+                            pinchActive = false
+                            dragActive = false
+                            working = .neutral
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.bottom, 10)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.top, 12)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -2357,22 +2398,6 @@ private struct SplitPhotoRepositionCover: View {
                         onClose()
                     }
                     .fontWeight(.semibold)
-                }
-                ToolbarItem(placement: .bottomBar) {
-                    VStack(spacing: 10) {
-                        Picker("Photo", selection: $activeSlot) {
-                            Text("Top").tag(SplitRepositionSlot.top)
-                            Text("Bottom").tag(SplitRepositionSlot.bottom)
-                        }
-                        .pickerStyle(.segmented)
-                        Button("Reset") {
-                            pinchActive = false
-                            dragActive = false
-                            working = .neutral
-                        }
-                        .font(.subheadline.weight(.semibold))
-                    }
-                    .frame(maxWidth: .infinity)
                 }
             }
         }
@@ -3194,7 +3219,10 @@ struct SlideTextEditorView: View {
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 6)
                                         .background(
-                                            active ? studioToolbarSegmentActiveColor : Color.clear
+                                            active
+                                                ? RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                                    .fill(studioToolbarSegmentActiveColor)
+                                                : nil
                                         )
                                     }
                                     .buttonStyle(.plain)
@@ -3203,8 +3231,15 @@ struct SlideTextEditorView: View {
                                     )
                                 }
                             }
-                            .background(Color.white.opacity(0.10), in: Capsule())
-                            .clipShape(Capsule())
+                            .padding(2)
+                            .background(
+                                Capsule()
+                                    .fill(Color.white.opacity(0.10))
+                            )
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+                            )
                         }
                     }
                 }
@@ -3908,12 +3943,9 @@ struct SlideTextEditorView: View {
                                                 onRequestSplitBottomPick: { idx in
                                                     selectedBlock = nil
                                                     selectedSplitSlot = .bottom
-                                                    // Placeholder taps should immediately open picker
-                                                    // so "Tap to pick second photo" acts directly.
-                                                    if slides.indices.contains(idx),
-                                                       slides[idx].splitBottomImage == nil {
-                                                        presentSplitBottomPicker(for: idx)
-                                                    }
+                                                    // Split UX: tapping the bottom photo/placeholder
+                                                    // should directly open replace flow.
+                                                    presentSplitBottomPicker(for: idx)
                                                 },
                                                 onRequestSplitTopSelect: { _ in
                                                     selectedBlock = nil
