@@ -1412,7 +1412,10 @@ struct CarouselSlideView: View {
                 ) {
                     VStack(alignment: slide.textStyle.primary.alignment.stackAlignment(fallback: .leading),
                            spacing: 4) {
-                        if let l1 = slide.dayInfoLine1 {
+                        // Must match `currentBlockText` / `commitInlineTextEdit` for `.mapRoute` `.primary`:
+                        // `loadSlides` seeds the heading in `dayInfoLine1` with `dayTitle` nil, so edits
+                        // that only set `dayTitle` would otherwise not change what we paint here.
+                        if let l1 = slide.dayTitle ?? slide.dayInfoLine1 {
                             Text(l1)
                                 .font(.system(size: width * 0.075 * slide.textStyle.primary.sizeScale,
                                               weight: studioFontWeight(base: .heavy,
@@ -2428,53 +2431,6 @@ private struct SplitPhotoRepositionCover: View {
     }
 }
 
-// MARK: - Inline Text Edit Sheet
-
-/// Owns its own @FocusState so the keyboard is reliably raised when the sheet appears.
-/// Keeping focus inside the sheet's own view tree is required because @FocusState mutations
-/// from a parent view don't cross the UIWindow boundary that .sheet() creates.
-private struct InlineTextEditSheetBody: View {
-    let showsCaptionField: Bool
-    @Binding var textDraft: String
-    @Binding var captionDraft: String
-    let onCancel: () -> Void
-    let onSave: () -> Void
-
-    private enum Field: Hashable { case main, caption }
-    @FocusState private var focusField: Field?
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField(showsCaptionField ? "Place name" : "Text", text: $textDraft, axis: .vertical)
-                        .focused($focusField, equals: .main)
-                        .lineLimit(1...6)
-                    if showsCaptionField {
-                        TextField("Caption", text: $captionDraft, axis: .vertical)
-                            .focused($focusField, equals: .caption)
-                            .lineLimit(1...8)
-                    }
-                }
-            }
-            .navigationTitle("Edit text")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { onCancel() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { onSave() }
-                }
-            }
-            .onAppear {
-                focusField = .main
-            }
-        }
-        .preferredColorScheme(.dark)
-    }
-}
-
 // MARK: - Full-Screen Text Editor
 
 /// Share / save / PDF from the editor nav bar — implemented by `SocialPostStudioSheet`.
@@ -2567,6 +2523,11 @@ struct SlideTextEditorView: View {
     /// Secondary draft for the place caption field shown beneath the place name
     /// when editing a placeStop primary block.
     @State private var inlineCaptionDraft = ""
+    /// Captures `selectedBlock` and `currentIndex` at the moment the text editor opens so
+    /// `commitInlineTextEdit` always writes to the correct slide/block even if those
+    /// values are cleared by lifecycle events (e.g. fullScreenCover onAppear) before Save fires.
+    @State private var textEditBlockCapture: SlideBlockID? = nil
+    @State private var textEditSlideIndexCapture: Int = 0
     private enum InlineTextFocusField: Hashable { case main, caption }
     @FocusState private var inlineTextFocusField: InlineTextFocusField?
     /// Which backing field receives caption edits for the current place-stop primary block.
@@ -2575,6 +2536,10 @@ struct SlideTextEditorView: View {
     /// Needed because `fullScreenCover` + `GeometryReader` doesn't propagate keyboard
     /// safe-area changes to the nested `safeAreaInset`, causing the keyboard to overlay the toolbar.
     @State private var keyboardHeight: CGFloat = 0
+    /// Full-screen text editor: `keyboardWillChangeFrame` still fires for this window while
+    /// the cover is up; without ignoring those events, `keyboardHeight` becomes stale and
+    /// the studio `safeAreaInset` chrome jumps when the cover dismisses.
+    @State private var ignoreChromeKeyboardNotifications = false
     /// When set, the editor can remove the current place slide from the carousel (Social Post Studio).
     let onExcludePlaceFromStudio: ((Int) -> Void)?
     /// When set, the editor can remove a day-map slide from the carousel.
@@ -3346,36 +3311,121 @@ struct SlideTextEditorView: View {
         }
     }
 
+    /// Same as `currentBlockText` but reads from the captured slide/block so the `onDismiss`
+    /// revert always reverts to the correct pre-edit value even if selection changed.
+    private var capturedBlockText: String {
+        guard slides.indices.contains(textEditSlideIndexCapture),
+              let block = textEditBlockCapture else { return "" }
+        let slide = slides[textEditSlideIndexCapture]
+        switch (slide.kind, block) {
+        case (.cover, .primary):       return slide.coverTitle ?? ""
+        case (.mapRoute, .primary):    return slide.dayTitle ?? slide.dayInfoLine1 ?? ""
+        case (.mapRoute, .secondary):  return slide.dayStory ?? ""
+        case (.placeStop, .primary):   return slide.placeStop?.placeTitle ?? ""
+        case (.placeStop, .secondary): return slide.placeStop?.placeSubtitle ?? ""
+        default: return ""
+        }
+    }
+
     /// True when the inline editor should show a second caption field (place name + caption).
     private var showsInlineCaptionField: Bool {
-        currentSlide?.kind == .placeStop && selectedBlock == .primary
+        textEditBlockCapture == .primary &&
+        slides.indices.contains(textEditSlideIndexCapture) &&
+        slides[textEditSlideIndexCapture].kind == .placeStop
+    }
+
+    private var inlineTextEditCapturePair: (CarouselSlideKind, SlideBlockID)? {
+        guard slides.indices.contains(textEditSlideIndexCapture),
+              let block = textEditBlockCapture else { return nil }
+        return (slides[textEditSlideIndexCapture].kind, block)
+    }
+
+    private var inlineTextPrimarySectionTitle: String {
+        guard let (kind, block) = inlineTextEditCapturePair else { return "Text" }
+        switch (kind, block) {
+        case (.cover, .primary): return "Cover title"
+        case (.mapRoute, .primary): return "Day heading"
+        case (.mapRoute, .secondary): return "Day story"
+        case (.placeStop, .primary): return "Place name"
+        case (.placeStop, .secondary): return "Subtitle"
+        default: return "Text"
+        }
+    }
+
+    private var inlineTextPrimarySectionSubtitle: String {
+        guard let (kind, block) = inlineTextEditCapturePair else {
+            return "Edits apply to the selected text on this slide."
+        }
+        switch (kind, block) {
+        case (.cover, .primary):
+            return "Shown centered on your carousel cover."
+        case (.mapRoute, .primary):
+            return "The large line at the top of the day map slide."
+        case (.mapRoute, .secondary):
+            return "Optional. Shown along the bottom of the map when this block has text."
+        case (.placeStop, .primary):
+            return "The bold place title at the bottom of this photo."
+        case (.placeStop, .secondary):
+            return "Optional. Smaller line in the top corner (for example area or country)."
+        default:
+            return "Shown on this slide when this text block is visible."
+        }
+    }
+
+    private var inlineTextSecondarySectionTitle: String? {
+        guard showsInlineCaptionField else { return nil }
+        return "Caption or story"
+    }
+
+    private var inlineTextSecondarySectionSubtitle: String? {
+        guard showsInlineCaptionField else { return nil }
+        return "Optional. Shown under the place name when there is something to display (photo caption, recap narrative, or notes)."
     }
 
     /// Writes `inlineTextDraft` (and `inlineCaptionDraft` for placeStop primary) back
-    /// into the appropriate field(s) of the current slide and dismisses the inline editor.
+    /// into the appropriate field(s) of the captured slide and dismisses the text editor.
+    /// Uses `textEditBlockCapture` / `textEditSlideIndexCapture` (set when the editor opens)
+    /// so the write always targets the correct slide/block even if `selectedBlock` or
+    /// `currentIndex` was changed by a lifecycle event while the cover was showing.
     private func commitInlineTextEdit() {
-        guard hasValidCurrentIndex, let block = selectedBlock else {
+        let idx = textEditSlideIndexCapture
+        guard slides.indices.contains(idx), let block = textEditBlockCapture else {
             showsTextEditLine = false
             return
         }
         inlineTextEditCommitted = true
         pushUndoSnapshot()
-        // Keep PIP cluster position stable when saving text edits. The text write path
-        // should never mutate inset-photo placement for `.pip` place-stop slides.
-        let preservedPIPOffset = slides[currentIndex].pipOffset
+        // Keep PIP cluster position stable when saving text edits.
+        let preservedPIPOffset = slides[idx].pipOffset
         let text = inlineTextDraft
-        switch (slides[currentIndex].kind, block) {
-        case (.cover, .primary):      slides[currentIndex].coverTitle = text
-        case (.mapRoute, .primary):   slides[currentIndex].dayTitle = text
-        case (.mapRoute, .secondary): slides[currentIndex].dayStory = text
+        switch (slides[idx].kind, block) {
+        case (.cover, .primary):      slides[idx].coverTitle = text
+        case (.mapRoute, .primary):
+            // Keep line 1 fields aligned so studio preview, export, and any reader of
+            // `dayInfoLine1` (loaded map slides use it when `dayTitle` is nil) stay consistent.
+            slides[idx].dayTitle = text
+            slides[idx].dayInfoLine1 = text
+        case (.mapRoute, .secondary): slides[idx].dayStory = text
         case (.placeStop, .primary):
-            slides[currentIndex].placeStop?.placeTitle = text
-            slides[currentIndex].photoCaption = inlineCaptionDraft
-        case (.placeStop, .secondary): slides[currentIndex].placeStop?.placeSubtitle = text
+            var slide = slides[idx]
+            if var stop = slide.placeStop {
+                stop.placeTitle = text
+                slide.placeStop = stop
+            }
+            slide.photoCaption = inlineCaptionDraft
+            slides[idx] = slide
+        case (.placeStop, .secondary):
+            var slide = slides[idx]
+            if var stop = slide.placeStop {
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                stop.placeSubtitle = trimmed.isEmpty ? nil : trimmed
+                slide.placeStop = stop
+            }
+            slides[idx] = slide
         default: break
         }
-        if slides[currentIndex].layout == .pip {
-            slides[currentIndex].pipOffset = preservedPIPOffset
+        if slides[idx].layout == .pip {
+            slides[idx].pipOffset = preservedPIPOffset
         }
         showsTextEditLine = false
         inlineTextFocusField = nil
@@ -3385,9 +3435,12 @@ struct SlideTextEditorView: View {
 #if DEBUG
         print("[CarouselStudio][TextEdit] cancelInlineTextEdit()")
 #endif
-        inlineTextDraft = currentBlockText
+        inlineTextDraft = capturedBlockText
         if showsInlineCaptionField {
-            inlineCaptionDraft = currentSlide?.photoCaption ?? currentSlide?.caption ?? ""
+            let idx = textEditSlideIndexCapture
+            inlineCaptionDraft = slides.indices.contains(idx)
+                ? (slides[idx].photoCaption ?? slides[idx].caption ?? "")
+                : ""
         }
         inlineTextEditCommitted = true
         showsTextEditLine = false
@@ -4237,8 +4290,11 @@ struct SlideTextEditorView: View {
 
     @ViewBuilder
     private var inlineTextEditSheet: some View {
-        InlineTextEditSheetBody(
-            showsCaptionField: showsInlineCaptionField,
+        SlideBlockTextEditView(
+            primarySectionTitle: inlineTextPrimarySectionTitle,
+            primarySectionSubtitle: inlineTextPrimarySectionSubtitle,
+            secondarySectionTitle: inlineTextSecondarySectionTitle,
+            secondarySectionSubtitle: inlineTextSecondarySectionSubtitle,
             textDraft: $inlineTextDraft,
             captionDraft: $inlineCaptionDraft,
             onCancel: cancelInlineTextEdit,
@@ -4693,6 +4749,10 @@ struct SlideTextEditorView: View {
             .toolbar(.visible, for: .navigationBar)
             .tint(.white)
             .preferredColorScheme(.dark)
+            // Text editing is presented in a fullScreenCover (isolated UIViewController).
+            // This prevents any keyboard-driven safe-area inset from propagating back into
+            // the slide editor and causing layout shifts / view shrinkage.
+            .ignoresSafeArea(.keyboard)
     }
 
     @ViewBuilder
@@ -4722,23 +4782,48 @@ struct SlideTextEditorView: View {
 #if DEBUG
                 print("[CarouselStudio][TextEdit] showsTextEditLine -> \(isShowing)")
 #endif
+                // The text editor's keyboard still delivers `keyboardWillChangeFrame` to this
+                // view while the fullScreenCover is up. If we accumulate that height here,
+                // the bottom chrome spacer becomes non-zero the moment the cover dismisses
+                // and the studio layout jumps.
+                if isShowing {
+                    ignoreChromeKeyboardNotifications = true
+                    var txn = Transaction()
+                    txn.disablesAnimations = true
+                    withTransaction(txn) {
+                        keyboardHeight = 0
+                    }
+                } else {
+                    ignoreChromeKeyboardNotifications = false
+                    var txn = Transaction()
+                    txn.disablesAnimations = true
+                    withTransaction(txn) {
+                        keyboardHeight = 0
+                    }
+                }
             }
-            .sheet(isPresented: $showsTextEditLine, onDismiss: {
+            // fullScreenCover presents a fully isolated UIViewController context so the
+            // keyboard inside the text editor cannot propagate safe-area insets back into
+            // the slide editor and cause layout shifts or view shrinkage.
+            .fullScreenCover(isPresented: $showsTextEditLine, onDismiss: {
 #if DEBUG
-                print("[CarouselStudio][TextEdit] sheet onDismiss; committed=\(inlineTextEditCommitted) focusField=\(String(describing: inlineTextFocusField))")
+                print("[CarouselStudio][TextEdit] fullScreenCover onDismiss; committed=\(inlineTextEditCommitted)")
 #endif
                 if !inlineTextEditCommitted {
-                    inlineTextDraft = currentBlockText
+                    // Cancelled without saving — restore drafts from captured values.
+                    inlineTextDraft = capturedBlockText
                     if showsInlineCaptionField {
-                        inlineCaptionDraft = currentSlide?.photoCaption ?? currentSlide?.caption ?? ""
+                        let idx = textEditSlideIndexCapture
+                        inlineCaptionDraft = slides.indices.contains(idx)
+                            ? (slides[idx].photoCaption ?? slides[idx].caption ?? "")
+                            : ""
                     }
                     inlineTextFocusField = nil
                 }
                 inlineTextEditCommitted = false
+                textEditBlockCapture = nil
             }, content: {
                 inlineTextEditSheet
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
             })
             .sheet(isPresented: $showCarouselStudioExportHub, onDismiss: {
                 carouselStudioExportHubPhase = .actions
@@ -4799,6 +4884,7 @@ struct SlideTextEditorView: View {
             }
             // Track keyboard height so the toolbar spacer can push content above the keyboard.
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notif in
+                guard !ignoreChromeKeyboardNotifications else { return }
                 guard let frame = notif.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
                 let newHeight = max(0, UIScreen.main.bounds.height - frame.minY)
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
@@ -6014,6 +6100,11 @@ struct SlideTextEditorView: View {
                     print("[CarouselStudio][TextEdit] opening sheet from Text tab")
 #endif
                     inlineTextEditCommitted = false
+                    textEditBlockCapture = selectedBlock
+                    // Must match `currentSlide` / `currentBlockText`: `currentIndex` can lag
+                    // `scrollPageID` after swiping, which otherwise captured the wrong slide
+                    // for labels, caption visibility, and `commitInlineTextEdit`.
+                    textEditSlideIndexCapture = editorPagerFocusedSlideIndex
                     inlineTextDraft = currentBlockText
                     inlineCaptionDraft = currentSlide?.photoCaption ?? currentSlide?.caption ?? ""
                     showsTextEditLine = true

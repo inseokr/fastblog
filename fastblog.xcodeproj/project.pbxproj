@@ -174,6 +174,7 @@
 		BB000206 /* ImportDraftsModalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000205 /* ImportDraftsModalView.swift */; };
 		BB000208 /* ProfileManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000207 /* ProfileManagementView.swift */; };
 		BB0002FB /* CarouselStudioSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002FA /* CarouselStudioSheet.swift */; };
+		BB00030B /* SlideBlockTextEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00030A /* SlideBlockTextEditView.swift */; };
 		BB00020A /* ProfilePageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000209 /* ProfilePageView.swift */; };
 		BB00020C /* TrackableScrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00020B /* TrackableScrollView.swift */; };
 		BB00020E /* UnsavedTripCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00020D /* UnsavedTripCard.swift */; };
@@ -307,6 +308,7 @@
 		BB00011F /* BlogPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogPreviewView.swift; sourceTree = "<group>"; };
 		BB000121 /* BlogSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogSettingsSheet.swift; sourceTree = "<group>"; };
 		BB0002FA /* CarouselStudioSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarouselStudioSheet.swift; sourceTree = "<group>"; };
+		BB00030A /* SlideBlockTextEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideBlockTextEditView.swift; sourceTree = "<group>"; };
 		BB000123 /* ClusterRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClusterRowView.swift; sourceTree = "<group>"; };
 		BB000125 /* CountryBlogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryBlogsView.swift; sourceTree = "<group>"; };
 		BB000127 /* CountryCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountryCardView.swift; sourceTree = "<group>"; };
@@ -630,6 +632,7 @@
 				BB00011F /* BlogPreviewView.swift */,
 				BB000121 /* BlogSettingsSheet.swift */,
 				BB0002FA /* CarouselStudioSheet.swift */,
+				BB00030A /* SlideBlockTextEditView.swift */,
 				BB0003B4 /* WeatherEditSheet.swift */,
 				BB000203 /* BottomSheetView.swift */,
 				BB000123 /* ClusterRowView.swift */,
@@ -958,6 +961,7 @@
 				BB000120 /* BlogPreviewView.swift in Sources */,
 				BB000122 /* BlogSettingsSheet.swift in Sources */,
 				BB0002FB /* CarouselStudioSheet.swift in Sources */,
+				BB00030B /* SlideBlockTextEditView.swift in Sources */,
 				BB0003B5 /* WeatherEditSheet.swift in Sources */,
 				BB000124 /* ClusterRowView.swift in Sources */,
 				BB000126 /* CountryBlogsView.swift in Sources */,
@@ -1266,7 +1270,7 @@
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Debug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
@@ -1298,7 +1302,7 @@
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Release.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
