@@ -2297,6 +2297,53 @@ private struct SplitPhotoRepositionCover: View {
     }
 }
 
+// MARK: - Inline Text Edit Sheet
+
+/// Owns its own @FocusState so the keyboard is reliably raised when the sheet appears.
+/// Keeping focus inside the sheet's own view tree is required because @FocusState mutations
+/// from a parent view don't cross the UIWindow boundary that .sheet() creates.
+private struct InlineTextEditSheetBody: View {
+    let showsCaptionField: Bool
+    @Binding var textDraft: String
+    @Binding var captionDraft: String
+    let onCancel: () -> Void
+    let onSave: () -> Void
+
+    private enum Field: Hashable { case main, caption }
+    @FocusState private var focusField: Field?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(showsCaptionField ? "Place name" : "Text", text: $textDraft, axis: .vertical)
+                        .focused($focusField, equals: .main)
+                        .lineLimit(1...6)
+                    if showsCaptionField {
+                        TextField("Caption", text: $captionDraft, axis: .vertical)
+                            .focused($focusField, equals: .caption)
+                            .lineLimit(1...8)
+                    }
+                }
+            }
+            .navigationTitle("Edit text")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { onCancel() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { onSave() }
+                }
+            }
+            .onAppear {
+                focusField = .main
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
 // MARK: - Full-Screen Text Editor
 
 /// Share / save / PDF from the editor nav bar — implemented by `SocialPostStudioSheet`.
@@ -4000,77 +4047,13 @@ struct SlideTextEditorView: View {
 
     @ViewBuilder
     private var inlineTextEditSheet: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField(showsInlineCaptionField ? "Place name" : "Text", text: $inlineTextDraft, axis: .vertical)
-                        .focused($inlineTextFocusField, equals: .main)
-                        .defaultFocus($inlineTextFocusField, .main)
-                        .lineLimit(1...6)
-                    if showsInlineCaptionField {
-                        TextField("Caption", text: $inlineCaptionDraft, axis: .vertical)
-                            .focused($inlineTextFocusField, equals: .caption)
-                            .lineLimit(1...8)
-                    }
-                }
-            }
-            .navigationTitle("Edit text")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { cancelInlineTextEdit() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { commitInlineTextEdit() }
-                }
-            }
-            .onAppear {
-#if DEBUG
-                print("[CarouselStudio][TextEdit] sheet onAppear; focusField=\(String(describing: inlineTextFocusField))")
-#endif
-                // On sheet presentation, focus can race with detent/layout setup.
-                // A two-pass focus request reliably raises the keyboard.
-                inlineTextFocusField = nil
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    inlineTextFocusField = .main
-#if DEBUG
-                    print("[CarouselStudio][TextEdit] focus pass #1 (50ms); focusField=\(String(describing: inlineTextFocusField))")
-#endif
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    if inlineTextFocusField == nil {
-                        inlineTextFocusField = .main
-                    }
-#if DEBUG
-                    print("[CarouselStudio][TextEdit] focus pass #2 (200ms); focusField=\(String(describing: inlineTextFocusField))")
-#endif
-                }
-            }
-            .onDisappear {
-#if DEBUG
-                print("[CarouselStudio][TextEdit] sheet onDisappear; focusField=\(String(describing: inlineTextFocusField))")
-#endif
-            }
-            .onChange(of: inlineTextFocusField) { _, newValue in
-#if DEBUG
-                print("[CarouselStudio][TextEdit] inlineTextFocusField -> \(String(describing: newValue))")
-#endif
-            }
-            .task {
-                // Some devices/sheet transitions still drop initial focus; retry a few times.
-                for delay in [120_000_000, 280_000_000, 520_000_000] {
-                    try? await Task.sleep(nanoseconds: UInt64(delay))
-                    if !showsTextEditLine { break }
-                    if inlineTextFocusField == nil {
-                        inlineTextFocusField = .main
-                    }
-#if DEBUG
-                    print("[CarouselStudio][TextEdit] focus retry (\(delay)ns); focusField=\(String(describing: inlineTextFocusField))")
-#endif
-                }
-            }
-        }
-        .preferredColorScheme(.dark)
+        InlineTextEditSheetBody(
+            showsCaptionField: showsInlineCaptionField,
+            textDraft: $inlineTextDraft,
+            captionDraft: $inlineCaptionDraft,
+            onCancel: cancelInlineTextEdit,
+            onSave: commitInlineTextEdit
+        )
     }
 
     @ViewBuilder
