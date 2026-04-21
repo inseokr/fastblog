@@ -1,10 +1,115 @@
 // CarouselStudioSheet.swift
 // fastblog
 
+import CoreImage
 import PDFKit
 import Photos
 import SwiftUI
 import UIKit
+import Vision
+
+// MARK: - PIP background removal (Vision)
+
+private let pipBackgroundRemovalCIContext = CIContext()
+
+/// Downscales so Vision + Core Image stay fast; max long edge matches PIP cache cap.
+private func downscaleUIImageForPIPBackgroundRemoval(_ image: UIImage, maxLongEdge: CGFloat) -> UIImage {
+    let w = image.size.width * image.scale
+    let h = image.size.height * image.scale
+    let long = max(w, h)
+    guard long > 1 else { return image }
+    let scaleFactor = min(1.0, maxLongEdge / long)
+    let nw = max(1, floor(w * scaleFactor))
+    let nh = max(1, floor(h * scaleFactor))
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    format.opaque = false
+    let renderer = UIGraphicsImageRenderer(size: CGSize(width: nw, height: nh), format: format)
+    return renderer.image { _ in
+        image.draw(in: CGRect(origin: .zero, size: CGSize(width: nw, height: nh)))
+    }
+}
+
+private func uiImageFromPixelBuffer(_ buffer: CVPixelBuffer, orientation: UIImage.Orientation = .up) -> UIImage? {
+    let ciImage = CIImage(cvPixelBuffer: buffer)
+    let extent = ciImage.extent.integral
+    guard extent.width > 1, extent.height > 1,
+          let cg = pipBackgroundRemovalCIContext.createCGImage(ciImage, from: extent) else { return nil }
+    return UIImage(cgImage: cg, scale: 1, orientation: orientation)
+}
+
+/// Subject-only cutout with alpha, or `nil` if Vision cannot produce a mask (callers keep the original).
+private func removePIPBackground(from image: UIImage) async -> UIImage? {
+    let working = downscaleUIImageForPIPBackgroundRemoval(image, maxLongEdge: 1024)
+    guard let cgImage = working.cgImage else { return nil }
+    return await withCheckedContinuation { cont in
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result: UIImage?
+            if #available(iOS 17.0, *) {
+                result = removePIPForegroundInstanceMaskIOS17(cgImage: cgImage)
+            } else if #available(iOS 16.0, *) {
+                result = removePIPPersonSegmentationMaskIOS16(cgImage: cgImage)
+            } else {
+                result = nil
+            }
+            cont.resume(returning: result)
+        }
+    }
+}
+
+@available(iOS 17.0, *)
+private func removePIPForegroundInstanceMaskIOS17(cgImage: CGImage) -> UIImage? {
+    let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+    let request = VNGenerateForegroundInstanceMaskRequest()
+    do {
+        try handler.perform([request])
+        guard let obs = request.results?.first as? VNInstanceMaskObservation,
+              !obs.allInstances.isEmpty else { return nil }
+        let buffer = try obs.generateMaskedImage(
+            ofInstances: obs.allInstances,
+            from: handler,
+            croppedToInstancesExtent: false
+        )
+        return uiImageFromPixelBuffer(buffer, orientation: .up)
+    } catch {
+        return nil
+    }
+}
+
+@available(iOS 16.0, *)
+private func removePIPPersonSegmentationMaskIOS16(cgImage: CGImage) -> UIImage? {
+    let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+    let request = VNGeneratePersonSegmentationRequest()
+    request.qualityLevel = .balanced
+    do {
+        try handler.perform([request])
+        guard let obs = request.results?.first as? VNPixelBufferObservation else { return nil }
+        return blendSourceWithPersonMask(cgImage: cgImage, maskPixelBuffer: obs.pixelBuffer)
+    } catch {
+        return nil
+    }
+}
+
+@available(iOS 16.0, *)
+private func blendSourceWithPersonMask(cgImage: CGImage, maskPixelBuffer: CVPixelBuffer) -> UIImage? {
+    let input = CIImage(cgImage: cgImage)
+    var mask = CIImage(cvPixelBuffer: maskPixelBuffer)
+    if mask.extent.width > 1, mask.extent.height > 1,
+       abs(mask.extent.width - input.extent.width) > 0.5 || abs(mask.extent.height - input.extent.height) > 0.5 {
+        let sx = input.extent.width / mask.extent.width
+        let sy = input.extent.height / mask.extent.height
+        mask = mask.transformed(by: CGAffineTransform(scaleX: sx, y: sy))
+    }
+    let clear = CIImage(color: .clear).cropped(to: input.extent)
+    guard let blended = CIFilter(name: "CIBlendWithMask", parameters: [
+        kCIInputImageKey: input,
+        kCIInputBackgroundImageKey: clear,
+        kCIInputMaskImageKey: mask
+    ])?.outputImage,
+          let cgOut = pipBackgroundRemovalCIContext.createCGImage(blended, from: blended.extent.integral)
+    else { return nil }
+    return UIImage(cgImage: cgOut, scale: 1, orientation: .up)
+}
 
 // MARK: - Carousel Studio chrome
 
@@ -341,17 +446,19 @@ private enum StyleCategory: String, CaseIterable, Identifiable {
 /// Add and remove are separate scrollable pills — see `pipAddPhotosTabButton` /
 /// `pipRemovePhotosTabButton`.
 private enum PIPStyleCategory: String, CaseIterable, Identifiable {
-    case order  = "Reorder"
-    case border = "Border"
-    case size   = "Size"
+    case order      = "Reorder"
+    case border     = "Border"
+    case size       = "Size"
+    case background = "Background"
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
-        case .order:  return "arrow.up.arrow.down"
-        case .border: return "paintpalette.fill"
-        case .size:   return "aspectratio"
+        case .order:       return "arrow.up.arrow.down"
+        case .border:      return "paintpalette.fill"
+        case .size:        return "aspectratio"
+        case .background: return "person.crop.rectangle.stack"
         }
     }
 }
@@ -715,6 +822,24 @@ struct CarouselSlide: Identifiable {
     /// Scales PIP thumbnail footprint relative to the default (~30% of slide width).
     /// Driven from the multi-photo toolbar Size strip; `.pip` layout only.
     var pipClusterSizeScale: CGFloat = 1.0
+    /// When `true`, PIP thumbnails render using `pipProcessedImages` (subject-only,
+    /// transparent background) instead of the originals in `pipImages`.
+    var pipBackgroundRemoved: Bool = false
+    /// Cached background-removed versions of `pipImages`. Populated async when the
+    /// user enables the "Remove background" toggle; cleared on toggle-off.
+    var pipProcessedImages: [UIImage] = []
+
+    /// Chooses the correct image array for rendering and export: when background
+    /// removal is on, `pipProcessedImages` is kept index-aligned with `pipImages`
+    /// (starts as a shallow copy of originals, then each slot is replaced by the
+    /// cutout as Vision finishes).
+    var effectivePIPImages: [UIImage] {
+        guard pipBackgroundRemoved else { return pipImages }
+        let n = pipImages.count
+        guard n > 0, pipProcessedImages.count == n else { return pipImages }
+        return pipProcessedImages
+    }
+
     /// `RecapPhoto.id` of the current hero photo. Lets the "Add photo" picker
     /// exclude it from the available list so users don't duplicate the hero
     /// into the cluster.
@@ -1208,6 +1333,8 @@ struct CarouselSlideView: View {
     /// (rotation + shadow) is not shaved off; other kinds still get one outer clip. When
     /// `false`, only the photo/gradient stack is clipped — used for small studio previews.
     var clipsFloatingContentToRoundedSlideOutline: Bool = true
+    /// Editor-only: stack positions (0,1,2) still awaiting Vision background removal.
+    var pipBackgroundRemovalLoadingSlots: Set<Int> = []
 
     private var height: CGFloat { width / aspectRatio }
     private let heroImageScale: CGFloat = 1.12
@@ -1412,7 +1539,10 @@ struct CarouselSlideView: View {
                 ) {
                     VStack(alignment: slide.textStyle.primary.alignment.stackAlignment(fallback: .leading),
                            spacing: 4) {
-                        if let l1 = slide.dayInfoLine1 {
+                        // Must match `currentBlockText` / `commitInlineTextEdit` for `.mapRoute` `.primary`:
+                        // `loadSlides` seeds the heading in `dayInfoLine1` with `dayTitle` nil, so edits
+                        // that only set `dayTitle` would otherwise not change what we paint here.
+                        if let l1 = slide.dayTitle ?? slide.dayInfoLine1 {
                             Text(l1)
                                 .font(.system(size: width * 0.075 * slide.textStyle.primary.sizeScale,
                                               weight: studioFontWeight(base: .heavy,
@@ -1597,7 +1727,7 @@ struct CarouselSlideView: View {
                     onDragStart: { onBlockDragStart?() },
                     onDragEnd: { onBlockDragEnd?() },
                     onSelect: { onSelectBlock?(.pipCluster) },
-                    images: slide.pipImages,
+                    images: slide.effectivePIPImages,
                     pipPhotoIDs: slide.pipPhotoIDs,
                     slideWidth: width,
                     borderColor: slide.pipBorderEnabled ? slide.pipBorderColor.color : .clear,
@@ -1605,7 +1735,8 @@ struct CarouselSlideView: View {
                     stackStyle: slide.pipClusterStackStyle,
                     pipSizeScale: slide.pipClusterSizeScale,
                     isEditingText: isEditingText,
-                    isSelected: selectedBlockID == .pipCluster
+                    isSelected: selectedBlockID == .pipCluster,
+                    backgroundRemovalLoadingSlots: pipBackgroundRemovalLoadingSlots
                 )
                 .padding(studioPIPClusterEdgeInset)
                 .transition(.scale(scale: 0.85).combined(with: .opacity))
@@ -1802,21 +1933,21 @@ struct CarouselSlideView: View {
             if slide.splitDividerStyle == .straight {
                 Rectangle()
                     .fill(.white.opacity(0.92))
-                    .frame(width: width, height: 2)
-                    .shadow(color: .black.opacity(0.28), radius: 2, x: 0, y: 1)
+                    .frame(width: width, height: 1.54)
+                    .shadow(color: .black.opacity(0.28), radius: 1.54, x: 0, y: 0.77)
             } else {
                 ZStack {
                     // Paper-edge feel: soft bright underpaint + warm paper core + tiny highlight.
                     CurvedSplitDividerShape()
-                        .stroke(.white.opacity(0.42), style: StrokeStyle(lineWidth: 11, lineCap: .round))
+                        .stroke(.white.opacity(0.42), style: StrokeStyle(lineWidth: 8.47, lineCap: .round))
                     CurvedSplitDividerShape()
-                        .stroke(Color(red: 0.97, green: 0.95, blue: 0.90), style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                        .stroke(Color(red: 0.97, green: 0.95, blue: 0.90), style: StrokeStyle(lineWidth: 6.16, lineCap: .round))
                     CurvedSplitDividerShape()
-                        .stroke(.white.opacity(0.70), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
-                        .offset(y: -0.6)
+                        .stroke(.white.opacity(0.70), style: StrokeStyle(lineWidth: 1.694, lineCap: .round))
+                        .offset(y: -0.462)
                 }
                 .frame(width: width, height: 40)
-                .shadow(color: .black.opacity(0.30), radius: 2.8, x: 0, y: 1.2)
+                .shadow(color: .black.opacity(0.30), radius: 2.156, x: 0, y: 0.924)
             }
         }
         // SwiftUI's default behavior for an `if/else` inside `Group` is to
@@ -1875,6 +2006,8 @@ private struct PIPClusterView: View {
     var stackStyle: CarouselPIPClusterStackStyle = .vertical
     /// 1.0 = default thumbnail width; clamped in the editor before assignment.
     var sizeScale: CGFloat = 1.0
+    /// Per-stack-slot indices (0…2) showing a small progress cue while Vision runs.
+    var backgroundRemovalLoadingSlots: Set<Int> = []
 
     private var thumbW: CGFloat { slideWidth * 0.30 * sizeScale }
     private var thumbH: CGFloat { thumbW * 0.72 }
@@ -1901,7 +2034,13 @@ private struct PIPClusterView: View {
             case .vertical:
                 VStack(alignment: .trailing, spacing: 5) { pipThumbnails }
             case .horizontal:
-                HStack(alignment: .bottom, spacing: 5) { pipThumbnails }
+                // Keep slot 0 nearest the top-trailing anchor (same as vertical), so the
+                // row grows leftward from the corner instead of pushing the hero thumb away.
+                HStack(alignment: .bottom, spacing: 5) {
+                    ForEach(Array(shownThumbnails.reversed())) { tile in
+                        pipThumb(tile)
+                    }
+                }
             }
         }
         // No internal top/trailing padding: cluster frame = visible thumbs, so the user can drag
@@ -1912,6 +2051,13 @@ private struct PIPClusterView: View {
     @ViewBuilder
     private var pipThumbnails: some View {
         ForEach(shownThumbnails) { tile in
+            pipThumb(tile)
+        }
+    }
+
+    @ViewBuilder
+    private func pipThumb(_ tile: PIPThumbTile) -> some View {
+        ZStack(alignment: .bottomTrailing) {
             Image(uiImage: tile.image)
                 .resizable()
                 .scaledToFill()
@@ -1922,8 +2068,16 @@ private struct PIPClusterView: View {
                         .strokeBorder(borderColor, lineWidth: 2.2)
                 )
                 .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
-                .rotationEffect(.degrees(rotations[tile.slot % rotations.count]))
+            if backgroundRemovalLoadingSlots.contains(tile.slot) {
+                ProgressView()
+                    .scaleEffect(0.65)
+                    .tint(.white)
+                    .padding(5)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .padding(4)
+            }
         }
+        .rotationEffect(.degrees(rotations[tile.slot % rotations.count]))
     }
 }
 
@@ -1956,9 +2110,12 @@ private struct DraggablePIPCluster: View {
     var isEditingText: Bool = false
     /// True when `selectedBlock == .pipCluster` in the editor.
     var isSelected: Bool = false
+    var backgroundRemovalLoadingSlots: Set<Int> = []
 
     @GestureState private var liveDrag: CGSize = .zero
     @State private var naturalRect: CGRect?
+    /// Avoid locking slide paging on tiny finger jitter; mirrors text-block tap slop.
+    @State private var didEngagePagerLockForPIPDrag = false
 
     private var savedPointOffset: CGSize {
         CGSize(width: savedOffset.width * slideBounds.width,
@@ -1981,7 +2138,8 @@ private struct DraggablePIPCluster: View {
                        borderColor: borderColor,
                        visibleCount: visibleCount,
                        stackStyle: stackStyle,
-                       sizeScale: pipSizeScale)
+                       sizeScale: pipSizeScale,
+                       backgroundRemovalLoadingSlots: backgroundRemovalLoadingSlots)
             .background(naturalRectCapture)
             .overlay(selectionRing)
             .contentShape(Rectangle())
@@ -1994,7 +2152,14 @@ private struct DraggablePIPCluster: View {
                 DragGesture(minimumDistance: isEditingText ? 0 : 4,
                             coordinateSpace: .local)
                     .updating($liveDrag) { value, state, _ in state = value.translation }
-                    .onChanged { _ in onDragStart() }
+                    .onChanged { value in
+                        guard isEditingText else { return }
+                        let moved = max(abs(value.translation.width), abs(value.translation.height))
+                        if moved >= 6, !didEngagePagerLockForPIPDrag {
+                            didEngagePagerLockForPIPDrag = true
+                            onDragStart()
+                        }
+                    }
                     .onEnded { value in
                         let tapSlop: CGFloat = 6
                         let moved = max(abs(value.translation.width),
@@ -2012,6 +2177,7 @@ private struct DraggablePIPCluster: View {
                                 height: slideBounds.height > 0 ? clamped.height / slideBounds.height : 0
                             )
                         }
+                        didEngagePagerLockForPIPDrag = false
                         onDragEnd()
                     }
             )
@@ -2108,6 +2274,8 @@ private struct SlideEditPage: View {
     let onRequestStudioCoverPhotoPick: (() -> Void)?
     /// Which horizontal page this edit surface represents (`slides` index).
     let slidePageIndex: Int
+    /// PIP stack slots (0…2) showing an inline spinner while Vision removes backgrounds.
+    let pipBackgroundRemovalLoadingSlots: Set<Int>
 
     private var slideWidth: CGFloat {
         let fromLayout = max(220, layoutWidth - 48)
@@ -2170,7 +2338,8 @@ private struct SlideEditPage: View {
                 onRequestSplitTopSelect(slidePageIndex)
             },
             selectedSplitSlot: selectedSplitSlot,
-            onCoverImageTap: (slide.kind == .cover ? onRequestStudioCoverPhotoPick : nil)
+            onCoverImageTap: (slide.kind == .cover ? onRequestStudioCoverPhotoPick : nil),
+            pipBackgroundRemovalLoadingSlots: pipBackgroundRemovalLoadingSlots
         )
         .coordinateSpace(.named(studioSlideCoordSpace))
         .shadow(color: .black.opacity(0.5), radius: 16, x: 0, y: 6)
@@ -2428,53 +2597,6 @@ private struct SplitPhotoRepositionCover: View {
     }
 }
 
-// MARK: - Inline Text Edit Sheet
-
-/// Owns its own @FocusState so the keyboard is reliably raised when the sheet appears.
-/// Keeping focus inside the sheet's own view tree is required because @FocusState mutations
-/// from a parent view don't cross the UIWindow boundary that .sheet() creates.
-private struct InlineTextEditSheetBody: View {
-    let showsCaptionField: Bool
-    @Binding var textDraft: String
-    @Binding var captionDraft: String
-    let onCancel: () -> Void
-    let onSave: () -> Void
-
-    private enum Field: Hashable { case main, caption }
-    @FocusState private var focusField: Field?
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField(showsCaptionField ? "Place name" : "Text", text: $textDraft, axis: .vertical)
-                        .focused($focusField, equals: .main)
-                        .lineLimit(1...6)
-                    if showsCaptionField {
-                        TextField("Caption", text: $captionDraft, axis: .vertical)
-                            .focused($focusField, equals: .caption)
-                            .lineLimit(1...8)
-                    }
-                }
-            }
-            .navigationTitle("Edit text")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { onCancel() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { onSave() }
-                }
-            }
-            .onAppear {
-                focusField = .main
-            }
-        }
-        .preferredColorScheme(.dark)
-    }
-}
-
 // MARK: - Full-Screen Text Editor
 
 /// Share / save / PDF from the editor nav bar — implemented by `SocialPostStudioSheet`.
@@ -2521,7 +2643,7 @@ struct SlideTextEditorView: View {
     /// Which style category (Color / Font Style / Font Size) is currently open in
     /// the drop-up panel. `nil` collapses the panel and only the category tab bar is shown.
     @State private var activeStyleCategory: StyleCategory? = nil
-    /// Which PIP category (Reorder / Border / Size) is currently open. Parallels
+    /// Which PIP category (Reorder / Border / Size / Background) is currently open. Parallels
     /// `activeStyleCategory` but for the photo-cluster toolbar that shows when
     /// `selectedBlock == .pipCluster`. Kept separate from `activeStyleCategory`
     /// so switching between a text block and the PIP block resets panel state.
@@ -2545,6 +2667,12 @@ struct SlideTextEditorView: View {
     @State private var splitRepositionSession: SplitRepositionSession?
     /// Ensures `pushUndoSnapshot()` runs once at the start of a PIP size drag (coalesced undo).
     @State private var pipClusterSizeSliderUndoPrimed = false
+    /// Bumps whenever PIP background work should abandon in-flight Vision tasks (slide change, mutation, toggle-off).
+    @State private var pipBackgroundRemovalGeneration: UInt64 = 0
+    /// Which `slides` index owns the in-flight Vision pass (nil when idle).
+    @State private var pipBackgroundRemovalSlideIndex: Int?
+    /// Visible PIP stack slots still awaiting a cutout for that slide.
+    @State private var pipBackgroundRemovalLoadingSlots: Set<Int> = []
     /// Disables horizontal slide paging while the user touches a text block (see `SlideEditPage`).
     @State private var locksHorizontalSlidePaging = false
     /// One-shot guard so a swipe clears selection once per drag.
@@ -2567,6 +2695,11 @@ struct SlideTextEditorView: View {
     /// Secondary draft for the place caption field shown beneath the place name
     /// when editing a placeStop primary block.
     @State private var inlineCaptionDraft = ""
+    /// Captures `selectedBlock` and `currentIndex` at the moment the text editor opens so
+    /// `commitInlineTextEdit` always writes to the correct slide/block even if those
+    /// values are cleared by lifecycle events (e.g. fullScreenCover onAppear) before Save fires.
+    @State private var textEditBlockCapture: SlideBlockID? = nil
+    @State private var textEditSlideIndexCapture: Int = 0
     private enum InlineTextFocusField: Hashable { case main, caption }
     @FocusState private var inlineTextFocusField: InlineTextFocusField?
     /// Which backing field receives caption edits for the current place-stop primary block.
@@ -2575,6 +2708,10 @@ struct SlideTextEditorView: View {
     /// Needed because `fullScreenCover` + `GeometryReader` doesn't propagate keyboard
     /// safe-area changes to the nested `safeAreaInset`, causing the keyboard to overlay the toolbar.
     @State private var keyboardHeight: CGFloat = 0
+    /// Full-screen text editor: `keyboardWillChangeFrame` still fires for this window while
+    /// the cover is up; without ignoring those events, `keyboardHeight` becomes stale and
+    /// the studio `safeAreaInset` chrome jumps when the cover dismisses.
+    @State private var ignoreChromeKeyboardNotifications = false
     /// When set, the editor can remove the current place slide from the carousel (Social Post Studio).
     let onExcludePlaceFromStudio: ((Int) -> Void)?
     /// When set, the editor can remove a day-map slide from the carousel.
@@ -2891,6 +3028,10 @@ struct SlideTextEditorView: View {
         return currentIndex
     }
 
+    /// Slide index mutations must target this value — `scrollPageID` can lead `currentIndex`
+    /// by a frame after horizontal paging, so `currentSlide` and `slides[currentIndex]` disagree.
+    private var editorMutationSlideIndex: Int { editorPagerFocusedSlideIndex }
+
     private var currentSlide: CarouselSlide? {
         let idx = editorPagerFocusedSlideIndex
         guard slides.indices.contains(idx) else { return nil }
@@ -3102,6 +3243,7 @@ struct SlideTextEditorView: View {
             if layout == .split {
                 autoFillSplitBottomIfTwoPhotos(slideIndex: index)
             }
+            invalidatePIPBackgroundRemovalForMutation(at: index)
         }
         clampCurrentIndexIfNeeded()
         // Re-pin immediately: deferring only to `onChange(visibleSlideIndicesTag)` let
@@ -3354,36 +3496,121 @@ struct SlideTextEditorView: View {
         }
     }
 
+    /// Same as `currentBlockText` but reads from the captured slide/block so the `onDismiss`
+    /// revert always reverts to the correct pre-edit value even if selection changed.
+    private var capturedBlockText: String {
+        guard slides.indices.contains(textEditSlideIndexCapture),
+              let block = textEditBlockCapture else { return "" }
+        let slide = slides[textEditSlideIndexCapture]
+        switch (slide.kind, block) {
+        case (.cover, .primary):       return slide.coverTitle ?? ""
+        case (.mapRoute, .primary):    return slide.dayTitle ?? slide.dayInfoLine1 ?? ""
+        case (.mapRoute, .secondary):  return slide.dayStory ?? ""
+        case (.placeStop, .primary):   return slide.placeStop?.placeTitle ?? ""
+        case (.placeStop, .secondary): return slide.placeStop?.placeSubtitle ?? ""
+        default: return ""
+        }
+    }
+
     /// True when the inline editor should show a second caption field (place name + caption).
     private var showsInlineCaptionField: Bool {
-        currentSlide?.kind == .placeStop && selectedBlock == .primary
+        textEditBlockCapture == .primary &&
+        slides.indices.contains(textEditSlideIndexCapture) &&
+        slides[textEditSlideIndexCapture].kind == .placeStop
+    }
+
+    private var inlineTextEditCapturePair: (CarouselSlideKind, SlideBlockID)? {
+        guard slides.indices.contains(textEditSlideIndexCapture),
+              let block = textEditBlockCapture else { return nil }
+        return (slides[textEditSlideIndexCapture].kind, block)
+    }
+
+    private var inlineTextPrimarySectionTitle: String {
+        guard let (kind, block) = inlineTextEditCapturePair else { return "Text" }
+        switch (kind, block) {
+        case (.cover, .primary): return "Cover title"
+        case (.mapRoute, .primary): return "Day heading"
+        case (.mapRoute, .secondary): return "Day story"
+        case (.placeStop, .primary): return "Place name"
+        case (.placeStop, .secondary): return "Subtitle"
+        default: return "Text"
+        }
+    }
+
+    private var inlineTextPrimarySectionSubtitle: String {
+        guard let (kind, block) = inlineTextEditCapturePair else {
+            return "Edits apply to the selected text on this slide."
+        }
+        switch (kind, block) {
+        case (.cover, .primary):
+            return "Shown centered on your carousel cover."
+        case (.mapRoute, .primary):
+            return "The large line at the top of the day map slide."
+        case (.mapRoute, .secondary):
+            return "Optional. Shown along the bottom of the map when this block has text."
+        case (.placeStop, .primary):
+            return "The bold place title at the bottom of this photo."
+        case (.placeStop, .secondary):
+            return "Optional. Smaller line in the top corner (for example area or country)."
+        default:
+            return "Shown on this slide when this text block is visible."
+        }
+    }
+
+    private var inlineTextSecondarySectionTitle: String? {
+        guard showsInlineCaptionField else { return nil }
+        return "Caption or story"
+    }
+
+    private var inlineTextSecondarySectionSubtitle: String? {
+        guard showsInlineCaptionField else { return nil }
+        return "Optional. Shown under the place name when there is something to display (photo caption, recap narrative, or notes)."
     }
 
     /// Writes `inlineTextDraft` (and `inlineCaptionDraft` for placeStop primary) back
-    /// into the appropriate field(s) of the current slide and dismisses the inline editor.
+    /// into the appropriate field(s) of the captured slide and dismisses the text editor.
+    /// Uses `textEditBlockCapture` / `textEditSlideIndexCapture` (set when the editor opens)
+    /// so the write always targets the correct slide/block even if `selectedBlock` or
+    /// `currentIndex` was changed by a lifecycle event while the cover was showing.
     private func commitInlineTextEdit() {
-        guard hasValidCurrentIndex, let block = selectedBlock else {
+        let idx = textEditSlideIndexCapture
+        guard slides.indices.contains(idx), let block = textEditBlockCapture else {
             showsTextEditLine = false
             return
         }
         inlineTextEditCommitted = true
         pushUndoSnapshot()
-        // Keep PIP cluster position stable when saving text edits. The text write path
-        // should never mutate inset-photo placement for `.pip` place-stop slides.
-        let preservedPIPOffset = slides[currentIndex].pipOffset
+        // Keep PIP cluster position stable when saving text edits.
+        let preservedPIPOffset = slides[idx].pipOffset
         let text = inlineTextDraft
-        switch (slides[currentIndex].kind, block) {
-        case (.cover, .primary):      slides[currentIndex].coverTitle = text
-        case (.mapRoute, .primary):   slides[currentIndex].dayTitle = text
-        case (.mapRoute, .secondary): slides[currentIndex].dayStory = text
+        switch (slides[idx].kind, block) {
+        case (.cover, .primary):      slides[idx].coverTitle = text
+        case (.mapRoute, .primary):
+            // Keep line 1 fields aligned so studio preview, export, and any reader of
+            // `dayInfoLine1` (loaded map slides use it when `dayTitle` is nil) stay consistent.
+            slides[idx].dayTitle = text
+            slides[idx].dayInfoLine1 = text
+        case (.mapRoute, .secondary): slides[idx].dayStory = text
         case (.placeStop, .primary):
-            slides[currentIndex].placeStop?.placeTitle = text
-            slides[currentIndex].photoCaption = inlineCaptionDraft
-        case (.placeStop, .secondary): slides[currentIndex].placeStop?.placeSubtitle = text
+            var slide = slides[idx]
+            if var stop = slide.placeStop {
+                stop.placeTitle = text
+                slide.placeStop = stop
+            }
+            slide.photoCaption = inlineCaptionDraft
+            slides[idx] = slide
+        case (.placeStop, .secondary):
+            var slide = slides[idx]
+            if var stop = slide.placeStop {
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                stop.placeSubtitle = trimmed.isEmpty ? nil : trimmed
+                slide.placeStop = stop
+            }
+            slides[idx] = slide
         default: break
         }
-        if slides[currentIndex].layout == .pip {
-            slides[currentIndex].pipOffset = preservedPIPOffset
+        if slides[idx].layout == .pip {
+            slides[idx].pipOffset = preservedPIPOffset
         }
         showsTextEditLine = false
         inlineTextFocusField = nil
@@ -3393,9 +3620,12 @@ struct SlideTextEditorView: View {
 #if DEBUG
         print("[CarouselStudio][TextEdit] cancelInlineTextEdit()")
 #endif
-        inlineTextDraft = currentBlockText
+        inlineTextDraft = capturedBlockText
         if showsInlineCaptionField {
-            inlineCaptionDraft = currentSlide?.photoCaption ?? currentSlide?.caption ?? ""
+            let idx = textEditSlideIndexCapture
+            inlineCaptionDraft = slides.indices.contains(idx)
+                ? (slides[idx].photoCaption ?? slides[idx].caption ?? "")
+                : ""
         }
         inlineTextEditCommitted = true
         showsTextEditLine = false
@@ -3416,6 +3646,7 @@ struct SlideTextEditorView: View {
         slides[slideIndex].pipClusterSizeScale = 1.0
         slides[slideIndex].splitTopFraming = nil
         slides[slideIndex].splitBottomFraming = nil
+        invalidatePIPBackgroundRemovalForMutation(at: slideIndex)
         for i in slides.indices where i != slideIndex {
             guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
             slides[i].isSelected = true
@@ -3427,25 +3658,27 @@ struct SlideTextEditorView: View {
     /// cluster photo without leaving the editor. Rotates `pipPhotoIDs` alongside
     /// `pipImages` so the hero ID stays aligned with the hero image.
     private func swapPIPPhotos() {
-        guard hasValidCurrentIndex,
-              slides[currentIndex].layout == .pip,
-              !slides[currentIndex].pipImages.isEmpty,
-              let hero = slides[currentIndex].heroImage else { return }
+        let idx = editorMutationSlideIndex
+        guard slides.indices.contains(idx),
+              slides[idx].layout == .pip,
+              !slides[idx].pipImages.isEmpty,
+              let hero = slides[idx].heroImage else { return }
         pushUndoSnapshot()
-        var pip = slides[currentIndex].pipImages
-        var pipIDs = slides[currentIndex].pipPhotoIDs
+        var pip = slides[idx].pipImages
+        var pipIDs = slides[idx].pipPhotoIDs
         let promoted = pip.removeFirst()
         let promotedID: UUID? = pipIDs.isEmpty ? nil : pipIDs.removeFirst()
         pip.append(hero)
-        if let heroID = slides[currentIndex].heroPhotoID {
+        if let heroID = slides[idx].heroPhotoID {
             pipIDs.append(heroID)
         }
         withAnimation(.easeInOut(duration: 0.22)) {
-            slides[currentIndex].heroImage = promoted
-            slides[currentIndex].heroPhotoID = promotedID
-            slides[currentIndex].pipImages = pip
-            slides[currentIndex].pipPhotoIDs = pipIDs
+            slides[idx].heroImage = promoted
+            slides[idx].heroPhotoID = promotedID
+            slides[idx].pipImages = pip
+            slides[idx].pipPhotoIDs = pipIDs
         }
+        invalidatePIPBackgroundRemovalForMutation(at: idx)
     }
 
     /// Replaces the large hero backdrop with another included photo from the same place.
@@ -3471,6 +3704,7 @@ struct SlideTextEditorView: View {
                 slides[slideIdx].pipImages[pipIdx] = oldHero ?? pipImg
                 slides[slideIdx].pipPhotoIDs[pipIdx] = oldHID ?? pipPID
             }
+            invalidatePIPBackgroundRemovalForMutation(at: slideIdx)
             return
         }
 
@@ -3502,6 +3736,7 @@ struct SlideTextEditorView: View {
                     slides[slideIdx].pipPhotoIDs = ids
                     slides[slideIdx].pipVisibleCount = min(3, vc + 1)
                 }
+                invalidatePIPBackgroundRemovalForMutation(at: slideIdx)
             }
         }
     }
@@ -3512,13 +3747,14 @@ struct SlideTextEditorView: View {
     /// Reorder tab hosts drag-to-reorder, and count is driven indirectly
     /// via the Add / Remove pills in `pipCategoryTabBar`.
     private func setPIPVisibleCount(_ count: Int) {
-        guard hasValidCurrentIndex,
-              slides[currentIndex].layout == .pip else { return }
+        let idx = editorMutationSlideIndex
+        guard slides.indices.contains(idx),
+              slides[idx].layout == .pip else { return }
         let clamped = min(max(count, 1), 3)
-        guard slides[currentIndex].pipVisibleCount != clamped else { return }
+        guard slides[idx].pipVisibleCount != clamped else { return }
         pushUndoSnapshot()
         withAnimation(.easeInOut(duration: 0.2)) {
-            slides[currentIndex].pipVisibleCount = clamped
+            slides[idx].pipVisibleCount = clamped
         }
     }
 
@@ -3533,9 +3769,10 @@ struct SlideTextEditorView: View {
     /// triggered just as the cluster size changes can't mangle the arrays.
     private func reorderPIPPhotos(fromOffsets source: IndexSet,
                                   toOffset destination: Int) {
-        guard hasValidCurrentIndex,
-              slides[currentIndex].layout == .pip else { return }
-        let slide = slides[currentIndex]
+        let idx = editorMutationSlideIndex
+        guard slides.indices.contains(idx),
+              slides[idx].layout == .pip else { return }
+        let slide = slides[idx]
         let visible = min(max(0, slide.pipVisibleCount), slide.pipImages.count)
         guard visible > 1 else { return }
         guard source.allSatisfy({ (0..<visible).contains($0) }),
@@ -3547,17 +3784,18 @@ struct SlideTextEditorView: View {
         var txn = Transaction()
         txn.disablesAnimations = true
         withTransaction(txn) {
-            slides[currentIndex].pipImages.move(fromOffsets: source,
-                                                toOffset: destination)
+            slides[idx].pipImages.move(fromOffsets: source,
+                                       toOffset: destination)
             // Keep the parallel ID array in step. Only perform the move when
             // the IDs fully cover the visible range — otherwise the caller
             // has a shorter IDs array (legacy slides), and skipping the move
             // leaves it untouched rather than indexing out of range.
-            if slides[currentIndex].pipPhotoIDs.count >= visible {
-                slides[currentIndex].pipPhotoIDs.move(fromOffsets: source,
-                                                     toOffset: destination)
+            if slides[idx].pipPhotoIDs.count >= visible {
+                slides[idx].pipPhotoIDs.move(fromOffsets: source,
+                                             toOffset: destination)
             }
         }
+        invalidatePIPBackgroundRemovalForMutation(at: idx)
     }
 
     /// Removes the bottom-most photo from the current cluster (the last
@@ -3565,65 +3803,168 @@ struct SlideTextEditorView: View {
     /// `addPIPPhotoToCluster` — symmetry means Add-then-Remove cleanly walks
     /// the user back to where they started.
     private func removeLastPIPPhoto() {
-        guard hasValidCurrentIndex,
-              slides[currentIndex].layout == .pip else { return }
-        let slide = slides[currentIndex]
+        let idx = editorMutationSlideIndex
+        guard slides.indices.contains(idx),
+              slides[idx].layout == .pip else { return }
+        let slide = slides[idx]
         let visible = min(max(0, slide.pipVisibleCount), slide.pipImages.count)
         guard visible > 0 else { return }
         pushUndoSnapshot()
         let removeAt = visible - 1
         withAnimation(.easeInOut(duration: 0.22)) {
-            slides[currentIndex].pipImages.remove(at: removeAt)
-            if removeAt < slides[currentIndex].pipPhotoIDs.count {
-                slides[currentIndex].pipPhotoIDs.remove(at: removeAt)
+            slides[idx].pipImages.remove(at: removeAt)
+            if removeAt < slides[idx].pipPhotoIDs.count {
+                slides[idx].pipPhotoIDs.remove(at: removeAt)
             }
-            slides[currentIndex].pipVisibleCount = max(1, visible - 1)
+            slides[idx].pipVisibleCount = max(1, visible - 1)
         }
+        invalidatePIPBackgroundRemovalForMutation(at: idx)
     }
 
     /// Sets `pipBorderColor` on the current slide. Used by the Border color drop-up.
     /// Also re-enables the border, so tapping any color swatch after "no border"
     /// immediately paints the outline back in.
     private func setPIPBorderColor(_ color: StudioTextColor) {
-        guard hasValidCurrentIndex,
-              slides[currentIndex].layout == .pip else { return }
-        let slide = slides[currentIndex]
+        let idx = editorMutationSlideIndex
+        guard slides.indices.contains(idx),
+              slides[idx].layout == .pip else { return }
+        let slide = slides[idx]
         guard slide.pipBorderColor != color || !slide.pipBorderEnabled else { return }
         pushUndoSnapshot()
-        slides[currentIndex].pipBorderColor = color
-        slides[currentIndex].pipBorderEnabled = true
+        slides[idx].pipBorderColor = color
+        slides[idx].pipBorderEnabled = true
     }
 
     /// Turns off the PIP thumbnail outline on the current slide. `pipBorderColor`
     /// is preserved so users can flip the border back on by tapping any color
     /// swatch without losing their previous selection.
     private func disablePIPBorder() {
-        guard hasValidCurrentIndex,
-              slides[currentIndex].layout == .pip else { return }
-        guard slides[currentIndex].pipBorderEnabled else { return }
+        let idx = editorMutationSlideIndex
+        guard slides.indices.contains(idx),
+              slides[idx].layout == .pip else { return }
+        guard slides[idx].pipBorderEnabled else { return }
         pushUndoSnapshot()
-        slides[currentIndex].pipBorderEnabled = false
+        slides[idx].pipBorderEnabled = false
+    }
+
+    // MARK: - PIP background removal (Vision)
+
+    private var pipBackgroundRemovalSupported: Bool {
+        if #available(iOS 16, *) { return true }
+        return false
+    }
+
+    private var pipBackgroundRemovalPanelBusy: Bool {
+        pipBackgroundRemovalSlideIndex != nil && !pipBackgroundRemovalLoadingSlots.isEmpty
+    }
+
+    private var pipBackgroundRemovalToggle: Binding<Bool> {
+        Binding(
+            get: { currentSlide?.pipBackgroundRemoved ?? false },
+            set: { setPIPBackgroundRemovalEnabled($0) }
+        )
+    }
+
+    private var pipStyleToolbarCategories: [PIPStyleCategory] {
+        if #available(iOS 16, *) { return Array(PIPStyleCategory.allCases) }
+        return PIPStyleCategory.allCases.filter { $0 != .background }
+    }
+
+    private func resetPIPBackgroundRemovalState(for slideIndex: Int) {
+        guard slides.indices.contains(slideIndex) else { return }
+        slides[slideIndex].pipBackgroundRemoved = false
+        slides[slideIndex].pipProcessedImages = []
+    }
+
+    private func invalidatePIPBackgroundRemovalForMutation(at slideIndex: Int) {
+        pipBackgroundRemovalGeneration += 1
+        pipBackgroundRemovalSlideIndex = nil
+        pipBackgroundRemovalLoadingSlots = []
+        resetPIPBackgroundRemovalState(for: slideIndex)
+    }
+
+    private func setPIPBackgroundRemovalEnabled(_ enabled: Bool) {
+        guard pipBackgroundRemovalSupported else { return }
+        let idx = editorPagerFocusedSlideIndex
+        guard slides.indices.contains(idx),
+              slides[idx].layout == .pip,
+              !slides[idx].pipImages.isEmpty else { return }
+        let visible = min(max(0, slides[idx].pipVisibleCount), slides[idx].pipImages.count)
+        guard visible > 0 else { return }
+        if slides[idx].pipBackgroundRemoved == enabled { return }
+        pushUndoSnapshot()
+        pipBackgroundRemovalGeneration += 1
+        let generation = pipBackgroundRemovalGeneration
+        if enabled {
+            slides[idx].pipBackgroundRemoved = true
+            slides[idx].pipProcessedImages = Array(slides[idx].pipImages)
+            pipBackgroundRemovalSlideIndex = idx
+            pipBackgroundRemovalLoadingSlots = Set(0..<visible)
+            Task {
+                await runPIPBackgroundRemoval(slideIndex: idx,
+                                              visibleCount: visible,
+                                              generation: generation)
+            }
+        } else {
+            pipBackgroundRemovalSlideIndex = nil
+            pipBackgroundRemovalLoadingSlots = []
+            slides[idx].pipBackgroundRemoved = false
+            slides[idx].pipProcessedImages = []
+        }
+    }
+
+    private func runPIPBackgroundRemoval(slideIndex: Int, visibleCount: Int, generation: UInt64) async {
+        let rowInputs: [UIImage] = await MainActor.run {
+            guard slides.indices.contains(slideIndex) else { return [] }
+            return Array(slides[slideIndex].pipImages.prefix(visibleCount))
+        }
+        guard rowInputs.count == visibleCount else {
+            await MainActor.run { completePIPBackgroundRemovalIfCurrent(generation: generation) }
+            return
+        }
+        for i in rowInputs.indices {
+            if Task.isCancelled { break }
+            let processed = await removePIPBackground(from: rowInputs[i]) ?? rowInputs[i]
+            await MainActor.run {
+                guard generation == pipBackgroundRemovalGeneration,
+                      slides.indices.contains(slideIndex),
+                      slides[slideIndex].pipBackgroundRemoved,
+                      slides[slideIndex].pipProcessedImages.count == slides[slideIndex].pipImages.count
+                else { return }
+                slides[slideIndex].pipProcessedImages[i] = processed
+                pipBackgroundRemovalLoadingSlots.remove(i)
+            }
+        }
+        await MainActor.run { completePIPBackgroundRemovalIfCurrent(generation: generation) }
+    }
+
+    private func completePIPBackgroundRemovalIfCurrent(generation: UInt64) {
+        guard generation == pipBackgroundRemovalGeneration else { return }
+        pipBackgroundRemovalLoadingSlots = []
+        pipBackgroundRemovalSlideIndex = nil
     }
 
     /// Writes a new PIP thumbnail size scale without its own undo snapshot — the
     /// Size strip captures undo once at drag begin (see `pipClusterSizeSliderPanel`).
     private func setPIPClusterSizeScaleLive(_ raw: CGFloat) {
-        guard hasValidCurrentIndex,
-              slides[currentIndex].layout == .pip else { return }
+        let idx = editorMutationSlideIndex
+        guard slides.indices.contains(idx),
+              slides[idx].layout == .pip else { return }
         let clamped = min(max(raw, Self.pipClusterSizeScaleMin), Self.pipClusterSizeScaleMax)
         let snapped = (clamped / Self.pipClusterSizeScaleStep).rounded() * Self.pipClusterSizeScaleStep
-        guard abs(snapped - slides[currentIndex].pipClusterSizeScale) > 0.0001 else { return }
-        slides[currentIndex].pipClusterSizeScale = snapped
+        guard abs(snapped - slides[idx].pipClusterSizeScale) > 0.0001 else { return }
+        slides[idx].pipClusterSizeScale = snapped
     }
 
     /// Vertical vs horizontal stacking for the PIP thumbnail column — driven from
     /// the "Style" menu in `pipStyleMenuButton`.
     private func applyPIPClusterStackStyle(_ style: CarouselPIPClusterStackStyle) {
-        guard hasValidCurrentIndex,
-              slides[currentIndex].layout == .pip else { return }
-        guard slides[currentIndex].pipClusterStackStyle != style else { return }
+        let idx = editorMutationSlideIndex
+        guard slides.indices.contains(idx),
+              slides[idx].layout == .pip else { return }
+        guard slides[idx].pipClusterStackStyle != style else { return }
         pushUndoSnapshot()
-        slides[currentIndex].pipClusterStackStyle = style
+        slides[idx].pipClusterStackStyle = style
     }
 
     private func availableSplitBottomPhotos(for slideIndex: Int) -> [RecapPhoto] {
@@ -3788,11 +4129,11 @@ struct SlideTextEditorView: View {
     /// it's fresh we load its image and append a new slot. In both cases
     /// `pipVisibleCount` is bumped so the newly-added photo is visible.
     private func addPIPPhotoToCluster(_ photo: RecapPhoto) {
-        guard hasValidCurrentIndex,
-              slides[currentIndex].layout == .pip else { return }
+        let slideIdx = editorMutationSlideIndex
+        guard slides.indices.contains(slideIdx),
+              slides[slideIdx].layout == .pip else { return }
         pushUndoSnapshot()
 
-        let slideIdx = currentIndex
         var images = slides[slideIdx].pipImages
         var ids = slides[slideIdx].pipPhotoIDs
         let visibleCount = max(0, min(slides[slideIdx].pipVisibleCount, ids.count))
@@ -3813,6 +4154,7 @@ struct SlideTextEditorView: View {
                 slides[slideIdx].pipPhotoIDs = ids
                 slides[slideIdx].pipVisibleCount = min(3, visibleCount + 1)
             }
+            invalidatePIPBackgroundRemovalForMutation(at: slideIdx)
             return
         }
 
@@ -3839,6 +4181,7 @@ struct SlideTextEditorView: View {
                     slides[slideIdx].pipPhotoIDs = ids2
                     slides[slideIdx].pipVisibleCount = min(3, slides[slideIdx].pipVisibleCount + 1)
                 }
+                invalidatePIPBackgroundRemovalForMutation(at: slideIdx)
             }
         }
     }
@@ -3980,7 +4323,10 @@ struct SlideTextEditorView: View {
                                                 },
                                                 selectedSplitSlot: selectedSplitSlot,
                                                 onRequestStudioCoverPhotoPick: onRequestStudioCoverPhotoPick,
-                                                slidePageIndex: i
+                                                slidePageIndex: i,
+                                                pipBackgroundRemovalLoadingSlots: pipBackgroundRemovalSlideIndex == i
+                                                    ? pipBackgroundRemovalLoadingSlots
+                                                    : []
                                             )
                                             Spacer(minLength: 0)
                                         }
@@ -4245,8 +4591,11 @@ struct SlideTextEditorView: View {
 
     @ViewBuilder
     private var inlineTextEditSheet: some View {
-        InlineTextEditSheetBody(
-            showsCaptionField: showsInlineCaptionField,
+        SlideBlockTextEditView(
+            primarySectionTitle: inlineTextPrimarySectionTitle,
+            primarySectionSubtitle: inlineTextPrimarySectionSubtitle,
+            secondarySectionTitle: inlineTextSecondarySectionTitle,
+            secondarySectionSubtitle: inlineTextSecondarySectionSubtitle,
             textDraft: $inlineTextDraft,
             captionDraft: $inlineCaptionDraft,
             onCancel: cancelInlineTextEdit,
@@ -4710,6 +5059,10 @@ struct SlideTextEditorView: View {
             .toolbar(.visible, for: .navigationBar)
             .tint(.white)
             .preferredColorScheme(.dark)
+            // Text editing is presented in a fullScreenCover (isolated UIViewController).
+            // This prevents any keyboard-driven safe-area inset from propagating back into
+            // the slide editor and causing layout shifts / view shrinkage.
+            .ignoresSafeArea(.keyboard)
     }
 
     @ViewBuilder
@@ -4739,23 +5092,48 @@ struct SlideTextEditorView: View {
 #if DEBUG
                 print("[CarouselStudio][TextEdit] showsTextEditLine -> \(isShowing)")
 #endif
+                // The text editor's keyboard still delivers `keyboardWillChangeFrame` to this
+                // view while the fullScreenCover is up. If we accumulate that height here,
+                // the bottom chrome spacer becomes non-zero the moment the cover dismisses
+                // and the studio layout jumps.
+                if isShowing {
+                    ignoreChromeKeyboardNotifications = true
+                    var txn = Transaction()
+                    txn.disablesAnimations = true
+                    withTransaction(txn) {
+                        keyboardHeight = 0
+                    }
+                } else {
+                    ignoreChromeKeyboardNotifications = false
+                    var txn = Transaction()
+                    txn.disablesAnimations = true
+                    withTransaction(txn) {
+                        keyboardHeight = 0
+                    }
+                }
             }
-            .sheet(isPresented: $showsTextEditLine, onDismiss: {
+            // fullScreenCover presents a fully isolated UIViewController context so the
+            // keyboard inside the text editor cannot propagate safe-area insets back into
+            // the slide editor and cause layout shifts or view shrinkage.
+            .fullScreenCover(isPresented: $showsTextEditLine, onDismiss: {
 #if DEBUG
-                print("[CarouselStudio][TextEdit] sheet onDismiss; committed=\(inlineTextEditCommitted) focusField=\(String(describing: inlineTextFocusField))")
+                print("[CarouselStudio][TextEdit] fullScreenCover onDismiss; committed=\(inlineTextEditCommitted)")
 #endif
                 if !inlineTextEditCommitted {
-                    inlineTextDraft = currentBlockText
+                    // Cancelled without saving — restore drafts from captured values.
+                    inlineTextDraft = capturedBlockText
                     if showsInlineCaptionField {
-                        inlineCaptionDraft = currentSlide?.photoCaption ?? currentSlide?.caption ?? ""
+                        let idx = textEditSlideIndexCapture
+                        inlineCaptionDraft = slides.indices.contains(idx)
+                            ? (slides[idx].photoCaption ?? slides[idx].caption ?? "")
+                            : ""
                     }
                     inlineTextFocusField = nil
                 }
                 inlineTextEditCommitted = false
+                textEditBlockCapture = nil
             }, content: {
                 inlineTextEditSheet
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
             })
             .sheet(isPresented: $showCarouselStudioExportHub, onDismiss: {
                 carouselStudioExportHubPhase = .actions
@@ -4816,6 +5194,7 @@ struct SlideTextEditorView: View {
             }
             // Track keyboard height so the toolbar spacer can push content above the keyboard.
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notif in
+                guard !ignoreChromeKeyboardNotifications else { return }
                 guard let frame = notif.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
                 let newHeight = max(0, UIScreen.main.bounds.height - frame.minY)
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
@@ -5249,17 +5628,26 @@ struct SlideTextEditorView: View {
                 pipBorderColorOptionsStrip
             case .size:
                 pipClusterSizeSliderPanel
+            case .background:
+                pipBackgroundRemovalPanel
             }
         }
-        .padding(.vertical, (category == .border || category == .size) ? 6 : 0)
+        .padding(.vertical, pipDropUpPanelUsesTightChrome(category) ? 6 : 0)
         .frame(maxWidth: .infinity)
-        .background((category == .border || category == .size) ? Color(white: 0.11) : Color.clear)
+        .background(pipDropUpPanelUsesTightChrome(category) ? Color(white: 0.11) : Color.clear)
         .overlay(alignment: .top) {
-            if category == .border || category == .size {
+            if pipDropUpPanelUsesTightChrome(category) {
                 Rectangle()
                     .fill(Color.white.opacity(0.06))
                     .frame(height: 1)
             }
+        }
+    }
+
+    private func pipDropUpPanelUsesTightChrome(_ category: PIPStyleCategory) -> Bool {
+        switch category {
+        case .border, .size, .background: return true
+        case .order: return false
         }
     }
 
@@ -5431,6 +5819,30 @@ struct SlideTextEditorView: View {
                     .foregroundColor(.white.opacity(0.55))
                     .monospacedDigit()
             }
+            // Preset size pills — quick jumps; slider below for fine-tuning.
+            HStack(spacing: 8) {
+                ForEach(Self.pipSizePresets, id: \.label) { preset in
+                    let isActive = abs(scale - preset.value) < (Self.pipClusterSizeScaleStep * 0.6)
+                    Button {
+                        pushUndoSnapshot()
+                        setPIPClusterSizeScaleLive(preset.value)
+                    } label: {
+                        Text(preset.label)
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundColor(isActive ? Color(white: 0.1) : .white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 7)
+                            .background(
+                                Capsule()
+                                    .fill(isActive
+                                          ? Color.white
+                                          : Color.white.opacity(0.12))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .animation(.easeInOut(duration: 0.15), value: isActive)
+                }
+            }
             GeometryReader { geo in
                 let w = geo.size.width
                 let h = geo.size.height
@@ -5481,6 +5893,59 @@ struct SlideTextEditorView: View {
         .padding(.vertical, 4)
     }
 
+    @ViewBuilder
+    private var pipBackgroundRemovalPanel: some View {
+        if pipBackgroundRemovalSupported {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center, spacing: 12) {
+                    Image(systemName: "person.crop.square.filled.and.at.rectangle")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.88))
+                        .frame(width: 28, alignment: .center)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 8) {
+                            Text("Remove background")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.white)
+                            if pipBackgroundRemovalPanelBusy {
+                                ProgressView()
+                                    .scaleEffect(0.78)
+                                    .tint(.white.opacity(0.9))
+                            }
+                        }
+                        if #available(iOS 17, *) {
+                            Text("On-device cutout for people, pets, and objects.")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.white.opacity(0.48))
+                        } else {
+                            Text("On-device person cutout — portraits work best.")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.white.opacity(0.48))
+                        }
+                    }
+                    Spacer(minLength: 6)
+                    Toggle("", isOn: pipBackgroundRemovalToggle)
+                        .labelsHidden()
+                        .tint(CarouselStudioChrome.accent)
+                        .disabled(currentSlide?.pipImages.isEmpty ?? true)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
+        } else {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.yellow.opacity(0.85))
+                Text("Requires iOS 16 or later")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.75))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+        }
+    }
+
     /// Category tab bar for the PIP cluster. Leading pills scroll with the row:
     /// **Add Photos** opens the picker when there is room and eligible picks;
     /// **Remove** drops the bottom-most photo when two or more thumbnails are
@@ -5495,7 +5960,7 @@ struct SlideTextEditorView: View {
                     pipRemovePhotosTabButton
                     pipStyleMenuButton
                 }
-                ForEach(PIPStyleCategory.allCases) { cat in
+                ForEach(pipStyleToolbarCategories, id: \.self) { cat in
                     pipCategoryButton(cat)
                 }
             }
@@ -5691,6 +6156,11 @@ struct SlideTextEditorView: View {
             .shadow(color: .black.opacity(0.35), radius: 2)
         case .size:
             Image(systemName: "aspectratio")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(isActive ? .white : .white.opacity(0.75))
+                .frame(width: 22, height: 22)
+        case .background:
+            Image(systemName: "person.crop.rectangle.stack")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundColor(isActive ? .white : .white.opacity(0.75))
                 .frame(width: 22, height: 22)
@@ -6031,6 +6501,11 @@ struct SlideTextEditorView: View {
                     print("[CarouselStudio][TextEdit] opening sheet from Text tab")
 #endif
                     inlineTextEditCommitted = false
+                    textEditBlockCapture = selectedBlock
+                    // Must match `currentSlide` / `currentBlockText`: `currentIndex` can lag
+                    // `scrollPageID` after swiping, which otherwise captured the wrong slide
+                    // for labels, caption visibility, and `commitInlineTextEdit`.
+                    textEditSlideIndexCapture = editorPagerFocusedSlideIndex
                     inlineTextDraft = currentBlockText
                     inlineCaptionDraft = currentSlide?.photoCaption ?? currentSlide?.caption ?? ""
                     showsTextEditLine = true
@@ -6096,6 +6571,15 @@ struct SlideTextEditorView: View {
     private static let pipClusterSizeScaleMin: CGFloat = 0.55
     private static let pipClusterSizeScaleMax: CGFloat = 1.45
     private static let pipClusterSizeScaleStep: CGFloat = 0.02
+
+    private struct PIPSizePreset { let label: String; let value: CGFloat }
+    private static let pipSizePresets: [PIPSizePreset] = [
+        PIPSizePreset(label: "XS", value: 0.55),
+        PIPSizePreset(label: "S",  value: 0.72),
+        PIPSizePreset(label: "M",  value: 1.00),
+        PIPSizePreset(label: "L",  value: 1.22),
+        PIPSizePreset(label: "XL", value: 1.45),
+    ]
 
     @ViewBuilder
     private func styleCategoryButton(_ cat: StyleCategory) -> some View {
@@ -6865,6 +7349,10 @@ struct SocialPostStudioSheet: View {
                 slides[index].splitTopFraming = nil
                 slides[index].splitBottomFraming = nil
             }
+            if layout != .pip {
+                slides[index].pipBackgroundRemoved = false
+                slides[index].pipProcessedImages = []
+            }
             for i in slides.indices where i != index {
                 guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
                 slides[i].isSelected = (layout != .pip)
@@ -7027,6 +7515,8 @@ struct SocialPostStudioSheet: View {
                 slides[i].layout = .single
                 slides[i].pipImages = []
                 slides[i].pipPhotoIDs = []
+                slides[i].pipBackgroundRemoved = false
+                slides[i].pipProcessedImages = []
             }
             return
         }
@@ -7061,6 +7551,8 @@ struct SocialPostStudioSheet: View {
             }
             slides[i].pipPhotoIDs = pipAligned.map(\.0)
             slides[i].pipImages = pipAligned.map(\.1)
+            slides[i].pipBackgroundRemoved = false
+            slides[i].pipProcessedImages = []
             if slides[i].layout == .pip, slides[i].pipImages.isEmpty {
                 slides[i].layout = .single
             }
