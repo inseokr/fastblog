@@ -3761,81 +3761,101 @@ struct SlideTextEditorView: View {
                         let visiblePos = currentVisiblePosition
                         let canGoPrev = (visiblePos ?? 0) > 0
                         let canGoNext = visiblePos.map { $0 < visibleIndices.count - 1 } ?? false
-                        // Left: prev / count / next. Right: manage groups. Same row, full width under the slide.
-                        HStack(alignment: .center, spacing: 0) {
-                            HStack(spacing: 12) {
-                                HStack(spacing: 16) {
-                                    Button {
-                                        guard let pos = visiblePos, pos > 0 else { return }
-                                        withAnimation(.easeInOut(duration: 0.22)) {
-                                            currentIndex = visibleIndices[pos - 1]
-                                            scrollPageID = currentIndex
-                                        }
-                                    } label: {
-                                        Image(systemName: "chevron.left")
-                                            .font(.system(size: 15, weight: .semibold))
-                                            .foregroundColor(canGoPrev ? .white : .white.opacity(0.2))
-                                            .frame(width: 36, height: 36)
-                                            .background(Color.white.opacity(canGoPrev ? 0.12 : 0.05))
-                                            .clipShape(Circle())
+                        /// 9:16 preview is tall; hide prev/next under the slide — paging stays swipe-based.
+                        let showSlideNavChevrons =
+                            abs(editorPreviewAspectRatio - Self.studioPreviewRatio916) >= 0.001
+                        // Under the slide: aspect / overview use the same horizontal inset as
+                        // `SlideEditPage`’s rendered slide width (`min(max(220, layoutWidth - 48),
+                        // maxHeight * aspectRatio)`), so their edges line up with the photo card.
+                        GeometryReader { navGeo in
+                            let navW = max(navGeo.size.width, 1)
+                            let editorSlideRenderW = min(
+                                max(220, navW - 48),
+                                slotH * editorPreviewAspectRatio
+                            )
+                            let photoSideInset = max(0, (navW - editorSlideRenderW) * 0.5)
+
+                            ZStack {
+                                HStack(alignment: .center, spacing: 0) {
+                                    Button(action: toggleEditorPreviewAspect) {
+                                        Text(editorPreviewAspectLabel)
+                                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                            .foregroundColor(.white.opacity(0.92))
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(Color.white.opacity(0.12))
+                                            .clipShape(Capsule())
                                     }
-                                    .disabled(!canGoPrev)
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("Preview \(editorPreviewAspectLabel). Tap to switch between 4:5 and 9:16.")
+                                    .padding(.leading, photoSideInset)
+
+                                    Spacer(minLength: 0)
+
+                                    if let onOpenPicker = onOpenPhotoGroupPicker {
+                                        let count = visibleSelectedSlideCount
+                                        let isOver = count > 34
+                                        Button {
+                                            onOpenPicker()
+                                        } label: {
+                                            Image(systemName: isOver ? "exclamationmark.triangle.fill" : "rectangle.3.group")
+                                                .font(.system(size: 15, weight: .semibold))
+                                                .foregroundColor(.white)
+                                                .frame(width: 36, height: 36)
+                                                .background(Color.white.opacity(0.12))
+                                                .clipShape(Capsule())
+                                        }
+                                        .accessibilityLabel("Slide overview, \(count) slide\(count == 1 ? "" : "s")")
+                                        .padding(.trailing, photoSideInset)
+                                    }
+                                }
+
+                                HStack(spacing: 16) {
+                                    if showSlideNavChevrons {
+                                        Button {
+                                            guard let pos = visiblePos, pos > 0 else { return }
+                                            withAnimation(.easeInOut(duration: 0.22)) {
+                                                currentIndex = visibleIndices[pos - 1]
+                                                scrollPageID = currentIndex
+                                            }
+                                        } label: {
+                                            Image(systemName: "chevron.left")
+                                                .font(.system(size: 15, weight: .semibold))
+                                                .foregroundColor(canGoPrev ? .white : .white.opacity(0.2))
+                                                .frame(width: 36, height: 36)
+                                                .background(Color.white.opacity(canGoPrev ? 0.12 : 0.05))
+                                                .clipShape(Circle())
+                                        }
+                                        .disabled(!canGoPrev)
+                                    }
 
                                     Text("\((visiblePos ?? 0) + 1) / \(max(visibleIndices.count, 1))")
                                         .font(.system(size: 13, weight: .medium, design: .monospaced))
                                         .foregroundColor(.white.opacity(0.55))
                                         .frame(minWidth: 52)
 
-                                    Button {
-                                        guard let pos = visiblePos, pos < visibleIndices.count - 1 else { return }
-                                        withAnimation(.easeInOut(duration: 0.22)) {
-                                            currentIndex = visibleIndices[pos + 1]
-                                            scrollPageID = currentIndex
+                                    if showSlideNavChevrons {
+                                        Button {
+                                            guard let pos = visiblePos, pos < visibleIndices.count - 1 else { return }
+                                            withAnimation(.easeInOut(duration: 0.22)) {
+                                                currentIndex = visibleIndices[pos + 1]
+                                                scrollPageID = currentIndex
+                                            }
+                                        } label: {
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 15, weight: .semibold))
+                                                .foregroundColor(canGoNext ? .white : .white.opacity(0.2))
+                                                .frame(width: 36, height: 36)
+                                                .background(Color.white.opacity(canGoNext ? 0.12 : 0.05))
+                                                .clipShape(Circle())
                                         }
-                                    } label: {
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 15, weight: .semibold))
-                                            .foregroundColor(canGoNext ? .white : .white.opacity(0.2))
-                                            .frame(width: 36, height: 36)
-                                            .background(Color.white.opacity(canGoNext ? 0.12 : 0.05))
-                                            .clipShape(Circle())
+                                        .disabled(!canGoNext)
                                     }
-                                    .disabled(!canGoNext)
                                 }
-
-                                Button(action: toggleEditorPreviewAspect) {
-                                    Text(editorPreviewAspectLabel)
-                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                        .foregroundColor(.white.opacity(0.92))
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 8)
-                                        .background(Color.white.opacity(0.12))
-                                        .clipShape(Capsule())
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Preview \(editorPreviewAspectLabel). Tap to switch between 4:5 and 9:16.")
                             }
-
-                            Spacer(minLength: 12)
-
-                            if let onOpenPicker = onOpenPhotoGroupPicker {
-                                let count = visibleSelectedSlideCount
-                                let isOver = count > 34
-                                Button {
-                                    onOpenPicker()
-                                } label: {
-                                    Image(systemName: isOver ? "exclamationmark.triangle.fill" : "rectangle.3.group")
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundColor(.white)
-                                        .frame(width: 36, height: 36)
-                                        .background(Color.white.opacity(0.12))
-                                        .clipShape(Capsule())
-                                }
-                                .accessibilityLabel("Slide overview, \(count) slide\(count == 1 ? "" : "s")")
-                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 24)
+                        .frame(height: 44)
                         .padding(.top, 8)
 
                         Spacer(minLength: 0)
