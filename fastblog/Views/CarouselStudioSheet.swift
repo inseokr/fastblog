@@ -3314,6 +3314,14 @@ struct SlideTextEditorView: View {
         return slides[idx]
     }
 
+    /// PIP thumbnails actually on screen — `pipVisibleCount` capped by loaded photos.
+    /// Toolbar logic must use this (not raw `pipVisibleCount`) so Style / Reorder
+    /// disable correctly when only one photo exists in the cluster.
+    private var currentSlideEffectivePIPVisibleCount: Int {
+        guard let slide = currentSlide else { return 0 }
+        return min(max(0, slide.pipVisibleCount), slide.pipImages.count)
+    }
+
     /// Slides the editor's swipe pager should actually render — mirrors the
     /// filter used by the preview/export pipelines so a place-stop slide that
     /// has been "folded into" a sibling's PIP cluster (same stop, `.pip`
@@ -4299,31 +4307,62 @@ struct SlideTextEditorView: View {
     private func setSplitBottomPhoto(_ photo: RecapPhoto, slideIndex: Int) {
         guard slides.indices.contains(slideIndex),
               slides[slideIndex].layout == .split else { return }
-        if slides[slideIndex].splitBottomPhotoID == photo.id { return }
-        pushUndoSnapshot()
+        if slides[slideIndex].splitBottomPhotoID == photo.id,
+           slides[slideIndex].splitBottomImage != nil { return }
+
+        // When the bottom photo id is still nil after switching to `.split`, the
+        // sibling single slide is not yet hidden (`isSlideHiddenBySiblingPIP`
+        // requires `splitBottomPhotoID`). A one-frame visible list change can
+        // confuse `scrollPosition(id:)` and advance the pager. Commit identity +
+        // sibling flags synchronously; only full-res image work stays async.
+        let alreadyCorrectID = slides[slideIndex].splitBottomPhotoID == photo.id
+        if !alreadyCorrectID {
+            pushUndoSnapshot()
+        }
         let stopID = slides[slideIndex].placeStop?.id
         let previousBottomID = slides[slideIndex].splitBottomPhotoID
+
+        if !alreadyCorrectID {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                slides[slideIndex].splitBottomPhotoID = photo.id
+                slides[slideIndex].splitBottomFraming = nil
+                if let pipIdx = slides[slideIndex].pipPhotoIDs.firstIndex(of: photo.id),
+                   slides[slideIndex].pipImages.indices.contains(pipIdx) {
+                    slides[slideIndex].splitBottomImage = slides[slideIndex].pipImages[pipIdx]
+                } else {
+                    slides[slideIndex].splitBottomImage = nil
+                }
+                if let stopID {
+                    for i in slides.indices where i != slideIndex {
+                        guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
+                        if let previousBottomID, slides[i].heroPhotoID == previousBottomID {
+                            slides[i].isSelected = true
+                        }
+                        if slides[i].heroPhotoID == photo.id {
+                            slides[i].isSelected = false
+                        }
+                    }
+                }
+            }
+            // Choosing a bottom photo can hide an earlier `.single` sibling (`splitBottomPhotoID`
+            // matches its hero). Removing the leftmost page keeps scroll offset in points, so
+            // `scrollPosition(id:)` can land on the next slide — re-pin like `setPlaceStopLayout`.
+            if visibleSlideIndices.contains(slideIndex) {
+                reassertEditorPagerToSlide(at: slideIndex)
+            }
+        }
+
+        guard slides[slideIndex].splitBottomImage == nil else { return }
+
         Task {
             let target = CGSize(width: 1080, height: 1080)
             guard let image = await loadRecapPhotoUIImage(photo: photo, size: target) else { return }
             await MainActor.run {
                 guard slides.indices.contains(slideIndex),
-                      slides[slideIndex].layout == .split else { return }
+                      slides[slideIndex].layout == .split,
+                      slides[slideIndex].splitBottomPhotoID == photo.id else { return }
                 withAnimation(.easeInOut(duration: 0.22)) {
                     slides[slideIndex].splitBottomImage = image
-                    slides[slideIndex].splitBottomPhotoID = photo.id
-                    slides[slideIndex].splitBottomFraming = nil
-                    if let stopID {
-                        for i in slides.indices where i != slideIndex {
-                            guard slides[i].kind == .placeStop, slides[i].placeStop?.id == stopID else { continue }
-                            if let previousBottomID, slides[i].heroPhotoID == previousBottomID {
-                                slides[i].isSelected = true
-                            }
-                            if slides[i].heroPhotoID == photo.id {
-                                slides[i].isSelected = false
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -6195,7 +6234,7 @@ struct SlideTextEditorView: View {
     /// Stack direction (vertical column vs horizontal row) for the PIP cluster.
     @ViewBuilder
     private var pipStyleMenuButton: some View {
-        let visible = currentSlide?.pipVisibleCount ?? 0
+        let visible = currentSlideEffectivePIPVisibleCount
         let canUsePIPMultiPhotoControls = visible > 1
         let current = currentSlide?.pipClusterStackStyle ?? .vertical
         Menu {
@@ -6249,7 +6288,7 @@ struct SlideTextEditorView: View {
     /// library photo exists.
     @ViewBuilder
     private var pipAddPhotosTabButton: some View {
-        let visible = currentSlide?.pipVisibleCount ?? 0
+        let visible = currentSlideEffectivePIPVisibleCount
         let canAdd = visible < 3 && !availableAddablePhotos.isEmpty
 
         Button {
@@ -6283,7 +6322,7 @@ struct SlideTextEditorView: View {
     /// more thumbnails are shown (disabled at a single-photo cluster).
     @ViewBuilder
     private var pipRemovePhotosTabButton: some View {
-        let visible = currentSlide?.pipVisibleCount ?? 0
+        let visible = currentSlideEffectivePIPVisibleCount
         let canRemove = visible > 1
 
         Button {
