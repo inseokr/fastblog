@@ -1588,7 +1588,7 @@ struct CarouselSlideView: View {
         .clipCarouselPostcardOutline(
             clipsFloatingContentToRoundedSlideOutline && !pipClusterNeedsUnclippedFloatingChrome
         )
-        .opacity(slide.isSelected ? 1.0 : 0.72)
+        .opacity(showsSelectionChrome && !slide.isSelected ? 0.72 : 1.0)
         .contentShape(RoundedRectangle(cornerRadius: 16))
         // Social Post Studio: cover `onCoverImageTap` sits inside the photo stack. A parent
         // `onTapGesture` here would compete with (and often swallow) that tap, so omit the
@@ -2301,13 +2301,21 @@ struct SlideTextEditorExportActions {
 }
 
 struct SlideTextEditorView: View {
+    private static let studioPreviewRatio45: CGFloat = 4.0 / 5.0
+    private static let studioPreviewRatio916: CGFloat = 9.0 / 16.0
+
     @Binding var slides: [CarouselSlide]
     let initialIndex: Int
+    /// Export / download thumbnail aspect from the parent (Post vs Story/Reel).
     let aspectRatio: CGFloat
+    /// Live slide preview frame; user can tap the aspect pill to flip vs `aspectRatio` for comparison.
+    @State private var editorPreviewAspectRatio: CGFloat
     /// Nav bar download affordance opens a bottom sheet (share / download / PDF); parent owns sheets, alerts, and export rendering.
     let exportActions: SlideTextEditorExportActions
     /// Mirrors parent `SocialPostStudioSheet.isRendering` so export progress covers the editor when presented in `fullScreenCover`.
     @Binding var exportInProgress: Bool
+    /// Parent sets a raw slide index to move the pager without tearing down the editor (e.g. from the slide grid sheet).
+    @Binding var externalJumpToSlideIndex: Int?
     /// When set (e.g. from `SocialPostStudioSheet`), the cover slide can change its hero via the same picker as the studio preview.
     let onRequestStudioCoverPhotoPick: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
@@ -2382,7 +2390,7 @@ struct SlideTextEditorView: View {
     let onOpenExcludedPhotos: (() -> Void)?
     /// Count of photos excluded this session — drives the **Excluded** toolbar affordance.
     let excludedFromStudioCount: Int
-    /// Opens the photo-group manager (bulk PIP / enable–disable per place stop).
+    /// Opens the slide grid navigator (jump to any slide while editing).
     let onOpenPhotoGroupPicker: (() -> Void)?
     /// When `true` (e.g. Reel export), the download picker only allows one slide at a time.
     let isSingleSlideDownloadMode: Bool
@@ -2408,6 +2416,7 @@ struct SlideTextEditorView: View {
         aspectRatio: CGFloat,
         exportActions: SlideTextEditorExportActions,
         exportInProgress: Binding<Bool>,
+        externalJumpToSlideIndex: Binding<Int?>,
         onRequestStudioCoverPhotoPick: (() -> Void)? = nil,
         onExcludePlaceFromStudio: ((Int) -> Void)? = nil,
         onExcludeMapFromStudio: ((Int) -> Void)? = nil,
@@ -2419,8 +2428,10 @@ struct SlideTextEditorView: View {
         self._slides = slides
         self.initialIndex = initialIndex
         self.aspectRatio = aspectRatio
+        self._editorPreviewAspectRatio = State(initialValue: aspectRatio)
         self.exportActions = exportActions
         self._exportInProgress = exportInProgress
+        self._externalJumpToSlideIndex = externalJumpToSlideIndex
         self.onRequestStudioCoverPhotoPick = onRequestStudioCoverPhotoPick
         self.onExcludePlaceFromStudio = onExcludePlaceFromStudio
         self.onExcludeMapFromStudio = onExcludeMapFromStudio
@@ -2432,8 +2443,22 @@ struct SlideTextEditorView: View {
         self._scrollPageID = State(initialValue: initialIndex)
     }
 
+    private var editorPreviewAspectLabel: String {
+        abs(editorPreviewAspectRatio - Self.studioPreviewRatio916) < 0.001 ? "9:16" : "4:5"
+    }
+
+    private func toggleEditorPreviewAspect() {
+        withAnimation(.easeInOut(duration: 0.22)) {
+            if abs(editorPreviewAspectRatio - Self.studioPreviewRatio916) < 0.001 {
+                editorPreviewAspectRatio = Self.studioPreviewRatio45
+            } else {
+                editorPreviewAspectRatio = Self.studioPreviewRatio916
+            }
+        }
+    }
+
     /// Number of visible (non-PIP-hidden) selected slides — used to badge the
-    /// photo-group picker button when the count exceeds TikTok's 34-slide limit.
+    /// slide grid button when the count exceeds TikTok's 34-slide limit.
     private var visibleSelectedSlideCount: Int {
         slides.enumerated().filter { idx, slide in
             !isSlideHiddenBySiblingPIP(at: idx, in: slides) && slide.isSelected
@@ -2459,6 +2484,27 @@ struct SlideTextEditorView: View {
             let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             return t.isEmpty ? "Photo" : t
         }
+    }
+
+    /// True when the download pick set is exactly the full candidate list.
+    private var downloadPickSelectionMatchesAll: Bool {
+        !studioDownloadCandidateIndices.isEmpty
+            && Set(studioDownloadCandidateIndices) == downloadSlidePickSelection
+    }
+
+    /// True when the pick matches "current slide only" (or the fallback first candidate if the current page is not listed).
+    private var downloadPickSelectionMatchesCurrentOnly: Bool {
+        let expected: Set<Int> = {
+            let idx = editorPagerFocusedSlideIndex
+            if studioDownloadCandidateIndices.contains(idx) {
+                return [idx]
+            }
+            if let first = studioDownloadCandidateIndices.first {
+                return [first]
+            }
+            return []
+        }()
+        return !expected.isEmpty && downloadSlidePickSelection == expected
     }
 
     private func selectAllSlidesForDownloadPick() {
@@ -2489,6 +2535,14 @@ struct SlideTextEditorView: View {
 
     private func orderedPickedDownloadIndices() -> [Int] {
         studioDownloadCandidateIndices.filter { downloadSlidePickSelection.contains($0) }
+    }
+
+    /// Saves only the slide currently centered in the editor (same render path as bulk download).
+    private func saveCurrentSlideOnlyToPhotos() {
+        let idx = editorPagerFocusedSlideIndex
+        guard visibleSlideIndices.contains(idx) else { return }
+        guard !exportActions.exportActionsDisabled() else { return }
+        Task { await exportActions.saveToPhotosAtIndices([idx]) }
     }
 
     private let maxUndoSteps = 40
@@ -3561,7 +3615,7 @@ struct SlideTextEditorView: View {
                 let outerW = outerSize.width
                 let outerH = outerSize.height
                 let slideContentW = max(220, outerW - 48)
-                let idealSlotH = slideContentW / aspectRatio
+                let idealSlotH = slideContentW / editorPreviewAspectRatio
                 let navRowReserve: CGFloat = 72
                 // The bottom `safeAreaInset` reserves pts for the editing chrome.
                 // The outer geometry still reports the full container height (SwiftUI's
@@ -3614,7 +3668,7 @@ struct SlideTextEditorView: View {
                                             Spacer(minLength: 0)
                                             SlideEditPage(
                                                 slide: $slides[i],
-                                                aspectRatio: aspectRatio,
+                                                aspectRatio: editorPreviewAspectRatio,
                                                 layoutWidth: slotW,
                                                 maxHeight: slotH,
                                                 selectedBlock: selectedBlock,
@@ -3693,6 +3747,7 @@ struct SlideTextEditorView: View {
                         }
                         .frame(height: slotH)
                         .animation(.easeInOut(duration: 0.22), value: slotSizingBottomReserve)
+                        .animation(.easeInOut(duration: 0.22), value: editorPreviewAspectRatio)
 
                         // Slide navigation sits directly beneath the slide (not
                         // pushed all the way to the bottom of the sheet). The
@@ -3706,9 +3761,9 @@ struct SlideTextEditorView: View {
                         let visiblePos = currentVisiblePosition
                         let canGoPrev = (visiblePos ?? 0) > 0
                         let canGoNext = visiblePos.map { $0 < visibleIndices.count - 1 } ?? false
-                        VStack(alignment: .trailing, spacing: 8) {
-                            HStack {
-                                Spacer(minLength: 0)
+                        // Left: prev / count / next. Right: manage groups. Same row, full width under the slide.
+                        HStack(alignment: .center, spacing: 0) {
+                            HStack(spacing: 12) {
                                 HStack(spacing: 16) {
                                     Button {
                                         guard let pos = visiblePos, pos > 0 else { return }
@@ -3747,35 +3802,40 @@ struct SlideTextEditorView: View {
                                     }
                                     .disabled(!canGoNext)
                                 }
-                                Spacer(minLength: 0)
-                            }
 
-                            if let onOpenPicker = onOpenPhotoGroupPicker {
-                                let count = visibleSelectedSlideCount
-                                let isOver = count > 34
-                                HStack {
-                                    Spacer(minLength: 0)
-                                    Button {
-                                        onOpenPicker()
-                                    } label: {
-                                        HStack(spacing: 6) {
-                                            Image(systemName: isOver ? "exclamationmark.triangle.fill" : "rectangle.3.group")
-                                                .font(.system(size: 13, weight: .semibold))
-                                            Text(isOver ? "Manage photo groups (\(count))" : "Manage photo groups")
-                                                .font(.system(size: 13, weight: .semibold))
-                                        }
+                                Button(action: toggleEditorPreviewAspect) {
+                                    Text(editorPreviewAspectLabel)
+                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
                                         .foregroundColor(.white.opacity(0.92))
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 8)
                                         .background(Color.white.opacity(0.12))
                                         .clipShape(Capsule())
-                                    }
-                                    .accessibilityLabel(isOver
-                                        ? "Manage photo groups — \(count) slides, over TikTok limit"
-                                        : "Manage photo groups")
                                 }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Preview \(editorPreviewAspectLabel). Tap to switch between 4:5 and 9:16.")
+                            }
+
+                            Spacer(minLength: 12)
+
+                            if let onOpenPicker = onOpenPhotoGroupPicker {
+                                let count = visibleSelectedSlideCount
+                                let isOver = count > 34
+                                Button {
+                                    onOpenPicker()
+                                } label: {
+                                    Image(systemName: isOver ? "exclamationmark.triangle.fill" : "rectangle.3.group")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .frame(width: 36, height: 36)
+                                        .background(Color.white.opacity(0.12))
+                                        .clipShape(Capsule())
+                                }
+                                .accessibilityLabel("Slide overview, \(count) slide\(count == 1 ? "" : "s")")
                             }
                         }
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 24)
                         .padding(.top, 8)
 
                         Spacer(minLength: 0)
@@ -3931,15 +3991,23 @@ struct SlideTextEditorView: View {
                 switch carouselStudioExportHubPhase {
                 case .actions:
                     VStack(spacing: 18) {
+                        Image("CarouselStudioExportHub")
+                            .resizable()
+                            .renderingMode(.original)
+                            .scaledToFit()
+                            .frame(width: 48, height: 48)
+                            .frame(maxWidth: .infinity)
+
                         Text("Export")
                             .font(.title2.weight(.semibold))
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+
                         Text("Share to social apps, save images to Photos, or export a PDF.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                        Spacer(minLength: 12)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
 
                         Button {
                             showCarouselStudioExportHub = false
@@ -3974,14 +4042,9 @@ struct SlideTextEditorView: View {
                         }
                         .disabled(exportActions.exportActionsDisabled())
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .frame(maxWidth: .infinity, alignment: .top)
                     .padding(20)
                     .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") { showCarouselStudioExportHub = false }
-                        }
-                    }
 
                 case .pickDownloadSlides:
                     VStack(spacing: 0) {
@@ -4001,6 +4064,11 @@ struct SlideTextEditorView: View {
                                                 clipsFloatingContentToRoundedSlideOutline: false
                                             )
                                             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                            if !selected {
+                                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                    .fill(Color.black.opacity(0.52))
+                                                    .allowsHitTesting(false)
+                                            }
                                             Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                                                 .font(.title3)
                                                 .symbolRenderingMode(.palette)
@@ -4018,15 +4086,39 @@ struct SlideTextEditorView: View {
                         }
 
                         VStack(spacing: 10) {
-                            Button("Select All", action: selectAllSlidesForDownloadPick)
-                                .buttonStyle(.bordered)
-                                .frame(maxWidth: .infinity)
+                            Button(action: selectAllSlidesForDownloadPick) {
+                                HStack(alignment: .center, spacing: 12) {
+                                    Image(systemName: downloadPickSelectionMatchesAll ? "checkmark.square.fill" : "square")
+                                        .font(.title3)
+                                        .foregroundStyle(downloadPickSelectionMatchesAll ? CarouselStudioChrome.accent : Color.secondary)
+                                    Text("Select All")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                        .multilineTextAlignment(.leading)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .padding(.horizontal, 14)
+                                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.bordered)
 
                             Button(action: selectCurrentSlideOnlyForDownloadPick) {
-                                Text("Current Slide (\(currentSlideQuickPickLabel))")
-                                    .font(.subheadline.weight(.semibold))
-                                    .multilineTextAlignment(.center)
-                                    .frame(maxWidth: .infinity)
+                                HStack(alignment: .center, spacing: 12) {
+                                    Image(systemName: downloadPickSelectionMatchesCurrentOnly ? "checkmark.square.fill" : "square")
+                                        .font(.title3)
+                                        .foregroundStyle(downloadPickSelectionMatchesCurrentOnly ? CarouselStudioChrome.accent : Color.secondary)
+                                    Text("Current Slide (\(currentSlideQuickPickLabel))")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                        .multilineTextAlignment(.leading)
+                                        .lineLimit(2)
+                                        .minimumScaleFactor(0.85)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .padding(.horizontal, 14)
+                                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.bordered)
 
@@ -4059,11 +4151,13 @@ struct SlideTextEditorView: View {
                             .accessibilityLabel("Back")
                         }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents(
+            carouselStudioExportHubPhase == .actions ? [.medium] : [.large]
+        )
         .presentationDragIndicator(.visible)
     }
 
@@ -4087,12 +4181,16 @@ struct SlideTextEditorView: View {
             .toolbarBackground(Color(red: 5/255, green: 10/255, blue: 48/255), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Exit") { dismiss() }
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
-                ToolbarItemGroup(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                    .accessibilityLabel("Close")
+
                     let canUndo = !undoStack.isEmpty
                     Button {
                         undoLastChange()
@@ -4105,7 +4203,8 @@ struct SlideTextEditorView: View {
                     }
                     .disabled(!canUndo)
                     .accessibilityLabel("Undo")
-
+                }
+                ToolbarItemGroup(placement: .topBarTrailing) {
                     if excludedFromStudioCount > 0, let onOpenExcluded = onOpenExcludedPhotos {
                         Button {
                             onOpenExcluded()
@@ -4117,27 +4216,29 @@ struct SlideTextEditorView: View {
                         .accessibilityLabel("Excluded photos, \(excludedFromStudioCount)")
                     }
 
-                    if canExcludeCurrentSlide {
-                        let isMap = slides.indices.contains(currentIndex) && slides[currentIndex].kind == .mapRoute
-                        Button {
-                            performExcludeFromStudio()
-                        } label: {
-                            Image(systemName: "minus.circle")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
-                        .accessibilityLabel(isMap ? "Remove map from carousel" : "Remove from carousel")
+                    Button {
+                        saveCurrentSlideOnlyToPhotos()
+                    } label: {
+                        Image("CarouselStudioSaveCurrentSlide")
+                            .resizable()
+                            .renderingMode(.original)
+                            .scaledToFit()
+                            .frame(width: 24, height: 24)
                     }
+                    .disabled(exportActions.exportActionsDisabled() || !visibleSlideIndices.contains(editorPagerFocusedSlideIndex))
+                    .accessibilityLabel("Save current slide to Photos")
 
                     Button {
                         carouselStudioExportHubPhase = .actions
                         showCarouselStudioExportHub = true
                     } label: {
-                        Image(systemName: "arrow.down.circle")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.white)
+                        Image("CarouselStudioExportHub")
+                            .resizable()
+                            .renderingMode(.original)
+                            .scaledToFit()
+                            .frame(width: 24, height: 24)
                     }
-                    .accessibilityLabel("Download and share")
+                    .accessibilityLabel("Share, download, or export PDF")
                 }
             }
             .onChange(of: scrollPageID) { _, newID in
@@ -4194,9 +4295,26 @@ struct SlideTextEditorView: View {
             .onChange(of: slides.count) { _, _ in
                 clampCurrentIndexIfNeeded()
             }
+            .onChange(of: externalJumpToSlideIndex) { _, newVal in
+                guard let idx = newVal else { return }
+                externalJumpToSlideIndex = nil
+                DispatchQueue.main.async {
+                    guard visibleSlideIndices.contains(idx) else { return }
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        currentIndex = idx
+                        scrollPageID = idx
+                    }
+                    showsHeroPhotoSwapSheet = false
+                    heroSwapSlideIndex = nil
+                    showsSplitBottomPhotoPicker = false
+                    splitBottomPickSlideIndex = nil
+                    selectedBlock = nil
+                    selectedSplitSlot = nil
+                }
+            }
         }
-        // Bar-button labels (e.g. **Exit**) still pick up global/accent tint on some
-        // OS builds unless the navigation hierarchy sets an explicit toolbar tint.
+        // Bar-button labels still pick up global/accent tint on some OS builds unless
+        // the navigation hierarchy sets an explicit toolbar tint.
         .tint(.white)
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showCarouselStudioExportHub, onDismiss: {
@@ -4342,7 +4460,7 @@ struct SlideTextEditorView: View {
                 slides: $slides,
                 slideIndex: session.slideIndex,
                 startingSlot: session.initialSlot,
-                slideAspectRatio: aspectRatio,
+                slideAspectRatio: editorPreviewAspectRatio,
                 onClose: { splitRepositionSession = nil },
                 onApply: { framing, slot in
                     pushUndoSnapshot()
@@ -5603,8 +5721,9 @@ struct SocialPostStudioSheet: View {
     @State private var shareItems: [Any] = []
     @State private var showShareSheet = false
     @State private var showSavedAlert = false
-    /// Count from the last "Save to Photos" / download-picker export (drives the success alert).
-    @State private var savedPhotosCountForAlert = 0
+    /// Two-line success alert after saving to Photos (title + message).
+    @State private var savedAlertTitle = ""
+    @State private var savedAlertBody = ""
     @State private var editingSlideRef: EditableSlideRef? = nil
     /// After `.pip` hides sibling place-stop cards, re-scroll so the slide the user
     /// tapped stays centered instead of the strip keeping a stale content offset.
@@ -5617,8 +5736,12 @@ struct SocialPostStudioSheet: View {
     /// Place photos removed from this session’s carousel (not the blog draft). Keys: `studioExclusionKey`.
     @State private var excludedStudioPhotoKeys: Set<String> = []
     @State private var showExcludedPhotosSheet = false
-    /// Photo-group manager: bulk PIP / enable–disable per place stop.
+    /// Slide grid sheet: jump to a slide in the preview strip or editor.
     @State private var showPhotoGroupPicker = false
+    /// When set, the horizontal preview strip scrolls this slide into view after the grid sheet closes.
+    @State private var navigatePreviewToSlideIndex: Int?
+    /// When set, `SlideTextEditorView` jumps its pager to this raw slide index (embedded or full-screen editor).
+    @State private var studioEditorJumpToSlideIndex: Int?
     /// Fired after load when the selected slide count still exceeds 34 after auto-PIP.
     @State private var showTikTokOverflowAlert = false
     @State private var tikTokOverflowRemainingCount = 0
@@ -5680,6 +5803,7 @@ struct SocialPostStudioSheet: View {
                         aspectRatio: exportFormat.aspectRatio,
                         exportActions: makeEditorExportActions(),
                         exportInProgress: $isRendering,
+                        externalJumpToSlideIndex: $studioEditorJumpToSlideIndex,
                         onRequestStudioCoverPhotoPick: {
                             #if DEBUG
                             print("[CarouselStudio] opening cover picker (Edit Slides / Carousel Studio)")
@@ -5779,17 +5903,28 @@ struct SocialPostStudioSheet: View {
             ShareSheet(items: shareItems,
                        excludedActivityTypes: [UIActivity.ActivityType(rawValue: "com.burbn.instagram.shareextension")])
         }
-        .alert("Slides Saved!", isPresented: $showSavedAlert) {
+        .alert(savedAlertTitle, isPresented: $showSavedAlert) {
             Button("OK", role: .cancel) {}
-        } message: { Text(savedAlertMessage) }
+        } message: { Text(savedAlertBody) }
         .alert("Too Many Slides for TikTok", isPresented: $showTikTokOverflowAlert) {
-            Button("Manage Photo Groups") { showPhotoGroupPicker = true }
+            Button("View Slides") { showPhotoGroupPicker = true }
             Button("Continue Anyway", role: .cancel) {}
         } message: {
-            Text("TikTok supports up to 34 photos per carousel. You have \(tikTokOverflowRemainingCount) slides selected. Use the photo group manager to trim down.")
+            Text("TikTok supports up to 34 photos per carousel. You have \(tikTokOverflowRemainingCount) slides selected. Open the slide grid to review your deck, then deselect slides or use grouped layout (PIP) for stops with many photos.")
         }
         .sheet(isPresented: $showPhotoGroupPicker) {
-            CarouselPhotoGroupPickerSheet(slides: $slides)
+            CarouselPhotoGroupPickerSheet(
+                slides: $slides,
+                aspectRatio: exportFormat.aspectRatio,
+                onSelectSlide: { index in
+                    showPhotoGroupPicker = false
+                    if opensInEditMode || editingSlideRef != nil {
+                        studioEditorJumpToSlideIndex = index
+                    } else {
+                        navigatePreviewToSlideIndex = index
+                    }
+                }
+            )
         }
         .fullScreenCover(item: $editingSlideRef) { ref in
             SlideTextEditorView(
@@ -5798,6 +5933,7 @@ struct SocialPostStudioSheet: View {
                 aspectRatio: exportFormat.aspectRatio,
                 exportActions: makeEditorExportActions(),
                 exportInProgress: $isRendering,
+                externalJumpToSlideIndex: $studioEditorJumpToSlideIndex,
                 onRequestStudioCoverPhotoPick: {
                     #if DEBUG
                     print("[CarouselStudio] opening cover picker (from slide editor sheet)")
@@ -5842,11 +5978,39 @@ struct SocialPostStudioSheet: View {
 
     // MARK: - Layout
 
-    private var savedAlertMessage: String {
-        if exportFormat.isSingleSlide {
-            return "Saved your Reel cover. You can post it now or refine later."
+    /// Visible slide indices (same rule as the slide editor / export).
+    private var studioVisibleSlideIndices: [Int] {
+        slides.indices.filter { !isSlideHiddenBySiblingPIP(at: $0, in: slides) }
+    }
+
+    /// Second line of the “saved to Photos” alert for one slide.
+    private func savedToPhotosDetailLine(for slide: CarouselSlide) -> String {
+        switch slide.kind {
+        case .cover:
+            return "Cover photo slide saved to Photos."
+        case .mapRoute:
+            return "Map slide saved to Photos."
+        case .placeStop:
+            let raw = slide.placeStop?.placeTitle ?? ""
+            let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            let label = name.isEmpty ? "Photo" : name
+            return "\(label) slide saved to Photos."
         }
-        return "Saved \(savedPhotosCountForAlert) slides to Photos. You can post them now or refine later."
+    }
+
+    /// Sets `savedAlertTitle` + `savedAlertBody` from which slide(s) were saved.
+    private func prepareSavedPhotosAlert(requestedIndices: [Int], renderedCount: Int) {
+        if requestedIndices.count == 1,
+           let idx = requestedIndices.first,
+           slides.indices.contains(idx) {
+            let slide = slides[idx]
+            let slideNum = studioVisibleSlideIndices.firstIndex(of: idx).map { $0 + 1 } ?? (idx + 1)
+            savedAlertTitle = "Slide \(slideNum) Saved!"
+            savedAlertBody = savedToPhotosDetailLine(for: slide)
+            return
+        }
+        savedAlertTitle = "\(renderedCount) slides saved!"
+        savedAlertBody = "Your slides were saved to Photos."
     }
 
     /// Horizontally-scrollable mode picker. Every card uses the same layout
@@ -5983,6 +6147,15 @@ struct SocialPostStudioSheet: View {
                         }
                     }
                 }
+                .onChange(of: navigatePreviewToSlideIndex) { _, newVal in
+                    guard let idx = newVal else { return }
+                    navigatePreviewToSlideIndex = nil
+                    DispatchQueue.main.async {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            previewScrollProxy.scrollTo(idx, anchor: .center)
+                        }
+                    }
+                }
             }
 
             Spacer(minLength: 0)
@@ -5994,7 +6167,7 @@ struct SocialPostStudioSheet: View {
         slides.contains { $0.kind == .placeStop }
     }
 
-    /// Pill showing the selected slide count; tapping it opens the photo-group manager.
+    /// Pill showing the selected slide count; tapping it opens the slide grid navigator.
     /// Turns orange with a warning icon when the count exceeds TikTok's 34-slide limit.
     private var studioSlideCountBadge: some View {
         let count = selectedSlides.count
@@ -6558,7 +6731,7 @@ struct SocialPostStudioSheet: View {
         for image in images {
             UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
         }
-        savedPhotosCountForAlert = images.count
+        prepareSavedPhotosAlert(requestedIndices: indices, renderedCount: images.count)
         showSavedAlert = true
     }
 
@@ -7310,241 +7483,134 @@ private struct StudioExcludedPhotosGallerySheet: View {
     }
 }
 
-// MARK: - Photo group picker
+// MARK: - Slide grid navigator sheet
 
-/// Sheet that lists every place stop as a "photo group" with controls to:
-/// - Toggle the whole group in/out of the exported carousel (select/deselect all its slides)
-/// - Switch between full (one slide per photo) and PIP (one slide with inset thumbnails) mode
-/// A running slide count vs the TikTok 34-slide limit guides the user toward the right shape.
+/// Two-column grid of visible slides (same order as the studio preview / editor pager).
+/// Each tile uses `CarouselSlideView` so text blocks, PIP, and split layouts match the real slide.
+/// Under each tile: ordinal plus a one-line label (`Cover`, `Map`, or the place name).
+/// Tapping a tile dismisses the sheet and asks the parent to scroll the preview or jump the editor pager.
 private struct CarouselPhotoGroupPickerSheet: View {
     @Binding var slides: [CarouselSlide]
+    /// Must match the studio’s current export aspect (post / story / reel).
+    let aspectRatio: CGFloat
+    let onSelectSlide: (Int) -> Void
     @Environment(\.dismiss) private var dismiss
 
-    private let tiktokLimit = 34
+    private let gridColumns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
+    ]
 
-    // MARK: - Group model
-
-    private struct PhotoGroup: Identifiable {
-        let id: UUID              // placeStop.id
-        let placeName: String
-        let placeSubtitle: String
-        let slideIndices: [Int]   // indices into `slides` for this stop
-        let thumbnailImage: UIImage?
-        let activeLayout: CarouselSlideLayout
-        let isEnabled: Bool       // true when any slide for this stop is selected
-        let photoCount: Int       // total photos loaded for this stop
+    private var visibleSlideIndices: [Int] {
+        slides.indices.filter { !isSlideHiddenBySiblingPIP(at: $0, in: slides) }
     }
 
-    private var photoGroups: [PhotoGroup] {
-        var order: [UUID] = []
-        var byStop: [UUID: [Int]] = [:]
-        for (i, slide) in slides.enumerated() {
-            guard slide.kind == .placeStop, let sid = slide.placeStop?.id else { continue }
-            if byStop[sid] == nil { order.append(sid); byStop[sid] = [] }
-            byStop[sid]!.append(i)
+    private func slideKindLabel(for slide: CarouselSlide) -> String {
+        switch slide.kind {
+        case .cover: return "Cover"
+        case .mapRoute: return "Map"
+        case .placeStop:
+            let raw = slide.placeStop?.placeTitle ?? ""
+            let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? "Place" : t
         }
-        return order.compactMap { sid -> PhotoGroup? in
-            guard let indices = byStop[sid], !indices.isEmpty else { return nil }
-            let first = slides[indices[0]]
-            guard let stop = first.placeStop else { return nil }
-            let isEnabled = indices.contains { slides[$0].isSelected }
-            let activeLayout = first.layout
-            let photoCount = 1 + first.pipImages.count  // hero + available PIPs
-            return PhotoGroup(
-                id: sid,
-                placeName: stop.placeTitle,
-                placeSubtitle: stop.placeSubtitle ?? "",
-                slideIndices: indices,
-                thumbnailImage: first.heroImage,
-                activeLayout: activeLayout,
-                isEnabled: isEnabled,
-                photoCount: photoCount
+    }
+
+    /// Extra padding before the outer clip so PIP rotation/shadow match the horizontal preview strip.
+    private func gridTileBleedInsets(slide: CarouselSlide) -> EdgeInsets {
+        let isPIPPreview = slide.kind == .placeStop && slide.layout == .pip && !slide.pipImages.isEmpty
+        if isPIPPreview {
+            return EdgeInsets(top: 22, leading: 10, bottom: 14, trailing: 24)
+        }
+        return EdgeInsets(top: 10, leading: 8, bottom: 10, trailing: 10)
+    }
+
+    @ViewBuilder
+    private func slideNavigatorTile(for slide: CarouselSlide) -> some View {
+        GeometryReader { geo in
+            let w = max(1, geo.size.width)
+            CarouselSlideView(
+                slide: slide,
+                width: w,
+                aspectRatio: aspectRatio,
+                onToggleSelection: {},
+                showsSelectionChrome: false,
+                clipsFloatingContentToRoundedSlideOutline: false
+            )
+            .allowsHitTesting(false)
+            .frame(width: w)
+            .padding(gridTileBleedInsets(slide: slide))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
             )
         }
+        .aspectRatio(aspectRatio, contentMode: .fit)
     }
-
-    /// Contribution of one group toward the total slide count.
-    private func slideContribution(of group: PhotoGroup) -> Int {
-        guard group.isEnabled else { return 0 }
-        return group.activeLayout == .single ? group.slideIndices.count : 1
-    }
-
-    private var totalSelectedCount: Int {
-        let coverAndMap = slides.enumerated().filter { idx, slide in
-            (slide.kind == .cover || slide.kind == .mapRoute) &&
-            !isSlideHiddenBySiblingPIP(at: idx, in: slides) &&
-            slide.isSelected
-        }.count
-        return coverAndMap + photoGroups.reduce(0) { $0 + slideContribution(of: $1) }
-    }
-
-    // MARK: - Mutations
-
-    private func toggleGroupEnabled(_ group: PhotoGroup) {
-        let newEnabled = !group.isEnabled
-        for i in group.slideIndices { slides[i].isSelected = newEnabled }
-    }
-
-    private func toggleGroupPIP(_ group: PhotoGroup) {
-        guard let firstIdx = group.slideIndices.first else { return }
-        let newLayout: CarouselSlideLayout = group.activeLayout == .single ? .pip : .single
-        var txn = Transaction(); txn.disablesAnimations = true
-        withTransaction(txn) {
-            slides[firstIdx].layout = newLayout
-            for i in group.slideIndices where i != firstIdx {
-                slides[i].isSelected = (newLayout == .single)
-            }
-        }
-    }
-
-    // MARK: - Body
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    countBanner
-                }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    let visibleCount = visibleSlideIndices.count
+                    Text("\(visibleCount) slide\(visibleCount == 1 ? "" : "s")")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 4)
 
-                let groups = photoGroups
-                if groups.isEmpty {
-                    Section {
-                        Text("No photo groups found.")
+                    let indices = visibleSlideIndices
+                    if indices.isEmpty {
+                        Text("No slides in this carousel.")
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Section("Photo Groups") {
-                        ForEach(groups) { group in
-                            groupRow(group)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 4)
+                    } else {
+                        LazyVGrid(columns: gridColumns, spacing: 14) {
+                            ForEach(Array(indices.enumerated()), id: \.element) { ordinal, rawIndex in
+                                let slide = slides[rawIndex]
+                                Button {
+                                    onSelectSlide(rawIndex)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        slideNavigatorTile(for: slide)
+                                            .frame(maxWidth: .infinity)
+
+                                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                            Text("\(ordinal + 1)")
+                                                .font(.caption.weight(.bold).monospacedDigit())
+                                                .foregroundStyle(.secondary)
+                                                .frame(minWidth: 20, alignment: .leading)
+                                            Text(slideKindLabel(for: slide))
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundStyle(.primary)
+                                                .lineLimit(1)
+                                                .truncationMode(.tail)
+                                            Spacer(minLength: 0)
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
+                        .padding(.horizontal, 4)
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
-            .listStyle(.insetGrouped)
-            .navigationTitle("Manage Photo Groups")
+            .background(Color(uiColor: .systemGroupedBackground))
+            .navigationTitle("Slides")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
             }
-        }
-    }
-
-    // MARK: - Count banner
-
-    private var countBanner: some View {
-        let count = totalSelectedCount
-        let isOver = count > tiktokLimit
-        return HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill((isOver ? Color.orange : Color.green).opacity(0.15))
-                    .frame(width: 44, height: 44)
-                Image(systemName: isOver ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(isOver ? Color.orange : Color.green)
-            }
-            VStack(alignment: .leading, spacing: 3) {
-                Text("\(count) slide\(count == 1 ? "" : "s") selected")
-                    .font(.headline)
-                Text(isOver
-                     ? "TikTok allows up to \(tiktokLimit) — remove some groups or enable PIP"
-                     : "Within TikTok's \(tiktokLimit)-slide limit")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 4)
-        .animation(.easeInOut(duration: 0.2), value: isOver)
-        .animation(.easeInOut(duration: 0.2), value: count)
-    }
-
-    // MARK: - Group row
-
-    @ViewBuilder
-    private func groupRow(_ group: PhotoGroup) -> some View {
-        let contrib = slideContribution(of: group)
-        HStack(spacing: 12) {
-            // Thumbnail
-            Group {
-                if let img = group.thumbnailImage {
-                    Image(uiImage: img)
-                        .resizable()
-                        .scaledToFill()
-                } else {
-                    Color(uiColor: .systemFill)
-                        .overlay(
-                            Image(systemName: "photo")
-                                .foregroundStyle(Color(uiColor: .tertiaryLabel))
-                        )
-                }
-            }
-            .frame(width: 56, height: 56)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .opacity(group.isEnabled ? 1.0 : 0.4)
-
-            // Place info
-            VStack(alignment: .leading, spacing: 3) {
-                Text(group.placeName.isEmpty ? "Unnamed place" : group.placeName)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                if !group.placeSubtitle.isEmpty {
-                    Text(group.placeSubtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Text(group.isEnabled
-                     ? (contrib == 1 ? "1 slide" : "\(contrib) slides")
-                     : "excluded")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(group.isEnabled
-                                     ? CarouselStudioChrome.accent
-                                     : Color(uiColor: .tertiaryLabel))
-            }
-            .opacity(group.isEnabled ? 1.0 : 0.5)
-
-            Spacer(minLength: 0)
-
-            // PIP toggle (only for stops with multiple photos)
-            if group.photoCount > 1 {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.15)) { toggleGroupPIP(group) }
-                } label: {
-                    Image(systemName: layoutIcon(group.activeLayout))
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(group.activeLayout == .single ? Color(uiColor: .tertiaryLabel) : .white)
-                        .padding(.horizontal, 10).padding(.vertical, 6)
-                        .background(group.activeLayout == .single
-                                    ? Color(uiColor: .systemFill)
-                                    : CarouselStudioChrome.accent)
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .disabled(!group.isEnabled)
-                .opacity(group.isEnabled ? 1.0 : 0.4)
-            }
-
-            // Include / exclude toggle
-            Toggle("", isOn: Binding(
-                get: { group.isEnabled },
-                set: { _ in
-                    withAnimation(.easeInOut(duration: 0.2)) { toggleGroupEnabled(group) }
-                }
-            ))
-            .labelsHidden()
-        }
-        .padding(.vertical, 2)
-    }
-
-    private func layoutIcon(_ layout: CarouselSlideLayout) -> String {
-        switch layout {
-        case .single: return "rectangle.portrait"
-        case .pip: return "pip"
-        case .split: return "rectangle.split.1x2"
         }
     }
 }
