@@ -3707,67 +3707,73 @@ struct SlideTextEditorView: View {
                         let canGoPrev = (visiblePos ?? 0) > 0
                         let canGoNext = visiblePos.map { $0 < visibleIndices.count - 1 } ?? false
                         VStack(alignment: .trailing, spacing: 8) {
-                            HStack(spacing: 16) {
-                                Button {
-                                    guard let pos = visiblePos, pos > 0 else { return }
-                                    withAnimation(.easeInOut(duration: 0.22)) {
-                                        currentIndex = visibleIndices[pos - 1]
-                                        scrollPageID = currentIndex
+                            HStack {
+                                Spacer(minLength: 0)
+                                HStack(spacing: 16) {
+                                    Button {
+                                        guard let pos = visiblePos, pos > 0 else { return }
+                                        withAnimation(.easeInOut(duration: 0.22)) {
+                                            currentIndex = visibleIndices[pos - 1]
+                                            scrollPageID = currentIndex
+                                        }
+                                    } label: {
+                                        Image(systemName: "chevron.left")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundColor(canGoPrev ? .white : .white.opacity(0.2))
+                                            .frame(width: 36, height: 36)
+                                            .background(Color.white.opacity(canGoPrev ? 0.12 : 0.05))
+                                            .clipShape(Circle())
                                     }
-                                } label: {
-                                    Image(systemName: "chevron.left")
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundColor(canGoPrev ? .white : .white.opacity(0.2))
-                                        .frame(width: 36, height: 36)
-                                        .background(Color.white.opacity(canGoPrev ? 0.12 : 0.05))
-                                        .clipShape(Circle())
-                                }
-                                .disabled(!canGoPrev)
+                                    .disabled(!canGoPrev)
 
-                                Text("\((visiblePos ?? 0) + 1) / \(max(visibleIndices.count, 1))")
-                                    .font(.system(size: 13, weight: .medium, design: .monospaced))
-                                    .foregroundColor(.white.opacity(0.55))
-                                    .frame(minWidth: 52)
+                                    Text("\((visiblePos ?? 0) + 1) / \(max(visibleIndices.count, 1))")
+                                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                        .foregroundColor(.white.opacity(0.55))
+                                        .frame(minWidth: 52)
 
-                                Button {
-                                    guard let pos = visiblePos, pos < visibleIndices.count - 1 else { return }
-                                    withAnimation(.easeInOut(duration: 0.22)) {
-                                        currentIndex = visibleIndices[pos + 1]
-                                        scrollPageID = currentIndex
+                                    Button {
+                                        guard let pos = visiblePos, pos < visibleIndices.count - 1 else { return }
+                                        withAnimation(.easeInOut(duration: 0.22)) {
+                                            currentIndex = visibleIndices[pos + 1]
+                                            scrollPageID = currentIndex
+                                        }
+                                    } label: {
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundColor(canGoNext ? .white : .white.opacity(0.2))
+                                            .frame(width: 36, height: 36)
+                                            .background(Color.white.opacity(canGoNext ? 0.12 : 0.05))
+                                            .clipShape(Circle())
                                     }
-                                } label: {
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundColor(canGoNext ? .white : .white.opacity(0.2))
-                                        .frame(width: 36, height: 36)
-                                        .background(Color.white.opacity(canGoNext ? 0.12 : 0.05))
-                                        .clipShape(Circle())
+                                    .disabled(!canGoNext)
                                 }
-                                .disabled(!canGoNext)
+                                Spacer(minLength: 0)
                             }
-                            .frame(maxWidth: .infinity)
 
                             if let onOpenPicker = onOpenPhotoGroupPicker {
                                 let count = visibleSelectedSlideCount
                                 let isOver = count > 34
-                                Button {
-                                    onOpenPicker()
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: isOver ? "exclamationmark.triangle.fill" : "rectangle.3.group")
-                                            .font(.system(size: 13, weight: .semibold))
-                                        Text(isOver ? "Manage photo groups (\(count))" : "Manage photo groups")
-                                            .font(.system(size: 13, weight: .semibold))
+                                HStack {
+                                    Spacer(minLength: 0)
+                                    Button {
+                                        onOpenPicker()
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: isOver ? "exclamationmark.triangle.fill" : "rectangle.3.group")
+                                                .font(.system(size: 13, weight: .semibold))
+                                            Text(isOver ? "Manage photo groups (\(count))" : "Manage photo groups")
+                                                .font(.system(size: 13, weight: .semibold))
+                                        }
+                                        .foregroundColor(.white.opacity(0.92))
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(Color.white.opacity(0.12))
+                                        .clipShape(Capsule())
                                     }
-                                    .foregroundColor(.white.opacity(0.92))
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                                    .background(Color.white.opacity(0.12))
-                                    .clipShape(Capsule())
+                                    .accessibilityLabel(isOver
+                                        ? "Manage photo groups — \(count) slides, over TikTok limit"
+                                        : "Manage photo groups")
                                 }
-                                .accessibilityLabel(isOver
-                                    ? "Manage photo groups — \(count) slides, over TikTok limit"
-                                    : "Manage photo groups")
                             }
                         }
                         .padding(.top, 8)
@@ -3932,7 +3938,9 @@ struct SlideTextEditorView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Spacer(minLength: 8)
+
+                        Spacer(minLength: 12)
+
                         Button {
                             showCarouselStudioExportHub = false
                             Task { await exportActions.share() }
@@ -3955,7 +3963,6 @@ struct SlideTextEditorView: View {
                                 .padding(.vertical, 14)
                         }
                         .buttonStyle(.bordered)
-                        .tint(Color(red: 0.14, green: 0.5, blue: 1))
                         .disabled(exportActions.exportActionsDisabled() || studioDownloadCandidateIndices.isEmpty)
 
                         Button {
@@ -3966,9 +3973,8 @@ struct SlideTextEditorView: View {
                                 .font(.subheadline.weight(.semibold))
                         }
                         .disabled(exportActions.exportActionsDisabled())
-
-                        Spacer(minLength: 0)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .padding(20)
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
@@ -4055,6 +4061,7 @@ struct SlideTextEditorView: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
@@ -4123,7 +4130,6 @@ struct SlideTextEditorView: View {
                     }
 
                     Button {
-                        selectAllSlidesForDownloadPick()
                         carouselStudioExportHubPhase = .actions
                         showCarouselStudioExportHub = true
                     } label: {
@@ -4535,6 +4541,7 @@ struct SlideTextEditorView: View {
                     let idx = editorPagerFocusedSlideIndex
                     if isTop {
                         selectedBlock = nil
+                        selectedSplitSlot = nil
                         heroSwapSlideIndex = idx
                         showsHeroPhotoSwapSheet = true
                     } else {
@@ -5596,6 +5603,8 @@ struct SocialPostStudioSheet: View {
     @State private var shareItems: [Any] = []
     @State private var showShareSheet = false
     @State private var showSavedAlert = false
+    /// Count from the last "Save to Photos" / download-picker export (drives the success alert).
+    @State private var savedPhotosCountForAlert = 0
     @State private var editingSlideRef: EditableSlideRef? = nil
     /// After `.pip` hides sibling place-stop cards, re-scroll so the slide the user
     /// tapped stays centered instead of the strip keeping a stale content offset.
@@ -5837,7 +5846,7 @@ struct SocialPostStudioSheet: View {
         if exportFormat.isSingleSlide {
             return "Saved your Reel cover. You can post it now or refine later."
         }
-        return "Saved \(selectedSlides.count) \(exportFormat.title.lowercased()) slides. You can post them now or refine later."
+        return "Saved \(savedPhotosCountForAlert) slides to Photos. You can post them now or refine later."
     }
 
     /// Horizontally-scrollable mode picker. Every card uses the same layout
@@ -6544,9 +6553,12 @@ struct SocialPostStudioSheet: View {
         guard !indices.isEmpty else { return }
         isRendering = true
         defer { isRendering = false }
-        for image in renderSlides(atIndices: indices) {
+        let images = renderSlides(atIndices: indices)
+        guard !images.isEmpty else { return }
+        for image in images {
             UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
         }
+        savedPhotosCountForAlert = images.count
         showSavedAlert = true
     }
 
