@@ -433,6 +433,19 @@ enum CarouselPIPClusterStackStyle: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Visual mask for each inset PIP thumbnail (`.pip` multi-photo cluster only).
+enum CarouselPIPThumbMaskStyle: String, CaseIterable, Identifiable {
+    case roundedRect
+    case circle
+    var id: String { rawValue }
+    var optionsStripLabel: String {
+        switch self {
+        case .roundedRect: return "Rounded"
+        case .circle: return "Circle"
+        }
+    }
+}
+
 /// Pill-shaped backdrop behind a text block. Tapping the block in the editor
 /// cycles through these states (default → dark → light → default …). Purely
 /// visual — dragging the block never changes this (see tap-vs-drag threshold
@@ -473,12 +486,13 @@ private enum StyleCategory: String, CaseIterable, Identifiable {
 }
 
 /// Categories in the bottom tab bar when the PIP photo cluster is selected.
-/// Order is left-to-right: Border, Size, Remove BG. Border picks the outline color
-/// painted around each thumbnail.
+/// Order is left-to-right: Border, Shape, Size, Remove BG. Border picks the outline
+/// color; Shape toggles rounded vs circular inset thumbnails.
 /// Add and remove are separate scrollable pills — see `pipAddPhotosTabButton` /
 /// `pipRemovePhotosTabButton`.
 private enum PIPStyleCategory: String, CaseIterable, Identifiable {
     case border     = "Border"
+    case shape      = "Shape"
     case size       = "Size"
     case background = "Remove BG"
 
@@ -487,6 +501,7 @@ private enum PIPStyleCategory: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .border:      return "paintpalette.fill"
+        case .shape:       return "square.on.circle"
         case .size:        return "aspectratio"
         case .background: return "person.crop.rectangle.stack"
         }
@@ -856,6 +871,8 @@ struct CarouselSlide: Identifiable {
     /// Scales PIP thumbnail footprint relative to the default (~30% of slide width).
     /// Driven from the multi-photo toolbar Size strip; `.pip` layout only.
     var pipClusterSizeScale: CGFloat = 1.0
+    /// Rounded-rectangle insets (classic) vs circular thumbnails. `.pip` only.
+    var pipThumbMaskStyle: CarouselPIPThumbMaskStyle = .roundedRect
     /// When `true`, PIP thumbnails render using `pipProcessedImages` (subject-only,
     /// transparent background) instead of the originals in `pipImages`.
     var pipBackgroundRemoved: Bool = false
@@ -1944,6 +1961,7 @@ struct CarouselSlideView: View {
                     visibleCount: slide.pipVisibleCount,
                     stackStyle: slide.pipClusterStackStyle,
                     pipSizeScale: slide.pipClusterSizeScale,
+                    thumbMaskStyle: slide.pipThumbMaskStyle,
                     isEditingText: isEditingText,
                     isSelected: selectedBlockID == .pipCluster,
                     backgroundRemovalLoadingSlots: pipBackgroundRemovalLoadingSlots
@@ -2219,11 +2237,15 @@ private struct PIPClusterView: View {
     var stackStyle: CarouselPIPClusterStackStyle = .vertical
     /// 1.0 = default thumbnail width; clamped in the editor before assignment.
     var sizeScale: CGFloat = 1.0
+    var thumbMaskStyle: CarouselPIPThumbMaskStyle = .roundedRect
     /// Per-stack-slot indices (0…2) showing a small progress cue while Vision runs.
     var backgroundRemovalLoadingSlots: Set<Int> = []
 
     private var thumbW: CGFloat { slideWidth * 0.30 * sizeScale }
     private var thumbH: CGFloat { thumbW * 0.72 }
+    /// In circle mode the slot is square (`thumbW` × `thumbW`); otherwise classic postcard aspect.
+    private var slotW: CGFloat { thumbW }
+    private var slotH: CGFloat { thumbMaskStyle == .circle ? thumbW : thumbH }
     private let rotations: [Double] = [1.5, -1.0, 1.8]
 
     private struct PIPThumbTile: Identifiable {
@@ -2269,6 +2291,7 @@ private struct PIPClusterView: View {
         // No internal top/trailing padding: cluster frame = visible thumbs, so the user can drag
         // PIP all the way into the top-right corner and the studio default sits flush to it.
         .animation(.easeInOut(duration: 0.2), value: stackStyle)
+        .animation(.easeInOut(duration: 0.2), value: thumbMaskStyle)
     }
 
     @ViewBuilder
@@ -2281,19 +2304,33 @@ private struct PIPClusterView: View {
     @ViewBuilder
     private func pipThumb(_ tile: PIPThumbTile) -> some View {
         ZStack(alignment: .bottomTrailing) {
-            SplitFramedPhotoInSlot(
+            let photo = SplitFramedPhotoInSlot(
                 image: tile.image,
                 framing: thumbnailFraming(at: tile.imageIndex),
-                slotWidth: thumbW,
-                slotHeight: thumbH
+                slotWidth: slotW,
+                slotHeight: slotH
             )
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .overlay {
-                    if pipBorderEnabled {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(borderColor, lineWidth: 2.2)
-                    }
+            Group {
+                if thumbMaskStyle == .circle {
+                    photo
+                        .clipShape(Circle())
+                        .overlay {
+                            if pipBorderEnabled {
+                                Circle()
+                                    .strokeBorder(borderColor, lineWidth: 2.2)
+                            }
+                        }
+                } else {
+                    photo
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay {
+                            if pipBorderEnabled {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .strokeBorder(borderColor, lineWidth: 2.2)
+                            }
+                        }
                 }
+            }
                 .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
             if backgroundRemovalLoadingSlots.contains(tile.slot) {
                 ProgressView()
@@ -2334,6 +2371,7 @@ private struct DraggablePIPCluster: View {
     var visibleCount: Int = 3
     var stackStyle: CarouselPIPClusterStackStyle = .vertical
     var pipSizeScale: CGFloat = 1.0
+    var thumbMaskStyle: CarouselPIPThumbMaskStyle = .roundedRect
     /// True while the slide is in the full-screen text editor; enables the
     /// selection ring and routes taps through `onSelect`.
     var isEditingText: Bool = false
@@ -2369,6 +2407,7 @@ private struct DraggablePIPCluster: View {
                        visibleCount: visibleCount,
                        stackStyle: stackStyle,
                        sizeScale: pipSizeScale,
+                       thumbMaskStyle: thumbMaskStyle,
                        backgroundRemovalLoadingSlots: backgroundRemovalLoadingSlots,
                        thumbnailFramings: thumbnailFramings)
             .background(naturalRectCapture)
@@ -2877,10 +2916,19 @@ private struct PIPPhotoRepositionCover: View {
         return slides[slideIndex].pipImages.count
     }
 
-    /// Matches `PIPClusterView` thumb width ÷ height (`thumbH = thumbW * 0.72`).
+    /// Matches `PIPClusterView` thumb width ÷ height (`thumbH = thumbW * 0.72`); for
+    /// circular insets the slot is square (aspect 1:1), matching `slotW == slotH` on the slide.
     private static let pipThumbAspectWH: CGFloat = 1.0 / 0.72
 
-    private var slotAspectWH: CGFloat { max(Self.pipThumbAspectWH, 0.01) }
+    private var pipRepositionMaskStyle: CarouselPIPThumbMaskStyle {
+        guard slides.indices.contains(slideIndex) else { return .roundedRect }
+        return slides[slideIndex].pipThumbMaskStyle
+    }
+
+    private var pipRepositionSlotAspectWH: CGFloat {
+        if pipRepositionMaskStyle == .circle { return 1.0 }
+        return max(Self.pipThumbAspectWH, 0.01)
+    }
 
     private var currentImage: UIImage? {
         guard slides.indices.contains(slideIndex) else { return nil }
@@ -2968,7 +3016,7 @@ private struct PIPPhotoRepositionCover: View {
     var body: some View {
         NavigationStack {
             GeometryReader { geo in
-                let slot = studioRepositionSlotDimensions(container: geo.size, slotAspectWH: slotAspectWH)
+                let slot = studioRepositionSlotDimensions(container: geo.size, slotAspectWH: pipRepositionSlotAspectWH)
                 let slotW = slot.slotW
                 let slotH = slot.slotH
 
@@ -2982,15 +3030,24 @@ private struct PIPPhotoRepositionCover: View {
                                 .foregroundStyle(.white.opacity(0.62))
 
                             ZStack {
-                                SplitFramedPhotoInSlot(
+                                let base = SplitFramedPhotoInSlot(
                                     image: img,
                                     framing: working,
                                     slotWidth: slotW,
                                     slotHeight: slotH
                                 )
-                                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                    .stroke(Color.white.opacity(0.92), lineWidth: 2)
-                                    .frame(width: slotW, height: slotH)
+                                if pipRepositionMaskStyle == .circle {
+                                    base
+                                        .clipShape(Circle())
+                                    Circle()
+                                        .stroke(Color.white.opacity(0.92), lineWidth: 2)
+                                        .frame(width: slotW, height: slotH)
+                                } else {
+                                    base
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .stroke(Color.white.opacity(0.92), lineWidth: 2)
+                                        .frame(width: slotW, height: slotH)
+                                }
                             }
                             .frame(width: slotW, height: slotH)
                             .contentShape(Rectangle())
@@ -4300,7 +4357,7 @@ struct SlideTextEditorView: View {
     }
 
     private var pipStyleToolbarCategories: [PIPStyleCategory] {
-        let ordered: [PIPStyleCategory] = [.border, .size, .background]
+        let ordered: [PIPStyleCategory] = [.border, .shape, .size, .background]
         if #available(iOS 16, *) { return ordered }
         return ordered.filter { $0 != .background }
     }
@@ -4400,6 +4457,15 @@ struct SlideTextEditorView: View {
         guard slides[idx].pipClusterStackStyle != style else { return }
         pushUndoSnapshot()
         slides[idx].pipClusterStackStyle = style
+    }
+
+    private func applyPIPThumbMaskStyle(_ style: CarouselPIPThumbMaskStyle) {
+        let idx = editorMutationSlideIndex
+        guard slides.indices.contains(idx),
+              slides[idx].layout == .pip else { return }
+        guard slides[idx].pipThumbMaskStyle != style else { return }
+        pushUndoSnapshot()
+        slides[idx].pipThumbMaskStyle = style
     }
 
     private func availableSplitBottomPhotos(for slideIndex: Int) -> [RecapPhoto] {
@@ -4919,7 +4985,9 @@ struct SlideTextEditorView: View {
                                         Button {
                                             onOpenPicker()
                                         } label: {
-                                            Image(systemName: isOver ? "exclamationmark.triangle.fill" : "rectangle.3.group")
+                                            // `rectangle.3.group` is a newer symbol and can render empty on older OS;
+                                            // `square.grid.2x2` is widely available and still reads as “grid overview.”
+                                            Image(systemName: isOver ? "exclamationmark.triangle.fill" : "square.grid.2x2")
                                                 .font(.system(size: 15, weight: .semibold))
                                                 .foregroundColor(.white)
                                                 .frame(width: 36, height: 36)
@@ -6027,7 +6095,7 @@ struct SlideTextEditorView: View {
     ///
     /// Top row: Reposition (inset thumbnails only), Swap photos (rotates the hero into
     /// the cluster). Cluster size is adjusted with **Remove** in the tab bar, not a
-    /// second trash action here. Below: Border / Size / Background drop-up (when
+    /// second trash action here. Below: Border / Shape / Size / Background drop-up (when
     /// open) and the PIP category tab bar.
     @ViewBuilder
     private var pipClusterToolbar: some View {
@@ -6099,6 +6167,8 @@ struct SlideTextEditorView: View {
             switch category {
             case .border:
                 pipBorderColorOptionsStrip
+            case .shape:
+                pipThumbShapeOptionsStrip
             case .size:
                 pipClusterSizeSliderPanel
             case .background:
@@ -6119,7 +6189,7 @@ struct SlideTextEditorView: View {
 
     private func pipDropUpPanelUsesTightChrome(_ category: PIPStyleCategory) -> Bool {
         switch category {
-        case .border, .size, .background: return true
+        case .border, .shape, .size, .background: return true
         }
     }
 
@@ -6162,6 +6232,35 @@ struct SlideTextEditorView: View {
             .padding(.horizontal, 14)
         }
         .scrollClipDisabled()
+    }
+
+    /// Rounded-rectangle insets (default) vs circular PIP thumbnails.
+    private var pipThumbShapeOptionsStrip: some View {
+        let current = currentSlide?.pipThumbMaskStyle ?? .roundedRect
+        return HStack(spacing: 8) {
+            ForEach(CarouselPIPThumbMaskStyle.allCases) { style in
+                let isActive = current == style
+                Button {
+                    applyPIPThumbMaskStyle(style)
+                } label: {
+                    Text(style.optionsStripLabel)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(isActive ? Color(white: 0.1) : .white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                        .background(
+                            Capsule()
+                                .fill(isActive
+                                      ? Color.white
+                                      : Color.white.opacity(0.12))
+                        )
+                }
+                .buttonStyle(.plain)
+                .animation(.easeInOut(duration: 0.15), value: isActive)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 6)
     }
 
     /// "No border" swatch — a dark circle with a diagonal line across it,
@@ -6343,7 +6442,7 @@ struct SlideTextEditorView: View {
     /// **Add Photos** opens the picker when there is room and eligible picks;
     /// **Remove** drops the bottom-most photo when two or more thumbnails are
     /// visible (each button disables independently). **Style** (vertical vs
-    /// horizontal stack) sits third; then Border / Size / Remove BG drop-ups.
+    /// horizontal stack) sits third; then Border / Shape / Size / Remove BG drop-ups.
     /// Mirrors `styleCategoryTabBar`'s layout so the row heights align.
     private var pipCategoryTabBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -6535,6 +6634,13 @@ struct SlideTextEditorView: View {
                 }
             }
             .shadow(color: .black.opacity(0.35), radius: 2)
+        case .shape:
+            Image(systemName: (currentSlide?.pipThumbMaskStyle ?? .roundedRect) == .circle
+                  ? "circle.fill"
+                  : "square.fill")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(isActive ? .white : .white.opacity(0.75))
+                .frame(width: 22, height: 22)
         case .size:
             Image(systemName: "aspectratio")
                 .font(.system(size: 14, weight: .bold))
@@ -7530,7 +7636,7 @@ struct SocialPostStudioSheet: View {
                 Text("\(count) slide\(count == 1 ? "" : "s")")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(isOver ? .orange : .secondary)
-                Image(systemName: "rectangle.3.group")
+                Image(systemName: "square.grid.2x2")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(isOver ? .orange : Color(uiColor: .tertiaryLabel))
             }
