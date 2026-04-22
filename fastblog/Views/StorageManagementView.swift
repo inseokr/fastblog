@@ -36,6 +36,11 @@ struct StorageManagementView: View {
     @State private var fullScreenPhotoId: UUID?
     @State private var downloadToast: String?
 
+    // MARK: - First-time tooltip
+
+    @AppStorage("bloggo.hasSeenUnusedPhotosTooltip") private var hasSeenUnusedPhotosTooltip: Bool = false
+    @State private var showIntroTooltip: Bool = false
+
     // MARK: - Grid layout (matches ManagePhotosView)
 
     private let columns = [
@@ -134,8 +139,25 @@ struct StorageManagementView: View {
                 .allowsHitTesting(false)
                 .zIndex(50)
             }
+
+            if showIntroTooltip {
+                UnusedPhotosIntroTooltipOverlay(onGotIt: {
+                    hasSeenUnusedPhotosTooltip = true
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        showIntroTooltip = false
+                    }
+                })
+                .transition(.opacity)
+                .zIndex(60)
+            }
         }
         .animation(.easeInOut(duration: 0.2), value: downloadToast != nil)
+        .animation(.easeInOut(duration: 0.25), value: showIntroTooltip)
+        .onAppear {
+            if !hasSeenUnusedPhotosTooltip && !showIntroTooltip {
+                showIntroTooltip = true
+            }
+        }
         .navigationTitle(navigationTitleText)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
@@ -783,6 +805,62 @@ private struct UnusedPhotosSlideshowView: View {
                 zoomScale = 1.0
                 baseZoomScale = 1.0
             }
+        }
+    }
+}
+
+// MARK: - First-time tooltip overlay
+
+private struct UnusedPhotosIntroTooltipOverlay: View {
+    let onGotIt: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.52)
+                .ignoresSafeArea()
+                .allowsHitTesting(true)
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "photo.stack")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Text("Unused Photos")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.white)
+                }
+
+                Text("These are the photos from this trip that aren't included in your blog.")
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.9))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("Free up space by removing the ones you no longer need from your phone or from Bloggo.")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.72))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button(action: onGotIt) {
+                    Text("Got it")
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.white.opacity(0.2), in: RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 6)
+            }
+            .padding(24)
+            .background(
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                    .stroke(Color.white.opacity(0.14), lineWidth: 1)
+            )
+            .padding(.horizontal, 28)
         }
     }
 }

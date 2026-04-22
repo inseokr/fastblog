@@ -11,15 +11,10 @@ struct DayContentPageView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Day header: "Day #" + date/Continue sit tight together; Spacer keeps the icon on the trailing edge.
+            // Header text and date/continue sit together; Spacer keeps the icon on the trailing edge.
             HStack(alignment: .center, spacing: 0) {
                 // Center-align so date vs italic "Continue" share the same vertical slot (firstTextBaseline + italic mismatch).
                 HStack(alignment: .center, spacing: 8) {
-                    Text("Day \(page.day.dayNumber)")
-                        .font(Font(StoryFontHelper.uiFont(for: fontTheme, size: 22, weight: .bold)))
-                        .foregroundColor(primaryColor)
-                        .monospacedDigit()
-
                     Group {
                         if page.isFirstPage {
                             Text(page.shortDateText)

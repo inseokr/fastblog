@@ -240,13 +240,16 @@ private struct PlaceMarkerView: View {
                     )
                     .shadow(color: .black.opacity(0.35), radius: 2)
 
-                Text("\(placeNumber)")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(width: 18, height: 18)
-                    .background(Circle().fill(Color.blue.opacity(0.9)))
-                    .overlay(Circle().stroke(Color.white, lineWidth: 1))
-                    .offset(x: -4, y: -4)
+                // Middle stops only: order badge on the photo. Start/end use the pills above.
+                if !isFirst && !isLast {
+                    Text("\(placeNumber)")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 18, height: 18)
+                        .background(Circle().fill(Color.blue.opacity(0.9)))
+                        .overlay(Circle().stroke(Color.white, lineWidth: 1))
+                        .offset(x: -4, y: -4)
+                }
             }
 
             Text(title)

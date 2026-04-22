@@ -165,7 +165,6 @@ struct PlaceStopRowView: View {
     var photoCaption: (UUID) -> Binding<String>
     var onDelete: () -> Void
     var onKebab: (() -> Void)?
-    var onManagePhotos: () -> Void
     var onRemovePhoto: ((UUID) -> Void)?
     var onPhotoTapped: ((RecapPhoto) -> Void)?
     var onCaptionFocus: ((UUID) -> Void)?
@@ -386,7 +385,18 @@ struct PlaceStopRowView: View {
                         }
                         Spacer()
                         if isEditMode {
-                            HStack(spacing: 0) {
+                            HStack(spacing: 4) {
+                                if onKebab != nil {
+                                    Button { onKebab?() } label: {
+                                        Image(systemName: "ellipsis")
+                                            .font(.body)
+                                            .foregroundColor(.secondary)
+                                            .frame(width: 28, height: 28)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("More actions for this place")
+                                }
                                 Button(action: onDelete) {
                                     Image(systemName: "eye.slash")
                                         .font(.system(size: 14, weight: .semibold))
@@ -540,55 +550,9 @@ struct PlaceStopRowView: View {
             // }
 
             // Photo strip: large thumbnails; one full photo visible + peek of next so users know they can scroll
-            let shouldShowManagePhotosCard = isEditMode
-
             if displayableIncludedPhotos.count == 1, let photo = displayableIncludedPhotos.first {
-                // --- CASE 2a: Single included photo — full-width hero (read and edit). Manage Photos bar sits above in edit mode.
+                // --- CASE 2a: Single included photo — full-width hero (read and edit).
                 VStack(alignment: .leading, spacing: 12) {
-                    if shouldShowManagePhotosCard {
-                        Button(action: onManagePhotos) {
-                            HStack(spacing: 14) {
-                                Image(systemName: "photo.on.rectangle")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundStyle(
-                                        LinearGradient(
-                                            colors: [Color.white.opacity(0.92), Color.white.opacity(0.58)],
-                                            startPoint: .top,
-                                            endPoint: .bottom
-                                        )
-                                    )
-                                    .frame(width: 44, height: 44)
-                                    .background(rowSurface)
-                                    .clipShape(RoundedRectangle(appChromeBaseRadius: 11, style: .continuous))
-
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text("Manage Photos")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundColor(.primary)
-                                    Text("\(stop.photos.count) \(stop.photos.count == 1 ? "Photo" : "Photos")")
-                                        .font(.caption.weight(.medium))
-                                        .foregroundColor(.secondary)
-                                }
-
-                                Spacer(minLength: 0)
-
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.secondary.opacity(0.9))
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 12)
-                            .background(rowInset)
-                            .clipShape(RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(appChromeBaseRadius: 12, style: .continuous)
-                                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Manage Photos, \(stop.photos.count) \(stop.photos.count == 1 ? "photo" : "photos")")
-                    }
-
                     VStack(alignment: .leading, spacing: 0) {
                         RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 960, height: 640))
                             .frame(maxWidth: .infinity, maxHeight: 260)
@@ -709,51 +673,15 @@ struct PlaceStopRowView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, isEditMode ? 4 : 0)
                 .padding(.bottom, isEditMode ? 20 : 12)
-            } else if displayableIncludedPhotos.count > 1 || (displayableIncludedPhotos.isEmpty && shouldShowManagePhotosCard) {
-                // --- CASE 2b: Multiple included photos, or edit mode with none included but a pool to manage — Manage Photos bar + horizontal strip when applicable ---
+            } else if displayableIncludedPhotos.count > 1 || (displayableIncludedPhotos.isEmpty && isEditMode) {
+                // --- CASE 2b: Multiple included photos, or edit mode with none displayable (manage via ⋯). ---
                 VStack(alignment: .leading, spacing: 12) {
-                    if shouldShowManagePhotosCard {
-                        Button(action: onManagePhotos) {
-                            HStack(spacing: 14) {
-                                Image(systemName: "photo.on.rectangle")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundStyle(
-                                        LinearGradient(
-                                            colors: [Color.white.opacity(0.92), Color.white.opacity(0.58)],
-                                            startPoint: .top,
-                                            endPoint: .bottom
-                                        )
-                                    )
-                                    .frame(width: 44, height: 44)
-                                    .background(rowSurface)
-                                    .clipShape(RoundedRectangle(appChromeBaseRadius: 11, style: .continuous))
-
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text("Manage Photos")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundColor(.primary)
-                                    Text("\(stop.photos.count) \(stop.photos.count == 1 ? "Photo" : "Photos")")
-                                        .font(.caption.weight(.medium))
-                                        .foregroundColor(.secondary)
-                                }
-
-                                Spacer(minLength: 0)
-
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.secondary.opacity(0.9))
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 12)
-                            .background(rowInset)
-                            .clipShape(RoundedRectangle(appChromeBaseRadius: 12, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(appChromeBaseRadius: 12, style: .continuous)
-                                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Manage Photos, \(stop.photos.count) \(stop.photos.count == 1 ? "photo" : "photos")")
+                    if displayableIncludedPhotos.isEmpty && isEditMode && !stop.photos.isEmpty {
+                        Text("No photos are shown for this place. Tap … above to manage or restore photos.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 4)
                     }
 
                     if !displayableIncludedPhotos.isEmpty {
@@ -1158,7 +1086,6 @@ struct PlaceStopRowView: View {
             photoCaption: { _ in .constant("") },
             onDelete: {},
             onKebab: nil,
-            onManagePhotos: {},
             onRemovePhoto: nil,
             onPhotoTapped: nil,
             onCaptionFocus: nil,

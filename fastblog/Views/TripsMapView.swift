@@ -52,7 +52,7 @@ private struct TripDraftMapAnnotationView: View {
 
     private static let thumbSize: CGFloat = 64
     private static let titleMaxWidth: CGFloat = 100
-    private static let dotSize: CGFloat = 14
+    private static let dotSize: CGFloat = 17.5
 
     var body: some View {
         ZStack {
@@ -120,12 +120,21 @@ private struct TripDraftMapAnnotationView: View {
     // MARK: Unselected — small dot so nearby markers don't pile up
 
     private var unselectedDot: some View {
-        Circle()
-            .fill(Color.white.opacity(0.9))
-            .frame(width: Self.dotSize, height: Self.dotSize)
-            .overlay(Circle().stroke(Color.black.opacity(0.25), lineWidth: 1))
-            .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
-            .transition(.scale.combined(with: .opacity))
+        VStack(spacing: 3) {
+            Circle()
+                .fill(Color.blue)
+                .frame(width: Self.dotSize, height: Self.dotSize)
+                .overlay(Circle().stroke(Color.white.opacity(0.6), lineWidth: 1.5))
+                .shadow(color: Color.blue.opacity(0.5), radius: 4, y: 1)
+
+            Text(trip.defaultBlogTitle)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .frame(maxWidth: Self.titleMaxWidth)
+                .shadow(color: .black.opacity(0.7), radius: 2)
+        }
+        .transition(.scale.combined(with: .opacity))
     }
 }
 
