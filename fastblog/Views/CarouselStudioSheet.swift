@@ -925,6 +925,20 @@ private func isSlideHiddenBySiblingPIP(at index: Int, in slides: [CarouselSlide]
     }
 }
 
+/// **Slides Management** and similar pickers use **raw** `slides` indices. The editor pager and
+/// horizontal preview only render PIP-“visible” pages (`!isSlideHiddenBySiblingPIP`). Remap a raw
+/// index so navigation targets a page that actually exists in the strip.
+private func indexVisibleInEditorOrPreviewStrip(slides: [CarouselSlide], rawIndex: Int) -> Int? {
+    guard slides.indices.contains(rawIndex) else { return nil }
+    if !isSlideHiddenBySiblingPIP(at: rawIndex, in: slides) { return rawIndex }
+    if slides[rawIndex].kind == .placeStop, let stopID = slides[rawIndex].placeStop?.id {
+        return slides.indices.first { i in
+            !isSlideHiddenBySiblingPIP(at: i, in: slides) && slides[i].placeStop?.id == stopID
+        }
+    }
+    return nil
+}
+
 // MARK: - Carousel Studio photo exclusion (Social Post Studio)
 
 private func studioExclusionKey(stop: UUID, photo: UUID) -> String { "\(stop.uuidString)|\(photo.uuidString)" }
@@ -994,6 +1008,157 @@ private func insertIndexForPlacePhotoInDay(
         }
     }
     return afterMap + matched
+}
+
+// MARK: - Slides Management (unified grid: in-deck + session-excluded place photos)
+
+/// One row in **Slides Management**: cover, a day map, a place still in the deck, or a place
+/// photo only in the session exclusion set (dimmed, restorable with the In carousel checkbox).
+private struct SlidesManagementItem: Identifiable {
+    let id: String
+    let ordinal: Int
+    enum Payload {
+        case cover(rawIndex: Int)
+        case map(rawIndex: Int)
+        case placeInDeck(rawIndex: Int, slide: CarouselSlide)
+        case placeRemovedFromDeck(stop: PlaceStop, photo: RecapPhoto)
+    }
+    let payload: Payload
+}
+
+/// Build the management grid in **loadSlides** order: cover, then per day: map, then that day’s
+/// place photos in `placeStops` order (and each stop’s `isIncluded` photos in array order), including
+/// session-removed place photos as separate dimmed cells.
+private func makeSlidesManagementItems(
+    blog: RecapBlogDetail,
+    slides: [CarouselSlide],
+    excludedKeys: Set<String>
+) -> [SlidesManagementItem] {
+    var out: [SlidesManagementItem] = []
+    var ord = 0
+    if let i = slides.firstIndex(where: { $0.kind == .cover }) {
+        ord += 1
+        out.append(SlidesManagementItem(id: "cover", ordinal: ord, payload: .cover(rawIndex: i)))
+    }
+    for day in blog.days {
+        let mapId = "map-\(day.id.uuidString)"
+        if let mIdx = slides.firstIndex(where: { $0.id == mapId }) {
+            ord += 1
+            out.append(SlidesManagementItem(id: mapId, ordinal: ord, payload: .map(rawIndex: mIdx)))
+        }
+        for stop in day.placeStops {
+            for photo in stop.photos where photo.isIncluded {
+                let key = studioExclusionKey(stop: stop.id, photo: photo.id)
+                if excludedKeys.contains(key) {
+                    ord += 1
+                    out.append(
+                        SlidesManagementItem(
+                            id: "excl-\(key)", ordinal: ord,
+                            payload: .placeRemovedFromDeck(stop: stop, photo: photo)
+                        )
+                    )
+                } else if let pIdx = slides.firstIndex(where: {
+                    $0.kind == .placeStop
+                        && $0.placeStop?.id == stop.id
+                        && $0.heroPhotoID == photo.id
+                }) {
+                    ord += 1
+                    out.append(
+                        SlidesManagementItem(
+                            id: slides[pIdx].id, ordinal: ord,
+                            payload: .placeInDeck(rawIndex: pIdx, slide: slides[pIdx])
+                        )
+                    )
+                } else {
+                    #if DEBUG
+                    print("[SlidesManagement] no slide for stop \(stop.id) photo \(photo.id); not in excluded set")
+                    #endif
+                }
+            }
+        }
+    }
+    return out
+}
+
+// MARK: - Download-style slide card (shared: Export → Download, Slides Management)
+
+/// Matches the “pick slides to download” card: 10pt rounded preview, `checkmark.circle` in the
+/// top-trailing corner, and a dim when not selected (not in the export pick / not in the carousel).
+private enum CarouselStudioDownloadStylePickMode {
+    /// Full-card tap: export toggles a pick, Slides: open, restore, or cover-only.
+    case singleAction(() -> Void)
+    /// Slide tap opens; corner check removes from the deck (place/map in carousel).
+    case splitOpenInSlideRemoveFromCorner(onOpen: () -> Void, onRemoveFromDeck: () -> Void)
+}
+
+private struct CarouselStudioDownloadStylePickCard: View {
+    let slide: CarouselSlide
+    let width: CGFloat
+    let aspectRatio: CGFloat
+    let isInCarousel: Bool
+    let mode: CarouselStudioDownloadStylePickMode
+
+    private var cornerGlyph: some View {
+        Image(systemName: isInCarousel ? "checkmark.circle.fill" : "circle")
+            .font(.title3)
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(.white, isInCarousel ? CarouselStudioChrome.accent : .white.opacity(0.35))
+            .padding(6)
+    }
+
+    @ViewBuilder
+    var body: some View {
+        switch mode {
+        case .singleAction(let onTap):
+            // `Button` + `.plain` is more reliable over `CarouselSlideView` than `onTapGesture`.
+            Button(action: onTap) {
+                ZStack(alignment: .topTrailing) {
+                    CarouselSlideView(
+                        slide: slide,
+                        width: width,
+                        aspectRatio: aspectRatio,
+                        onToggleSelection: {},
+                        showsSelectionChrome: false,
+                        clipsFloatingContentToRoundedSlideOutline: false,
+                        showsBackgroundOnly: true
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    if !isInCarousel {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.black.opacity(0.52))
+                            .allowsHitTesting(false)
+                    }
+                    cornerGlyph
+                }
+            }
+            .buttonStyle(.plain)
+
+        case .splitOpenInSlideRemoveFromCorner(onOpen: let onOpen, onRemoveFromDeck: let onRemove):
+            ZStack(alignment: .topTrailing) {
+                Button(action: onOpen) {
+                    CarouselSlideView(
+                        slide: slide,
+                        width: width,
+                        aspectRatio: aspectRatio,
+                        onToggleSelection: {},
+                        showsSelectionChrome: false,
+                        clipsFloatingContentToRoundedSlideOutline: false,
+                        showsBackgroundOnly: true
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    onRemove()
+                } label: {
+                    cornerGlyph
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove from carousel")
+            }
+        }
+    }
 }
 
 /// Builds one place-stop carousel slide (hero + PIP payload) matching `loadSlides` rules.
@@ -3025,10 +3190,6 @@ struct SlideTextEditorView: View {
     let onExcludePlaceFromStudio: ((Int) -> Void)?
     /// When set, the editor can remove a day-map slide from the carousel.
     let onExcludeMapFromStudio: ((Int) -> Void)?
-    /// Opens the excluded-photo gallery (parent-owned sheet).
-    let onOpenExcludedPhotos: (() -> Void)?
-    /// Count of photos excluded this session — drives the **Excluded** toolbar affordance.
-    let excludedFromStudioCount: Int
     /// Opens the slide grid navigator (jump to any slide while editing).
     let onOpenPhotoGroupPicker: (() -> Void)?
     /// When `true` (e.g. Reel export), the download picker only allows one slide at a time.
@@ -3085,8 +3246,6 @@ struct SlideTextEditorView: View {
         onRequestStudioCoverPhotoPick: (() -> Void)? = nil,
         onExcludePlaceFromStudio: ((Int) -> Void)? = nil,
         onExcludeMapFromStudio: ((Int) -> Void)? = nil,
-        onOpenExcludedPhotos: (() -> Void)? = nil,
-        excludedFromStudioCount: Int = 0,
         onOpenPhotoGroupPicker: (() -> Void)? = nil,
         isSingleSlideDownloadMode: Bool = false,
         onDismissEditor: (() -> Void)? = nil
@@ -3101,8 +3260,6 @@ struct SlideTextEditorView: View {
         self.onRequestStudioCoverPhotoPick = onRequestStudioCoverPhotoPick
         self.onExcludePlaceFromStudio = onExcludePlaceFromStudio
         self.onExcludeMapFromStudio = onExcludeMapFromStudio
-        self.onOpenExcludedPhotos = onOpenExcludedPhotos
-        self.excludedFromStudioCount = excludedFromStudioCount
         self.onOpenPhotoGroupPicker = onOpenPhotoGroupPicker
         self.isSingleSlideDownloadMode = isSingleSlideDownloadMode
         self.onDismissEditor = onDismissEditor
@@ -5094,30 +5251,13 @@ struct SlideTextEditorView: View {
                                         let selected = downloadSlidePickSelection.contains(idx)
                                         GeometryReader { geo in
                                             let w = max(80, geo.size.width)
-                                            ZStack(alignment: .topTrailing) {
-                                                CarouselSlideView(
-                                                    slide: slides[idx],
-                                                    width: w,
-                                                    aspectRatio: aspectRatio,
-                                                    onToggleSelection: {},
-                                                    showsSelectionChrome: false,
-                                                    clipsFloatingContentToRoundedSlideOutline: false,
-                                                    showsBackgroundOnly: true
-                                                )
-                                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                                if !selected {
-                                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                                        .fill(Color.black.opacity(0.52))
-                                                        .allowsHitTesting(false)
-                                                }
-                                                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                                                    .font(.title3)
-                                                    .symbolRenderingMode(.palette)
-                                                    .foregroundStyle(.white, selected ? CarouselStudioChrome.accent : .white.opacity(0.35))
-                                                    .padding(6)
-                                            }
-                                            .contentShape(Rectangle())
-                                            .onTapGesture { toggleDownloadPick(for: idx) }
+                                            CarouselStudioDownloadStylePickCard(
+                                                slide: slides[idx],
+                                                width: w,
+                                                aspectRatio: aspectRatio,
+                                                isInCarousel: selected,
+                                                mode: .singleAction { toggleDownloadPick(for: idx) }
+                                            )
                                         }
                                         .aspectRatio(aspectRatio, contentMode: .fit)
                                         .id(idx)
@@ -5248,17 +5388,6 @@ struct SlideTextEditorView: View {
         }
 
         ToolbarItemGroup(placement: .topBarTrailing) {
-            if excludedFromStudioCount > 0, let onOpenExcluded = onOpenExcludedPhotos {
-                Button {
-                    onOpenExcluded()
-                } label: {
-                    Text("Excluded (\(excludedFromStudioCount))")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
-                }
-                .accessibilityLabel("Excluded photos, \(excludedFromStudioCount)")
-            }
-
             Button {
                 carouselStudioExportHubPhase = .actions
                 showCarouselStudioExportHub = true
@@ -5354,10 +5483,10 @@ struct SlideTextEditorView: View {
                 clampCurrentIndexIfNeeded()
             }
             .onChange(of: externalJumpToSlideIndex) { _, newVal in
-                guard let idx = newVal else { return }
+                guard let raw = newVal else { return }
                 externalJumpToSlideIndex = nil
                 DispatchQueue.main.async {
-                    guard visibleSlideIndices.contains(idx) else { return }
+                    guard let idx = indexVisibleInEditorOrPreviewStrip(slides: slides, rawIndex: raw) else { return }
                     withAnimation(.easeInOut(duration: 0.22)) {
                         currentIndex = idx
                         scrollPageID = idx
@@ -5642,12 +5771,9 @@ struct SlideTextEditorView: View {
     @ViewBuilder
     private var embeddedEditorHeader: some View {
         let canUndo = !undoStack.isEmpty
-        ZStack {
-            Text("Carousel Studio")
-                .font(.headline)
-                .foregroundStyle(.white)
-                .allowsHitTesting(false)
-
+        // Three-column bar: equal flexible leading/trailing regions so the title stays
+        // visually centered and does not crowd long trailing labels (e.g. "Excluded (n)").
+        HStack(spacing: 0) {
             HStack(spacing: 12) {
                 Button {
                     onDismissEditor?()
@@ -5671,21 +5797,19 @@ struct SlideTextEditorView: View {
                 .buttonStyle(.plain)
                 .disabled(!canUndo)
                 .accessibilityLabel("Undo")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-                Spacer()
+            Text("Carousel Studio")
+                .font(.headline)
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .multilineTextAlignment(.center)
+                .allowsHitTesting(false)
+                .layoutPriority(1)
 
-                if excludedFromStudioCount > 0, let onOpenExcluded = onOpenExcludedPhotos {
-                    Button {
-                        onOpenExcluded()
-                    } label: {
-                        Text("Excluded (\(excludedFromStudioCount))")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Excluded photos, \(excludedFromStudioCount)")
-                }
-
+            HStack(spacing: 8) {
                 Button {
                     carouselStudioExportHubPhase = .actions
                     showCarouselStudioExportHub = true
@@ -5699,6 +5823,7 @@ struct SlideTextEditorView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Share, download, or export PDF")
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -6955,7 +7080,6 @@ struct SocialPostStudioSheet: View {
     @State private var showStudioCoverPicker = false
     /// Place photos removed from this session’s carousel (not the blog draft). Keys: `studioExclusionKey`.
     @State private var excludedStudioPhotoKeys: Set<String> = []
-    @State private var showExcludedPhotosSheet = false
     /// Slide grid sheet: jump to a slide in the preview strip or editor.
     @State private var showPhotoGroupPicker = false
     /// When set, the horizontal preview strip scrolls this slide into view after the grid sheet closes.
@@ -7033,8 +7157,6 @@ struct SocialPostStudioSheet: View {
                         },
                         onExcludePlaceFromStudio: { idx in excludePlaceSlide(at: idx) },
                         onExcludeMapFromStudio: { idx in excludeMapSlide(at: idx) },
-                        onOpenExcludedPhotos: { showExcludedPhotosSheet = true },
-                        excludedFromStudioCount: excludedStudioPhotoKeys.count,
                         onOpenPhotoGroupPicker: { showPhotoGroupPicker = true },
                         isSingleSlideDownloadMode: exportFormat.isSingleSlide,
                         onDismissEditor: onDismissFromParent
@@ -7081,16 +7203,6 @@ struct SocialPostStudioSheet: View {
                             }
                         }
                         ToolbarItemGroup(placement: .topBarTrailing) {
-                            if !excludedStudioPhotoKeys.isEmpty {
-                                Button {
-                                    showExcludedPhotosSheet = true
-                                } label: {
-                                    Text("Excluded (\(excludedStudioPhotoKeys.count))")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(.white)
-                                }
-                                .accessibilityLabel("Excluded photos")
-                            }
                             Menu {
                                 Button {
                                     Task { await shareViaSheet() }
@@ -7133,14 +7245,23 @@ struct SocialPostStudioSheet: View {
         .sheet(isPresented: $showPhotoGroupPicker) {
             CarouselPhotoGroupPickerSheet(
                 slides: $slides,
+                blog: blog,
+                excludedKeys: excludedStudioPhotoKeys,
                 aspectRatio: exportFormat.aspectRatio,
                 onSelectSlide: { index in
                     showPhotoGroupPicker = false
-                    if opensInEditMode || editingSlideRef != nil {
-                        studioEditorJumpToSlideIndex = index
-                    } else {
-                        navigatePreviewToSlideIndex = index
+                    // Defer so the sheet can start dismissing; the editor then handles
+                    // `externalJumpToSlideIndex` with a PIP-corrected target.
+                    DispatchQueue.main.async {
+                        if opensInEditMode || editingSlideRef != nil {
+                            studioEditorJumpToSlideIndex = index
+                        } else {
+                            navigatePreviewToSlideIndex = index
+                        }
                     }
+                },
+                onRestoreExcludedPlacePhoto: { stopID, photoID in
+                    restoreExcludedPhoto(stopID: stopID, photoID: photoID)
                 },
                 onExcludePlaceFromStudio: { idx in excludePlaceSlide(at: idx) },
                 onExcludeMapFromStudio: { idx in excludeMapSlide(at: idx) }
@@ -7162,8 +7283,6 @@ struct SocialPostStudioSheet: View {
                 },
                 onExcludePlaceFromStudio: { idx in excludePlaceSlide(at: idx) },
                 onExcludeMapFromStudio: { idx in excludeMapSlide(at: idx) },
-                onOpenExcludedPhotos: { showExcludedPhotosSheet = true },
-                excludedFromStudioCount: excludedStudioPhotoKeys.count,
                 onOpenPhotoGroupPicker: { showPhotoGroupPicker = true },
                 isSingleSlideDownloadMode: exportFormat.isSingleSlide
             )
@@ -7175,15 +7294,6 @@ struct SocialPostStudioSheet: View {
                 onPick: { photo in
                     showStudioCoverPicker = false
                     Task { await applyStudioCoverFromPick(photo) }
-                }
-            )
-        }
-        .sheet(isPresented: $showExcludedPhotosSheet) {
-            StudioExcludedPhotosGallerySheet(
-                blog: blog,
-                excludedKeys: excludedStudioPhotoKeys,
-                onRestore: { stopID, photoID in
-                    restoreExcludedPhoto(stopID: stopID, photoID: photoID)
                 }
             )
         }
@@ -7385,9 +7495,10 @@ struct SocialPostStudioSheet: View {
                     }
                 }
                 .onChange(of: navigatePreviewToSlideIndex) { _, newVal in
-                    guard let idx = newVal else { return }
+                    guard let raw = newVal else { return }
                     navigatePreviewToSlideIndex = nil
                     DispatchQueue.main.async {
+                        guard let idx = indexVisibleInEditorOrPreviewStrip(slides: slides, rawIndex: raw) else { return }
                         withAnimation(.easeInOut(duration: 0.22)) {
                             previewScrollProxy.scrollTo(idx, anchor: .center)
                         }
@@ -7442,7 +7553,7 @@ struct SocialPostStudioSheet: View {
                     .font(.body.weight(.medium))
                     .foregroundStyle(.secondary)
                     .padding(.top, 1)
-                Text("Remove a place photo from this carousel: swipe up on its card, long-press the card, or tap ⋯ then Remove from carousel. In the full editor, press and hold the slide or use ⋯ above. Nothing is deleted from your trip.")
+                Text("Remove a place photo from this carousel: swipe up on its card, long-press the card, or tap ⋯ then Remove from carousel. To add a photo back, open Slides Management (slide count button) and tap a dimmed card—same layout as the Download slide picker. In the full editor, press and hold the slide or use ⋯ above. Nothing is deleted from your trip.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
@@ -7748,9 +7859,6 @@ struct SocialPostStudioSheet: View {
                 slides.insert(slide, at: bounded)
             }
             await rebuildPIPPayloadsForStop(stopID: stopID)
-            await MainActor.run {
-                if excludedStudioPhotoKeys.isEmpty { showExcludedPhotosSheet = false }
-            }
         }
     }
 
@@ -8570,127 +8678,17 @@ private struct SwipeUpToRemoveCard<Content: View>: View {
     }
 }
 
-// MARK: - Excluded photos gallery (Carousel Studio)
-
-private struct StudioExcludedPhotoThumb: View {
-    let photo: RecapPhoto
-    @State private var image: UIImage?
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(Color(white: 0.2))
-            .aspectRatio(4.0 / 5.0, contentMode: .fit)
-            .overlay {
-                if let img = image {
-                    Image(uiImage: img)
-                        .resizable()
-                        .scaledToFill()
-                } else {
-                    Image(systemName: "photo")
-                        .font(.title2)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .task {
-                let loaded = await loadRecapPhotoUIImage(photo: photo, size: CGSize(width: 400, height: 500))
-                await MainActor.run { image = loaded }
-            }
-    }
-}
-
-/// Grid of thumbnails for place photos removed from the carousel this session; **Revert** restores a slide.
-private struct StudioExcludedPhotosGallerySheet: View {
-    let blog: RecapBlogDetail
-    let excludedKeys: Set<String>
-    let onRestore: (UUID, UUID) -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    private struct Item: Identifiable {
-        let id: String
-        let stopID: UUID
-        let photoID: UUID
-        let placeTitle: String
-        let photo: RecapPhoto
-    }
-
-    private var items: [Item] {
-        excludedKeys.compactMap { key -> Item? in
-            guard let (stopID, photoID) = parseStudioExclusionKey(key) else { return nil }
-            guard let stop = freshPlaceStop(stopID: stopID, blog: blog),
-                  let photo = stop.photos.first(where: { $0.id == photoID }),
-                  photo.isIncluded else { return nil }
-            return Item(id: key, stopID: stopID, photoID: photoID, placeTitle: stop.placeTitle, photo: photo)
-        }
-        .sorted { lhs, rhs in
-            lhs.placeTitle.localizedCaseInsensitiveCompare(rhs.placeTitle) == .orderedAscending
-        }
-    }
-
-    private let gridColumns = [GridItem(.adaptive(minimum: 108), spacing: 14)]
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                if items.isEmpty {
-                    Text("Nothing here — excluded photos appear after you remove a place slide from the carousel.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 40)
-                } else {
-                    LazyVGrid(columns: gridColumns, spacing: 16) {
-                        ForEach(items) { item in
-                            VStack(alignment: .leading, spacing: 10) {
-                                StudioExcludedPhotoThumb(photo: item.photo)
-                                Text(item.placeTitle)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundColor(.primary)
-                                    .lineLimit(2)
-                                Button {
-                                    onRestore(item.stopID, item.photoID)
-                                } label: {
-                                    Text("Revert")
-                                        .font(.subheadline.weight(.semibold))
-                                        .frame(maxWidth: .infinity)
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                            }
-                            .padding(12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(Color(uiColor: .secondarySystemGroupedBackground))
-                            )
-                        }
-                    }
-                    .padding(18)
-                }
-            }
-            .navigationTitle("Excluded photos")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-    }
-}
-
 // MARK: - Slide grid navigator sheet
 
-/// Two-column grid of visible slides (same order as the studio preview / editor pager).
-/// Each tile uses `CarouselSlideView` with `showsBackgroundOnly` so thumbnails stay stable (imagery only; no text/PIP overlays).
-/// Under each tile: ordinal plus a one-line label (`Cover`, `Map - Mar 13`, or the place name’s first line).
-/// Tapping a tile dismisses the sheet and asks the parent to scroll the preview or jump the editor pager.
-/// Long-press a place or map tile to remove it when the parent supplies exclusion callbacks.
+/// Two-column grid in **loadSlides** order. Uses the same **Download** slide card (preview, dim, corner check)
+/// and grid metrics as `carouselStudioExportHubPhase == .pickDownloadSlides`.
 private struct CarouselPhotoGroupPickerSheet: View {
     @Binding var slides: [CarouselSlide]
-    /// Must match the studio’s current export aspect (post / story / reel).
+    let blog: RecapBlogDetail
+    let excludedKeys: Set<String>
     let aspectRatio: CGFloat
     let onSelectSlide: (Int) -> Void
+    let onRestoreExcludedPlacePhoto: ((UUID, UUID) -> Void)?
     let onExcludePlaceFromStudio: ((Int) -> Void)?
     let onExcludeMapFromStudio: ((Int) -> Void)?
     @Environment(\.dismiss) private var dismiss
@@ -8699,36 +8697,47 @@ private struct CarouselPhotoGroupPickerSheet: View {
     @AppStorage("blogify.slidesManagementTip.dismissed") private var slidesManagementTipDismissed = false
     @State private var pendingExcludeRawIndex: Int?
 
-    private var slidesManagementNavigationSubtitle: String {
-        if hasSlideRemovalActions {
-            "Tap a slide to open it in the editor."
-        } else {
-            "Tap a slide to open it in the editor."
+    private var managementItems: [SlidesManagementItem] {
+        makeSlidesManagementItems(blog: blog, slides: slides, excludedKeys: excludedKeys)
+    }
+
+    private var removedPlaceCount: Int {
+        managementItems.filter {
+            if case .placeRemovedFromDeck = $0.payload { return true }
+            return false
         }
+        .count
+    }
+
+    private var slidesManagementNavigationSubtitle: String {
+            "Click a slide to edit"
     }
 
     init(
         slides: Binding<[CarouselSlide]>,
+        blog: RecapBlogDetail,
+        excludedKeys: Set<String>,
         aspectRatio: CGFloat,
         onSelectSlide: @escaping (Int) -> Void,
+        onRestoreExcludedPlacePhoto: ((UUID, UUID) -> Void)? = nil,
         onExcludePlaceFromStudio: ((Int) -> Void)? = nil,
         onExcludeMapFromStudio: ((Int) -> Void)? = nil
     ) {
         _slides = slides
+        self.blog = blog
+        self.excludedKeys = excludedKeys
         self.aspectRatio = aspectRatio
         self.onSelectSlide = onSelectSlide
+        self.onRestoreExcludedPlacePhoto = onRestoreExcludedPlacePhoto
         self.onExcludePlaceFromStudio = onExcludePlaceFromStudio
         self.onExcludeMapFromStudio = onExcludeMapFromStudio
     }
 
+    /// Same column spec as **Export → Download → pick slides**.
     private let gridColumns = [
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(minimum: 120), spacing: 10),
+        GridItem(.flexible(minimum: 120), spacing: 10),
     ]
-
-    private var visibleSlideIndices: [Int] {
-        slides.indices.filter { !isSlideHiddenBySiblingPIP(at: $0, in: slides) }
-    }
 
     private var hasSlideRemovalActions: Bool {
         onExcludePlaceFromStudio != nil || onExcludeMapFromStudio != nil
@@ -8764,7 +8773,6 @@ private struct CarouselPhotoGroupPickerSheet: View {
         }
     }
 
-    /// First non-empty line only (place titles may contain embedded newlines).
     private func slidesManagementFirstTextLine(_ raw: String) -> String {
         let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return "" }
@@ -8789,46 +8797,151 @@ private struct CarouselPhotoGroupPickerSheet: View {
         }
     }
 
-    /// Extra padding before the outer clip so PIP rotation/shadow match the horizontal preview strip.
-    private func gridTileBleedInsets(slide: CarouselSlide) -> EdgeInsets {
-        let isPIPPreview = slide.kind == .placeStop && slide.layout == .pip && !slide.pipImages.isEmpty
-        if isPIPPreview {
-            return EdgeInsets(top: 22, leading: 10, bottom: 14, trailing: 24)
-        }
-        return EdgeInsets(top: 10, leading: 8, bottom: 10, trailing: 10)
+    private func placeNameLabel(from stop: PlaceStop) -> String {
+        let t = slidesManagementFirstTextLine(stop.placeTitle)
+        return t.isEmpty ? "Place" : t
     }
 
     @ViewBuilder
-    private func slideNavigatorTile(for slide: CarouselSlide) -> some View {
-        // Reserve height with aspect ratio first so `GeometryReader` cannot collapse/overlap the caption row below.
-        Color.clear
-            .aspectRatio(aspectRatio, contentMode: .fit)
-            .frame(maxWidth: .infinity)
-            .overlay {
-                GeometryReader { geo in
-                    let w = max(1, geo.size.width)
-                    CarouselSlideView(
+    private func slidesManagementCaption(ordinal1Based: Int, title: String, subtitle: String? = nil) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("\(ordinal1Based)")
+                .font(.caption.weight(.bold).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .fixedSize()
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.top, 8)
+    }
+
+    @ViewBuilder
+    private func slidesManagementDeckItemRow(ordinal1Based: Int, rawIndex: Int, slide: CarouselSlide) -> some View {
+        let canSplit = canExcludeSlide(at: rawIndex)
+        VStack(alignment: .leading, spacing: 0) {
+            GeometryReader { geo in
+                let w = max(80, geo.size.width)
+                if canSplit {
+                    CarouselStudioDownloadStylePickCard(
                         slide: slide,
                         width: w,
                         aspectRatio: aspectRatio,
-                        onToggleSelection: {},
-                        showsSelectionChrome: false,
-                        clipsFloatingContentToRoundedSlideOutline: false,
-                        showsBackgroundOnly: true
+                        isInCarousel: true,
+                        mode: .splitOpenInSlideRemoveFromCorner(
+                            onOpen: { onSelectSlide(rawIndex) },
+                            onRemoveFromDeck: { requestExclude(at: rawIndex) }
+                        )
                     )
-                    .allowsHitTesting(false)
-                    .frame(width: w)
-                    .padding(gridTileBleedInsets(slide: slide))
+                } else {
+                    CarouselStudioDownloadStylePickCard(
+                        slide: slide,
+                        width: w,
+                        aspectRatio: aspectRatio,
+                        isInCarousel: true,
+                        mode: .singleAction { onSelectSlide(rawIndex) }
+                    )
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .aspectRatio(aspectRatio, contentMode: .fit)
+            slidesManagementCaption(ordinal1Based: ordinal1Based, title: slideKindLabel(for: slide))
+        }
+    }
+
+    /// Session-excluded place: download-style unselected card; full-card tap adds back. Loads hero like `loadSlides`.
+    private struct SlidesManagementRemovedSessionRow: View {
+        let blog: RecapBlogDetail
+        let stop: PlaceStop
+        let photo: RecapPhoto
+        let aspectRatio: CGFloat
+        let onRestore: () -> Void
+        @State private var hero: UIImage? = nil
+
+        private var previewSlide: CarouselSlide {
+            let stopIdx = globalStopIndexInBlog(blog: blog, stopID: stop.id) ?? 1
+            return CarouselSlide(
+                id: "slides-mgmt-removed-\(stop.id)-\(photo.id)", kind: .placeStop,
+                isSelected: true, heroImage: hero, placeStop: stop, photoCaption: photo.caption,
+                textStyle: .placeStopDefault, pipImages: [], pipPhotoIDs: [],
+                heroPhotoID: photo.id, stopIndex: stopIdx
+            )
+        }
+
+        var body: some View {
+            GeometryReader { geo in
+                let w = max(80, geo.size.width)
+                CarouselStudioDownloadStylePickCard(
+                    slide: previewSlide,
+                    width: w,
+                    aspectRatio: aspectRatio,
+                    isInCarousel: false,
+                    mode: .singleAction(onRestore)
+                )
+            }
+            .aspectRatio(aspectRatio, contentMode: .fit)
+            .task {
+                if hero != nil { return }
+                let w: CGFloat = 640
+                let h = w / max(0.1, aspectRatio)
+                if let img = await loadRecapPhotoUIImage(photo: photo, size: CGSize(width: w, height: h)) {
+                    await MainActor.run { hero = img }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func slidesManagementRemovedItemRow(ordinal1Based: Int, stop: PlaceStop, photo: RecapPhoto) -> some View {
+        let restore = onRestoreExcludedPlacePhoto
+        VStack(alignment: .leading, spacing: 0) {
+            if let restore {
+                SlidesManagementRemovedSessionRow(
+                    blog: blog,
+                    stop: stop,
+                    photo: photo,
+                    aspectRatio: aspectRatio,
+                    onRestore: { restore(stop.id, photo.id) }
+                )
+                slidesManagementCaption(
+                    ordinal1Based: ordinal1Based,
+                    title: placeNameLabel(from: stop),
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func slidesManagementItemView(_ item: SlidesManagementItem) -> some View {
+        let ord = item.ordinal
+        switch item.payload {
+        case .cover(rawIndex: let i):
+            slidesManagementDeckItemRow(ordinal1Based: ord, rawIndex: i, slide: slides[i])
+        case .map(rawIndex: let i):
+            slidesManagementDeckItemRow(ordinal1Based: ord, rawIndex: i, slide: slides[i])
+        case .placeInDeck(rawIndex: let i, slide: _):
+            slidesManagementDeckItemRow(ordinal1Based: ord, rawIndex: i, slide: slides[i])
+        case .placeRemovedFromDeck(stop: let stop, photo: let photo):
+            slidesManagementRemovedItemRow(ordinal1Based: ord, stop: stop, photo: photo)
+        }
     }
 
     private var slidesManagementTipBody: String {
-        if hasSlideRemovalActions {
-            "Tap any slide to jump to it in the editor. Touch and hold a slide. Then choose Remove from carousel."
+        if onRestoreExcludedPlacePhoto != nil, hasSlideRemovalActions {
+            "Cards look like the Download slide picker. Tap the preview to open that slide, or tap the check in the corner to remove. Dimmed cards: tap the card to add a photo back. A remove confirmation may still appear."
+        } else if hasSlideRemovalActions {
+            "Same card style as Download. Tap a preview to open in the editor; tap the check in the corner to remove a place or map. A confirmation may appear."
         } else {
-            "Tap any slide to jump to it in the editor."
+            "Tap a preview to open that slide in the editor."
         }
     }
 
@@ -8861,7 +8974,6 @@ private struct CarouselPhotoGroupPickerSheet: View {
         }
     }
 
-    /// Title + subtitle in the nav bar (`principal`) so they sit on the same horizontal band as Done, not in the scrolling body.
     private var slidesManagementNavBarTitle: some View {
         VStack(spacing: 2) {
             Text("Slides Management")
@@ -8873,7 +8985,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .lineLimit(2)
+                .lineLimit(3)
                 .minimumScaleFactor(0.8)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -8881,8 +8993,14 @@ private struct CarouselPhotoGroupPickerSheet: View {
     }
 
     private var slidesManagementSlideCountLine: some View {
-        let visibleCount = visibleSlideIndices.count
-        return Text("\(visibleCount) slide\(visibleCount == 1 ? "" : "s")")
+        let n = managementItems.count
+        let line: String
+        if removedPlaceCount > 0 {
+            line = "\(n) slide\(n == 1 ? "" : "s") — \(removedPlaceCount) not in the carousel (dimmed)"
+        } else {
+            line = "\(n) slide\(n == 1 ? "" : "s")"
+        }
+        return Text(line)
             .font(.subheadline.weight(.medium))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -8890,68 +9008,25 @@ private struct CarouselPhotoGroupPickerSheet: View {
     }
 
     @ViewBuilder
-    private func slidesManagementTileCell(ordinal: Int, rawIndex: Int, slide: CarouselSlide) -> some View {
-        Button {
-            onSelectSlide(rawIndex)
-        } label: {
-            VStack(alignment: .leading, spacing: 0) {
-                slideNavigatorTile(for: slide)
-                    .frame(maxWidth: .infinity)
-
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("\(ordinal + 1)")
-                        .font(.caption.weight(.bold).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .fixedSize()
-                    Text(slideKindLabel(for: slide))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .multilineTextAlignment(.leading)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.top, 10)
-                .padding(.horizontal, 2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .contextMenu {
-            if canExcludeSlide(at: rawIndex) {
-                Button(role: .destructive) {
-                    requestExclude(at: rawIndex)
-                } label: {
-                    Label("Remove from carousel", systemImage: "minus.circle")
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
     private var slidesManagementGridOrEmpty: some View {
-        let indices = visibleSlideIndices
-        if indices.isEmpty {
+        if managementItems.isEmpty {
             Text("No slides in this carousel.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 4)
         } else {
-            LazyVGrid(columns: gridColumns, spacing: 14) {
-                ForEach(Array(indices.enumerated()), id: \.element) { ordinal, rawIndex in
-                    let slide = slides[rawIndex]
-                    slidesManagementTileCell(ordinal: ordinal, rawIndex: rawIndex, slide: slide)
+            LazyVGrid(columns: gridColumns, spacing: 12) {
+                ForEach(managementItems) { item in
+                    slidesManagementItemView(item)
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, 0)
         }
     }
 
     private var slidesManagementScrollContent: some View {
         VStack(alignment: .leading, spacing: 16) {
-            slidesManagementTipBanner
             slidesManagementSlideCountLine
             slidesManagementGridOrEmpty
         }
