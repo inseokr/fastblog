@@ -473,13 +473,14 @@ private enum StyleCategory: String, CaseIterable, Identifiable {
 }
 
 /// Categories in the bottom tab bar when the PIP photo cluster is selected.
-/// Border picks the outline color painted around each thumbnail.
+/// Order is left-to-right: Border, Size, Remove BG. Border picks the outline color
+/// painted around each thumbnail.
 /// Add and remove are separate scrollable pills — see `pipAddPhotosTabButton` /
 /// `pipRemovePhotosTabButton`.
 private enum PIPStyleCategory: String, CaseIterable, Identifiable {
     case border     = "Border"
     case size       = "Size"
-    case background = "Background"
+    case background = "Remove BG"
 
     var id: String { rawValue }
 
@@ -2949,7 +2950,7 @@ struct SlideTextEditorView: View {
     /// Which style category (Color / Font Style / Font Size) is currently open in
     /// the drop-up panel. `nil` collapses the panel and only the category tab bar is shown.
     @State private var activeStyleCategory: StyleCategory? = nil
-    /// Which PIP category (Border / Size / Background) is currently open. Parallels
+    /// Which PIP category (Border / Size / Remove BG) is currently open. Parallels
     /// `activeStyleCategory` but for the photo-cluster toolbar that shows when
     /// `selectedBlock == .pipCluster`. Kept separate from `activeStyleCategory`
     /// so switching between a text block and the PIP block resets panel state.
@@ -4142,8 +4143,9 @@ struct SlideTextEditorView: View {
     }
 
     private var pipStyleToolbarCategories: [PIPStyleCategory] {
-        if #available(iOS 16, *) { return Array(PIPStyleCategory.allCases) }
-        return PIPStyleCategory.allCases.filter { $0 != .background }
+        let ordered: [PIPStyleCategory] = [.border, .size, .background]
+        if #available(iOS 16, *) { return ordered }
+        return ordered.filter { $0 != .background }
     }
 
     private func resetPIPBackgroundRemovalState(for slideIndex: Int) {
@@ -6216,7 +6218,7 @@ struct SlideTextEditorView: View {
     /// **Add Photos** opens the picker when there is room and eligible picks;
     /// **Remove** drops the bottom-most photo when two or more thumbnails are
     /// visible (each button disables independently). **Style** (vertical vs
-    /// horizontal stack) sits third; then Border / Size / Background drop-ups.
+    /// horizontal stack) sits third; then Border / Size / Remove BG drop-ups.
     /// Mirrors `styleCategoryTabBar`'s layout so the row heights align.
     private var pipCategoryTabBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -8859,21 +8861,22 @@ private struct CarouselPhotoGroupPickerSheet: View {
         }
     }
 
-    /// Title + subtitle at the top of the sheet content (not in the toolbar — bar items get capsule/glass chrome).
-    private var slidesManagementHeader: some View {
-        VStack(alignment: .leading, spacing: 2) {
+    /// Title + subtitle in the nav bar (`principal`) so they sit on the same horizontal band as Done, not in the scrolling body.
+    private var slidesManagementNavBarTitle: some View {
+        VStack(spacing: 2) {
             Text("Slides Management")
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(.primary)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
             Text(slidesManagementNavigationSubtitle)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
                 .fixedSize(horizontal: false, vertical: true)
-                .multilineTextAlignment(.leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
     }
 
@@ -8948,7 +8951,6 @@ private struct CarouselPhotoGroupPickerSheet: View {
 
     private var slidesManagementScrollContent: some View {
         VStack(alignment: .leading, spacing: 16) {
-            slidesManagementHeader
             slidesManagementTipBanner
             slidesManagementSlideCountLine
             slidesManagementGridOrEmpty
@@ -8965,6 +8967,9 @@ private struct CarouselPhotoGroupPickerSheet: View {
             .background(Color(uiColor: .systemGroupedBackground))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    slidesManagementNavBarTitle
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
