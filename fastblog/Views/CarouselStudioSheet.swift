@@ -1169,7 +1169,14 @@ private struct CarouselStudioDownloadStylePickCard: View {
                 Button {
                     onRemove()
                 } label: {
-                    cornerGlyph
+                    ZStack {
+                        // Keep visual glyph size unchanged, but expand the tap target.
+                        Circle()
+                            .fill(Color.clear)
+                            .frame(width: 44, height: 44)
+                        cornerGlyph
+                    }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Remove from carousel")
