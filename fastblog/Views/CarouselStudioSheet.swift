@@ -1269,6 +1269,8 @@ private let studioPIPClusterEdgeInset: CGFloat = 10
 private struct DraggableTextBlock<Content: View>: View {
     let id: SlideBlockID
     let isEditingText: Bool
+    /// When `false`, no outline is drawn (clean slide) even in edit mode — used until the user selects a block.
+    var showsEditingOutline: Bool = true
     let isSelected: Bool
     /// Committed displacement from the block's natural anchor, expressed as a normalized
     /// fraction of `slideBounds` (e.g. `width = 0.10` ⇒ 10% of slide width to the right).
@@ -1415,7 +1417,7 @@ private struct DraggableTextBlock<Content: View>: View {
 
     @ViewBuilder
     private var editingRing: some View {
-        if isEditingText {
+        if isEditingText, showsEditingOutline {
             RoundedRectangle(cornerRadius: 7)
                 .strokeBorder(
                     isSelected
@@ -1565,6 +1567,9 @@ struct CarouselSlideView: View {
     private var height: CGFloat { width / aspectRatio }
     private let heroImageScale: CGFloat = 1.12
     private var slideBounds: CGRect { CGRect(x: 0, y: 0, width: width, height: height) }
+
+    /// Dashed/solid block rings only after something is selected; with no selection the canvas matches export.
+    private var showsDraggableBlockOutlines: Bool { isEditingText && selectedBlockID != nil }
 
     /// When `clipsFloatingContentToRoundedSlideOutline` is on, the default is one
     /// final `clipShape` around **everything** (text + PIP). PIP sits in the top-trailing
@@ -1729,6 +1734,7 @@ struct CarouselSlideView: View {
                 DraggableTextBlock(
                     id: .primary,
                     isEditingText: isEditingText,
+                    showsEditingOutline: showsDraggableBlockOutlines,
                     isSelected: selectedBlockID == .primary,
                     savedOffset: offsetBinding(for: .primary),
                     slideBounds: slideBounds,
@@ -1761,6 +1767,7 @@ struct CarouselSlideView: View {
                 DraggableTextBlock(
                     id: .primary,
                     isEditingText: isEditingText,
+                    showsEditingOutline: showsDraggableBlockOutlines,
                     isSelected: selectedBlockID == .primary,
                     savedOffset: offsetBinding(for: .primary),
                     slideBounds: slideBounds,
@@ -1818,6 +1825,7 @@ struct CarouselSlideView: View {
                 DraggableTextBlock(
                     id: .secondary,
                     isEditingText: isEditingText,
+                    showsEditingOutline: showsDraggableBlockOutlines,
                     isSelected: selectedBlockID == .secondary,
                     savedOffset: offsetBinding(for: .secondary),
                     slideBounds: slideBounds,
@@ -1853,6 +1861,7 @@ struct CarouselSlideView: View {
                     DraggableTextBlock(
                         id: .primary,
                         isEditingText: isEditingText,
+                        showsEditingOutline: showsDraggableBlockOutlines,
                         isSelected: selectedBlockID == .primary,
                         savedOffset: offsetBinding(for: .primary),
                         slideBounds: slideBounds,
@@ -1922,6 +1931,7 @@ struct CarouselSlideView: View {
                 DraggableTextBlock(
                     id: .secondary,
                     isEditingText: isEditingText,
+                    showsEditingOutline: showsDraggableBlockOutlines,
                     isSelected: selectedBlockID == .secondary,
                     savedOffset: offsetBinding(for: .secondary),
                     slideBounds: slideBounds,
@@ -1970,6 +1980,7 @@ struct CarouselSlideView: View {
                     pipSizeScale: slide.pipClusterSizeScale,
                     thumbMaskStyle: slide.pipThumbMaskStyle,
                     isEditingText: isEditingText,
+                    showsEditingOutline: showsDraggableBlockOutlines,
                     isSelected: selectedBlockID == .pipCluster,
                     backgroundRemovalLoadingSlots: pipBackgroundRemovalLoadingSlots
                 )
@@ -2382,6 +2393,8 @@ private struct DraggablePIPCluster: View {
     /// True while the slide is in the full-screen text editor; enables the
     /// selection ring and routes taps through `onSelect`.
     var isEditingText: Bool = false
+    /// When `false`, no cluster ring in edit mode until a block is selected on the slide.
+    var showsEditingOutline: Bool = true
     /// True when `selectedBlock == .pipCluster` in the editor.
     var isSelected: Bool = false
     var backgroundRemovalLoadingSlots: Set<Int> = []
@@ -2463,7 +2476,7 @@ private struct DraggablePIPCluster: View {
 
     @ViewBuilder
     private var selectionRing: some View {
-        if isEditingText {
+        if isEditingText, showsEditingOutline {
             // Cluster frame is the visible thumb rect; expand the ring by a few points so
             // it visually hugs the tiles without sitting on top of them.
             let ringBreathing: CGFloat = 4
@@ -3155,6 +3168,8 @@ struct SlideTextEditorView: View {
     let initialIndex: Int
     /// Export / download thumbnail aspect from the parent (Post vs Story/Reel).
     let aspectRatio: CGFloat
+    /// Parent-owned aspect used for `ImageRenderer` export; kept in sync when the user toggles 4:5 ↔ 9:16.
+    let exportCanvasAspectRatio: Binding<CGFloat>
     /// Live slide preview frame; user can tap the aspect pill to flip vs `aspectRatio` for comparison.
     @State private var editorPreviewAspectRatio: CGFloat
     /// Nav bar download affordance opens a bottom sheet (share / download / PDF); parent owns sheets, alerts, and export rendering.
@@ -3304,6 +3319,7 @@ struct SlideTextEditorView: View {
         slides: Binding<[CarouselSlide]>,
         initialIndex: Int,
         aspectRatio: CGFloat,
+        exportCanvasAspectRatio: Binding<CGFloat>,
         exportActions: SlideTextEditorExportActions,
         exportInProgress: Binding<Bool>,
         externalJumpToSlideIndex: Binding<Int?>,
@@ -3317,6 +3333,7 @@ struct SlideTextEditorView: View {
         self._slides = slides
         self.initialIndex = initialIndex
         self.aspectRatio = aspectRatio
+        self.exportCanvasAspectRatio = exportCanvasAspectRatio
         self._editorPreviewAspectRatio = State(initialValue: aspectRatio)
         self.exportActions = exportActions
         self._exportInProgress = exportInProgress
@@ -3353,6 +3370,7 @@ struct SlideTextEditorView: View {
             } else {
                 editorPreviewAspectRatio = Self.studioPreviewRatio916
             }
+            exportCanvasAspectRatio.wrappedValue = editorPreviewAspectRatio
             // Drop transient editor interaction state so the next ratio starts clean.
             selectedBlock = nil
             selectedSplitSlot = nil
@@ -5687,6 +5705,7 @@ struct SlideTextEditorView: View {
                 pipClusterSizeSliderUndoPrimed = false
                 undoStack = []
                 showsTextEditLine = false
+                exportCanvasAspectRatio.wrappedValue = editorPreviewAspectRatio
             }
             .onChange(of: selectedBlock) { _, newValue in
                 #if DEBUG
@@ -7171,6 +7190,8 @@ struct SocialPostStudioSheet: View {
 
     @State private var slides: [CarouselSlide] = []
     @State private var exportFormat: ExportFormat = .post
+    /// Aspect used by `ImageRenderer` in `renderSlides`; matches `exportFormat` until the slide editor toggles 4:5 ↔ 9:16.
+    @State private var exportRenderAspectRatio: CGFloat = 4.0 / 5.0
     /// Per-format snapshot of each slide's text/pip offsets. Populated when the user
     /// switches aspect ratios so switching back restores the previous layout.
     @State private var savedFormatOffsets: [String: [(primary: CGSize, secondary: CGSize, pip: CGSize)]] = [:]
@@ -7259,6 +7280,7 @@ struct SocialPostStudioSheet: View {
                         slides: $slides,
                         initialIndex: 0,
                         aspectRatio: exportFormat.aspectRatio,
+                        exportCanvasAspectRatio: $exportRenderAspectRatio,
                         exportActions: makeEditorExportActions(),
                         exportInProgress: $isRendering,
                         externalJumpToSlideIndex: $studioEditorJumpToSlideIndex,
@@ -7380,11 +7402,14 @@ struct SocialPostStudioSheet: View {
                 onExcludeMapFromStudio: { idx in excludeMapSlide(at: idx) }
             )
         }
-        .fullScreenCover(item: $editingSlideRef) { ref in
+        .fullScreenCover(item: $editingSlideRef, onDismiss: {
+            exportRenderAspectRatio = exportFormat.aspectRatio
+        }) { ref in
             SlideTextEditorView(
                 slides: $slides,
                 initialIndex: ref.index,
                 aspectRatio: exportFormat.aspectRatio,
+                exportCanvasAspectRatio: $exportRenderAspectRatio,
                 exportActions: makeEditorExportActions(),
                 exportInProgress: $isRendering,
                 externalJumpToSlideIndex: $studioEditorJumpToSlideIndex,
@@ -8167,6 +8192,7 @@ struct SocialPostStudioSheet: View {
             for i in result.indices { result[i].isSelected = (i == 0) }
         }
         slides = result
+        exportRenderAspectRatio = exportFormat.aspectRatio
         isLoading = false
         checkTikTokOverflow()
     }
@@ -8263,7 +8289,7 @@ struct SocialPostStudioSheet: View {
             seen.insert(idx)
             let slide = slides[idx]
             let view = CarouselSlideView(slide: slide, width: exportWidth,
-                                         aspectRatio: exportFormat.aspectRatio,
+                                         aspectRatio: exportRenderAspectRatio,
                                          onToggleSelection: {}, showsSelectionChrome: false)
             let r = ImageRenderer(content: view)
             r.scale = 1.0
