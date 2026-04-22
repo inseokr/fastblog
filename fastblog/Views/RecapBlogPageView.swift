@@ -913,6 +913,7 @@ struct RecapBlogPageView: View {
         showStoryMode ||
         showPanorama ||
         showSocialPostStudio ||
+        fullScreenMapDay != nil ||
         placeCaptionEditItem != nil ||
         dayCaptionEditItem != nil ||
         (placePhotoModalItem != nil && !revealRecapNavigationDuringPhotoDismiss) ||
@@ -5171,7 +5172,7 @@ Your blog remains private unless you choose to share it.
                 }
                 .buttonStyle(.plain)
                 .disabled(!isToolbarSaveEnabled)
-            } else if !isExportingPDF && !showStoryMode {
+            } else if !isExportingPDF && !showStoryMode && fullScreenMapDay == nil {
                 Button {
                     showBlogSettings = true
                 } label: {
