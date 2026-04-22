@@ -810,6 +810,8 @@ struct CarouselSlide: Identifiable {
     var heroImage: UIImage?
     var coverTitle: String?
     var mapSnapshot: UIImage?
+    /// Short month/day for map slides (e.g. "Mar 13"); used in Slides Management labels only.
+    var mapShortDateLine: String? = nil
     var dayInfoLine1: String?
     var dayInfoLine2: String?
     var placeStop: PlaceStop?
@@ -1364,6 +1366,9 @@ struct CarouselSlideView: View {
     /// (rotation + shadow) is not shaved off; other kinds still get one outer clip. When
     /// `false`, only the photo/gradient stack is clipped — used for small studio previews.
     var clipsFloatingContentToRoundedSlideOutline: Bool = true
+    /// When `true`, draws only imagery (hero, map snapshot, split slots) without title, captions, PIPs, or text legibility gradients.
+    /// Used by the Carousel Studio download picker; export keeps the default `false` so saves include all overlays.
+    var showsBackgroundOnly: Bool = false
     /// Editor-only: stack positions (0,1,2) still awaiting Vision background removal.
     var pipBackgroundRemovalLoadingSlots: Set<Int> = []
 
@@ -1410,9 +1415,11 @@ struct CarouselSlideView: View {
             switch slide.kind {
             case .cover:
                 coverBackground
-                LinearGradient(colors: [.black.opacity(0.72), .black.opacity(0.3), .clear],
-                               startPoint: .bottom, endPoint: .top)
-                    .frame(width: width, height: height)
+                if !showsBackgroundOnly {
+                    LinearGradient(colors: [.black.opacity(0.72), .black.opacity(0.3), .clear],
+                                   startPoint: .bottom, endPoint: .top)
+                        .frame(width: width, height: height)
+                }
                 if onCoverImageTap != nil, showsSelectionChrome || isEditingText {
                     Color.clear
                         .contentShape(Rectangle())
@@ -1429,30 +1436,34 @@ struct CarouselSlideView: View {
 
             case .mapRoute:
                 mapRouteBackground
-                if !slide.isPrimaryHidden {
-                    LinearGradient(colors: [.black.opacity(0.6), .clear],
-                                   startPoint: .top, endPoint: .init(x: 0.5, y: 0.45))
-                        .frame(width: width, height: height)
-                }
-                if mapRouteStoryVisible(slide), !slide.isSecondaryHidden {
-                    LinearGradient(colors: [.clear, .black.opacity(0.65)],
-                                   startPoint: .init(x: 0.5, y: 0.52), endPoint: .bottom)
-                        .frame(width: width, height: height)
+                if !showsBackgroundOnly {
+                    if !slide.isPrimaryHidden {
+                        LinearGradient(colors: [.black.opacity(0.6), .clear],
+                                       startPoint: .top, endPoint: .init(x: 0.5, y: 0.45))
+                            .frame(width: width, height: height)
+                    }
+                    if mapRouteStoryVisible(slide), !slide.isSecondaryHidden {
+                        LinearGradient(colors: [.clear, .black.opacity(0.65)],
+                                       startPoint: .init(x: 0.5, y: 0.52), endPoint: .bottom)
+                            .frame(width: width, height: height)
+                    }
                 }
 
             case .placeStop:
                 placeStopBackground
-                // Top gradient: only when the city/country subtitle is present
-                if placeSubtitleVisible(slide), !slide.isSecondaryHidden {
-                    LinearGradient(colors: [.black.opacity(0.65), .clear],
-                                   startPoint: .top, endPoint: .init(x: 0.5, y: 0.42))
-                        .frame(width: width, height: height)
-                }
-                // Bottom gradient: protects the place name + caption
-                if !slide.isPrimaryHidden {
-                    LinearGradient(colors: [.clear, .black.opacity(0.72)],
-                                   startPoint: .init(x: 0.5, y: 0.58), endPoint: .bottom)
-                        .frame(width: width, height: height)
+                if !showsBackgroundOnly {
+                    // Top gradient: only when the city/country subtitle is present
+                    if placeSubtitleVisible(slide), !slide.isSecondaryHidden {
+                        LinearGradient(colors: [.black.opacity(0.65), .clear],
+                                       startPoint: .top, endPoint: .init(x: 0.5, y: 0.42))
+                            .frame(width: width, height: height)
+                    }
+                    // Bottom gradient: protects the place name + caption
+                    if !slide.isPrimaryHidden {
+                        LinearGradient(colors: [.clear, .black.opacity(0.72)],
+                                       startPoint: .init(x: 0.5, y: 0.58), endPoint: .bottom)
+                            .frame(width: width, height: height)
+                    }
                 }
                 // Sits above the imagery but below all text/PIP overlays (they are `.overlay`s
                 // applied after this `ZStack`). Taps choose the large hero backdrop only; blocks
@@ -1524,7 +1535,7 @@ struct CarouselSlideView: View {
         // ── Draggable text overlays ───────────────────────────────────
         // Cover title — centered
         .overlay {
-            if slide.kind == .cover, !slide.isPrimaryHidden, let title = slide.coverTitle, !title.isEmpty {
+            if !showsBackgroundOnly, slide.kind == .cover, !slide.isPrimaryHidden, let title = slide.coverTitle, !title.isEmpty {
                 DraggableTextBlock(
                     id: .primary,
                     isEditingText: isEditingText,
@@ -1556,7 +1567,7 @@ struct CarouselSlideView: View {
         }
         // Map heading — top-leading
         .overlay(alignment: .topLeading) {
-            if slide.kind == .mapRoute, !slide.isPrimaryHidden {
+            if !showsBackgroundOnly, slide.kind == .mapRoute, !slide.isPrimaryHidden {
                 DraggableTextBlock(
                     id: .primary,
                     isEditingText: isEditingText,
@@ -1613,7 +1624,7 @@ struct CarouselSlideView: View {
         // Map story — bottom-leading
         .overlay(alignment: .bottomLeading) {
             let storyText = (slide.dayStory ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if slide.kind == .mapRoute, !slide.isSecondaryHidden, !storyText.isEmpty {
+            if !showsBackgroundOnly, slide.kind == .mapRoute, !slide.isSecondaryHidden, !storyText.isEmpty {
                 DraggableTextBlock(
                     id: .secondary,
                     isEditingText: isEditingText,
@@ -1647,7 +1658,7 @@ struct CarouselSlideView: View {
         }
         // Place name + caption — bottom-leading
         .overlay(alignment: .bottomLeading) {
-            if slide.kind == .placeStop, !slide.isPrimaryHidden {
+            if !showsBackgroundOnly, slide.kind == .placeStop, !slide.isPrimaryHidden {
                 if let placeStop = slide.placeStop {
                     DraggableTextBlock(
                         id: .primary,
@@ -1717,7 +1728,7 @@ struct CarouselSlideView: View {
         .overlay(alignment: .topLeading) {
             let subtitleText = (slide.placeStop?.placeSubtitle ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            if slide.kind == .placeStop, !slide.isSecondaryHidden, !subtitleText.isEmpty {
+            if !showsBackgroundOnly, slide.kind == .placeStop, !slide.isSecondaryHidden, !subtitleText.isEmpty {
                 DraggableTextBlock(
                     id: .secondary,
                     isEditingText: isEditingText,
@@ -1751,7 +1762,7 @@ struct CarouselSlideView: View {
         }
         // PIP thumbnail cluster — top-trailing (same anchor in Edit Slides + Social Post Studio)
         .overlay(alignment: .topTrailing) {
-            if slide.kind == .placeStop, slide.layout == .pip, !slide.pipImages.isEmpty {
+            if !showsBackgroundOnly, slide.kind == .placeStop, slide.layout == .pip, !slide.pipImages.isEmpty {
                 DraggablePIPCluster(
                     savedOffset: pipOffsetBinding,
                     slideBounds: slideBounds,
@@ -5088,7 +5099,8 @@ struct SlideTextEditorView: View {
                                                     aspectRatio: aspectRatio,
                                                     onToggleSelection: {},
                                                     showsSelectionChrome: false,
-                                                    clipsFloatingContentToRoundedSlideOutline: false
+                                                    clipsFloatingContentToRoundedSlideOutline: false,
+                                                    showsBackgroundOnly: true
                                                 )
                                                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                                                 if !selected {
@@ -7921,7 +7933,8 @@ struct SocialPostStudioSheet: View {
 
             result.append(CarouselSlide(
                 id: "map-\(day.id.uuidString)", kind: .mapRoute, isSelected: true,
-                mapSnapshot: mapSnap, dayInfoLine1: "Day \(dayNumber)",
+                mapSnapshot: mapSnap, mapShortDateLine: day.monthDayStringForStoryBookRange(),
+                dayInfoLine1: "Day \(dayNumber)",
                 dayInfoLine2: day.dayStoryDateLine, dayStory: bestStory))
             result.append(contentsOf: placeSlides)
         }
@@ -8667,8 +8680,8 @@ private struct StudioExcludedPhotosGallerySheet: View {
 // MARK: - Slide grid navigator sheet
 
 /// Two-column grid of visible slides (same order as the studio preview / editor pager).
-/// Each tile uses `CarouselSlideView` so text blocks, PIP, and split layouts match the real slide.
-/// Under each tile: ordinal plus a one-line label (`Cover`, `Map`, or the place name).
+/// Each tile uses `CarouselSlideView` with `showsBackgroundOnly` so thumbnails stay stable (imagery only; no text/PIP overlays).
+/// Under each tile: ordinal plus a one-line label (`Cover`, `Map - Mar 13`, or the place name’s first line).
 /// Tapping a tile dismisses the sheet and asks the parent to scroll the preview or jump the editor pager.
 /// Long-press a place or map tile to remove it when the parent supplies exclusion callbacks.
 private struct CarouselPhotoGroupPickerSheet: View {
@@ -8749,13 +8762,27 @@ private struct CarouselPhotoGroupPickerSheet: View {
         }
     }
 
+    /// First non-empty line only (place titles may contain embedded newlines).
+    private func slidesManagementFirstTextLine(_ raw: String) -> String {
+        let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return "" }
+        for lineSub in t.split(whereSeparator: \.isNewline) {
+            let line = String(lineSub).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !line.isEmpty { return line }
+        }
+        return ""
+    }
+
     private func slideKindLabel(for slide: CarouselSlide) -> String {
         switch slide.kind {
         case .cover: return "Cover"
-        case .mapRoute: return "Map"
+        case .mapRoute:
+            let d = slide.mapShortDateLine?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if d.isEmpty { return "Map" }
+            return "Map - \(d)"
         case .placeStop:
             let raw = slide.placeStop?.placeTitle ?? ""
-            let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            let t = slidesManagementFirstTextLine(raw)
             return t.isEmpty ? "Place" : t
         }
     }
@@ -8784,7 +8811,8 @@ private struct CarouselPhotoGroupPickerSheet: View {
                         aspectRatio: aspectRatio,
                         onToggleSelection: {},
                         showsSelectionChrome: false,
-                        clipsFloatingContentToRoundedSlideOutline: false
+                        clipsFloatingContentToRoundedSlideOutline: false,
+                        showsBackgroundOnly: true
                     )
                     .allowsHitTesting(false)
                     .frame(width: w)
@@ -8831,6 +8859,24 @@ private struct CarouselPhotoGroupPickerSheet: View {
         }
     }
 
+    /// Title + subtitle at the top of the sheet content (not in the toolbar — bar items get capsule/glass chrome).
+    private var slidesManagementHeader: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Slides Management")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(slidesManagementNavigationSubtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
     private var slidesManagementSlideCountLine: some View {
         let visibleCount = visibleSlideIndices.count
         return Text("\(visibleCount) slide\(visibleCount == 1 ? "" : "s")")
@@ -8857,7 +8903,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
                     Text(slideKindLabel(for: slide))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.primary)
-                        .lineLimit(2)
+                        .lineLimit(1)
                         .multilineTextAlignment(.leading)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -8902,6 +8948,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
 
     private var slidesManagementScrollContent: some View {
         VStack(alignment: .leading, spacing: 16) {
+            slidesManagementHeader
             slidesManagementTipBanner
             slidesManagementSlideCountLine
             slidesManagementGridOrEmpty
@@ -8916,9 +8963,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
                 slidesManagementScrollContent
             }
             .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("Slides Management")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationSubtitleIfAvailable(slidesManagementNavigationSubtitle)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

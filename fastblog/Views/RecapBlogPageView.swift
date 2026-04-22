@@ -1318,7 +1318,8 @@ struct RecapBlogPageView: View {
             loadDraftIfNeeded: loadDraftIfNeeded,
             checkFirstTimeTip: checkFirstTimeTip,
             createdRecapStore: createdRecapStore,
-            dismiss: dismiss
+            needsCommittedRecapToolbarSave: { needsCommittedRecapToolbarSave },
+            performRecapDismiss: performDismiss
         )
     }
 
@@ -3755,6 +3756,12 @@ Your blog remains private unless you choose to share it.
         return createdRecapStore.saveBlogDetail(draft)
     }
 
+    /// Writes `draft` without a toolbar Save (`hasCommittedRecapSave` unchanged). Used when leaving an uncommitted recap via X so we never run the guest second-blog gate or force a double-tap (edit → view → back).
+    @discardableResult
+    private func persistRecapWithoutToolbarCommit() -> Bool {
+        createdRecapStore.saveBlogDetail(draft, asDraft: true)
+    }
+
     @discardableResult
     private func saveDraft() -> Bool {
         // Check if this is the first save before saving
@@ -5086,13 +5093,30 @@ Your blog remains private unless you choose to share it.
         return draft != snapshot
     }
 
+    /// True until an explicit recap toolbar Save completes (`hasCommittedRecapSave`). Without this, `draftSnapshot` is initialized equal to `draft`, so `hasUnsavedChanges` stays false and Save stays disabled—blocking first saves and the guest second-blog sign-in flow (`guestSecondSaveBlockedSignal`).
+    private var needsCommittedRecapToolbarSave: Bool {
+        guard let r = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId }) else { return false }
+        return !r.hasCommittedRecapSave
+    }
+
+    private var isToolbarSaveEnabled: Bool {
+        hasUnsavedChanges || needsCommittedRecapToolbarSave
+    }
+
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             Button {
                 if isEditMode {
-                    // X button: exit edit mode. Show discard alert if there are unsaved changes.
-                    if hasUnsavedChanges {
+                    if needsCommittedRecapToolbarSave {
+                        if hasUnsavedChanges {
+                            showUnsavedChangesAlert = true
+                        } else {
+                            // Draft, no edits since snapshot: leave without prompting; keep as on-device draft only.
+                            _ = persistRecapWithoutToolbarCommit()
+                            performDismiss()
+                        }
+                    } else if hasUnsavedChanges {
                         showUnsavedChangesAlert = true
                     } else {
                         isEditMode = false
@@ -5143,10 +5167,10 @@ Your blog remains private unless you choose to share it.
                         .fixedSize()
                         .padding(.horizontal, 20)
                         .padding(.vertical, 7)
-                        .background(hasUnsavedChanges ? Color.blue : Color.gray.opacity(0.5), in: Capsule())
+                        .background(isToolbarSaveEnabled ? Color.blue : Color.gray.opacity(0.5), in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(!hasUnsavedChanges)
+                .disabled(!isToolbarSaveEnabled)
             } else if !isExportingPDF && !showStoryMode {
                 Button {
                     showBlogSettings = true
@@ -6224,7 +6248,10 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
     var loadDraftIfNeeded: () -> Void
     var checkFirstTimeTip: () -> Void
     var createdRecapStore: CreatedRecapBlogStore
-    var dismiss: DismissAction
+    /// True when this recap has never had a toolbar Save (`hasCommittedRecapSave` is false).
+    var needsCommittedRecapToolbarSave: () -> Bool
+    /// Dismisses the recap (respects overlay `onRequestDismiss` when set).
+    var performRecapDismiss: () -> Void
     @State private var blogGroupingTipPage = 0
 
     func body(content: Content) -> some View {
@@ -6242,15 +6269,25 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
                 Color.clear
                     .alert("Unsaved Changes", isPresented: $showUnsavedChangesAlert) {
                         Button("Yes") {
+                            let leavingUncommittedDraft = needsCommittedRecapToolbarSave()
                             if saveDraft() {
-                                isEditMode = false
+                                if leavingUncommittedDraft {
+                                    performRecapDismiss()
+                                } else {
+                                    isEditMode = false
+                                }
                             }
                         }
                         Button("No", role: .destructive) {
                             if let snapshot = draftSnapshot {
                                 draft = snapshot
                             }
-                            isEditMode = false
+                            if needsCommittedRecapToolbarSave() {
+                                _ = createdRecapStore.saveBlogDetail(draft, asDraft: true)
+                                performRecapDismiss()
+                            } else {
+                                isEditMode = false
+                            }
                         }
                         Button("Cancel", role: .cancel) { }
                     } message: {
