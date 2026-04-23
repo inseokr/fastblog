@@ -221,11 +221,11 @@ struct PlaceStopActionSheet: View {
                     .font(.body)
                     .foregroundColor(.white)
                     .frame(width: 24)
-                
+
                 Text(title)
                     .font(.body)
                     .foregroundColor(.white)
-                
+
                 Spacer()
             }
             .padding(.horizontal, 16)
