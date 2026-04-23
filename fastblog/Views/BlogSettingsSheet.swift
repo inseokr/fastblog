@@ -44,12 +44,14 @@ extension Font {
     }
 }
 
-/// Shown from the blog page (RecapBlogPageView). Change title, cover, and manage photos.
+/// Shown from the blog page (RecapBlogPageView). Change title, cover, pick photos, and related settings.
 struct BlogSettingsSheet: View {
     @Binding var draft: RecapBlogDetail
     @Binding var selectedDayIndex: Int
     var blogKey: Int?
     var onSave: () -> Void
+    /// Re-open the trip photo picker + update flow (``EditBlogPhotoFlowView``). Nil hides the row.
+    var onPickPhotos: (() -> Void)? = nil
     var onEditMode: (() -> Void)? = nil
     var onAddNewMoments: (() -> Void)? = nil
     var onRescanAllMoments: (() -> Void)? = nil
@@ -254,6 +256,14 @@ struct BlogSettingsSheet: View {
                 showCoverChange = true
             } label: {
                 Label("Change Cover Photo", systemImage: "photo")
+            }
+            if onPickPhotos != nil {
+                Button {
+                    AppAnalytics.trackEvent(name: "Blog-PickPhotos-Settings")
+                    onPickPhotos?()
+                } label: {
+                    Label("Pick Photos", systemImage: "photo.on.rectangle.angled")
+                }
             }
         }
     }

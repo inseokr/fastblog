@@ -158,6 +158,8 @@ struct RecapBlogPageView: View {
     @State private var expandedDayCaptionIds: Set<UUID> = []
     /// Snapshot taken when ManagePhotosView opens, used to diff on dismiss for targeted cloud sync.
     @State private var managePhotosEditInfo: ManagePhotosEditInfo?
+    /// After popping Manage Photos, `dayPageScrollView.onAppear` runs again; skip the default scroll-to-map/top so the user's offset is preserved.
+    @State private var skipDefaultDayPageScrollOnNextAppear = false
     /// Presents the system photo picker while managing a place's photo group.
     @State private var showLibraryImportForManageStop = false
     @State private var isEditMode = true
@@ -957,6 +959,12 @@ struct RecapBlogPageView: View {
                     selectedDayIndex: $selectedDayIndex,
                     blogKey: currentBlogKey,
                     onSave: { saveDraft() },
+                    onPickPhotos: {
+                        showBlogSettings = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                            showEditPhotoFlow = true
+                        }
+                    },
                     onEditMode: {
                         showBlogSettings = false
                         isEditMode = true
@@ -1145,6 +1153,7 @@ struct RecapBlogPageView: View {
             .onChange(of: showManagePhotosForStop) { old, new in
                 guard old != nil, new == nil else { return }
                 // Equivalent of onDismiss: save and sync after user navigates back.
+                skipDefaultDayPageScrollOnNextAppear = true
                 print("📸 [ManagePhotos] dismissed — editInfo=\(managePhotosEditInfo != nil ? "set(stopId=\(managePhotosEditInfo!.stopId))" : "nil")")
                 persistRecapBlogDetail()
                 syncPhotoChangesWithCloud()
@@ -1152,8 +1161,17 @@ struct RecapBlogPageView: View {
             .fullScreenCover(isPresented: $showEditPhotoFlow, onDismiss: {
                 persistRecapBlogDetail()
             }) {
-                EditBlogPhotoFlowView(blogId: blogId, onDismiss: { showEditPhotoFlow = false })
-                    .environmentObject(createdRecapStore)
+                EditBlogPhotoFlowView(
+                    blogId: blogId,
+                    onDismiss: { showEditPhotoFlow = false },
+                    onBlogPhotosUpdated: {
+                        if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
+                            draft = updated
+                            draftSnapshot = updated
+                        }
+                    }
+                )
+                .environmentObject(createdRecapStore)
             }
             
             .sheet(isPresented: $showRestorePlaces) {
@@ -1719,6 +1737,13 @@ struct RecapBlogPageView: View {
             }
         }
         .onAppear {
+            if skipDefaultDayPageScrollOnNextAppear {
+                skipDefaultDayPageScrollOnNextAppear = false
+                withAnimation(.easeOut(duration: 0.16)) {
+                    scrollCoverMaskActive.wrappedValue = false
+                }
+                return
+            }
             guard index > 0 else { return }
             if pendingDeepLinkStopScrollId != nil {
                 scrollCoverMaskActive.wrappedValue = false
@@ -2752,6 +2777,10 @@ struct RecapBlogPageView: View {
                         draft.days[dayIdx].placeStops[stopIdx].sentiment = newValue
                         persistRecapBlogDetail()
                         syncSentimentToCloudIfNeeded(dayId: day.id, stopId: stop.id)
+                    },
+                    onManagePhotos: {
+                        AppAnalytics.track(.blogPlaceManagePhoto(blogId: blogId.uuidString, placeId: stop.id.uuidString))
+                        openManagePhotos(dayId: day.id, stopId: stop.id)
                     }
                 )
                 .id(stop.id)
@@ -6638,6 +6667,8 @@ private struct ManagePhotosEditInfo {
 private struct EditBlogPhotoFlowView: View {
     let blogId: UUID
     var onDismiss: () -> Void
+    /// Called after ``CreateBlogFlowView`` finishes `updateBlog` for this blog (not on Cancel).
+    var onBlogPhotosUpdated: (() -> Void)? = nil
     @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
     @State private var trip: TripDraft?
     @State private var tripToUpdate: TripDraft?
@@ -6660,6 +6691,7 @@ private struct EditBlogPhotoFlowView: View {
                         existingBlogId: blogId,
                         onUpdateComplete: {
                             tripToUpdate = nil
+                            onBlogPhotosUpdated?()
                             onDismiss()
                         },
                         onClose: { _ in }

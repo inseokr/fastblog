@@ -204,6 +204,8 @@ struct PlaceStopRowView: View {
     var onRevertPlaceStory: (() -> Void)? = nil
     /// Called when user taps the sentiment pill in edit mode. Receives the new sentiment value (1/2/3).
     var onSentimentChanged: ((Int) -> Void)? = nil
+    /// When set, a "Manage Photos" button is shown below the photo strip in edit mode.
+    var onManagePhotos: (() -> Void)? = nil
 
     @FocusState private var focusedPlaceNote: Bool
     @FocusState private var focusedOverallStory: Bool
@@ -669,6 +671,18 @@ struct PlaceStopRowView: View {
                         .padding(.top, 8)
                     }
                     }
+                    if isEditMode, let onManagePhotos {
+                        Button(action: onManagePhotos) {
+                            Label("Manage Photos", systemImage: "photo.stack")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.primary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(rowInset)
+                                .appChromeCornerRadius(10)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, isEditMode ? 4 : 0)
@@ -677,7 +691,7 @@ struct PlaceStopRowView: View {
                 // --- CASE 2b: Multiple included photos, or edit mode with none displayable (manage via ⋯). ---
                 VStack(alignment: .leading, spacing: 12) {
                     if displayableIncludedPhotos.isEmpty && isEditMode && !stop.photos.isEmpty {
-                        Text("No photos are shown for this place. Tap … above to manage or restore photos.")
+                        Text("No photos are shown for this place.")
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -813,6 +827,19 @@ struct PlaceStopRowView: View {
                             .padding(.trailing, 16)
                         }
                         .frame(minHeight: isEditMode ? thumbnailSize + 56 : thumbnailSize + 28)
+                    }
+                    if isEditMode, let onManagePhotos {
+                        Button(action: onManagePhotos) {
+                            Label("Manage Photos", systemImage: "photo.stack")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.primary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(rowInset)
+                                .appChromeCornerRadius(10)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 .padding(.horizontal, 16)
