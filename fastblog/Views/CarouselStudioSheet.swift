@@ -1898,6 +1898,38 @@ struct CarouselSlideView: View {
                 .padding(studioTextBlockEdgeInset)
             }
         }
+        // Bloggo watermark — bottom-trailing on map slides
+        .overlay(alignment: .bottomTrailing) {
+            if !showsBackgroundOnly, slide.kind == .mapRoute {
+                HStack(spacing: width * 0.025) {
+                    Image("AppIconMark")
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: width * 0.072, height: width * 0.072)
+                        .clipShape(RoundedRectangle(cornerRadius: width * 0.016))
+                        .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
+                    VStack(alignment: .leading, spacing: width * 0.006) {
+                        HStack(spacing: width * 0.012) {
+                            Text("Powered by")
+                                .font(.system(size: width * 0.028, weight: .medium, design: .rounded))
+                                .foregroundStyle(Color.white.opacity(0.75))
+                            Text("Bloggo")
+                                .font(.system(size: width * 0.028, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color.white)
+                        }
+                        Text("Available on the App Store")
+                            .font(.system(size: width * 0.022, weight: .regular, design: .rounded))
+                            .foregroundStyle(Color.white.opacity(0.55))
+                    }
+                }
+                .padding(.horizontal, width * 0.034)
+                .padding(.vertical, width * 0.022)
+                .background(Color.black.opacity(0.45))
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: width * 0.04))
+                .padding(width * 0.042)
+            }
+        }
         // Place name + caption — bottom-leading
         .overlay(alignment: .bottomLeading) {
             if !showsBackgroundOnly, slide.kind == .placeStop, !slide.isPrimaryHidden {
@@ -2763,7 +2795,11 @@ private struct DraggablePIPThumb: View {
         guard let natural = naturalRect,
               slideBounds.width > 0, slideBounds.height > 0
         else { return proposed }
-        let bounds = slideBounds.insetBy(dx: studioPIPClusterEdgeInset, dy: studioPIPClusterEdgeInset)
+        // No extra inset: the outer .padding on each DraggablePIPThumb already
+        // gives a 10pt natural margin from edges, so the photo can reach the edge
+        // when dragged. Using studioPIPClusterEdgeInset here would double-count
+        // that margin and block upward/inward movement from the default position.
+        let bounds = slideBounds
         let visual = natural.offsetBy(dx: proposed.width, dy: proposed.height)
         var dx: CGFloat = 0
         var dy: CGFloat = 0
