@@ -503,6 +503,12 @@ struct PlaceCaptionEditSheet: View {
             expandedPhotoPreviewScale = 1.0
             expandedPhotoPreviewOffset = .zero
         }
+        // Mirror the defer in presentExpandedPhotoPreview: don't toggle first-responder
+        // synchronously inside a SwiftUI update pass. Also restores focus so that
+        // updateUIView doesn't call resignFirstResponder the next time the user types.
+        DispatchQueue.main.async {
+            isFocused = true
+        }
     }
 
     private func presentExpandedPhotoPreview(id: UUID) {
