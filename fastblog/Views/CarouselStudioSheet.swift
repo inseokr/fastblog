@@ -819,6 +819,14 @@ private struct CurvedSplitBottomMaskShape: Shape {
     }
 }
 
+/// Per-photo style overrides used when `slide.pipIsUngrouped == true`.
+/// Nil fields fall through to the slide-level cluster defaults.
+struct PIPPhotoStyle {
+    var borderColor: StudioTextColor = .white
+    var borderEnabled: Bool = true
+    var thumbMaskStyle: CarouselPIPThumbMaskStyle = .roundedRect
+}
+
 struct CarouselSlide: Identifiable {
     let id: String
     let kind: CarouselSlideKind
@@ -879,6 +887,26 @@ struct CarouselSlide: Identifiable {
     /// Cached background-removed versions of `pipImages`. Populated async when the
     /// user enables the "Remove background" toggle; cleared on toggle-off.
     var pipProcessedImages: [UIImage] = []
+    /// When `true`, each PIP thumbnail is positioned independently on the slide
+    /// rather than moving as a single cluster. See `pipPhotoOffsets`.
+    var pipIsUngrouped: Bool = false
+    /// Normalized per-photo offsets used when `pipIsUngrouped == true`.
+    /// Index-aligned with `pipImages`. `.zero` means the natural top-trailing anchor.
+    var pipPhotoOffsets: [CGSize] = []
+    /// Per-photo style overrides for border color/enabled and shape when ungrouped.
+    /// Nil at a given index means "inherit cluster-level defaults".
+    var pipPhotoStyles: [PIPPhotoStyle?] = []
+
+    /// Returns the effective border+shape style for the photo at `index`,
+    /// merging any per-photo override with the cluster-level defaults.
+    func effectivePIPPhotoStyle(at index: Int) -> PIPPhotoStyle {
+        let override = index < pipPhotoStyles.count ? pipPhotoStyles[index] : nil
+        var style = PIPPhotoStyle()
+        style.borderColor    = override?.borderColor    ?? pipBorderColor
+        style.borderEnabled  = override?.borderEnabled  ?? pipBorderEnabled
+        style.thumbMaskStyle = override?.thumbMaskStyle ?? pipThumbMaskStyle
+        return style
+    }
 
     /// Chooses the correct image array for rendering and export: when background
     /// removal is on, `pipProcessedImages` is kept index-aligned with `pipImages`
@@ -1541,6 +1569,12 @@ struct CarouselSlideView: View {
     var onBlockTap: ((SlideBlockID) -> Void)? = nil
     /// Edit-mode write-back: commit a new PIP cluster offset. Nil in read-only (preview/export) use.
     var onUpdatePIPOffset: ((CGSize) -> Void)? = nil
+    /// Edit-mode write-back: commit a new per-photo offset when `slide.pipIsUngrouped == true`.
+    var onUpdatePIPPhotoOffset: ((Int, CGSize) -> Void)? = nil
+    /// Edit-mode: fires when the user taps a specific PIP thumbnail in ungrouped mode.
+    var onSelectPIPPhoto: ((Int) -> Void)? = nil
+    /// Index of the currently selected individual PIP photo (ungrouped mode only).
+    var selectedPIPPhotoIndex: Int? = nil
     /// Multi-photo layout only: fired when the user taps the large hero backdrop (areas not covered
     /// by text blocks or the PIP cluster). Opens the hero-swap picker in `SlideTextEditorView`.
     var onTapHeroBackdrop: (() -> Void)? = nil
@@ -1599,6 +1633,16 @@ struct CarouselSlideView: View {
         Binding(
             get: { slide.pipOffset },
             set: { onUpdatePIPOffset?($0) }
+        )
+    }
+
+    private func pipPhotoOffsetBinding(at index: Int) -> Binding<CGSize> {
+        Binding(
+            get: {
+                guard index < slide.pipPhotoOffsets.count else { return .zero }
+                return slide.pipPhotoOffsets[index]
+            },
+            set: { onUpdatePIPPhotoOffset?(index, $0) }
         )
     }
 
@@ -1963,29 +2007,61 @@ struct CarouselSlideView: View {
         // PIP thumbnail cluster — top-trailing (same anchor in Edit Slides + Social Post Studio)
         .overlay(alignment: .topTrailing) {
             if !showsBackgroundOnly, slide.kind == .placeStop, slide.layout == .pip, !slide.pipImages.isEmpty {
-                DraggablePIPCluster(
-                    savedOffset: pipOffsetBinding,
-                    slideBounds: slideBounds,
-                    onDragStart: { onBlockDragStart?() },
-                    onDragEnd: { onBlockDragEnd?() },
-                    onSelect: { onSelectBlock?(.pipCluster) },
-                    images: slide.effectivePIPImages,
-                    pipPhotoIDs: slide.pipPhotoIDs,
-                    thumbnailFramings: slide.pipThumbnailFramings,
-                    slideWidth: width,
-                    pipBorderEnabled: slide.pipBorderEnabled && !slide.pipBackgroundRemoved,
-                    borderColor: slide.pipBorderColor.color,
-                    visibleCount: slide.pipVisibleCount,
-                    stackStyle: slide.pipClusterStackStyle,
-                    pipSizeScale: slide.pipClusterSizeScale,
-                    thumbMaskStyle: slide.pipThumbMaskStyle,
-                    isEditingText: isEditingText,
-                    showsEditingOutline: showsDraggableBlockOutlines,
-                    isSelected: selectedBlockID == .pipCluster,
-                    backgroundRemovalLoadingSlots: pipBackgroundRemovalLoadingSlots
-                )
-                .padding(studioPIPClusterEdgeInset)
-                .transition(.scale(scale: 0.85).combined(with: .opacity))
+                if slide.pipIsUngrouped {
+                    let clamped = max(0, min(slide.pipVisibleCount, min(slide.effectivePIPImages.count, 3)))
+                    // Each thumb is independently positioned; ZStack keeps them at the
+                    // same topTrailing anchor so each one's offset moves it from there.
+                    ZStack(alignment: .topTrailing) {
+                        ForEach(Array(0..<clamped), id: \.self) { i in
+                            let photoStyle = slide.effectivePIPPhotoStyle(at: i)
+                            DraggablePIPThumb(
+                                savedOffset: pipPhotoOffsetBinding(at: i),
+                                slideBounds: slideBounds,
+                                onDragStart: { onBlockDragStart?() },
+                                onDragEnd: { onBlockDragEnd?() },
+                                onSelect: { onSelectPIPPhoto?(i) },
+                                image: slide.effectivePIPImages[i],
+                                imageIndex: i,
+                                slot: i,
+                                framing: i < slide.pipThumbnailFramings.count ? slide.pipThumbnailFramings[i] : nil,
+                                slideWidth: width,
+                                pipBorderEnabled: photoStyle.borderEnabled && !slide.pipBackgroundRemoved,
+                                borderColor: photoStyle.borderColor.color,
+                                thumbMaskStyle: photoStyle.thumbMaskStyle,
+                                sizeScale: slide.pipClusterSizeScale,
+                                isEditingText: isEditingText,
+                                isSelected: selectedPIPPhotoIndex == i,
+                                showsEditingOutline: showsDraggableBlockOutlines
+                            )
+                            .padding(studioPIPClusterEdgeInset)
+                        }
+                    }
+                    .transition(.scale(scale: 0.85).combined(with: .opacity))
+                } else {
+                    DraggablePIPCluster(
+                        savedOffset: pipOffsetBinding,
+                        slideBounds: slideBounds,
+                        onDragStart: { onBlockDragStart?() },
+                        onDragEnd: { onBlockDragEnd?() },
+                        onSelect: { onSelectBlock?(.pipCluster) },
+                        images: slide.effectivePIPImages,
+                        pipPhotoIDs: slide.pipPhotoIDs,
+                        thumbnailFramings: slide.pipThumbnailFramings,
+                        slideWidth: width,
+                        pipBorderEnabled: slide.pipBorderEnabled && !slide.pipBackgroundRemoved,
+                        borderColor: slide.pipBorderColor.color,
+                        visibleCount: slide.pipVisibleCount,
+                        stackStyle: slide.pipClusterStackStyle,
+                        pipSizeScale: slide.pipClusterSizeScale,
+                        thumbMaskStyle: slide.pipThumbMaskStyle,
+                        isEditingText: isEditingText,
+                        showsEditingOutline: showsDraggableBlockOutlines,
+                        isSelected: selectedBlockID == .pipCluster,
+                        backgroundRemovalLoadingSlots: pipBackgroundRemovalLoadingSlots
+                    )
+                    .padding(studioPIPClusterEdgeInset)
+                    .transition(.scale(scale: 0.85).combined(with: .opacity))
+                }
             }
         }
         // ── Chrome ────────────────────────────────────────────────────
@@ -2534,6 +2610,171 @@ private struct DraggablePIPCluster: View {
     }
 }
 
+// MARK: - Draggable PIP Thumb (ungrouped)
+
+/// Single PIP thumbnail with its own independent drag gesture.
+/// Used when `slide.pipIsUngrouped == true` so each photo can be
+/// repositioned freely anywhere on the slide.
+private struct DraggablePIPThumb: View {
+    @Binding var savedOffset: CGSize
+    let slideBounds: CGRect
+    var onDragStart: () -> Void = {}
+    var onDragEnd: () -> Void = {}
+    var onSelect: () -> Void = {}
+    let image: UIImage
+    let imageIndex: Int
+    let slot: Int
+    var framing: StudioImageFraming? = nil
+    let slideWidth: CGFloat
+    var pipBorderEnabled: Bool = true
+    var borderColor: Color = .white
+    var thumbMaskStyle: CarouselPIPThumbMaskStyle = .roundedRect
+    var sizeScale: CGFloat = 1.0
+    var isEditingText: Bool = false
+    var isSelected: Bool = false
+    var showsEditingOutline: Bool = true
+
+    @GestureState private var liveDrag: CGSize = .zero
+    @State private var naturalRect: CGRect?
+    @State private var didEngagePagerLock = false
+
+    private let rotations: [Double] = [1.5, -1.0, 1.8]
+    private var thumbW: CGFloat { slideWidth * 0.30 * sizeScale }
+    private var slotW: CGFloat { thumbW }
+    private var slotH: CGFloat { thumbMaskStyle == .circle ? thumbW : thumbW * 0.72 }
+
+    private var savedPointOffset: CGSize {
+        CGSize(width: savedOffset.width * slideBounds.width,
+               height: savedOffset.height * slideBounds.height)
+    }
+
+    private var displayPointOffset: CGSize {
+        clampedOffset(CGSize(
+            width: savedPointOffset.width + liveDrag.width,
+            height: savedPointOffset.height + liveDrag.height
+        ))
+    }
+
+    var body: some View {
+        let photo = SplitFramedPhotoInSlot(
+            image: image,
+            framing: framing,
+            slotWidth: slotW,
+            slotHeight: slotH
+        )
+        Group {
+            if thumbMaskStyle == .circle {
+                photo
+                    .clipShape(Circle())
+                    .overlay {
+                        if pipBorderEnabled {
+                            Circle().strokeBorder(borderColor, lineWidth: 2.2)
+                        }
+                    }
+            } else {
+                photo
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay {
+                        if pipBorderEnabled {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(borderColor, lineWidth: 2.2)
+                        }
+                    }
+            }
+        }
+        .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
+        .rotationEffect(.degrees(rotations[slot % rotations.count]))
+        .overlay(selectionRing)
+        .background(naturalRectCapture)
+        .contentShape(Rectangle())
+        .offset(x: displayPointOffset.width, y: displayPointOffset.height)
+        .highPriorityGesture(
+            DragGesture(minimumDistance: isEditingText ? 0 : 4, coordinateSpace: .local)
+                .updating($liveDrag) { value, state, _ in state = value.translation }
+                .onChanged { value in
+                    guard isEditingText else { return }
+                    let moved = max(abs(value.translation.width), abs(value.translation.height))
+                    if moved >= 6, !didEngagePagerLock {
+                        didEngagePagerLock = true
+                        onDragStart()
+                    }
+                }
+                .onEnded { value in
+                    let moved = max(abs(value.translation.width), abs(value.translation.height))
+                    if moved < 6 {
+                        if isEditingText { onSelect() }
+                    } else {
+                        let proposed = CGSize(
+                            width: savedPointOffset.width + value.translation.width,
+                            height: savedPointOffset.height + value.translation.height
+                        )
+                        let clamped = clampedOffset(proposed)
+                        savedOffset = CGSize(
+                            width: slideBounds.width > 0 ? clamped.width / slideBounds.width : 0,
+                            height: slideBounds.height > 0 ? clamped.height / slideBounds.height : 0
+                        )
+                    }
+                    didEngagePagerLock = false
+                    onDragEnd()
+                }
+        )
+        .animation(.easeInOut(duration: 0.15), value: isSelected)
+    }
+
+    @ViewBuilder
+    private var selectionRing: some View {
+        if isEditingText, showsEditingOutline {
+            let cr: CGFloat = thumbMaskStyle == .circle ? 999 : 6
+            RoundedRectangle(cornerRadius: cr, style: .continuous)
+                .strokeBorder(
+                    isSelected ? CarouselStudioChrome.accent : Color.white.opacity(0.35),
+                    style: isSelected
+                        ? StrokeStyle(lineWidth: 2.0)
+                        : StrokeStyle(lineWidth: 1.0, dash: [5, 3])
+                )
+                .padding(-4)
+        }
+    }
+
+    @ViewBuilder
+    private var naturalRectCapture: some View {
+        GeometryReader { geo in
+            Color.clear
+                .onAppear { captureNaturalRect(from: geo) }
+                .onChange(of: geo.size) { _, _ in captureNaturalRect(from: geo) }
+                .onChange(of: slideBounds) { _, _ in
+                    naturalRect = nil
+                    captureNaturalRect(from: geo)
+                }
+        }
+    }
+
+    private func captureNaturalRect(from geo: GeometryProxy) {
+        let current = geo.frame(in: .named(studioSlideCoordSpace))
+        guard current.width > 0, current.height > 0 else { return }
+        let activeOffset = CGSize(
+            width: savedPointOffset.width + liveDrag.width,
+            height: savedPointOffset.height + liveDrag.height
+        )
+        naturalRect = current.offsetBy(dx: -activeOffset.width, dy: -activeOffset.height)
+    }
+
+    private func clampedOffset(_ proposed: CGSize) -> CGSize {
+        guard let natural = naturalRect,
+              slideBounds.width > 0, slideBounds.height > 0
+        else { return proposed }
+        let bounds = slideBounds.insetBy(dx: studioPIPClusterEdgeInset, dy: studioPIPClusterEdgeInset)
+        let visual = natural.offsetBy(dx: proposed.width, dy: proposed.height)
+        var dx: CGFloat = 0
+        var dy: CGFloat = 0
+        if visual.minX < bounds.minX { dx += bounds.minX - visual.minX }
+        if visual.minY < bounds.minY { dy += bounds.minY - visual.minY }
+        if visual.maxX > bounds.maxX { dx -= visual.maxX - bounds.maxX }
+        if visual.maxY > bounds.maxY { dy -= visual.maxY - bounds.maxY }
+        return CGSize(width: proposed.width + dx, height: proposed.height + dy)
+    }
+}
+
 // MARK: - Per-slide edit page
 
 private struct SlideEditPage: View {
@@ -2566,6 +2807,10 @@ private struct SlideEditPage: View {
     let slidePageIndex: Int
     /// PIP stack slots (0…2) showing an inline spinner while Vision removes backgrounds.
     let pipBackgroundRemovalLoadingSlots: Set<Int>
+    /// Index of the currently selected individual PIP photo (ungrouped mode only).
+    var selectedPIPPhotoIndex: Int? = nil
+    /// Fires when the user taps a PIP thumbnail in ungrouped mode.
+    var onSelectPIPPhoto: ((Int) -> Void)? = nil
 
     private var slideWidth: CGFloat {
         let fromLayout = max(220, layoutWidth - 48)
@@ -2615,6 +2860,16 @@ private struct SlideEditPage: View {
                 recordUndoSnapshot()
                 slide.pipOffset = newOffset
             },
+            onUpdatePIPPhotoOffset: { photoIndex, newOffset in
+                recordUndoSnapshot()
+                if slide.pipPhotoOffsets.count <= photoIndex {
+                    let needed = photoIndex + 1 - slide.pipPhotoOffsets.count
+                    slide.pipPhotoOffsets.append(contentsOf: Array(repeating: CGSize.zero, count: needed))
+                }
+                slide.pipPhotoOffsets[photoIndex] = newOffset
+            },
+            onSelectPIPPhoto: onSelectPIPPhoto,
+            selectedPIPPhotoIndex: selectedPIPPhotoIndex,
             onTapHeroBackdrop: {
                 guard slide.kind == .placeStop, slide.layout == .pip else { return }
                 onRequestHeroSwap(slidePageIndex)
@@ -3199,6 +3454,9 @@ struct SlideTextEditorView: View {
     /// `selectedBlock == .pipCluster`. Kept separate from `activeStyleCategory`
     /// so switching between a text block and the PIP block resets panel state.
     @State private var activePIPCategory: PIPStyleCategory? = nil
+    /// Index of the PIP photo selected in ungrouped mode. Nil when no photo
+    /// is individually selected or when in grouped (cluster) mode.
+    @State private var selectedPIPPhotoIndex: Int? = nil
     /// True while the "Add photo" picker sheet is presented. Nil-able to work
     /// with `.sheet(isPresented:)`. The picker reads `currentSlide?.placeStop`
     /// and the exclusion set live, so no extra context needs to be captured.
@@ -3360,6 +3618,7 @@ struct SlideTextEditorView: View {
             slides[idx].textStyle.primary.offset = .zero
             slides[idx].textStyle.secondary.offset = .zero
             slides[idx].pipOffset = .zero
+            slides[idx].pipPhotoOffsets = []
         }
     }
 
@@ -4184,6 +4443,8 @@ struct SlideTextEditorView: View {
         slides[slideIndex].pipOffset = .zero
         slides[slideIndex].pipClusterSizeScale = 1.0
         slides[slideIndex].pipThumbnailFramings = []
+        slides[slideIndex].pipIsUngrouped = false
+        slides[slideIndex].pipPhotoOffsets = []
         slides[slideIndex].splitTopFraming = nil
         slides[slideIndex].splitBottomFraming = nil
         invalidatePIPBackgroundRemovalForMutation(at: slideIndex)
@@ -4340,27 +4601,84 @@ struct SlideTextEditorView: View {
     /// Sets `pipBorderColor` on the current slide. Used by the Border color drop-up.
     /// Also re-enables the border, so tapping any color swatch after "no border"
     /// immediately paints the outline back in.
+    // MARK: - PIP effective style (respects per-photo override when ungrouped)
+
+    /// Border color to display in the toolbar — photo override when a photo is
+    /// selected in ungrouped mode, cluster-level default otherwise.
+    private var pipEffectiveBorderColor: StudioTextColor {
+        guard let slide = currentSlide else { return .white }
+        if slide.pipIsUngrouped, let i = selectedPIPPhotoIndex {
+            return slide.effectivePIPPhotoStyle(at: i).borderColor
+        }
+        return slide.pipBorderColor
+    }
+
+    private var pipEffectiveBorderEnabled: Bool {
+        guard let slide = currentSlide else { return true }
+        if slide.pipIsUngrouped, let i = selectedPIPPhotoIndex {
+            return slide.effectivePIPPhotoStyle(at: i).borderEnabled
+        }
+        return slide.pipBorderEnabled
+    }
+
+    private var pipEffectiveMaskStyle: CarouselPIPThumbMaskStyle {
+        guard let slide = currentSlide else { return .roundedRect }
+        if slide.pipIsUngrouped, let i = selectedPIPPhotoIndex {
+            return slide.effectivePIPPhotoStyle(at: i).thumbMaskStyle
+        }
+        return slide.pipThumbMaskStyle
+    }
+
+    /// Ensures `slides[idx].pipPhotoStyles` is long enough for `photoIndex`,
+    /// filling gaps with nil (cluster-level default).
+    private func ensurePIPPhotoStyleCapacity(at photoIndex: Int, in slideIndex: Int) {
+        guard slides.indices.contains(slideIndex) else { return }
+        if slides[slideIndex].pipPhotoStyles.count <= photoIndex {
+            let needed = photoIndex + 1 - slides[slideIndex].pipPhotoStyles.count
+            slides[slideIndex].pipPhotoStyles.append(contentsOf: Array(repeating: nil, count: needed))
+        }
+        if slides[slideIndex].pipPhotoStyles[photoIndex] == nil {
+            slides[slideIndex].pipPhotoStyles[photoIndex] = slides[slideIndex].effectivePIPPhotoStyle(at: photoIndex)
+        }
+    }
+
     private func setPIPBorderColor(_ color: StudioTextColor) {
         let idx = editorMutationSlideIndex
         guard slides.indices.contains(idx),
               slides[idx].layout == .pip else { return }
-        let slide = slides[idx]
-        guard slide.pipBorderColor != color || !slide.pipBorderEnabled else { return }
-        pushUndoSnapshot()
-        slides[idx].pipBorderColor = color
-        slides[idx].pipBorderEnabled = true
+        if slides[idx].pipIsUngrouped, let photoIndex = selectedPIPPhotoIndex {
+            let current = slides[idx].effectivePIPPhotoStyle(at: photoIndex)
+            guard current.borderColor != color || !current.borderEnabled else { return }
+            pushUndoSnapshot()
+            ensurePIPPhotoStyleCapacity(at: photoIndex, in: idx)
+            slides[idx].pipPhotoStyles[photoIndex]?.borderColor = color
+            slides[idx].pipPhotoStyles[photoIndex]?.borderEnabled = true
+        } else {
+            let slide = slides[idx]
+            guard slide.pipBorderColor != color || !slide.pipBorderEnabled else { return }
+            pushUndoSnapshot()
+            slides[idx].pipBorderColor = color
+            slides[idx].pipBorderEnabled = true
+        }
     }
 
-    /// Turns off the PIP thumbnail outline on the current slide. `pipBorderColor`
-    /// is preserved so users can flip the border back on by tapping any color
-    /// swatch without losing their previous selection.
+    /// Turns off the PIP thumbnail outline on the current slide (or selected photo
+    /// when ungrouped). `pipBorderColor` is preserved so tapping a color swatch
+    /// later restores the border without losing the previous selection.
     private func disablePIPBorder() {
         let idx = editorMutationSlideIndex
         guard slides.indices.contains(idx),
               slides[idx].layout == .pip else { return }
-        guard slides[idx].pipBorderEnabled else { return }
-        pushUndoSnapshot()
-        slides[idx].pipBorderEnabled = false
+        if slides[idx].pipIsUngrouped, let photoIndex = selectedPIPPhotoIndex {
+            guard slides[idx].effectivePIPPhotoStyle(at: photoIndex).borderEnabled else { return }
+            pushUndoSnapshot()
+            ensurePIPPhotoStyleCapacity(at: photoIndex, in: idx)
+            slides[idx].pipPhotoStyles[photoIndex]?.borderEnabled = false
+        } else {
+            guard slides[idx].pipBorderEnabled else { return }
+            pushUndoSnapshot()
+            slides[idx].pipBorderEnabled = false
+        }
     }
 
     // MARK: - PIP background removal (Vision)
@@ -4488,9 +4806,38 @@ struct SlideTextEditorView: View {
         let idx = editorMutationSlideIndex
         guard slides.indices.contains(idx),
               slides[idx].layout == .pip else { return }
-        guard slides[idx].pipThumbMaskStyle != style else { return }
+        if slides[idx].pipIsUngrouped, let photoIndex = selectedPIPPhotoIndex {
+            guard slides[idx].effectivePIPPhotoStyle(at: photoIndex).thumbMaskStyle != style else { return }
+            pushUndoSnapshot()
+            ensurePIPPhotoStyleCapacity(at: photoIndex, in: idx)
+            slides[idx].pipPhotoStyles[photoIndex]?.thumbMaskStyle = style
+        } else {
+            guard slides[idx].pipThumbMaskStyle != style else { return }
+            pushUndoSnapshot()
+            slides[idx].pipThumbMaskStyle = style
+        }
+    }
+
+    /// Toggles between grouped cluster and individually-draggable thumbnails.
+    /// When ungrouping, each photo offset is seeded to the current cluster position
+    /// so photos start stacked where the cluster was and the user drags them apart.
+    private func togglePIPGrouping(for idx: Int) {
+        guard slides.indices.contains(idx),
+              slides[idx].layout == .pip else { return }
         pushUndoSnapshot()
-        slides[idx].pipThumbMaskStyle = style
+        selectedPIPPhotoIndex = nil
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+            if slides[idx].pipIsUngrouped {
+                slides[idx].pipIsUngrouped = false
+                slides[idx].pipPhotoOffsets = []
+                slides[idx].pipPhotoStyles = []
+            } else {
+                let count = max(0, min(slides[idx].pipVisibleCount, slides[idx].pipImages.count))
+                let clusterOffset = slides[idx].pipOffset
+                slides[idx].pipIsUngrouped = true
+                slides[idx].pipPhotoOffsets = Array(repeating: clusterOffset, count: count)
+            }
+        }
     }
 
     private func availableSplitBottomPhotos(for slideIndex: Int) -> [RecapPhoto] {
@@ -4868,19 +5215,26 @@ struct SlideTextEditorView: View {
                                                 onSelectBlock: {
                                                     selectedBlock = $0
                                                     selectedSplitSlot = nil
+                                                    // Switching to a non-PIP block clears photo selection
+                                                    if $0 != .pipCluster { selectedPIPPhotoIndex = nil }
                                                 },
-                                                onDeselect: { selectedBlock = nil },
+                                                onDeselect: {
+                                                    selectedBlock = nil
+                                                    selectedPIPPhotoIndex = nil
+                                                },
                                                 recordUndoSnapshot: { pushUndoSnapshot() },
                                                 locksHorizontalSlidePaging: $locksHorizontalSlidePaging,
                                                 onRequestHeroSwap: { idx in
                                                     // Drop text/PIP selection and bottom chrome so the swap sheet
                                                     // is the only focus (case `nil` no longer forces the sheet closed).
                                                     selectedBlock = nil
+                                                    selectedPIPPhotoIndex = nil
                                                     heroSwapSlideIndex = idx
                                                     showsHeroPhotoSwapSheet = true
                                                 },
                                                 onRequestSplitBottomPick: { idx in
                                                     selectedBlock = nil
+                                                    selectedPIPPhotoIndex = nil
                                                     selectedSplitSlot = .bottom
                                                     // Split UX: tapping the bottom photo/placeholder
                                                     // should directly open replace flow.
@@ -4888,6 +5242,7 @@ struct SlideTextEditorView: View {
                                                 },
                                                 onRequestSplitTopSelect: { _ in
                                                     selectedBlock = nil
+                                                    selectedPIPPhotoIndex = nil
                                                     selectedSplitSlot = .top
                                                 },
                                                 selectedSplitSlot: selectedSplitSlot,
@@ -4895,7 +5250,13 @@ struct SlideTextEditorView: View {
                                                 slidePageIndex: i,
                                                 pipBackgroundRemovalLoadingSlots: pipBackgroundRemovalSlideIndex == i
                                                     ? pipBackgroundRemovalLoadingSlots
-                                                    : []
+                                                    : [],
+                                                selectedPIPPhotoIndex: selectedPIPPhotoIndex,
+                                                onSelectPIPPhoto: { photoIdx in
+                                                    selectedBlock = .pipCluster
+                                                    selectedPIPPhotoIndex = photoIdx
+                                                    selectedSplitSlot = nil
+                                                }
                                             )
                                             Spacer(minLength: 0)
                                         }
@@ -4925,6 +5286,7 @@ struct SlideTextEditorView: View {
                                         guard !didClearSelectionForPagerDrag else { return }
                                         didClearSelectionForPagerDrag = true
                                         selectedBlock = nil
+                                        selectedPIPPhotoIndex = nil
                                         selectedSplitSlot = nil
                                         activeStyleCategory = nil
                                         activePIPCategory = nil
@@ -6125,7 +6487,9 @@ struct SlideTextEditorView: View {
     /// open) and the PIP category tab bar.
     @ViewBuilder
     private var pipClusterToolbar: some View {
-        VStack(spacing: 0) {
+        let isUngrouped = currentSlide?.pipIsUngrouped ?? false
+        let selectedPhotoIdx = selectedPIPPhotoIndex
+        return VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Button {
                     let idx = editorPagerFocusedSlideIndex
@@ -6147,6 +6511,18 @@ struct SlideTextEditorView: View {
                 .buttonStyle(.plain)
                 .disabled(currentSlide?.pipImages.isEmpty ?? true)
                 .opacity((currentSlide?.pipImages.isEmpty ?? true) ? 0.4 : 1.0)
+
+                // When ungrouped with a photo tapped, show which photo is selected
+                // so the user knows border/shape actions apply to just that photo.
+                if isUngrouped, let photoIdx = selectedPhotoIdx {
+                    Text("Photo \(photoIdx + 1)")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(CarouselStudioChrome.accent)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(CarouselStudioChrome.accent.opacity(0.15))
+                        .clipShape(Capsule())
+                        .transition(.scale(scale: 0.85).combined(with: .opacity))
+                }
 
                 Spacer(minLength: 8)
 
@@ -6173,6 +6549,7 @@ struct SlideTextEditorView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 6)
             .background(Color(white: 0.08))
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: selectedPhotoIdx)
 
             if let category = activePIPCategory {
                 pipDropUpPanel(for: category)
@@ -6225,8 +6602,8 @@ struct SlideTextEditorView: View {
     /// slash) that turns off the outline entirely without discarding the
     /// currently-selected color.
     private var pipBorderColorOptionsStrip: some View {
-        let active = currentSlide?.pipBorderColor ?? .white
-        let borderOff = !(currentSlide?.pipBorderEnabled ?? true)
+        let active = pipEffectiveBorderColor
+        let borderOff = !pipEffectiveBorderEnabled
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 14) {
                 Button { disablePIPBorder() } label: {
@@ -6262,7 +6639,7 @@ struct SlideTextEditorView: View {
 
     /// Rounded-rectangle insets (default) vs circular PIP thumbnails.
     private var pipThumbShapeOptionsStrip: some View {
-        let current = currentSlide?.pipThumbMaskStyle ?? .roundedRect
+        let current = pipEffectiveMaskStyle
         return HStack(spacing: 8) {
             ForEach(CarouselPIPThumbMaskStyle.allCases) { style in
                 let isActive = current == style
@@ -6476,6 +6853,7 @@ struct SlideTextEditorView: View {
                 HStack(spacing: 8) {
                     pipAddPhotosTabButton
                     pipRemovePhotosTabButton
+                    pipGroupToggleTabButton
                     pipStyleMenuButton
                 }
                 ForEach(pipStyleToolbarCategories, id: \.self) { cat in
@@ -6493,6 +6871,44 @@ struct SlideTextEditorView: View {
                 .fill(Color.white.opacity(0.06))
                 .frame(height: 1)
         }
+    }
+
+    /// Separate / Join button: breaks the cluster into individually draggable
+    /// thumbnails (or re-groups them). Disabled when only one photo is visible.
+    @ViewBuilder
+    private var pipGroupToggleTabButton: some View {
+        let isUngrouped = currentSlide?.pipIsUngrouped ?? false
+        let visible = currentSlideEffectivePIPVisibleCount
+        let canToggle = visible > 1
+
+        Button {
+            let idx = editorPagerFocusedSlideIndex
+            guard slides.indices.contains(idx) else { return }
+            togglePIPGrouping(for: idx)
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: isUngrouped ? "square.stack.fill" : "square.2.layers.3d.top.filled")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(canToggle
+                        ? (isUngrouped ? CarouselStudioChrome.accent : .white.opacity(0.75))
+                        : .white.opacity(0.3))
+                    .frame(width: 22, height: 22)
+                Text(isUngrouped ? "Join" : "Separate")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(canToggle ? .white : .white.opacity(0.35))
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.78)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(width: Self.categoryButtonWidth)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!canToggle)
+        .animation(.easeInOut(duration: 0.18), value: isUngrouped)
+        .animation(.easeInOut(duration: 0.18), value: canToggle)
     }
 
     /// Stack direction (vertical column vs horizontal row) for the PIP cluster.
@@ -6642,12 +7058,12 @@ struct SlideTextEditorView: View {
     private func pipCategoryIcon(for cat: PIPStyleCategory, isActive: Bool) -> some View {
         switch cat {
         case .border:
-            let borderOff = !(currentSlide?.pipBorderEnabled ?? true)
+            let borderOff = !pipEffectiveBorderEnabled
             ZStack {
                 Circle()
                     .fill(borderOff
                           ? Color(white: 0.14)
-                          : (currentSlide?.pipBorderColor ?? .white).color)
+                          : pipEffectiveBorderColor.color)
                     .frame(width: 22, height: 22)
                     .overlay(Circle().strokeBorder(
                         isActive ? Color.white : Color.white.opacity(0.35),
@@ -6661,7 +7077,7 @@ struct SlideTextEditorView: View {
             }
             .shadow(color: .black.opacity(0.35), radius: 2)
         case .shape:
-            Image(systemName: (currentSlide?.pipThumbMaskStyle ?? .roundedRect) == .circle
+            Image(systemName: pipEffectiveMaskStyle == .circle
                   ? "circle.fill"
                   : "square.fill")
                 .font(.system(size: 14, weight: .bold))
