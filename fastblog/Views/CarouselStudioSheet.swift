@@ -4586,16 +4586,56 @@ struct SlideTextEditorView: View {
         pushUndoSnapshot()
         let removeAt = visible - 1
         withAnimation(.easeInOut(duration: 0.22)) {
-            slides[idx].pipImages.remove(at: removeAt)
-            if removeAt < slides[idx].pipPhotoIDs.count {
-                slides[idx].pipPhotoIDs.remove(at: removeAt)
-            }
-            if removeAt < slides[idx].pipThumbnailFramings.count {
-                slides[idx].pipThumbnailFramings.remove(at: removeAt)
-            }
+            removePIPPhotoArrayEntries(at: removeAt, in: idx)
             slides[idx].pipVisibleCount = max(1, visible - 1)
         }
         invalidatePIPBackgroundRemovalForMutation(at: idx)
+    }
+
+    /// Removes the photo at `photoIndex` when the cluster is ungrouped and that
+    /// photo is currently selected. If only one photo remains after removal the
+    /// cluster re-groups, preserving the removed photo's position as the new
+    /// cluster anchor so the remaining photo doesn't jump.
+    private func removeSelectedPIPPhoto() {
+        let idx = editorMutationSlideIndex
+        guard slides.indices.contains(idx),
+              slides[idx].layout == .pip,
+              slides[idx].pipIsUngrouped,
+              let photoIndex = selectedPIPPhotoIndex else { return }
+        let visible = min(max(0, slides[idx].pipVisibleCount), slides[idx].pipImages.count)
+        guard photoIndex < visible else { return }
+        pushUndoSnapshot()
+        selectedPIPPhotoIndex = nil
+        withAnimation(.easeInOut(duration: 0.22)) {
+            removePIPPhotoArrayEntries(at: photoIndex, in: idx)
+            let newVisible = max(1, visible - 1)
+            slides[idx].pipVisibleCount = newVisible
+            // Auto-rejoin when only one photo remains — no point being ungrouped.
+            if newVisible <= 1 {
+                let remainingOffset = slides[idx].pipPhotoOffsets.first ?? slides[idx].pipOffset
+                slides[idx].pipOffset = remainingOffset
+                slides[idx].pipIsUngrouped = false
+                slides[idx].pipPhotoOffsets = []
+                slides[idx].pipPhotoStyles = []
+            }
+        }
+        invalidatePIPBackgroundRemovalForMutation(at: idx)
+    }
+
+    /// Removes all index-aligned PIP array entries at `index`.
+    /// Does NOT change `pipVisibleCount` — callers handle that.
+    private func removePIPPhotoArrayEntries(at index: Int, in slideIndex: Int) {
+        guard slides.indices.contains(slideIndex) else { return }
+        func removeIfInBounds<T>(_ arr: inout [T], at i: Int) {
+            guard i < arr.count else { return }
+            arr.remove(at: i)
+        }
+        removeIfInBounds(&slides[slideIndex].pipImages, at: index)
+        removeIfInBounds(&slides[slideIndex].pipPhotoIDs, at: index)
+        removeIfInBounds(&slides[slideIndex].pipThumbnailFramings, at: index)
+        removeIfInBounds(&slides[slideIndex].pipProcessedImages, at: index)
+        removeIfInBounds(&slides[slideIndex].pipPhotoOffsets, at: index)
+        removeIfInBounds(&slides[slideIndex].pipPhotoStyles, at: index)
     }
 
     /// Sets `pipBorderColor` on the current slide. Used by the Border color drop-up.
@@ -6998,15 +7038,21 @@ struct SlideTextEditorView: View {
         .animation(.easeInOut(duration: 0.18), value: canAdd)
     }
 
-    /// Leading **Remove** pill: drops the bottom-most visible photo when two or
-    /// more thumbnails are shown (disabled at a single-photo cluster).
+    /// Leading **Remove** pill: in ungrouped mode with a photo selected, removes
+    /// that specific photo; otherwise drops the bottom-most visible photo
+    /// (disabled when only one photo is in the cluster).
     @ViewBuilder
     private var pipRemovePhotosTabButton: some View {
         let visible = currentSlideEffectivePIPVisibleCount
-        let canRemove = visible > 1
+        let isUngroupedWithSelection = (currentSlide?.pipIsUngrouped ?? false) && selectedPIPPhotoIndex != nil
+        let canRemove = isUngroupedWithSelection || visible > 1
 
         Button {
-            removeLastPIPPhoto()
+            if isUngroupedWithSelection {
+                removeSelectedPIPPhoto()
+            } else {
+                removeLastPIPPhoto()
+            }
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: "minus.circle.fill")
