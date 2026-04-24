@@ -221,6 +221,8 @@
 		BB0003E3 /* UndoToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E2 /* UndoToastView.swift */; };
 		BB000401 /* TripCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000400 /* TripCluster.swift */; };
 		BB000403 /* TripClusterAnnotationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000402 /* TripClusterAnnotationView.swift */; };
+		BB000405 /* BlogDropService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000404 /* BlogDropService.swift */; };
+		BB000407 /* BlogDropSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000406 /* BlogDropSheet.swift */; };
 		BB00A001 /* Analytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00A002 /* Analytics.swift */; };
 		BB00AE01 /* AnalyticsEventType.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00AE02 /* AnalyticsEventType.swift */; };
 		BB00AI01 /* AnalyticsIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00AI02 /* AnalyticsIdentity.swift */; };
@@ -466,6 +468,8 @@
 		BB0003E2 /* UndoToastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoToastView.swift; sourceTree = "<group>"; };
 		BB000400 /* TripCluster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCluster.swift; sourceTree = "<group>"; };
 		BB000402 /* TripClusterAnnotationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripClusterAnnotationView.swift; sourceTree = "<group>"; };
+		BB000404 /* BlogDropService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogDropService.swift; sourceTree = "<group>"; };
+		BB000406 /* BlogDropSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogDropSheet.swift; sourceTree = "<group>"; };
 		BB00A002 /* Analytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Analytics.swift; sourceTree = "<group>"; };
 		BB00AE02 /* AnalyticsEventType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsEventType.swift; sourceTree = "<group>"; };
 		BB00AI02 /* AnalyticsIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsIdentity.swift; sourceTree = "<group>"; };
@@ -697,6 +701,7 @@
 				BB000169 /* TripsMapView.swift */,
 				BB00016B /* TripsView.swift */,
 				TS00R04 /* TripNearbyShareViews.swift */,
+				BB000406 /* BlogDropSheet.swift */,
 				BB0002F6 /* NewMomentsPullUpViews.swift */,
 				BB0001C3 /* UndoOverlayView.swift */,
 				BB0003E2 /* UndoToastView.swift */,
@@ -758,6 +763,7 @@
 				BB0001F6 /* AuthStateManager.swift */,
 				BB00017F /* CreatedRecapBlogStore.swift */,
 				BB0003D2 /* BlogBackupService.swift */,
+				BB000404 /* BlogDropService.swift */,
 				BB000251 /* AppCapturePhotoService.swift */,
 				BB000261 /* VibeRecorder.swift */,
 				BB000263 /* VibePlayer.swift */,
@@ -1021,6 +1027,7 @@
 				TS00B03 /* TripNearbyShareSessionController.swift in Sources */,
 				TS00B05 /* TripNearbyShareHaptics.swift in Sources */,
 				TS00B04 /* TripNearbyShareViews.swift in Sources */,
+				BB000407 /* BlogDropSheet.swift in Sources */,
 				BB00016E /* CitySearchHelper.swift in Sources */,
 				BB000170 /* LocationManagerForOnboarding.swift in Sources */,
 				BB000172 /* MapWithCenterSelector.swift in Sources */,
@@ -1032,6 +1039,7 @@
 				BB00017E /* SplashView.swift in Sources */,
 				BB000180 /* CreatedRecapBlogStore.swift in Sources */,
 				BB0003D3 /* BlogBackupService.swift in Sources */,
+				BB000405 /* BlogDropService.swift in Sources */,
 				BB000182 /* DayToTripGrouper.swift in Sources */,
 				BB000184 /* GeoDistanceHelper.swift in Sources */,
 				BB000186 /* GeocodingService.swift in Sources */,
@@ -1270,7 +1278,7 @@
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Debug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
@@ -1302,7 +1310,7 @@
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Release.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;

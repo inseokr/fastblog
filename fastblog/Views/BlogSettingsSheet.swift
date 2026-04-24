@@ -82,6 +82,7 @@ struct BlogSettingsSheet: View {
     @State private var showWritingStyle = false
     @State private var showNearbyShareHost = false
     @State private var showNearbyShareUnavailableAlert = false
+    @State private var showBlogDrop = false
     @State private var isExportingBackup = false
     @State private var backupExportProgress: Double = 0
     @State private var backupShareURL: URL?
@@ -120,6 +121,7 @@ struct BlogSettingsSheet: View {
                 .sheet(isPresented: $showCoverChange, onDismiss: handleCoverPickerDismiss) { coverPhotoPicker }
                 .sheet(isPresented: $showRestorePlaces) { restorePlacesSheet }
                 .sheet(isPresented: $showWritingStyle) { StoryWritingStyleSheet() }
+                .sheet(isPresented: $showBlogDrop) { blogDropSheet }
                 .alert("Delete Blog?", isPresented: $showDeleteConfirmation) { deleteAlertButtons } message: { deleteAlertMessage }
                 .overlay { customDeletePopup }
                 .alert("Remove from Cloud?", isPresented: $showRemoveFromCloudConfirmation) { removeCloudAlertButtons } message: { removeCloudAlertMessage }
@@ -185,6 +187,7 @@ struct BlogSettingsSheet: View {
             unusedPhotosSection
             fontStyleAndWeatherSection
             backupSection
+            blogDropSection
             cloudSection
         }
     }
@@ -282,6 +285,18 @@ struct BlogSettingsSheet: View {
             } else {
                 Text("Save this blog from the editor first (toolbar Save). Export only includes saved blogs, not draft-only recaps.")
             }
+        }
+    }
+
+    private var blogDropSection: some View {
+        Section {
+            Button {
+                showBlogDrop = true
+            } label: {
+                Label("Blog Drop", systemImage: "arrow.down.circle")
+            }
+        } footer: {
+            Text("Share this blog with another Bloggo user. All stories — blog, day, place, and photo — are copied to their device.")
         }
     }
 
@@ -459,6 +474,10 @@ struct BlogSettingsSheet: View {
             .fontWeight(.semibold)
             .foregroundColor(.white)
         }
+    }
+
+    private var blogDropSheet: some View {
+        BlogDropSendSheet(detail: draft)
     }
 
     private var titleChangeSheet: some View {

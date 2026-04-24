@@ -817,6 +817,7 @@ private struct SettingsView: View {
     @State private var tripExclusionRadius = NeighborhoodStore.tripExclusionRadiusMiles
 
     @State private var showImportBackupPicker = false
+    @State private var showReceiveBlogDrop = false
     @State private var isExportingAllBackups = false
     @State private var isImportingBackup = false
     @State private var backupFlowProgress: Double = 0
@@ -1051,6 +1052,12 @@ private struct SettingsView: View {
                     }
                     .disabled(isImportingBackup)
 
+                    Button {
+                        showReceiveBlogDrop = true
+                    } label: {
+                        Label("Receive Blog Drop", systemImage: "arrow.down.circle")
+                    }
+
                     Toggle(isOn: $preferPhotoLibraryWhenImportingBackup) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Add photos already on this device")
@@ -1206,6 +1213,10 @@ private struct SettingsView: View {
                 if let u = backupAllShareURL {
                     ShareSheet(items: [u])
                 }
+            }
+            .sheet(isPresented: $showReceiveBlogDrop) {
+                BlogDropReceiveSheet()
+                    .environmentObject(createdRecapStore)
             }
             .alert(backupFlowAlertTitle, isPresented: $showBackupFlowAlert) {
                 Button("OK", role: .cancel) {}

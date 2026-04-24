@@ -427,6 +427,14 @@ final class CreatedRecapBlogStore: ObservableObject {
         addCreatedBlog(trip: trip)
     }
 
+    /// Registers a blog received via Blog Drop (cloud-based sharing). All stories are already
+    /// embedded in the `RecapBlogDetail` produced by `BlogDropService.importDrop`.
+    func importBlogDrop(_ importedDetail: RecapBlogDetail) {
+        guard let trip = TripShareBlogDraftBuilder.tripDraft(from: importedDetail) else { return }
+        addCreatedBlog(trip: trip)
+        saveBlogDetail(importedDetail, asDraft: false)
+    }
+
     /// Materializes a recap blog received via nearby share (preserves captions and stories) and adds it like a new blog.
     /// - Note: We create the `CreatedRecapBlog` entry using a derived `TripDraft`, then overwrite the stored `RecapBlogDetail`
     ///   so the imported detail (captions/stories/place notes) is preserved exactly.
