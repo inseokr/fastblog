@@ -1,7 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Read(//Users/inseo/Documents/GitHub/shazam/shazam/Capper/**)"
+      "Read(//Users/inseo/Documents/GitHub/shazam/shazam/Capper/**)",
+      "Bash(sips -g pixelWidth -g pixelHeight \"/Users/inseo/Documents/GitHub/fastblog/fastblog/fastblog/Assets.xcassets/AppIcon.appiconset/bloggo 1024, no roounded corner.png\")",
+      "Bash(sips -z 800 800 \"/Users/inseo/Documents/GitHub/fastblog/fastblog/fastblog/Assets.xcassets/AppIcon.appiconset/bloggo 1024, no roounded corner.png\" --out \"/Users/inseo/Desktop/bloggo_icon_small.png\")",
+      "Read(//Users/inseo/Desktop/**)",
+      "Bash(sips -z 700 700 \"/Users/inseo/Documents/GitHub/fastblog/fastblog/fastblog/Assets.xcassets/AppIcon.appiconset/bloggo 1024, no roounded corner.png\" --out \"/Users/inseo/Desktop/bloggo_icon_small.png\")",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:apis.map.kakao.com)",
+      "Read(//Users/inseo/Library/Developer/Xcode/DerivedData/fastblog-bjgdkhkzwbbyyncqbwhmulntjpie/SourcePackages/checkouts/KakaoMapsSDK-SPM/**)",
+      "Read(//Users/inseo/Library/Developer/Xcode/DerivedData/**)"
     ],
     "additionalDirectories": [
       "/Users/inseo/Documents/GitHub/shazam/shazam/Capper/Views"

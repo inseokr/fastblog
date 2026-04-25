@@ -14,7 +14,7 @@ struct MapTapPOICandidate: Identifiable {
     let name: String
     let category: String?
     let coordinate: CLLocationCoordinate2D
-    /// Distance from the user’s tap to this POI’s placemark (meters).
+    /// Distance from the user's tap to this POI's placemark (meters).
     let distanceMeters: Double
 }
 
@@ -25,10 +25,17 @@ enum MapTapPOIResult {
     case ambiguous(candidates: [MapTapPOICandidate])
 }
 
-/// Wraps MKLocalSearchCompleter for place suggestions, biased by a specific location.
+/// Which backend serves autocomplete suggestions and coordinate resolution.
+enum PlaceSearchProvider {
+    case mapKit
+    case kakao
+}
+
+/// Wraps MKLocalSearchCompleter (MapKit) and Kakao Local API for place suggestions,
+/// automatically routing to the right provider based on the place's country.
 final class PlaceSearchViewModel: NSObject, ObservableObject {
     @Published var query: String = ""
-    @Published var suggestions: [MKLocalSearchCompletion] = []
+    @Published var suggestions: [PlaceSuggestion] = []
     @Published var isSearching = false
 
     var onPlaceSelected: ((String) -> Void)?
@@ -37,7 +44,13 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private let debounceInterval: TimeInterval = 0.3
 
-    /// If set, search results are biased towards this region.
+    private var activeProvider: PlaceSearchProvider = .mapKit
+    private var kakaoSearchTask: Task<Void, Never>?
+
+    /// Stored for Kakao distance-biased search.
+    private var biasCoordinate: CLLocationCoordinate2D?
+
+    /// If set, MapKit search results are biased towards this region.
     var biasRegion: MKCoordinateRegion? {
         didSet {
             if let region = biasRegion {
@@ -55,13 +68,34 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
             .debounce(for: .seconds(debounceInterval), scheduler: RunLoop.main)
             .removeDuplicates()
             .sink { [weak self] newQuery in
-                self?.updateCompleter(query: newQuery)
+                self?.updateSearch(query: newQuery)
             }
             .store(in: &cancellables)
     }
 
+    // MARK: - Provider selection
+
+    /// Call this once the place's country is known. Switches to Kakao for KR when the API key is configured.
+    func setProvider(isoCountryCode: String) {
+        if isoCountryCode == "KR", KakaoLocalService.shared.isAvailable {
+            activeProvider = .kakao
+            completer.queryFragment = ""
+            suggestions = []
+            debugPrint("[PlaceSearch] provider → Kakao (KR)")
+        } else {
+            activeProvider = .mapKit
+            kakaoSearchTask?.cancel()
+            kakaoSearchTask = nil
+            suggestions = []
+            debugPrint("[PlaceSearch] provider → MapKit (\(isoCountryCode))")
+        }
+    }
+
+    // MARK: - Bias location
+
     func setBiasLocation(_ coordinate: CLLocationCoordinate2D?) {
-        guard let coordinate = coordinate else { return }
+        guard let coordinate else { return }
+        biasCoordinate = coordinate
         let region = MKCoordinateRegion(
             center: coordinate,
             latitudinalMeters: 5000,
@@ -70,35 +104,89 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         self.biasRegion = region
     }
 
-    private func updateCompleter(query: String) {
-        if query.isEmpty {
-            suggestions = []
-            return
+    // MARK: - Search routing
+
+    private func updateSearch(query: String) {
+        switch activeProvider {
+        case .mapKit:
+            if query.isEmpty { suggestions = []; return }
+            completer.queryFragment = query
+        case .kakao:
+            kakaoSearchTask?.cancel()
+            if query.isEmpty { suggestions = []; return }
+            let coord = biasCoordinate
+            let q = query
+            kakaoSearchTask = Task { @MainActor [weak self] in
+                guard let self, !Task.isCancelled else { return }
+                let places = await KakaoLocalService.shared.searchPlaces(query: q, near: coord)
+                guard !Task.isCancelled else { return }
+                self.suggestions = places.compactMap { place in
+                    guard let coord = place.coordinate else { return nil }
+                    return PlaceSuggestion(
+                        id: place.id,
+                        title: place.place_name,
+                        subtitle: place.displaySubtitle,
+                        source: .kakao(coordinate: coord, categoryRaw: place.poiCategoryRaw)
+                    )
+                }
+            }
         }
-        completer.queryFragment = query
     }
 
     func clearQuery() {
         query = ""
         suggestions = []
+        kakaoSearchTask?.cancel()
+        kakaoSearchTask = nil
     }
 
-    /// Resolves a search completion to its MKPointOfInterestCategory raw value.
-    /// Performs a single MKLocalSearch round-trip; returns nil if no POI category is available.
-    func fetchCategory(for completion: MKLocalSearchCompletion) async -> String? {
-        let request = MKLocalSearch.Request(completion: completion)
-        let search = MKLocalSearch(request: request)
-        guard let response = try? await search.start(),
-              let mapItem = response.mapItems.first else {
-            debugPrint("[Category] fetchCategory(autocomplete) '\(completion.title)' → nil (no mapItems)")
-            return nil
+    // MARK: - Suggestion resolution
+
+    /// Resolves a picked suggestion to its coordinate and POI category.
+    /// For Kakao suggestions this returns immediately; for MapKit it does a network round-trip.
+    func resolveDetails(for suggestion: PlaceSuggestion) async -> (coordinate: CLLocationCoordinate2D?, categoryRaw: String?) {
+        switch suggestion.source {
+        case .mapKit(let completion):
+            let request = MKLocalSearch.Request(completion: completion)
+            let search = MKLocalSearch(request: request)
+            guard let response = try? await search.start(),
+                  let mapItem = response.mapItems.first else {
+                debugPrint("[PlaceSearch] resolveDetails(mapKit) '\(suggestion.title)' → no result")
+                return (nil, nil)
+            }
+            let cat = mapItem.pointOfInterestCategory?.rawValue
+            debugPrint("[PlaceSearch] resolveDetails(mapKit) '\(suggestion.title)' → category=\(cat ?? "nil")")
+            return (mapItem.placemark.coordinate, cat)
+        case .kakao(let coordinate, let categoryRaw):
+            debugPrint("[PlaceSearch] resolveDetails(kakao) '\(suggestion.title)' → category=\(categoryRaw ?? "nil")")
+            return (coordinate, categoryRaw)
         }
-        let raw = mapItem.pointOfInterestCategory?.rawValue
-        debugPrint("[Category] fetchCategory(autocomplete) '\(completion.title)' → \(raw ?? "nil")")
-        return raw
     }
 
-    /// Search radius for POIs around a map tap (meters). Scales with zoom so we don’t pull in far-away DB hits.
+    // MARK: - Coordinate → place name
+
+    /// Returns the best human-readable place name for a coordinate.
+    /// Uses Kakao reverse geocode in KR mode; falls back to CLGeocoder otherwise.
+    func resolveCoordinateName(at coordinate: CLLocationCoordinate2D) async -> String {
+        if activeProvider == .kakao {
+            if let doc = await KakaoLocalService.shared.reverseGeocode(coordinate: coordinate) {
+                let name = doc.bestPlaceName
+                if !name.isEmpty {
+                    debugPrint("[PlaceSearch] resolveCoordinateName(kakao) → '\(name)'")
+                    return name
+                }
+            }
+        }
+        let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        let place = await GeocodingService.shared.place(for: location, precise: true)
+        let name = !place.title.isEmpty ? place.title : place.bestPlaceLabel
+        debugPrint("[PlaceSearch] resolveCoordinateName(geocoder) → '\(name)'")
+        return name
+    }
+
+    // MARK: - MapKit POI tap resolution
+
+    /// Search radius for POIs around a map tap (meters). Scales with zoom.
     private static func tapSearchRadiusMeters(mapRegion: MKCoordinateRegion?) -> Double {
         if let region = mapRegion {
             let metersPerPoint = region.span.latitudeDelta * 111_000.0 / 500.0
@@ -107,9 +195,8 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         return 80.0
     }
 
-    /// Resolves a bare map tap (coordinate only) to a POI. Uses **closest placemark distance** only—no category
-    /// bias, so the tapped building wins over a farther “parent” campus. If two or more POIs are almost
-    /// equally close, returns `.ambiguous` so the UI can ask which one.
+    /// Resolves a bare map tap to a POI using MKLocalPointsOfInterestRequest.
+    /// If two or more POIs are almost equally close, returns `.ambiguous` so the UI can let the user choose.
     func resolveMapTapPOI(near coordinate: CLLocationCoordinate2D, mapRegion: MKCoordinateRegion? = nil) async -> MapTapPOIResult {
         let tapRadius = Self.tapSearchRadiusMeters(mapRegion: mapRegion)
         debugPrint("[POI] resolveMapTapPOI radius=\(Int(tapRadius))m latDelta=\(mapRegion?.span.latitudeDelta ?? -1)")
@@ -135,7 +222,6 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         }
 
         let gapToSecond = scored.count >= 2 ? scored[1].distance - first.distance : Double.greatestFiniteMagnitude
-        /// If the #2 POI is almost as close as #1, auto-picking is often wrong—let the user choose.
         let ambiguousGapMeters: Double = 22
 
         if scored.count >= 2, gapToSecond < ambiguousGapMeters {
@@ -161,8 +247,9 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         )
     }
 
+    // MARK: - Category helpers (MapKit)
+
     /// Resolves POI category at a coordinate by searching for the place name in a small region.
-    /// Use after reverse geocoding to get the MKPointOfInterestCategory for a map-tapped location.
     func fetchCategory(at coordinate: CLLocationCoordinate2D, name: String) async -> String? {
         guard !name.isEmpty else { return nil }
         let request = MKLocalSearch.Request()
@@ -176,18 +263,28 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         let search = MKLocalSearch(request: request)
         guard let response = try? await search.start(),
               let mapItem = response.mapItems.first else {
-            debugPrint("[Category] fetchCategory(geocode fallback) '\(name)' → nil (no mapItems)")
+            debugPrint("[Category] fetchCategory '\(name)' → nil")
             return nil
         }
         let raw = mapItem.pointOfInterestCategory?.rawValue
-        debugPrint("[Category] fetchCategory(geocode fallback) '\(name)' → \(raw ?? "nil")")
+        debugPrint("[Category] fetchCategory '\(name)' → \(raw ?? "nil")")
         return raw
     }
 }
 
+// MARK: - MKLocalSearchCompleterDelegate
+
 extension PlaceSearchViewModel: MKLocalSearchCompleterDelegate {
     func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
-        suggestions = completer.results
+        guard activeProvider == .mapKit else { return }
+        suggestions = completer.results.map { completion in
+            PlaceSuggestion(
+                id: "\(completion.title)|\(completion.subtitle)",
+                title: completion.title,
+                subtitle: completion.subtitle,
+                source: .mapKit(completion)
+            )
+        }
     }
 
     func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
