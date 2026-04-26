@@ -35,7 +35,6 @@
 		719410832D92A6734F6EEC18 /* PlaceCaptionEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B46C5EE23C4433541B86F40B /* PlaceCaptionEditSheet.swift */; };
 		75A557C81671BBFA4382AAA5 /* PageFooterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3FBC69125D4B22AEC596A03 /* PageFooterView.swift */; };
 		7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AA000061 /* GoogleSignIn */; };
-		BB000282 /* KakaoMapsSDK-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = BB000281 /* KakaoMapsSDK-SPM */; };
 		7D19D079975A2110DB757EE7 /* BlogPDFView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E304D9246790A5FC17716A85 /* BlogPDFView.swift */; };
 		7FBD2FEB65535E4150C1E521 /* TOCPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F6DDE63772EF1F878EC3686 /* TOCPageView.swift */; };
 		A1B2C3D52F9E1000010002 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D52F9E1000010001 /* PrivacyInfo.xcprivacy */; };
@@ -109,10 +108,6 @@
 		BB000182 /* DayToTripGrouper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000181 /* DayToTripGrouper.swift */; };
 		BB000184 /* GeoDistanceHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000183 /* GeoDistanceHelper.swift */; };
 		BB000186 /* GeocodingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000185 /* GeocodingService.swift */; };
-		BB000270 /* KakaoLocalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000271 /* KakaoLocalService.swift */; };
-		BB000272 /* PlaceSuggestion.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000273 /* PlaceSuggestion.swift */; };
-		BB000284 /* KakaoTappableMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000283 /* KakaoTappableMapView.swift */; };
-		BB000285 /* KakaoMapTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000286 /* KakaoMapTestView.swift */; };
 		BB000188 /* ImageLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000187 /* ImageLoader.swift */; };
 		BB00018A /* LocalExclusion.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000189 /* LocalExclusion.swift */; };
 		BB00018C /* LocalExclusionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00018B /* LocalExclusionTests.swift */; };
@@ -189,6 +184,11 @@
 		BB000254 /* AppCaptureDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000255 /* AppCaptureDetailView.swift */; };
 		BB000260 /* VibeRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000261 /* VibeRecorder.swift */; };
 		BB000262 /* VibePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000263 /* VibePlayer.swift */; };
+		BB000270 /* KakaoLocalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000271 /* KakaoLocalService.swift */; };
+		BB000272 /* PlaceSuggestion.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000273 /* PlaceSuggestion.swift */; };
+		BB000282 /* KakaoMapsSDK-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = BB000281 /* KakaoMapsSDK-SPM */; };
+		BB000284 /* KakaoTappableMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000283 /* KakaoTappableMapView.swift */; };
+		BB000285 /* KakaoMapTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000286 /* KakaoMapTestView.swift */; };
 		BB0002A1 /* StoryWritingStyleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002A2 /* StoryWritingStyleSheet.swift */; };
 		BB0002B1 /* SlideshowMusicPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B0 /* SlideshowMusicPreference.swift */; };
 		BB0002B3 /* SlideshowMusicPlaybackCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */; };
@@ -317,8 +317,6 @@
 		BB00012D /* CreatingRecapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreatingRecapView.swift; sourceTree = "<group>"; };
 		BB00012F /* DayChipsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayChipsView.swift; sourceTree = "<group>"; };
 		BB000131 /* EditPlaceStopNameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditPlaceStopNameSheet.swift; sourceTree = "<group>"; };
-		BB000283 /* KakaoTappableMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KakaoTappableMapView.swift; sourceTree = "<group>"; };
-		BB000286 /* KakaoMapTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KakaoMapTestView.swift; sourceTree = "<group>"; };
 		BB000133 /* FindMoreTripsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FindMoreTripsSheet.swift; sourceTree = "<group>"; };
 		BB000135 /* LandingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandingView.swift; sourceTree = "<group>"; };
 		BB000137 /* LoadingScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingScanView.swift; sourceTree = "<group>"; };
@@ -361,8 +359,6 @@
 		BB000181 /* DayToTripGrouper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayToTripGrouper.swift; sourceTree = "<group>"; };
 		BB000183 /* GeoDistanceHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeoDistanceHelper.swift; sourceTree = "<group>"; };
 		BB000185 /* GeocodingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeocodingService.swift; sourceTree = "<group>"; };
-		BB000271 /* KakaoLocalService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KakaoLocalService.swift; sourceTree = "<group>"; };
-		BB000273 /* PlaceSuggestion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSuggestion.swift; sourceTree = "<group>"; };
 		BB000187 /* ImageLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageLoader.swift; sourceTree = "<group>"; };
 		BB000189 /* LocalExclusion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalExclusion.swift; sourceTree = "<group>"; };
 		BB00018B /* LocalExclusionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalExclusionTests.swift; sourceTree = "<group>"; };
@@ -441,6 +437,10 @@
 		BB000255 /* AppCaptureDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCaptureDetailView.swift; sourceTree = "<group>"; };
 		BB000261 /* VibeRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VibeRecorder.swift; sourceTree = "<group>"; };
 		BB000263 /* VibePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VibePlayer.swift; sourceTree = "<group>"; };
+		BB000271 /* KakaoLocalService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KakaoLocalService.swift; sourceTree = "<group>"; };
+		BB000273 /* PlaceSuggestion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSuggestion.swift; sourceTree = "<group>"; };
+		BB000283 /* KakaoTappableMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KakaoTappableMapView.swift; sourceTree = "<group>"; };
+		BB000286 /* KakaoMapTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KakaoMapTestView.swift; sourceTree = "<group>"; };
 		BB0002A2 /* StoryWritingStyleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryWritingStyleSheet.swift; sourceTree = "<group>"; };
 		BB0002B0 /* SlideshowMusicPreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowMusicPreference.swift; sourceTree = "<group>"; };
 		BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowMusicPlaybackCoordinator.swift; sourceTree = "<group>"; };
@@ -1296,13 +1296,9 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Debug.entitlements;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
@@ -1313,6 +1309,10 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fastblog.fastblog;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1332,13 +1332,9 @@
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Release.entitlements;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
@@ -1349,6 +1345,10 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fastblog.fastblog;
 				PRODUCT_NAME = "$(TARGET_NAME)";
