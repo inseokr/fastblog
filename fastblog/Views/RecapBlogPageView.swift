@@ -2134,12 +2134,8 @@ struct RecapBlogPageView: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 guard !isCoverPending, displayCoverId != nil else { return }
-                if isEditMode {
-                    coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
-                    showCoverPhotoPicker = true
-                } else {
-                    showPanorama = true
-                }
+                coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
+                showCoverPhotoPicker = true
             }
         }
         .onPreferenceChange(CoverHeroTitleHeightPreferenceKey.self) { h in

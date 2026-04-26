@@ -216,6 +216,7 @@ struct PlaceStopRowView: View {
     @State private var expandedCaptionPhotoId: UUID? = nil
     @State private var isOverallStoryExpanded = false
     @State private var isOverallStoryTruncated = false
+    @State private var isPhotoStripExpanded = false
     // Vibe playback for blog photo thumbnails
     @StateObject private var vibePlayer = VibePlayer()
     @State private var playingVibePhotoId: UUID? = nil
@@ -320,6 +321,14 @@ struct PlaceStopRowView: View {
     /// Included photos that still resolve to real pixels (omits deleted library assets / missing app captures).
     private var displayableIncludedPhotos: [RecapPhoto] {
         stop.photos.filter(\.isIncluded).filter(\.hasDisplayableLocalBacking)
+    }
+
+    private var photosForStrip: [RecapPhoto] {
+        isPhotoStripExpanded ? displayableIncludedPhotos : Array(displayableIncludedPhotos.prefix(3))
+    }
+
+    private var photoStripOverflowCount: Int {
+        max(0, displayableIncludedPhotos.count - 3)
     }
 
     var body: some View {
@@ -701,7 +710,7 @@ struct PlaceStopRowView: View {
                     if !displayableIncludedPhotos.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(alignment: .top, spacing: 10) {
-                                ForEach(displayableIncludedPhotos) { photo in
+                                ForEach(photosForStrip) { photo in
                                     VStack(alignment: .leading, spacing: 6) {
                                         RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 480, height: 480))
                                             .aspectRatio(1, contentMode: .fill)
@@ -785,6 +794,24 @@ struct PlaceStopRowView: View {
                                                 .animation(.easeInOut(duration: 0.2), value: isPlaying)
                                             }
                                         }
+                                        .overlay {
+                                            let isLastCollapsed = !isPhotoStripExpanded && photoStripOverflowCount > 0 && photo.id == photosForStrip.last?.id
+                                            if isLastCollapsed {
+                                                ZStack {
+                                                    Color.black.opacity(0.55)
+                                                    Text("+\(photoStripOverflowCount)")
+                                                        .font(.system(size: 28, weight: .semibold))
+                                                        .foregroundColor(.white)
+                                                }
+                                                .appChromeCornerRadius(8)
+                                                .contentShape(Rectangle())
+                                                .onTapGesture {
+                                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                                                        isPhotoStripExpanded = true
+                                                    }
+                                                }
+                                            }
+                                        }
                                         if isEditMode {
                                             Button {
                                                 onCaptionTapped?(photo.id)
@@ -827,6 +854,26 @@ struct PlaceStopRowView: View {
                             .padding(.trailing, 16)
                         }
                         .frame(minHeight: isEditMode ? thumbnailSize + 56 : thumbnailSize + 28)
+                    }
+                    if displayableIncludedPhotos.count > 3 {
+                        Button {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                                isPhotoStripExpanded.toggle()
+                            }
+                        } label: {
+                            Label(
+                                isPhotoStripExpanded ? "Show less" : "Show all \(displayableIncludedPhotos.count) photos",
+                                systemImage: isPhotoStripExpanded ? "chevron.up" : "chevron.down"
+                            )
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.primary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(rowInset)
+                            .appChromeCornerRadius(10)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if isEditMode, let onManagePhotos {
                         Button(action: onManagePhotos) {

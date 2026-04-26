@@ -100,32 +100,30 @@ struct PhotoSelectView: View {
 #endif
 
     var body: some View {
-        ZStack {
-            Color.black
-                .ignoresSafeArea()
+        VStack(spacing: 0) {
+            // Full-screen photo: fills remaining space (shrinks when embedded bottom content is present)
+            // ignoresSafeArea(.container, .top) lets the photo draw behind the nav bar without expanding
+            // the VStack's layout frame — keeping sibling overlays (day tabs) properly below the nav bar.
+            mainPhotoArea
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea(.container, edges: .top)
 
-            VStack(spacing: 0) {
-                // Full-screen photo: fills remaining space (shrinks when embedded bottom content is present)
-                mainPhotoArea
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                // Bottom: count label, horizontal strip, then optional Create button when embedded
-                VStack(spacing: 24) {
-                    selectedCountLabel
-                    thumbnailStrip
-                }
-                .padding(.top, 24)
-                .padding(.bottom, 12)
-                .background(Color.black)
-
-                if embedded, let content = embeddedBottomContent {
-                    content()
-                        .padding(.top, 4)
-                        .padding(.bottom, 24)
-                }
+            // Bottom: count label, horizontal strip, then optional Create button when embedded
+            VStack(spacing: 24) {
+                selectedCountLabel
+                thumbnailStrip
             }
+            .padding(.top, 24)
+            .padding(.bottom, 12)
             .background(Color.black)
+
+            if embedded, let content = embeddedBottomContent {
+                content()
+                    .padding(.top, 4)
+                    .padding(.bottom, 24)
+            }
         }
+        .background(Color.black.ignoresSafeArea())
         .navigationTitle(embedded ? "" : "Select Photos")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -204,6 +202,7 @@ struct PhotoSelectView: View {
     private func mainPhotoImage(photo: MockPhoto) -> some View {
         MockPhotoThumbnail(photo: photo, cornerRadius: 0, showIcon: false)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
     }
 
     private var selectionCheckOverlay: some View {
@@ -384,6 +383,7 @@ struct ThumbnailCell: View {
             ZStack(alignment: .topTrailing) {
                 MockPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false)
                     .frame(width: 56, height: 56)
+                    .clipped()
                 if photo.isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 14))
