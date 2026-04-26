@@ -7,13 +7,6 @@ import CoreLocation
 import MapKit
 import SwiftUI
 
-#if DEBUG
-/// Flip to `true` to open the sheet pinned to a Busan coordinate with the Kakao map,
-/// regardless of the actual PlaceStop location.
-private let kDevForceKoreanMap = true
-private let kDevKoreanTestCoord = CLLocationCoordinate2D(latitude: 35.1143, longitude: 129.0402)
-#endif
-
 struct EditPlaceStopNameSheet: View {
     @Binding var placeTitle: String
     /// City / country line under the title; editable even when there is no map or photos.
@@ -54,10 +47,14 @@ struct EditPlaceStopNameSheet: View {
     /// Incremented to request zoom on the embedded `MKMapView` (handled in `TappableMapView.updateUIView`).
     @State private var mapZoomInTrigger = 0
     @State private var mapZoomOutTrigger = 0
+    /// Tracks the in-flight Kakao POI resolution task so a new tap can cancel and replace it.
+    @State private var kakaoResolveTask: Task<Void, Never>?
     @State private var isSavingName = false
     /// One-time coachmark for “tap the map to fill the place name” (shown until dismissed or the user taps the map).
     @AppStorage("blogify.editPlaceMapTapCoachmarkSeen") private var mapTapCoachmarkSeen = false
     @State private var showMapTapCoachmarkSheet = false
+    @AppStorage("blogify.koreaMapPreference") private var koreaMapPreference = ""
+    @State private var showKoreaMapPrompt = false
     /// Tapping a strip thumbnail opens a full-screen preview (swipe between included photos).
     @State private var enlargedStripPhoto: RecapPhoto? = nil
     /// Square cell size for the stacked map zoom control (compact, map-style).
@@ -67,15 +64,8 @@ struct EditPlaceStopNameSheet: View {
         photos.filter(\.isIncluded).filter(\.hasDisplayableLocalBacking)
     }
 
-    /// In DEBUG builds with `kDevForceKoreanMap = true`, returns the Busan test
-    /// coordinate regardless of the actual PlaceStop location. In all other cases
-    /// identical to `location`. Use this for map display and geocoding only —
-    /// save paths should read `location` directly so no fake coordinate leaks.
-    private var effectiveLocation: CLLocationCoordinate2D? {
-        #if DEBUG
-        if kDevForceKoreanMap { return kDevKoreanTestCoord }
-        #endif
-        return location
+    private var isUsingKakaoMap: Bool {
+        placeCountryCode == "KR" && KakaoLocalService.shared.isAvailable && koreaMapPreference != "apple"
     }
 
     /// Extra space above the bottom hint so the photo strip does not cover it.
@@ -86,16 +76,16 @@ struct EditPlaceStopNameSheet: View {
         ZStack(alignment: .bottom) {
             NavigationStack {
             Group {
-                if let coord = effectiveLocation {
+                if let coord = location {
                     ZStack {
-                        if placeCountryCode == "KR" {
+                        if isUsingKakaoMap {
                             KakaoTappableMapView(
                                 center: selectedCoordinate ?? coord,
                                 title: selectedCoordinate != nil ? editedTitle : nil,
                                 zoomInTrigger: mapZoomInTrigger,
                                 zoomOutTrigger: mapZoomOutTrigger,
-                                onTap: { tappedCoordinate in
-                                    resolveKakaoPOI(at: tappedCoordinate)
+                                onTap: { tappedCoordinate, kakaoZoomLevel in
+                                    resolveKakaoPOI(at: tappedCoordinate, kakaoZoomLevel: kakaoZoomLevel)
                                 }
                             )
                         } else {
@@ -123,6 +113,13 @@ struct EditPlaceStopNameSheet: View {
                                         .tint(.white)
                                 }
                                 .allowsHitTesting(true)
+                        }
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        if placeCountryCode == "KR", KakaoLocalService.shared.isAvailable, !isResolvingPOI, !isFocused {
+                            mapProviderToggleButton
+                                .padding(.top, 10)
+                                .padding(.trailing, 12)
                         }
                     }
                 } else {
@@ -198,26 +195,20 @@ struct EditPlaceStopNameSheet: View {
                 initialCategory = initialPlaceCategory
                 mapTapResolvedAsPOI = false
                 pickedFromAutocomplete = false
-                searchViewModel.setBiasLocation(effectiveLocation)
-                if effectiveLocation != nil, !mapTapCoachmarkSeen {
+                searchViewModel.setBiasLocation(location)
+                if location != nil, !mapTapCoachmarkSeen {
                     showMapTapCoachmarkSheet = true
                 }
-                if let coord = effectiveLocation {
-                    #if DEBUG
-                    // With kDevForceKoreanMap the coordinate is already Korean — set "KR"
-                    // synchronously so KakaoTappableMapView is the FIRST map shown, not a
-                    // late swap from MKMapKit after async geocoding (which restarts the engine).
-                    if kDevForceKoreanMap {
-                        placeCountryCode = "KR"
-                        searchViewModel.setProvider(isoCountryCode: "KR")
-                    }
-                    #endif
+                if let coord = location {
                     if placeCountryCode.isEmpty {
                         Task {
                             let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
                             let geocoded = await GeocodingService.shared.place(for: loc, precise: false)
                             placeCountryCode = geocoded.isoCountryCode
                             searchViewModel.setProvider(isoCountryCode: geocoded.isoCountryCode)
+                            if geocoded.isoCountryCode == "KR", koreaMapPreference.isEmpty {
+                                showKoreaMapPrompt = true
+                            }
                         }
                     }
                 }
@@ -234,6 +225,23 @@ struct EditPlaceStopNameSheet: View {
                     .preferredColorScheme(.dark)
             }
             .preferredColorScheme(.dark)
+            .confirmationDialog(
+                "Use Kakao Map for Korea?",
+                isPresented: $showKoreaMapPrompt,
+                titleVisibility: .visible
+            ) {
+                Button("Use Kakao Map") {
+                    koreaMapPreference = "kakao"
+                }
+                Button("Use Apple Maps") {
+                    koreaMapPreference = "apple"
+                }
+                Button("Don't Ask Again", role: .cancel) {
+                    koreaMapPreference = "kakao"
+                }
+            } message: {
+                Text("Kakao Map provides better coverage for Korean locations. You can switch anytime using the button on the map.")
+            }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -299,7 +307,7 @@ struct EditPlaceStopNameSheet: View {
 
     @ViewBuilder
     private var editPlaceBottomMapChromeOverlay: some View {
-        if effectiveLocation != nil, !isResolvingPOI {
+        if location != nil, !isResolvingPOI {
             Group {
                 if selectedCoordinate != nil, mapTapResolvedAsPOI {
                     Button {
@@ -572,6 +580,28 @@ struct EditPlaceStopNameSheet: View {
         .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
     }
 
+    private var mapProviderToggleButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                koreaMapPreference = isUsingKakaoMap ? "apple" : "kakao"
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: isUsingKakaoMap ? "applelogo" : "map.fill")
+                    .font(.caption.weight(.semibold))
+                Text(isUsingKakaoMap ? "Apple Maps" : "Kakao Map")
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(.white.opacity(0.92))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(.white.opacity(0.15), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .shadow(color: .black.opacity(0.3), radius: 6)
+    }
+
     @MainActor
     private func saveAndDismissAsync() async {
         isSavingName = true
@@ -689,26 +719,45 @@ struct EditPlaceStopNameSheet: View {
         .background(Color(white: 0.12))
     }
 
-    // MARK: - Kakao map tap → reverse geocode (no MKLocalPointsOfInterestRequest for KR)
-    private func resolveKakaoPOI(at coordinate: CLLocationCoordinate2D) {
-        guard !isResolvingPOI else { return }
-        debugPrint("[KakaoMap] resolveKakaoPOI lat=\(coordinate.latitude) lon=\(coordinate.longitude)")
+    // MARK: - Kakao map tap → nearby POI (Kakao Local category) like MapKit POI, else reverse geocode
+    private func resolveKakaoPOI(at coordinate: CLLocationCoordinate2D, kakaoZoomLevel: Int) {
+        // Cancel any in-flight resolution so rapid re-taps always reflect the latest tap position.
+        kakaoResolveTask?.cancel()
+        debugPrint("[KakaoMap] resolveKakaoPOI lat=\(coordinate.latitude) lon=\(coordinate.longitude) zoom=\(kakaoZoomLevel)")
         isResolvingPOI = true
         isFocused = false
         showSuggestions = false
-        Task { @MainActor in
+        kakaoResolveTask = Task { @MainActor in
             defer { isResolvingPOI = false }
-            let name = await searchViewModel.resolveCoordinateName(at: coordinate)
-            guard !name.isEmpty, name != "Unknown Place" else {
-                debugPrint("[KakaoMap] resolveKakaoPOI: empty/unknown name, skipping")
-                return
-            }
-            editedTitle = name
-            selectedCoordinate = coordinate
-            mapTapResolvedAsPOI = false
-            debugPrint("[KakaoMap] resolveKakaoPOI → '\(name)'")
-            if let category = await searchViewModel.fetchCategory(at: coordinate, name: name) {
+            let result = await searchViewModel.resolveKakaoMapTapPOI(near: coordinate, kakaoZoomLevel: kakaoZoomLevel)
+            guard !Task.isCancelled else { return }
+            switch result {
+            case .single(let name, let category, let coord):
+                debugPrint("[KakaoMap] resolveKakaoPOI POI single '\(name)'")
+                editedTitle = name
+                selectedCoordinate = coord
                 selectedCategory = category
+                mapTapResolvedAsPOI = true
+                if selectedCategory == nil, let c = await searchViewModel.fetchCategory(at: coord, name: name) {
+                    selectedCategory = c
+                }
+            case .ambiguous(let candidates):
+                debugPrint("[KakaoMap] resolveKakaoPOI ambiguous (\(candidates.count) choices)")
+                mapTapPOIDisambiguationCandidates = candidates
+                showMapTapPOIDisambiguation = true
+            case .none:
+                let name = await searchViewModel.resolveCoordinateName(at: coordinate)
+                guard !name.isEmpty, name != "Unknown Place" else {
+                    debugPrint("[KakaoMap] resolveKakaoPOI: empty/unknown name, skipping")
+                    return
+                }
+                editedTitle = name
+                selectedCoordinate = coordinate
+                mapTapResolvedAsPOI = false
+                debugPrint("[KakaoMap] resolveKakaoPOI reverse-geocode → '\(name)'")
+                if let category = await searchViewModel.fetchCategory(at: coordinate, name: name) {
+                    selectedCategory = category
+                }
             }
         }
     }

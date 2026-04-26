@@ -112,6 +112,7 @@
 		BB000270 /* KakaoLocalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000271 /* KakaoLocalService.swift */; };
 		BB000272 /* PlaceSuggestion.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000273 /* PlaceSuggestion.swift */; };
 		BB000284 /* KakaoTappableMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000283 /* KakaoTappableMapView.swift */; };
+		BB000285 /* KakaoMapTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000286 /* KakaoMapTestView.swift */; };
 		BB000188 /* ImageLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000187 /* ImageLoader.swift */; };
 		BB00018A /* LocalExclusion.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000189 /* LocalExclusion.swift */; };
 		BB00018C /* LocalExclusionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00018B /* LocalExclusionTests.swift */; };
@@ -317,6 +318,7 @@
 		BB00012F /* DayChipsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayChipsView.swift; sourceTree = "<group>"; };
 		BB000131 /* EditPlaceStopNameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditPlaceStopNameSheet.swift; sourceTree = "<group>"; };
 		BB000283 /* KakaoTappableMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KakaoTappableMapView.swift; sourceTree = "<group>"; };
+		BB000286 /* KakaoMapTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KakaoMapTestView.swift; sourceTree = "<group>"; };
 		BB000133 /* FindMoreTripsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FindMoreTripsSheet.swift; sourceTree = "<group>"; };
 		BB000135 /* LandingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandingView.swift; sourceTree = "<group>"; };
 		BB000137 /* LoadingScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingScanView.swift; sourceTree = "<group>"; };
@@ -664,6 +666,7 @@
 				BB00012F /* DayChipsView.swift */,
 				BB000131 /* EditPlaceStopNameSheet.swift */,
 				BB000283 /* KakaoTappableMapView.swift */,
+				BB000286 /* KakaoMapTestView.swift */,
 				BB000133 /* FindMoreTripsSheet.swift */,
 				BB0003B2 /* VisitedCitiesSheet.swift */,
 				BB000205 /* ImportDraftsModalView.swift */,
@@ -1000,6 +1003,7 @@
 				BB000130 /* DayChipsView.swift in Sources */,
 				BB000132 /* EditPlaceStopNameSheet.swift in Sources */,
 				BB000284 /* KakaoTappableMapView.swift in Sources */,
+				BB000285 /* KakaoMapTestView.swift in Sources */,
 				BB000134 /* FindMoreTripsSheet.swift in Sources */,
 				BB000136 /* LandingView.swift in Sources */,
 				BB000138 /* LoadingScanView.swift in Sources */,

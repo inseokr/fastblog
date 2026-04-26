@@ -111,6 +111,8 @@ struct fastblogApp: App {
     #if DEBUG
         /// Flip to `true` to skip splash + onboarding and land directly on ManagePhotosView.
         private static let kDevBypassToManagePhotos = false
+        /// Flip to `true` to skip splash + onboarding and land directly on KakaoMapTestView.
+        private static let kDevBypassToKakaoMapTest = false
     #endif
 
     var body: some Scene {
@@ -180,7 +182,9 @@ struct fastblogApp: App {
     @ViewBuilder
     private var appContent: some View {
         #if DEBUG
-            if Self.kDevBypassToManagePhotos {
+            if Self.kDevBypassToKakaoMapTest {
+                NavigationStack { KakaoMapTestView() }
+            } else if Self.kDevBypassToManagePhotos {
                 ManagePhotosDevWrapper()
             } else {
                 normalAppRoot

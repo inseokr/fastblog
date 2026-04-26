@@ -247,6 +247,78 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         )
     }
 
+    // MARK: - Kakao Local POI tap resolution
+
+    /// Search radius (meters) around a tap from Kakao map zoom level (1 = far out … 21 = close in).
+    /// Generous radii account for the user tapping on nearby terrain instead of directly on the POI icon,
+    /// which can offset the registered coordinate by 30–80 m depending on zoom.
+    private static func kakaoTapRadiusMeters(zoomLevel: Int) -> Int {
+        switch zoomLevel {
+        case 19...21: return 70
+        case 17..<19: return 100
+        case 15..<17: return 140
+        case 13..<15: return 200
+        default: return 280
+        }
+    }
+
+    /// Resolves a map tap in Korea to a named place using Kakao category search (parallel category queries),
+    /// mirroring `resolveMapTapPOI` semantics: single hit, ambiguous list, or `.none` for address fallback.
+    func resolveKakaoMapTapPOI(near coordinate: CLLocationCoordinate2D, kakaoZoomLevel: Int) async -> MapTapPOIResult {
+        guard activeProvider == .kakao, KakaoLocalService.shared.isAvailable else {
+            debugPrint("[POI] resolveKakaoMapTapPOI skipped (not Kakao or REST key missing)")
+            return .none
+        }
+        let radius = Self.kakaoTapRadiusMeters(zoomLevel: kakaoZoomLevel)
+        debugPrint("[POI] resolveKakaoMapTapPOI radius=\(radius)m zoom=\(kakaoZoomLevel)")
+
+        let places = await KakaoLocalService.shared.searchNearbyPlacesForMapTap(coordinate: coordinate, radius: radius)
+        let tapLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+
+        let scored: [(place: KakaoPlace, distance: Double)] = places.compactMap { place in
+            guard let coord = place.coordinate else { return nil }
+            let name = place.place_name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return nil }
+            let d = place.distanceMetersFromAPI
+                ?? tapLocation.distance(from: CLLocation(latitude: coord.latitude, longitude: coord.longitude))
+            guard d <= Double(radius) else { return nil }
+            return (place, d)
+        }
+        .sorted { $0.distance < $1.distance }
+
+        guard let first = scored.first else {
+            debugPrint("[POI] resolveKakaoMapTapPOI: no named place within radius")
+            return .none
+        }
+
+        // Gap tighter than 12 m → show disambiguation; wider → silently pick the closest.
+        // 22 m was too generous and produced false ambiguities when two places shared an address.
+        let ambiguousGapMeters: Double = 12
+        let gapToSecond = scored.count >= 2 ? scored[1].distance - first.distance : Double.greatestFiniteMagnitude
+
+        if scored.count >= 2, gapToSecond < ambiguousGapMeters {
+            let capped = scored.prefix(8).map { pair in
+                MapTapPOICandidate(
+                    name: pair.place.place_name.trimmingCharacters(in: .whitespacesAndNewlines),
+                    category: pair.place.poiCategoryRaw,
+                    coordinate: pair.place.coordinate ?? coordinate,
+                    distanceMeters: pair.distance
+                )
+            }
+            debugPrint("[POI] Kakao ambiguous tap: \(capped.count) candidates (gap \(Int(gapToSecond))m)")
+            return .ambiguous(candidates: Array(capped))
+        }
+
+        let name = first.place.place_name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return .none }
+        debugPrint("[POI] Kakao single place '\(name)' dist=\(Int(first.distance))m")
+        return .single(
+            name: name,
+            category: first.place.poiCategoryRaw,
+            coordinate: first.place.coordinate ?? coordinate
+        )
+    }
+
     // MARK: - Category helpers (MapKit)
 
     /// Resolves POI category at a coordinate by searching for the place name in a small region.

@@ -16,7 +16,8 @@ struct KakaoTappableMapView: UIViewRepresentable {
     let title: String?
     var zoomInTrigger: Int = 0
     var zoomOutTrigger: Int = 0
-    var onTap: (CLLocationCoordinate2D) -> Void
+    /// Second parameter is Kakao zoom level (1…21, higher = closer). Used for POI search radius.
+    var onTap: (CLLocationCoordinate2D, Int) -> Void
 
     // MARK: - UIViewRepresentable
 
@@ -65,14 +66,17 @@ struct KakaoTappableMapView: UIViewRepresentable {
         weak var engineController: KMController?
         private var enginePrepared = false
         private var engineActivated = false
-
         override func layoutSubviews() {
             super.layoutSubviews()
             // renderView is created during KMController init with frame=.zero and is
             // never resized by the SDK's own layoutSubviews — only the engine is
-            // notified of the new size.  Force the UIView to fill us so the Metal
-            // drawable is the correct size.
-            renderView?.frame = bounds
+            // notified of the new size.  Only push a new frame when bounds actually
+            // change so pinch / pan gestures are not reset mid-gesture.
+            if let rv = renderView {
+                if !rv.frame.equalTo(bounds) {
+                    rv.frame = bounds
+                }
+            }
             startEngineIfReady()
         }
 
@@ -96,6 +100,16 @@ struct KakaoTappableMapView: UIViewRepresentable {
                 enginePrepared = ok
                 debugPrint("[KakaoMap] prepareEngine() → \(ok)")
                 guard ok else { return }
+
+                // prepareEngine() creates renderView (the Metal UIView) but does NOT
+                // guarantee it is in our subview hierarchy. Add it now so the Metal
+                // drawable is actually visible, then size it to fill us.
+                if let rv = renderView {
+                    if rv.superview == nil { addSubview(rv) }
+                    if !rv.frame.equalTo(bounds) {
+                        rv.frame = bounds
+                    }
+                }
             }
             if !engineActivated {
                 engineController.activateEngine()
@@ -129,7 +143,8 @@ struct KakaoTappableMapView: UIViewRepresentable {
         private var map: KakaoMap?
         private var pin: Poi?
         private var pendingCenter: CLLocationCoordinate2D?
-        private var currentZoomLevel: Int = 5   // 5 ≈ whole Korea peninsula; raise for street detail
+        /// Default ~neighborhood zoom so map tiles show Kakao POI labels; user can zoom out with controls.
+        private var currentZoomLevel: Int = 15
         var lastZoomInTrigger = 0
         var lastZoomOutTrigger = 0
 
@@ -170,6 +185,11 @@ struct KakaoTappableMapView: UIViewRepresentable {
             }
             self.map = map
             map.eventDelegate = self
+            // Two-finger rotate and "rotate + zoom" share the same touch path as pinch zoom.
+            // Leaving them enabled often makes pinch feel inverted or erratic; keep plain `.zoom`.
+            map.setGestureEnable(type: .rotate, enable: false)
+            map.setGestureEnable(type: .rotateZoom, enable: false)
+            currentZoomLevel = map.zoomLevel
             debugPrint("[KakaoMap] map view ready, setting up pin")
             setupPin(on: map)
         }
@@ -180,7 +200,8 @@ struct KakaoTappableMapView: UIViewRepresentable {
 
         @objc func containerDidResized(_ size: CGSize) {
             // Keep the renderView UIView in sync whenever the engine reports a resize.
-            if let c = container { c.renderView?.frame = c.bounds }
+            guard let c = container, let rv = c.renderView, !rv.frame.equalTo(c.bounds) else { return }
+            rv.frame = c.bounds
         }
 
         @objc func authenticationSucceeded() {
@@ -198,8 +219,29 @@ struct KakaoTappableMapView: UIViewRepresentable {
                 latitude: position.wgsCoord.latitude,
                 longitude: position.wgsCoord.longitude
             )
-            debugPrint("[KakaoMap] terrain tapped lat=\(coord.latitude) lon=\(coord.longitude)")
-            DispatchQueue.main.async { self.parent.onTap(coord) }
+            let zoom = kakaoMap.zoomLevel
+            debugPrint("[KakaoMap] terrain tapped lat=\(coord.latitude) lon=\(coord.longitude) zoom=\(zoom)")
+            DispatchQueue.main.async { self.parent.onTap(coord, zoom) }
+        }
+
+        /// Fires when the user taps a built-in Kakao tile POI or a custom label-layer POI.
+        /// Forwarding this alongside `terrainDidTapped` ensures a direct tap on a POI icon
+        /// triggers the same search flow as tapping nearby terrain.
+        @objc func poiDidTapped(kakaoMap: KakaoMap, layerID: String, poiID: String, position: MapPoint) {
+            // Skip taps on our own center pin — that location is already selected.
+            guard layerID != Self.layerID || poiID != Self.pinID else { return }
+            let coord = CLLocationCoordinate2D(
+                latitude: position.wgsCoord.latitude,
+                longitude: position.wgsCoord.longitude
+            )
+            let zoom = kakaoMap.zoomLevel
+            debugPrint("[KakaoMap] POI tapped layerID=\(layerID) poiID=\(poiID) lat=\(coord.latitude) lon=\(coord.longitude) zoom=\(zoom)")
+            DispatchQueue.main.async { self.parent.onTap(coord, zoom) }
+        }
+
+        /// Keeps `currentZoomLevel` aligned with pinch / pan so +/- buttons stay consistent.
+        @objc func cameraDidStopped(kakaoMap: KakaoMap, by: MoveBy) {
+            currentZoomLevel = kakaoMap.zoomLevel
         }
 
         // MARK: - Pin
@@ -209,35 +251,25 @@ struct KakaoTappableMapView: UIViewRepresentable {
             let mapPoint = MapPoint(longitude: coord.longitude, latitude: coord.latitude)
             let mgr = map.getLabelManager()
 
-            // Kakao SDK (K3fCore) only accepts plain 8-bit sRGB bitmaps.
-            // UIGraphicsImageRenderer defaults to Display-P3 on modern hardware;
-            // UIGraphicsBeginImageContextWithOptions still uses a device-dependent
-            // color space that can mismatch. Use an explicit CGContext backed by the
-            // named sRGB color space with non-premultiplied alpha — the most
-            // unambiguous format we can give the SDK.
-            let pinSide = 44
-            let pinImage: UIImage? = {
-                guard let srgb = CGColorSpace(name: CGColorSpace.sRGB),
-                      let ctx  = CGContext(
-                          data: nil,
-                          width: pinSide, height: pinSide,
-                          bitsPerComponent: 8,
-                          bytesPerRow: 0,
-                          space: srgb,
-                          bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
-                              | CGImageAlphaInfo.premultipliedLast.rawValue
-                      ) else { return nil }
-                // outer red circle
-                ctx.setFillColor(UIColor.systemRed.cgColor)
-                ctx.fillEllipse(in: CGRect(x: 2, y: 2, width: 40, height: 40))
-                // inner white dot
-                ctx.setFillColor(UIColor.white.cgColor)
-                ctx.fillEllipse(in: CGRect(x: 16, y: 16, width: 12, height: 12))
-                guard let cg = ctx.makeImage() else { return nil }
-                return UIImage(cgImage: cg, scale: 1.0, orientation: .up)
-            }()
-            if let img = pinImage {
-                let icon  = PoiIconStyle(symbol: img, anchorPoint: CGPoint(x: 0.5, y: 1.0))
+            // K3fCore is strict about pixel formats. Every raw CGContext approach
+            // (BGRA, RGBA, opaque, premultiplied) has triggered "unsupported image
+            // format". The only reliable solution: draw into any context, then
+            // encode to PNG and decode back. iOS's PNG decoder always produces a
+            // format-normalised CGImage that K3fCore accepts without complaint.
+            let pinSide = CGSize(width: 44, height: 44)
+            UIGraphicsBeginImageContextWithOptions(pinSide, false, 1.0)
+            UIColor.systemRed.setFill()
+            UIBezierPath(ovalIn: CGRect(x: 2, y: 2, width: 40, height: 40)).fill()
+            UIColor.white.setFill()
+            UIBezierPath(ovalIn: CGRect(x: 16, y: 16, width: 12, height: 12)).fill()
+            let rawImg = UIGraphicsGetImageFromCurrentImageContext()
+            UIGraphicsEndImageContext()
+
+            // PNG encode → decode normalises the pixel format to one K3fCore accepts.
+            if let raw = rawImg,
+               let pngData = raw.pngData(),
+               let img = UIImage(data: pngData, scale: 1.0) {
+                let icon  = PoiIconStyle(symbol: img, anchorPoint: CGPoint(x: 0.5, y: 0.5))
                 let level = PerLevelPoiStyle(iconStyle: icon, padding: 0, level: 0)
                 mgr.addPoiStyle(PoiStyle(styleID: Self.styleID, styles: [level]))
             }

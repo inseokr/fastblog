@@ -729,7 +729,7 @@ struct PlacePhotoModalView: View {
         .onDisappear {
             vibePlayer.stop()
         }
-        .sheet(isPresented: $showRenameSheet) {
+        .fullScreenCover(isPresented: $showRenameSheet) {
             EditPlaceStopNameSheet(
                 placeTitle: $placeTitle,
                 initialPlaceSubtitle: effectivePlaceSubtitle,
@@ -743,8 +743,6 @@ struct PlacePhotoModalView: View {
                     onSavePlaceName?(newName, category, coord, subtitleLine)
                 }
             )
-            // Root photo modal disables UIKit sheet dismiss; nested sheets must stay interactively dismissible.
-            .interactiveDismissDisabled(false)
         }
         .sheet(isPresented: $showWritingStyleSheet) {
             StoryWritingStyleSheet()

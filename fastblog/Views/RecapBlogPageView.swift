@@ -1108,7 +1108,7 @@ struct RecapBlogPageView: View {
                     }
                 )
             }
-            .sheet(item: $showEditNameForStop) { stop in
+            .fullScreenCover(item: $showEditNameForStop) { stop in
                 EditPlaceStopNameSheet(
                     placeTitle: bindingForPlaceTitle(stopId: stop.id),
                     initialPlaceSubtitle: stop.placeSubtitle,
