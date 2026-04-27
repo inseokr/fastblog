@@ -397,17 +397,6 @@ struct PlaceStopRowView: View {
                         Spacer()
                         if isEditMode {
                             HStack(spacing: 4) {
-                                if onKebab != nil {
-                                    Button { onKebab?() } label: {
-                                        Image(systemName: "ellipsis")
-                                            .font(.body)
-                                            .foregroundColor(.secondary)
-                                            .frame(width: 28, height: 28)
-                                            .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("More actions for this place")
-                                }
                                 Button(action: onDelete) {
                                     Image(systemName: "eye.slash")
                                         .font(.system(size: 14, weight: .semibold))
@@ -687,6 +676,7 @@ struct PlaceStopRowView: View {
                                 .foregroundColor(.primary)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(rowInset)
                                 .appChromeCornerRadius(10)
                         }
@@ -862,11 +852,11 @@ struct PlaceStopRowView: View {
                                 .foregroundColor(.primary)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(rowInset)
                                 .appChromeCornerRadius(10)
                         }
                         .buttonStyle(.plain)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 .padding(.horizontal, 16)

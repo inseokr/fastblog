@@ -72,7 +72,6 @@ struct BlogSettingsSheet: View {
     @AppStorage(WeatherTemperatureUnit.storageKey) private var weatherTemperatureUnitRaw: String = WeatherTemperatureUnit.fahrenheit.rawValue
     @AppStorage("selectedBlogFont") private var selectedBlogFont: String = "Serif"
 
-    @State private var showPhotoFlow = false
     @State private var showTitleChange = false
     @State private var showCoverChange = false
     @State private var coverPhotoIdentifierBeforeEdit: String? = nil
@@ -119,14 +118,6 @@ struct BlogSettingsSheet: View {
                 .navigationTitle("Blog Settings")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { navigationToolbar }
-                .fullScreenCover(isPresented: $showPhotoFlow) {
-                    EditBlogPhotoFlowView(
-                        blogId: draft.id,
-                        onDismiss: { showPhotoFlow = false },
-                        onBlogPhotosUpdated: { onBlogPhotosUpdated?() }
-                    )
-                    .environmentObject(createdRecapStore)
-                }
                 .sheet(isPresented: $showTitleChange) { titleChangeSheet }
                 .sheet(isPresented: $showCoverChange, onDismiss: handleCoverPickerDismiss) { coverPhotoPicker }
                 .sheet(isPresented: $showRestorePlaces) { restorePlacesSheet }
@@ -211,7 +202,7 @@ struct BlogSettingsSheet: View {
                     onEditMode?()
                     dismiss()
                 } label: {
-                    Label("Turn on Blog Edit Mode", systemImage: "pencil")
+                    Label("Edit Blog", systemImage: "pencil")
                         .foregroundStyle(.white)
                 }
             }
@@ -248,13 +239,6 @@ struct BlogSettingsSheet: View {
 
     private var unusedPhotosSection: some View {
         Section {
-            Button {
-                AppAnalytics.trackEvent(name: "Blog-PickPhotos-Settings")
-                showPhotoFlow = true
-            } label: {
-                Label("Photo Selection", systemImage: "photo.on.rectangle.angled")
-                    .foregroundStyle(.white)
-            }
             Button {
                 showStorageManagement = true
             } label: {
