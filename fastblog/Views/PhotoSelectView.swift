@@ -120,11 +120,10 @@ struct PhotoSelectView: View {
             if embedded, let content = embeddedBottomContent {
                 content()
                     .padding(.top, 4)
-                    .padding(.bottom, 24)
             }
         }
         .background(Color.black.ignoresSafeArea())
-        .navigationTitle(embedded ? "" : "Select Photos")
+        .navigationTitle(embedded ? "Photo Selection" : "Select Photos")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if !embedded {
@@ -167,33 +166,28 @@ struct PhotoSelectView: View {
     private var mainPhotoArea: some View {
         ZStack {
             if let photo = currentPhoto {
-                ZStack {
-                    mainPhotoImage(photo: photo)
-                    if photo.isSelected {
-                        Color.black.opacity(0.4)
-                            .allowsHitTesting(false)
-                        selectionCheckOverlay
-                    }
-                }
-                .id(photo.id)
-                .contentShape(Rectangle())
-                .onTapGesture { toggleSelection() }
-                .gesture(
-                    DragGesture(minimumDistance: 40)
-                        .onEnded { value in
-                            let idx = photos.firstIndex(where: { $0.id == currentPhotoId }) ?? 0
-                            let dx = value.translation.width
-                            if dx < -40, idx + 1 < photos.count {
-                                withAnimation(.easeInOut(duration: 0.22)) {
-                                    currentPhotoId = photos[idx + 1].id
-                                }
-                            } else if dx > 40, idx > 0 {
-                                withAnimation(.easeInOut(duration: 0.22)) {
-                                    currentPhotoId = photos[idx - 1].id
+                mainPhotoImage(photo: photo)
+                    .opacity(photo.isSelected ? 1.0 : 0.7)
+                    .animation(.easeInOut(duration: 0.2), value: photo.isSelected)
+                    .id(photo.id)
+                    .contentShape(Rectangle())
+                    .onTapGesture { toggleSelection() }
+                    .gesture(
+                        DragGesture(minimumDistance: 40)
+                            .onEnded { value in
+                                let idx = photos.firstIndex(where: { $0.id == currentPhotoId }) ?? 0
+                                let dx = value.translation.width
+                                if dx < -40, idx + 1 < photos.count {
+                                    withAnimation(.easeInOut(duration: 0.22)) {
+                                        currentPhotoId = photos[idx + 1].id
+                                    }
+                                } else if dx > 40, idx > 0 {
+                                    withAnimation(.easeInOut(duration: 0.22)) {
+                                        currentPhotoId = photos[idx - 1].id
+                                    }
                                 }
                             }
-                        }
-                )
+                    )
             }
         }
         .animation(.easeInOut(duration: 0.22), value: currentPhotoId)
@@ -203,14 +197,6 @@ struct PhotoSelectView: View {
         MockPhotoThumbnail(photo: photo, cornerRadius: 0, showIcon: false)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
-    }
-
-    private var selectionCheckOverlay: some View {
-        Image(systemName: "checkmark.circle.fill")
-            .font(.system(size: 72))
-            .foregroundStyle(.white)
-            .shadow(color: .black.opacity(0.4), radius: 6)
-            .transition(.scale.combined(with: .opacity))
     }
 
     private func toggleSelection() {
@@ -397,6 +383,8 @@ struct ThumbnailCell: View {
                         .allowsHitTesting(false)
                 }
             }
+            .frame(width: 56, height: 56)
+            .clipped()
             .overlay(
                 RoundedRectangle(appChromeBaseRadius: 8)
                     .stroke(isCurrent ? Color.white : Color.clear, lineWidth: 3)

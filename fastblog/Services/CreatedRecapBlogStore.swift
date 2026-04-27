@@ -627,7 +627,7 @@ final class CreatedRecapBlogStore: ObservableObject {
         guard var trip = tripDraftsBySourceId[blogId] else { return nil }
         let includedIds: Set<UUID>
         if let detail = blogDetailsBySourceId[blogId] {
-            includedIds = Set(detail.days.flatMap { day in day.placeStops.flatMap { stop in stop.photos.map(\.id) } })
+            includedIds = Set(detail.days.flatMap { day in day.placeStops.flatMap { stop in stop.photos.filter(\.isIncluded).map(\.id) } })
         } else {
             includedIds = Set(trip.days.flatMap { day in day.photos.filter(\.isSelected).map(\.id) })
         }

@@ -165,7 +165,6 @@ struct RecapBlogPageView: View {
     @State private var isEditMode = true
     @State private var showBlogSettings = false
     @State private var showShareSheet = false
-    @State private var showEditPhotoFlow = false
     @State private var fullScreenMapDay: RecapBlogDay?
     @State private var fullScreenMapFocusedPlaceId: UUID?
     @State private var showTitleChange = false
@@ -959,10 +958,10 @@ struct RecapBlogPageView: View {
                     selectedDayIndex: $selectedDayIndex,
                     blogKey: currentBlogKey,
                     onSave: { saveDraft() },
-                    onPickPhotos: {
-                        showBlogSettings = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                            showEditPhotoFlow = true
+                    onBlogPhotosUpdated: {
+                        if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
+                            draft = updated
+                            draftSnapshot = updated
                         }
                     },
                     onEditMode: {
@@ -1158,22 +1157,6 @@ struct RecapBlogPageView: View {
                 persistRecapBlogDetail()
                 syncPhotoChangesWithCloud()
             }
-            .fullScreenCover(isPresented: $showEditPhotoFlow, onDismiss: {
-                persistRecapBlogDetail()
-            }) {
-                EditBlogPhotoFlowView(
-                    blogId: blogId,
-                    onDismiss: { showEditPhotoFlow = false },
-                    onBlogPhotosUpdated: {
-                        if let updated = createdRecapStore.getBlogDetail(blogId: blogId) {
-                            draft = updated
-                            draftSnapshot = updated
-                        }
-                    }
-                )
-                .environmentObject(createdRecapStore)
-            }
-            
             .sheet(isPresented: $showRestorePlaces) {
                 RemovedPlacesSheet(draft: $draft, selectedDayIndex: $selectedDayIndex) {
                     persistRecapBlogDetail()
@@ -6657,60 +6640,6 @@ private struct ManagePhotosEditInfo {
     let stopId: UUID
     /// Inclusion state of each photo at the moment ManagePhotosView was opened.
     let photoInclusionBefore: [UUID: Bool]
-}
-
-/// Presents the photo selection flow (TripDayPickerView) in edit mode, then Title → Cover with "Update". Used when user taps Edit on the Recap Blog page.
-private struct EditBlogPhotoFlowView: View {
-    let blogId: UUID
-    var onDismiss: () -> Void
-    /// Called after ``CreateBlogFlowView`` finishes `updateBlog` for this blog (not on Cancel).
-    var onBlogPhotosUpdated: (() -> Void)? = nil
-    @EnvironmentObject private var createdRecapStore: CreatedRecapBlogStore
-    @State private var trip: TripDraft?
-    @State private var tripToUpdate: TripDraft?
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                if let t = trip {
-                    TripDayPickerView(
-                        trip: t,
-                        onStartCreateBlog: { _ in },
-                        isEditMode: true,
-                        onUpdate: { updated in
-                            tripToUpdate = updated
-                        }
-                    )
-                    .fullScreenCover(item: $tripToUpdate) { updatedTrip in
-                    CreateBlogFlowView(
-                        trip: updatedTrip,
-                        existingBlogId: blogId,
-                        onUpdateComplete: {
-                            tripToUpdate = nil
-                            onBlogPhotosUpdated?()
-                            onDismiss()
-                        },
-                        onClose: { _ in }
-                    )
-                    .environmentObject(createdRecapStore)
-                    }
-                } else {
-                    ProgressView("Loading…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { onDismiss() }
-                }
-            }
-        }
-        .onAppear {
-            trip = createdRecapStore.tripDraftApplyingBlogSelection(blogId: blogId)
-        }
-        .preferredColorScheme(nil)
-    }
 }
 
 // MARK: - Processing Day Popup
