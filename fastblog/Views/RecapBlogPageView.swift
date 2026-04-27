@@ -4158,7 +4158,7 @@ Your blog remains private unless you choose to share it.
                 debugPrint("[Category] updatePlaceTitle stored: placeTitle='\(stop.placeTitle)' placeSubtitle=\(stop.placeSubtitle ?? "nil") placeCategory=\(stop.placeCategory ?? "nil")")
 
                 persistRecapBlogDetail()
-                if let placeKey = stop.visitedTimeDigitized {
+                if draft.blogKey != nil, let placeKey = stop.visitedTimeDigitized {
                     let categories = stop.placeCategory.map { [$0] }
                     Task { try? await APIManager.shared.updatePlaceName(visitedTimeDigitized: placeKey, placeName: title, categories: categories) }
                 }
@@ -4180,7 +4180,7 @@ Your blog remains private unless you choose to share it.
             draft.days[i] = day
             debugPrint("[Category] updatePlaceCategory stored: placeTitle='\(stop.placeTitle)' placeCategory=\(stop.placeCategory ?? "nil")")
             persistRecapBlogDetail()
-            if let placeKey = stop.visitedTimeDigitized {
+            if draft.blogKey != nil, let placeKey = stop.visitedTimeDigitized {
                 let categories = category.map { [$0] } ?? ["unknown"]
                 Task { try? await APIManager.shared.updatePlaceName(visitedTimeDigitized: placeKey, placeName: stop.placeTitle, categories: categories) }
             }

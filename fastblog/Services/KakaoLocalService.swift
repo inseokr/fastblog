@@ -77,8 +77,9 @@ struct KakaoPlace: Decodable {
         road_address_name.isEmpty ? address_name : road_address_name
     }
 
-    /// Partial mapping from Kakao category_group_code to MKPointOfInterestCategory raw value.
-    /// Used to show the right icon in PlaceStopRowView.
+    /// Maps Kakao category fields to an MKPointOfInterestCategory raw value.
+    /// Uses category_group_code for the coarse type, then narrows AT4 (tourist attractions)
+    /// via the hierarchical category_name string (e.g. "관광명소 > 해변" → beach).
     var poiCategoryRaw: String? {
         switch category_group_code {
         case "FD6": return MKPointOfInterestCategory.restaurant.rawValue
@@ -88,12 +89,43 @@ struct KakaoPlace: Decodable {
         case "BK9": return MKPointOfInterestCategory.bank.rawValue
         case "OL7": return MKPointOfInterestCategory.gasStation.rawValue
         case "PK6": return MKPointOfInterestCategory.parking.rawValue
-        case "AT4": return MKPointOfInterestCategory.amusementPark.rawValue
         case "AD5": return MKPointOfInterestCategory.hotel.rawValue
         case "CT1": return MKPointOfInterestCategory.museum.rawValue
         case "SC4": return MKPointOfInterestCategory.school.rawValue
+        case "CS2": return MKPointOfInterestCategory.store.rawValue
+        case "MT1": return MKPointOfInterestCategory.foodMarket.rawValue
+        case "SW8": return MKPointOfInterestCategory.publicTransport.rawValue
+        case "AT4": return Self.refinedAttractionCategory(from: category_name)
         default: return nil
         }
+    }
+
+    /// Narrows Kakao AT4 (관광명소) to a more specific MKPointOfInterestCategory
+    /// by inspecting the Korean subcategory tokens in category_name.
+    private static func refinedAttractionCategory(from categoryName: String) -> String {
+        let name = categoryName
+        if name.contains("해변") || name.contains("해수욕장") {
+            return MKPointOfInterestCategory.beach.rawValue
+        }
+        if name.contains("국립공원") {
+            return MKPointOfInterestCategory.nationalPark.rawValue
+        }
+        if name.contains("공원") || name.contains("자연") {
+            return MKPointOfInterestCategory.park.rawValue
+        }
+        if name.contains("수족관") {
+            return MKPointOfInterestCategory.aquarium.rawValue
+        }
+        if name.contains("동물원") {
+            return MKPointOfInterestCategory.zoo.rawValue
+        }
+        if name.contains("경기장") || name.contains("스타디움") {
+            return MKPointOfInterestCategory.stadium.rawValue
+        }
+        if name.contains("문화유적") || name.contains("유적") || name.contains("랜드마크") {
+            return "MKPOICategoryLandmark"
+        }
+        return MKPointOfInterestCategory.amusementPark.rawValue
     }
 }
 
@@ -174,6 +206,9 @@ actor KakaoLocalService {
             return []
         }
         debugPrint("[Kakao] searchPlaces('\(query)') → \(response.documents.count) results")
+        for place in response.documents {
+            debugPrint("[Kakao] category  '\(place.place_name)'  group=\(place.category_group_code)  name='\(place.category_name)'  → poi=\(place.poiCategoryRaw ?? "nil")")
+        }
         return response.documents
     }
 
@@ -250,7 +285,12 @@ actor KakaoLocalService {
                     if byId[place.id] == nil { byId[place.id] = place }
                 }
             }
-            return Array(byId.values)
+            let results = Array(byId.values)
+            debugPrint("[Kakao] mapTap → \(results.count) nearby places (deduped)")
+            for place in results {
+                debugPrint("[Kakao] category  '\(place.place_name)'  group=\(place.category_group_code)  name='\(place.category_name)'  → poi=\(place.poiCategoryRaw ?? "nil")")
+            }
+            return results
         }
     }
 

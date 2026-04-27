@@ -615,7 +615,7 @@ struct EditPlaceStopNameSheet: View {
         let inferred = PlacePOICategoryPresentation.inferredCategoryRaw(fromPlaceTitle: finalName)
 
         var category: String?
-        if !titleChanged {
+        if !titleChanged || mapTapResolvedAsPOI {
             category = selectedCategory
         }
         if category == nil {
