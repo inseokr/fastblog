@@ -170,11 +170,16 @@ struct ManagePhotosView: View {
                         if let split = onSplitRequested {
                             let canSplit = manageGridPhotos.count > 1
                             Button(action: split) {
-                                Image(systemName: "scissors")
-                                    .font(.system(size: 22, weight: .semibold))
-                                    .foregroundStyle(Color.orange.opacity(canSplit ? 1.0 : 0.38))
-                                    .frame(width: 56, height: 56)
-                                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                                VStack(spacing: 3) {
+                                    Image(systemName: "scissors")
+                                        .font(.system(size: 22, weight: .semibold))
+                                        .foregroundStyle(Color.orange.opacity(canSplit ? 1.0 : 0.38))
+                                    Text("Split")
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(Color.orange.opacity(canSplit ? 1.0 : 0.38))
+                                }
+                                .frame(width: 64, height: 64)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                             }
                             .buttonStyle(.plain)
                             .disabled(!canSplit)
@@ -188,11 +193,16 @@ struct ManagePhotosView: View {
                         Spacer()
                         if onAddFromLibrary != nil {
                             Button(action: { onAddFromLibrary?() }) {
-                                Image(systemName: "photo.badge.plus")
-                                    .font(.system(size: 22, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .frame(width: 56, height: 56)
-                                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                                VStack(spacing: 3) {
+                                    Image(systemName: "photo.badge.plus")
+                                        .font(.system(size: 22, weight: .semibold))
+                                        .foregroundColor(.white)
+                                    Text("Gallery")
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundColor(.white)
+                                }
+                                .frame(width: 64, height: 64)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                             }
                             .accessibilityLabel("Add Photos")
                         }

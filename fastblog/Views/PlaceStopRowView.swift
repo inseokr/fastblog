@@ -855,26 +855,6 @@ struct PlaceStopRowView: View {
                         }
                         .frame(minHeight: isEditMode ? thumbnailSize + 56 : thumbnailSize + 28)
                     }
-                    if displayableIncludedPhotos.count > 3 {
-                        Button {
-                            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                                isPhotoStripExpanded.toggle()
-                            }
-                        } label: {
-                            Label(
-                                isPhotoStripExpanded ? "Show less" : "Show all \(displayableIncludedPhotos.count) photos",
-                                systemImage: isPhotoStripExpanded ? "chevron.up" : "chevron.down"
-                            )
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.primary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(rowInset)
-                            .appChromeCornerRadius(10)
-                        }
-                        .buttonStyle(.plain)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
                     if isEditMode, let onManagePhotos {
                         Button(action: onManagePhotos) {
                             Label("Manage Photos", systemImage: "photo.stack")

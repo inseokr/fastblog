@@ -194,10 +194,12 @@ struct PlacePhotoModalView: View {
     @State private var navigationDoNotShowAgain = false
     @AppStorage(Self.navigationChooserSuppressedKey) private var navigationChooserSuppressed = false
     @AppStorage(Self.navigationChooserPreferredAppKey) private var navigationChooserPreferredAppRaw = ""
+    @AppStorage("bloggo.camera.saveToPhotosEnabled") private var saveToPhotosEnabled: Bool = false
     /// When non-nil, replaces `placeSubtitle` for display after an in-modal rename (empty clears the line).
     @State private var subtitleOverride: String? = nil
     /// Read-only bottom overlay: multi-line captions start collapsed; user can expand.
     @State private var isReadOnlyCaptionExpanded = false
+    @State private var downloadToast: String?
     /// Vertical drag for swipe-down dismiss (blog overlay & sheets without a drag indicator).
     @State private var interactiveDismissDragOffset: CGFloat = 0
     @State private var isDismissExitAnimating = false
@@ -354,6 +356,21 @@ struct PlacePhotoModalView: View {
 
     private var currentPhoto: RecapPhoto? {
         photos.first { $0.id == effectiveDisplayedPhotoId } ?? photos.first
+    }
+
+    private var currentPhotoLocalIdentifier: String? {
+        let id = currentPhoto?.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return id.isEmpty ? nil : id
+    }
+
+    private var isCurrentPhotoFromInAppCameraStorage: Bool {
+        guard let id = currentPhotoLocalIdentifier else { return false }
+        return id.hasPrefix(AppCapturePhotoService.prefix)
+    }
+
+    /// Manual download is only needed for Bloggo-stored in-app captures when camera auto-save is off.
+    private var shouldShowManualDownloadAction: Bool {
+        isCurrentPhotoFromInAppCameraStorage && !saveToPhotosEnabled
     }
 
     /// Device-level safe area insets from UIKit — bypasses SwiftUI's navigation-stack-consumed safe area
@@ -678,13 +695,30 @@ struct PlacePhotoModalView: View {
                     }
                 },
                 onNavigate: { handleNavigationTap() },
-                onLink: { openGoogleSearch() }
+                onLink: { openGoogleSearch() },
+                showDownloadAction: shouldShowManualDownloadAction,
+                onDownload: { saveCurrentInAppCaptureToPhotos() }
             )
             .ignoresSafeArea(.all, edges: presentation.isSheet ? [] : .top)
             // Hide top chrome while zoomed so it doesn’t compete with the full-screen photo overlay.
             .allowsHitTesting(!isZoomMode)
             .opacity(isZoomMode ? 0 : 1)
             .animation(.easeInOut(duration: 0.25), value: isZoomMode)
+
+            if let toast = downloadToast {
+                VStack {
+                    Spacer()
+                    Text(toast)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(.black.opacity(0.72)))
+                        .padding(.bottom, 32)
+                }
+                .transition(.opacity)
+                .allowsHitTesting(false)
+            }
 
             // 5. Zoom mode overlay — appears when user taps the photo
             if isZoomMode, let photo = currentPhoto {
@@ -711,6 +745,7 @@ struct PlacePhotoModalView: View {
                 playingVibePulse = false
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: downloadToast != nil)
     }
 
     var body: some View {
@@ -1362,6 +1397,48 @@ struct PlacePhotoModalView: View {
         UIApplication.shared.open(url)
     }
 
+    private func saveCurrentInAppCaptureToPhotos() {
+        guard let localId = currentPhotoLocalIdentifier,
+              localId.hasPrefix(AppCapturePhotoService.prefix),
+              let image = AppCapturePhotoService.shared.loadImage(identifier: localId) else {
+            presentDownloadToast("Couldn't save to Photos")
+            return
+        }
+
+        Task {
+            var auth = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+            if auth == .notDetermined {
+                auth = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            }
+            guard auth == .authorized || auth == .limited else {
+                await MainActor.run {
+                    presentDownloadToast("Allow Photos access to save")
+                }
+                return
+            }
+
+            PHPhotoLibrary.shared().performChanges({
+                PHAssetChangeRequest.creationRequestForAsset(from: image)
+            }) { success, _ in
+                DispatchQueue.main.async {
+                    presentDownloadToast(success ? "1 photo saved to Photos" : "Couldn't save to Photos")
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func presentDownloadToast(_ message: String) {
+        downloadToast = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                if downloadToast == message {
+                    downloadToast = nil
+                }
+            }
+        }
+    }
+
     /// Builds `https://www.google.com/search?q=…` for a place title plus optional subtitle (e.g. city).
     private func googleSearchURL(placeName: String) -> URL? {
         let parts = [placeName, effectivePlaceSubtitle]
@@ -1565,6 +1642,8 @@ private struct PlaceDetailTopChrome: View {
     let onToggleVibe: () -> Void
     let onNavigate: () -> Void
     let onLink: () -> Void
+    let showDownloadAction: Bool
+    let onDownload: () -> Void
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -1670,7 +1749,9 @@ private struct PlaceDetailTopChrome: View {
                             RightActionStack(
                                 onSparkles: { },
                                 onNavigate: onNavigate,
-                                onLink: onLink
+                                onLink: onLink,
+                                showDownloadAction: showDownloadAction,
+                                onDownload: onDownload
                             )
                             .frame(width: PlaceDetailChromeLayout.circleActionSize, alignment: .center)
                         }
@@ -1757,6 +1838,8 @@ struct RightActionStack: View {
     var onSparkles: () -> Void
     var onNavigate: () -> Void
     var onLink: () -> Void
+    var showDownloadAction: Bool = false
+    var onDownload: () -> Void = { }
 
     var body: some View {
         VStack(spacing: PlaceDetailChromeLayout.actionStackSpacing) {
@@ -1790,6 +1873,20 @@ struct RightActionStack: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Open in browser")
+
+            if showDownloadAction {
+                Button(action: onDownload) {
+                    Image(systemName: "square.and.arrow.down.fill")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: PlaceDetailChromeLayout.circleActionSize, height: PlaceDetailChromeLayout.circleActionSize)
+                        .background(Color.blue.opacity(0.78))
+                        .clipShape(Circle())
+                        .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Save to Photos")
+            }
         }
         .shadow(color: .black.opacity(0.25), radius: 2)
     }

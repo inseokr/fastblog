@@ -1935,6 +1935,7 @@ struct CameraCaptureView: View {
     @State private var isShowingCapturesGallery = false
     @State private var latestGalleryThumbnail: UIImage? = nil
     @State private var flashOpacity: Double = 0
+    @State private var addNotePulse: Bool = false
     @State private var toastMessage: String?
     @State private var isShowingToast: Bool = false
     @State private var attachedCountThisSession: Int = 0
@@ -1965,6 +1966,8 @@ struct CameraCaptureView: View {
     /// Persisted so the user's last choice survives across camera sessions.
     /// Defaults to false — only enabled once the user explicitly toggles it on.
     @AppStorage("bloggo.camera.vibeEnabled") private var vibeEnabled: Bool = false
+    /// When enabled, each in-app camera capture is also saved to the user's Photos library.
+    @AppStorage("bloggo.camera.saveToPhotosEnabled") private var saveToPhotosEnabled: Bool = false
     /// True when the most recently captured photo had a vibe audio clip attached.
     @State private var lastCaptureWasVibe: Bool = false
     /// Drives the "Capturing Vibe" pill dot pulse animation.
@@ -2130,7 +2133,7 @@ struct CameraCaptureView: View {
             .padding(.leading, 16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-            // Right stack: Reverse → Flash → Vibe
+            // Right stack: Reverse → Flash → Save to Photos → Vibe
             VStack(spacing: 16) {
                 // Reverse camera
                 Button {
@@ -2161,6 +2164,21 @@ struct CameraCaptureView: View {
                 }
                 .accessibilityLabel(flashAccessibilityLabel)
                 .disabled(cameraController.position == .front)
+
+                // Save to Photos toggle
+                Button {
+                    toggleSaveToPhotos()
+                } label: {
+                    Image(systemName: "arrow.down.to.line.compact")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial)
+                        .background(saveToPhotosEnabled ? Color.cyan.opacity(0.22) : Color.clear)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(saveToPhotosEnabled ? Color.cyan.opacity(0.5) : Color.clear, lineWidth: 1))
+                }
+                .accessibilityLabel(saveToPhotosEnabled ? "Save to Photos on, tap to disable" : "Save to Photos off, tap to enable")
 
                 // Vibe toggle
                 Button {
@@ -2203,6 +2221,12 @@ struct CameraCaptureView: View {
                     }
                 }
         )
+        .simultaneousGesture(
+            TapGesture(count: 2)
+                .onEnded {
+                    cameraController.flipCamera()
+                }
+        )
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
 
@@ -2238,6 +2262,9 @@ struct CameraCaptureView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
                     vibePulse = true
+                }
+                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                    addNotePulse = true
                 }
             }
         }
@@ -2765,6 +2792,17 @@ struct CameraCaptureView: View {
                 isShowingSessionGallery = true
             } label: {
                 shutterBarCurrentPhotosButton
+                    .overlay(alignment: .top) {
+                        if photosCapturedThisSession > 0 {
+                            Button {
+                                isShowingSessionGallery = true
+                            } label: {
+                                addNotePromptCard
+                            }
+                            .buttonStyle(.plain)
+                            .offset(y: -46)
+                        }
+                    }
             }
             .frame(maxWidth: .infinity)
         }
@@ -2839,6 +2877,35 @@ struct CameraCaptureView: View {
         }
         .frame(width: previewSize, height: previewSize)
     }
+
+    /// Floating "plus note" prompt shown above current-capture button.
+    private var addNotePromptCard: some View {
+        return HStack(spacing: 8) {
+            Image(systemName: "text.bubble.fill")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.white.opacity(0.9))
+                .frame(width: 20, height: 20)
+                .background(Color.white.opacity(0.14))
+                .clipShape(Circle())
+                .scaleEffect(addNotePulse ? 1.04 : 1.0)
+                .shadow(color: .white.opacity(addNotePulse ? 0.24 : 0.14), radius: addNotePulse ? 5 : 3)
+                .animation(.easeInOut(duration: 1.5), value: addNotePulse)
+
+            Text("Add note?")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.white.opacity(0.92))
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .overlay(
+            Capsule()
+                .stroke(Color.white.opacity(0.18), lineWidth: 0.8)
+        )
+        .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+    }
 }
 
 // MARK: - Moment count by place (same place = one moment)
@@ -2910,6 +2977,7 @@ extension CameraCaptureView {
     /// Used after capture when not near home, and when user taps "Keep" on the near-home confirmation.
     /// Only adds to sessionMoments and shows "You are capturing a moment" when it's truly a new trip (no existing blog or draft for this capture).
     private func applyCapturedPhoto(image: UIImage?, timestamp: Date, vibeURL: URL? = nil) {
+        saveCapturedImageToPhotosLibraryIfNeeded(image)
         var persistedLocalId: String?
         var remainingVibeURL = vibeURL
         if let image = image, let lid = persistInAppCameraCapture(image: image, timestamp: timestamp, vibeURL: vibeURL) {
@@ -2953,6 +3021,31 @@ extension CameraCaptureView {
                 hasOfferedStartBlogThisSession = true
                 startNewOnTheGoBlogFromSession()
             }
+        }
+    }
+
+    private func toggleSaveToPhotos() {
+        if saveToPhotosEnabled {
+            saveToPhotosEnabled = false
+            return
+        }
+        Task {
+            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            await MainActor.run {
+                if status == .authorized || status == .limited {
+                    saveToPhotosEnabled = true
+                } else {
+                    saveToPhotosEnabled = false
+                    showToast("Enable Photos access in Settings to save locally.")
+                }
+            }
+        }
+    }
+
+    private func saveCapturedImageToPhotosLibraryIfNeeded(_ image: UIImage?) {
+        guard saveToPhotosEnabled, let image else { return }
+        PHPhotoLibrary.shared().performChanges {
+            PHAssetChangeRequest.creationRequestForAsset(from: image)
         }
     }
 
@@ -3548,10 +3641,12 @@ private final class InAppGalleryAutoScrollInvoker: ObservableObject {
 private struct InAppPhotoGalleryView: View {
     @ObservedObject private var store = InAppCameraPhotoStore.shared
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("bloggo.inAppCamera.hasSeenDownloadTooltip") private var hasSeenDownloadTooltip = false
     @State private var isSelectMode = false
     @State private var selectedIds: Set<UUID> = []
     @State private var showRemoveConfirmation = false
     @State private var downloadToast: String?
+    @State private var showDownloadTooltip = false
     @State private var cellFrames: [UUID: CGRect] = [:]
     @State private var dragStartIndex: Int?
     @State private var dragInitialSelectedIds: Set<UUID> = []
@@ -3611,6 +3706,7 @@ private struct InAppPhotoGalleryView: View {
                 if isSelectMode && !store.entries.isEmpty {
                     HStack {
                         Button {
+                            presentDownloadTooltipIfNeeded()
                             saveSelectedToPhotoLibrary()
                         } label: {
                             Image(systemName: "square.and.arrow.down")
@@ -3655,6 +3751,27 @@ private struct InAppPhotoGalleryView: View {
                         .background(Capsule().fill(.black.opacity(0.7)))
                         .padding(.bottom, 88)
                 }
+
+                if showDownloadTooltip {
+                    VStack(spacing: 4) {
+                        Text("Download")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                        Text("Captured photos here are also saved to your device Photos.")
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.9))
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.black.opacity(0.82))
+                    )
+                    .padding(.horizontal, 32)
+                    .padding(.bottom, 164)
+                    .transition(.opacity)
+                }
             }
             .alert("Remove selected photos?", isPresented: $showRemoveConfirmation) {
                 Button("Cancel", role: .cancel) { }
@@ -3669,6 +3786,7 @@ private struct InAppPhotoGalleryView: View {
         }
         .interactiveDismissDisabled(isSelectMode)
         .preferredColorScheme(.dark)
+        .animation(.easeInOut(duration: 0.2), value: showDownloadTooltip)
     }
 
     private func inAppScrollGrid(proxy: ScrollViewProxy) -> some View {
@@ -3860,6 +3978,15 @@ private struct InAppPhotoGalleryView: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) { downloadToast = nil }
                 }
             }
+        }
+    }
+
+    private func presentDownloadTooltipIfNeeded() {
+        guard !hasSeenDownloadTooltip else { return }
+        hasSeenDownloadTooltip = true
+        showDownloadTooltip = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
+            showDownloadTooltip = false
         }
     }
 
