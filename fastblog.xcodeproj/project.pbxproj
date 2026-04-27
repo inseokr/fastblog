@@ -184,6 +184,11 @@
 		BB000254 /* AppCaptureDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000255 /* AppCaptureDetailView.swift */; };
 		BB000260 /* VibeRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000261 /* VibeRecorder.swift */; };
 		BB000262 /* VibePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000263 /* VibePlayer.swift */; };
+		BB000270 /* KakaoLocalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000271 /* KakaoLocalService.swift */; };
+		BB000272 /* PlaceSuggestion.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000273 /* PlaceSuggestion.swift */; };
+		BB000282 /* KakaoMapsSDK-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = BB000281 /* KakaoMapsSDK-SPM */; };
+		BB000284 /* KakaoTappableMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000283 /* KakaoTappableMapView.swift */; };
+		BB000285 /* KakaoMapTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000286 /* KakaoMapTestView.swift */; };
 		BB0002A1 /* StoryWritingStyleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002A2 /* StoryWritingStyleSheet.swift */; };
 		BB0002B1 /* SlideshowMusicPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B0 /* SlideshowMusicPreference.swift */; };
 		BB0002B3 /* SlideshowMusicPlaybackCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */; };
@@ -223,6 +228,7 @@
 		BB000403 /* TripClusterAnnotationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000402 /* TripClusterAnnotationView.swift */; };
 		BB000405 /* BlogDropService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000404 /* BlogDropService.swift */; };
 		BB000407 /* BlogDropSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000406 /* BlogDropSheet.swift */; };
+		BB000409 /* EditBlogPhotoFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000408 /* EditBlogPhotoFlowView.swift */; };
 		BB00A001 /* Analytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00A002 /* Analytics.swift */; };
 		BB00AE01 /* AnalyticsEventType.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00AE02 /* AnalyticsEventType.swift */; };
 		BB00AI01 /* AnalyticsIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00AI02 /* AnalyticsIdentity.swift */; };
@@ -432,6 +438,10 @@
 		BB000255 /* AppCaptureDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCaptureDetailView.swift; sourceTree = "<group>"; };
 		BB000261 /* VibeRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VibeRecorder.swift; sourceTree = "<group>"; };
 		BB000263 /* VibePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VibePlayer.swift; sourceTree = "<group>"; };
+		BB000271 /* KakaoLocalService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KakaoLocalService.swift; sourceTree = "<group>"; };
+		BB000273 /* PlaceSuggestion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSuggestion.swift; sourceTree = "<group>"; };
+		BB000283 /* KakaoTappableMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KakaoTappableMapView.swift; sourceTree = "<group>"; };
+		BB000286 /* KakaoMapTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KakaoMapTestView.swift; sourceTree = "<group>"; };
 		BB0002A2 /* StoryWritingStyleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoryWritingStyleSheet.swift; sourceTree = "<group>"; };
 		BB0002B0 /* SlideshowMusicPreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowMusicPreference.swift; sourceTree = "<group>"; };
 		BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowMusicPlaybackCoordinator.swift; sourceTree = "<group>"; };
@@ -470,6 +480,7 @@
 		BB000402 /* TripClusterAnnotationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripClusterAnnotationView.swift; sourceTree = "<group>"; };
 		BB000404 /* BlogDropService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogDropService.swift; sourceTree = "<group>"; };
 		BB000406 /* BlogDropSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogDropSheet.swift; sourceTree = "<group>"; };
+		BB000408 /* EditBlogPhotoFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditBlogPhotoFlowView.swift; sourceTree = "<group>"; };
 		BB00A002 /* Analytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Analytics.swift; sourceTree = "<group>"; };
 		BB00AE02 /* AnalyticsEventType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsEventType.swift; sourceTree = "<group>"; };
 		BB00AI02 /* AnalyticsIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsIdentity.swift; sourceTree = "<group>"; };
@@ -507,6 +518,7 @@
 				7A15FF6A2F49617A0042F844 /* GoogleSignIn in Frameworks */,
 				BB0003D1 /* ZIPFoundation in Frameworks */,
 				A1C4M3R12F9E1000010003 /* PhotosUI.framework in Frameworks */,
+				BB000282 /* KakaoMapsSDK-SPM in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -601,6 +613,7 @@
 				BB00010F /* MockPhoto.swift */,
 				BB000111 /* PlaceCluster.swift */,
 				BB000113 /* RecapBlogDetail.swift */,
+				BB000273 /* PlaceSuggestion.swift */,
 				BB000115 /* RecapDraft.swift */,
 				BB0001D1 /* RecallTrigger.swift */,
 				BB000119 /* ScanConfig.swift */,
@@ -654,6 +667,8 @@
 				BB000216 /* UploadingBlogView.swift */,
 				BB00012F /* DayChipsView.swift */,
 				BB000131 /* EditPlaceStopNameSheet.swift */,
+				BB000283 /* KakaoTappableMapView.swift */,
+				BB000286 /* KakaoMapTestView.swift */,
 				BB000133 /* FindMoreTripsSheet.swift */,
 				BB0003B2 /* VisitedCitiesSheet.swift */,
 				BB000205 /* ImportDraftsModalView.swift */,
@@ -684,6 +699,7 @@
 				BB0001DB /* PaywallView.swift */,
 				BB00F006 /* PushPermissionPromptView.swift */,
 				BB000153 /* RecapBlogPageView.swift */,
+				BB000408 /* EditBlogPhotoFlowView.swift */,
 				BB000155 /* RecapBuilderView.swift */,
 				BB000157 /* RecapPreviewView.swift */,
 				BB000159 /* RecapSavedView.swift */,
@@ -774,6 +790,7 @@
 				BB0001CF /* FindMoreTripsAgent.swift */,
 				BB000183 /* GeoDistanceHelper.swift */,
 				BB000185 /* GeocodingService.swift */,
+				BB000271 /* KakaoLocalService.swift */,
 				BB0001ED /* GoogleAuthManager.swift */,
 				BB000187 /* ImageLoader.swift */,
 				BB0001F8 /* KeychainHelper.swift */,
@@ -873,6 +890,7 @@
 			packageProductDependencies = (
 				AA000061 /* GoogleSignIn */,
 				AA000063 /* ZIPFoundation */,
+				BB000281 /* KakaoMapsSDK-SPM */,
 			);
 			productName = fastblog;
 			productReference = AA000003 /* Bloggo.app */;
@@ -900,6 +918,7 @@
 			packageReferences = (
 				AA000060 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 				AA000062 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
+				BB000280 /* XCRemoteSwiftPackageReference "KakaoMapsSDK-SPM" */,
 			);
 			productRefGroup = BB0001AF /* Products */;
 			projectDirPath = "";
@@ -986,6 +1005,8 @@
 				BB000215 /* UploadingBlogView.swift in Sources */,
 				BB000130 /* DayChipsView.swift in Sources */,
 				BB000132 /* EditPlaceStopNameSheet.swift in Sources */,
+				BB000284 /* KakaoTappableMapView.swift in Sources */,
+				BB000285 /* KakaoMapTestView.swift in Sources */,
 				BB000134 /* FindMoreTripsSheet.swift in Sources */,
 				BB000136 /* LandingView.swift in Sources */,
 				BB000138 /* LoadingScanView.swift in Sources */,
@@ -1008,6 +1029,7 @@
 				BB000152 /* ProfileView.swift in Sources */,
 				BB00F005 /* PushPermissionPromptView.swift in Sources */,
 				BB000154 /* RecapBlogPageView.swift in Sources */,
+				BB000409 /* EditBlogPhotoFlowView.swift in Sources */,
 				BB000156 /* RecapBuilderView.swift in Sources */,
 				BB000158 /* RecapPreviewView.swift in Sources */,
 				BB00015A /* RecapSavedView.swift in Sources */,
@@ -1043,6 +1065,8 @@
 				BB000182 /* DayToTripGrouper.swift in Sources */,
 				BB000184 /* GeoDistanceHelper.swift in Sources */,
 				BB000186 /* GeocodingService.swift in Sources */,
+				BB000270 /* KakaoLocalService.swift in Sources */,
+				BB000272 /* PlaceSuggestion.swift in Sources */,
 				BB000188 /* ImageLoader.swift in Sources */,
 				BB00018A /* LocalExclusion.swift in Sources */,
 				BB00018C /* LocalExclusionTests.swift in Sources */,
@@ -1278,7 +1302,7 @@
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Debug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
@@ -1289,6 +1313,10 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fastblog.fastblog;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1310,7 +1338,7 @@
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Release.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
@@ -1321,6 +1349,10 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fastblog.fastblog;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1371,6 +1403,14 @@
 				minimumVersion = 0.9.0;
 			};
 		};
+		BB000280 /* XCRemoteSwiftPackageReference "KakaoMapsSDK-SPM" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/kakao-mapsSDK/KakaoMapsSDK-SPM.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1383,6 +1423,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA000062 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
 			productName = ZIPFoundation;
+		};
+		BB000281 /* KakaoMapsSDK-SPM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BB000280 /* XCRemoteSwiftPackageReference "KakaoMapsSDK-SPM" */;
+			productName = "KakaoMapsSDK-SPM";
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

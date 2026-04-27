@@ -67,10 +67,8 @@ struct PlaceStopActionSheet: View {
             }
             if onSplit != nil { section2Rows += 1 }
             height += CGFloat(section2Rows) * rowH + CGFloat(section2Dividers)
-            height += 24
+            height += 20
         }
-
-        height += 8
 
         height += rowH
         height += 34
@@ -173,10 +171,8 @@ struct PlaceStopActionSheet: View {
                 .background(Color(white: 0.15))
                 .appChromeCornerRadius(12)
                 .padding(.horizontal, 16)
-                .padding(.bottom, 24)
+                .padding(.bottom, 20)
             }
-
-            Spacer(minLength: 8)
 
             // Section 3: Destructive Action
             VStack(spacing: 0) {

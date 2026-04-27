@@ -50,8 +50,8 @@ struct BlogSettingsSheet: View {
     @Binding var selectedDayIndex: Int
     var blogKey: Int?
     var onSave: () -> Void
-    /// Re-open the trip photo picker + update flow (``EditBlogPhotoFlowView``). Nil hides the row.
-    var onPickPhotos: (() -> Void)? = nil
+    /// Called after the photo selection flow updates photos for this blog.
+    var onBlogPhotosUpdated: (() -> Void)? = nil
     var onEditMode: (() -> Void)? = nil
     var onAddNewMoments: (() -> Void)? = nil
     var onRescanAllMoments: (() -> Void)? = nil
@@ -72,6 +72,7 @@ struct BlogSettingsSheet: View {
     @AppStorage(WeatherTemperatureUnit.storageKey) private var weatherTemperatureUnitRaw: String = WeatherTemperatureUnit.fahrenheit.rawValue
     @AppStorage("selectedBlogFont") private var selectedBlogFont: String = "Serif"
 
+    @State private var showPhotoFlow = false
     @State private var showTitleChange = false
     @State private var showCoverChange = false
     @State private var coverPhotoIdentifierBeforeEdit: String? = nil
@@ -83,6 +84,7 @@ struct BlogSettingsSheet: View {
     @State private var showNearbyShareHost = false
     @State private var showNearbyShareUnavailableAlert = false
     @State private var showBlogDrop = false
+    @State private var showStorageManagement = false
     @State private var isExportingBackup = false
     @State private var backupExportProgress: Double = 0
     @State private var backupShareURL: URL?
@@ -117,6 +119,14 @@ struct BlogSettingsSheet: View {
                 .navigationTitle("Blog Settings")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { navigationToolbar }
+                .fullScreenCover(isPresented: $showPhotoFlow) {
+                    EditBlogPhotoFlowView(
+                        blogId: draft.id,
+                        onDismiss: { showPhotoFlow = false },
+                        onBlogPhotosUpdated: { onBlogPhotosUpdated?() }
+                    )
+                    .environmentObject(createdRecapStore)
+                }
                 .sheet(isPresented: $showTitleChange) { titleChangeSheet }
                 .sheet(isPresented: $showCoverChange, onDismiss: handleCoverPickerDismiss) { coverPhotoPicker }
                 .sheet(isPresented: $showRestorePlaces) { restorePlacesSheet }
@@ -187,8 +197,10 @@ struct BlogSettingsSheet: View {
             unusedPhotosSection
             fontStyleAndWeatherSection
             backupSection
-            blogDropSection
             cloudSection
+        }
+        .navigationDestination(isPresented: $showStorageManagement) {
+            StorageManagementView(draft: $draft, onSave: onSave)
         }
     }
 
@@ -199,7 +211,8 @@ struct BlogSettingsSheet: View {
                     onEditMode?()
                     dismiss()
                 } label: {
-                    Label("Edit Mode", systemImage: "pencil")
+                    Label("Turn on Blog Edit Mode", systemImage: "pencil")
+                        .foregroundStyle(.white)
                 }
             }
             if !draft.removedPlaceStops.isEmpty {
@@ -209,6 +222,7 @@ struct BlogSettingsSheet: View {
                     Label("Restore Places (\(draft.removedPlaceStops.count))", systemImage: "arrow.uturn.backward.circle")
                         .lineLimit(1)
                         .truncationMode(.tail)
+                        .foregroundStyle(.white)
                 }
             }
             if onAddNewMoments != nil {
@@ -217,6 +231,7 @@ struct BlogSettingsSheet: View {
                     dismiss()
                 } label: {
                     Label("Add New Moments", systemImage: "plus.circle")
+                        .foregroundStyle(.white)
                 }
             }
             if onRescanAllMoments != nil {
@@ -225,6 +240,7 @@ struct BlogSettingsSheet: View {
                     dismiss()
                 } label: {
                     Label("Rescan All Moments", systemImage: "arrow.clockwise.circle")
+                        .foregroundStyle(.white)
                 }
             }
         }
@@ -232,11 +248,24 @@ struct BlogSettingsSheet: View {
 
     private var unusedPhotosSection: some View {
         Section {
-            NavigationLink {
-                StorageManagementView(draft: $draft, onSave: onSave)
+            Button {
+                AppAnalytics.trackEvent(name: "Blog-PickPhotos-Settings")
+                showPhotoFlow = true
+            } label: {
+                Label("Photo Selection", systemImage: "photo.on.rectangle.angled")
+                    .foregroundStyle(.white)
+            }
+            Button {
+                showStorageManagement = true
             } label: {
                 Label {
-                    Text("Unused Photos")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Cleanup Camera Roll Photos")
+                            .foregroundStyle(.white)
+                        Text("Free up your phone storage by deleting photos not selected for the blog")
+                            .font(.caption)
+                            .foregroundStyle(Color(white: 0.6))
+                    }
                 } icon: {
                     Image(systemName: "photo.stack")
                         .foregroundStyle(.white)
@@ -252,6 +281,7 @@ struct BlogSettingsSheet: View {
                 showTitleChange = true
             } label: {
                 Label("Change Blog Title", systemImage: "textformat")
+                    .foregroundStyle(.white)
             }
             Button {
                 AppAnalytics.trackEvent(name: "Blog-Pick-CoverPhoto")
@@ -259,14 +289,7 @@ struct BlogSettingsSheet: View {
                 showCoverChange = true
             } label: {
                 Label("Change Cover Photo", systemImage: "photo")
-            }
-            if onPickPhotos != nil {
-                Button {
-                    AppAnalytics.trackEvent(name: "Blog-PickPhotos-Settings")
-                    onPickPhotos?()
-                } label: {
-                    Label("Pick Photos", systemImage: "photo.on.rectangle.angled")
-                }
+                    .foregroundStyle(.white)
             }
         }
     }
@@ -276,15 +299,20 @@ struct BlogSettingsSheet: View {
             Button {
                 Task { await exportBlogBackupTapped() }
             } label: {
-                Label("Export Backup (ZIP)", systemImage: "arrow.up.doc")
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Export Backup (ZIP)")
+                            .foregroundStyle(.white)
+                        Text(canExportSavedBackup ? "Import to another device via App Settings" : "Save the blog from the editor first to enable")
+                            .font(.caption)
+                            .foregroundStyle(Color(white: 0.6))
+                    }
+                } icon: {
+                    Image(systemName: "arrow.up.doc")
+                        .foregroundStyle(.white)
+                }
             }
             .disabled(isExportingBackup || !canExportSavedBackup)
-        } footer: {
-            if canExportSavedBackup {
-                Text("Creates a backup file of this blog so you can import it to another device using Bloggo. Import can be found in the App Settings page.")
-            } else {
-                Text("Save this blog from the editor first (toolbar Save). Export only includes saved blogs, not draft-only recaps.")
-            }
         }
     }
 
@@ -293,10 +321,19 @@ struct BlogSettingsSheet: View {
             Button {
                 showBlogDrop = true
             } label: {
-                Label("Blog Drop", systemImage: "arrow.down.circle")
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Blog Drop")
+                            .foregroundStyle(.white)
+                        Text("Copy all stories to another Bloggo user's device")
+                            .font(.caption)
+                            .foregroundStyle(Color(white: 0.6))
+                    }
+                } icon: {
+                    Image(systemName: "arrow.down.circle")
+                        .foregroundStyle(.white)
+                }
             }
-        } footer: {
-            Text("Share this blog with another Bloggo user. All stories — blog, day, place, and photo — are copied to their device.")
         }
     }
 
@@ -369,27 +406,19 @@ struct BlogSettingsSheet: View {
                     .font(.custom("AmericanTypewriter", size: 16))
                     .tag("Typewriter")
             } label: {
-                Label {
-                    Text("Font Style")
-                } icon: {
-                    Image(systemName: "textformat.alt")
-                        .foregroundStyle(.white)
-                }
+                Label("Font Style", systemImage: "textformat.alt")
+                    .foregroundStyle(.white)
             }
+            .tint(Color(uiColor: .secondaryLabel))
             Picker(selection: $weatherTemperatureUnitRaw) {
                 ForEach(WeatherTemperatureUnit.allCases, id: \.rawValue) { unit in
                     Text(unit.displayName).tag(unit.rawValue)
                 }
             } label: {
-                Label {
-                    Text("Day weather")
-                } icon: {
-                    Image(systemName: "sun.max")
-                        .foregroundStyle(.white)
-                }
+                Label("Day weather", systemImage: "sun.max")
+                    .foregroundStyle(.white)
             }
-        } footer: {
-            Text("High and low temperatures shown on each day in the blog use this unit.")
+            .tint(Color(uiColor: .secondaryLabel))
         }
     }
 
@@ -424,6 +453,7 @@ struct BlogSettingsSheet: View {
         } footer: {
             Text(displayPrompt)
                 .lineLimit(3)
+                .foregroundStyle(Color(white: 0.6))
         }
     }
 
@@ -438,6 +468,7 @@ struct BlogSettingsSheet: View {
                 }
             } footer: {
                 Text("This will remove uploaded photos from the cloud. Your local blog and photos are not affected.")
+                    .foregroundStyle(Color(white: 0.6))
             }
         }
     }
@@ -466,13 +497,20 @@ struct BlogSettingsSheet: View {
 
     @ToolbarContentBuilder
     private var navigationToolbar: some ToolbarContent {
-        ToolbarItem(placement: .confirmationAction) {
-            Button("Done") {
+        ToolbarItem(placement: .cancellationAction) {
+            Button {
                 onSave()
                 dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .fontWeight(.medium)
+                    .foregroundStyle(.white)
             }
-            .fontWeight(.semibold)
-            .foregroundColor(.white)
+        }
+        ToolbarItem(placement: .principal) {
+            Text("Blog Settings")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(.white)
         }
     }
 
