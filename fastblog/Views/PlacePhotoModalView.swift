@@ -409,8 +409,13 @@ struct PlacePhotoModalView: View {
     }
 
     /// Full-screen / blog overlay: inset bottom chrome to clear the home indicator.
+    /// Keep recap/map visual rhythm unchanged; Places Visited needs this extra lift
+    /// because its title row can include an additional trailing action.
     private func bottomPhotoChromeInset(safeBottom: CGFloat) -> CGFloat {
         if presentation.isSheet { return 0 }
+        if presentation.fullscreenSource == .placesVisited {
+            return safeBottom
+        }
         return 0
     }
 

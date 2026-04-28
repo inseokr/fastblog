@@ -295,6 +295,8 @@ struct RecapBlogPageView: View {
     @State private var showRescanResultAlert = false
     @State private var rescanResultMessage = ""
     @State private var hasCheckedFirstTimeTip = false
+    /// Presents the in-app camera from an ongoing/current blog.
+    @State private var showCameraCaptureFromRecap = false
 
     // MARK: - Panorama
     @State private var showPanorama = false
@@ -744,6 +746,15 @@ struct RecapBlogPageView: View {
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showFirstSaveBanner)
             .overlay(alignment: .top) { uploadSuccessBannerOverlay }
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showUploadSuccessBanner)
+            .fullScreenCover(isPresented: $showCameraCaptureFromRecap) {
+                NavigationStack {
+                    CameraCaptureView(
+                        tripsViewModel: TripsViewModel(createdRecapStore: createdRecapStore),
+                        postDismissToast: nil
+                    )
+                    .environmentObject(createdRecapStore)
+                }
+            }
             .fullScreenCover(isPresented: $showUploadingFullScreen) {
                 UploadingBlogView(
                     uploadProgress: $uploadProgress,
@@ -1467,6 +1478,15 @@ struct RecapBlogPageView: View {
             if !isKeyboardVisible {
                 dayFilterSection
                     .zIndex(1)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            if shouldShowRecapCameraQuickCapture && !isKeyboardVisible {
+                recapCameraQuickCaptureButton
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(.trailing, 16)
+                    .padding(.bottom, Self.dayFilterApproxHeight + 14)
+                    .zIndex(21)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -2334,6 +2354,49 @@ struct RecapBlogPageView: View {
                 }
             }
         }
+    }
+
+    private var recapCameraQuickCaptureButton: some View {
+        Button {
+            openCameraCaptureFromRecap()
+        } label: {
+            Image(systemName: "camera.fill")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 52, height: 52)
+                .background(
+                    Circle()
+                        .fill(Color.blue)
+                )
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.22), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open In-App Camera")
+    }
+
+    /// True only for the currently active on-the-go blog; concluded blogs never show quick capture.
+    private var shouldShowRecapCameraQuickCapture: Bool {
+        guard OnTheGoTripStore.activeBlogId == blogId else { return false }
+        return OnTheGoTripStore.isTripStillOngoing()
+    }
+
+    private func openCameraCaptureFromRecap() {
+        if let blog = createdRecapStore.visibleRecents.first(where: { $0.sourceTripId == blogId }) {
+            let fallbackEndDate = draft.days.last?.date ?? Date()
+            let endDate = blog.tripEndDate ?? fallbackEndDate
+            OnTheGoTripStore.markTripAsActive(
+                blogId: blogId,
+                title: blog.title,
+                tripEndDate: endDate,
+                country: blog.countryName
+            )
+        }
+        AppAnalytics.track(.appInAppCameraOpen)
+        showCameraCaptureFromRecap = true
     }
 
     private func dayPill(title: String, index: Int, day: RecapBlogDay, processingIndex: Int?) -> some View {
