@@ -1153,11 +1153,19 @@ struct RecapBlogPageView: View {
                 }
             }
             .sheet(isPresented: $showBloggoGalleryImportForManageStop) {
-                AppCaptureGalleryView { captureIds in
-                    showBloggoGalleryImportForManageStop = false
-                    guard let pair = showManagePhotosForStop, !captureIds.isEmpty else { return }
-                    importBloggoPhotosIntoStop(captureIds: captureIds, dayId: pair.dayId, stopId: pair.stopId)
-                }
+                let alreadyAdded: Set<String> = {
+                    guard let pair = showManagePhotosForStop,
+                          let stop = placeStop(dayId: pair.dayId, stopId: pair.stopId) else { return [] }
+                    return Set(stop.photos.compactMap(\.localIdentifier))
+                }()
+                AppCaptureGalleryView(
+                    onPickerComplete: { captureIds in
+                        showBloggoGalleryImportForManageStop = false
+                        guard let pair = showManagePhotosForStop, !captureIds.isEmpty else { return }
+                        importBloggoPhotosIntoStop(captureIds: captureIds, dayId: pair.dayId, stopId: pair.stopId)
+                    },
+                    excludedIdentifiers: alreadyAdded
+                )
             }
             .onChange(of: showManagePhotosForStop) { old, new in
                 guard old != nil, new == nil else { return }

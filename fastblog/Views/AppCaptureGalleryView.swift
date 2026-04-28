@@ -54,6 +54,9 @@ struct AppCaptureGalleryView: View {
     /// When provided the view works as a photo picker. The callback receives the UUIDs of selected
     /// captures and the sheet is dismissed automatically. Download/trash actions are hidden.
     var onPickerComplete: (([UUID]) -> Void)? = nil
+    /// Capture identifiers (bloggo-capture:<uuid>) already present in the destination stop.
+    /// These are hidden from the picker grid so the user only sees photos not yet added.
+    var excludedIdentifiers: Set<String> = []
 
     private var isPickerMode: Bool { onPickerComplete != nil }
 
@@ -103,27 +106,26 @@ struct AppCaptureGalleryView: View {
                 // Bottom bar in select mode
                 if isSelectMode && !items.isEmpty {
                     if isPickerMode {
-                        // Picker mode: single "Add N Photos" confirm button
-                        HStack {
-                            Spacer()
-                            Button {
-                                let ids = Array(selectedIds)
-                                onPickerComplete?(ids)
-                                dismiss()
-                            } label: {
-                                Text(selectedIds.isEmpty ? "Add Photos" : "Add \(selectedIds.count) Photo\(selectedIds.count == 1 ? "" : "s")")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundColor(selectedIds.isEmpty ? .gray : .white)
-                                    .padding(.horizontal, 24)
-                                    .padding(.vertical, 12)
-                                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
-                            }
-                            .disabled(selectedIds.isEmpty)
-                            .accessibilityLabel("Add selected photos to blog")
-                            Spacer()
+                        // Picker mode: full-width blue primary button
+                        Button {
+                            let ids = Array(selectedIds)
+                            onPickerComplete?(ids)
+                            dismiss()
+                        } label: {
+                            Text(selectedIds.isEmpty ? "Select Photos to Add" : "Add \(selectedIds.count) Photo\(selectedIds.count == 1 ? "" : "s")")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
                         }
+                        .background(
+                            Color.blue.opacity(selectedIds.isEmpty ? 0.35 : 1),
+                            in: RoundedRectangle(appChromeBaseRadius: 12)
+                        )
+                        .disabled(selectedIds.isEmpty)
                         .padding(.horizontal, 20)
                         .padding(.bottom, 8)
+                        .accessibilityLabel("Add selected photos to blog")
                     } else {
                         // Normal mode: download (left), count (center), trash (right)
                         HStack {
@@ -184,21 +186,30 @@ struct AppCaptureGalleryView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        if isPickerMode { onPickerComplete?([]) }
-                        dismiss()
-                    } label: {
-                        if isPickerMode {
-                            Text("Cancel")
-                                .foregroundColor(.white)
-                        } else {
+                    if isPickerMode {
+                        Button("Cancel") {
+                            onPickerComplete?([])
+                            dismiss()
+                        }
+                        .foregroundColor(.white)
+                    } else {
+                        Button {
+                            dismiss()
+                        } label: {
                             Image(systemName: "chevron.down")
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundColor(.white)
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Dismiss")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(isPickerMode ? "Cancel" : "Dismiss")
+                }
+                ToolbarItem(placement: .principal) {
+                    if isPickerMode {
+                        Text("Bloggo Gallery")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if !items.isEmpty && !isPickerMode {
@@ -371,6 +382,10 @@ struct AppCaptureGalleryView: View {
         var loaded: [AppCaptureItem] = []
         let store = CreatedRecapBlogStore.shared
         for uuid in ids {
+            if isPickerMode {
+                let identifier = AppCapturePhotoService.identifier(for: uuid)
+                if excludedIdentifiers.contains(identifier) { continue }
+            }
             let image = service.loadImage(captureId: uuid)
             let info = service.metadata(captureId: uuid)
             let metaCaption = info?.caption?.trimmingCharacters(in: .whitespacesAndNewlines)
