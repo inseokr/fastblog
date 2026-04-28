@@ -179,8 +179,13 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         }
         let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
         let place = await GeocodingService.shared.place(for: location, precise: true)
-        let name = !place.title.isEmpty ? place.title : place.bestPlaceLabel
-        debugPrint("[PlaceSearch] resolveCoordinateName(geocoder) → '\(name)'")
+        // Prefer `bestPlaceLabel`: it filters street-suffix names (" st", " ave", …) and falls
+        // through to subLocality/locality. Taps that miss every nearby POI surface a neighborhood
+        // or city name instead of "1234 Main St", which is what users actually want.
+        let preferred = place.bestPlaceLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let usePreferred = !preferred.isEmpty && preferred != "Unknown Place"
+        let name = usePreferred ? preferred : place.title
+        debugPrint("[PlaceSearch] resolveCoordinateName(geocoder) → '\(name)' (best='\(place.bestPlaceLabel)' title='\(place.title)')")
         return name
     }
 
@@ -195,14 +200,33 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
         return 80.0
     }
 
+    /// Wide fallback radius (meters) when the strict tap radius returns no POI. Apple's POI registration
+    /// coordinate is often offset 30–80 m (sometimes more, e.g. hotel entrance vs. building footprint),
+    /// so a strict-only search misses POIs the user clearly tapped on. Picked to match the upper Kakao tier.
+    private static let widePOIFallbackRadiusMeters: Double = 250
+
     /// Resolves a bare map tap to a POI using MKLocalPointsOfInterestRequest.
+    /// Strategy: strict zoom-scaled radius first (best when the tap landed on a label), then a generous
+    /// fallback radius so registration offsets don't silently degrade to a street-name reverse geocode.
     /// If two or more POIs are almost equally close, returns `.ambiguous` so the UI can let the user choose.
     func resolveMapTapPOI(near coordinate: CLLocationCoordinate2D, mapRegion: MKCoordinateRegion? = nil) async -> MapTapPOIResult {
-        let tapRadius = Self.tapSearchRadiusMeters(mapRegion: mapRegion)
-        debugPrint("[POI] resolveMapTapPOI radius=\(Int(tapRadius))m latDelta=\(mapRegion?.span.latitudeDelta ?? -1)")
+        let strictRadius = Self.tapSearchRadiusMeters(mapRegion: mapRegion)
+        debugPrint("[POI] resolveMapTapPOI strictRadius=\(Int(strictRadius))m latDelta=\(mapRegion?.span.latitudeDelta ?? -1)")
 
+        let strict = await searchPOINearTap(coordinate: coordinate, radius: strictRadius)
+        if case .none = strict {
+            let wide = Self.widePOIFallbackRadiusMeters
+            debugPrint("[POI] resolveMapTapPOI strict empty → retrying wideRadius=\(Int(wide))m")
+            return await searchPOINearTap(coordinate: coordinate, radius: wide)
+        }
+        return strict
+    }
+
+    /// Single-radius POI search around a tap. Returns `.single` for a dominant nearest POI,
+    /// `.ambiguous` when two or more POIs are within `ambiguousGapMeters` of the closest, else `.none`.
+    private func searchPOINearTap(coordinate: CLLocationCoordinate2D, radius: Double) async -> MapTapPOIResult {
         let tapLocation = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        let request = MKLocalPointsOfInterestRequest(center: coordinate, radius: tapRadius)
+        let request = MKLocalPointsOfInterestRequest(center: coordinate, radius: radius)
         let search = MKLocalSearch(request: request)
         guard let response = try? await search.start(), !response.mapItems.isEmpty else { return .none }
 
@@ -211,13 +235,13 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
             let loc = item.placemark.location
                 ?? CLLocation(latitude: item.placemark.coordinate.latitude, longitude: item.placemark.coordinate.longitude)
             let d = tapLocation.distance(from: loc)
-            guard d <= tapRadius else { return nil }
+            guard d <= radius else { return nil }
             return (item, d)
         }
         .sorted { $0.distance < $1.distance }
 
         guard let first = scored.first else {
-            debugPrint("[POI] no named POI within tap radius")
+            debugPrint("[POI] no named POI within radius=\(Int(radius))m")
             return .none
         }
 
@@ -233,13 +257,13 @@ final class PlaceSearchViewModel: NSObject, ObservableObject {
                     distanceMeters: pair.distance
                 )
             }
-            debugPrint("[POI] ambiguous tap: \(capped.count) candidates (gap \(Int(gapToSecond))m)")
+            debugPrint("[POI] ambiguous tap: \(capped.count) candidates (gap \(Int(gapToSecond))m, radius=\(Int(radius))m)")
             return .ambiguous(candidates: Array(capped))
         }
 
         let name = (first.item.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return .none }
-        debugPrint("[POI] single POI '\(name)' dist=\(Int(first.distance))m")
+        debugPrint("[POI] single POI '\(name)' dist=\(Int(first.distance))m radius=\(Int(radius))m")
         return .single(
             name: name,
             category: first.item.pointOfInterestCategory?.rawValue,
