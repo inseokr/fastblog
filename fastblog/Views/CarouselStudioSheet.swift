@@ -44,14 +44,8 @@ private func removePIPBackground(from image: UIImage) async -> UIImage? {
     guard let cgImage = working.cgImage else { return nil }
     return await withCheckedContinuation { cont in
         DispatchQueue.global(qos: .userInitiated).async {
-            let result: UIImage?
-            if #available(iOS 17.0, *) {
-                result = removePIPForegroundInstanceMaskIOS17(cgImage: cgImage)
-            } else if #available(iOS 16.0, *) {
-                result = removePIPPersonSegmentationMaskIOS16(cgImage: cgImage)
-            } else {
-                result = nil
-            }
+            // Deployment target is iOS 17+; Vision foreground mask API is 17+ only.
+            let result = removePIPForegroundInstanceMaskIOS17(cgImage: cgImage)
             cont.resume(returning: result)
         }
     }
@@ -6565,7 +6559,7 @@ struct SlideTextEditorView: View {
     private var pipClusterToolbar: some View {
         let isUngrouped = currentSlide?.pipIsUngrouped ?? false
         let selectedPhotoIdx = selectedPIPPhotoIndex
-        return VStack(spacing: 0) {
+        VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Button {
                     let idx = editorPagerFocusedSlideIndex

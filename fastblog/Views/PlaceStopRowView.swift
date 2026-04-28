@@ -676,7 +676,7 @@ struct PlaceStopRowView: View {
                                 .foregroundColor(.primary)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 8)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .frame(maxWidth: .infinity, alignment: .center)
                                 .background(rowInset)
                                 .appChromeCornerRadius(10)
                         }
@@ -852,7 +852,7 @@ struct PlaceStopRowView: View {
                                 .foregroundColor(.primary)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 8)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .frame(maxWidth: .infinity, alignment: .center)
                                 .background(rowInset)
                                 .appChromeCornerRadius(10)
                         }

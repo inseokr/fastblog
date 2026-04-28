@@ -429,7 +429,7 @@ enum StoryPageLayout {
                 break
             }
 
-            var (head, tail) = takePrefixFittingHeight(remaining, font: font, width: width, maxHeight: maxH)
+            let (head, tail) = takePrefixFittingHeight(remaining, font: font, width: width, maxHeight: maxH)
             if head.isEmpty {
                 let ch = String(remaining.prefix(1))
                 chunks.append(ch)

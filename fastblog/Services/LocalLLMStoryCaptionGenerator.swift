@@ -589,7 +589,6 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 
     @available(iOS 26.0, *)
     private func enhanceCaptionWithLLM(context: EnhancePhotoCaptionContext) async -> String? {
-        let tagsLine = context.tags.isEmpty ? "" : "\nPhoto tags: \(context.tags.prefix(8).joined(separator: ", "))."
         let langLine = languageInstruction(for: context.userText)
         let langInstruction = langLine.isEmpty ? "" : "\n\(langLine)"
 
@@ -613,9 +612,6 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
 
     @available(iOS 26.0, *)
     private func enhancePlaceStoryWithLLM(context: EnhancePlaceStoryContext) async -> String? {
-        let tagsLine = context.tags.isEmpty ? "" : "\nPhoto tags: \(context.tags.prefix(8).joined(separator: ", "))."
-        let timePart = context.dateTimeText.isEmpty ? "" : "\nVisited: \(context.dateTimeText)."
-        let countPart = context.photoCount > 1 ? "\n\(context.photoCount) photos from this stop." : ""
         let langLine = languageInstruction(for: context.userText)
         let langInstruction = langLine.isEmpty ? "" : "\n\(langLine)"
 
@@ -656,7 +652,6 @@ final class LocalLLMStoryCaptionGenerator: StoryCaptionGeneratorProtocol, @unche
             ? ""
             : "\nPhoto captions:\n" + captions.prefix(6).enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
         let langLine = languageInstruction(for: context.userText)
-        let langInstruction = langLine.isEmpty ? "" : "\n\(langLine)"
 
         // Only surface the place name when it is a reliable proper noun.
         let placePart: String

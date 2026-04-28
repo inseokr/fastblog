@@ -84,6 +84,11 @@ struct ContentView: View {
             .environment(\.dismissToLanding, {
                 dismissToLandingRequested = true
             })
+            .onChange(of: tripsViewModel.openTripsWhenCurrentDefaultScanFinishes) { _, shouldPrepare in
+                if shouldPrepare {
+                    pendingShowTripsWhenIdle = true
+                }
+            }
             .onChange(of: tripsViewModel.scanState) { _, newState in
                 if newState == .idle && pendingShowTripsWhenIdle {
                     pendingShowTripsWhenIdle = false

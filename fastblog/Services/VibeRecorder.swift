@@ -7,6 +7,7 @@
 //
 
 import AVFoundation
+import AVFAudio
 import Foundation
 
 /// Records ambient audio and produces a trimmed m4a clip of at most 10 seconds.
@@ -26,7 +27,7 @@ final class VibeRecorder: NSObject, ObservableObject {
     /// No-op if already recording. Silently skips if permission is denied.
     func start() {
         guard recorder == nil else { return }
-        AVAudioSession.sharedInstance().requestRecordPermission { [weak self] granted in
+        AVAudioApplication.requestRecordPermission { [weak self] granted in
             guard granted else { return }
             DispatchQueue.main.async { self?.beginRecording() }
         }
@@ -66,7 +67,7 @@ final class VibeRecorder: NSObject, ObservableObject {
         let session = AVAudioSession.sharedInstance()
         do {
             // Do not use `.mixWithOthers` — we want other apps' music (Spotify, etc.) to pause while Vibe records.
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
             try session.setActive(true)
         } catch {
             return
@@ -152,7 +153,7 @@ enum InAppCameraAudioSession {
     static func activateForCamera() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
             try session.setActive(true)
         } catch {
             // Camera still works without audio session; Vibe may be limited.

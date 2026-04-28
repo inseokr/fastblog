@@ -133,7 +133,7 @@ class PDFExportService {
     // Card styling (light gray on white paper ≈ app's Color(white: 0.12) on black)
     static let cardBg = UIColor(white: 0.92, alpha: 1.0)
     static let cardRadius: CGFloat = 12
-    static let cardPadding: CGFloat = 16
+    nonisolated static let cardPadding: CGFloat = 16
 
     // Photo grid — sized to fit INSIDE the card (not full contentW)
     // Card interior = contentW - cardPadding*2 = 508
@@ -526,7 +526,7 @@ class PDFExportService {
         // ── Badge + Title (app: HStack spacing 12) ──
         pen.drawBadge(number: number, color: badgeColor, size: badgeSize)
 
-        var titleAttrs: [NSAttributedString.Key: Any] = [
+        let titleAttrs: [NSAttributedString.Key: Any] = [
             .font: titleFont,
             .foregroundColor: options.primaryTextColor
         ]

@@ -59,7 +59,7 @@ struct AssetPhotoView: View {
         .appChromeCornerRadius(cornerRadius)
         .task(id: assetIdentifier) {
             // if image is already loaded and identifier matches, do nothing (prevents flicker on view update)
-            if let currentImage = image, displayedIdentifier == assetIdentifier {
+            if image != nil, displayedIdentifier == assetIdentifier {
                 return
             }
 

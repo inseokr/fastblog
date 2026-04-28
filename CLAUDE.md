@@ -6,7 +6,7 @@ Cursor loads the same expectations via **`.cursor/rules/fastblog.mdc`** (always-
 
 ## Build command
 ```
-xcodebuild -project fastblog.xcodeproj -scheme fastblog -sdk iphonesimulator build
+xcodebuild -project fastblog.xcodeproj -scheme Bloggo -sdk iphonesimulator build
 ```
 
 ## Skills (read before coding)

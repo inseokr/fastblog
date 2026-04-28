@@ -36,7 +36,7 @@ class MapSnapshotHelper {
         let options = MKMapSnapshotter.Options()
         options.region = region
         options.size = size
-        options.scale = UIScreen.main.scale
+        options.scale = await MainActor.run { UIScreen.main.scale }
         options.mapType = .standard
         options.traitCollection = UITraitCollection(userInterfaceStyle: .light)
 
@@ -197,7 +197,7 @@ class MapSnapshotHelper {
         let options = MKMapSnapshotter.Options()
         options.region = displayRegion
         options.size = size
-        options.scale = UIScreen.main.scale
+        options.scale = await MainActor.run { UIScreen.main.scale }
         options.mapType = .standard
         options.traitCollection = UITraitCollection(userInterfaceStyle: .light)
 

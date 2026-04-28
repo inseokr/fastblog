@@ -2485,7 +2485,7 @@ final class CreatedRecapBlogStore: ObservableObject {
     func continueGeocodingDays(blogId: UUID) async {
         // Only `blogDetailsBySourceId` is needed to geocode and persist; requiring a trip draft caused silent no-ops
         // when detail existed without `tripDraftsBySourceId` (e.g. persistence edge cases).
-        guard var detail = blogDetailsBySourceId[blogId] else { return }
+        guard let detail = blogDetailsBySourceId[blogId] else { return }
         let dayIndicesToProcess = detail.days.indices.filter { !detail.days[$0].isPlaceNamesResolved }
         guard let dayIdx = dayIndicesToProcess.first else { return }
 

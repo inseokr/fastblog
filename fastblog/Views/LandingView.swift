@@ -980,12 +980,9 @@ private struct SettingsView: View {
                 }
 
                 Section {
-                    NavigationLink(
-                        destination: NeighborhoodIntroView(onDismiss: {
-                            showNeighborhoodFlow = false
-                        }),
-                        isActive: $showNeighborhoodFlow
-                    ) {
+                    Button {
+                        showNeighborhoodFlow = true
+                    } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 8) {
                                 Label("Neighborhood", systemImage: "mappin.circle.fill")
@@ -996,8 +993,12 @@ private struct SettingsView: View {
                                 }
                             }
                             Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
                     }
+                    .buttonStyle(.plain)
 
                     if photoAuth.status != .limited {
                         VStack(alignment: .leading, spacing: 8) {
@@ -1156,6 +1157,11 @@ private struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(isPresented: $showNeighborhoodFlow) {
+                NeighborhoodIntroView(onDismiss: {
+                    showNeighborhoodFlow = false
+                })
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {

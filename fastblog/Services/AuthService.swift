@@ -130,7 +130,6 @@ final class AuthService: NSObject, ObservableObject {
 
     func signOut() {
         let defaults = UserDefaults.standard
-        let previousUserId = currentUser?.id
 
         currentUser = nil
         AppAnalytics.shared.currentUserId = nil

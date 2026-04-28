@@ -16,8 +16,10 @@ enum DraftReminderNotificationManager {
 
     /// Call when notification permission is granted while logged out (e.g. onboarding). Ensures post-login registration runs.
     static func recordPreLoginNotificationPermissionGrant() {
-        guard AuthService.shared.currentJwtToken == nil else { return }
-        UserDefaults.standard.set(true, forKey: notificationsGrantedPreLoginKey)
+        Task { @MainActor in
+            guard AuthService.shared.currentJwtToken == nil else { return }
+            UserDefaults.standard.set(true, forKey: notificationsGrantedPreLoginKey)
+        }
     }
 
     static func requestPermissionIfNeeded() {
@@ -64,14 +66,11 @@ enum DraftReminderNotificationManager {
             UserDefaults.standard.removeObject(forKey: notificationsGrantedPreLoginKey)
             print("[Push] Permission not determined — requesting authorization now")
             // Permission not yet requested (or reset). Ask once more now that an account exists.
-            center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
-                print("[Push] Authorization prompt result — granted: \(granted)")
-                if granted {
-                    DispatchQueue.main.async {
-                        print("[Push] Calling registerForRemoteNotifications() after prompt")
-                        UIApplication.shared.registerForRemoteNotifications()
-                    }
-                }
+            let granted = (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+            print("[Push] Authorization prompt result — granted: \(granted)")
+            if granted {
+                print("[Push] Calling registerForRemoteNotifications() after prompt")
+                await MainActor.run { UIApplication.shared.registerForRemoteNotifications() }
             }
             return false
 

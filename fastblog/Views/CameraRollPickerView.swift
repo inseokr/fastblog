@@ -86,6 +86,9 @@ struct MultiPhotoLibraryImportPickerView: UIViewControllerRepresentable {
                         resolvedLocation = asset.location
                     }
                 }
+                // Copy for the sendable completion handler (var cannot be captured mutably across concurrency).
+                let captureDate = resolvedDate
+                let captureLocation = resolvedLocation
                 let provider = result.itemProvider
                 guard provider.canLoadObject(ofClass: UIImage.self) else { continue }
                 group.enter()
@@ -93,7 +96,7 @@ struct MultiPhotoLibraryImportPickerView: UIViewControllerRepresentable {
                     defer { group.leave() }
                     guard let image = object as? UIImage else { return }
                     lock.lock()
-                    loaded.append((image, resolvedDate, resolvedLocation))
+                    loaded.append((image, captureDate, captureLocation))
                     lock.unlock()
                 }
             }

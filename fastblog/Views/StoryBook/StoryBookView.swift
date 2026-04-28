@@ -204,12 +204,12 @@ struct StoryBookView: View {
         } message: {
             Text(exportErrorMessage ?? "Unknown error")
         }
-        .onChange(of: triggerShare) { newValue in
+        .onChange(of: triggerShare) { _, newValue in
             guard newValue else { return }
             triggerShare = false
             Task { await exportStoryModePDFAndShare() }
         }
-        .onChange(of: isContentReady) { ready in
+        .onChange(of: isContentReady) { _, ready in
             contentReady = ready
         }
         .onAppear { syncStoryStatusBarColorScheme() }

@@ -691,7 +691,7 @@ struct PanoramaPlayerView: View {
                                     Image(uiImage: img)
                                         .resizable()
                                         .scaledToFill()
-                                } else if let heroPhotoId {
+                                } else if heroPhotoId != nil {
                                     Color.gray.opacity(0.25)
                                     ProgressView()
                                         .tint(.white)

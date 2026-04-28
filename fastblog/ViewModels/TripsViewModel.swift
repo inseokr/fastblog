@@ -69,6 +69,8 @@ final class TripsViewModel: ObservableObject {
     @Published var loadingMessage: String = "Loading Past Trips…"
     /// Progress of the initial default scan (0.0 → 1.0). Reset to 0 on each new scan.
     @Published var defaultScanProgress: Double = 0
+    /// When true, `ContentView` should mount the Trips overlay and reveal it when this default scan returns to `.idle` (e.g. home-mile radius changed in Settings).
+    @Published var openTripsWhenCurrentDefaultScanFinishes: Bool = false
 
     /// When true, show the "Select Photos / To Create A Blog" intro after scan completes (unless user chose "Do not show again").
     @Published var showSelectPhotosIntroAfterScan: Bool = true
@@ -278,7 +280,7 @@ final class TripsViewModel: ObservableObject {
             tripDrafts[idx] = merged
             lastSelectedVisibleTripID = tripId
             pendingScrollToCameraTripID = tripId
-            if var window = currentWindowTrips, let wi = window.firstIndex(where: { $0.id == tripId }) {
+            if let window = currentWindowTrips, let wi = window.firstIndex(where: { $0.id == tripId }) {
                 var w = window
                 w[wi] = merged
                 currentWindowTrips = w
@@ -300,7 +302,31 @@ final class TripsViewModel: ObservableObject {
         }
         if changed {
             tripDrafts[idx] = draft
-            if var window = currentWindowTrips, let wi = window.firstIndex(where: { $0.id == tripId }) {
+            if let window = currentWindowTrips, let wi = window.firstIndex(where: { $0.id == tripId }) {
+                var w = window
+                w[wi] = draft
+                currentWindowTrips = w
+            }
+        }
+    }
+
+    /// Updates caption text for a photo already stored in a camera trip draft (in-app camera flow).
+    func updatePhotoCaptionInCameraDraft(tripId: UUID, photoId: UUID, caption: String?) {
+        guard let idx = tripDrafts.firstIndex(where: { $0.id == tripId }),
+              tripDrafts[idx].coverImageName == "camera.fill" else { return }
+        var draft = tripDrafts[idx]
+        var changed = false
+        draft.days = draft.days.map { day in
+            var photos = day.photos
+            for pIdx in photos.indices where photos[pIdx].id == photoId {
+                photos[pIdx].caption = caption.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+                changed = true
+            }
+            return TripDay(id: day.id, dayIndex: day.dayIndex, dateText: day.dateText, photos: photos, countryCode: day.countryCode, countryName: day.countryName, cityName: day.cityName)
+        }
+        if changed {
+            tripDrafts[idx] = draft
+            if let window = currentWindowTrips, let wi = window.firstIndex(where: { $0.id == tripId }) {
                 var w = window
                 w[wi] = draft
                 currentWindowTrips = w
@@ -715,7 +741,7 @@ final class TripsViewModel: ObservableObject {
             .sink { [weak self] _ in
                 guard let self else { return }
                 guard scanState == .idle else { return }
-                startDefaultScan(forceFullScan: true)
+                startDefaultScan(forceFullScan: true, openTripsWhenFinished: true)
             }
             .store(in: &cancellables)
     }
@@ -768,15 +794,23 @@ final class TripsViewModel: ObservableObject {
     func cancelDefaultScan() {
         defaultScanTask?.cancel()
         defaultScanTask = nil
+        openTripsWhenCurrentDefaultScanFinishes = false
         scanState = .idle
         defaultScanProgress = 0
     }
 
+    private func finishDefaultScanToIdle() {
+        openTripsWhenCurrentDefaultScanFinishes = false
+        scanState = .idle
+    }
+
     /// When true, skips incremental scan and runs a full-window scan (e.g. after user selects more photos in Limited Library picker).
-    func startDefaultScan(forceFullScan: Bool = false) {
+    /// Set `openTripsWhenFinished` when the scan was user-initiated from Settings (home radius) so the Trips overlay appears when the scan completes.
+    func startDefaultScan(forceFullScan: Bool = false, openTripsWhenFinished: Bool = false) {
         if forceFullScan {
             PhotoLibraryTripService.invalidateScanCache()
         }
+        openTripsWhenCurrentDefaultScanFinishes = openTripsWhenFinished
         showSelectPhotosIntroAfterScan = true
         scanState = .scanningDefault
         loadingMessage = "Loading your recent trips…"
@@ -855,7 +889,7 @@ final class TripsViewModel: ObservableObject {
                 AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
                 AppAnalytics.shared.incrementCounter("trips_detected", by: mergedLimitedTrips.count)
                 ScanSessionStore.saveLastScannedDate(Date(), for: userId)
-                scanState = .idle
+                finishDefaultScanToIdle()
                 presentNewMomentsSheetIfNeeded()
                 return
             }
@@ -935,7 +969,7 @@ final class TripsViewModel: ObservableObject {
                     scanStart: fullWindowStart,
                     scanEnd: windowEnd
                 )
-                scanState = .idle
+                finishDefaultScanToIdle()
                 presentNewMomentsSheetIfNeeded()
 
             } else {
@@ -1016,7 +1050,7 @@ final class TripsViewModel: ObservableObject {
                 debugPrint("[Scan] saved lastScannedDate = \(scanDbg(now))")
                 #endif
 
-                scanState = .idle
+                finishDefaultScanToIdle()
 
                 detectNewMomentsForOnTheGoTrip(scannedDrafts: windowTrips)
                 newlyScannedPhotos = dedupePhotosByLocalId(newlyScannedPhotos)

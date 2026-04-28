@@ -1392,8 +1392,7 @@ struct RecapBlogPageView: View {
                 emptyDayPage(screenHeight: screenHeight)
             } else {
                 if let day = day(at: selectedDayIndex) {
-                    GeometryReader { geo in
-                        let w = geo.size.width
+                    GeometryReader { _ in
                         dayPageView(
                             blogDay: day,
                             index: selectedDayIndex,
@@ -5839,9 +5838,9 @@ Your blog remains private unless you choose to share it.
     ) async {
         switch step {
         case .delete(let photo):
-            try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "delete")
+            _ = try? await APIManager.shared.updatePhoto(placeKey: placeKey, photo: photo, operation: "delete")
         case .addCloud(let photo):
-            try? await APIManager.shared.updatePhoto(
+            _ = try? await APIManager.shared.updatePhoto(
                 placeKey: placeKey,
                 photo: photo,
                 operation: "add",
@@ -6568,7 +6567,9 @@ private struct RecapMergePlacesSelectionSheet: View {
                 GeometryReader { geo in
                     Color.clear
                         .onAppear { contentHeight = geo.size.height }
-                        .onChange(of: geo.size.height) { contentHeight = $0 }
+                        .onChange(of: geo.size.height) { _, newHeight in
+                            contentHeight = newHeight
+                        }
                 }
             )
             Spacer(minLength: 0)
