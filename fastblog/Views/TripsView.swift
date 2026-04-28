@@ -3171,12 +3171,13 @@ struct CameraCaptureView: View {
         .frame(width: size, height: size)
     }
 
-    /// Right: Session moment count — opens session gallery (caption input modal). Thumbnail or empty circle with centered count.
+    /// Right: Session photo count — opens session gallery (caption input modal). Thumbnail or empty circle with centered count.
+    /// Uses raw capture count, not `momentCount` (distinct ~50m places), so multiple shots in one spot still increment the badge.
     private var shutterBarCurrentPhotosButton: some View {
         let previewSize: CGFloat = 56
         let effectiveList = sessionMoments.isEmpty ? sessionCapturesForDisplay : sessionMoments
         let latestSessionImage = effectiveList.last?.previewImage
-        let count = momentCount(from: effectiveList)
+        let count = effectiveList.count
         return ZStack {
             if let image = latestSessionImage {
                 Image(uiImage: image)
