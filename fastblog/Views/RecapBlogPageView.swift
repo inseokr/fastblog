@@ -162,6 +162,8 @@ struct RecapBlogPageView: View {
     @State private var skipDefaultDayPageScrollOnNextAppear = false
     /// Presents the system photo picker while managing a place's photo group.
     @State private var showLibraryImportForManageStop = false
+    /// Presents the Bloggo Gallery picker while managing a place's photo group.
+    @State private var showBloggoGalleryImportForManageStop = false
     @State private var isEditMode = true
     @State private var showBlogSettings = false
     @State private var showShareSheet = false
@@ -1137,7 +1139,8 @@ struct RecapBlogPageView: View {
                         guard let stop = placeStop(dayId: pair.dayId, stopId: pair.stopId) else { return }
                         presentSplitPlaceStopSheet(dayId: pair.dayId, stop: stop)
                     },
-                    onAddFromLibrary: { showLibraryImportForManageStop = true }
+                    onAddFromLibrary: { showLibraryImportForManageStop = true },
+                    onAddFromBloggoGallery: { showBloggoGalleryImportForManageStop = true }
                 )
             }
             .sheet(isPresented: $showLibraryImportForManageStop) {
@@ -1147,6 +1150,13 @@ struct RecapBlogPageView: View {
                     Task {
                         await importLibraryPhotosIntoStop(assetIdentifiers: identifiers, dayId: pair.dayId, stopId: pair.stopId)
                     }
+                }
+            }
+            .sheet(isPresented: $showBloggoGalleryImportForManageStop) {
+                AppCaptureGalleryView { captureIds in
+                    showBloggoGalleryImportForManageStop = false
+                    guard let pair = showManagePhotosForStop, !captureIds.isEmpty else { return }
+                    importBloggoPhotosIntoStop(captureIds: captureIds, dayId: pair.dayId, stopId: pair.stopId)
                 }
             }
             .onChange(of: showManagePhotosForStop) { old, new in
@@ -5910,6 +5920,34 @@ Your blog remains private unless you choose to share it.
             if let img = await ImageLoader.shared.loadImage(assetIdentifier: id, targetSize: CGSize(width: 2048, height: 2048)) {
                 InAppCameraPhotoStore.shared.addPhoto(image: img, timestamp: timestamp)
             }
+        }
+
+        stop.photos.sort { $0.timestamp < $1.timestamp }
+        draft.days[dayIdx].placeStops[stopIdx] = stop
+        persistRecapBlogDetail()
+    }
+
+    private func importBloggoPhotosIntoStop(captureIds: [UUID], dayId: UUID, stopId: UUID) {
+        guard let dayIdx = draft.days.firstIndex(where: { $0.id == dayId }),
+              let stopIdx = draft.days[dayIdx].placeStops.firstIndex(where: { $0.id == stopId }) else { return }
+
+        var stop = draft.days[dayIdx].placeStops[stopIdx]
+        var existingIds = Set(stop.photos.compactMap(\.localIdentifier))
+
+        for uuid in captureIds {
+            let identifier = AppCapturePhotoService.identifier(for: uuid)
+            guard !existingIds.contains(identifier),
+                  let info = AppCapturePhotoService.shared.metadata(captureId: uuid) else { continue }
+            let recap = RecapPhoto(
+                timestamp: info.timestamp,
+                location: info.location,
+                imageName: "photo",
+                isIncluded: true,
+                localIdentifier: identifier,
+                caption: info.caption
+            )
+            stop.photos.append(recap)
+            existingIds.insert(identifier)
         }
 
         stop.photos.sort { $0.timestamp < $1.timestamp }

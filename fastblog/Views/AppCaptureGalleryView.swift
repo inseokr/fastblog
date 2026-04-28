@@ -51,6 +51,12 @@ struct AppCaptureItem: Identifiable {
 struct AppCaptureGalleryView: View {
     @Environment(\.dismiss) private var dismiss
 
+    /// When provided the view works as a photo picker. The callback receives the UUIDs of selected
+    /// captures and the sheet is dismissed automatically. Download/trash actions are hidden.
+    var onPickerComplete: (([UUID]) -> Void)? = nil
+
+    private var isPickerMode: Bool { onPickerComplete != nil }
+
     @State private var items: [AppCaptureItem] = []
     @State private var selectedItem: AppCaptureItem?
     @State private var isLoading = true
@@ -94,43 +100,68 @@ struct AppCaptureGalleryView: View {
                     }
                 }
 
-                // Bottom bar in select mode: download (left), "# Photos Selected" (center), trash (right)
+                // Bottom bar in select mode
                 if isSelectMode && !items.isEmpty {
-                    HStack {
-                        Button {
-                            saveSelectedToPhotoLibrary()
-                        } label: {
-                            Image(systemName: "square.and.arrow.down")
-                                .font(.system(size: 22, weight: .semibold))
-                                .foregroundColor(selectedIds.isEmpty ? .gray : .white)
-                                .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                    if isPickerMode {
+                        // Picker mode: single "Add N Photos" confirm button
+                        HStack {
+                            Spacer()
+                            Button {
+                                let ids = Array(selectedIds)
+                                onPickerComplete?(ids)
+                                dismiss()
+                            } label: {
+                                Text(selectedIds.isEmpty ? "Add Photos" : "Add \(selectedIds.count) Photo\(selectedIds.count == 1 ? "" : "s")")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(selectedIds.isEmpty ? .gray : .white)
+                                    .padding(.horizontal, 24)
+                                    .padding(.vertical, 12)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                            }
+                            .disabled(selectedIds.isEmpty)
+                            .accessibilityLabel("Add selected photos to blog")
+                            Spacer()
                         }
-                        .disabled(selectedIds.isEmpty)
-                        .accessibilityLabel("Save selected to Photos")
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 8)
+                    } else {
+                        // Normal mode: download (left), count (center), trash (right)
+                        HStack {
+                            Button {
+                                saveSelectedToPhotoLibrary()
+                            } label: {
+                                Image(systemName: "square.and.arrow.down")
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .foregroundColor(selectedIds.isEmpty ? .gray : .white)
+                                    .frame(width: 56, height: 56)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                            }
+                            .disabled(selectedIds.isEmpty)
+                            .accessibilityLabel("Save selected to Photos")
 
-                        Spacer()
+                            Spacer()
 
-                        Text("\(selectedIds.count) Photos Selected")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            Text("\(selectedIds.count) Photos Selected")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
 
-                        Spacer()
+                            Spacer()
 
-                        Button {
-                            showRemoveConfirmation = true
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(.system(size: 22, weight: .semibold))
-                                .foregroundColor(selectedIds.isEmpty ? .gray : .red)
-                                .frame(width: 56, height: 56)
-                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                            Button {
+                                showRemoveConfirmation = true
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .foregroundColor(selectedIds.isEmpty ? .gray : .red)
+                                    .frame(width: 56, height: 56)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                            }
+                            .disabled(selectedIds.isEmpty)
+                            .accessibilityLabel("Remove selected from gallery")
                         }
-                        .disabled(selectedIds.isEmpty)
-                        .accessibilityLabel("Remove selected from gallery")
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 8)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 8)
                 }
 
                 VStack(spacing: 12) {
@@ -154,17 +185,23 @@ struct AppCaptureGalleryView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
+                        if isPickerMode { onPickerComplete?([]) }
                         dismiss()
                     } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.white)
+                        if isPickerMode {
+                            Text("Cancel")
+                                .foregroundColor(.white)
+                        } else {
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Dismiss")
+                    .accessibilityLabel(isPickerMode ? "Cancel" : "Dismiss")
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    if !items.isEmpty {
+                    if !items.isEmpty && !isPickerMode {
                         if isSelectMode {
                             Button("Done") {
                                 isSelectMode = false
@@ -192,7 +229,12 @@ struct AppCaptureGalleryView: View {
         .presentationDetents([.fraction(1)])
         .presentationDragIndicator(.visible)
         .preferredColorScheme(.dark)
-        .task { await loadItems() }
+        .task {
+            await loadItems()
+            if isPickerMode && !isSelectMode {
+                isSelectMode = true
+            }
+        }
         .fullScreenCover(item: $selectedItem) { item in
             AppCaptureDetailView(
                 items: $items,

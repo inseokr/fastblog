@@ -17,6 +17,8 @@ struct ManagePhotosView: View {
     var onSplitRequested: (() -> Void)? = nil
     /// Called from the trailing "…" menu when user chooses Add from Library. Nil hides that item.
     var onAddFromLibrary: (() -> Void)? = nil
+    /// Called when user wants to add photos from Bloggo Gallery. Nil hides that option.
+    var onAddFromBloggoGallery: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var isSelectMode = false
@@ -25,6 +27,7 @@ struct ManagePhotosView: View {
     @State private var didPrimeGridCache = false
     @State private var existingPhotoLibraryAssetIds: Set<String> = []
     @State private var visiblePhotoCount: Int = 0
+    @State private var showAddPhotoSourceDialog = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -110,9 +113,13 @@ struct ManagePhotosView: View {
         fullScreenPhotoId == nil ? "Manage Photos" : ""
     }
 
-    /// Bottom bar: split (when offered) and/or add-from-library. Split stays visible but disabled with one photo.
+    /// Bottom bar: split (when offered) and/or add-from-library/gallery. Split stays visible but disabled with one photo.
     private var managePhotosOverflowMenuVisible: Bool {
-        onSplitRequested != nil || onAddFromLibrary != nil
+        onSplitRequested != nil || onAddFromLibrary != nil || onAddFromBloggoGallery != nil
+    }
+
+    private var addPhotoButtonVisible: Bool {
+        onAddFromLibrary != nil || onAddFromBloggoGallery != nil
     }
 
     var body: some View {
@@ -191,13 +198,20 @@ struct ManagePhotosView: View {
                             )
                         }
                         Spacer()
-                        if onAddFromLibrary != nil {
-                            Button(action: { onAddFromLibrary?() }) {
+                        if addPhotoButtonVisible {
+                            Button(action: {
+                                if onAddFromLibrary != nil && onAddFromBloggoGallery != nil {
+                                    showAddPhotoSourceDialog = true
+                                } else {
+                                    onAddFromLibrary?()
+                                    onAddFromBloggoGallery?()
+                                }
+                            }) {
                                 VStack(spacing: 3) {
                                     Image(systemName: "photo.badge.plus")
                                         .font(.system(size: 22, weight: .semibold))
                                         .foregroundColor(.white)
-                                    Text("Gallery")
+                                    Text("Add")
                                         .font(.caption2.weight(.semibold))
                                         .foregroundColor(.white)
                                 }
@@ -205,6 +219,11 @@ struct ManagePhotosView: View {
                                 .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                             }
                             .accessibilityLabel("Add Photos")
+                            .confirmationDialog("Add Photos From", isPresented: $showAddPhotoSourceDialog) {
+                                Button("Camera Roll") { onAddFromLibrary?() }
+                                Button("Bloggo Gallery") { onAddFromBloggoGallery?() }
+                                Button("Cancel", role: .cancel) {}
+                            }
                         }
                     }
                     .padding(.horizontal, 20)

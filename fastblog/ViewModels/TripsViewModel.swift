@@ -835,10 +835,16 @@ final class TripsViewModel: ObservableObject {
                     }
                 )
 
-                tripDrafts = allTrips
+                let mergedLimitedTrips = photoLibraryService.mergingBloggoCaptures(
+                    into: allTrips,
+                    occupiedDateRanges: occupiedRanges,
+                    scanStart: .distantPast,
+                    scanEnd: Date()
+                )
+                tripDrafts = mergedLimitedTrips
                 currentWindowTrips = nil
-                if let first = allTrips.first?.days.first?.photos.first?.timestamp,
-                   let last = allTrips.last?.days.last?.photos.last?.timestamp {
+                if let first = mergedLimitedTrips.first?.days.first?.photos.first?.timestamp,
+                   let last = mergedLimitedTrips.last?.days.last?.photos.last?.timestamp {
                     earliestScannedDate = first
                     latestScannedDate = last
                 } else {
@@ -847,7 +853,7 @@ final class TripsViewModel: ObservableObject {
                 }
 
                 AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
-                AppAnalytics.shared.incrementCounter("trips_detected", by: allTrips.count)
+                AppAnalytics.shared.incrementCounter("trips_detected", by: mergedLimitedTrips.count)
                 ScanSessionStore.saveLastScannedDate(Date(), for: userId)
                 scanState = .idle
                 presentNewMomentsSheetIfNeeded()
@@ -923,6 +929,12 @@ final class TripsViewModel: ObservableObject {
                 #endif
 
                 mergeIncrementalTrips(incrementalTrips, since: lastDate)
+                tripDrafts = photoLibraryService.mergingBloggoCaptures(
+                    into: tripDrafts,
+                    occupiedDateRanges: occupiedRanges,
+                    scanStart: fullWindowStart,
+                    scanEnd: windowEnd
+                )
                 scanState = .idle
                 presentNewMomentsSheetIfNeeded()
 
@@ -958,7 +970,13 @@ final class TripsViewModel: ObservableObject {
                 AppAnalytics.shared.trackEvent(name: "trip_scan_completed")
                 AppAnalytics.shared.incrementCounter("trips_detected", by: windowTrips.count)
 
-                tripDrafts = windowTrips
+                let mergedWindowTrips = photoLibraryService.mergingBloggoCaptures(
+                    into: windowTrips,
+                    occupiedDateRanges: occupiedRanges,
+                    scanStart: fullWindowStart,
+                    scanEnd: windowEnd
+                )
+                tripDrafts = mergedWindowTrips
                 currentWindowTrips = nil
                 earliestScannedDate = fullWindowStart
                 latestScannedDate = windowEnd

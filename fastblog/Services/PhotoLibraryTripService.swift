@@ -1323,6 +1323,168 @@ final class PhotoLibraryTripService {
         )
     }
 
+    // MARK: - Bloggo Gallery merge
+
+    /// Merges in-app camera captures (bloggo-capture:) from AppCapturePhotoService into
+    /// a TripDraft array produced by a PHAsset scan. Photos whose calendar day matches an
+    /// existing TripDay are injected into that day. Remaining captures are clustered by
+    /// calendar-day gaps (using maxGapDaysToBridge) and appended as new TripDraft entries.
+    ///
+    /// - Parameters:
+    ///   - trips: The TripDraft array from a prior PHAsset scan.
+    ///   - occupiedDateRanges: Date ranges already covered by saved blogs (excludes those captures).
+    ///   - scanStart: Earliest timestamp to include (pass .distantPast for limited-access scans).
+    ///   - scanEnd: Latest timestamp to include (exclusive).
+    func mergingBloggoCaptures(
+        into trips: [TripDraft],
+        occupiedDateRanges: [(start: Date, end: Date)],
+        scanStart: Date,
+        scanEnd: Date
+    ) -> [TripDraft] {
+        let captureService = AppCapturePhotoService.shared
+        let captureIds = captureService.allCaptureIds()
+        guard !captureIds.isEmpty else { return trips }
+
+        let home = NeighborhoodStore.getNeighborhoodCenter()
+        let minMiles = NeighborhoodStore.effectiveTripMinMilesFromHome
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        formatter.dateStyle = .medium
+
+        // Collect and filter captures
+        var candidates: [(id: UUID, info: AppCapturePhotoService.CaptureInfo)] = []
+        for uuid in captureIds {
+            guard let info = captureService.metadata(captureId: uuid) else { continue }
+            let ts = info.timestamp
+            guard ts >= scanStart && ts < scanEnd else { continue }
+            let inOccupied = occupiedDateRanges.contains { ts >= $0.start && ts <= $0.end }
+            guard !inOccupied else { continue }
+            guard let loc = info.location else { continue }
+            if let homeLocation = home {
+                let clLoc = CLLocation(latitude: loc.latitude, longitude: loc.longitude)
+                guard TripPhotoFilter.shouldIncludeInTrips(
+                    assetLocation: clLoc, home: homeLocation, minMiles: minMiles
+                ) else { continue }
+            }
+            candidates.append((id: uuid, info: info))
+        }
+        guard !candidates.isEmpty else { return trips }
+
+        candidates.sort { $0.info.timestamp < $1.info.timestamp }
+
+        var updatedTrips = trips
+        var orphans: [(id: UUID, info: AppCapturePhotoService.CaptureInfo)] = []
+
+        for capture in candidates {
+            let captureDay = calendar.startOfDay(for: capture.info.timestamp)
+            let identifier = AppCapturePhotoService.identifier(for: capture.id)
+            let photo = MockPhoto(
+                imageName: "photo",
+                timestamp: capture.info.timestamp,
+                isSelected: false,
+                localIdentifier: identifier,
+                location: capture.info.location,
+                caption: capture.info.caption
+            )
+            var injected = false
+            outer: for i in 0..<updatedTrips.count {
+                for j in 0..<updatedTrips[i].days.count {
+                    guard let dayDate = formatter.date(from: updatedTrips[i].days[j].dateText),
+                          calendar.isDate(dayDate, inSameDayAs: captureDay) else { continue }
+                    guard !updatedTrips[i].days[j].photos.contains(where: { $0.localIdentifier == identifier }) else {
+                        injected = true
+                        break outer
+                    }
+                    updatedTrips[i].days[j].photos.append(photo)
+                    updatedTrips[i].days[j].photos.sort { $0.timestamp < $1.timestamp }
+                    injected = true
+                    break outer
+                }
+            }
+            if !injected { orphans.append(capture) }
+        }
+
+        guard !orphans.isEmpty else { return updatedTrips }
+
+        // Cluster orphans into trip-sized groups using maxGapDaysToBridge
+        let monthYearFormatter = DateFormatter()
+        monthYearFormatter.dateFormat = "MMM yyyy"
+
+        var clusters: [[(id: UUID, info: AppCapturePhotoService.CaptureInfo)]] = []
+        var current: [(id: UUID, info: AppCapturePhotoService.CaptureInfo)] = []
+        for (idx, capture) in orphans.enumerated() {
+            if idx == 0 {
+                current.append(capture)
+            } else {
+                let prevDay = calendar.startOfDay(for: orphans[idx - 1].info.timestamp)
+                let thisDay = calendar.startOfDay(for: capture.info.timestamp)
+                let gap = calendar.dateComponents([.day], from: prevDay, to: thisDay).day ?? 0
+                if gap <= ScanConfig.maxGapDaysToBridge + 1 {
+                    current.append(capture)
+                } else {
+                    clusters.append(current)
+                    current = [capture]
+                }
+            }
+        }
+        if !current.isEmpty { clusters.append(current) }
+
+        for cluster in clusters {
+            let dayGroups = Dictionary(grouping: cluster) {
+                calendar.startOfDay(for: $0.info.timestamp)
+            }
+            let sortedDays = dayGroups.sorted { $0.key < $1.key }
+            let tripDays: [TripDay] = sortedDays.enumerated().map { dayIndex, entry in
+                let (dayDate, caps) = entry
+                let sorted = caps.sorted { $0.info.timestamp < $1.info.timestamp }
+                let photos = sorted.map { cap in
+                    MockPhoto(
+                        imageName: "photo",
+                        timestamp: cap.info.timestamp,
+                        isSelected: false,
+                        localIdentifier: AppCapturePhotoService.identifier(for: cap.id),
+                        location: cap.info.location,
+                        caption: cap.info.caption
+                    )
+                }
+                return TripDay(
+                    dayIndex: dayIndex + 1,
+                    dateText: formatter.string(from: dayDate),
+                    photos: photos
+                )
+            }
+            guard !tripDays.isEmpty else { continue }
+            let firstDate = sortedDays[0].key
+            let lastDate = sortedDays[sortedDays.count - 1].key
+            let sameDay = calendar.isDate(firstDate, inSameDayAs: lastDate)
+            let dateRangeText = sameDay
+                ? formatter.string(from: firstDate)
+                : "\(formatter.string(from: firstDate)) – \(formatter.string(from: lastDate))"
+            let daysSeasonText = "\(tripDays.count) day\(tripDays.count == 1 ? "" : "s") • \(monthYearFormatter.string(from: firstDate))"
+            let coverId = tripDays.first?.photos.first?.localIdentifier
+            let newTrip = TripDraft(
+                title: "Bloggo Captures",
+                dateRangeText: dateRangeText,
+                days: tripDays,
+                coverImageName: "camera.fill",
+                isScannedFromDefaultRange: true,
+                draftCreatedAgoText: "From Bloggo Gallery",
+                daysSeasonText: daysSeasonText,
+                coverTheme: "default",
+                coverAssetIdentifier: coverId
+            )
+            updatedTrips.append(newTrip)
+        }
+
+        updatedTrips.sort { a, b in
+            guard let da = a.days.first.flatMap({ formatter.date(from: $0.dateText) }),
+                  let db = b.days.first.flatMap({ formatter.date(from: $0.dateText) }) else { return false }
+            return da > db
+        }
+        return updatedTrips
+    }
+
     // MARK: - Trip filter debug (DEBUG only)
 
 
