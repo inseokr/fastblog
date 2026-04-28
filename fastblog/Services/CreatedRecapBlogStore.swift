@@ -612,7 +612,9 @@ final class CreatedRecapBlogStore: ObservableObject {
         guard TripMatchingService.isTripSaved(draft: draft, against: visibleRecents) else { return false }
         let libraryIds = draft.days.flatMap(\.photos).compactMap(\.localIdentifier)
             .filter { !$0.hasPrefix(AppCapturePhotoService.prefix) }
-        if libraryIds.isEmpty { return true }
+        // A trip whose photos are exclusively in-app captures has no PHAsset overlap with any
+        // saved blog and is therefore never redundant — always keep it visible.
+        if libraryIds.isEmpty { return false }
         let known = allPhotoLibraryLocalIdentifiersInVisibleBlogs()
         return libraryIds.allSatisfy { known.contains($0) }
     }
@@ -2286,8 +2288,6 @@ final class CreatedRecapBlogStore: ObservableObject {
 
     /// Builds blog detail, resolves place names from reverse-geocoding, generates a title, and scores photos via Vision AI.
     func buildBlogDetailAsync(from trip: TripDraft) async -> RecapBlogDetail {
-        // print out debug
-        print("[buildBlogDetailAsync] Building detail for trip '\(trip.title)' with \(trip.days.count) days")
         var detail = buildBlogDetail(from: trip)
         var cityCandidates: [(city: String, order: Int)] = []
         var countryCandidates: [(country: String, order: Int)] = []

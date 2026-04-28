@@ -54,17 +54,16 @@ struct TripMatchingService {
                 }
             }
 
-            // 4. Forward continuation: trip starts within 24 h after blog ends (same trip, new photos)
+            // 4. Forward continuation: trip starts within 24 h after blog ends (same trip, new photos).
+            // Require a positive country match — unknown-country trips must not be collapsed
+            // into an unrelated saved blog.
             let hourDiff = Calendar.current.dateComponents([.hour], from: blogEnd, to: draftStart).hour ?? Int.max
             if hourDiff >= 0 && hourDiff <= 24 {
                 if let draftCountry = draft.primaryCountryDisplayName,
                    let blogCountry = blog.countryName,
                    !draftCountry.isEmpty,
-                   !blogCountry.isEmpty {
-                    if draftCountry.lowercased() == blogCountry.lowercased() {
-                        return true
-                    }
-                } else {
+                   !blogCountry.isEmpty,
+                   draftCountry.lowercased() == blogCountry.lowercased() {
                     return true
                 }
             }
@@ -100,17 +99,16 @@ struct TripMatchingService {
                  return true
             }
 
-            // Forward continuation: single-day trip starts within 24 h after blog ends
+            // Forward continuation: single-day trip starts within 24 h after blog ends.
+            // Require a positive country match — unknown-country trips (e.g. Bloggo Captures)
+            // must not be collapsed into an unrelated saved blog.
             let hourDiff = calendar.dateComponents([.hour], from: blogEnd, to: draftDate).hour ?? Int.max
             if hourDiff >= 0 && hourDiff <= 24 {
                 if let draftCountry = draft.primaryCountryDisplayName,
                    let blogCountry = blog.countryName,
                    !draftCountry.isEmpty,
-                   !blogCountry.isEmpty {
-                    if draftCountry.lowercased() == blogCountry.lowercased() {
-                        return true
-                    }
-                } else {
+                   !blogCountry.isEmpty,
+                   draftCountry.lowercased() == blogCountry.lowercased() {
                     return true
                 }
             }

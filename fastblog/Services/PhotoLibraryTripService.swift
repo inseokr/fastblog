@@ -1343,33 +1343,81 @@ final class PhotoLibraryTripService {
     ) -> [TripDraft] {
         let captureService = AppCapturePhotoService.shared
         let captureIds = captureService.allCaptureIds()
-        guard !captureIds.isEmpty else { return trips }
+#if DEBUG
+        let dbgFmt = ISO8601DateFormatter()
+        debugPrint("[BloGGoMerge] start — captureIds=\(captureIds.count)  existingTrips=\(trips.count)  scanStart=\(dbgFmt.string(from: scanStart))  scanEnd=\(dbgFmt.string(from: scanEnd))")
+        if let hc = NeighborhoodStore.getNeighborhoodCenter() {
+            debugPrint("[BloGGoMerge] home=(\(String(format: "%.4f", hc.coordinate.latitude)), \(String(format: "%.4f", hc.coordinate.longitude)))  minMiles=\(NeighborhoodStore.effectiveTripMinMilesFromHome)")
+        } else {
+            debugPrint("[BloGGoMerge] home=nil (no home-distance filter)")
+        }
+#endif
+        guard !captureIds.isEmpty else {
+#if DEBUG
+            debugPrint("[BloGGoMerge] → no captures on disk, returning unchanged trips")
+#endif
+            return trips
+        }
 
+#if DEBUG
         let home = NeighborhoodStore.getNeighborhoodCenter()
         let minMiles = NeighborhoodStore.effectiveTripMinMilesFromHome
+#endif
 
         let formatter = DateFormatter()
         formatter.locale = Locale.current
         formatter.dateStyle = .medium
 
-        // Collect and filter captures
+        // Collect and filter captures.
+        // In-app captures are always user-intentional, so we intentionally skip both the
+        // location-required gate and the home-distance filter that apply to PHAsset scanning.
+        // The only hard exclusions are: outside the scan window, and already in a published blog.
         var candidates: [(id: UUID, info: AppCapturePhotoService.CaptureInfo)] = []
         for uuid in captureIds {
-            guard let info = captureService.metadata(captureId: uuid) else { continue }
-            let ts = info.timestamp
-            guard ts >= scanStart && ts < scanEnd else { continue }
-            let inOccupied = occupiedDateRanges.contains { ts >= $0.start && ts <= $0.end }
-            guard !inOccupied else { continue }
-            guard let loc = info.location else { continue }
-            if let homeLocation = home {
-                let clLoc = CLLocation(latitude: loc.latitude, longitude: loc.longitude)
-                guard TripPhotoFilter.shouldIncludeInTrips(
-                    assetLocation: clLoc, home: homeLocation, minMiles: minMiles
-                ) else { continue }
+            guard let info = captureService.metadata(captureId: uuid) else {
+#if DEBUG
+                debugPrint("[BloGGoMerge] ✗ \(uuid.uuidString.prefix(8)) — metadata load FAILED (corrupt/missing meta.json?)")
+#endif
+                continue
             }
+            let ts = info.timestamp
+            guard ts >= scanStart && ts < scanEnd else {
+#if DEBUG
+                debugPrint("[BloGGoMerge] ✗ \(uuid.uuidString.prefix(8)) — OUT OF SCAN WINDOW  ts=\(dbgFmt.string(from: ts))  scanStart=\(dbgFmt.string(from: scanStart))  scanEnd=\(dbgFmt.string(from: scanEnd))")
+#endif
+                continue
+            }
+            let inOccupied = occupiedDateRanges.contains { ts >= $0.start && ts <= $0.end }
+            guard !inOccupied else {
+#if DEBUG
+                let matchedRange = occupiedDateRanges.first { ts >= $0.start && ts <= $0.end }
+                debugPrint("[BloGGoMerge] ✗ \(uuid.uuidString.prefix(8)) — IN OCCUPIED BLOG RANGE  ts=\(dbgFmt.string(from: ts))  range=\(matchedRange.map { "\(dbgFmt.string(from: $0.start))–\(dbgFmt.string(from: $0.end))" } ?? "?")")
+#endif
+                continue
+            }
+#if DEBUG
+            if let loc = info.location, let homeLocation = home {
+                let clLoc = CLLocation(latitude: loc.latitude, longitude: loc.longitude)
+                let distMi = TripPhotoFilter.distanceMiles(from: homeLocation, to: clLoc)
+                let withinHome = distMi < minMiles
+                debugPrint("[BloGGoMerge] ✓ \(uuid.uuidString.prefix(8)) — CANDIDATE  ts=\(dbgFmt.string(from: ts))  loc=(\(String(format: "%.4f", loc.latitude)), \(String(format: "%.4f", loc.longitude)))  distFromHome=\(String(format: "%.1f", distMi))mi\(withinHome ? " (would have been excluded by PHAsset rule — kept for in-app capture)" : "")")
+            } else if info.location == nil {
+                debugPrint("[BloGGoMerge] ✓ \(uuid.uuidString.prefix(8)) — CANDIDATE (no GPS)  ts=\(dbgFmt.string(from: ts))")
+            } else {
+                debugPrint("[BloGGoMerge] ✓ \(uuid.uuidString.prefix(8)) — CANDIDATE  ts=\(dbgFmt.string(from: ts))  loc=(\(String(format: "%.4f", info.location!.latitude)), \(String(format: "%.4f", info.location!.longitude)))")
+            }
+#endif
             candidates.append((id: uuid, info: info))
         }
-        guard !candidates.isEmpty else { return trips }
+#if DEBUG
+        debugPrint("[BloGGoMerge] candidates after filters: \(candidates.count)/\(captureIds.count)")
+#endif
+        guard !candidates.isEmpty else {
+#if DEBUG
+            debugPrint("[BloGGoMerge] → all captures filtered out, returning unchanged trips")
+#endif
+            return trips
+        }
 
         candidates.sort { $0.info.timestamp < $1.info.timestamp }
 
@@ -1380,9 +1428,9 @@ final class PhotoLibraryTripService {
             let captureDay = calendar.startOfDay(for: capture.info.timestamp)
             let identifier = AppCapturePhotoService.identifier(for: capture.id)
             let photo = MockPhoto(
-                imageName: "photo",
+                imageName: "camera.fill",
                 timestamp: capture.info.timestamp,
-                isSelected: false,
+                isSelected: true,
                 localIdentifier: identifier,
                 location: capture.info.location,
                 caption: capture.info.caption
@@ -1394,18 +1442,39 @@ final class PhotoLibraryTripService {
                           calendar.isDate(dayDate, inSameDayAs: captureDay) else { continue }
                     guard !updatedTrips[i].days[j].photos.contains(where: { $0.localIdentifier == identifier }) else {
                         injected = true
+#if DEBUG
+                        debugPrint("[BloGGoMerge] ✓ \(capture.id.uuidString.prefix(8)) — already present in trip[\(i)] day[\(j)] \"\(updatedTrips[i].days[j].dateText)\"")
+#endif
                         break outer
                     }
                     updatedTrips[i].days[j].photos.append(photo)
                     updatedTrips[i].days[j].photos.sort { $0.timestamp < $1.timestamp }
                     injected = true
+#if DEBUG
+                    debugPrint("[BloGGoMerge] ✓ \(capture.id.uuidString.prefix(8)) — INJECTED into trip[\(i)] \"\(updatedTrips[i].title)\" day[\(j)] \"\(updatedTrips[i].days[j].dateText)\"")
+#endif
                     break outer
                 }
             }
-            if !injected { orphans.append(capture) }
+            if !injected {
+#if DEBUG
+                let captureDayText = formatter.string(from: captureDay)
+                let tripDayTexts = updatedTrips.flatMap { $0.days.map(\.dateText) }
+                debugPrint("[BloGGoMerge] ✗ \(capture.id.uuidString.prefix(8)) — NO MATCHING TRIP DAY → orphan  captureDay=\(captureDayText)  existingDays=[\(tripDayTexts.joined(separator: ", "))]")
+#endif
+                orphans.append(capture)
+            }
         }
 
-        guard !orphans.isEmpty else { return updatedTrips }
+        guard !orphans.isEmpty else {
+#if DEBUG
+            debugPrint("[BloGGoMerge] → no orphans, done. totalTrips=\(updatedTrips.count)")
+#endif
+            return updatedTrips
+        }
+#if DEBUG
+        debugPrint("[BloGGoMerge] orphans=\(orphans.count) → clustering into new trips")
+#endif
 
         // Cluster orphans into trip-sized groups using maxGapDaysToBridge
         let monthYearFormatter = DateFormatter()
@@ -1440,9 +1509,9 @@ final class PhotoLibraryTripService {
                 let sorted = caps.sorted { $0.info.timestamp < $1.info.timestamp }
                 let photos = sorted.map { cap in
                     MockPhoto(
-                        imageName: "photo",
+                        imageName: "camera.fill",
                         timestamp: cap.info.timestamp,
-                        isSelected: false,
+                        isSelected: true,
                         localIdentifier: AppCapturePhotoService.identifier(for: cap.id),
                         location: cap.info.location,
                         caption: cap.info.caption
@@ -1474,9 +1543,15 @@ final class PhotoLibraryTripService {
                 coverTheme: "default",
                 coverAssetIdentifier: coverId
             )
+#if DEBUG
+            debugPrint("[BloGGoMerge] + new orphan trip \"\(newTrip.title)\" \(dateRangeText)  days=\(tripDays.count)  photos=\(tripDays.reduce(0) { $0 + $1.photos.count })")
+#endif
             updatedTrips.append(newTrip)
         }
 
+#if DEBUG
+        debugPrint("[BloGGoMerge] done. totalTrips=\(updatedTrips.count)")
+#endif
         updatedTrips.sort { a, b in
             guard let da = a.days.first.flatMap({ formatter.date(from: $0.dateText) }),
                   let db = b.days.first.flatMap({ formatter.date(from: $0.dateText) }) else { return false }
