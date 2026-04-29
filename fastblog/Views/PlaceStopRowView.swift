@@ -243,10 +243,6 @@ struct PlaceStopRowView: View {
         colorScheme == .dark ? .white.opacity(0.9) : .primary
     }
 
-    private var editNamePillFill: Color {
-        colorScheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.08)
-    }
-
     /// 12-hour visit time from earliest photo timestamp. Formatter: "h:mm a" (e.g. 3:42 PM).
     private static let visitTimeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -331,6 +327,39 @@ struct PlaceStopRowView: View {
         max(0, displayableIncludedPhotos.count - 3)
     }
 
+    /// `prominent`: blue pill for names never manually edited; gray pill after the user has saved a custom name.
+    @ViewBuilder
+    private func tapToRenamePill(prominent: Bool) -> some View {
+        let blue = Color(uiColor: .systemBlue)
+        HStack(spacing: 6) {
+            Image(systemName: "hand.tap.fill")
+                .font(.caption2.weight(.bold))
+            Text("Tap to rename")
+                .font(.caption2.weight(.semibold))
+        }
+        .foregroundStyle(prominent ? blue : Color.secondary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background {
+            if prominent {
+                Capsule(style: .continuous)
+                    .fill(blue.opacity(colorScheme == .dark ? 0.25 : 0.12))
+            } else {
+                Capsule(style: .continuous)
+                    .fill(Color(uiColor: .tertiarySystemFill))
+            }
+        }
+        .overlay {
+            if prominent {
+                Capsule(style: .continuous)
+                    .strokeBorder(blue.opacity(colorScheme == .dark ? 0.5 : 0.28), lineWidth: 1)
+            } else {
+                Capsule(style: .continuous)
+                    .strokeBorder(Color(uiColor: .separator).opacity(colorScheme == .dark ? 0.55 : 0.9), lineWidth: 1)
+            }
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Row 1: badge + title, subtitle, time
@@ -341,23 +370,15 @@ struct PlaceStopRowView: View {
                         if isEditMode {
                             HStack(alignment: .top, spacing: 10) {
                                 Button { onEditName?() } label: {
-                                    Text(stop.cleanedPlaceTitle)
-                                        .font(Font.blog(selectedBlogFont, size: 22, bold: true))
-                                        .foregroundColor(rowTitle)
-                                }
-                                .buttonStyle(.plain)
-                                Button { onEditName?() } label: {
-                                    ZStack {
-                                        Circle()
-                                            .fill(editNamePillFill)
-                                        Image(systemName: "square.and.pencil")
-                                            .font(.system(size: 14, weight: .semibold))
-                                            .foregroundStyle(rowTitle)
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text(stop.cleanedPlaceTitle)
+                                            .font(Font.blog(selectedBlogFont, size: 22, bold: true))
+                                            .foregroundColor(rowTitle)
+                                        tapToRenamePill(prominent: !stop.placeTitleIsManual)
                                     }
-                                    .frame(width: 28, height: 28)
                                 }
                                 .buttonStyle(.plain)
-                                .accessibilityLabel("Edit place name")
+                                .accessibilityLabel(isEditMode ? "Tap to rename" : stop.cleanedPlaceTitle)
                             }
                         } else {
                             HStack(alignment: .top, spacing: 10) {
