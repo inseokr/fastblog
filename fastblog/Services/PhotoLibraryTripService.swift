@@ -1369,9 +1369,12 @@ final class PhotoLibraryTripService {
         formatter.dateStyle = .medium
 
         // Collect and filter captures.
-        // In-app captures are always user-intentional, so we intentionally skip both the
-        // location-required gate and the home-distance filter that apply to PHAsset scanning.
-        // The only hard exclusions are: outside the scan window, and already in a published blog.
+        // In-app captures are always user-intentional, so we intentionally skip:
+        //   - the location-required gate and home-distance filter (used for PHAsset scanning)
+        //   - the occupiedDateRanges filter (so a capture taken inside a published blog's
+        //     date range still surfaces as its own "Bloggo Captures" card in the carousel,
+        //     in addition to whatever the at-capture-time camera flow did with it)
+        // The only hard exclusion is: outside the scan window.
         var candidates: [(id: UUID, info: AppCapturePhotoService.CaptureInfo)] = []
         for uuid in captureIds {
             guard let info = captureService.metadata(captureId: uuid) else {
@@ -1387,24 +1390,18 @@ final class PhotoLibraryTripService {
 #endif
                 continue
             }
+#if DEBUG
             let inOccupied = occupiedDateRanges.contains { ts >= $0.start && ts <= $0.end }
-            guard !inOccupied else {
-#if DEBUG
-                let matchedRange = occupiedDateRanges.first { ts >= $0.start && ts <= $0.end }
-                debugPrint("[BloGGoMerge] ✗ \(uuid.uuidString.prefix(8)) — IN OCCUPIED BLOG RANGE  ts=\(dbgFmt.string(from: ts))  range=\(matchedRange.map { "\(dbgFmt.string(from: $0.start))–\(dbgFmt.string(from: $0.end))" } ?? "?")")
-#endif
-                continue
-            }
-#if DEBUG
+            let occupiedNote = inOccupied ? " (inside published-blog range — kept anyway)" : ""
             if let loc = info.location, let homeLocation = home {
                 let clLoc = CLLocation(latitude: loc.latitude, longitude: loc.longitude)
                 let distMi = TripPhotoFilter.distanceMiles(from: homeLocation, to: clLoc)
                 let withinHome = distMi < minMiles
-                debugPrint("[BloGGoMerge] ✓ \(uuid.uuidString.prefix(8)) — CANDIDATE  ts=\(dbgFmt.string(from: ts))  loc=(\(String(format: "%.4f", loc.latitude)), \(String(format: "%.4f", loc.longitude)))  distFromHome=\(String(format: "%.1f", distMi))mi\(withinHome ? " (would have been excluded by PHAsset rule — kept for in-app capture)" : "")")
+                debugPrint("[BloGGoMerge] ✓ \(uuid.uuidString.prefix(8)) — CANDIDATE  ts=\(dbgFmt.string(from: ts))  loc=(\(String(format: "%.4f", loc.latitude)), \(String(format: "%.4f", loc.longitude)))  distFromHome=\(String(format: "%.1f", distMi))mi\(withinHome ? " (would have been excluded by PHAsset rule — kept for in-app capture)" : "")\(occupiedNote)")
             } else if info.location == nil {
-                debugPrint("[BloGGoMerge] ✓ \(uuid.uuidString.prefix(8)) — CANDIDATE (no GPS)  ts=\(dbgFmt.string(from: ts))")
+                debugPrint("[BloGGoMerge] ✓ \(uuid.uuidString.prefix(8)) — CANDIDATE (no GPS)  ts=\(dbgFmt.string(from: ts))\(occupiedNote)")
             } else {
-                debugPrint("[BloGGoMerge] ✓ \(uuid.uuidString.prefix(8)) — CANDIDATE  ts=\(dbgFmt.string(from: ts))  loc=(\(String(format: "%.4f", info.location!.latitude)), \(String(format: "%.4f", info.location!.longitude)))")
+                debugPrint("[BloGGoMerge] ✓ \(uuid.uuidString.prefix(8)) — CANDIDATE  ts=\(dbgFmt.string(from: ts))  loc=(\(String(format: "%.4f", info.location!.latitude)), \(String(format: "%.4f", info.location!.longitude)))\(occupiedNote)")
             }
 #endif
             candidates.append((id: uuid, info: info))
