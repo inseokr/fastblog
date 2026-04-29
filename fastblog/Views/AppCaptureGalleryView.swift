@@ -313,7 +313,8 @@ struct AppCaptureGalleryView: View {
             }
             .padding(.bottom, isSelectMode ? 72 : 88)
         }
-        .scrollDisabled(isSelectMode && !selectedIds.isEmpty)
+        // Keep scrolling available while in select mode; multi-select now happens by taps only.
+        .scrollDisabled(false)
         .background(
             GeometryReader { g in
                 Color.clear
@@ -326,35 +327,6 @@ struct AppCaptureGalleryView: View {
         .onPreferenceChange(AppCaptureGalleryCellFramePreferenceKey.self) { frames in
             cellFrames = frames
         }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                .onChanged { value in
-                    guard isSelectMode else { return }
-                    lastDragGlobalLocation = value.location
-                    if dragStartIndex == nil {
-                        let dragDistance = hypot(value.translation.width, value.translation.height)
-                        guard dragDistance > 8 else { return }
-                        if shouldTreatDragAsScrollOnly(translation: value.translation) {
-                            return
-                        }
-                        guard let startIndex = itemIndex(at: value.startLocation) else { return }
-                        beginDragSelection(at: startIndex)
-                        lastDragItemIndex = startIndex
-                    }
-                    if let currentIndex = itemIndex(at: value.location) {
-                        lastDragItemIndex = currentIndex
-                        applyDragSelection(to: currentIndex)
-                    } else if let idx = lastDragItemIndex {
-                        applyDragSelection(to: idx)
-                    }
-                    updateAutoScroll(proxy: proxy, globalY: value.location.y)
-                }
-                .onEnded { _ in
-                    autoScrollInvoker.stop()
-                    endDragSelection()
-                    lastDragItemIndex = nil
-                }
-        )
     }
 
     private var emptyState: some View {
