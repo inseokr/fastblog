@@ -409,8 +409,13 @@ struct PlacePhotoModalView: View {
     }
 
     /// Full-screen / blog overlay: inset bottom chrome to clear the home indicator.
+    /// Keep recap/map visual rhythm unchanged; Places Visited needs this extra lift
+    /// because its title row can include an additional trailing action.
     private func bottomPhotoChromeInset(safeBottom: CGFloat) -> CGFloat {
         if presentation.isSheet { return 0 }
+        if presentation.fullscreenSource == .placesVisited {
+            return safeBottom
+        }
         return 0
     }
 
@@ -1278,7 +1283,6 @@ struct PlacePhotoModalView: View {
     private var dateTimeTextForCurrentPhoto: String {
         guard let photo = currentPhoto else { return "" }
         let tz = effectiveTimeZone
-        let tzAbbr = Self.timeZoneDisplayLabel(for: tz)
         let dateFmt = DateFormatter()
         dateFmt.dateFormat = "d MMM yyyy 'at' h:mm a"
         dateFmt.locale = Locale(identifier: "en_US_POSIX")
@@ -1332,7 +1336,6 @@ struct PlacePhotoModalView: View {
         dateFmt.dateFormat = "d MMM yyyy 'at' h:mm a"
         dateFmt.locale = Locale(identifier: "en_US_POSIX")
         dateFmt.timeZone = tz
-        let tzAbbr = Self.timeZoneDisplayLabel(for: tz)
         var lines: [String] = []
         if let creation = meta.creation {
             lines.append("Created: \(dateFmt.string(from: creation))")

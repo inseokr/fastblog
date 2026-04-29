@@ -740,11 +740,16 @@ private struct MyBlogsManageSheet: View {
                         Group {
                             if countryNames.count == 1, let only = countryNames.first {
                                 Button { splitCountryNav = only } label: {
-                                    Image(systemName: "scissors")
-                                        .font(.system(size: 22, weight: .semibold))
-                                        .foregroundColor(canSplit ? .orange : .primary)
-                                        .frame(width: 56, height: 56)
-                                        .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                                    VStack(spacing: 3) {
+                                        Image(systemName: "scissors")
+                                            .font(.system(size: 22, weight: .semibold))
+                                            .foregroundStyle(Color.orange.opacity(canSplit ? 1.0 : 0.38))
+                                        Text("Split")
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(Color.orange.opacity(canSplit ? 1.0 : 0.38))
+                                    }
+                                    .frame(width: 64, height: 64)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                                 }
                             } else {
                                 Menu {
@@ -752,11 +757,16 @@ private struct MyBlogsManageSheet: View {
                                         Button(country) { splitCountryNav = country }
                                     }
                                 } label: {
-                                    Image(systemName: "scissors")
-                                        .font(.system(size: 22, weight: .semibold))
-                                        .foregroundColor(canSplit ? .orange : .primary)
-                                        .frame(width: 56, height: 56)
-                                        .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                                    VStack(spacing: 3) {
+                                        Image(systemName: "scissors")
+                                            .font(.system(size: 22, weight: .semibold))
+                                            .foregroundStyle(Color.orange.opacity(canSplit ? 1.0 : 0.38))
+                                        Text("Split")
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(Color.orange.opacity(canSplit ? 1.0 : 0.38))
+                                    }
+                                    .frame(width: 64, height: 64)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                                 }
                             }
                         }
@@ -764,11 +774,16 @@ private struct MyBlogsManageSheet: View {
                         Group {
                             if countryNames.count == 1, let only = countryNames.first {
                                 Button { mergeCountryNav = only } label: {
-                                    Image(systemName: "arrow.triangle.merge")
-                                        .font(.system(size: 22, weight: .semibold))
-                                        .foregroundColor(canMerge ? .blue : .primary)
-                                        .frame(width: 56, height: 56)
-                                        .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                                    VStack(spacing: 3) {
+                                        Image(systemName: "arrow.triangle.merge")
+                                            .font(.system(size: 22, weight: .semibold))
+                                            .foregroundStyle(Color.blue.opacity(canMerge ? 1.0 : 0.38))
+                                        Text("Merge")
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(Color.blue.opacity(canMerge ? 1.0 : 0.38))
+                                    }
+                                    .frame(width: 64, height: 64)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                                 }
                             } else {
                                 Menu {
@@ -776,11 +791,16 @@ private struct MyBlogsManageSheet: View {
                                         Button(country) { mergeCountryNav = country }
                                     }
                                 } label: {
-                                    Image(systemName: "arrow.triangle.merge")
-                                        .font(.system(size: 22, weight: .semibold))
-                                        .foregroundColor(canMerge ? .blue : .primary)
-                                        .frame(width: 56, height: 56)
-                                        .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                                    VStack(spacing: 3) {
+                                        Image(systemName: "arrow.triangle.merge")
+                                            .font(.system(size: 22, weight: .semibold))
+                                            .foregroundStyle(Color.blue.opacity(canMerge ? 1.0 : 0.38))
+                                        Text("Merge")
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(Color.blue.opacity(canMerge ? 1.0 : 0.38))
+                                    }
+                                    .frame(width: 64, height: 64)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                                 }
                             }
                         }

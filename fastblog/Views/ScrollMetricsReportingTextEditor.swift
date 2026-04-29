@@ -119,7 +119,7 @@ struct ScrollMetricsReportingTextEditor: UIViewRepresentable {
             lastPublishedContent = content
             lastPublishedOffset = offset
             DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
+                guard self != nil else { return }
                 if abs(visibleBinding.wrappedValue - visible) > 0.25 {
                     visibleBinding.wrappedValue = visible
                 }

@@ -95,6 +95,7 @@
 		BB000168 /* TripDayPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000167 /* TripDayPickerView.swift */; };
 		BB00016A /* TripsMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000169 /* TripsMapView.swift */; };
 		BB00016C /* TripsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00016B /* TripsView.swift */; };
+		BB0003F1 /* InAppCameraCaptionOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003F0 /* InAppCameraCaptionOverlay.swift */; };
 		BB00016E /* CitySearchHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00016D /* CitySearchHelper.swift */; };
 		BB000170 /* LocationManagerForOnboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00016F /* LocationManagerForOnboarding.swift */; };
 		BB000172 /* MapWithCenterSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000171 /* MapWithCenterSelector.swift */; };
@@ -347,6 +348,7 @@
 		BB000167 /* TripDayPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDayPickerView.swift; sourceTree = "<group>"; };
 		BB000169 /* TripsMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsMapView.swift; sourceTree = "<group>"; };
 		BB00016B /* TripsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripsView.swift; sourceTree = "<group>"; };
+		BB0003F0 /* InAppCameraCaptionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppCameraCaptionOverlay.swift; sourceTree = "<group>"; };
 		BB00016D /* CitySearchHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitySearchHelper.swift; sourceTree = "<group>"; };
 		BB00016F /* LocationManagerForOnboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationManagerForOnboarding.swift; sourceTree = "<group>"; };
 		BB000171 /* MapWithCenterSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapWithCenterSelector.swift; sourceTree = "<group>"; };
@@ -716,6 +718,7 @@
 				BB000167 /* TripDayPickerView.swift */,
 				BB000169 /* TripsMapView.swift */,
 				BB00016B /* TripsView.swift */,
+				BB0003F0 /* InAppCameraCaptionOverlay.swift */,
 				TS00R04 /* TripNearbyShareViews.swift */,
 				BB000406 /* BlogDropSheet.swift */,
 				BB0002F6 /* NewMomentsPullUpViews.swift */,
@@ -1043,6 +1046,7 @@
 				BB000168 /* TripDayPickerView.swift in Sources */,
 				BB00016A /* TripsMapView.swift in Sources */,
 				BB00016C /* TripsView.swift in Sources */,
+				BB0003F1 /* InAppCameraCaptionOverlay.swift in Sources */,
 				BB000305 /* CameraRollPickerView.swift in Sources */,
 				TS00B01 /* TripShareNearbyConfig.swift in Sources */,
 				TS00B02 /* TripSharePackage.swift in Sources */,
