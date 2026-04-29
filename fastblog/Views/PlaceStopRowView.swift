@@ -327,37 +327,26 @@ struct PlaceStopRowView: View {
         max(0, displayableIncludedPhotos.count - 3)
     }
 
-    /// `prominent`: blue pill for names never manually edited; gray pill after the user has saved a custom name.
-    @ViewBuilder
-    private func tapToRenamePill(prominent: Bool) -> some View {
+    /// Blue coachmark pill when the place name has never been manually edited (`placeTitleIsManual` is false).
+    private var tapToRenamePill: some View {
         let blue = Color(uiColor: .systemBlue)
-        HStack(spacing: 6) {
+        return HStack(spacing: 6) {
             Image(systemName: "hand.tap.fill")
                 .font(.caption2.weight(.bold))
             Text("Tap to rename")
                 .font(.caption2.weight(.semibold))
         }
-        .foregroundStyle(prominent ? blue : Color.secondary)
+        .foregroundStyle(blue)
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
-        .background {
-            if prominent {
-                Capsule(style: .continuous)
-                    .fill(blue.opacity(colorScheme == .dark ? 0.25 : 0.12))
-            } else {
-                Capsule(style: .continuous)
-                    .fill(Color(uiColor: .tertiarySystemFill))
-            }
-        }
-        .overlay {
-            if prominent {
-                Capsule(style: .continuous)
-                    .strokeBorder(blue.opacity(colorScheme == .dark ? 0.5 : 0.28), lineWidth: 1)
-            } else {
-                Capsule(style: .continuous)
-                    .strokeBorder(Color(uiColor: .separator).opacity(colorScheme == .dark ? 0.55 : 0.9), lineWidth: 1)
-            }
-        }
+        .background(
+            Capsule(style: .continuous)
+                .fill(blue.opacity(colorScheme == .dark ? 0.25 : 0.12))
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .strokeBorder(blue.opacity(colorScheme == .dark ? 0.5 : 0.28), lineWidth: 1)
+        )
     }
 
     var body: some View {
@@ -374,11 +363,27 @@ struct PlaceStopRowView: View {
                                         Text(stop.cleanedPlaceTitle)
                                             .font(Font.blog(selectedBlogFont, size: 22, bold: true))
                                             .foregroundColor(rowTitle)
-                                        tapToRenamePill(prominent: !stop.placeTitleIsManual)
+                                        if !stop.placeTitleIsManual {
+                                            tapToRenamePill
+                                        }
                                     }
                                 }
                                 .buttonStyle(.plain)
-                                .accessibilityLabel(isEditMode ? "Tap to rename" : stop.cleanedPlaceTitle)
+                                .accessibilityLabel(!stop.placeTitleIsManual ? "Tap to rename" : stop.cleanedPlaceTitle)
+                                if stop.placeTitleIsManual {
+                                    Button { onEditName?() } label: {
+                                        ZStack {
+                                            Circle()
+                                                .fill(colorScheme == .dark ? Color.white.opacity(0.22) : Color.black.opacity(0.08))
+                                            Image(systemName: "square.and.pencil")
+                                                .font(.system(size: 14, weight: .semibold))
+                                                .foregroundStyle(rowTitle)
+                                        }
+                                        .frame(width: 28, height: 28)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("Edit place name")
+                                }
                             }
                         } else {
                             HStack(alignment: .top, spacing: 10) {
