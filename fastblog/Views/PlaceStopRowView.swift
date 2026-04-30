@@ -715,6 +715,19 @@ struct PlaceStopRowView: View {
             if displayableIncludedPhotos.count == 1, let photo = displayableIncludedPhotos.first {
                 // --- CASE 2a: Single included photo — full-width hero (read and edit).
                 VStack(alignment: .leading, spacing: 12) {
+                    if isEditMode, let onManagePhotos {
+                        Button(action: onManagePhotos) {
+                            Label("Manage Photos", systemImage: "photo.stack")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.primary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .background(rowInset)
+                                .appChromeCornerRadius(10)
+                        }
+                        .buttonStyle(.plain)
+                    }
                     VStack(alignment: .leading, spacing: 0) {
                         RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 960, height: 640))
                             .frame(maxWidth: .infinity, maxHeight: 260)
@@ -773,6 +786,13 @@ struct PlaceStopRowView: View {
                             .padding(.top, 8)
                     }
                     }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, isEditMode ? 4 : 0)
+                .padding(.bottom, isEditMode ? 20 : 12)
+            } else if displayableIncludedPhotos.count > 1 || (displayableIncludedPhotos.isEmpty && isEditMode) {
+                // --- CASE 2b: Multiple included photos, or edit mode with none displayable (manage via ⋯). ---
+                VStack(alignment: .leading, spacing: 12) {
                     if isEditMode, let onManagePhotos {
                         Button(action: onManagePhotos) {
                             Label("Manage Photos", systemImage: "photo.stack")
@@ -786,13 +806,6 @@ struct PlaceStopRowView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, isEditMode ? 4 : 0)
-                .padding(.bottom, isEditMode ? 20 : 12)
-            } else if displayableIncludedPhotos.count > 1 || (displayableIncludedPhotos.isEmpty && isEditMode) {
-                // --- CASE 2b: Multiple included photos, or edit mode with none displayable (manage via ⋯). ---
-                VStack(alignment: .leading, spacing: 12) {
                     if displayableIncludedPhotos.isEmpty && isEditMode && !stop.photos.isEmpty {
                         Text("No photos are shown for this place.")
                             .font(.caption)
@@ -889,19 +902,6 @@ struct PlaceStopRowView: View {
                             .padding(.trailing, 16)
                         }
                         .frame(minHeight: isEditMode ? thumbnailSize + 56 : thumbnailSize + 28)
-                    }
-                    if isEditMode, let onManagePhotos {
-                        Button(action: onManagePhotos) {
-                            Label("Manage Photos", systemImage: "photo.stack")
-                                .font(.subheadline.weight(.medium))
-                                .foregroundColor(.primary)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .background(rowInset)
-                                .appChromeCornerRadius(10)
-                        }
-                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 16)
