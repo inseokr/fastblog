@@ -240,7 +240,7 @@ struct VoiceMemoRecorderSheet: View {
 
     private var previewContent: some View {
         VStack(spacing: 22) {
-            counterText(stagedURL.flatMap(durationLabel) ?? "—")
+            counterText(previewCounterText)
 
             HStack(spacing: 28) {
                 Button {
@@ -386,6 +386,20 @@ struct VoiceMemoRecorderSheet: View {
         let duration = CMTimeGetSeconds(asset.duration)
         guard duration.isFinite, duration > 0 else { return nil }
         return format(duration)
+    }
+
+    private func durationSeconds(for url: URL) -> TimeInterval? {
+        let asset = AVURLAsset(url: url)
+        let seconds = CMTimeGetSeconds(asset.duration)
+        guard seconds.isFinite, seconds > 0 else { return nil }
+        return seconds
+    }
+
+    private var previewCounterText: String {
+        guard let url = stagedURL, let total = durationSeconds(for: url) else { return "—" }
+        guard player.isPlaying else { return format(total) }
+        let remaining = max(0, total - player.currentTime)
+        return format(remaining)
     }
 
     private func startReRecordFlow() {
