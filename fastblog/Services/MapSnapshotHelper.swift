@@ -25,13 +25,16 @@ class MapSnapshotHelper {
         var indexedCoords: [(displayNumber: Int, coord: CLLocationCoordinate2D, placeTitle: String)] = []
         for (i, stop) in placeStops.enumerated() {
             if let loc = stop.representativeLocation {
-                indexedCoords.append((displayNumber: i + 1, coord: loc.clCoordinate, placeTitle: stop.placeTitle))
+                let c = loc.clCoordinate
+                guard Self.isReasonableCoordinate(c) else { continue }
+                indexedCoords.append((displayNumber: i + 1, coord: c, placeTitle: stop.placeTitle))
             }
         }
         guard !indexedCoords.isEmpty else { return nil }
 
         let coords = indexedCoords.map(\.coord)
-        let region = region(for: coords, padding: regionPadding)
+        let computed = region(for: coords, padding: regionPadding)
+        let region = validatedSnapshotRegion(computed, fallbackCenter: coords[0])
 
         let options = MKMapSnapshotter.Options()
         options.region = region
@@ -146,7 +149,7 @@ class MapSnapshotHelper {
             let coord: CLLocationCoordinate2D? = stop.representativeLocation?.clCoordinate
                 ?? included.first(where: { $0.location != nil })?.location?.clCoordinate
 
-            guard let unwrappedCoord = coord else { continue }
+            guard let unwrappedCoord = coord, Self.isReasonableCoordinate(unwrappedCoord) else { continue }
 
             displayIndex += 1
             entries.append(
@@ -182,7 +185,7 @@ class MapSnapshotHelper {
         // Shift the viewport center 25 % toward the first stop so the start of the
         // route sits more prominently in frame.  The span is unchanged so all later
         // stops remain fully inside the snapshot.
-        let displayRegion: MKCoordinateRegion = {
+        let rawDisplayRegion: MKCoordinateRegion = {
             let first = entries[0].coord
             let biasedLat = boundingRegion.center.latitude
                 + (first.latitude  - boundingRegion.center.latitude)  * 0.25
@@ -193,6 +196,7 @@ class MapSnapshotHelper {
                 span: boundingRegion.span
             )
         }()
+        let displayRegion = validatedSnapshotRegion(rawDisplayRegion, fallbackCenter: entries[0].coord)
 
         let options = MKMapSnapshotter.Options()
         options.region = displayRegion
@@ -292,16 +296,69 @@ class MapSnapshotHelper {
         }
     }
     
+    /// Degenerate / corrupt EXIF coords (NaN, non-finite lat/lon) or antimeridian spans will make
+    /// `MKMapSnapshotOptions.setRegion` throw NSException — reject bad points up front.
+    private static func isReasonableCoordinate(_ c: CLLocationCoordinate2D) -> Bool {
+        guard c.latitude.isFinite, c.longitude.isFinite else { return false }
+        return (-89.999...89.999).contains(c.latitude) && (-179.999...179.999).contains(c.longitude)
+    }
+
+    /// MapKit rejects non-finite, non-positive, or absurdly wide spans; clamps to snapshot-safe ranges.
+    private static func validatedSnapshotRegion(_ region: MKCoordinateRegion, fallbackCenter: CLLocationCoordinate2D) -> MKCoordinateRegion {
+        let minLatDelta = 0.02
+        let minLonDelta = 0.02
+        /// Longitude diff from naive min/max can approach 360° when a route crosses the antimeridian;
+        /// `setRegion:` throws far below that; keep the portrait within MapKit limits.
+        let maxLatDelta = 160.0
+        let maxLonDelta = 170.0
+
+        let safeFallback = Self.isReasonableCoordinate(fallbackCenter)
+            ? fallbackCenter
+            : CLLocationCoordinate2D(latitude: 37.3349, longitude: -122.00902)
+
+        var lat = region.center.latitude
+        var lon = region.center.longitude
+        if !(lat.isFinite && lon.isFinite) || !Self.isReasonableCoordinate(CLLocationCoordinate2D(latitude: lat, longitude: lon)) {
+            lat = Self.clamp(safeFallback.latitude, -89.0...89.0)
+            lon = Self.clamp(safeFallback.longitude, -179.0...179.0)
+        }
+        var latΔ = region.span.latitudeDelta
+        var lonΔ = region.span.longitudeDelta
+        if !(latΔ.isFinite && lonΔ.isFinite) || latΔ <= 0 || lonΔ <= 0 {
+            latΔ = minLatDelta
+            lonΔ = minLonDelta
+        }
+        latΔ = Self.clamp(latΔ, minLatDelta...maxLatDelta)
+        lonΔ = Self.clamp(lonΔ, minLonDelta...maxLonDelta)
+
+        lat = Self.clamp(lat, -89.0...89.0)
+        lon = Self.clamp(lon, -179.0...179.0)
+
+        let span = MKCoordinateSpan(latitudeDelta: latΔ, longitudeDelta: lonΔ)
+        return MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: lat, longitude: lon), span: span)
+    }
+
+    private static func clamp(_ value: Double, _ range: ClosedRange<Double>) -> Double {
+        Swift.min(Swift.max(value, range.lowerBound), range.upperBound)
+    }
+
     /// Calculates the bounding region for a set of coordinates with padding.
     private static func region(for coords: [CLLocationCoordinate2D], padding: Double = 0.01) -> MKCoordinateRegion {
-        if coords.count == 1 {
-            let coord = coords[0]
+        let filtered = coords.filter { isReasonableCoordinate($0) }
+        guard let firstCoord = filtered.first else {
+            let origin = coords.first ?? .init(latitude: 0, longitude: 0)
+            let span = MKCoordinateSpan(latitudeDelta: max(0.05, padding * 2), longitudeDelta: max(0.05, padding * 2))
+            return MKCoordinateRegion(center: origin, span: span)
+        }
+
+        if filtered.count == 1 {
+            let coord = firstCoord
             let span = MKCoordinateSpan(latitudeDelta: max(0.05, padding * 2), longitudeDelta: max(0.05, padding * 2))
             return MKCoordinateRegion(center: coord, span: span)
         }
 
-        let lats = coords.map(\.latitude)
-        let lons = coords.map(\.longitude)
+        let lats = filtered.map(\.latitude)
+        let lons = filtered.map(\.longitude)
         let minLat = lats.min()!
         let maxLat = lats.max()!
         let minLon = lons.min()!
