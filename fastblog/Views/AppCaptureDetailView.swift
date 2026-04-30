@@ -208,31 +208,6 @@ struct AppCaptureDetailView: View {
 
                     Spacer()
 
-                    // Voice memo play button — appears left of the Vibe button when one is attached.
-                    if currentItem?.localVoiceMemoURL != nil {
-                        let memoPlaying = voiceMemoPlayer.isPlaying
-                        Button {
-                            if memoPlaying {
-                                voiceMemoPlayer.stop()
-                            } else if let url = currentItem?.localVoiceMemoURL {
-                                vibePlayer.stop()
-                                voiceMemoPlayer.play(url: url)
-                            }
-                        } label: {
-                            Image(systemName: memoPlaying ? "stop.fill" : "mic.fill")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.white)
-                                .frame(width: 44, height: 44)
-                                .background(.ultraThinMaterial)
-                                .background(memoPlaying ? Color.purple.opacity(0.5) : Color.purple.opacity(0.32))
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(memoPlaying ? "Stop voice memo" : "Play voice memo")
-                        .padding(.trailing, 8)
-                    }
-
                     // Right: Vibe toggle when available (download/delete live in bottom bar)
                     if currentItem?.localVibeURL != nil {
                         let audioPlaying = vibePlayer.isPlaying
@@ -307,7 +282,7 @@ struct AppCaptureDetailView: View {
             if let item = currentItem {
                 let placeTitle = resolvedPlaceTitle.isEmpty ? "Unknown Place" : resolvedPlaceTitle
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(placeTitle)
                         .font(.title3)
                         .fontWeight(.bold)
@@ -363,6 +338,30 @@ struct AppCaptureDetailView: View {
                             }
                             .disabled(isGeneratingCaption)
                         }
+                    }
+
+                    if item.localVoiceMemoURL != nil {
+                        let memoPlaying = voiceMemoPlayer.isPlaying
+                        Button {
+                            if memoPlaying {
+                                voiceMemoPlayer.stop()
+                            } else if let url = item.localVoiceMemoURL {
+                                vibePlayer.stop()
+                                voiceMemoPlayer.play(url: url)
+                            }
+                        } label: {
+                            Label(memoPlaying ? "Playing memo" : "Voice memo", systemImage: memoPlaying ? "stop.fill" : "mic.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(Color.blue.opacity(0.72))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(memoPlaying ? "Stop voice memo" : "Play voice memo")
                     }
                 }
 

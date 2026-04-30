@@ -155,6 +155,10 @@ struct PlacePhotoModalView: View {
     /// Called when the user saves a place name edit from within this modal.
     /// Provides (newName, category, coordinate, subtitleLine) so the caller can update the store; subtitle is trimmed (empty clears).
     var onSavePlaceName: ((String, String?, CLLocationCoordinate2D?, String) -> Void)?
+    /// When set, the bottom category chip / “Add category” pill opens `PlaceStopCategoryPickerSheet` and persists via this callback (`nil` = Others / none).
+    var onSavePlaceCategory: ((String?) -> Void)? = nil
+    /// When true (e.g. Places Visited grid “Add category”), presents the category sheet once after the modal appears.
+    var presentPlaceCategoryPickerOnAppear: Bool = false
     /// Called when the user commits the caption (Done/Save). Use to sync story to cloud.
     var onCaptionCommitted: ((UUID) -> Void)? = nil
 
@@ -197,6 +201,11 @@ struct PlacePhotoModalView: View {
     @AppStorage("bloggo.camera.saveToPhotosEnabled") private var saveToPhotosEnabled: Bool = false
     /// When non-nil, replaces `placeSubtitle` for display after an in-modal rename (empty clears the line).
     @State private var subtitleOverride: String? = nil
+    /// Local category (picker or rename) so choosing “Others” (`nil`) does not fall back to `initialPlaceCategory`.
+    @State private var hasLocalPlaceCategoryOverride: Bool = false
+    @State private var localPlaceCategoryRaw: String? = nil
+    @State private var showPlaceCategoryPicker = false
+    @State private var didPresentInitialPlaceCategoryPicker = false
     /// Read-only bottom overlay: multi-line captions start collapsed; user can expand.
     @State private var isReadOnlyCaptionExpanded = false
     @State private var downloadToast: String?
@@ -282,6 +291,26 @@ struct PlacePhotoModalView: View {
         return placeSubtitle
     }
 
+    private var effectivePlaceCategoryRaw: String? {
+        if hasLocalPlaceCategoryOverride {
+            let raw = localPlaceCategoryRaw
+            let t = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+        let t = (initialPlaceCategory ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
+    }
+
+    /// Seed for category picker / rename sheet (preserves explicit clear vs inherited initial).
+    private var categoryPickerSeedRaw: String? {
+        if hasLocalPlaceCategoryOverride { return localPlaceCategoryRaw }
+        return initialPlaceCategory
+    }
+
+    private var canEditPlaceCategoryFromOverlay: Bool {
+        onSavePlaceCategory != nil && !recapBlogIsReadOnly
+    }
+
     /// Earliest photo in this stop by timestamp (same as used for place stop visit time).
     private var earliestPhoto: RecapPhoto? {
         photos.min(by: { $0.timestamp < $1.timestamp })
@@ -307,6 +336,7 @@ struct PlacePhotoModalView: View {
         showAssetTimeMetadata: Bool = true,
         autoFocusCaption: Bool = false,
         presentation: PlaceDetailPresentation = .sheet,
+        presentPlaceCategoryPickerOnAppear: Bool = false,
         photoCaption: @escaping (UUID) -> Binding<String>,
         onDismiss: @escaping () -> Void,
         onDismissSlideBegan: (() -> Void)? = nil,
@@ -317,6 +347,7 @@ struct PlacePhotoModalView: View {
         onPhotoCaptionManuallyEdited: ((UUID) -> Void)? = nil,
         onRemovePhoto: ((UUID) -> Void)? = nil,
         onSavePlaceName: ((String, String?, CLLocationCoordinate2D?, String) -> Void)? = nil,
+        onSavePlaceCategory: ((String?) -> Void)? = nil,
         onCaptionCommitted: ((UUID) -> Void)? = nil
     ) {
         self._placeTitle = placeTitle
@@ -332,6 +363,7 @@ struct PlacePhotoModalView: View {
         self.showAssetTimeMetadata = showAssetTimeMetadata
         self.autoFocusCaption = autoFocusCaption
         self.presentation = presentation
+        self.presentPlaceCategoryPickerOnAppear = presentPlaceCategoryPickerOnAppear
         self.photoCaption = photoCaption
         self.onDismiss = onDismiss
         self.onDismissSlideBegan = onDismissSlideBegan
@@ -342,6 +374,7 @@ struct PlacePhotoModalView: View {
         self.onPhotoCaptionManuallyEdited = onPhotoCaptionManuallyEdited
         self.onRemovePhoto = onRemovePhoto
         self.onSavePlaceName = onSavePlaceName
+        self.onSavePlaceCategory = onSavePlaceCategory
         self.onCaptionCommitted = onCaptionCommitted
         _currentPhotoId = State(initialValue: initialPhotoId)
         // Blog edit or caption-sheet handoff: caption editor from the first frame (no onAppear flip).
@@ -398,6 +431,13 @@ struct PlacePhotoModalView: View {
         guard let id = currentPhoto?.localIdentifier,
               let captureId = AppCapturePhotoService.uuid(from: id) else { return nil }
         return AppCapturePhotoService.shared.vibeFileURL(for: captureId)
+    }
+
+    /// Local voice memo URL for the current photo, if one was explicitly recorded.
+    private var currentVoiceMemoURL: URL? {
+        guard let id = currentPhoto?.localIdentifier,
+              let captureId = AppCapturePhotoService.uuid(from: id) else { return nil }
+        return AppCapturePhotoService.shared.voiceMemoFileURL(for: captureId)
     }
 
     private var currentCaption: String {
@@ -580,6 +620,7 @@ struct PlacePhotoModalView: View {
                                 BottomInfoOverlay(
                                     placeTitle: placeTitle,
                                     dateTimeText: dateTimeTextForCurrentPhoto,
+                                    hasVoiceMemo: currentVoiceMemoURL != nil,
                                     assetTimeMetadataLines: assetTimeMetadataLinesForCurrentPhoto,
                                     showAssetTimeMetadata: showAssetTimeMetadata,
                                     isEditing: $isEditing,
@@ -589,7 +630,10 @@ struct PlacePhotoModalView: View {
                                     blogIsEditMode: usesInlineCaptionChrome,
                                     contentVerticalPadding: PlaceDetailChromeLayout.bottomContentVerticalPadding(sheet: presentation.isSheet),
                                     contentHorizontalPadding: PlaceDetailChromeLayout.bottomContentHorizontalPadding(sheet: presentation.isSheet),
-                                    onTitleTap: { openGoogleSearch() },
+                                    onTitleTap: recapBlogIsReadOnly ? nil : {
+                                        isCaptionFocused = false
+                                        showRenameSheet = true
+                                    },
                                     onViewBlog: titleRowOnViewBlog,
                                     onCommitCaption: { commitCaption() }
                                 )
@@ -662,6 +706,8 @@ struct PlacePhotoModalView: View {
                 isVibeEnabled: isVibeEnabled,
                 isVibePlaying: isVibeEnabled && vibePlayer.isPlaying,
                 playingVibePulse: playingVibePulse,
+                placeCategoryRaw: effectivePlaceCategoryRaw,
+                onCategoryTap: canEditPlaceCategoryFromOverlay ? { showPlaceCategoryPicker = true } : nil,
                 onLeadingPrimary: {
                     // Caption edit from kebab menu: "Cancel" should leave edit mode and
                     // return to read-only in the same full-screen viewer.
@@ -773,14 +819,30 @@ struct PlacePhotoModalView: View {
             EditPlaceStopNameSheet(
                 placeTitle: $placeTitle,
                 initialPlaceSubtitle: effectivePlaceSubtitle,
-                initialPlaceCategory: initialPlaceCategory,
+                initialPlaceCategory: categoryPickerSeedRaw,
                 location: photos.compactMap({ $0.location?.clCoordinate }).first,
                 photos: photos,
                 onSave: { newName, coord, category, subtitleLine in
                     debugPrint("[Category] PlacePhotoModal onSave: name='\(newName)' category=\(category ?? "nil") subtitle='\(subtitleLine)' onSavePlaceName wired=\(onSavePlaceName != nil)")
                     placeTitle = newName
+                    editedPlaceTitle = newName
+                    titleWhenEditingStarted = newName
                     subtitleOverride = subtitleLine
+                    hasLocalPlaceCategoryOverride = true
+                    localPlaceCategoryRaw = category
                     onSavePlaceName?(newName, category, coord, subtitleLine)
+                }
+            )
+        }
+        .sheet(isPresented: $showPlaceCategoryPicker) {
+            PlaceStopCategoryPickerSheet(
+                initialCategoryRaw: categoryPickerSeedRaw,
+                onCancel: { showPlaceCategoryPicker = false },
+                onDone: { newCategory in
+                    hasLocalPlaceCategoryOverride = true
+                    localPlaceCategoryRaw = newCategory
+                    onSavePlaceCategory?(newCategory)
+                    showPlaceCategoryPicker = false
                 }
             )
         }
@@ -847,6 +909,14 @@ struct PlacePhotoModalView: View {
                 // Otherwise a tap may only dismiss focus instead of entering zoom.
                 isEditing = false
                 isCaptionFocused = false
+            }
+            if presentPlaceCategoryPickerOnAppear, !didPresentInitialPlaceCategoryPicker {
+                didPresentInitialPlaceCategoryPicker = true
+                if canEditPlaceCategoryFromOverlay {
+                    DispatchQueue.main.async {
+                        showPlaceCategoryPicker = true
+                    }
+                }
             }
         }
         .onChange(of: currentPhotoId) { _, _ in
@@ -1046,10 +1116,23 @@ struct PlacePhotoModalView: View {
                             }
 
                             if !dateTimeTextForCurrentPhoto.isEmpty {
-                                Text(dateTimeTextForCurrentPhoto)
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.white.opacity(0.8))
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(dateTimeTextForCurrentPhoto)
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.white.opacity(0.8))
+                                    if currentVoiceMemoURL != nil {
+                                        Label("Voice memo", systemImage: "mic.fill")
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 5)
+                                            .background(
+                                                Capsule(style: .continuous)
+                                                    .fill(Color.blue.opacity(0.85))
+                                            )
+                                    }
+                                }
                             }
                         }
                         .padding(.bottom, 4)
@@ -1143,8 +1226,9 @@ struct PlacePhotoModalView: View {
                         }
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 24)
-                    .padding(.bottom, 34)
+                    .padding(.top, 30)
+                    // Keep the caption panel/dark backdrop slightly higher above the keyboard.
+                    .padding(.bottom, 20)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background {
                         // When the caption field is focused, transparent — dim overlay on the photo handles readability.
@@ -1547,7 +1631,7 @@ struct PlacePhotoModalView: View {
                 photo: photo,
                 placeName: editedPlaceTitle,
                 placeSubtitle: effectivePlaceSubtitle,
-                placeCategoryMK: initialPlaceCategory,
+                placeCategoryMK: effectivePlaceCategoryRaw,
                 visitTimeZone: effectiveTimeZone,
                 userCaptionHint: hintRaw.isEmpty ? nil : hintRaw
             )
@@ -1636,6 +1720,8 @@ private struct PlaceDetailTopChrome: View {
     let isVibeEnabled: Bool
     let isVibePlaying: Bool
     let playingVibePulse: Bool
+    let placeCategoryRaw: String?
+    let onCategoryTap: (() -> Void)?
     let onLeadingPrimary: () -> Void
     let onSaveCaptionAndDismiss: () -> Void
     let onDoneBlogEdit: () -> Void
@@ -1647,6 +1733,41 @@ private struct PlaceDetailTopChrome: View {
     let onLink: () -> Void
     let showDownloadAction: Bool
     let onDownload: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    @ViewBuilder
+    private var topCenterCategoryPill: some View {
+        if let raw = placeCategoryRaw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            if let onCategoryTap {
+                Button(action: onCategoryTap) {
+                    PlacePOICategoryBadge(rawCategory: raw)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Change place category")
+            } else {
+                PlacePOICategoryBadge(rawCategory: raw)
+            }
+        } else if let onCategoryTap {
+            Button(action: onCategoryTap) {
+                HStack(spacing: 4) {
+                    Image(systemName: "tag")
+                        .font(.caption2)
+                    Text("Add category")
+                        .font(.caption2.weight(.medium))
+                }
+                .foregroundStyle(Color.white.opacity(0.9))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08))
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Change place category")
+        }
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -1682,28 +1803,59 @@ private struct PlaceDetailTopChrome: View {
             }
 
             VStack(spacing: 0) {
-                HStack(alignment: .top) {
-                    if openInCaptionEditor {
-                        // Handoff from place/photo caption edit sheet — reads as leaving the viewer, not aborting an edit.
-                        capsuleButton(title: "Close", action: onLeadingPrimary)
-                    } else if isEditing || blogIsEditMode {
-                        capsuleButton(title: "Cancel", action: onLeadingPrimary)
-                    } else {
-                        capsuleButton(title: "Close", action: onLeadingPrimary)
-                    }
+                ZStack(alignment: .top) {
+                    HStack(alignment: .top) {
+                        if openInCaptionEditor {
+                            // Handoff from place/photo caption edit sheet — reads as leaving the viewer, not aborting an edit.
+                            capsuleButton(title: "Close", action: onLeadingPrimary)
+                        } else if isEditing || blogIsEditMode {
+                            capsuleButton(title: "Cancel", action: onLeadingPrimary)
+                        } else {
+                            capsuleButton(title: "Close", action: onLeadingPrimary)
+                        }
 
-                    Spacer()
+                        Spacer()
 
-                    if !isEditing && !blogIsEditMode && !openInCaptionEditor {
-                        // Trailing alignment keeps the waveform + ⋯ + nav/link column fixed when "Playing Vibe"
-                        // appears; default center alignment re-centers a wider top row and shifts buttons.
-                        VStack(alignment: .trailing, spacing: PlaceDetailChromeLayout.actionStackSpacing) {
-                            if hasVibeClip {
-                                HStack(alignment: .center, spacing: 8) {
-                                    if isVibePlaying {
-                                        PlayingVibeHeaderPill(pulse: playingVibePulse)
-                                            .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .trailing)))
+                        if !isEditing && !blogIsEditMode && !openInCaptionEditor {
+                            // Trailing alignment keeps the waveform + ⋯ + nav/link column fixed when "Playing Vibe"
+                            // appears; default center alignment re-centers a wider top row and shifts buttons.
+                            VStack(alignment: .trailing, spacing: PlaceDetailChromeLayout.actionStackSpacing) {
+                                Menu {
+                                    if !recapBlogIsReadOnly {
+                                        Button(action: onMenuEditPlaceName) {
+                                            Label("Edit Place Name", systemImage: "mappin.and.ellipse")
+                                        }
+                                        Button(action: onMenuBeginCaptionEdit) {
+                                            Label("Edit caption", systemImage: "text.alignleft")
+                                        }
                                     }
+                                    Button {
+                                        onMenuRemovePhoto(currentPhotoId)
+                                    } label: {
+                                        Label("Hide photo", systemImage: "minus.circle")
+                                            .foregroundStyle(.white)
+                                    }
+                                } label: {
+                                    Image(systemName: "ellipsis")
+                                        .font(.system(size: 18, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .frame(width: PlaceDetailChromeLayout.circleActionSize, height: PlaceDetailChromeLayout.circleActionSize)
+                                        .background(Color.white.opacity(0.22))
+                                        .clipShape(Circle())
+                                        .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
+                                }
+                                .frame(width: PlaceDetailChromeLayout.circleActionSize, alignment: .center)
+
+                                RightActionStack(
+                                    onSparkles: { },
+                                    onNavigate: onNavigate,
+                                    onLink: onLink,
+                                    showDownloadAction: showDownloadAction,
+                                    onDownload: onDownload
+                                )
+                                .frame(width: PlaceDetailChromeLayout.circleActionSize, alignment: .center)
+
+                                if hasVibeClip {
                                     Button(action: onToggleVibe) {
                                         AtmosphericWaveformView(isActive: isVibeEnabled)
                                             .frame(width: PlaceDetailChromeLayout.circleActionSize, height: PlaceDetailChromeLayout.circleActionSize)
@@ -1719,53 +1871,23 @@ private struct PlaceDetailTopChrome: View {
                                     }
                                     .buttonStyle(.plain)
                                     .accessibilityLabel(isVibePlaying ? "Vibe playing" : "Play vibe")
+                                    .frame(width: PlaceDetailChromeLayout.circleActionSize, alignment: .center)
                                 }
-                                .animation(.easeInOut(duration: 0.25), value: isVibePlaying)
                             }
-
-                            Menu {
-                                if !recapBlogIsReadOnly {
-                                    Button(action: onMenuEditPlaceName) {
-                                        Label("Edit Place Name", systemImage: "mappin.and.ellipse")
-                                    }
-                                    Button(action: onMenuBeginCaptionEdit) {
-                                        Label("Edit caption", systemImage: "text.alignleft")
-                                    }
-                                }
-                                Button {
-                                    onMenuRemovePhoto(currentPhotoId)
-                                } label: {
-                                    Label("Hide photo", systemImage: "minus.circle")
-                                        .foregroundStyle(.white)
-                                }
-                            } label: {
-                                Image(systemName: "ellipsis")
-                                    .font(.system(size: 18, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .frame(width: PlaceDetailChromeLayout.circleActionSize, height: PlaceDetailChromeLayout.circleActionSize)
-                                    .background(Color.white.opacity(0.22))
-                                    .clipShape(Circle())
-                                    .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
-                            }
-                            .frame(width: PlaceDetailChromeLayout.circleActionSize, alignment: .center)
-
-                            RightActionStack(
-                                onSparkles: { },
-                                onNavigate: onNavigate,
-                                onLink: onLink,
-                                showDownloadAction: showDownloadAction,
-                                onDownload: onDownload
-                            )
-                            .frame(width: PlaceDetailChromeLayout.circleActionSize, alignment: .center)
+                        } else if isEditing && !blogIsEditMode && !openInCaptionEditor {
+                            accentHeaderPill(title: "Save", fill: Color.blue, action: onSaveCaptionAndDismiss)
+                        } else if blogIsEditMode && !openInCaptionEditor {
+                            blogEditPhotoSaveCapsule(action: onDoneBlogEdit)
+                                .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
+                        } else if openInCaptionEditor && !hideChromeDoneFromCaptionEditorSheet {
+                            capsuleButton(title: "Done", action: onDoneBlogEdit)
+                                .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
                         }
-                    } else if isEditing && !blogIsEditMode && !openInCaptionEditor {
-                        accentHeaderPill(title: "Save", fill: Color.blue, action: onSaveCaptionAndDismiss)
-                    } else if blogIsEditMode && !openInCaptionEditor {
-                        blogEditPhotoSaveCapsule(action: onDoneBlogEdit)
-                            .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
-                    } else if openInCaptionEditor && !hideChromeDoneFromCaptionEditorSheet {
-                        capsuleButton(title: "Done", action: onDoneBlogEdit)
-                            .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
+                    }
+
+                    if !isEditing && !blogIsEditMode && !openInCaptionEditor {
+                        topCenterCategoryPill
+                            .padding(.top, 6)
                     }
                 }
                 .animation(.easeInOut(duration: 0.2), value: hasUnsavedChanges)
@@ -1900,6 +2022,7 @@ struct RightActionStack: View {
 struct BottomInfoOverlay: View {
     let placeTitle: String
     let dateTimeText: String
+    var hasVoiceMemo: Bool = false
     /// PHAsset time metadata lines (e.g. "Created: ... (PST)", "Modified: ... (PST)"); shown below dateTimeText when non-empty.
     var assetTimeMetadataLines: [String] = []
     /// When false, suppress Created/Modified metadata lines.
@@ -1921,46 +2044,69 @@ struct BottomInfoOverlay: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                // Tappable place title — opens search in the browser (same icon as story place links).
-                Button(action: { onTitleTap?() }) {
-                    HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        Text(placeTitle)
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .shadow(color: .black.opacity(0.4), radius: 2)
-                            .lineLimit(1)
-                        if onTitleTap != nil {
-                            StoryPlaceExternalLinkIcon(titleFontSize: 22, foregroundColor: .white)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    // Tappable place title — opens Edit Place Name when editing is available.
+                    Button(action: { onTitleTap?() }) {
+                        HStack(alignment: .firstTextBaseline, spacing: 5) {
+                            Text(placeTitle)
+                                .font(.title2)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
                                 .shadow(color: .black.opacity(0.4), radius: 2)
+                                .lineLimit(1)
+                            if onTitleTap != nil {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.white.opacity(0.22))
+                                    Image(systemName: "link")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                }
+                                .frame(width: 28, height: 28)
+                            }
                         }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.plain)
-                .disabled(onTitleTap == nil)
-
-                if let onViewBlog {
-                    Button(action: onViewBlog) {
-                        Image(systemName: "book.fill")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 44, height: 44)
-                            .background(Color.white.opacity(0.22))
-                            .clipShape(Circle())
-                            .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("View blog")
+                    .disabled(onTitleTap == nil)
+                    .accessibilityLabel("Edit place name")
+
+                    if let onViewBlog {
+                        Button(action: onViewBlog) {
+                            Image(systemName: "book.fill")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(width: 44, height: 44)
+                                .background(Color.white.opacity(0.22))
+                                .clipShape(Circle())
+                                .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("View blog")
+                    }
                 }
             }
 
             if !dateTimeText.isEmpty {
-                Text(dateTimeText)
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.95))
-                    .shadow(color: .black.opacity(0.3), radius: 1)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(dateTimeText)
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.95))
+                        .shadow(color: .black.opacity(0.3), radius: 1)
+                    if hasVoiceMemo {
+                        Label("Voice memo", systemImage: "mic.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(Color.blue.opacity(0.85))
+                            )
+                            .shadow(color: .black.opacity(0.3), radius: 1)
+                    }
+                }
             }
 
             if showAssetTimeMetadata {

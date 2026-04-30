@@ -245,6 +245,12 @@ final class AppCapturePhotoService {
         return url
     }
 
+    /// Removes only the vibe clip for a capture (keeps the photo and voice memo).
+    func deleteVibe(captureId: UUID) {
+        guard let url = try? vibePath(for: captureId) else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
     // MARK: - Voice memo file (voice_memo.m4a inside capture folder)
 
     private func voiceMemoPath(for captureId: UUID) throws -> URL {

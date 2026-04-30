@@ -11,7 +11,7 @@
 //    .preview   – playback of just-recorded clip, with Re-record / Save / Cancel.
 //
 //  When `existingMemoURL` is non-nil the sheet starts in .preview so the user
-//  can play, replace, or delete an existing memo.
+//  can play, re-record, or delete an existing memo.
 //
 
 import AVFoundation
@@ -45,7 +45,7 @@ struct VoiceMemoRecorderSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-                .padding(.top, 18)
+                .padding(.top, mode == .recording ? 32 : 18)
                 .padding(.bottom, 8)
 
             ZStack {
@@ -60,12 +60,18 @@ struct VoiceMemoRecorderSheet: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            footer
-                .padding(.horizontal, 24)
-                .padding(.bottom, 24)
+            if mode != .recording {
+                footer
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 24)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.ignoresSafeArea())
+        .background(
+            Color.gray.opacity(0.28)
+                .background(.ultraThinMaterial)
+                .ignoresSafeArea()
+        )
         .preferredColorScheme(.dark)
         .onAppear {
             recorder.refreshMicrophoneAuthorizationState()
@@ -109,10 +115,6 @@ struct VoiceMemoRecorderSheet: View {
 
     private var header: some View {
         VStack(spacing: 4) {
-            Capsule()
-                .fill(Color.white.opacity(0.25))
-                .frame(width: 36, height: 4)
-                .padding(.bottom, 10)
             Text(headerTitle)
                 .font(.headline)
                 .foregroundColor(.white)
@@ -183,14 +185,9 @@ struct VoiceMemoRecorderSheet: View {
     private var recordingContent: some View {
         VStack(spacing: 22) {
             counterText("\(format(recorder.elapsed)) / \(format(VoiceMemoRecorder.maxDuration))")
+                .padding(.top, 10)
 
-            if recorder.isRecording {
-                // Matches in-app camera Vibe — visibly “recording” whenever audio is actually capturing.
-                AtmosphericWaveformView(isActive: true)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .accessibilityHidden(true)
-            } else if !recorder.permissionDenied {
+            if !recorder.permissionDenied && !recorder.isRecording {
                 ProgressView()
                     .tint(.cyan)
                     .scaleEffect(1.05)
@@ -200,7 +197,7 @@ struct VoiceMemoRecorderSheet: View {
 
             if recorder.isRecording {
                 LiveMeterWaveformView(level: recorder.meterLevel, meterTick: recorder.meterTick)
-                    .frame(height: 76)
+                    .frame(height: 68)
                     .padding(.horizontal, 18)
             }
 
@@ -262,34 +259,16 @@ struct VoiceMemoRecorderSheet: View {
                 .accessibilityLabel(player.isPlaying ? "Pause voice memo" : "Play voice memo")
             }
 
-            HStack(spacing: 14) {
-                Button {
-                    player.stop()
-                    if let url = stagedURL, url != existingMemoURL {
-                        try? FileManager.default.removeItem(at: url)
-                    }
-                    stagedURL = nil
-                    mode = .idle
+            if existingMemoURL != nil {
+                Button(role: .destructive) {
+                    showDeleteConfirm = true
                 } label: {
-                    Label("Re-record", systemImage: "arrow.counterclockwise")
+                    Label("Delete", systemImage: "trash")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(.red)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
                         .background(.ultraThinMaterial, in: Capsule())
-                }
-
-                if existingMemoURL != nil {
-                    Button(role: .destructive) {
-                        showDeleteConfirm = true
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(.red)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(.ultraThinMaterial, in: Capsule())
-                    }
                 }
             }
         }
@@ -298,7 +277,8 @@ struct VoiceMemoRecorderSheet: View {
     // MARK: - Footer (Cancel / Save)
 
     private var footer: some View {
-        HStack(spacing: 12) {
+        let canSaveMemo = stagedURL.flatMap(durationLabel) != nil
+        return HStack(spacing: 12) {
             Button("Cancel") {
                 player.stop()
                 if recorder.isRecording { recorder.stop() }
@@ -316,20 +296,31 @@ struct VoiceMemoRecorderSheet: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
 
             Button {
-                guard let url = stagedURL else { return }
-                player.stop()
-                didCommit = true
-                onSave(url)
-                dismiss()
+                if existingMemoURL != nil, stagedURL == existingMemoURL {
+                    startReRecordFlow()
+                } else {
+                    guard let url = stagedURL, canSaveMemo else { return }
+                    player.stop()
+                    didCommit = true
+                    onSave(url)
+                    dismiss()
+                }
             } label: {
-                Text(existingMemoURL != nil ? "Replace" : "Save")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
+                Group {
+                    if existingMemoURL != nil, stagedURL == existingMemoURL {
+                        Label("Re-record", systemImage: "arrow.counterclockwise")
+                    } else {
+                        Text("Save")
+                    }
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
             }
-            .background(stagedURL == nil ? Color.blue.opacity(0.4) : Color.blue, in: RoundedRectangle(cornerRadius: 12))
-            .disabled(stagedURL == nil)
+            .background(canSaveMemo ? Color.blue : Color.blue.opacity(0.28), in: RoundedRectangle(cornerRadius: 12))
+            .opacity(canSaveMemo ? 1 : 0.72)
+            .disabled(!canSaveMemo)
         }
     }
 
@@ -397,6 +388,15 @@ struct VoiceMemoRecorderSheet: View {
         return format(duration)
     }
 
+    private func startReRecordFlow() {
+        player.stop()
+        if let url = stagedURL, url != existingMemoURL {
+            try? FileManager.default.removeItem(at: url)
+        }
+        stagedURL = nil
+        mode = .idle
+    }
+
     private func openAppSettingsForMicrophone() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
@@ -421,6 +421,10 @@ private struct LiveMeterWaveformView: View {
             ZStack {
                 Capsule()
                     .fill(Color.white.opacity(0.06))
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.white.opacity(0.1), lineWidth: 0.8)
+                    )
 
                 HStack(alignment: .center, spacing: 4) {
                     ForEach(Array(samples.enumerated()), id: \.offset) { _, value in
@@ -436,7 +440,9 @@ private struct LiveMeterWaveformView: View {
                     }
                 }
                 .padding(.horizontal, 6)
+                .padding(.vertical, 8)
             }
+            .clipShape(Capsule())
         }
         /// `meterTick` advances every metering interval (~10 Hz) regardless of whether `level` repeats,
         /// so scrolling bars never “freeze” during silence (the old `onChange(level)`‑only wiring did).
@@ -462,6 +468,6 @@ private struct LiveMeterWaveformView: View {
     }
 
     private func barHeight(for value: CGFloat, geo: GeometryProxy) -> CGFloat {
-        max(6, min(geo.size.height * 0.96, geo.size.height * value))
+        max(5, min(geo.size.height * 0.72, geo.size.height * value * 0.78))
     }
 }

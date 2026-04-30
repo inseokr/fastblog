@@ -220,6 +220,8 @@ struct PlaceStopRowView: View {
     // Vibe playback for blog photo thumbnails
     @StateObject private var vibePlayer = VibePlayer()
     @State private var playingVibePhotoId: UUID? = nil
+    @StateObject private var voiceMemoPlayer = VibePlayer()
+    @State private var playingVoiceMemoPhotoId: UUID? = nil
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("selectedBlogFont") private var selectedBlogFont: String = "Serif"
 
@@ -304,6 +306,133 @@ struct PlaceStopRowView: View {
         guard let id = photo.localIdentifier,
               let captureId = AppCapturePhotoService.uuid(from: id) else { return nil }
         return AppCapturePhotoService.shared.vibeFileURL(for: captureId)
+    }
+
+    /// Returns the explicit voice memo file URL for a photo captured in the in-app camera.
+    private func voiceMemoURL(for photo: RecapPhoto) -> URL? {
+        guard let id = photo.localIdentifier,
+              let captureId = AppCapturePhotoService.uuid(from: id) else { return nil }
+        return AppCapturePhotoService.shared.voiceMemoFileURL(for: captureId)
+    }
+
+    @ViewBuilder
+    private func vibeTopRightControl(for photo: RecapPhoto, compact: Bool) -> some View {
+        if vibeURL(for: photo) != nil {
+            let isPlaying = playingVibePhotoId == photo.id && vibePlayer.isPlaying
+            HStack(spacing: compact ? 4 : 5) {
+                if !isPlaying {
+                    Button {
+                        if let url = vibeURL(for: photo) {
+                            voiceMemoPlayer.stop()
+                            playingVoiceMemoPhotoId = nil
+                            playingVibePhotoId = photo.id
+                            vibePlayer.play(url: url)
+                        }
+                    } label: {
+                        Text("Play Vibe")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.black.opacity(0.55))
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(Color.green.opacity(0.5), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                }
+
+                Button {
+                    if isPlaying {
+                        vibePlayer.stop()
+                        playingVibePhotoId = nil
+                    } else if let url = vibeURL(for: photo) {
+                        voiceMemoPlayer.stop()
+                        playingVoiceMemoPhotoId = nil
+                        playingVibePhotoId = photo.id
+                        vibePlayer.play(url: url)
+                    }
+                } label: {
+                    Image(systemName: "waveform")
+                        .font(.system(size: isPlaying ? 15 : 11, weight: .semibold))
+                        .foregroundStyle(
+                            LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
+                        )
+                        .symbolEffect(.variableColor.iterative.reversing, isActive: isPlaying)
+                        .padding(isPlaying ? 8 : 6)
+                        .background(Color.black.opacity(0.55))
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(Color.green.opacity(isPlaying ? 0.85 : 0.5), lineWidth: isPlaying ? 1.5 : 1))
+                        .scaleEffect(isPlaying ? 1.25 : 1.0)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.6), value: isPlaying)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(compact ? 5 : 8)
+            .animation(.easeInOut(duration: 0.2), value: isPlaying)
+        }
+    }
+
+    @ViewBuilder
+    private func photoReadSecondaryContent(for photo: RecapPhoto, width: CGFloat? = nil) -> some View {
+        let caption = photoCaption(photo.id).wrappedValue
+        let hasCaption = !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let isExpanded = expandedCaptionPhotoId == photo.id
+
+        VStack(alignment: .leading, spacing: 8) {
+            if let memoURL = voiceMemoURL(for: photo) {
+                let isMemoPlaying = playingVoiceMemoPhotoId == photo.id && voiceMemoPlayer.isPlaying
+                Button {
+                    if isMemoPlaying {
+                        voiceMemoPlayer.stop()
+                        playingVoiceMemoPhotoId = nil
+                    } else {
+                        vibePlayer.stop()
+                        playingVibePhotoId = nil
+                        playingVoiceMemoPhotoId = photo.id
+                        voiceMemoPlayer.play(url: memoURL)
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: isMemoPlaying ? "stop.circle.fill" : "mic.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(isMemoPlaying ? "Stop voice memo" : "Play voice memo")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color.blue.opacity(0.9))
+                    )
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if hasCaption {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        expandedCaptionPhotoId = isExpanded ? nil : photo.id
+                    }
+                } label: {
+                    Text(caption)
+                        .font(.blog(selectedBlogFont, size: 16))
+                        .lineSpacing(6)
+                        .foregroundColor(rowStoryReadColor)
+                        .lineLimit(isExpanded ? nil : 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: isExpanded)
+                        .padding(8)
+                        .background(rowInset)
+                        .appChromeCornerRadius(6)
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(width: width, alignment: .leading)
     }
 
     /// True when the focused field (place note or photo caption) has text, so Clear should be red.
@@ -603,58 +732,8 @@ struct PlaceStopRowView: View {
                                     .padding(6)
                                 }
                             }
-                            .overlay(alignment: .bottomLeading) {
-                                if vibeURL(for: photo) != nil {
-                                    let isPlaying = playingVibePhotoId == photo.id && vibePlayer.isPlaying
-                                    HStack(spacing: 5) {
-                                        Button {
-                                            if isPlaying {
-                                                vibePlayer.stop()
-                                                playingVibePhotoId = nil
-                                            } else {
-                                                if let url = vibeURL(for: photo) {
-                                                    playingVibePhotoId = photo.id
-                                                    vibePlayer.play(url: url)
-                                                }
-                                            }
-                                        } label: {
-                                            Image(systemName: "waveform")
-                                                .font(.system(size: isPlaying ? 15 : 11, weight: .semibold))
-                                                .foregroundStyle(
-                                                    LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
-                                                )
-                                                .symbolEffect(.variableColor.iterative.reversing, isActive: isPlaying)
-                                                .padding(isPlaying ? 8 : 6)
-                                                .background(Color.black.opacity(0.55))
-                                                .clipShape(Circle())
-                                                .overlay(Circle().stroke(Color.green.opacity(isPlaying ? 0.85 : 0.5), lineWidth: isPlaying ? 1.5 : 1))
-                                                .scaleEffect(isPlaying ? 1.25 : 1.0)
-                                                .animation(.spring(response: 0.35, dampingFraction: 0.6), value: isPlaying)
-                                        }
-                                        .buttonStyle(.plain)
-                                        if !isPlaying {
-                                            Button {
-                                                if let url = vibeURL(for: photo) {
-                                                    playingVibePhotoId = photo.id
-                                                    vibePlayer.play(url: url)
-                                                }
-                                            } label: {
-                                                Text("Play Vibe")
-                                                    .font(.system(size: 11, weight: .semibold))
-                                                    .foregroundColor(.white)
-                                                    .padding(.horizontal, 8)
-                                                    .padding(.vertical, 4)
-                                                    .background(Color.black.opacity(0.55))
-                                                    .clipShape(Capsule())
-                                                    .overlay(Capsule().stroke(Color.green.opacity(0.5), lineWidth: 1))
-                                            }
-                                            .buttonStyle(.plain)
-                                            .transition(.opacity.combined(with: .scale(scale: 0.85)))
-                                        }
-                                    }
-                                    .padding(8)
-                                    .animation(.easeInOut(duration: 0.2), value: isPlaying)
-                                }
+                            .overlay(alignment: .topTrailing) {
+                                vibeTopRightControl(for: photo, compact: false)
                             }
                             .contentShape(Rectangle())
                             .onTapGesture { onPhotoTapped?(photo) }
@@ -676,23 +755,9 @@ struct PlaceStopRowView: View {
                         }
                         .buttonStyle(.plain)
                         .padding(.top, 8)
-                    } else if !photoCaption(photo.id).wrappedValue.isEmpty {
-                        let isExpanded = expandedCaptionPhotoId == photo.id
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                expandedCaptionPhotoId = isExpanded ? nil : photo.id
-                            }
-                        } label: {
-                            Text(photoCaption(photo.id).wrappedValue)
-                                .font(.blog(selectedBlogFont, size: 16))
-                                .lineSpacing(6)
-                                .foregroundColor(rowStoryReadColor)
-                                .lineLimit(isExpanded ? nil : 4)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .fixedSize(horizontal: false, vertical: isExpanded)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.top, 8)
+                    } else {
+                        photoReadSecondaryContent(for: photo)
+                            .padding(.top, 8)
                     }
                     }
                     if isEditMode, let onManagePhotos {
@@ -756,59 +821,8 @@ struct PlaceStopRowView: View {
                                             .onTapGesture {
                                                 onPhotoTapped?(photo)
                                             }
-                                        .overlay(alignment: .bottomLeading) {
-                                            if vibeURL(for: photo) != nil {
-                                                let isPlaying = playingVibePhotoId == photo.id && vibePlayer.isPlaying
-                                                HStack(spacing: 5) {
-                                                    Button {
-                                                        if isPlaying {
-                                                            vibePlayer.stop()
-                                                            playingVibePhotoId = nil
-                                                        } else {
-                                                            if let url = vibeURL(for: photo) {
-                                                                playingVibePhotoId = photo.id
-                                                                vibePlayer.play(url: url)
-                                                            }
-                                                        }
-                                                    } label: {
-                                                        Image(systemName: "waveform")
-                                                            .font(.system(size: isPlaying ? 15 : 11, weight: .semibold))
-                                                            .foregroundStyle(
-                                                                LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
-                                                            )
-                                                            .symbolEffect(.variableColor.iterative.reversing, isActive: isPlaying)
-                                                            .padding(isPlaying ? 8 : 6)
-                                                            .background(Color.black.opacity(0.55))
-                                                            .clipShape(Circle())
-                                                            .overlay(Circle().stroke(Color.green.opacity(isPlaying ? 0.85 : 0.5), lineWidth: isPlaying ? 1.5 : 1))
-                                                            .scaleEffect(isPlaying ? 1.25 : 1.0)
-                                                            .animation(.spring(response: 0.35, dampingFraction: 0.6), value: isPlaying)
-                                                    }
-                                                    .buttonStyle(.plain)
-
-                                                    if !isPlaying {
-                                                        Button {
-                                                            if let url = vibeURL(for: photo) {
-                                                                playingVibePhotoId = photo.id
-                                                                vibePlayer.play(url: url)
-                                                            }
-                                                        } label: {
-                                                            Text("Play Vibe")
-                                                                .font(.system(size: 11, weight: .semibold))
-                                                                .foregroundColor(.white)
-                                                                .padding(.horizontal, 8)
-                                                                .padding(.vertical, 4)
-                                                                .background(Color.black.opacity(0.55))
-                                                                .clipShape(Capsule())
-                                                                .overlay(Capsule().stroke(Color.green.opacity(0.5), lineWidth: 1))
-                                                        }
-                                                        .buttonStyle(.plain)
-                                                        .transition(.opacity.combined(with: .scale(scale: 0.85)))
-                                                    }
-                                                }
-                                                .padding(5)
-                                                .animation(.easeInOut(duration: 0.2), value: isPlaying)
-                                            }
+                                        .overlay(alignment: .topTrailing) {
+                                            vibeTopRightControl(for: photo, compact: true)
                                         }
                                         .overlay {
                                             let isLastCollapsed = !isPhotoStripExpanded && photoStripOverflowCount > 0 && photo.id == photosForStrip.last?.id
@@ -845,22 +859,8 @@ struct PlaceStopRowView: View {
                                             }
                                             .frame(width: thumbnailSize)
                                             .buttonStyle(.plain)
-                                        } else if !photoCaption(photo.id).wrappedValue.isEmpty {
-                                            let isExpanded = expandedCaptionPhotoId == photo.id
-                                            Button {
-                                                withAnimation(.easeInOut(duration: 0.2)) {
-                                                    expandedCaptionPhotoId = isExpanded ? nil : photo.id
-                                                }
-                                            } label: {
-                                                Text(photoCaption(photo.id).wrappedValue)
-                                                    .font(.blog(selectedBlogFont, size: 16))
-                                                    .lineSpacing(6)
-                                                    .foregroundColor(rowStoryReadColor)
-                                                    .lineLimit(isExpanded ? nil : 4)
-                                                    .frame(width: thumbnailSize, alignment: .leading)
-                                                    .fixedSize(horizontal: false, vertical: isExpanded)
-                                            }
-                                            .buttonStyle(.plain)
+                                        } else {
+                                            photoReadSecondaryContent(for: photo, width: thumbnailSize)
                                         }
                                     }
                                     .frame(width: thumbnailSize)
@@ -924,6 +924,12 @@ struct PlaceStopRowView: View {
                     )
                 }
             }
+        }
+        .onDisappear {
+            vibePlayer.stop()
+            voiceMemoPlayer.stop()
+            playingVibePhotoId = nil
+            playingVoiceMemoPhotoId = nil
         }
     }
 

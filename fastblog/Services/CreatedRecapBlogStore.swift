@@ -1152,6 +1152,49 @@ final class CreatedRecapBlogStore: ObservableObject {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let subTrimmed = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        var targetMomentKey: String? = nil
+        for detail in blogDetailsBySourceId.values where targetMomentKey == nil {
+            for day in detail.days where targetMomentKey == nil {
+                if let stop = day.placeStops.first(where: { $0.photos.contains(where: { $0.id == photoId }) }) {
+                    targetMomentKey = stop.visitedTimeDigitized
+                }
+            }
+        }
+        var changed = false
+        for key in blogDetailsBySourceId.keys {
+            guard var detail = blogDetailsBySourceId[key] else { continue }
+            var detailChanged = false
+            for dayIdx in detail.days.indices {
+                for stopIdx in detail.days[dayIdx].placeStops.indices {
+                    let stop = detail.days[dayIdx].placeStops[stopIdx]
+                    let containsPhoto = stop.photos.contains { $0.id == photoId }
+                    let sameMoment = targetMomentKey != nil && stop.visitedTimeDigitized == targetMomentKey
+                    if containsPhoto || sameMoment {
+                        detail.days[dayIdx].placeStops[stopIdx].placeTitle = trimmed
+                        detail.days[dayIdx].placeStops[stopIdx].placeTitleIsManual = true
+                        // `EditPlaceStopNameSheet` passes the resolved category (including nil to clear after a rename).
+                        detail.days[dayIdx].placeStops[stopIdx].placeCategory = category
+                        if let coordinate {
+                            detail.days[dayIdx].placeStops[stopIdx].representativeLocation = PhotoCoordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                        }
+                        detail.days[dayIdx].placeStops[stopIdx].placeSubtitle = subTrimmed.isEmpty ? nil : subTrimmed
+                        detailChanged = true
+                    }
+                }
+            }
+            if detailChanged {
+                blogDetailsBySourceId[key] = detail
+                changed = true
+            }
+        }
+        if changed {
+            persistBlogDetails()
+            objectWillChange.send()
+        }
+    }
+
+    /// Updates only `placeCategory` for the stop that contains the given photo (Places Visited category chip / picker).
+    func updatePlaceStopCategoryFromPlacesVisited(photoId: UUID, category: String?) {
         var changed = false
         for key in blogDetailsBySourceId.keys {
             guard var detail = blogDetailsBySourceId[key] else { continue }
@@ -1160,16 +1203,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                 for stopIdx in detail.days[dayIdx].placeStops.indices {
                     let containsPhoto = detail.days[dayIdx].placeStops[stopIdx].photos.contains { $0.id == photoId }
                     if containsPhoto {
-                        detail.days[dayIdx].placeStops[stopIdx].placeTitle = trimmed
-                        detail.days[dayIdx].placeStops[stopIdx].placeTitleIsManual = true
-                        // `EditPlaceStopNameSheet` passes the resolved category (including nil to clear after a rename).
                         detail.days[dayIdx].placeStops[stopIdx].placeCategory = category
-                        if let coordinate {
-                            detail.days[dayIdx].placeStops[stopIdx].representativeLocation = PhotoCoordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
-                        }
-                        if !subTrimmed.isEmpty {
-                            detail.days[dayIdx].placeStops[stopIdx].placeSubtitle = subTrimmed
-                        }
                         detailChanged = true
                     }
                 }
@@ -1190,14 +1224,24 @@ final class CreatedRecapBlogStore: ObservableObject {
     func updatePlaceStopName(photoId: UUID, newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        var targetMomentKey: String? = nil
+        for detail in blogDetailsBySourceId.values where targetMomentKey == nil {
+            for day in detail.days where targetMomentKey == nil {
+                if let stop = day.placeStops.first(where: { $0.photos.contains(where: { $0.id == photoId }) }) {
+                    targetMomentKey = stop.visitedTimeDigitized
+                }
+            }
+        }
         var changed = false
         for key in blogDetailsBySourceId.keys {
             guard var detail = blogDetailsBySourceId[key] else { continue }
             var detailChanged = false
             for dayIdx in detail.days.indices {
                 for stopIdx in detail.days[dayIdx].placeStops.indices {
-                    let containsPhoto = detail.days[dayIdx].placeStops[stopIdx].photos.contains { $0.id == photoId }
-                    if containsPhoto {
+                    let stop = detail.days[dayIdx].placeStops[stopIdx]
+                    let containsPhoto = stop.photos.contains { $0.id == photoId }
+                    let sameMoment = targetMomentKey != nil && stop.visitedTimeDigitized == targetMomentKey
+                    if containsPhoto || sameMoment {
                         detail.days[dayIdx].placeStops[stopIdx].placeTitle = trimmed
                         let cat = detail.days[dayIdx].placeStops[stopIdx].placeCategory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                         if cat.isEmpty {
