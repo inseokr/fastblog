@@ -176,6 +176,8 @@ struct PlacePhotoModalView: View {
     @State private var isVibeEnabled: Bool = false
     /// Drives the cyan dot pulse on the top-center “Playing Vibe” pill (same rhythm as camera “Capturing Vibe”).
     @State private var playingVibePulse: Bool = false
+    // Voice memo
+    @StateObject private var voiceMemoPlayer = VibePlayer()
     /// Stores the user's original caption text per photo before AI first enhances it, enabling "Revert to original".
     @State private var captionOriginalDraftByPhotoId: [UUID: String] = [:]
     @State private var isZoomMode = false
@@ -575,6 +577,7 @@ struct PlacePhotoModalView: View {
                     .task(id: currentPhotoId) {
                         // Stop any playing Vibe; when the header vibe control is available, auto-play once per landed photo.
                         vibePlayer.stop()
+                        voiceMemoPlayer.stop()
                         let canUseVibeChrome = !isEditing && !blogIsEditMode && !openInCaptionEditor
                         if canUseVibeChrome, let url = currentVibeURL {
                             isVibeEnabled = true
@@ -621,6 +624,7 @@ struct PlacePhotoModalView: View {
                                     placeTitle: placeTitle,
                                     dateTimeText: dateTimeTextForCurrentPhoto,
                                     hasVoiceMemo: currentVoiceMemoURL != nil,
+                                    isVoiceMemoPlaying: voiceMemoPlayer.isPlaying,
                                     assetTimeMetadataLines: assetTimeMetadataLinesForCurrentPhoto,
                                     showAssetTimeMetadata: showAssetTimeMetadata,
                                     isEditing: $isEditing,
@@ -635,6 +639,16 @@ struct PlacePhotoModalView: View {
                                         showRenameSheet = true
                                     },
                                     onViewBlog: titleRowOnViewBlog,
+                                    onToggleVoiceMemo: {
+                                        guard let memoURL = currentVoiceMemoURL else { return }
+                                        if voiceMemoPlayer.isPlaying {
+                                            voiceMemoPlayer.stop()
+                                        } else {
+                                            vibePlayer.stop()
+                                            isVibeEnabled = false
+                                            voiceMemoPlayer.play(url: memoURL)
+                                        }
+                                    },
                                     onCommitCaption: { commitCaption() }
                                 )
                             }
@@ -740,6 +754,7 @@ struct PlacePhotoModalView: View {
                 onToggleVibe: {
                     isVibeEnabled.toggle()
                     if isVibeEnabled, let url = currentVibeURL {
+                        voiceMemoPlayer.stop()
                         vibePlayer.play(url: url)
                     } else {
                         vibePlayer.stop()
@@ -814,6 +829,7 @@ struct PlacePhotoModalView: View {
         }
         .onDisappear {
             vibePlayer.stop()
+            voiceMemoPlayer.stop()
         }
         .fullScreenCover(isPresented: $showRenameSheet) {
             EditPlaceStopNameSheet(
@@ -1122,15 +1138,27 @@ struct PlacePhotoModalView: View {
                                         .fontWeight(.medium)
                                         .foregroundColor(.white.opacity(0.8))
                                     if currentVoiceMemoURL != nil {
-                                        Label("Voice memo", systemImage: "mic.fill")
-                                            .font(.caption2.weight(.semibold))
-                                            .foregroundStyle(.white)
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 5)
-                                            .background(
-                                                Capsule(style: .continuous)
-                                                    .fill(Color.blue.opacity(0.85))
-                                            )
+                                        Button {
+                                            guard let memoURL = currentVoiceMemoURL else { return }
+                                            if voiceMemoPlayer.isPlaying {
+                                                voiceMemoPlayer.stop()
+                                            } else {
+                                                vibePlayer.stop()
+                                                isVibeEnabled = false
+                                                voiceMemoPlayer.play(url: memoURL)
+                                            }
+                                        } label: {
+                                            Label(voiceMemoPlayer.isPlaying ? "Stop voice memo" : "Play voice memo", systemImage: voiceMemoPlayer.isPlaying ? "stop.circle.fill" : "mic.fill")
+                                                .font(.caption2.weight(.semibold))
+                                                .foregroundStyle(.white)
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 5)
+                                                .background(
+                                                    Capsule(style: .continuous)
+                                                        .fill(Color.blue.opacity(0.85))
+                                                )
+                                        }
+                                        .buttonStyle(.plain)
                                     }
                                 }
                             }
@@ -1807,11 +1835,11 @@ private struct PlaceDetailTopChrome: View {
                     HStack(alignment: .top) {
                         if openInCaptionEditor {
                             // Handoff from place/photo caption edit sheet — reads as leaving the viewer, not aborting an edit.
-                            capsuleButton(title: "Close", action: onLeadingPrimary)
+                            leadingCloseCircleButton(action: onLeadingPrimary)
                         } else if isEditing || blogIsEditMode {
                             capsuleButton(title: "Cancel", action: onLeadingPrimary)
                         } else {
-                            capsuleButton(title: "Close", action: onLeadingPrimary)
+                            leadingCloseCircleButton(action: onLeadingPrimary)
                         }
 
                         Spacer()
@@ -1901,6 +1929,19 @@ private struct PlaceDetailTopChrome: View {
 
     private func capsuleButton(title: String, action: @escaping () -> Void) -> some View {
         accentHeaderPill(title: title, fill: Color.black.opacity(0.35), action: action)
+    }
+
+    private func leadingCloseCircleButton(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.white)
+                .frame(width: PlaceDetailChromeLayout.circleActionSize, height: PlaceDetailChromeLayout.circleActionSize)
+                .background(Color.white.opacity(0.22))
+                .clipShape(Circle())
+                .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
+        }
+        .buttonStyle(.plain)
     }
 
     private func blogEditPhotoSaveCapsule(action: @escaping () -> Void) -> some View {
@@ -2023,6 +2064,7 @@ struct BottomInfoOverlay: View {
     let placeTitle: String
     let dateTimeText: String
     var hasVoiceMemo: Bool = false
+    var isVoiceMemoPlaying: Bool = false
     /// PHAsset time metadata lines (e.g. "Created: ... (PST)", "Modified: ... (PST)"); shown below dateTimeText when non-empty.
     var assetTimeMetadataLines: [String] = []
     /// When false, suppress Created/Modified metadata lines.
@@ -2040,6 +2082,7 @@ struct BottomInfoOverlay: View {
     var onTitleTap: (() -> Void)? = nil
     /// Places Visited only: opens the source blog; trailing-aligned with the place title row.
     var onViewBlog: (() -> Void)? = nil
+    var onToggleVoiceMemo: (() -> Void)? = nil
     var onCommitCaption: () -> Void
 
     var body: some View {
@@ -2094,18 +2137,6 @@ struct BottomInfoOverlay: View {
                         .font(.subheadline)
                         .foregroundColor(.white.opacity(0.95))
                         .shadow(color: .black.opacity(0.3), radius: 1)
-                    if hasVoiceMemo {
-                        Label("Voice memo", systemImage: "mic.fill")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(
-                                Capsule(style: .continuous)
-                                    .fill(Color.blue.opacity(0.85))
-                            )
-                            .shadow(color: .black.opacity(0.3), radius: 1)
-                    }
                 }
             }
 
@@ -2167,6 +2198,23 @@ struct BottomInfoOverlay: View {
                         }
                     }
                 }
+            }
+
+            if hasVoiceMemo {
+                Button(action: { onToggleVoiceMemo?() }) {
+                    Label(isVoiceMemoPlaying ? "Stop voice memo" : "Play voice memo", systemImage: isVoiceMemoPlaying ? "stop.circle.fill" : "mic.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color.blue.opacity(0.85))
+                        )
+                        .shadow(color: .black.opacity(0.3), radius: 1)
+                }
+                .buttonStyle(.plain)
+                .disabled(onToggleVoiceMemo == nil)
             }
         }
         .padding(.horizontal, contentHorizontalPadding)

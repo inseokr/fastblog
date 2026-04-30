@@ -316,32 +316,10 @@ struct PlaceStopRowView: View {
     }
 
     @ViewBuilder
-    private func vibeTopRightControl(for photo: RecapPhoto, compact: Bool) -> some View {
+    private func vibeBottomLeftControl(for photo: RecapPhoto, compact: Bool) -> some View {
         if vibeURL(for: photo) != nil {
             let isPlaying = playingVibePhotoId == photo.id && vibePlayer.isPlaying
             HStack(spacing: compact ? 4 : 5) {
-                if !isPlaying {
-                    Button {
-                        if let url = vibeURL(for: photo) {
-                            voiceMemoPlayer.stop()
-                            playingVoiceMemoPhotoId = nil
-                            playingVibePhotoId = photo.id
-                            vibePlayer.play(url: url)
-                        }
-                    } label: {
-                        Text("Play Vibe")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.black.opacity(0.55))
-                            .clipShape(Capsule())
-                            .overlay(Capsule().stroke(Color.green.opacity(0.5), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
-                }
-
                 Button {
                     if isPlaying {
                         vibePlayer.stop()
@@ -354,19 +332,43 @@ struct PlaceStopRowView: View {
                     }
                 } label: {
                     Image(systemName: "waveform")
-                        .font(.system(size: isPlaying ? 15 : 11, weight: .semibold))
+                        .font(.system(size: compact ? 11 : 12, weight: .semibold))
                         .foregroundStyle(
                             LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
                         )
-                        .symbolEffect(.variableColor.iterative.reversing, isActive: isPlaying)
-                        .padding(isPlaying ? 8 : 6)
-                        .background(Color.black.opacity(0.55))
+                        .padding(compact ? 6 : 7)
+                        .background(Color.black.opacity(0.5))
                         .clipShape(Circle())
-                        .overlay(Circle().stroke(Color.green.opacity(isPlaying ? 0.85 : 0.5), lineWidth: isPlaying ? 1.5 : 1))
-                        .scaleEffect(isPlaying ? 1.25 : 1.0)
-                        .animation(.spring(response: 0.35, dampingFraction: 0.6), value: isPlaying)
+                        .overlay(
+                            Circle().stroke(
+                                Color.green.opacity(isPlaying ? 0.85 : 0.5),
+                                lineWidth: 1
+                            )
+                        )
                 }
                 .buttonStyle(.plain)
+
+                if !isPlaying {
+                    Button {
+                        if let url = vibeURL(for: photo) {
+                            voiceMemoPlayer.stop()
+                            playingVoiceMemoPhotoId = nil
+                            playingVibePhotoId = photo.id
+                            vibePlayer.play(url: url)
+                        }
+                    } label: {
+                        Text("Play Vibe")
+                            .font(.system(size: compact ? 10 : 11, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, compact ? 7 : 8)
+                            .padding(.vertical, compact ? 3.5 : 4)
+                            .background(Color.black.opacity(0.5))
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(Color.white.opacity(0.35), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.opacity)
+                }
             }
             .padding(compact ? 5 : 8)
             .animation(.easeInOut(duration: 0.2), value: isPlaying)
@@ -380,43 +382,8 @@ struct PlaceStopRowView: View {
         let isExpanded = expandedCaptionPhotoId == photo.id
 
         VStack(alignment: .leading, spacing: 8) {
-            if let memoURL = voiceMemoURL(for: photo) {
-                let isMemoPlaying = playingVoiceMemoPhotoId == photo.id && voiceMemoPlayer.isPlaying
-                Button {
-                    if isMemoPlaying {
-                        voiceMemoPlayer.stop()
-                        playingVoiceMemoPhotoId = nil
-                    } else {
-                        vibePlayer.stop()
-                        playingVibePhotoId = nil
-                        playingVoiceMemoPhotoId = photo.id
-                        voiceMemoPlayer.play(url: memoURL)
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: isMemoPlaying ? "stop.circle.fill" : "mic.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text(isMemoPlaying ? "Stop voice memo" : "Play voice memo")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(Color.blue.opacity(0.9))
-                    )
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
             if hasCaption {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        expandedCaptionPhotoId = isExpanded ? nil : photo.id
-                    }
-                } label: {
+                VStack(alignment: .leading, spacing: 8) {
                     Text(caption)
                         .font(.blog(selectedBlogFont, size: 16))
                         .lineSpacing(6)
@@ -424,15 +391,55 @@ struct PlaceStopRowView: View {
                         .lineLimit(isExpanded ? nil : 4)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: isExpanded)
-                        .padding(8)
-                        .background(rowInset)
-                        .appChromeCornerRadius(6)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                expandedCaptionPhotoId = isExpanded ? nil : photo.id
+                            }
+                        }
+
+                    voiceMemoButton(for: photo)
                 }
-                .buttonStyle(.plain)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                voiceMemoButton(for: photo)
             }
         }
         .frame(width: width, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func voiceMemoButton(for photo: RecapPhoto) -> some View {
+        if let memoURL = voiceMemoURL(for: photo) {
+            let isMemoPlaying = playingVoiceMemoPhotoId == photo.id && voiceMemoPlayer.isPlaying
+            Button {
+                if isMemoPlaying {
+                    voiceMemoPlayer.stop()
+                    playingVoiceMemoPhotoId = nil
+                } else {
+                    vibePlayer.stop()
+                    playingVibePhotoId = nil
+                    playingVoiceMemoPhotoId = photo.id
+                    voiceMemoPlayer.play(url: memoURL)
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: isMemoPlaying ? "stop.circle.fill" : "mic.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(isMemoPlaying ? "Stop voice memo" : "Play voice memo")
+                        .font(.caption.weight(.semibold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.blue.opacity(0.9))
+                )
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     /// True when the focused field (place note or photo caption) has text, so Clear should be red.
@@ -732,28 +739,34 @@ struct PlaceStopRowView: View {
                                     .padding(6)
                                 }
                             }
-                            .overlay(alignment: .topTrailing) {
-                                vibeTopRightControl(for: photo, compact: false)
+                            .overlay(alignment: .bottomLeading) {
+                                vibeBottomLeftControl(for: photo, compact: false)
+                                    .padding(.leading, 6)
+                                    .padding(.bottom, 6)
                             }
                             .contentShape(Rectangle())
                             .onTapGesture { onPhotoTapped?(photo) }
 
                     if isEditMode {
-                        Button {
-                            onCaptionTapped?(photo.id)
-                        } label: {
-                            let caption = photoCaption(photo.id).wrappedValue
-                            Text(caption.isEmpty ? "Leave a story for this photo" : caption)
-                                .font(.caption)
-                                .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : rowCaptionFilled)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(8)
-                                .background(rowInset)
-                                .appChromeCornerRadius(6)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Button {
+                                onCaptionTapped?(photo.id)
+                            } label: {
+                                let caption = photoCaption(photo.id).wrappedValue
+                                Text(caption.isEmpty ? "Leave a story for this photo" : caption)
+                                    .font(.caption)
+                                    .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : rowCaptionFilled)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(8)
+                                    .background(rowInset)
+                                    .appChromeCornerRadius(6)
+                            }
+                            .buttonStyle(.plain)
+
+                            voiceMemoButton(for: photo)
                         }
-                        .buttonStyle(.plain)
                         .padding(.top, 8)
                     } else {
                         photoReadSecondaryContent(for: photo)
@@ -821,8 +834,10 @@ struct PlaceStopRowView: View {
                                             .onTapGesture {
                                                 onPhotoTapped?(photo)
                                             }
-                                        .overlay(alignment: .topTrailing) {
-                                            vibeTopRightControl(for: photo, compact: true)
+                                        .overlay(alignment: .bottomLeading) {
+                                            vibeBottomLeftControl(for: photo, compact: true)
+                                                .padding(.leading, 4)
+                                                .padding(.bottom, 4)
                                         }
                                         .overlay {
                                             let isLastCollapsed = !isPhotoStripExpanded && photoStripOverflowCount > 0 && photo.id == photosForStrip.last?.id
@@ -843,22 +858,26 @@ struct PlaceStopRowView: View {
                                             }
                                         }
                                         if isEditMode {
-                                            Button {
-                                                onCaptionTapped?(photo.id)
-                                            } label: {
-                                                let caption = photoCaption(photo.id).wrappedValue
-                                                Text(caption.isEmpty ? "Leave a story for this photo" : caption)
-                                                    .font(.caption)
-                                                    .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : rowCaptionFilled)
-                                                    .lineLimit(2)
-                                                    .multilineTextAlignment(.leading)
-                                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                                    .padding(8)
-                                                    .background(rowInset)
-                                                    .appChromeCornerRadius(6)
+                                            VStack(alignment: .leading, spacing: 8) {
+                                                Button {
+                                                    onCaptionTapped?(photo.id)
+                                                } label: {
+                                                    let caption = photoCaption(photo.id).wrappedValue
+                                                    Text(caption.isEmpty ? "Leave a story for this photo" : caption)
+                                                        .font(.caption)
+                                                        .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : rowCaptionFilled)
+                                                        .lineLimit(2)
+                                                        .multilineTextAlignment(.leading)
+                                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                                        .padding(8)
+                                                        .background(rowInset)
+                                                        .appChromeCornerRadius(6)
+                                                }
+                                                .buttonStyle(.plain)
+
+                                                voiceMemoButton(for: photo)
                                             }
-                                            .frame(width: thumbnailSize)
-                                            .buttonStyle(.plain)
+                                            .frame(width: thumbnailSize, alignment: .leading)
                                         } else {
                                             photoReadSecondaryContent(for: photo, width: thumbnailSize)
                                         }
