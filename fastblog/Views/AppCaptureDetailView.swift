@@ -34,6 +34,10 @@ struct AppCaptureDetailView: View {
     /// Global toggle: once enabled, auto-plays Vibe as the user pages through photos.
     @State private var isVibeEnabled: Bool = false
 
+    // MARK: - Voice memo (separate player so it can play simultaneously with vibe is undesirable;
+    // we explicitly stop vibe when starting voice memo playback and vice-versa).
+    @StateObject private var voiceMemoPlayer = VibePlayer()
+
     /// Restrict writing assist in full-screen gallery to iPhone 15+ hardware.
     private var supportsFullScreenWritingAssist: Bool {
         guard UIDevice.current.userInterfaceIdiom == .phone else { return true }
@@ -125,6 +129,7 @@ struct AppCaptureDetailView: View {
         }
         .onDisappear {
             vibePlayer.stop()
+            voiceMemoPlayer.stop()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { notification in
             guard pendingCaptionEditorClose else { return }
@@ -176,6 +181,7 @@ struct AppCaptureDetailView: View {
                 resolvedPlaceTitle = resolvePlaceTitle(for: items[newIdx].id)
             }
             vibePlayer.stop()
+            voiceMemoPlayer.stop()
             if isVibeEnabled, let url = items[safe: newIdx]?.localVibeURL {
                 vibePlayer.play(url: url)
             }
@@ -202,6 +208,31 @@ struct AppCaptureDetailView: View {
 
                     Spacer()
 
+                    // Voice memo play button — appears left of the Vibe button when one is attached.
+                    if currentItem?.localVoiceMemoURL != nil {
+                        let memoPlaying = voiceMemoPlayer.isPlaying
+                        Button {
+                            if memoPlaying {
+                                voiceMemoPlayer.stop()
+                            } else if let url = currentItem?.localVoiceMemoURL {
+                                vibePlayer.stop()
+                                voiceMemoPlayer.play(url: url)
+                            }
+                        } label: {
+                            Image(systemName: memoPlaying ? "stop.fill" : "mic.fill")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(width: 44, height: 44)
+                                .background(.ultraThinMaterial)
+                                .background(memoPlaying ? Color.purple.opacity(0.5) : Color.purple.opacity(0.32))
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(memoPlaying ? "Stop voice memo" : "Play voice memo")
+                        .padding(.trailing, 8)
+                    }
+
                     // Right: Vibe toggle when available (download/delete live in bottom bar)
                     if currentItem?.localVibeURL != nil {
                         let audioPlaying = vibePlayer.isPlaying
@@ -210,6 +241,7 @@ struct AppCaptureDetailView: View {
                         Button {
                             isVibeEnabled.toggle()
                             if isVibeEnabled, let url = currentItem?.localVibeURL {
+                                voiceMemoPlayer.stop()
                                 vibePlayer.play(url: url)
                             } else {
                                 vibePlayer.stop()

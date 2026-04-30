@@ -6993,12 +6993,13 @@ private struct NewMomentsReviewSheet: View {
         let thumbSpacing: CGFloat = 8
         let thumbCorner: CGFloat = 10
         let contentSpacing: CGFloat = 12
-        let displayedPhotos = Array(group.photos.prefix(3))
-        let extraCount = group.photos.count - 3
-        let stripWidth: CGFloat = {
-            guard !displayedPhotos.isEmpty else { return 0 }
-            return CGFloat(displayedPhotos.count) * thumbSize + CGFloat(displayedPhotos.count - 1) * thumbSpacing
-        }()
+        let displayedPhotos = group.photos
+        let photoRows = stride(from: 0, to: displayedPhotos.count, by: 3).map {
+            Array(displayedPhotos[$0..<min($0 + 3, displayedPhotos.count)])
+        }
+        let widestRow = min(displayedPhotos.count, 3)
+        let stripWidth: CGFloat = displayedPhotos.isEmpty ? 0
+            : CGFloat(widestRow) * thumbSize + CGFloat(widestRow - 1) * thumbSpacing
         return Button {
             withAnimation(.easeInOut(duration: 0.2)) {
                 if isHidden {
@@ -7009,13 +7010,17 @@ private struct NewMomentsReviewSheet: View {
             }
         } label: {
             HStack(alignment: .top, spacing: contentSpacing) {
-                // Photo strip: fixed row height so 1 vs 3 thumbs share the same top edge and scale.
-                HStack(spacing: thumbSpacing) {
-                    ForEach(displayedPhotos) { photo in
-                        newMomentThumbnail(photo: photo, size: thumbSize, cornerRadius: thumbCorner)
+                // Photo grid: 3 per row, unlimited rows.
+                VStack(alignment: .leading, spacing: thumbSpacing) {
+                    ForEach(Array(photoRows.enumerated()), id: \.offset) { _, row in
+                        HStack(spacing: thumbSpacing) {
+                            ForEach(row) { photo in
+                                newMomentThumbnail(photo: photo, size: thumbSize, cornerRadius: thumbCorner)
+                            }
+                        }
                     }
                 }
-                .frame(width: stripWidth, height: thumbSize, alignment: .topLeading)
+                .frame(width: stripWidth, alignment: .topLeading)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(group.placeKey)
@@ -7025,11 +7030,6 @@ private struct NewMomentsReviewSheet: View {
                     Text(newMomentsTimeFormatter.string(from: group.earliestTimestamp))
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.secondary)
-                    if extraCount > 0 {
-                        Text("+\(extraCount) more")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.secondary)
-                    }
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, minHeight: thumbSize, alignment: .topLeading)

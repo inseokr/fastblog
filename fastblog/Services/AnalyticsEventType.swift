@@ -45,6 +45,10 @@ enum AnalyticsEventType {
     case appInAppCameraPhotoTaken
     case appInAppCameraVibeON
     case appInAppCameraCaption
+    case appInAppCameraPreviewSave
+    case appInAppCameraPreviewDiscard
+    case appInAppCameraVoiceMemoSave
+    case appInAppCameraVoiceMemoPlay
 
     // -----------------------------------------------------------------------
     // MARK: Derived values consumed by AppAnalytics
@@ -80,13 +84,19 @@ enum AnalyticsEventType {
         case .appInAppCameraPhotoTaken:         return "App-InAppCamera-PhotoTaken"
         case .appInAppCameraVibeON:             return "App-InAppCamera-VibeON"
         case .appInAppCameraCaption:            return "App-InAppCamera-Caption"
+        case .appInAppCameraPreviewSave:        return "App-InAppCamera-Preview-Save"
+        case .appInAppCameraPreviewDiscard:     return "App-InAppCamera-Preview-Discard"
+        case .appInAppCameraVoiceMemoSave:      return "App-InAppCamera-VoiceMemo-Save"
+        case .appInAppCameraVoiceMemoPlay:      return "App-InAppCamera-VoiceMemo-Play"
         }
     }
 
     var context: AnalyticsContext {
         switch self {
         case .blogScan, .appOpen, .appInAppCameraOpen,
-             .appInAppCameraPhotoTaken, .appInAppCameraVibeON, .appInAppCameraCaption:
+             .appInAppCameraPhotoTaken, .appInAppCameraVibeON, .appInAppCameraCaption,
+             .appInAppCameraPreviewSave, .appInAppCameraPreviewDiscard,
+             .appInAppCameraVoiceMemoSave, .appInAppCameraVoiceMemoPlay:
             return .empty
 
         case .blogSave(let id),

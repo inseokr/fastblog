@@ -245,6 +245,35 @@ final class AppCapturePhotoService {
         return url
     }
 
+    // MARK: - Voice memo file (voice_memo.m4a inside capture folder)
+
+    private func voiceMemoPath(for captureId: UUID) throws -> URL {
+        try captureURL(for: captureId).appendingPathComponent("voice_memo.m4a")
+    }
+
+    /// Copies a recorded voice memo into the capture folder, replacing any existing one.
+    /// Call after `saveCapture` once the user explicitly saves a recording from `VoiceMemoRecorderSheet`.
+    func saveVoiceMemo(captureId: UUID, from sourceURL: URL) throws {
+        let dest = try voiceMemoPath(for: captureId)
+        if FileManager.default.fileExists(atPath: dest.path) {
+            try FileManager.default.removeItem(at: dest)
+        }
+        try FileManager.default.copyItem(at: sourceURL, to: dest)
+    }
+
+    /// Returns the local voice memo file URL for a capture if one exists on disk.
+    func voiceMemoFileURL(for captureId: UUID) -> URL? {
+        guard let url = try? voiceMemoPath(for: captureId),
+              FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return url
+    }
+
+    /// Removes only the voice memo for a capture (keeps the photo and vibe).
+    func deleteVoiceMemo(captureId: UUID) {
+        guard let url = try? voiceMemoPath(for: captureId) else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
     // MARK: - Delete
 
     func deleteCapture(captureId: UUID) {
