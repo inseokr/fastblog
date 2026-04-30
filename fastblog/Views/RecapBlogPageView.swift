@@ -1229,6 +1229,7 @@ struct RecapBlogPageView: View {
                 photoGroups: photoGroups,
                 blogId: blogId,
                 blogTitle: draft.title,
+                startInGallery: true,
                 onDismiss: { showPanorama = false },
                 onAppCaptureDeletedFromSlideshow: { identifier in
                     removeAppCapturePhotoFromSlideshow(identifier: identifier)
@@ -1946,12 +1947,13 @@ struct RecapBlogPageView: View {
                         heroHeight: geo.size.height,
                         measuredTitleHeight: coverHeroMeasuredTitleHeight
                     )
+                    let viewModeLift: CGFloat = 12
 
                     if isEditMode {
                         // Edit mode: vertically center the title on the cover; keep 20pt before Change Cover.
                         VStack(spacing: 0) {
                             Spacer()
-                                .frame(height: titleTopInset)
+                                .frame(height: max(0, titleTopInset - viewModeLift))
                             VStack(spacing: 20) {
                                 HStack {
                                     Spacer(minLength: 0)
@@ -2154,8 +2156,12 @@ struct RecapBlogPageView: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 guard !isCoverPending, displayCoverId != nil else { return }
-                coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
-                showCoverPhotoPicker = true
+                if isEditMode {
+                    coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
+                    showCoverPhotoPicker = true
+                } else {
+                    showPanorama = true
+                }
             }
         }
         .onPreferenceChange(CoverHeroTitleHeightPreferenceKey.self) { h in
@@ -2378,10 +2384,10 @@ struct RecapBlogPageView: View {
         .accessibilityLabel("Open In-App Camera")
     }
 
-    /// True only for the currently active on-the-go blog; concluded blogs never show quick capture.
+    /// Shows quick capture only while the recap is truly "on the go":
+    /// latest included photo was taken within the last 24 hours.
     private var shouldShowRecapCameraQuickCapture: Bool {
-        guard OnTheGoTripStore.activeBlogId == blogId else { return false }
-        return OnTheGoTripStore.isTripStillOngoing()
+        isOnTheGoBlogForRescan
     }
 
     private func openCameraCaptureFromRecap() {
@@ -2932,6 +2938,9 @@ struct RecapBlogPageView: View {
                         },
                         onSavePlaceName: { name, category, coord, subtitleLine in
                             updatePlaceTitle(stopId: item.stopId, to: name, category: category, coordinate: coord, placeSubtitleLine: subtitleLine)
+                        },
+                        onSavePlaceCategory: { newCategory in
+                            updatePlaceCategory(stopId: item.stopId, category: newCategory)
                         },
                         onCaptionCommitted: { photoId in
                             syncStoryToCloudIfNeeded(stopId: item.stopId, isPlaceNote: false, photoId: photoId)
@@ -4220,11 +4229,24 @@ Your blog remains private unless you choose to share it.
 
     private func updatePlaceTitle(stopId: UUID, to title: String, category: String? = nil, coordinate: CLLocationCoordinate2D? = nil, placeSubtitleLine: String = "") {
         let subTrimmed = placeSubtitleLine.trimmingCharacters(in: .whitespacesAndNewlines)
-        debugPrint("[Category] updatePlaceTitle called: stopId=\(stopId) title='\(title)' category=\(category ?? "nil") coord=\(coordinate.map { "\($0.latitude),\($0.longitude)" } ?? "nil") subtitle='\(subTrimmed)'")
+        let targetMomentKey = placeStop(stopId: stopId)?.visitedTimeDigitized
+        debugPrint("[Category] updatePlaceTitle called: stopId=\(stopId) title='\(title)' category=\(category ?? "nil") coord=\(coordinate.map { "\($0.latitude),\($0.longitude)" } ?? "nil") subtitle='\(subTrimmed)' momentKey=\(targetMomentKey ?? "nil")")
+
+        var didUpdateAnyStop = false
+        var apiPlaceKey: String? = nil
+        var apiCategories: [String]? = nil
+
         for i in draft.days.indices {
-            if let j = draft.days[i].placeStops.firstIndex(where: { $0.id == stopId }) {
-                var day = draft.days[i]
-                var stop = day.placeStops[j]
+            var day = draft.days[i]
+            var didUpdateDay = false
+
+            for j in day.placeStops.indices {
+                let existing = day.placeStops[j]
+                let matchesTargetStop = existing.id == stopId
+                let matchesMoment = targetMomentKey != nil && existing.visitedTimeDigitized == targetMomentKey
+                guard matchesTargetStop || matchesMoment else { continue }
+
+                var stop = existing
                 stop.placeTitle = title
                 stop.placeTitleIsManual = true
                 stop.placeSubtitle = subTrimmed.isEmpty ? nil : subTrimmed
@@ -4234,18 +4256,28 @@ Your blog remains private unless you choose to share it.
                     stop.representativeLocation = PhotoCoordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
                 }
                 day.placeStops[j] = stop
-                draft.days[i] = day
-                debugPrint("[Category] updatePlaceTitle stored: placeTitle='\(stop.placeTitle)' placeSubtitle=\(stop.placeSubtitle ?? "nil") placeCategory=\(stop.placeCategory ?? "nil")")
+                didUpdateDay = true
+                didUpdateAnyStop = true
+                debugPrint("[Category] updatePlaceTitle stored: stopId=\(stop.id) placeTitle='\(stop.placeTitle)' placeSubtitle=\(stop.placeSubtitle ?? "nil") placeCategory=\(stop.placeCategory ?? "nil")")
 
-                persistRecapBlogDetail()
-                if draft.blogKey != nil, let placeKey = stop.visitedTimeDigitized {
-                    let categories = stop.placeCategory.map { [$0] }
-                    Task { try? await APIManager.shared.updatePlaceName(visitedTimeDigitized: placeKey, placeName: title, categories: categories) }
+                if apiPlaceKey == nil {
+                    apiPlaceKey = stop.visitedTimeDigitized
+                    apiCategories = stop.placeCategory.map { [$0] }
                 }
-                // Story generation is now user-initiated via the magic wand (enhance flow).
-                break
+            }
+
+            if didUpdateDay {
+                draft.days[i] = day
             }
         }
+
+        if didUpdateAnyStop {
+            persistRecapBlogDetail()
+            if draft.blogKey != nil, let placeKey = apiPlaceKey {
+                Task { try? await APIManager.shared.updatePlaceName(visitedTimeDigitized: placeKey, placeName: title, categories: apiCategories) }
+            }
+        }
+
         showEditNameForStop = nil
     }
 

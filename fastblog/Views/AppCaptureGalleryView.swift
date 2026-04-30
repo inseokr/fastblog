@@ -44,6 +44,8 @@ struct AppCaptureItem: Identifiable {
     var location: PhotoCoordinate?
     /// Local file URL of the Vibe audio clip (vibe.m4a), if one was recorded for this capture.
     var localVibeURL: URL?
+    /// Local file URL of the explicit voice memo (voice_memo.m4a), if the user attached one.
+    var localVoiceMemoURL: URL?
 }
 
 // MARK: - Gallery view
@@ -379,7 +381,8 @@ struct AppCaptureGalleryView: View {
                 timestamp: info?.timestamp ?? Date(),
                 caption: merged,
                 location: info?.location,
-                localVibeURL: service.vibeFileURL(for: uuid)
+                localVibeURL: service.vibeFileURL(for: uuid),
+                localVoiceMemoURL: service.voiceMemoFileURL(for: uuid)
             ))
         }
         items = loaded
@@ -564,7 +567,7 @@ private struct GalleryCell: View {
                         .opacity(isSelectMode && isSelected ? 0.5 : 1)
                 }
 
-                // Caption indicator (bottom-left, after vibe badge)
+                // Caption indicator (bottom-right).
                 if !isSelectMode, let cap = item.caption, !cap.isEmpty {
                     Image(systemName: "text.bubble.fill")
                         .font(.system(size: 10))
@@ -572,21 +575,36 @@ private struct GalleryCell: View {
                         .padding(5)
                         .background(Color.black.opacity(0.45))
                         .clipShape(Circle())
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                         .padding(5)
                 }
 
-                // Vibe badge — static green waveform in a circle, bottom-left
-                if !isSelectMode, item.localVibeURL != nil {
-                    Image(systemName: "waveform")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(
-                            LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
-                        )
-                        .padding(6)
-                        .background(Color.black.opacity(0.55))
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(Color.green.opacity(0.5), lineWidth: 1))
-                        .padding(5)
+                // Vibe + voice memo badges — bottom-leading column with voice memo above vibe.
+                if !isSelectMode {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if item.localVoiceMemoURL != nil {
+                            Image(systemName: "mic.fill")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(6)
+                                .background(Color.purple.opacity(0.78))
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 1))
+                        }
+                        if item.localVibeURL != nil {
+                            Image(systemName: "waveform")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(
+                                    LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
+                                )
+                                .padding(6)
+                                .background(Color.black.opacity(0.55))
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(Color.green.opacity(0.5), lineWidth: 1))
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .padding(5)
                 }
 
                 // Select mode checkmark

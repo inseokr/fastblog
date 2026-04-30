@@ -9,7 +9,8 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:apis.map.kakao.com)",
       "Read(//Users/inseo/Library/Developer/Xcode/DerivedData/fastblog-bjgdkhkzwbbyyncqbwhmulntjpie/SourcePackages/checkouts/KakaoMapsSDK-SPM/**)",
-      "Read(//Users/inseo/Library/Developer/Xcode/DerivedData/**)"
+      "Read(//Users/inseo/Library/Developer/Xcode/DerivedData/**)",
+      "Bash(git -C /Users/inseo/Documents/GitHub/fastblog/fastblog log --oneline --all -- \"fastblog/Views/InAppCameraCaptionOverlay.swift\")"
     ],
     "additionalDirectories": [
       "/Users/inseo/Documents/GitHub/shazam/shazam/Capper/Views"

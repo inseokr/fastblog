@@ -558,6 +558,17 @@ struct FullScreenMapView: View {
                             editablePlaceStops[idx] = updated
                         }
                         onPlaceNameSaved?(updated.id, name, category, coord, subtitleLine)
+                    },
+                    onSavePlaceCategory: { newCategory in
+                        guard var updated = photoModalStop else { return }
+                        updated.placeCategory = newCategory
+                        photoModalStop = updated
+                        if let idx = editablePlaceStops.firstIndex(where: { $0.id == updated.id }) {
+                            editablePlaceStops[idx] = updated
+                        }
+                        let subtitleLine = (updated.placeSubtitle ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                        let coord = updated.representativeLocation?.clCoordinate
+                        onPlaceNameSaved?(updated.id, updated.placeTitle, newCategory, coord, subtitleLine)
                     }
                 )
                 .transition(.asymmetric(insertion: .opacity, removal: .identity))
@@ -590,10 +601,11 @@ struct FullScreenMapView: View {
             HStack(spacing: 6) {
                 Image(systemName: p.symbol)
                     .font(.system(size: 12, weight: .semibold))
+                    .symbolRenderingMode(.monochrome)
                 Text(label)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
             }
-            .foregroundColor(.white)
+            .foregroundStyle(isSelected ? Color.white : Color.white.opacity(0.88))
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(isSelected ? p.color : p.color.opacity(0.35))

@@ -638,6 +638,7 @@ struct TripsView: View {
                 )
                 .environmentObject(createdRecapStore)
             }
+            .interactiveDismissDisabled(true)
         }
         .onChange(of: showCameraCapture) { _, isShowing in
             // When camera dismisses, scroll to the trip with newly captured photos (if any).
@@ -1545,6 +1546,9 @@ struct CapturedMoment: Identifiable {
     var location: PhotoCoordinate?
     /// Local file URL of the Vibe audio clip recorded with this moment, if any.
     var vibeURL: URL?
+    /// Local file URL of the explicit user-recorded voice memo for this moment, if any.
+    /// Only set after a successful save from `VoiceMemoRecorderSheet`.
+    var voiceMemoURL: URL?
     /// When false, this moment was already acknowledged with an inline "added to blog" toast — skip duplicate exit summary.
     var includedInExitAddedToast: Bool = true
 
@@ -1557,6 +1561,7 @@ struct CapturedMoment: Identifiable {
         injectedPhotoId: UUID? = nil,
         location: PhotoCoordinate? = nil,
         vibeURL: URL? = nil,
+        voiceMemoURL: URL? = nil,
         includedInExitAddedToast: Bool = true
     ) {
         self.id = id
@@ -1567,6 +1572,7 @@ struct CapturedMoment: Identifiable {
         self.injectedPhotoId = injectedPhotoId
         self.location = location
         self.vibeURL = vibeURL
+        self.voiceMemoURL = voiceMemoURL
         self.includedInExitAddedToast = includedInExitAddedToast
     }
 }
@@ -1924,7 +1930,6 @@ struct CameraCaptureView: View {
     var postDismissToast: ((String) -> Void)? = nil
     /// When set (ZStack overlay presentation), called instead of dismiss().
     var onDismissOverlay: (() -> Void)? = nil
-    /// When set, "View" in the blog-started modal will call this with the blog's sourceTripId so the parent can open that blog and dismiss the camera.
     var onNavigateToBlog: ((UUID) -> Void)? = nil
 
     @StateObject private var cameraController = CameraController()
@@ -1951,7 +1956,9 @@ struct CameraCaptureView: View {
     @State private var sessionDraftTripId: UUID? = nil
     @State private var hasOfferedStartBlogThisSession: Bool = false
     @State private var hasReportedDismissToast: Bool = false
-    /// When true, show the "Blog has started, your moments will be saved to [name]" modal with Ok / View.
+    /// Set when a NEW blog is just created; triggers the "Blog has started" prompt on next Save.
+    @State private var pendingBlogStartedAlert: Bool = false
+    /// When true, show the "Blog has started, your moments will be saved to [name]" modal after first photo save.
     @State private var showBlogStartedPrompt: Bool = false
     /// When capture is near home, show confirmation before adding. Pending (image, timestamp) to add if user taps Keep.
     @State private var showNearHomeConfirmation: Bool = false
@@ -1972,6 +1979,7 @@ struct CameraCaptureView: View {
     @AppStorage("bloggo.camera.vibeEnabled") private var vibeEnabled: Bool = false
     /// When enabled, each in-app camera capture is also saved to the user's Photos library.
     @AppStorage("bloggo.camera.saveToPhotosEnabled") private var saveToPhotosEnabled: Bool = false
+    @AppStorage("bloggo.camera.hasSeenSaveToPhotosTooltip") private var hasSeenSaveToPhotosTooltip = false
     /// True when the most recently captured photo had a vibe audio clip attached.
     @State private var lastCaptureWasVibe: Bool = false
     /// Drives the "Capturing Vibe" pill dot pulse animation.
@@ -1980,6 +1988,7 @@ struct CameraCaptureView: View {
     @AppStorage("bloggo.hasSeenVibeTooltip") private var hasSeenVibeTooltip = false
     @State private var showVibeTooltip = false
     @State private var vibeTooltipPage = 0
+    @State private var showSaveToPhotosTooltip = false
     /// Per presentation of the camera sheet — used to correlate delayed push rules on the server.
     @State private var cameraSessionId = UUID()
     /// Snapchat-style in-place caption review (frozen still, not a sheet).
@@ -1991,7 +2000,25 @@ struct CameraCaptureView: View {
     @State private var captionModeWantsKeyboard = false
     @State private var captionModePlaceTitle = ""
     @State private var captionModePlaceSubtitle: String?
+    /// Monotonic token to ignore stale async place-title refresh results.
+    @State private var captionModePlaceRefreshToken: Int = 0
     @State private var showCaptionModeEditPlaceSheet = false
+    /// Inline caption editor visibility within the post-capture preview overlay.
+    @State private var previewIsEditingCaption = false
+    @FocusState private var previewCaptionFocused: Bool
+    /// Voice memo half-sheet presentation + playback player for the preview overlay.
+    @State private var showVoiceMemoSheet = false
+    @StateObject private var previewVoiceMemoPlayer = VibePlayer()
+    /// Vibe playback player for the post-capture preview top bar.
+    @StateObject private var previewVibePlayer = VibePlayer()
+    /// Discard-confirmation alert when the user closes the preview with attached caption / voice memo.
+    @State private var showPreviewDiscardConfirm = false
+    /// Confirm before deleting only the vibe clip from the current previewed photo.
+    @State private var showRemoveVibeConfirm = false
+    /// Resolved once when the post-capture preview opens — **never** re-hit `FileManager`/disk from SwiftUI `body`
+    /// (those checks were stacking every layout pass and could freeze UI for seconds).
+    @State private var previewChromeHasVibe = false
+    @State private var previewChromeHasVoiceMemo = false
 
     private static let nearHomeAlertSuppressedKey = "bloggo.nearHomeAlertSuppressed"
     private static let nearHomeSuppressedPreferKeepKey = "bloggo.nearHomeSuppressedPreferKeep"
@@ -2045,15 +2072,57 @@ struct CameraCaptureView: View {
             showToast("Couldn’t open caption. Try again.")
             return
         }
+        // Stop decoding live camera frames under the fullscreen still — renders were competing with
+        // a full-resolution UIImage and caused multi-second freezes / swipe-lag feeling like a hang.
+        cameraController.stopRunning()
+        previewVibePlayer.stop()
+        previewVoiceMemoPlayer.stop()
+
+        // One-shot disk lookups for chrome (avoid `vibeFileURL` / `voiceMemoFileURL` inside View bodies —
+        // SwiftUI evaluates those relentlessly during layout/animations).
+        refreshPreviewChromeAttachmentFlags(for: moment)
+        if let vibeURL = resolvedVibeURL(for: moment) {
+            // Auto-play attached vibe when the post-capture preview appears.
+            previewVibePlayer.play(url: vibeURL)
+        }
+
         captionModeMomentId = moment.id
         captionModeFrozenImage = frozen
         captionModeWantsKeyboard = false
+        captionModePlaceTitle = "Captured Moment"
+        captionModePlaceSubtitle = nil
         withAnimation(.easeOut(duration: 0.2)) {
             isCaptionModeActive = true
         }
-        // Offload any expensive place-title resolution work so the camera preview
-        // doesn't stall while caption mode is entering.
-        refreshCaptionModePlaceChrome()
+        // Let the freeze-frame commit first — then hydrate place title/geocode asynchronously.
+        DispatchQueue.main.async {
+            guard self.captionModeMomentId == moment.id else { return }
+            self.refreshCaptionModePlaceChrome()
+        }
+    }
+
+    private func refreshPreviewChromeAttachmentFlags(for moment: CapturedMoment) {
+        previewChromeHasVibe = resolvedVibeURL(for: moment) != nil
+        previewChromeHasVoiceMemo = resolvedVoiceMemoURL(for: moment) != nil
+    }
+
+    private func removeVibeAudio(for moment: CapturedMoment) {
+        if let localId = moment.localIdentifier,
+           let captureId = AppCapturePhotoService.uuid(from: localId) {
+            AppCapturePhotoService.shared.deleteVibe(captureId: captureId)
+        } else if let url = moment.vibeURL {
+            try? FileManager.default.removeItem(at: url)
+        }
+
+        if let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == moment.id }) {
+            sessionCapturesForDisplay[idx].vibeURL = nil
+        }
+        if let idx = sessionMoments.firstIndex(where: { $0.id == moment.id }) {
+            sessionMoments[idx].vibeURL = nil
+        }
+
+        previewVibePlayer.stop()
+        previewChromeHasVibe = false
     }
 
     private func exitInPlaceCaptionMode() {
@@ -2063,6 +2132,14 @@ struct CameraCaptureView: View {
         captionModeMomentId = nil
         captionModeFrozenImage = nil
         captionModeWantsKeyboard = false
+        previewIsEditingCaption = false
+        previewCaptionFocused = false
+        previewVibePlayer.stop()
+        previewVoiceMemoPlayer.stop()
+        cameraController.startRunning()
+
+        previewChromeHasVibe = false
+        previewChromeHasVoiceMemo = false
     }
 
     /// Resolves a usable still for caption mode. Falls back to persisted app-capture storage.
@@ -2079,13 +2156,16 @@ struct CameraCaptureView: View {
     }
 
     private func refreshCaptionModePlaceChrome() {
+        captionModePlaceRefreshToken += 1
+        let refreshToken = captionModePlaceRefreshToken
         guard let moment = captionModeResolvedMoment else {
             captionModePlaceTitle = "Captured Moment"
             captionModePlaceSubtitle = nil
             return
         }
 
-        // Set a fast default immediately; we fill in the real title/subtitle asynchronously.
+        // Fast default only — `getBlogDetail` can walk a huge in-memory blog graph and stall
+        // the first frame after capture if we run it synchronously when opening the preview.
         captionModePlaceTitle = "Captured Moment"
         captionModePlaceSubtitle = nil
 
@@ -2095,19 +2175,21 @@ struct CameraCaptureView: View {
         let draftId = sessionDraftTripId
         let locCoord = moment.location?.clCoordinate ?? cameraController.currentLocation?.coordinate
 
-        // Snapshot the store/state needed for background scanning.
-        let blogDetailSnapshot: RecapBlogDetail? = {
-            guard let tripId, let injectedPhotoId else { return nil }
-            return createdRecapStore.getBlogDetail(blogId: tripId)
-        }()
+        Task { @MainActor in
+            guard self.captionModeMomentId == momentId,
+                  self.captionModePlaceRefreshToken == refreshToken else { return }
 
-        let draftSnapshot: TripDraft? = {
-            guard let draftId, let injectedPhotoId else { return nil }
-            return tripsViewModel.tripDrafts.first(where: { $0.id == draftId })
-        }()
+            // Snapshot the store/state needed for background scanning (now *after* preview is on-screen).
+            let blogDetailSnapshot: RecapBlogDetail? = {
+                guard let tripId, let injectedPhotoId else { return nil }
+                return self.createdRecapStore.getBlogDetail(blogId: tripId)
+            }()
 
-        // The nested scans can be large; do them off the main actor.
-        Task {
+            let draftSnapshot: TripDraft? = {
+                guard let draftId, let injectedPhotoId else { return nil }
+                return self.tripsViewModel.tripDrafts.first(where: { $0.id == draftId })
+            }()
+
             let resolved: (String, String?) = await Task.detached(priority: .userInitiated) {
                 var resolvedTitle = "Captured Moment"
                 var resolvedSubtitle: String? = nil
@@ -2137,13 +2219,19 @@ struct CameraCaptureView: View {
                 return (resolvedTitle, resolvedSubtitle)
             }.value
 
-            guard captionModeMomentId == momentId else { return }
-            captionModePlaceTitle = resolved.0
-            captionModePlaceSubtitle = resolved.1
+            guard self.captionModeMomentId == momentId,
+                  self.captionModePlaceRefreshToken == refreshToken else { return }
+            self.captionModePlaceTitle = resolved.0
+            self.captionModePlaceSubtitle = resolved.1
+
+            let isGenericStopTitle = self.captionModePlaceTitle.range(
+                of: "^Stop\\s+\\d+$",
+                options: .regularExpression
+            ) != nil
 
             // If we still couldn't resolve from blog/draft, fall back to reverse geocoding.
             // (This is async and should not block the preview.)
-            if (captionModePlaceTitle == "Captured Moment" || captionModePlaceTitle.isEmpty),
+            if (self.captionModePlaceTitle == "Captured Moment" || self.captionModePlaceTitle.isEmpty || isGenericStopTitle),
                let c = locCoord {
                 let place = await GeocodingService.shared.place(
                     for: CLLocation(latitude: c.latitude, longitude: c.longitude)
@@ -2151,10 +2239,13 @@ struct CameraCaptureView: View {
                 let city = place.cityName != "Unknown Place" ? place.cityName : place.bestPlaceLabel
                 let country = place.countryName != "Unknown" ? place.countryName : nil
 
-                guard captionModeMomentId == momentId else { return }
-                if captionModePlaceTitle == "Captured Moment" || captionModePlaceTitle.isEmpty {
-                    captionModePlaceTitle = city
-                    captionModePlaceSubtitle = country
+                guard self.captionModeMomentId == momentId,
+                      self.captionModePlaceRefreshToken == refreshToken else { return }
+                if self.captionModePlaceTitle == "Captured Moment"
+                    || self.captionModePlaceTitle.isEmpty
+                    || self.captionModePlaceTitle.range(of: "^Stop\\s+\\d+$", options: .regularExpression) != nil {
+                    self.captionModePlaceTitle = city
+                    self.captionModePlaceSubtitle = country
                 }
             }
         }
@@ -2209,6 +2300,7 @@ struct CameraCaptureView: View {
             exitInPlaceCaptionMode()
             return
         }
+        let showBlogStartedAfterSave = pendingBlogStartedAlert
         syncSessionCaptionsToBlog()
         let caption = captionModeResolvedMoment?.caption
         if let photoId = moment.injectedPhotoId {
@@ -2223,24 +2315,41 @@ struct CameraCaptureView: View {
             if let idx = sessionMoments.firstIndex(where: { $0.id == moment.id }) {
                 sessionMoments[idx].includedInExitAddedToast = false
             }
-            let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
-            let msg = "1 moment added to \(title)"
-            if let post = postDismissToast {
-                post(msg)
-            } else {
-                showToast(msg)
+            // Avoid stacking a timed toast behind the blog-started modal (toast ignores taps; feels like a second dismissal).
+            if !showBlogStartedAfterSave {
+                let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
+                let msg = "1 moment added to \(title)"
+                if let post = postDismissToast {
+                    post(msg)
+                } else {
+                    showToast(msg)
+                }
             }
             AppAnalytics.track(.appInAppCameraCaption)
         } else {
             let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
-            if sessionSourceTripId != nil || sessionDraftTripId != nil {
-                showToast("Moment saved for \(title)")
-            } else {
-                showToast("Moment saved")
+            if !showBlogStartedAfterSave {
+                if sessionSourceTripId != nil || sessionDraftTripId != nil {
+                    showToast("Moment saved for \(title)")
+                } else {
+                    showToast("Moment saved")
+                }
             }
             AppAnalytics.track(.appInAppCameraCaption)
         }
+        let revealBlogStartedPrompt = showBlogStartedAfterSave
+        if revealBlogStartedPrompt {
+            pendingBlogStartedAlert = false
+        }
+        // Resign keyboard before exit so the modal's first tap isn't eaten by dismissal/focus teardown.
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         exitInPlaceCaptionMode()
+        // Caption preview uses .transition(.opacity) (~0.18s); layering the prompt in the same frame can leave hit-testing fighting the outgoing overlay.
+        if revealBlogStartedPrompt {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
+                showBlogStartedPrompt = true
+            }
+        }
     }
 
     @ViewBuilder
@@ -2250,7 +2359,7 @@ struct CameraCaptureView: View {
                 .ignoresSafeArea()
         } else if cameraController.isConfigured {
             if isCaptionModeActive {
-                FullScreenCameraPreview(session: cameraController.session)
+                Color.black
                     .ignoresSafeArea()
             } else {
                 FullScreenCameraPreview(session: cameraController.session)
@@ -2421,6 +2530,7 @@ struct CameraCaptureView: View {
             .disabled(cameraController.position == .front)
 
             Button {
+                presentSaveToPhotosTooltipIfNeeded()
                 toggleSaveToPhotos()
             } label: {
                 Image(systemName: "arrow.down.to.line.compact")
@@ -2462,6 +2572,479 @@ struct CameraCaptureView: View {
         .padding(.top, 8)
         .padding(.trailing, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+
+        if showSaveToPhotosTooltip {
+            VStack(spacing: 4) {
+                Text("Download")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                Text("Photos captured here can also save to your device Photos.")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.9))
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.black.opacity(0.82))
+            )
+            .padding(.trailing, 20)
+            .padding(.top, 214)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .transition(.opacity)
+        }
+    }
+
+    // MARK: - Post-capture preview overlay
+    //
+    // Shown automatically after every shot. Frozen still on top of the (paused-feeling)
+    // camera preview, with caption editor + a 4-button bottom action bar.
+    // Save = explicit commit; Delete / Close = remove the just-taken photo from the
+    // Bloggo Gallery and any auto-routed blog/draft (matches the user's spec).
+
+    @ViewBuilder
+    private var postCapturePreviewOverlay: some View {
+        ZStack {
+            // Frozen still — same image used in caption mode for stability under async updates.
+            if let frozen = captionModeFrozenImage {
+                Color.black.ignoresSafeArea()
+                Image(uiImage: frozen)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .offset(y: -16)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        beginPreviewCaptionEditing()
+                    }
+                    .ignoresSafeArea()
+            }
+
+            Color.black
+                .opacity(previewCaptionFocused ? 0.32 : 0)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .animation(.easeOut(duration: 0.18), value: previewCaptionFocused)
+
+            if previewIsEditingCaption {
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .onTapGesture { dismissPreviewCaptionEditor() }
+            }
+
+            previewTopBar
+            previewBottomChrome
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            previewActionDock
+        }
+        .transition(.opacity)
+    }
+
+    private var previewTopBar: some View {
+        VStack {
+            HStack(alignment: .top) {
+                Button {
+                    requestPreviewClose()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
+                }
+                .accessibilityLabel("Discard photo")
+
+                Spacer()
+
+                if previewChromeHasVibe, let moment = captionModeResolvedMoment {
+                    let isPlaying = previewVibePlayer.isPlaying
+                    VStack(spacing: 10) {
+                        Button {
+                            if isPlaying {
+                                previewVibePlayer.stop()
+                            } else if let url = resolvedVibeURL(for: moment) {
+                                previewVibePlayer.play(url: url)
+                            }
+                        } label: {
+                            AtmosphericWaveformView(isActive: isPlaying)
+                                .frame(width: 44, height: 44)
+                                .background(.ultraThinMaterial)
+                                .background(isPlaying ? Color.cyan.opacity(0.32) : Color.white.opacity(0.06))
+                                .clipShape(Circle())
+                                .overlay(
+                                    Circle().stroke(
+                                        isPlaying
+                                            ? LinearGradient(colors: [.cyan, .green], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                            : LinearGradient(colors: [Color.white.opacity(0.2)], startPoint: .top, endPoint: .bottom),
+                                        lineWidth: isPlaying ? 2 : 1
+                                    )
+                                )
+                                .shadow(color: isPlaying ? .cyan.opacity(0.55) : .clear, radius: isPlaying ? 10 : 0)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(isPlaying ? "Stop vibe playback" : "Play vibe")
+
+                        Button {
+                            showRemoveVibeConfirm = true
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(width: 36, height: 36)
+                                .background(Color.red.opacity(0.8))
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Remove vibe audio")
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            Spacer()
+        }
+    }
+
+    /// Resolves the on-disk vibe URL for a captured moment (in-memory or persisted).
+    private func resolvedVibeURL(for moment: CapturedMoment) -> URL? {
+        if let url = moment.vibeURL { return url }
+        if let lid = moment.localIdentifier,
+           let captureId = AppCapturePhotoService.uuid(from: lid) {
+            return AppCapturePhotoService.shared.vibeFileURL(for: captureId)
+        }
+        return nil
+    }
+
+    /// Resolves the on-disk voice memo URL for a captured moment (in-memory or persisted).
+    private func resolvedVoiceMemoURL(for moment: CapturedMoment) -> URL? {
+        if let url = moment.voiceMemoURL { return url }
+        if let lid = moment.localIdentifier,
+           let captureId = AppCapturePhotoService.uuid(from: lid) {
+            return AppCapturePhotoService.shared.voiceMemoFileURL(for: captureId)
+        }
+        return nil
+    }
+
+    private var previewBottomChrome: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Spacer()
+            // Place title + caption preview (read-only). Tap caption to edit inline.
+            if let moment = captionModeResolvedMoment {
+                let placeTitle = captionModePlaceTitle.isEmpty ? "Captured Moment" : captionModePlaceTitle
+
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .center, spacing: 10) {
+                            Button {
+                                guard canOpenCaptionModePlaceEditor else {
+                                    showToast("Setting up place details…")
+                                    return
+                                }
+                                showCaptionModeEditPlaceSheet = true
+                            } label: {
+                                HStack(alignment: .center, spacing: 8) {
+                                    Text(placeTitle)
+                                        .font(.title3.weight(.bold))
+                                        .foregroundColor(.white)
+                                        .shadow(color: .black.opacity(0.4), radius: 2)
+
+                                    Image(systemName: "mappin.and.ellipse")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .frame(width: 30, height: 30)
+                                        .background(Color.black.opacity(0.36), in: Circle())
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color.white.opacity(0.26), lineWidth: 1)
+                                        )
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Edit place name")
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 10) {
+                                Text(moment.timestamp.formatted(date: .omitted, time: .shortened))
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.85))
+                                    .shadow(color: .black.opacity(0.3), radius: 1)
+                                Spacer(minLength: 0)
+                            }
+                            if previewChromeHasVoiceMemo {
+                                Button {
+                                    togglePreviewVoiceMemoPlayback(for: moment)
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: previewVoiceMemoPlayer.isPlaying ? "pause.fill" : "mic.fill")
+                                            .font(.system(size: 10, weight: .semibold))
+                                        Text(previewVoiceMemoPlayer.isPlaying ? "Playing memo" : "Voice memo attached")
+                                            .font(.system(size: 11, weight: .medium))
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(Color.blue.opacity(0.92), in: Capsule())
+                                    .shadow(color: .black.opacity(0.22), radius: 2, y: 1)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(previewVoiceMemoPlayer.isPlaying ? "Pause voice memo" : "Play voice memo")
+                            }
+                        }
+                    }
+
+                    TextField(
+                        "",
+                        text: captionModeCaptionBinding,
+                        prompt: Text("Tap to write a story behind this photo")
+                            .foregroundColor(.white.opacity(0.72)),
+                        axis: .vertical
+                    )
+                    .focused($previewCaptionFocused)
+                    .textFieldStyle(.plain)
+                    .font(.body)
+                    .foregroundColor(.white)
+                    .lineLimit(1...4)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onTapGesture { beginPreviewCaptionEditing() }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    LinearGradient(
+                        colors: [
+                            Color.black.opacity(0.74),
+                            Color.black.opacity(0.46),
+                            Color.black.opacity(0.18),
+                            Color.clear
+                        ],
+                        startPoint: .bottom,
+                        endPoint: .top
+                    )
+                    // Extend the text scrim to the photo edge so the caption chrome
+                    // feels anchored instead of floating.
+                    .padding(.horizontal, -20)
+                    .padding(.bottom, -84)
+                )
+            }
+
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 64)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        .background(
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.5), .black.opacity(0.85)],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+                .ignoresSafeArea(edges: .bottom)
+                .allowsHitTesting(false)
+        )
+    }
+
+    private var previewActionDock: some View {
+        HStack(spacing: 14) {
+            previewActionCircleButton(
+                systemImage: "pencil",
+                tint: .white
+            ) {
+                beginPreviewCaptionEditing()
+            }
+            .accessibilityLabel("Edit caption")
+
+            previewActionCircleButton(
+                systemImage: previewVoiceMemoPlayer.isPlaying ? "stop.circle.fill" : "mic.fill",
+                tint: previewChromeHasVoiceMemo ? .cyan : .white
+            ) {
+                showVoiceMemoSheet = true
+            }
+            .accessibilityLabel(previewChromeHasVoiceMemo ? "Edit voice memo" : "Add voice memo")
+
+            Spacer(minLength: 0)
+
+            Button {
+                dismissPreviewCaptionEditor()
+                commitCaptionModeDone()
+                AppAnalytics.track(.appInAppCameraPreviewSave)
+            } label: {
+                Text("Save")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 11)
+                    .background(Color.blue.opacity(0.9))
+                    .clipShape(Capsule())
+                    .shadow(color: .black.opacity(0.28), radius: 4, y: 2)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Save photo to Bloggo Gallery")
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .padding(.bottom, 14)
+        .background(
+            Color.black.opacity(0.78)
+                .background(.ultraThinMaterial)
+                .ignoresSafeArea(edges: .bottom)
+        )
+    }
+
+    private var previewActionBar: some View {
+        HStack(spacing: 14) {
+            previewActionCircleButton(
+                systemImage: "pencil",
+                tint: .white
+            ) {
+                beginPreviewCaptionEditing()
+            }
+            .accessibilityLabel("Edit caption")
+
+            previewActionCircleButton(
+                systemImage: previewVoiceMemoPlayer.isPlaying ? "stop.circle.fill" : "mic.fill",
+                tint: previewChromeHasVoiceMemo ? .cyan : .white
+            ) {
+                showVoiceMemoSheet = true
+            }
+            .accessibilityLabel(previewChromeHasVoiceMemo ? "Edit voice memo" : "Add voice memo")
+
+            Spacer(minLength: 0)
+
+            Button {
+                dismissPreviewCaptionEditor()
+                commitCaptionModeDone()
+                AppAnalytics.track(.appInAppCameraPreviewSave)
+            } label: {
+                Text("Save")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 11)
+                    .background(Color.blue.opacity(0.9))
+                    .clipShape(Capsule())
+                    .shadow(color: .black.opacity(0.28), radius: 4, y: 2)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Save photo to Bloggo Gallery")
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func previewActionCircleButton(
+        systemImage: String,
+        tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(Color.black.opacity(0.52))
+                    .frame(width: 50, height: 50)
+                Circle()
+                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                    .frame(width: 50, height: 50)
+                Image(systemName: systemImage)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(tint)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func beginPreviewCaptionEditing() {
+        previewIsEditingCaption = true
+        DispatchQueue.main.async { previewCaptionFocused = true }
+    }
+
+    private var canOpenCaptionModePlaceEditor: Bool {
+        guard let moment = captionModeResolvedMoment else { return false }
+        return moment.injectedPhotoId != nil && moment.localIdentifier != nil
+    }
+
+    private func dismissPreviewCaptionEditor() {
+        previewCaptionFocused = false
+        // Caption binding already mutates session arrays as the user types.
+        syncSessionCaptionsToBlog()
+        withAnimation(.easeOut(duration: 0.2)) {
+            previewIsEditingCaption = false
+        }
+    }
+
+    private func togglePreviewVoiceMemoPlayback(for moment: CapturedMoment) {
+        if previewVoiceMemoPlayer.isPlaying {
+            previewVoiceMemoPlayer.stop()
+        } else if let url = resolvedVoiceMemoURL(for: moment) {
+            previewVoiceMemoPlayer.play(url: url)
+        }
+    }
+
+    /// Persists a freshly-recorded voice memo onto the captured moment.
+    /// Mirrors the in-app capture id into both the in-memory `CapturedMoment` and the
+    /// on-disk `bloggo_captures/<uuid>/voice_memo.m4a`.
+    private func saveVoiceMemoForCurrentPreview(sourceURL: URL) {
+        guard let moment = captionModeResolvedMoment else { return }
+        // Ensure the photo is persisted (so we have a folder to drop the memo into).
+        guard let localId = resolvedCaptureLocalIdentifier(for: moment, fallbackVibeURL: nil),
+              let captureId = AppCapturePhotoService.uuid(from: localId) else { return }
+        do {
+            try AppCapturePhotoService.shared.saveVoiceMemo(captureId: captureId, from: sourceURL)
+            try? FileManager.default.removeItem(at: sourceURL)
+            let persisted = AppCapturePhotoService.shared.voiceMemoFileURL(for: captureId)
+            if let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == moment.id }) {
+                sessionCapturesForDisplay[idx].voiceMemoURL = persisted
+                if sessionCapturesForDisplay[idx].localIdentifier == nil {
+                    sessionCapturesForDisplay[idx].localIdentifier = localId
+                }
+            }
+            if let idx = sessionMoments.firstIndex(where: { $0.id == moment.id }) {
+                sessionMoments[idx].voiceMemoURL = persisted
+                if sessionMoments[idx].localIdentifier == nil {
+                    sessionMoments[idx].localIdentifier = localId
+                }
+            }
+            previewChromeHasVoiceMemo = persisted != nil
+            AppAnalytics.track(.appInAppCameraVoiceMemoSave)
+        } catch {
+            showToast("Couldn't save voice memo. Try again.")
+        }
+    }
+
+    /// Deletes the persisted voice memo for the moment currently being previewed.
+    private func deleteVoiceMemoForCurrentPreview() {
+        guard let moment = captionModeResolvedMoment else { return }
+        previewVoiceMemoPlayer.stop()
+        if let lid = moment.localIdentifier,
+           let captureId = AppCapturePhotoService.uuid(from: lid) {
+            AppCapturePhotoService.shared.deleteVoiceMemo(captureId: captureId)
+        }
+        if let idx = sessionCapturesForDisplay.firstIndex(where: { $0.id == moment.id }) {
+            sessionCapturesForDisplay[idx].voiceMemoURL = nil
+        }
+        if let idx = sessionMoments.firstIndex(where: { $0.id == moment.id }) {
+            sessionMoments[idx].voiceMemoURL = nil
+        }
+        previewChromeHasVoiceMemo = false
+    }
+
+    /// Treats X / swipe-to-dismiss as discard (per spec: "if it's not saved then removed").
+    /// Adds a confirmation when the user has invested in caption / voice memo to avoid surprise data loss.
+    private func requestPreviewClose() {
+        guard let moment = captionModeResolvedMoment else {
+            exitInPlaceCaptionMode()
+            return
+        }
+        let hasCaption = !(moment.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasVoiceMemo = resolvedVoiceMemoURL(for: moment) != nil
+        if hasCaption || hasVoiceMemo {
+            showPreviewDiscardConfirm = true
+        } else {
+            discardCaptionModeCapture()
+        }
     }
 
     /// Split from `body` so the Swift compiler can type-check the camera chrome in reasonable time.
@@ -2472,9 +3055,9 @@ struct CameraCaptureView: View {
 
             if !isCaptionModeActive {
                 nonCaptionCameraOverlay
+            } else {
+                postCapturePreviewOverlay
             }
-
-            // In-app camera caption mode is intentionally disabled.
         }
     }
 
@@ -2488,6 +3071,13 @@ struct CameraCaptureView: View {
                         guard !isCaptionModeActive else { return }
                         if value.translation.height < -50 {
                             isShowingCapturesGallery = true
+                        } else if value.translation.height > 50 {
+                            // Swipe-down dismiss is allowed only before any photo is captured.
+                            let hasCapturedPhotos = photosCapturedThisSession > 0
+                                || !sessionCapturesForDisplay.isEmpty
+                                || !sessionMoments.isEmpty
+                            guard !hasCapturedPhotos else { return }
+                            closeCamera()
                         }
                     }
             )
@@ -2525,9 +3115,11 @@ struct CameraCaptureView: View {
             attachedCountThisSession = 0
             sessionTripTitle = nil
             sessionSourceTripId = nil
+            sessionDraftTripId = nil
+            hasOfferedStartBlogThisSession = false
+            pendingBlogStartedAlert = false
             lastCaptureWasVibe = false
             if vibeEnabled { vibeRecorder.start() }
-            sessionDraftTripId = nil
             isCaptionModeActive = false
             captionModeMomentId = nil
             captionModeFrozenImage = nil
@@ -2583,6 +3175,13 @@ struct CameraCaptureView: View {
                             caption: moment.caption
                         )],
                         onSave: { name, coord, category, subtitle in
+                            let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let trimmedSubtitle = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                            captionModePlaceRefreshToken += 1
+                            if !trimmedName.isEmpty {
+                                captionModePlaceTitle = trimmedName
+                            }
+                            captionModePlaceSubtitle = trimmedSubtitle.isEmpty ? nil : trimmedSubtitle
                             createdRecapStore.updatePlaceStopFromPlacesVisited(
                                 photoId: photoId,
                                 newName: name,
@@ -2735,8 +3334,8 @@ struct CameraCaptureView: View {
     /// Secondary overlays and vibe tooltip presentation.
     private var inAppCameraBodyWithLifecycle: some View {
         inAppCameraWithSessionSheets
-            .overlay { blogStartedPromptOverlay }
             .overlay { nearHomeConfirmationOverlay }
+            .overlay { blogStartedPromptOverlay }
             .onChange(of: showNearHomeConfirmation) { _, show in
             if show { nearHomeDoNotShowAgain = false }
             }
@@ -2756,6 +3355,36 @@ struct CameraCaptureView: View {
                 .presentationDragIndicator(.visible)
                 .preferredColorScheme(.dark)
         }
+            .sheet(isPresented: $showVoiceMemoSheet) {
+                VoiceMemoRecorderSheet(
+                    existingMemoURL: captionModeResolvedMoment.flatMap(resolvedVoiceMemoURL(for:)),
+                    onSave: { url in
+                        saveVoiceMemoForCurrentPreview(sourceURL: url)
+                    },
+                    onDelete: {
+                        deleteVoiceMemoForCurrentPreview()
+                    },
+                    onCancel: { /* no-op */ }
+                )
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .preferredColorScheme(.dark)
+            }
+            .alert("Discard photo?", isPresented: $showPreviewDiscardConfirm) {
+                Button("Keep", role: .cancel) {}
+                Button("Discard", role: .destructive) { discardCaptionModeCapture() }
+            } message: {
+                Text("Closing without saving removes this photo, its caption, and any voice memo from Bloggo Gallery.")
+            }
+            .alert("Remove this vibe audio?", isPresented: $showRemoveVibeConfirm) {
+                Button("No", role: .cancel) {}
+                Button("Yes", role: .destructive) {
+                    guard let moment = captionModeResolvedMoment else { return }
+                    removeVibeAudio(for: moment)
+                }
+            } message: {
+                Text("This removes only the vibe audio and keeps the photo.")
+            }
     }
 
     var body: some View {
@@ -2771,6 +3400,17 @@ struct CameraCaptureView: View {
             guard !Task.isCancelled else { return }
             guard !hasSeenCameraTooltip, !showCameraTooltip, cameraController.isConfigured else { return }
             showCameraTooltip = true
+        }
+    }
+
+    private func presentSaveToPhotosTooltipIfNeeded() {
+        guard !hasSeenSaveToPhotosTooltip else { return }
+        hasSeenSaveToPhotosTooltip = true
+        showSaveToPhotosTooltip = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showSaveToPhotosTooltip = false
+            }
         }
     }
 
@@ -2815,49 +3455,45 @@ struct CameraCaptureView: View {
 
     @ViewBuilder private var blogStartedPromptOverlay: some View {
         if showBlogStartedPrompt {
-            Color.black.opacity(0.4)
-                .ignoresSafeArea()
-                .onTapGesture { }
             let blogName = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your blog"
-            VStack(spacing: 0) {
-                Text("Blog has started, your moments will be saved to \"\(blogName)\"")
-                    .font(.subheadline)
-                    .foregroundColor(.primary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 24)
-                    .padding(.bottom, 20)
-                HStack(spacing: 16) {
-                    Button("Ok") {
+            ZStack {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
                         showBlogStartedPrompt = false
                     }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity)
-                    Button("View") {
+                VStack(spacing: 0) {
+                    Text("Blog has started, your moments will be saved to \"\(blogName)\"")
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 24)
+                        .padding(.bottom, 20)
+                    Button("Close") {
                         showBlogStartedPrompt = false
-                        if let id = sessionSourceTripId {
-                            onNavigateToBlog?(id)
-                        }
                     }
+                    .buttonStyle(.borderless)
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .background(Color.blue, in: RoundedRectangle(appChromeBaseRadius: 10))
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 24)
+                .frame(maxWidth: 300)
+                .background(
+                    RoundedRectangle(appChromeBaseRadius: 20, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .environment(\.colorScheme, .dark)
+                )
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 20, style: .continuous))
+                .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
+                .padding(.horizontal, 36)
             }
-            .frame(maxWidth: 300)
-            .background(
-                RoundedRectangle(appChromeBaseRadius: 20, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .environment(\.colorScheme, .dark)
-            )
-            .clipShape(RoundedRectangle(appChromeBaseRadius: 20, style: .continuous))
-            .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
-            .padding(.horizontal, 36)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -3127,17 +3763,6 @@ struct CameraCaptureView: View {
                 isShowingSessionGallery = true
             } label: {
                 shutterBarCurrentPhotosButton
-                    .overlay(alignment: .top) {
-                        if photosCapturedThisSession > 0 {
-                            Button {
-                                isShowingSessionGallery = true
-                            } label: {
-                                addNotePromptCard
-                            }
-                            .buttonStyle(.plain)
-                            .offset(y: -46)
-                        }
-                    }
             }
             .frame(maxWidth: .infinity)
         }
@@ -3364,6 +3989,13 @@ extension CameraCaptureView {
                 hasOfferedStartBlogThisSession = true
                 startNewOnTheGoBlogFromSession()
             }
+        }
+
+        // Auto-show the post-capture preview overlay so the user can review,
+        // caption, attach a voice memo, and explicitly Save (or Discard).
+        // Defer one tick so the just-appended moment is visible to the overlay.
+        DispatchQueue.main.async {
+            enterInPlaceCaptionMode()
         }
     }
 
@@ -3617,7 +4249,7 @@ extension CameraCaptureView {
                 sessionTripTitle = blog.title
             }
         }
-        showBlogStartedPrompt = true
+        pendingBlogStartedAlert = true
         // So exit toast shows "X moments added to [Blog Name]" even if user exits before injection completes.
         attachedCountThisSession = momentCount(from: sessionMoments)
         // Clear sessionMoments so the counter and gallery switch to sessionCapturesForDisplay,
@@ -3670,6 +4302,7 @@ extension CameraCaptureView {
         // Switch UI to blog flow immediately so counter and gallery use sessionCapturesForDisplay.
         attachedCountThisSession = momentCount(from: sessionMoments)
         sessionMoments = []
+        pendingBlogStartedAlert = true
         let location = cameraController.currentLocation
         Task { @MainActor in
             let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
@@ -3741,7 +4374,12 @@ extension CameraCaptureView {
             sessionSourceTripId = tripId
             sessionTripTitle = title
             attachedCountThisSession = photos.count
-            showBlogStartedPrompt = true
+            // Inject any photos captured while this async Task was running (geocoding delay).
+            let lateArrivals = sessionMoments.filter { $0.previewImage != nil }
+            sessionMoments = []
+            for pending in lateArrivals {
+                injectCapturedImageIntoBlog(pending.previewImage, at: pending.timestamp, sourceTripId: tripId, momentId: pending.id, vibeURL: pending.vibeURL)
+            }
         }
     }
 
@@ -4431,25 +5069,36 @@ private struct SessionGalleryView: View {
                         HStack(alignment: .top, spacing: 12) {
                             // Photo preview — same height as timestamp + caption block
                             if let image = moment.previewImage {
-                                ZStack(alignment: .bottomLeading) {
+                                ZStack(alignment: .topTrailing) {
                                     Image(uiImage: image)
                                         .resizable()
                                         .scaledToFill()
                                         .frame(width: 70, height: rowHeight)
                                         .clipped()
                                         .appChromeCornerRadius(8)
-                                    // Vibe badge — static green waveform, bottom-left
-                                    if moment.vibeURL != nil {
-                                        Image(systemName: "waveform")
-                                            .font(.system(size: 9, weight: .semibold))
-                                            .foregroundStyle(
-                                                LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
-                                            )
-                                            .padding(5)
-                                            .background(Color.black.opacity(0.55))
-                                            .clipShape(Circle())
-                                            .padding(4)
+                                    // Attachment badges cluster in top-right:
+                                    // Voice memo on the left, Vibe on the right.
+                                    HStack(spacing: 4) {
+                                        if moment.voiceMemoURL != nil {
+                                            Image(systemName: "mic.fill")
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .foregroundColor(.white)
+                                                .padding(5)
+                                                .background(Color.black.opacity(0.55))
+                                                .clipShape(Circle())
+                                        }
+                                        if moment.vibeURL != nil {
+                                            Image(systemName: "waveform")
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .foregroundStyle(
+                                                    LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
+                                                )
+                                                .padding(5)
+                                                .background(Color.black.opacity(0.55))
+                                                .clipShape(Circle())
+                                        }
                                     }
+                                    .padding(4)
                                 }
                                 .frame(width: 70, height: rowHeight)
                             } else {
@@ -4509,25 +5158,36 @@ private struct SessionGalleryView: View {
                         HStack(alignment: .top, spacing: 12) {
                             // Photo preview — same height as timestamp + caption block
                             if let image = moment.previewImage {
-                                ZStack(alignment: .bottomLeading) {
+                                ZStack(alignment: .topTrailing) {
                                     Image(uiImage: image)
                                         .resizable()
                                         .scaledToFill()
                                         .frame(width: 70, height: rowHeight)
                                         .clipped()
                                         .appChromeCornerRadius(8)
-                                    // Vibe badge — static green waveform, bottom-left
-                                    if moment.vibeURL != nil {
-                                        Image(systemName: "waveform")
-                                            .font(.system(size: 9, weight: .semibold))
-                                            .foregroundStyle(
-                                                LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
-                                            )
-                                            .padding(5)
-                                            .background(Color.black.opacity(0.55))
-                                            .clipShape(Circle())
-                                            .padding(4)
+                                    // Attachment badges cluster in top-right:
+                                    // Voice memo on the left, Vibe on the right.
+                                    HStack(spacing: 4) {
+                                        if moment.voiceMemoURL != nil {
+                                            Image(systemName: "mic.fill")
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .foregroundColor(.white)
+                                                .padding(5)
+                                                .background(Color.black.opacity(0.55))
+                                                .clipShape(Circle())
+                                        }
+                                        if moment.vibeURL != nil {
+                                            Image(systemName: "waveform")
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .foregroundStyle(
+                                                    LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
+                                                )
+                                                .padding(5)
+                                                .background(Color.black.opacity(0.55))
+                                                .clipShape(Circle())
+                                        }
                                     }
+                                    .padding(4)
                                 }
                                 .frame(width: 70, height: rowHeight)
                             } else {

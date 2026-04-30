@@ -184,6 +184,8 @@
 		BB000254 /* AppCaptureDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000255 /* AppCaptureDetailView.swift */; };
 		BB000260 /* VibeRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000261 /* VibeRecorder.swift */; };
 		BB000262 /* VibePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000263 /* VibePlayer.swift */; };
+		BB000264 /* VoiceMemoRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000265 /* VoiceMemoRecorder.swift */; };
+		BB000266 /* VoiceMemoRecorderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000267 /* VoiceMemoRecorderSheet.swift */; };
 		BB000270 /* KakaoLocalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000271 /* KakaoLocalService.swift */; };
 		BB000272 /* PlaceSuggestion.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000273 /* PlaceSuggestion.swift */; };
 		BB000282 /* KakaoMapsSDK-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = BB000281 /* KakaoMapsSDK-SPM */; };
@@ -438,6 +440,8 @@
 		BB000255 /* AppCaptureDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCaptureDetailView.swift; sourceTree = "<group>"; };
 		BB000261 /* VibeRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VibeRecorder.swift; sourceTree = "<group>"; };
 		BB000263 /* VibePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VibePlayer.swift; sourceTree = "<group>"; };
+		BB000265 /* VoiceMemoRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMemoRecorder.swift; sourceTree = "<group>"; };
+		BB000267 /* VoiceMemoRecorderSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMemoRecorderSheet.swift; sourceTree = "<group>"; };
 		BB000271 /* KakaoLocalService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KakaoLocalService.swift; sourceTree = "<group>"; };
 		BB000273 /* PlaceSuggestion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceSuggestion.swift; sourceTree = "<group>"; };
 		BB000283 /* KakaoTappableMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KakaoTappableMapView.swift; sourceTree = "<group>"; };
@@ -660,6 +664,7 @@
 				BB000243 /* SplitBlogView.swift */,
 				BB000253 /* AppCaptureGalleryView.swift */,
 				BB000255 /* AppCaptureDetailView.swift */,
+				BB000267 /* VoiceMemoRecorderSheet.swift */,
 				BB000127 /* CountryCardView.swift */,
 				BB000129 /* CoverPhotoSelectView.swift */,
 				BB00012B /* CreateBlogFlowView.swift */,
@@ -783,6 +788,7 @@
 				BB000251 /* AppCapturePhotoService.swift */,
 				BB000261 /* VibeRecorder.swift */,
 				BB000263 /* VibePlayer.swift */,
+				BB000265 /* VoiceMemoRecorder.swift */,
 				BB000181 /* DayToTripGrouper.swift */,
 				BB0001E6 /* DraftReminderNotificationManager.swift */,
 				EA00EA01 /* EarlyAccessManager.swift */,
@@ -998,6 +1004,8 @@
 				BB000254 /* AppCaptureDetailView.swift in Sources */,
 				BB000260 /* VibeRecorder.swift in Sources */,
 				BB000262 /* VibePlayer.swift in Sources */,
+				BB000264 /* VoiceMemoRecorder.swift in Sources */,
+				BB000266 /* VoiceMemoRecorderSheet.swift in Sources */,
 				BB000128 /* CountryCardView.swift in Sources */,
 				BB00012A /* CoverPhotoSelectView.swift in Sources */,
 				BB00012C /* CreateBlogFlowView.swift in Sources */,
