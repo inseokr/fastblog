@@ -2300,6 +2300,7 @@ struct CameraCaptureView: View {
             exitInPlaceCaptionMode()
             return
         }
+        let showBlogStartedAfterSave = pendingBlogStartedAlert
         syncSessionCaptionsToBlog()
         let caption = captionModeResolvedMoment?.caption
         if let photoId = moment.injectedPhotoId {
@@ -2314,28 +2315,41 @@ struct CameraCaptureView: View {
             if let idx = sessionMoments.firstIndex(where: { $0.id == moment.id }) {
                 sessionMoments[idx].includedInExitAddedToast = false
             }
-            let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
-            let msg = "1 moment added to \(title)"
-            if let post = postDismissToast {
-                post(msg)
-            } else {
-                showToast(msg)
+            // Avoid stacking a timed toast behind the blog-started modal (toast ignores taps; feels like a second dismissal).
+            if !showBlogStartedAfterSave {
+                let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
+                let msg = "1 moment added to \(title)"
+                if let post = postDismissToast {
+                    post(msg)
+                } else {
+                    showToast(msg)
+                }
             }
             AppAnalytics.track(.appInAppCameraCaption)
         } else {
             let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
-            if sessionSourceTripId != nil || sessionDraftTripId != nil {
-                showToast("Moment saved for \(title)")
-            } else {
-                showToast("Moment saved")
+            if !showBlogStartedAfterSave {
+                if sessionSourceTripId != nil || sessionDraftTripId != nil {
+                    showToast("Moment saved for \(title)")
+                } else {
+                    showToast("Moment saved")
+                }
             }
             AppAnalytics.track(.appInAppCameraCaption)
         }
-        if pendingBlogStartedAlert {
+        let revealBlogStartedPrompt = showBlogStartedAfterSave
+        if revealBlogStartedPrompt {
             pendingBlogStartedAlert = false
-            showBlogStartedPrompt = true
         }
+        // Resign keyboard before exit so the modal's first tap isn't eaten by dismissal/focus teardown.
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         exitInPlaceCaptionMode()
+        // Caption preview uses .transition(.opacity) (~0.18s); layering the prompt in the same frame can leave hit-testing fighting the outgoing overlay.
+        if revealBlogStartedPrompt {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
+                showBlogStartedPrompt = true
+            }
+        }
     }
 
     @ViewBuilder
@@ -3320,8 +3334,8 @@ struct CameraCaptureView: View {
     /// Secondary overlays and vibe tooltip presentation.
     private var inAppCameraBodyWithLifecycle: some View {
         inAppCameraWithSessionSheets
-            .overlay { blogStartedPromptOverlay }
             .overlay { nearHomeConfirmationOverlay }
+            .overlay { blogStartedPromptOverlay }
             .onChange(of: showNearHomeConfirmation) { _, show in
             if show { nearHomeDoNotShowAgain = false }
             }
@@ -3441,38 +3455,45 @@ struct CameraCaptureView: View {
 
     @ViewBuilder private var blogStartedPromptOverlay: some View {
         if showBlogStartedPrompt {
-            Color.black.opacity(0.4)
-                .ignoresSafeArea()
-                .onTapGesture { }
             let blogName = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your blog"
-            VStack(spacing: 0) {
-                Text("Blog has started, your moments will be saved to \"\(blogName)\"")
-                    .font(.subheadline)
-                    .foregroundColor(.primary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 24)
-                    .padding(.bottom, 20)
-                Button("Close") {
-                    showBlogStartedPrompt = false
+            ZStack {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        showBlogStartedPrompt = false
+                    }
+                VStack(spacing: 0) {
+                    Text("Blog has started, your moments will be saved to \"\(blogName)\"")
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 24)
+                        .padding(.bottom, 20)
+                    Button("Close") {
+                        showBlogStartedPrompt = false
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.blue, in: RoundedRectangle(appChromeBaseRadius: 10))
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
                 }
-                .font(.subheadline.weight(.semibold))
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Color.blue, in: RoundedRectangle(appChromeBaseRadius: 10))
-                .padding(.horizontal, 20)
-                .padding(.bottom, 24)
+                .frame(maxWidth: 300)
+                .background(
+                    RoundedRectangle(appChromeBaseRadius: 20, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .environment(\.colorScheme, .dark)
+                )
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 20, style: .continuous))
+                .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
+                .padding(.horizontal, 36)
             }
-            .frame(maxWidth: 300)
-            .background(
-                RoundedRectangle(appChromeBaseRadius: 20, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .environment(\.colorScheme, .dark)
-            )
-            .clipShape(RoundedRectangle(appChromeBaseRadius: 20, style: .continuous))
-            .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
-            .padding(.horizontal, 36)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
