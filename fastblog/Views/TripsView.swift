@@ -1930,7 +1930,6 @@ struct CameraCaptureView: View {
     var postDismissToast: ((String) -> Void)? = nil
     /// When set (ZStack overlay presentation), called instead of dismiss().
     var onDismissOverlay: (() -> Void)? = nil
-    /// When set, "View" in the blog-started modal will call this with the blog's sourceTripId so the parent can open that blog and dismiss the camera.
     var onNavigateToBlog: ((UUID) -> Void)? = nil
 
     @StateObject private var cameraController = CameraController()
@@ -1957,7 +1956,9 @@ struct CameraCaptureView: View {
     @State private var sessionDraftTripId: UUID? = nil
     @State private var hasOfferedStartBlogThisSession: Bool = false
     @State private var hasReportedDismissToast: Bool = false
-    /// When true, show the "Blog has started, your moments will be saved to [name]" modal with Ok / View.
+    /// Set when a NEW blog is just created; triggers the "Blog has started" prompt on next Save.
+    @State private var pendingBlogStartedAlert: Bool = false
+    /// When true, show the "Blog has started, your moments will be saved to [name]" modal after first photo save.
     @State private var showBlogStartedPrompt: Bool = false
     /// When capture is near home, show confirmation before adding. Pending (image, timestamp) to add if user taps Keep.
     @State private var showNearHomeConfirmation: Bool = false
@@ -2329,6 +2330,10 @@ struct CameraCaptureView: View {
                 showToast("Moment saved")
             }
             AppAnalytics.track(.appInAppCameraCaption)
+        }
+        if pendingBlogStartedAlert {
+            pendingBlogStartedAlert = false
+            showBlogStartedPrompt = true
         }
         exitInPlaceCaptionMode()
     }
@@ -3446,25 +3451,14 @@ struct CameraCaptureView: View {
                     .padding(.horizontal, 24)
                     .padding(.top, 24)
                     .padding(.bottom, 20)
-                HStack(spacing: 16) {
-                    Button("Ok") {
-                        showBlogStartedPrompt = false
-                    }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity)
-                    Button("View") {
-                        showBlogStartedPrompt = false
-                        if let id = sessionSourceTripId {
-                            onNavigateToBlog?(id)
-                        }
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.blue, in: RoundedRectangle(appChromeBaseRadius: 10))
+                Button("Close") {
+                    showBlogStartedPrompt = false
                 }
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Color.blue, in: RoundedRectangle(appChromeBaseRadius: 10))
                 .padding(.horizontal, 20)
                 .padding(.bottom, 24)
             }
@@ -4232,7 +4226,7 @@ extension CameraCaptureView {
                 sessionTripTitle = blog.title
             }
         }
-        showBlogStartedPrompt = true
+        pendingBlogStartedAlert = true
         // So exit toast shows "X moments added to [Blog Name]" even if user exits before injection completes.
         attachedCountThisSession = momentCount(from: sessionMoments)
         // Clear sessionMoments so the counter and gallery switch to sessionCapturesForDisplay,
@@ -4285,6 +4279,7 @@ extension CameraCaptureView {
         // Switch UI to blog flow immediately so counter and gallery use sessionCapturesForDisplay.
         attachedCountThisSession = momentCount(from: sessionMoments)
         sessionMoments = []
+        pendingBlogStartedAlert = true
         let location = cameraController.currentLocation
         Task { @MainActor in
             let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
@@ -4356,7 +4351,12 @@ extension CameraCaptureView {
             sessionSourceTripId = tripId
             sessionTripTitle = title
             attachedCountThisSession = photos.count
-            showBlogStartedPrompt = true
+            // Inject any photos captured while this async Task was running (geocoding delay).
+            let lateArrivals = sessionMoments.filter { $0.previewImage != nil }
+            sessionMoments = []
+            for pending in lateArrivals {
+                injectCapturedImageIntoBlog(pending.previewImage, at: pending.timestamp, sourceTripId: tripId, momentId: pending.id, vibeURL: pending.vibeURL)
+            }
         }
     }
 

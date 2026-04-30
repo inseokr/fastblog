@@ -899,6 +899,9 @@ final class CreatedRecapBlogStore: ObservableObject {
                     saveBlogDetail(geocodedDetail, asDraft: true)
                 }
                 await applyPhotoQualitySelectionForBlog(sourceTripId: sourceTripId, dayIndices: Array(modifiedDayIndices))
+                // New days injected from in-app camera have isPlaceNamesResolved = false by default.
+                // continueGeocodingDays is only called on initial load, so trigger it here to resolve them.
+                await continueGeocodingDays(blogId: sourceTripId)
             }
         }
 
@@ -2688,7 +2691,9 @@ final class CreatedRecapBlogStore: ObservableObject {
             for stopIdx in updated.days[dayIdx].placeStops.indices {
                 if Task.isCancelled { return updated }
                 let photos = updated.days[dayIdx].placeStops[stopIdx].photos
+                // Exclude in-app camera captures — they have no PHAsset and cannot be scored via Vision.
                 let identifiers = photos.compactMap(\.localIdentifier)
+                    .filter { !$0.hasPrefix(AppCapturePhotoService.prefix) }
                 guard !identifiers.isEmpty else { continue }
 
                 let scores = await scorer.scorePhotos(identifiers: identifiers)
@@ -3031,6 +3036,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                 if Task.isCancelled { return }
 
                 let identifiers = detail.days[dayIdx].placeStops[stopIdx].photos.compactMap(\.localIdentifier)
+                    .filter { !$0.hasPrefix(AppCapturePhotoService.prefix) }
                 guard !identifiers.isEmpty else { continue }
 
                 let scores = await scorer.scorePhotos(identifiers: identifiers)

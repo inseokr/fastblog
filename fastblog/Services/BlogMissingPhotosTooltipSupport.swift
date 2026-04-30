@@ -35,6 +35,9 @@ enum BlogMissingPhotosEvaluator {
     ) -> Bool {
         guard isSignedIn, !isSuppressedForBlog else { return false }
         guard ownerScope == .account else { return false }
+        // With Limited Photos access, on-device camera shots may not be resolvable by localIdentifier.
+        // Avoid falsely claiming photos are from another device in that permission mode.
+        guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized else { return false }
         return blogHasMissingOrNoResolvablePhotos(detail: detail, recapSummary: recapSummary)
     }
 

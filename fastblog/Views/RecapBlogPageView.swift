@@ -2384,10 +2384,10 @@ struct RecapBlogPageView: View {
         .accessibilityLabel("Open In-App Camera")
     }
 
-    /// True only for the currently active on-the-go blog; concluded blogs never show quick capture.
+    /// Shows quick capture only while the recap is truly "on the go":
+    /// latest included photo was taken within the last 24 hours.
     private var shouldShowRecapCameraQuickCapture: Bool {
-        guard OnTheGoTripStore.activeBlogId == blogId else { return false }
-        return OnTheGoTripStore.isTripStillOngoing()
+        isOnTheGoBlogForRescan
     }
 
     private func openCameraCaptureFromRecap() {
