@@ -1947,13 +1947,13 @@ struct RecapBlogPageView: View {
                         heroHeight: geo.size.height,
                         measuredTitleHeight: coverHeroMeasuredTitleHeight
                     )
-                    let viewModeLift: CGFloat = 12
+                    let coverContentLift: CGFloat = 18
 
                     if isEditMode {
                         // Edit mode: vertically center the title on the cover; keep 20pt before Change Cover.
                         VStack(spacing: 0) {
                             Spacer()
-                                .frame(height: max(0, titleTopInset - viewModeLift))
+                                .frame(height: max(0, titleTopInset - coverContentLift))
                             VStack(spacing: 20) {
                                 HStack {
                                     Spacer(minLength: 0)
@@ -2030,7 +2030,7 @@ struct RecapBlogPageView: View {
                         // View mode: title vertically centered on the cover; same 14pt / 6pt spacing below the title.
                         VStack(spacing: 0) {
                             Spacer()
-                                .frame(height: titleTopInset)
+                                .frame(height: max(0, titleTopInset - coverContentLift))
                             VStack(spacing: 14) {
                                 Text(draft.title)
                                     .font(.blog(selectedBlogFont, size: 30, bold: true))
