@@ -216,7 +216,6 @@ struct PlaceStopRowView: View {
     @State private var expandedCaptionPhotoId: UUID? = nil
     @State private var isOverallStoryExpanded = false
     @State private var isOverallStoryTruncated = false
-    @State private var isPhotoStripExpanded = false
     // Vibe playback for blog photo thumbnails
     @StateObject private var vibePlayer = VibePlayer()
     @State private var playingVibePhotoId: UUID? = nil
@@ -297,13 +296,29 @@ struct PlaceStopRowView: View {
         }
     }
 
-    /// Photo size in strip — 80% of screen width so one photo is prominent and the next peeks on the right.
-    private var thumbnailSize: CGFloat { UIScreen.main.bounds.width * 0.8 }
     /// Returns the local vibe audio URL for a photo if it was captured with the in-app camera.
     private func vibeURL(for photo: RecapPhoto) -> URL? {
         guard let id = photo.localIdentifier,
               let captureId = AppCapturePhotoService.uuid(from: id) else { return nil }
         return AppCapturePhotoService.shared.vibeFileURL(for: captureId)
+    }
+
+    /// Horizontal strip thumbnails — ~80% of screen width per item so one photo is prominent with peek like before.
+    private var photoStripThumbnailSize: CGFloat { UIScreen.main.bounds.width * 0.8 }
+
+    /// Vertical gap between successive horizontal photo rows (each row is its own ScrollView).
+    private static let photoStripRowSpacing: CGFloat = 14
+
+    private static func chunkedPhotos(_ photos: [RecapPhoto], chunkSize: Int) -> [[RecapPhoto]] {
+        guard chunkSize > 0 else { return [photos] }
+        var rows: [[RecapPhoto]] = []
+        var index = photos.startIndex
+        while index < photos.endIndex {
+            let end = photos.index(index, offsetBy: chunkSize, limitedBy: photos.endIndex) ?? photos.endIndex
+            rows.append(Array(photos[index..<end]))
+            index = end
+        }
+        return rows
     }
 
     /// True when the focused field (place note or photo caption) has text, so Clear should be red.
@@ -319,12 +334,126 @@ struct PlaceStopRowView: View {
         stop.photos.filter(\.isIncluded).filter(\.hasDisplayableLocalBacking)
     }
 
-    private var photosForStrip: [RecapPhoto] {
-        isPhotoStripExpanded ? displayableIncludedPhotos : Array(displayableIncludedPhotos.prefix(3))
-    }
+    @ViewBuilder
+    private func stripPhotoCell(photo: RecapPhoto) -> some View {
+        let thumb = photoStripThumbnailSize
+        VStack(alignment: .leading, spacing: 6) {
+            RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 480, height: 480))
+                .aspectRatio(1, contentMode: .fill)
+                .frame(width: thumb, height: thumb)
+                .clipped()
+                .appChromeCornerRadius(8)
+                .overlay(alignment: .topLeading) {
+                    photoTimestampBadge(for: photo)
+                        .padding(.leading, 8)
+                        .padding(.top, 8)
+                }
+                .overlay(alignment: .topTrailing) {
+                    if isEditMode {
+                        Button {
+                            onRemovePhoto?(photo.id)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 30))
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(.white, Color.black.opacity(0.6))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(6)
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onPhotoTapped?(photo)
+                }
+                .overlay(alignment: .bottomLeading) {
+                    if vibeURL(for: photo) != nil {
+                        let isPlaying = playingVibePhotoId == photo.id && vibePlayer.isPlaying
+                        HStack(spacing: 5) {
+                            Button {
+                                if isPlaying {
+                                    vibePlayer.stop()
+                                    playingVibePhotoId = nil
+                                } else if let url = vibeURL(for: photo) {
+                                    playingVibePhotoId = photo.id
+                                    vibePlayer.play(url: url)
+                                }
+                            } label: {
+                                Image(systemName: "waveform")
+                                    .font(.system(size: isPlaying ? 15 : 11, weight: .semibold))
+                                    .foregroundStyle(
+                                        LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
+                                    )
+                                    .symbolEffect(.variableColor.iterative.reversing, isActive: isPlaying)
+                                    .padding(isPlaying ? 8 : 6)
+                                    .background(Color.black.opacity(0.55))
+                                    .clipShape(Circle())
+                                    .overlay(Circle().stroke(Color.green.opacity(isPlaying ? 0.85 : 0.5), lineWidth: isPlaying ? 1.5 : 1))
+                                    .scaleEffect(isPlaying ? 1.25 : 1.0)
+                                    .animation(.spring(response: 0.35, dampingFraction: 0.6), value: isPlaying)
+                            }
+                            .buttonStyle(.plain)
 
-    private var photoStripOverflowCount: Int {
-        max(0, displayableIncludedPhotos.count - 3)
+                            if !isPlaying {
+                                Button {
+                                    if let url = vibeURL(for: photo) {
+                                        playingVibePhotoId = photo.id
+                                        vibePlayer.play(url: url)
+                                    }
+                                } label: {
+                                    Text("Play Vibe")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.black.opacity(0.55))
+                                        .clipShape(Capsule())
+                                        .overlay(Capsule().stroke(Color.green.opacity(0.5), lineWidth: 1))
+                                }
+                                .buttonStyle(.plain)
+                                .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                            }
+                        }
+                        .padding(5)
+                        .animation(.easeInOut(duration: 0.2), value: isPlaying)
+                    }
+                }
+            if isEditMode {
+                Button {
+                    onCaptionTapped?(photo.id)
+                } label: {
+                    let caption = photoCaption(photo.id).wrappedValue
+                    Text(caption.isEmpty ? "Leave a story for this photo" : caption)
+                        .font(.caption)
+                        .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : rowCaptionFilled)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                        .background(rowInset)
+                        .appChromeCornerRadius(6)
+                }
+                .frame(width: thumb)
+                .buttonStyle(.plain)
+            } else if !photoCaption(photo.id).wrappedValue.isEmpty {
+                let isExpanded = expandedCaptionPhotoId == photo.id
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        expandedCaptionPhotoId = isExpanded ? nil : photo.id
+                    }
+                } label: {
+                    Text(photoCaption(photo.id).wrappedValue)
+                        .font(.blog(selectedBlogFont, size: 16))
+                        .lineSpacing(6)
+                        .foregroundColor(rowStoryReadColor)
+                        .lineLimit(isExpanded ? nil : 4)
+                        .frame(width: thumb, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: isExpanded)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(width: thumb)
     }
 
     /// Blue coachmark pill when the place name has never been manually edited (`placeTitleIsManual` is false).
@@ -724,152 +853,21 @@ struct PlaceStopRowView: View {
                     }
 
                     if !displayableIncludedPhotos.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(alignment: .top, spacing: 10) {
-                                ForEach(photosForStrip) { photo in
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        RecapPhotoThumbnail(photo: photo, cornerRadius: 8, showIcon: false, targetSize: CGSize(width: 480, height: 480))
-                                            .aspectRatio(1, contentMode: .fill)
-                                            .frame(width: thumbnailSize, height: thumbnailSize)
-                                            .clipped()
-                                            .appChromeCornerRadius(8)
-                                            .overlay(alignment: .topLeading) {
-                                                photoTimestampBadge(for: photo)
-                                                    .padding(.leading, 8)
-                                                    .padding(.top, 8)
-                                            }
-                                            .overlay(alignment: .topTrailing) {
-                                                if isEditMode {
-                                                    Button {
-                                                        onRemovePhoto?(photo.id)
-                                                    } label: {
-                                                        Image(systemName: "xmark.circle.fill")
-                                                            .font(.system(size: 30))
-                                                            .symbolRenderingMode(.palette)
-                                                            .foregroundStyle(.white, Color.black.opacity(0.6))
-                                                    }
-                                                    .buttonStyle(.plain)
-                                                    .padding(6)
-                                                }
-                                            }
-                                            .contentShape(Rectangle())
-                                            .onTapGesture {
-                                                onPhotoTapped?(photo)
-                                            }
-                                        .overlay(alignment: .bottomLeading) {
-                                            if vibeURL(for: photo) != nil {
-                                                let isPlaying = playingVibePhotoId == photo.id && vibePlayer.isPlaying
-                                                HStack(spacing: 5) {
-                                                    Button {
-                                                        if isPlaying {
-                                                            vibePlayer.stop()
-                                                            playingVibePhotoId = nil
-                                                        } else {
-                                                            if let url = vibeURL(for: photo) {
-                                                                playingVibePhotoId = photo.id
-                                                                vibePlayer.play(url: url)
-                                                            }
-                                                        }
-                                                    } label: {
-                                                        Image(systemName: "waveform")
-                                                            .font(.system(size: isPlaying ? 15 : 11, weight: .semibold))
-                                                            .foregroundStyle(
-                                                                LinearGradient(colors: [.cyan, .green], startPoint: .top, endPoint: .bottom)
-                                                            )
-                                                            .symbolEffect(.variableColor.iterative.reversing, isActive: isPlaying)
-                                                            .padding(isPlaying ? 8 : 6)
-                                                            .background(Color.black.opacity(0.55))
-                                                            .clipShape(Circle())
-                                                            .overlay(Circle().stroke(Color.green.opacity(isPlaying ? 0.85 : 0.5), lineWidth: isPlaying ? 1.5 : 1))
-                                                            .scaleEffect(isPlaying ? 1.25 : 1.0)
-                                                            .animation(.spring(response: 0.35, dampingFraction: 0.6), value: isPlaying)
-                                                    }
-                                                    .buttonStyle(.plain)
-
-                                                    if !isPlaying {
-                                                        Button {
-                                                            if let url = vibeURL(for: photo) {
-                                                                playingVibePhotoId = photo.id
-                                                                vibePlayer.play(url: url)
-                                                            }
-                                                        } label: {
-                                                            Text("Play Vibe")
-                                                                .font(.system(size: 11, weight: .semibold))
-                                                                .foregroundColor(.white)
-                                                                .padding(.horizontal, 8)
-                                                                .padding(.vertical, 4)
-                                                                .background(Color.black.opacity(0.55))
-                                                                .clipShape(Capsule())
-                                                                .overlay(Capsule().stroke(Color.green.opacity(0.5), lineWidth: 1))
-                                                        }
-                                                        .buttonStyle(.plain)
-                                                        .transition(.opacity.combined(with: .scale(scale: 0.85)))
-                                                    }
-                                                }
-                                                .padding(5)
-                                                .animation(.easeInOut(duration: 0.2), value: isPlaying)
-                                            }
-                                        }
-                                        .overlay {
-                                            let isLastCollapsed = !isPhotoStripExpanded && photoStripOverflowCount > 0 && photo.id == photosForStrip.last?.id
-                                            if isLastCollapsed {
-                                                ZStack {
-                                                    Color.black.opacity(0.55)
-                                                    Text("+\(photoStripOverflowCount)")
-                                                        .font(.system(size: 28, weight: .semibold))
-                                                        .foregroundColor(.white)
-                                                }
-                                                .appChromeCornerRadius(8)
-                                                .contentShape(Rectangle())
-                                                .onTapGesture {
-                                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                                                        isPhotoStripExpanded = true
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        if isEditMode {
-                                            Button {
-                                                onCaptionTapped?(photo.id)
-                                            } label: {
-                                                let caption = photoCaption(photo.id).wrappedValue
-                                                Text(caption.isEmpty ? "Leave a story for this photo" : caption)
-                                                    .font(.caption)
-                                                    .foregroundColor(caption.isEmpty ? .secondary.opacity(0.8) : rowCaptionFilled)
-                                                    .lineLimit(2)
-                                                    .multilineTextAlignment(.leading)
-                                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                                    .padding(8)
-                                                    .background(rowInset)
-                                                    .appChromeCornerRadius(6)
-                                            }
-                                            .frame(width: thumbnailSize)
-                                            .buttonStyle(.plain)
-                                        } else if !photoCaption(photo.id).wrappedValue.isEmpty {
-                                            let isExpanded = expandedCaptionPhotoId == photo.id
-                                            Button {
-                                                withAnimation(.easeInOut(duration: 0.2)) {
-                                                    expandedCaptionPhotoId = isExpanded ? nil : photo.id
-                                                }
-                                            } label: {
-                                                Text(photoCaption(photo.id).wrappedValue)
-                                                    .font(.blog(selectedBlogFont, size: 16))
-                                                    .lineSpacing(6)
-                                                    .foregroundColor(rowStoryReadColor)
-                                                    .lineLimit(isExpanded ? nil : 4)
-                                                    .frame(width: thumbnailSize, alignment: .leading)
-                                                    .fixedSize(horizontal: false, vertical: isExpanded)
-                                            }
-                                            .buttonStyle(.plain)
+                        let photoRows = Self.chunkedPhotos(displayableIncludedPhotos, chunkSize: 3)
+                        VStack(alignment: .leading, spacing: Self.photoStripRowSpacing) {
+                            ForEach(Array(photoRows.enumerated()), id: \.offset) { _, rowPhotos in
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(alignment: .top, spacing: 10) {
+                                        ForEach(rowPhotos) { photo in
+                                            stripPhotoCell(photo: photo)
+                                                .id(photo.id)
                                         }
                                     }
-                                    .frame(width: thumbnailSize)
-                                    .id(photo.id)
+                                    .padding(.trailing, 16)
                                 }
+                                .frame(minHeight: isEditMode ? photoStripThumbnailSize + 56 : photoStripThumbnailSize + 28)
                             }
-                            .padding(.trailing, 16)
                         }
-                        .frame(minHeight: isEditMode ? thumbnailSize + 56 : thumbnailSize + 28)
                     }
                     if isEditMode, let onManagePhotos {
                         Button(action: onManagePhotos) {

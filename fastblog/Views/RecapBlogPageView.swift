@@ -6993,12 +6993,10 @@ private struct NewMomentsReviewSheet: View {
         let thumbSpacing: CGFloat = 8
         let thumbCorner: CGFloat = 10
         let contentSpacing: CGFloat = 12
-        let displayedPhotos = Array(group.photos.prefix(3))
-        let extraCount = group.photos.count - 3
-        let stripWidth: CGFloat = {
-            guard !displayedPhotos.isEmpty else { return 0 }
-            return CGFloat(displayedPhotos.count) * thumbSize + CGFloat(displayedPhotos.count - 1) * thumbSpacing
-        }()
+        let photoRows = chunkedPhotos(group.photos, chunkSize: 3)
+        let rowCount = max(photoRows.count, 1)
+        let gridHeight = CGFloat(rowCount) * thumbSize + CGFloat(max(rowCount - 1, 0)) * thumbSpacing
+        let gridWidth = thumbSize * 3 + thumbSpacing * 2
         return Button {
             withAnimation(.easeInOut(duration: 0.2)) {
                 if isHidden {
@@ -7009,13 +7007,16 @@ private struct NewMomentsReviewSheet: View {
             }
         } label: {
             HStack(alignment: .top, spacing: contentSpacing) {
-                // Photo strip: fixed row height so 1 vs 3 thumbs share the same top edge and scale.
-                HStack(spacing: thumbSpacing) {
-                    ForEach(displayedPhotos) { photo in
-                        newMomentThumbnail(photo: photo, size: thumbSize, cornerRadius: thumbCorner)
+                VStack(alignment: .leading, spacing: thumbSpacing) {
+                    ForEach(Array(photoRows.enumerated()), id: \.offset) { _, rowPhotos in
+                        HStack(spacing: thumbSpacing) {
+                            ForEach(rowPhotos) { photo in
+                                newMomentThumbnail(photo: photo, size: thumbSize, cornerRadius: thumbCorner)
+                            }
+                        }
                     }
                 }
-                .frame(width: stripWidth, height: thumbSize, alignment: .topLeading)
+                .frame(width: gridWidth, height: gridHeight, alignment: .topLeading)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(group.placeKey)
@@ -7025,14 +7026,9 @@ private struct NewMomentsReviewSheet: View {
                     Text(newMomentsTimeFormatter.string(from: group.earliestTimestamp))
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.secondary)
-                    if extraCount > 0 {
-                        Text("+\(extraCount) more")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.secondary)
-                    }
                     Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, minHeight: thumbSize, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: gridHeight, alignment: .topLeading)
 
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
@@ -7041,7 +7037,7 @@ private struct NewMomentsReviewSheet: View {
                         .foregroundColor(isHidden ? .green : .secondary)
                     Spacer(minLength: 0)
                 }
-                .frame(width: 40, height: thumbSize)
+                .frame(width: 40, height: gridHeight)
                 .contentShape(Rectangle())
             }
             .padding(12)
@@ -7057,6 +7053,18 @@ private struct NewMomentsReviewSheet: View {
         }
         .buttonStyle(.plain)
         .opacity(isHidden ? 0.35 : 1.0)
+    }
+
+    private func chunkedPhotos(_ photos: [MockPhoto], chunkSize: Int) -> [[MockPhoto]] {
+        guard chunkSize > 0 else { return [photos] }
+        var rows: [[MockPhoto]] = []
+        var index = 0
+        while index < photos.count {
+            let endIndex = min(index + chunkSize, photos.count)
+            rows.append(Array(photos[index..<endIndex]))
+            index += chunkSize
+        }
+        return rows
     }
 }
 
