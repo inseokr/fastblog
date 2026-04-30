@@ -1229,6 +1229,7 @@ struct RecapBlogPageView: View {
                 photoGroups: photoGroups,
                 blogId: blogId,
                 blogTitle: draft.title,
+                startInGallery: true,
                 onDismiss: { showPanorama = false },
                 onAppCaptureDeletedFromSlideshow: { identifier in
                     removeAppCapturePhotoFromSlideshow(identifier: identifier)
@@ -1946,12 +1947,13 @@ struct RecapBlogPageView: View {
                         heroHeight: geo.size.height,
                         measuredTitleHeight: coverHeroMeasuredTitleHeight
                     )
+                    let viewModeLift: CGFloat = 12
 
                     if isEditMode {
                         // Edit mode: vertically center the title on the cover; keep 20pt before Change Cover.
                         VStack(spacing: 0) {
                             Spacer()
-                                .frame(height: titleTopInset)
+                                .frame(height: max(0, titleTopInset - viewModeLift))
                             VStack(spacing: 20) {
                                 HStack {
                                     Spacer(minLength: 0)
@@ -2154,8 +2156,12 @@ struct RecapBlogPageView: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 guard !isCoverPending, displayCoverId != nil else { return }
-                coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
-                showCoverPhotoPicker = true
+                if isEditMode {
+                    coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
+                    showCoverPhotoPicker = true
+                } else {
+                    showPanorama = true
+                }
             }
         }
         .onPreferenceChange(CoverHeroTitleHeightPreferenceKey.self) { h in

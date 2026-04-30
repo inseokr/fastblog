@@ -51,11 +51,31 @@ struct PanoramaPlayerView: View {
     let blogId: UUID
     /// Shown centered on the gallery hero (matches recap cover title treatment).
     let blogTitle: String
+    /// When true, present the gallery overlay immediately instead of starting on slideshow playback.
+    var startInGallery: Bool = false
     var onDismiss: () -> Void
     /// When the user deletes an in-app capture (`bloggo-capture:` id) from the slideshow gallery full-screen viewer.
     var onAppCaptureDeletedFromSlideshow: ((String) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
+
+    init(
+        photoGroups: [[PanoramaPhotoEntry]],
+        blogId: UUID,
+        blogTitle: String,
+        startInGallery: Bool = false,
+        onDismiss: @escaping () -> Void,
+        onAppCaptureDeletedFromSlideshow: ((String) -> Void)? = nil
+    ) {
+        self.photoGroups = photoGroups
+        self.blogId = blogId
+        self.blogTitle = blogTitle
+        self.startInGallery = startInGallery
+        self.onDismiss = onDismiss
+        self.onAppCaptureDeletedFromSlideshow = onAppCaptureDeletedFromSlideshow
+        _isPlaying = State(initialValue: !startInGallery)
+        _showGallery = State(initialValue: startInGallery)
+    }
 
     // MARK: - Image cache (keyed by asset identifier)
     @State private var loadedImages: [String: UIImage] = [:]
@@ -89,6 +109,8 @@ struct PanoramaPlayerView: View {
 
     // MARK: - Gallery
     @State private var showGallery: Bool = false
+    /// True only when dismissing gallery via Play; switches transition to fade instead of swipe-down.
+    @State private var useFadeForGalleryTransition = false
     @State private var wasPlayingBeforeGallery: Bool = false
     /// Full-screen photo paging within the gallery overlay (grid tap); `nil` = grid / hero visible.
     @State private var galleryDetailPhotoId: String?
@@ -231,11 +253,14 @@ struct PanoramaPlayerView: View {
             // Gallery panel — slides up from bottom
             if showGallery {
                 galleryOverlay
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(
+                        useFadeForGalleryTransition
+                            ? .opacity
+                            : .move(edge: .bottom).combined(with: .opacity)
+                    )
                     .zIndex(20)
             }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showGallery)
         .animation(.easeInOut(duration: 0.28), value: galleryDetailPhotoId)
         .sheet(isPresented: $showMusicPicker) {
             SlideshowBundledTrackPickerSheet(
@@ -514,24 +539,15 @@ struct PanoramaPlayerView: View {
     private var topBar: some View {
         HStack(alignment: .center, spacing: 10) {
 
-            // Close
+            // Close (slideshow -> gallery)
             Button {
-                stopTimer()
-                Task { @MainActor in
-                    await slideshowMusic.stopAll()
-                    dismiss()
-                    onDismiss()
-                }
+                presentSlideshowGallery()
             } label: {
-                ZStack {
-                    Circle().fill(.black.opacity(0.6))
-                    Circle().strokeBorder(.white.opacity(0.25), lineWidth: 0.5)
-                    Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.white)
-                }
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
+                Text("Close")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
@@ -625,6 +641,7 @@ struct PanoramaPlayerView: View {
     // MARK: - Gallery overlay
 
     private func presentSlideshowGallery() {
+        useFadeForGalleryTransition = false
         wasPlayingBeforeGallery = isPlaying
         stopTimer()
         if isPlaying {
@@ -657,6 +674,21 @@ struct PanoramaPlayerView: View {
         GeometryReader { geo in
             let coverHeight = geo.size.height * Self.coverHeroHeightFraction
             let allPhotos = photoGroups.flatMap { $0 }
+            let groupedPhotosByPlace: [(placeName: String, photos: [PanoramaPhotoEntry])] = {
+                var orderedGroups: [(placeName: String, photos: [PanoramaPhotoEntry])] = []
+                for entry in allPhotos {
+                    let normalizedPlace = {
+                        let trimmed = entry.placeName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        return trimmed.isEmpty ? "Unknown Place" : trimmed
+                    }()
+                    if let idx = orderedGroups.firstIndex(where: { $0.placeName == normalizedPlace }) {
+                        orderedGroups[idx].photos.append(entry)
+                    } else {
+                        orderedGroups.append((placeName: normalizedPlace, photos: [entry]))
+                    }
+                }
+                return orderedGroups
+            }()
             let heroPhotoId: String? = {
                 guard currentFlatIndex >= 0, currentFlatIndex < allPhotos.count else { return nil }
                 return allPhotos[currentFlatIndex].id
@@ -724,10 +756,15 @@ struct PanoramaPlayerView: View {
                                     .padding(.horizontal, 24)
 
                                 Button {
-                                    dismissSlideshowGallery()
-                                    isPlaying = true
-                                    resumeSlideshowTimingIfPlaying()
-                                    Task { await slideshowMusic.resume() }
+                                    useFadeForGalleryTransition = true
+                                    DispatchQueue.main.async {
+                                        withAnimation(.easeInOut(duration: 0.22)) {
+                                            showGallery = false
+                                        }
+                                        isPlaying = true
+                                        resumeSlideshowTimingIfPlaying()
+                                        Task { await slideshowMusic.resume() }
+                                    }
                                 } label: {
                                     HStack(spacing: 8) {
                                         Image(systemName: "play.fill")
@@ -754,46 +791,57 @@ struct PanoramaPlayerView: View {
                         }
                         .padding(.bottom, 16)
 
-                        Text("All Photos")
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 18)
-                            .padding(.bottom, 10)
+                        VStack(alignment: .leading, spacing: 18) {
+                            ForEach(groupedPhotosByPlace, id: \.placeName) { group in
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text(group.placeName)
+                                        .font(.headline)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 18)
 
-                        LazyVGrid(columns: Self.galleryGridColumns, spacing: 2) {
-                            ForEach(allPhotos.indices, id: \.self) { idx in
-                                GeometryReader { cellGeo in
-                                    GalleryThumbCell(
-                                        entry: allPhotos[idx],
-                                        loadedImages: loadedImages,
-                                        isCurrentPhoto: idx == currentFlatIndex
-                                    )
-                                    .frame(width: cellGeo.size.width, height: cellGeo.size.width)
-                                    .clipped()
-                                }
-                                .aspectRatio(1, contentMode: .fit)
-                                .onTapGesture {
-                                    galleryDetailPhotoId = allPhotos[idx].id
+                                    LazyVGrid(columns: Self.galleryGridColumns, spacing: 2) {
+                                        ForEach(group.photos, id: \.id) { photo in
+                                            GeometryReader { cellGeo in
+                                                GalleryThumbCell(
+                                                    entry: photo,
+                                                    loadedImages: loadedImages,
+                                                    isCurrentPhoto: photo.id == heroPhotoId
+                                                )
+                                                .frame(width: cellGeo.size.width, height: cellGeo.size.width)
+                                                .clipped()
+                                            }
+                                            .aspectRatio(1, contentMode: .fit)
+                                            .onTapGesture {
+                                                galleryDetailPhotoId = photo.id
+                                            }
+                                        }
+                                    }
+                                    .padding(2)
                                 }
                             }
                         }
-                        .padding(2)
 
                         Color.clear
                             .frame(height: geo.safeAreaInsets.bottom + 16)
                     }
                 }
 
-                // Close gallery — same role as tapping the dimmed area in the old sheet
+                // Exit slideshow from gallery
                 Button {
-                    dismissSlideshowGallery()
+                    stopTimer()
+                    Task { @MainActor in
+                        await slideshowMusic.stopAll()
+                        dismiss()
+                        onDismiss()
+                    }
                 } label: {
-                    Text("Close")
+                    Image(systemName: "xmark")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
-                        .contentShape(Rectangle())
+                        .foregroundColor(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Color.black.opacity(0.5))
+                        .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .padding(.leading, 20)
