@@ -190,22 +190,6 @@ struct ProfilePageView: View {
                 Text("Bloggo")
                     .font(.system(size: 22, weight: .bold))
             }
-            if authStateManager.isLoggedIn {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task { await createdRecapStore.syncFromCloud() }
-                    } label: {
-                        if createdRecapStore.isSyncing {
-                            ProgressView()
-                                .tint(.primary)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .foregroundColor(.primary)
-                        }
-                    }
-                    .disabled(createdRecapStore.isSyncing)
-                }
-            }
         }
         .sheet(isPresented: $showShare) {
             if !shareItems.isEmpty {

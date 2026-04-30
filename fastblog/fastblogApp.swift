@@ -152,12 +152,11 @@ struct fastblogApp: App {
                         .environmentObject(authStateManager)
                         .environmentObject(createdRecapStore)
                 }
-                // Migrate anonymous drafts + import prompt on login; also kick off cloud sync.
+                // Migrate anonymous drafts + import prompt on login.
                 .onChange(of: authStateManager.authState) { _, newState in
                     if case .loggedIn(let userId) = newState {
                         createdRecapStore.importAnonymousDrafts(into: userId)
                         authStateManager.checkAndPromptImportIfNeeded()
-                        Task { await createdRecapStore.syncFromCloud() }
                         // Register any pending APNs token now that the user has an account.
                         Task {
                             let isDenied = await DraftReminderNotificationManager.handlePostLoginSetup()
@@ -289,9 +288,6 @@ struct fastblogApp: App {
                 AppAnalytics.shared.flushOnBackground()
                 Task {
                     createdRecapStore.enforceArchiveRules()
-                    if authStateManager.isLoggedIn {
-                        await createdRecapStore.syncFromCloud()
-                    }
                 }
             }
         }

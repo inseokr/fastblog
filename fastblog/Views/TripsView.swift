@@ -3101,9 +3101,11 @@ struct CameraCaptureView: View {
             attachedCountThisSession = 0
             sessionTripTitle = nil
             sessionSourceTripId = nil
+            sessionDraftTripId = nil
+            hasOfferedStartBlogThisSession = false
+            pendingBlogStartedAlert = false
             lastCaptureWasVibe = false
             if vibeEnabled { vibeRecorder.start() }
-            sessionDraftTripId = nil
             isCaptionModeActive = false
             captionModeMomentId = nil
             captionModeFrozenImage = nil
