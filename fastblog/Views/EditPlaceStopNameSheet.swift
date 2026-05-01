@@ -50,8 +50,7 @@ struct EditPlaceStopNameSheet: View {
     /// Tracks the in-flight Kakao POI resolution task so a new tap can cancel and replace it.
     @State private var kakaoResolveTask: Task<Void, Never>?
     @State private var isSavingName = false
-    /// One-time coachmark for “tap the map to fill the place name” (shown until dismissed or the user taps the map).
-    @AppStorage("blogify.editPlaceMapTapCoachmarkSeen") private var mapTapCoachmarkSeen = false
+    /// One-time coachmark for "tap the map to fill the place name" (scoped per signed-in user, or guest).
     @State private var showMapTapCoachmarkSheet = false
     @AppStorage("blogify.koreaMapPreference") private var koreaMapPreference = ""
     @State private var showKoreaMapPrompt = false
@@ -196,7 +195,7 @@ struct EditPlaceStopNameSheet: View {
                 mapTapResolvedAsPOI = false
                 pickedFromAutocomplete = false
                 searchViewModel.setBiasLocation(location)
-                if location != nil, !mapTapCoachmarkSeen {
+                if location != nil, !hasSeenMapTapCoachmark {
                     showMapTapCoachmarkSheet = true
                 }
                 if let coord = location {
@@ -214,10 +213,10 @@ struct EditPlaceStopNameSheet: View {
                 }
             }
             .onChange(of: isResolvingPOI) { _, resolving in
-                if resolving { mapTapCoachmarkSeen = true }
+                if resolving { markMapTapCoachmarkSeen() }
             }
             .sheet(isPresented: $showMapTapCoachmarkSheet, onDismiss: {
-                mapTapCoachmarkSeen = true
+                markMapTapCoachmarkSeen()
             }) {
                 mapTapCoachmarkSheetContent
                     .presentationDetents([.medium])
@@ -437,6 +436,19 @@ struct EditPlaceStopNameSheet: View {
             .padding(.bottom, 24)
         }
         .padding(.top, 24)
+    }
+
+    private var mapTapCoachmarkSeenKey: String {
+        let scope = AuthService.shared.currentUser?.id ?? "guest"
+        return "blogify.editPlaceMapTapCoachmarkSeen.\(scope)"
+    }
+
+    private var hasSeenMapTapCoachmark: Bool {
+        UserDefaults.standard.bool(forKey: mapTapCoachmarkSeenKey)
+    }
+
+    private func markMapTapCoachmarkSeen() {
+        UserDefaults.standard.set(true, forKey: mapTapCoachmarkSeenKey)
     }
 
     /// Returning users: small reminder aligned with the map chrome.

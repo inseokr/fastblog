@@ -31,6 +31,8 @@ struct BlogVideoExportOptionsSheet: View {
                 VStack(spacing: 20) {
                     durationSection
                     musicSection
+                    dayMapSection
+                    timestampSection
                 }
                 .padding(20)
                 .padding(.bottom, 8)
@@ -49,7 +51,10 @@ struct BlogVideoExportOptionsSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button { dismiss() } label: {
+                    Button {
+                        persistOptions()
+                        dismiss()
+                    } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 14))
                             .foregroundColor(.white)
@@ -76,6 +81,10 @@ struct BlogVideoExportOptionsSheet: View {
         .onAppear {
             options = (try? JSONDecoder().decode(BlogVideoExportOptions.self, from: optionsData))
                 ?? BlogVideoExportOptions()
+        }
+        .onDisappear {
+            // Persist edits even when user closes settings without exporting.
+            persistOptions()
         }
     }
 
@@ -136,6 +145,46 @@ struct BlogVideoExportOptionsSheet: View {
 
     // MARK: - Export Button
 
+    private var timestampSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Timestamps", icon: "clock")
+            Toggle(isOn: $options.includeTimestamps) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Include timestamps")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.primary)
+                    Text("Show centered 24-hour capture time on each exported slide.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .toggleStyle(.switch)
+            .padding(14)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .appChromeCornerRadius(12)
+        }
+    }
+
+    private var dayMapSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Daily Map Intro", icon: "map")
+            Toggle(isOn: $options.includeDailyMapIntro) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Show day route maps")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.primary)
+                    Text("Add a zoomed-out map slide before each day's photos.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .toggleStyle(.switch)
+            .padding(14)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .appChromeCornerRadius(12)
+        }
+    }
+
     private var progressLabel: String {
         if progress < 0.1  { return "Loading photos…" }
         if progress < 0.62 { return "Rendering slideshow…" }
@@ -178,7 +227,7 @@ struct BlogVideoExportOptionsSheet: View {
 
     @MainActor
     private func startExport() {
-        if let data = try? JSONEncoder().encode(options) { optionsData = data }
+        persistOptions()
         isExporting = true
         progress = 0.02
 
@@ -201,6 +250,12 @@ struct BlogVideoExportOptionsSheet: View {
                 exportError = error.localizedDescription
                 showError = true
             }
+        }
+    }
+
+    private func persistOptions() {
+        if let data = try? JSONEncoder().encode(options) {
+            optionsData = data
         }
     }
 

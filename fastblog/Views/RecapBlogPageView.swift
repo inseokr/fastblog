@@ -270,6 +270,7 @@ struct RecapBlogPageView: View {
     @State private var storyStatusBarColorScheme: ColorScheme = .dark
     @State private var pendingStoryOpen = false
     @AppStorage("pdfExportOptions") private var pdfExportOptionsData: Data = (try? JSONEncoder().encode(PDFExportOptions())) ?? Data()
+    @AppStorage("blogVideoExportOptions") private var blogVideoExportOptionsData: Data = (try? JSONEncoder().encode(BlogVideoExportOptions())) ?? Data()
     @State private var showProfileManagement = false
     @State private var showRestorePlaces = false
     /// Tracks whether AI auto-fill is running so we don't show the blog as empty during generation.
@@ -317,6 +318,10 @@ struct RecapBlogPageView: View {
 
     private var pdfExportOptions: PDFExportOptions {
         (try? JSONDecoder().decode(PDFExportOptions.self, from: pdfExportOptionsData)) ?? PDFExportOptions()
+    }
+
+    private var slideshowPlaybackOptions: BlogVideoExportOptions {
+        (try? JSONDecoder().decode(BlogVideoExportOptions.self, from: blogVideoExportOptionsData)) ?? BlogVideoExportOptions()
     }
 
     /// Matches story book backdrop so the recap page never flashes the wrong color behind Story mode.
@@ -1204,10 +1209,41 @@ struct RecapBlogPageView: View {
 
     @ViewBuilder
     private func panoramaOverlayLayer() -> some View {
-        // Build one group per PlaceStop so diptych never mixes places.
-        let groups: [[PanoramaPhotoEntry]] = draft.days
-            .flatMap(\.placeStops)
-            .compactMap { stop -> [PanoramaPhotoEntry]? in
+        let panoramaData = buildPanoramaOverlayData()
+        if !panoramaData.photoGroups.isEmpty {
+            PanoramaPlayerView(
+                photoGroups: panoramaData.photoGroups,
+                mapIntroSlides: panoramaData.mapIntroSlides,
+                includeTimestamps: panoramaData.includeTimestamps,
+                blogId: blogId,
+                blogTitle: draft.title,
+                startInGallery: panoramaStartInGallery,
+                onDismiss: {
+                    showPanorama = false
+                    panoramaStartInGallery = false
+                },
+                onAppCaptureDeletedFromSlideshow: { identifier in
+                    removeAppCapturePhotoFromSlideshow(identifier: identifier)
+                },
+                onDownloadTap: {
+                    showVideoExportOptions = true
+                }
+            )
+        }
+    }
+
+    private func buildPanoramaOverlayData() -> (
+        photoGroups: [[PanoramaPhotoEntry]],
+        mapIntroSlides: [PanoramaMapIntroSlide],
+        includeTimestamps: Bool
+    ) {
+        let includeDailyMapIntro = slideshowPlaybackOptions.includeDailyMapIntro
+        let includeTimestamps = slideshowPlaybackOptions.includeTimestamps
+        var mapIntroSlides: [PanoramaMapIntroSlide] = []
+        var assembledGroups: [[PanoramaPhotoEntry]] = []
+
+        for (dayIndex, day) in draft.days.enumerated() {
+            let placeGroups: [[PanoramaPhotoEntry]] = day.placeStops.compactMap { stop -> [PanoramaPhotoEntry]? in
                 let entries = stop.photos
                     .filter(\.isIncluded)
                     .compactMap { photo -> PanoramaPhotoEntry? in
@@ -1221,27 +1257,37 @@ struct RecapBlogPageView: View {
                     }
                 return entries.isEmpty ? nil : entries
             }
+            guard !placeGroups.isEmpty else { continue }
+
+            if includeDailyMapIntro {
+                let mapId = PanoramaMapIntroSlide.identifier(forDayID: day.id)
+                mapIntroSlides.append(
+                    PanoramaMapIntroSlide(
+                        id: mapId,
+                        dayID: day.id,
+                        dayNumber: dayIndex + 1,
+                        dayDateText: day.shortDateText,
+                        placeStops: day.placeStops
+                    )
+                )
+                assembledGroups.append([PanoramaPhotoEntry(id: mapId, caption: nil, placeName: "Day \(dayIndex + 1) Route", timestamp: nil)])
+            }
+
+            assembledGroups.append(contentsOf: placeGroups)
+        }
+
         // Fall back to cover photo when no included photos exist.
-        let photoGroups = groups.isEmpty
+        let photoGroups = assembledGroups.isEmpty
             ? draft.selectedCoverPhotoIdentifier.map {
                 [[PanoramaPhotoEntry(id: $0, caption: nil, placeName: nil, timestamp: nil)]]
             } ?? []
-            : groups
-        if !photoGroups.isEmpty {
-            PanoramaPlayerView(
-                photoGroups: photoGroups,
-                blogId: blogId,
-                blogTitle: draft.title,
-                startInGallery: panoramaStartInGallery,
-                onDismiss: {
-                    showPanorama = false
-                    panoramaStartInGallery = false
-                },
-                onAppCaptureDeletedFromSlideshow: { identifier in
-                    removeAppCapturePhotoFromSlideshow(identifier: identifier)
-                }
-            )
-        }
+            : assembledGroups
+
+        return (
+            photoGroups: photoGroups,
+            mapIntroSlides: mapIntroSlides,
+            includeTimestamps: includeTimestamps
+        )
     }
 
     private func applyFinalContentModifiers<Content: View>(to content: Content) -> some View {

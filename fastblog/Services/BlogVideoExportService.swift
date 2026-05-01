@@ -9,6 +9,10 @@ struct BlogVideoExportOptions: Codable, Equatable {
     var secondsPerSlide: Double = 3.0
     /// Filename of the bundled music track to mix in, or nil for silence.
     var musicFilename: String? = nil
+    /// When true, overlay each slide photo's capture time (24-hour) in the center.
+    var includeTimestamps: Bool = true
+    /// When true, prepend a per-day route map before each day's photos.
+    var includeDailyMapIntro: Bool = true
 }
 
 // MARK: - Service
@@ -49,8 +53,8 @@ enum BlogVideoExportService {
         options: BlogVideoExportOptions,
         progressHandler: ((Double) -> Void)? = nil
     ) async throws -> URL {
-        let groups = slideshowPhotoGroups(from: draft)
-        let specs = enumerateSlideshowSlides(groups: groups)
+        let dayGroups = slideshowDayGroups(from: draft)
+        let specs = enumerateSlideshowSlides(dayGroups: dayGroups, includeDailyMapIntro: options.includeDailyMapIntro)
         guard !specs.isEmpty else { throw ExportError.noPages }
 
         let logicalSize = CGSize(
@@ -73,8 +77,9 @@ enum BlogVideoExportService {
 
         var loaded: [String: UIImage] = [:]
         let allIds = Set(specs.flatMap { spec -> [String] in
-            if let b = spec.bottom { return [spec.top.id, b.id] }
-            return [spec.top.id]
+            guard case .photo(let photoSpec) = spec else { return [] }
+            if let b = photoSpec.bottom { return [photoSpec.top.id, b.id] }
+            return [photoSpec.top.id]
         })
         let idList = Array(allIds)
         await withTaskGroup(of: (String, UIImage?).self) { group in
@@ -89,21 +94,32 @@ enum BlogVideoExportService {
                 if let img { loaded[lid] = img }
             }
         }
+        let dayMapImages = await generateDayMapSlides(
+            dayGroups: dayGroups,
+            logicalSize: logicalSize,
+            includeDailyMapIntro: options.includeDailyMapIntro
+        )
         progressHandler?(0.08)
 
         var zoomIn = true
         var frames: [UIImage] = []
         frames.reserveCapacity(specs.count)
         for (idx, spec) in specs.enumerated() {
-            if idx > 0, spec.layout == .solo { zoomIn.toggle() }
+            if idx > 0,
+               case .photo(let photoSpec) = spec,
+               photoSpec.layout == .solo {
+                zoomIn.toggle()
+            }
             if idx % 2 == 0 { await Task.yield() }
             let image = try autoreleasepool {
                 try renderSlideshowSpecToImage(
                     spec: spec,
                     loaded: loaded,
+                    dayMapImages: dayMapImages,
                     logicalSize: logicalSize,
                     slideIndex: idx,
-                    zoomIn: zoomIn
+                    zoomIn: zoomIn,
+                    options: options
                 )
             }
             frames.append(image)
@@ -134,10 +150,19 @@ enum BlogVideoExportService {
 
     // MARK: - Slideshow sequencing (matches `RecapBlogPageView` + `PanoramaPlayerView`)
 
-    private static func slideshowPhotoGroups(from draft: RecapBlogDetail) -> [[PanoramaPhotoEntry]] {
-        let groups: [[PanoramaPhotoEntry]] = draft.days
-            .flatMap(\.placeStops)
-            .compactMap { stop -> [PanoramaPhotoEntry]? in
+    private struct DaySlideshowGroup {
+        let dayID: UUID
+        let dayNumber: Int
+        let dayDateText: String
+        let placeCount: Int
+        let photoCount: Int
+        let mapStops: [PlaceStop]
+        let photoGroups: [[PanoramaPhotoEntry]]
+    }
+
+    private static func slideshowDayGroups(from draft: RecapBlogDetail) -> [DaySlideshowGroup] {
+        let groups = draft.days.enumerated().compactMap { (dayIndex, day) -> DaySlideshowGroup? in
+            let placeGroups: [[PanoramaPhotoEntry]] = day.placeStops.compactMap { stop -> [PanoramaPhotoEntry]? in
                 let entries = stop.photos
                     .filter(\.isIncluded)
                     .compactMap { photo -> PanoramaPhotoEntry? in
@@ -151,19 +176,54 @@ enum BlogVideoExportService {
                     }
                 return entries.isEmpty ? nil : entries
             }
+            guard !placeGroups.isEmpty else { return nil }
+            let placesWithIncludedPhotos = day.placeStops.filter { !$0.includedPhotos.isEmpty }
+            return DaySlideshowGroup(
+                dayID: day.id,
+                dayNumber: dayIndex + 1,
+                dayDateText: day.shortDateText,
+                placeCount: placesWithIncludedPhotos.count,
+                photoCount: placeGroups.reduce(0) { $0 + $1.count },
+                mapStops: day.placeStops,
+                photoGroups: placeGroups
+            )
+        }
         if !groups.isEmpty { return groups }
         if let cover = draft.selectedCoverPhotoIdentifier {
-            return [[PanoramaPhotoEntry(id: cover, caption: nil, placeName: nil, timestamp: nil)]]
+            return [
+                DaySlideshowGroup(
+                    dayID: UUID(),
+                    dayNumber: 1,
+                    dayDateText: "",
+                    placeCount: 1,
+                    photoCount: 1,
+                    mapStops: [],
+                    photoGroups: [[PanoramaPhotoEntry(id: cover, caption: nil, placeName: nil, timestamp: nil)]]
+                )
+            ]
         }
         return []
     }
 
     private enum ExportSlideLayout { case solo, diptych }
 
-    private struct ExportSlideSpec {
+    private struct ExportPhotoSlideSpec {
         let layout: ExportSlideLayout
         let top: PanoramaPhotoEntry
         let bottom: PanoramaPhotoEntry?
+    }
+
+    private struct ExportDayMapSlideSpec {
+        let dayID: UUID
+        let dayNumber: Int
+        let dayDateText: String
+        let placeCount: Int
+        let photoCount: Int
+    }
+
+    private enum ExportSlideSpec {
+        case photo(ExportPhotoSlideSpec)
+        case dayMap(ExportDayMapSlideSpec)
     }
 
     /// Deterministic stand-in for `PanoramaPlayerView.chooseLayout` (which uses random when ≥2 photos remain).
@@ -188,9 +248,9 @@ enum BlogVideoExportService {
         return (ng, 0)
     }
 
-    private static func enumerateSlideshowSlides(groups: [[PanoramaPhotoEntry]]) -> [ExportSlideSpec] {
+    private static func enumeratePhotoSlides(groups: [[PanoramaPhotoEntry]]) -> [ExportPhotoSlideSpec] {
         guard !groups.isEmpty else { return [] }
-        var specs: [ExportSlideSpec] = []
+        var specs: [ExportPhotoSlideSpec] = []
         var gi = 0
         var off = 0
         var layout = chooseDeterministicLayout(
@@ -204,7 +264,7 @@ enum BlogVideoExportService {
             switch layout {
             case .solo:
                 guard off < group.count else { return specs }
-                specs.append(ExportSlideSpec(layout: .solo, top: group[off], bottom: nil))
+                specs.append(ExportPhotoSlideSpec(layout: .solo, top: group[off], bottom: nil))
                 guard let next = advanceAfterStep(groups: groups, groupIndex: gi, offset: off, step: 1) else {
                     return specs
                 }
@@ -215,7 +275,7 @@ enum BlogVideoExportService {
                     layout = .solo
                     continue
                 }
-                specs.append(ExportSlideSpec(layout: .diptych, top: group[off], bottom: group[off + 1]))
+                specs.append(ExportPhotoSlideSpec(layout: .diptych, top: group[off], bottom: group[off + 1]))
                 guard let next = advanceAfterStep(groups: groups, groupIndex: gi, offset: off, step: 2) else {
                     return specs
                 }
@@ -227,6 +287,61 @@ enum BlogVideoExportService {
                 offset: off,
                 remaining: groups[gi].count - off
             )
+        }
+    }
+
+    private static func enumerateSlideshowSlides(
+        dayGroups: [DaySlideshowGroup],
+        includeDailyMapIntro: Bool
+    ) -> [ExportSlideSpec] {
+        var specs: [ExportSlideSpec] = []
+        for day in dayGroups {
+            let photoSpecs = enumeratePhotoSlides(groups: day.photoGroups)
+            guard !photoSpecs.isEmpty else { continue }
+            if includeDailyMapIntro, !day.mapStops.isEmpty {
+                specs.append(.dayMap(
+                    ExportDayMapSlideSpec(
+                        dayID: day.dayID,
+                        dayNumber: day.dayNumber,
+                        dayDateText: day.dayDateText,
+                        placeCount: day.placeCount,
+                        photoCount: day.photoCount
+                    )
+                ))
+            }
+            specs.append(contentsOf: photoSpecs.map { .photo($0) })
+        }
+        return specs
+    }
+
+    private static func generateDayMapSlides(
+        dayGroups: [DaySlideshowGroup],
+        logicalSize: CGSize,
+        includeDailyMapIntro: Bool
+    ) async -> [UUID: UIImage] {
+        guard includeDailyMapIntro else { return [:] }
+        let days = dayGroups.filter { !$0.mapStops.isEmpty }
+        guard !days.isEmpty else { return [:] }
+
+        let mapSize = CGSize(width: logicalSize.width * 2, height: logicalSize.height * 2)
+        return await withTaskGroup(of: (UUID, UIImage?).self, returning: [UUID: UIImage].self) { group in
+            for day in days {
+                group.addTask {
+                    let image = await MapSnapshotHelper.generateSnapshot(
+                        for: day.mapStops,
+                        size: mapSize,
+                        regionPadding: 0.045,
+                        showPlaceNames: true
+                    )
+                    return (day.dayID, image)
+                }
+            }
+
+            var images: [UUID: UIImage] = [:]
+            for await (dayID, image) in group {
+                if let image { images[dayID] = image }
+            }
+            return images
         }
     }
 
@@ -245,15 +360,19 @@ enum BlogVideoExportService {
     private static func renderSlideshowSpecToImage(
         spec: ExportSlideSpec,
         loaded: [String: UIImage],
+        dayMapImages: [UUID: UIImage],
         logicalSize: CGSize,
         slideIndex: Int,
-        zoomIn: Bool
+        zoomIn: Bool,
+        options: BlogVideoExportOptions
     ) throws -> UIImage {
         let root = SlideshowExportFrameView(
             spec: spec,
             loaded: loaded,
+            dayMapImages: dayMapImages,
             size: logicalSize,
-            zoomIn: zoomIn
+            zoomIn: zoomIn,
+            includeTimestamps: options.includeTimestamps
         )
         .frame(width: logicalSize.width, height: logicalSize.height)
         .background(Color.black)
@@ -406,39 +525,111 @@ enum BlogVideoExportService {
     private struct SlideshowExportFrameView: View {
         let spec: ExportSlideSpec
         let loaded: [String: UIImage]
+        let dayMapImages: [UUID: UIImage]
         let size: CGSize
         let zoomIn: Bool
+        let includeTimestamps: Bool
+
+        private static let timestampFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = "HH:mm"
+            return formatter
+        }()
 
         var body: some View {
-            switch spec.layout {
-            case .solo:
-                soloExportView(id: spec.top.id)
-            case .diptych:
-                let paneH = (size.height - 2) / 2
-                VStack(spacing: 2) {
-                    photoFill(id: spec.top.id, width: size.width, height: paneH)
-                    photoFill(id: spec.bottom?.id, width: size.width, height: paneH)
+            switch spec {
+            case .photo(let photoSpec):
+                switch photoSpec.layout {
+                case .solo:
+                    soloExportView(entry: photoSpec.top)
+                case .diptych:
+                    let paneH = (size.height - 2) / 2
+                    VStack(spacing: 2) {
+                        photoFill(entry: photoSpec.top, width: size.width, height: paneH)
+                        photoFill(entry: photoSpec.bottom, width: size.width, height: paneH)
+                    }
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
                 }
-                .frame(width: size.width, height: size.height)
-                .clipped()
+            case .dayMap(let mapSpec):
+                dayMapView(spec: mapSpec)
             }
         }
 
         @ViewBuilder
-        private func soloExportView(id: String) -> some View {
-            let scale = BlogVideoExportService.soloKenBurnsScale(zoomIn: zoomIn, progress: 0.5)
-            photoFill(id: id, width: size.width, height: size.height, scale: scale)
+        private func dayMapView(spec: ExportDayMapSlideSpec) -> some View {
+            ZStack(alignment: .bottomLeading) {
+                if let map = dayMapImages[spec.dayID] {
+                    Image(uiImage: map)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: size.width, height: size.height)
+                        .clipped()
+                } else {
+                    Color(white: 0.18)
+                        .frame(width: size.width, height: size.height)
+                }
+
+                LinearGradient(
+                    colors: [.black.opacity(0.05), .black.opacity(0.72)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(width: size.width, height: size.height)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Day \(spec.dayNumber)")
+                        .font(.system(size: 42, weight: .heavy, design: .rounded))
+                        .foregroundColor(.white)
+                    if !spec.dayDateText.isEmpty {
+                        Text(spec.dayDateText)
+                            .font(.system(size: 24, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white.opacity(0.92))
+                    }
+                    Text("\(spec.placeCount) places visited • \(spec.photoCount) photos")
+                        .font(.system(size: 20, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.9))
+                }
+                .padding(.horizontal, 26)
+                .padding(.vertical, 24)
+            }
+            .frame(width: size.width, height: size.height)
+            .clipped()
         }
 
         @ViewBuilder
-        private func photoFill(id: String?, width: CGFloat, height: CGFloat, scale: CGFloat = 1.0) -> some View {
-            if let id, let img = loaded[id] {
+        private func soloExportView(entry: PanoramaPhotoEntry) -> some View {
+            let scale = BlogVideoExportService.soloKenBurnsScale(zoomIn: zoomIn, progress: 0.5)
+            photoFill(entry: entry, width: size.width, height: size.height, scale: scale)
+        }
+
+        @ViewBuilder
+        private func photoFill(entry: PanoramaPhotoEntry?, width: CGFloat, height: CGFloat, scale: CGFloat = 1.0) -> some View {
+            if let entry, let img = loaded[entry.id] {
                 Image(uiImage: img)
                     .resizable()
                     .scaledToFill()
                     .frame(width: width, height: height)
                     .scaleEffect(scale)
                     .clipped()
+                    .overlay {
+                        if includeTimestamps,
+                           let timestamp = entry.timestamp {
+                            Text(Self.timestampFormatter.string(from: timestamp))
+                                .font(.system(size: 24, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(.black.opacity(0.35), in: Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .stroke(.white.opacity(0.2), lineWidth: 0.5)
+                                )
+                                .shadow(color: .black.opacity(0.6), radius: 8, x: 0, y: 2)
+                                .padding(12)
+                        }
+                    }
             } else {
                 Color.gray.opacity(0.35)
                     .frame(width: width, height: height)

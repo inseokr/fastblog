@@ -24,6 +24,20 @@ struct PanoramaPhotoEntry: Equatable {
     let timestamp: Date?
 }
 
+struct PanoramaMapIntroSlide: Equatable {
+    let id: String
+    let dayID: UUID
+    let dayNumber: Int
+    let dayDateText: String
+    let placeStops: [PlaceStop]
+
+    static let identifierPrefix = "bloggo-map-intro:"
+
+    static func identifier(forDayID dayID: UUID) -> String {
+        "\(identifierPrefix)\(dayID.uuidString.lowercased())"
+    }
+}
+
 // MARK: - Layout variant (solo or top/bottom diptych only)
 
 private enum SlideLayout: Equatable {
@@ -47,6 +61,10 @@ private enum DiptychHalf {
 struct PanoramaPlayerView: View {
     /// Photos grouped by place (PlaceStop). Each inner array = one place.
     let photoGroups: [[PanoramaPhotoEntry]]
+    /// Optional generated map intro pages inserted into `photoGroups` by ID.
+    let mapIntroSlides: [PanoramaMapIntroSlide]
+    /// Mirrors video export option: centered timestamp badges on slideshow frames.
+    let includeTimestamps: Bool
     /// Used to persist the chosen slideshow track for this recap (`UserDefaults`, keyed by blog).
     let blogId: UUID
     /// Shown centered on the gallery hero (matches recap cover title treatment).
@@ -56,23 +74,31 @@ struct PanoramaPlayerView: View {
     var onDismiss: () -> Void
     /// When the user deletes an in-app capture (`bloggo-capture:` id) from the slideshow gallery full-screen viewer.
     var onAppCaptureDeletedFromSlideshow: ((String) -> Void)? = nil
+    /// Triggered by the top-right download control to open slideshow video export options in the host view.
+    var onDownloadTap: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
 
     init(
         photoGroups: [[PanoramaPhotoEntry]],
+        mapIntroSlides: [PanoramaMapIntroSlide] = [],
+        includeTimestamps: Bool = true,
         blogId: UUID,
         blogTitle: String,
         startInGallery: Bool = false,
         onDismiss: @escaping () -> Void,
-        onAppCaptureDeletedFromSlideshow: ((String) -> Void)? = nil
+        onAppCaptureDeletedFromSlideshow: ((String) -> Void)? = nil,
+        onDownloadTap: (() -> Void)? = nil
     ) {
         self.photoGroups = photoGroups
+        self.mapIntroSlides = mapIntroSlides
+        self.includeTimestamps = includeTimestamps
         self.blogId = blogId
         self.blogTitle = blogTitle
         self.startInGallery = startInGallery
         self.onDismiss = onDismiss
         self.onAppCaptureDeletedFromSlideshow = onAppCaptureDeletedFromSlideshow
+        self.onDownloadTap = onDownloadTap
         _isPlaying = State(initialValue: !startInGallery)
         _showGallery = State(initialValue: startInGallery)
     }
@@ -130,6 +156,12 @@ struct PanoramaPlayerView: View {
     private let zoomScale: CGFloat = 1.12   // how far to zoom in/out
     private let pinchScaleMin: CGFloat = 0.5
     private let pinchScaleMax: CGFloat = 4.0
+    private static let slideshowTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 
     // MARK: - Derived
 
@@ -172,6 +204,10 @@ struct PanoramaPlayerView: View {
         selectedSlideshowMusicFilename != nil
             ? "Slideshow music, change track"
             : "Slideshow music, none selected"
+    }
+
+    private var mapIntroById: [String: PanoramaMapIntroSlide] {
+        Dictionary(uniqueKeysWithValues: mapIntroSlides.map { ($0.id, $0) })
     }
 
     // MARK: - Body
@@ -329,6 +365,7 @@ struct PanoramaPlayerView: View {
                 }
         )
         .task {
+            await preloadMapIntroSlides()
             await preloadAround(groupIndex: 0, offset: 0)
             currentLayout = chooseLayout(groupIndex: 0, offset: 0)
             await restorePersistedSlideshowMusic()
@@ -394,6 +431,7 @@ struct PanoramaPlayerView: View {
     @ViewBuilder
     private func soloZoomView(img: UIImage, size: CGSize) -> some View {
         let combinedScale = currentScale * pinchBaseScale * pinchGestureScale
+        let centerTimeText = formattedCenterTime(for: topPhotoId)
 
         Image(uiImage: img)
             .resizable()
@@ -412,6 +450,11 @@ struct PanoramaPlayerView: View {
                 soloElapsed = 0
                 updateSoloKenBurnsScale()
                 if isPlaying { startSoloTimer() }
+            }
+            .overlay {
+                if includeTimestamps, let centerTimeText {
+                    centeredTimestampBadge(text: centerTimeText)
+                }
             }
     }
 
@@ -505,6 +548,7 @@ struct PanoramaPlayerView: View {
     /// `diptychExpandHalf`: which diptych pane this is; tap opens full view only while slideshow is **paused**.
     @ViewBuilder
     private func photoPane(id: String?, width: CGFloat, height: CGFloat, diptychExpandHalf: DiptychHalf? = nil) -> some View {
+        let centerTimeText = formattedCenterTime(for: id)
         if let id, let img = loadedImages[id] {
             if !isPlaying, let half = diptychExpandHalf {
                 Image(uiImage: img)
@@ -514,6 +558,11 @@ struct PanoramaPlayerView: View {
                     .clipped()
                     .contentShape(Rectangle())
                     .onTapGesture { openDiptychExpanded(half) }
+                    .overlay {
+                        if includeTimestamps, let centerTimeText {
+                            centeredTimestampBadge(text: centerTimeText)
+                        }
+                    }
             } else {
                 Image(uiImage: img)
                     .resizable()
@@ -521,12 +570,40 @@ struct PanoramaPlayerView: View {
                     .frame(width: width, height: height)
                     .clipped()
                     .allowsHitTesting(false)
+                    .overlay {
+                        if includeTimestamps, let centerTimeText {
+                            centeredTimestampBadge(text: centerTimeText)
+                        }
+                    }
             }
         } else {
             Color.gray.opacity(0.25)
                 .frame(width: width, height: height)
                 .overlay(ProgressView().tint(.white).scaleEffect(0.7))
         }
+    }
+
+    private func formattedCenterTime(for photoId: String?) -> String? {
+        guard let photoId,
+              let entry = photoGroups.joined().first(where: { $0.id == photoId }),
+              let timestamp = entry.timestamp else { return nil }
+        return Self.slideshowTimeFormatter.string(from: timestamp)
+    }
+
+    private func centeredTimestampBadge(text: String) -> some View {
+        Text(text)
+            .font(.system(size: 24, weight: .semibold, design: .rounded))
+            .foregroundColor(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.black.opacity(0.35), in: Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(.white.opacity(0.2), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.6), radius: 8, x: 0, y: 2)
+            .padding(12)
+            .allowsHitTesting(false)
     }
 
     private var loadingPlaceholder: some View {
@@ -553,21 +630,41 @@ struct PanoramaPlayerView: View {
 
             Spacer()
 
-            // Music picker (muted when no background track is selected)
-            Button { showMusicPicker = true } label: {
-                let active = selectedSlideshowMusicFilename != nil
-                ZStack {
-                    Circle().fill(.black.opacity(active ? 0.6 : 0.38))
-                    Circle().strokeBorder(.white.opacity(active ? 0.25 : 0.12), lineWidth: 0.5)
-                    Image(systemName: "music.note")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(.white.opacity(active ? 1 : 0.38))
+            HStack(spacing: 10) {
+                // Music picker (muted when no background track is selected)
+                Button { showMusicPicker = true } label: {
+                    let active = selectedSlideshowMusicFilename != nil
+                    ZStack {
+                        Circle().fill(.black.opacity(active ? 0.6 : 0.38))
+                        Circle().strokeBorder(.white.opacity(active ? 0.25 : 0.12), lineWidth: 0.5)
+                        Image(systemName: "music.note")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(.white.opacity(active ? 1 : 0.38))
+                    }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
                 }
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
+                .buttonStyle(.plain)
+                .accessibilityLabel(slideshowMusicAccessibilityLabel)
+
+                Button {
+                    onDownloadTap?()
+                } label: {
+                    ZStack {
+                        Circle().fill(.black.opacity(0.6))
+                        Circle().strokeBorder(.white.opacity(0.25), lineWidth: 0.5)
+                        Image("CarouselStudioExportHub")
+                            .resizable()
+                            .renderingMode(.original)
+                            .scaledToFit()
+                            .frame(width: 26, height: 26)
+                    }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Download slideshow video")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(slideshowMusicAccessibilityLabel)
         }
     }
 
@@ -1082,6 +1179,32 @@ struct PanoramaPlayerView: View {
 
     // MARK: - Image loading
 
+    /// Renders map intro slides once per session so they can participate in normal slide transitions.
+    private func preloadMapIntroSlides() async {
+        guard !mapIntroSlides.isEmpty else { return }
+        let screenSize = UIScreen.main.bounds.size
+        let targetSize = CGSize(width: screenSize.width * 2, height: screenSize.height * 2)
+
+        await withTaskGroup(of: (String, UIImage?).self) { group in
+            for intro in mapIntroSlides where loadedImages[intro.id] == nil {
+                group.addTask {
+                    let image = await MapSnapshotHelper.generateSnapshot(
+                        for: intro.placeStops,
+                        size: targetSize,
+                        regionPadding: 0.045,
+                        showPlaceNames: true
+                    )
+                    return (intro.id, image)
+                }
+            }
+            for await (id, image) in group {
+                if let image {
+                    await MainActor.run { loadedImages[id] = image }
+                }
+            }
+        }
+    }
+
     /// Preload photos around the current position: current group + neighbours.
     private func preloadAround(groupIndex: Int, offset: Int) async {
         let screenSize = UIScreen.main.bounds.size
@@ -1103,6 +1226,17 @@ struct PanoramaPlayerView: View {
 
         for id in ids {
             guard loadedImages[id] == nil else { continue }
+            if let intro = mapIntroById[id] {
+                if let image = await MapSnapshotHelper.generateSnapshot(
+                    for: intro.placeStops,
+                    size: CGSize(width: screenSize.width * 2, height: screenSize.height * 2),
+                    regionPadding: 0.045,
+                    showPlaceNames: true
+                ) {
+                    await MainActor.run { loadedImages[id] = image }
+                }
+                continue
+            }
             if let img = await ImageLoader.shared.loadImage(assetIdentifier: id, targetSize: targetSize) {
                 await MainActor.run { loadedImages[id] = img }
             }

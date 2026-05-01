@@ -18,7 +18,8 @@ class MapSnapshotHelper {
         for placeStops: [PlaceStop],
         size: CGSize = CGSize(width: 600, height: 300),
         regionPadding: Double = 0.01,
-        showPlaceNames: Bool = false
+        showPlaceNames: Bool = false,
+        mapType: MKMapType = .standard
     ) async -> UIImage? {
         // Build (displayNumber, coordinate, title) pairs, preserving original ordering
         // so marker #2 on the map always matches place #2 in the blog.
@@ -40,7 +41,7 @@ class MapSnapshotHelper {
         options.region = region
         options.size = size
         options.scale = await MainActor.run { UIScreen.main.scale }
-        options.mapType = .standard
+        options.mapType = mapType
         options.traitCollection = UITraitCollection(userInterfaceStyle: .light)
 
         let snapshotter = MKMapSnapshotter(options: options)
