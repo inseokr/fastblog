@@ -241,7 +241,7 @@ struct CameraRollToBlogView: View {
             }
             .padding(.horizontal, 24)
         }
-        .frame(height: 220)
+        .frame(height: 300)
     }
 
     // Scroll content: map + day header + 2 stop rows (day pills are fixed in body ZStack)
@@ -344,7 +344,7 @@ struct CameraRollToBlogView: View {
                 .clipShape(Circle())
                 .padding(10)
         }
-        .frame(height: 90)
+        .frame(height: 140)
         .padding(.horizontal, 14)
         .padding(.top, 8)
     }
