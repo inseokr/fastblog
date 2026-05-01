@@ -572,7 +572,8 @@ struct RecapBlogPageView: View {
                             pendingSecondSaveCommitAfterAuth = false
                             showAuth = false
                             if saveDraft() {
-                                performDismiss()
+                                // Match the toolbar Save path: after a successful commit, leave edit mode.
+                                isEditMode = false
                             }
                         } else if pendingEarlyAccessAfterAuth {
                             // Immediately return to the blog with the confirmation pull-up; register via API in the background.
