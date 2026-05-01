@@ -164,10 +164,10 @@ struct ProblemStatementView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     // Phase 1: Headline
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Bloggo removes")
+                        Text("Your story starts with")
                             .font(.system(size: 28, weight: .bold))
                             .foregroundColor(.white)
-                        Text("blank page anxiety.")
+                        Text("your photos.")
                             .font(.system(size: 34, weight: .black))
                             .foregroundColor(.white)
                     }
@@ -175,7 +175,7 @@ struct ProblemStatementView: View {
                     .offset(y: showHeadline ? 0 : 8)
 
                     // Phase 2: Body
-                    Text("Thousands of photos sitting in your camera roll. No story written.")
+                    Text("From camera roll to blog. Instantly.")
                         .font(.body)
                         .foregroundColor(.white.opacity(0.5))
                         .fixedSize(horizontal: false, vertical: true)
