@@ -1214,6 +1214,7 @@ struct RecapBlogPageView: View {
             PanoramaPlayerView(
                 photoGroups: panoramaData.photoGroups,
                 mapIntroSlides: panoramaData.mapIntroSlides,
+                coverIntroSlide: panoramaData.coverIntroSlide,
                 includeTimestamps: panoramaData.includeTimestamps,
                 blogId: blogId,
                 blogTitle: draft.title,
@@ -1235,12 +1236,32 @@ struct RecapBlogPageView: View {
     private func buildPanoramaOverlayData() -> (
         photoGroups: [[PanoramaPhotoEntry]],
         mapIntroSlides: [PanoramaMapIntroSlide],
+        coverIntroSlide: PanoramaCoverIntroSlide?,
         includeTimestamps: Bool
     ) {
         let includeDailyMapIntro = slideshowPlaybackOptions.includeDailyMapIntro
         let includeTimestamps = slideshowPlaybackOptions.includeTimestamps
         var mapIntroSlides: [PanoramaMapIntroSlide] = []
         var assembledGroups: [[PanoramaPhotoEntry]] = []
+
+        let includedPhotos = draft.days.flatMap(\.placeStops).flatMap(\.photos).filter(\.isIncluded)
+        let fallbackCoverId = includedPhotos.compactMap(\.localIdentifier).first
+        let selectedCoverId = draft.selectedCoverPhotoIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let coverId = (selectedCoverId?.isEmpty == false) ? selectedCoverId : fallbackCoverId
+        let coverIntroSlide: PanoramaCoverIntroSlide? = coverId.map { id in
+            PanoramaCoverIntroSlide(
+                id: PanoramaCoverIntroSlide.identifier,
+                coverPhotoID: id,
+                title: draft.title,
+                subtitle: tripDurationText,
+                dayCount: draft.days.count,
+                momentCount: includedPhotos.count
+            )
+        }
+
+        if let coverIntroSlide {
+            assembledGroups.append([PanoramaPhotoEntry(id: coverIntroSlide.id, caption: nil, placeName: nil, timestamp: nil)])
+        }
 
         for (dayIndex, day) in draft.days.enumerated() {
             let placeGroups: [[PanoramaPhotoEntry]] = day.placeStops.compactMap { stop -> [PanoramaPhotoEntry]? in
@@ -1267,6 +1288,8 @@ struct RecapBlogPageView: View {
                         dayID: day.id,
                         dayNumber: dayIndex + 1,
                         dayDateText: day.shortDateText,
+                        placeCount: day.placeStops.filter { !$0.includedPhotos.isEmpty }.count,
+                        photoCount: placeGroups.reduce(0) { $0 + $1.count },
                         placeStops: day.placeStops
                     )
                 )
@@ -1278,7 +1301,7 @@ struct RecapBlogPageView: View {
 
         // Fall back to cover photo when no included photos exist.
         let photoGroups = assembledGroups.isEmpty
-            ? draft.selectedCoverPhotoIdentifier.map {
+            ? coverId.map {
                 [[PanoramaPhotoEntry(id: $0, caption: nil, placeName: nil, timestamp: nil)]]
             } ?? []
             : assembledGroups
@@ -1286,6 +1309,7 @@ struct RecapBlogPageView: View {
         return (
             photoGroups: photoGroups,
             mapIntroSlides: mapIntroSlides,
+            coverIntroSlide: coverIntroSlide,
             includeTimestamps: includeTimestamps
         )
     }

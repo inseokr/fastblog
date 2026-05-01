@@ -62,11 +62,7 @@ struct TripsView: View {
     #if DEBUG
     @State private var showDebugScanSheet = false
     #endif
-    /// Show "Load more trips?" popup when user scrolls past the last trip.
-    @State private var showLoadMorePopup = false
-    /// Show "Load newer trips?" popup when user swipes past the first trip.
-    @State private var showLoadNewerPopup = false
-    /// Guards against the popup firing on the initial programmatic selection in onAppear.
+    /// Guards against edge actions firing on the initial programmatic selection in onAppear.
     @State private var didCompleteInitialSelection = false
     /// True while the carousel is animating the map to a new trip — blocks onMapRegionChanged
     /// from firing back and jumping the scroll position mid-animation.
@@ -222,6 +218,26 @@ struct TripsView: View {
         })?.0
     }
 
+    private func triggerLoadOlderFromSwipeEdge() {
+        guard !viewModel.isLoadingOlderTrips else { return }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        if photoAuth.status == .limited {
+            presentLimitedLibraryPicker()
+        } else {
+            viewModel.loadOlderTrips()
+        }
+    }
+
+    private func triggerLoadNewerFromSwipeEdge() {
+        guard !viewModel.isLoadingNewerTrips else { return }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        if photoAuth.status == .limited {
+            presentLimitedLibraryPicker()
+        } else {
+            viewModel.loadNewerTrips()
+        }
+    }
+
     var body: some View {
         coreBody
             .overlay {
@@ -232,29 +248,19 @@ struct TripsView: View {
             .navigationBarBackButtonHidden(true)
             .onChange(of: viewModel.olderTripsResult) { _, result in
                 if case .success = result {
-                    withAnimation(.easeInOut(duration: 0.3)) { showLoadMorePopup = false }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                         if let first = allTrips.first {
                             withAnimation(.easeInOut(duration: 0.45)) { selectedTripID = first.id }
                         }
                     }
-                } else if case .empty = result {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        withAnimation(.easeInOut(duration: 0.3)) { showLoadMorePopup = false }
-                    }
                 }
             }
             .onChange(of: viewModel.newerTripsResult) { _, result in
                 if case .success = result {
-                    withAnimation(.easeInOut(duration: 0.3)) { showLoadNewerPopup = false }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                         if let last = allTrips.last {
                             withAnimation(.easeInOut(duration: 0.45)) { selectedTripID = last.id }
                         }
-                    }
-                } else if case .empty = result {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        withAnimation(.easeInOut(duration: 0.3)) { showLoadNewerPopup = false }
                     }
                 }
             }
@@ -288,12 +294,6 @@ struct TripsView: View {
         if let trip = tripForPopup {
             blogCreationPopup(trip: trip)
         }
-        if showLoadMorePopup && !viewModel.isLoadingOlderTrips {
-            loadMoreTripsPopup
-        }
-        if showLoadNewerPopup && !viewModel.isLoadingNewerTrips {
-            loadNewerTripsPopup
-        }
         if viewModel.isVisitedCityScanning {
             LoadingScanView(
                 message: "Finding your trip…",
@@ -310,7 +310,6 @@ struct TripsView: View {
                 progress: viewModel.loadOlderProgress,
                 onCancel: {
                     viewModel.cancelLoadOlderTrips()
-                    withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
                 },
                 useCenteredLayout: true,
                 showsTopTrailingActions: false
@@ -324,7 +323,6 @@ struct TripsView: View {
                 progress: viewModel.loadNewerProgress,
                 onCancel: {
                     viewModel.cancelLoadNewerTrips()
-                    withAnimation(.easeOut(duration: 0.3)) { showLoadNewerPopup = true }
                 },
                 useCenteredLayout: true,
                 showsTopTrailingActions: false
@@ -574,7 +572,7 @@ struct TripsView: View {
                             }
                         }
 
-                        // Trailing “Trips” peek → load-older sheet, then snap back to the oldest visible trip.
+                        // Trailing “Trips” peek → load older trips, then snap back to oldest visible trip.
                         if newID == TripCarouselScrollPeekID.olderMore {
                             if !didCompleteInitialSelection {
                                 didCompleteInitialSelection = true
@@ -582,10 +580,7 @@ struct TripsView: View {
                                 if let last = allTrips.last { selectedTripID = last.id }
                                 return
                             }
-                            if !viewModel.isLoadingOlderTrips, !showLoadMorePopup {
-                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
-                            }
+                            triggerLoadOlderFromSwipeEdge()
                             suppressMapAnimation = true
                             DispatchQueue.main.async {
                                 if let last = allTrips.last {
@@ -597,7 +592,7 @@ struct TripsView: View {
                             return
                         }
 
-                        // Leading “Trips” peek → load-newer (or single-trip load-more) sheet, then snap to newest.
+                        // Leading “Trips” peek → load newer trips, then snap to newest.
                         if newID == TripCarouselScrollPeekID.newerMore {
                             if !didCompleteInitialSelection {
                                 didCompleteInitialSelection = true
@@ -605,14 +600,8 @@ struct TripsView: View {
                                 if let first = allTrips.first { selectedTripID = first.id }
                                 return
                             }
-                            if !viewModel.isLoadingNewerTrips {
-                                if allTrips.count == 1, !showLoadMorePopup {
-                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                    withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
-                                } else if viewModel.canLoadNewerTrips, !showLoadNewerPopup {
-                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                    withAnimation(.easeOut(duration: 0.3)) { showLoadNewerPopup = true }
-                                }
+                            if viewModel.canLoadNewerTrips {
+                                triggerLoadNewerFromSwipeEdge()
                             }
                             suppressMapAnimation = true
                             DispatchQueue.main.async {
@@ -657,7 +646,7 @@ struct TripsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar(
-            (viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips || viewModel.scanState != .idle || showLoadMorePopup || showLoadNewerPopup) ? .hidden : .visible,
+            (viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips || viewModel.scanState != .idle) ? .hidden : .visible,
             for: .navigationBar
         )
         .toolbar {
@@ -673,8 +662,8 @@ struct TripsView: View {
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(tripsNavLabel)
                 }
-                .opacity((showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips || viewModel.scanState != .idle) ? 0 : 1)
-                .disabled(showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips || viewModel.scanState != .idle)
+                .opacity((viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips || viewModel.scanState != .idle) ? 0 : 1)
+                .disabled(viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips || viewModel.scanState != .idle)
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -688,8 +677,8 @@ struct TripsView: View {
                         .font(.headline)
                         .foregroundColor(tripsNavLabel)
                 }
-                .opacity((showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips || viewModel.scanState != .idle) ? 0 : 1)
-                .disabled(showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips || viewModel.scanState != .idle)
+                .opacity((viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips || viewModel.scanState != .idle) ? 0 : 1)
+                .disabled(viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips || viewModel.scanState != .idle)
             }
             // Scan Debug ladybug — hidden for now; set to DEBUG to show.
             #if false
@@ -1114,34 +1103,27 @@ struct TripsView: View {
         .scrollPosition(id: $selectedTripID, anchor: .leading)
         .contentMargins(.horizontal, 24)
         .frame(height: 240)
-        // Detect swipes past either end of the carousel.
-        // • Left-swipe on last card (or the only card) → "Load older trips"
-        // • Right-swipe on first card (or the only card) → "Load newer trips" when multiple trips; when only one trip, show newer popup if available
+        // Detect swipes past either end of the carousel and trigger loading.
         .simultaneousGesture(
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
                     let isLeftwardDrag  = value.translation.width < -40
                     let isRightwardDrag = value.translation.width >  40
 
-                    // Left drag → Load older trips (last card when multiple, or the only card when single)
+                    // Left drag → load older trips on trailing edge.
                     if isLeftwardDrag,
                        selectedTripID == allTrips.last?.id || selectedTripID == TripCarouselScrollPeekID.olderMore,
-                       !viewModel.isLoadingOlderTrips,
-                       !showLoadMorePopup {
-                        withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
+                       !viewModel.isLoadingOlderTrips {
+                        triggerLoadOlderFromSwipeEdge()
                     }
 
-                    // Right drag → Load newer trips only when latest trip is not in current month; single trip uses load-more popup
+                    // Right drag → load newer trips when the current month is not already visible.
                     if isRightwardDrag,
                        selectedTripID == allTrips.first?.id || selectedTripID == TripCarouselScrollPeekID.newerMore,
                        !viewModel.isLoadingNewerTrips,
-                       !showLoadNewerPopup,
                        !latestTripIsInCurrentMonth {
-                        if allTrips.count == 1 {
-                            withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
-                        } else if viewModel.canLoadNewerTrips {
-                            withAnimation(.easeOut(duration: 0.3)) { showLoadNewerPopup = true }
-                        }
+                        guard viewModel.canLoadNewerTrips else { return }
+                        triggerLoadNewerFromSwipeEdge()
                     }
                 }
         )
@@ -1196,8 +1178,8 @@ struct TripsView: View {
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
                     let isHorizontalSwipe = abs(value.translation.width) > 40
-                    if isHorizontalSwipe, !showLoadMorePopup {
-                        withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
+                    if isHorizontalSwipe {
+                        triggerLoadOlderFromSwipeEdge()
                     }
                 }
         )
@@ -1419,248 +1401,6 @@ struct TripsView: View {
         .zIndex(200)
     }
 
-    // MARK: - Load More Trips Popup
-
-    private var loadMoreTripsPopup: some View {
-        ZStack {
-            tripsDimmingScrim
-                .ignoresSafeArea()
-                .onTapGesture {
-                    withAnimation { showLoadMorePopup = false }
-                }
-
-            VStack(spacing: 20) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 36))
-                    .foregroundColor(.blue)
-
-                Text("Load older trips?")
-                    .font(.title3)
-                    .fontWeight(.bold)
-                    .foregroundColor(tripsNavLabel)
-
-                Text("")
-                    .font(.body)
-                    .foregroundColor(tripsSecondaryOnMapChrome)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-
-                // Shown after a scan returns with no results
-                if viewModel.olderTripsResult == .empty {
-                    HStack(spacing: 6) {
-                        Image(systemName: "info.circle.fill")
-                            .foregroundColor(.orange)
-                        Text("No more trips found in this period.")
-                            .font(.subheadline)
-                            .foregroundColor(tripsSecondaryOnMapChrome)
-                    }
-                    .padding(.horizontal)
-                    .transition(.opacity)
-                }
-
-                VStack(spacing: 10) {
-                    if photoAuth.status == .limited {
-                        // Limited access — offer to upgrade or select more photos
-                        Button {
-                            withAnimation { showLoadMorePopup = false }
-                            openSettings()
-                        } label: {
-                            Text("Allow Full Access")
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(Color.blue)
-                                .appChromeCornerRadius(10)
-                        }
-
-                        Button {
-                            withAnimation { showLoadMorePopup = false }
-                            presentLimitedLibraryPicker()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "photo.badge.plus")
-                                    .font(.system(size: 13, weight: .semibold))
-                                Text("Select More Photos")
-                                    .fontWeight(.semibold)
-                            }
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color.white.opacity(0.15))
-                            .appChromeCornerRadius(10)
-                        }
-                    } else {
-                        // Full access — one tap starts the scan automatically
-                        Button {
-                            withAnimation { showLoadMorePopup = false }
-                            viewModel.loadOlderTrips()
-                        } label: {
-                            Text("Yes, load more")
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(Color.blue)
-                                .appChromeCornerRadius(10)
-                        }
-                        // Disable while a scan result is already displayed (user should dismiss first)
-                        .disabled(viewModel.olderTripsResult == .empty)
-                    }
-
-                    Button {
-                        withAnimation { showLoadMorePopup = false }
-                    } label: {
-                        Text("Not now")
-                            .fontWeight(.medium)
-                            .foregroundColor(colorScheme == .dark ? .white.opacity(0.7) : .primary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color(uiColor: .tertiarySystemFill))
-                            .appChromeCornerRadius(10)
-                    }
-                }
-                .padding(.horizontal)
-                .animation(.easeInOut(duration: 0.25), value: viewModel.olderTripsResult)
-            }
-            .padding(.vertical, 24)
-            .background(
-                RoundedRectangle(appChromeBaseRadius: 16)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(appChromeBaseRadius: 16)
-                            .stroke(tripsMaterialHairline, lineWidth: 1)
-                    )
-            )
-            .shadow(radius: 20)
-            .padding(.horizontal, 40)
-            .transition(.opacity)
-        }
-        .zIndex(200)
-    }
-
-    private func openSettings() {
-        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-        UIApplication.shared.open(url)
-    }
-
-    // MARK: - Load Newer Trips Popup
-
-    private var loadNewerTripsPopup: some View {
-        ZStack {
-            tripsDimmingScrim
-                .ignoresSafeArea()
-                .onTapGesture {
-                    withAnimation { showLoadNewerPopup = false }
-                }
-
-            VStack(spacing: 20) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 36))
-                    .foregroundColor(.blue)
-                    .scaleEffect(x: -1) // mirror to face forward in time
-
-                Text("Load newer trips?")
-                    .font(.title3)
-                    .fontWeight(.bold)
-                    .foregroundColor(tripsNavLabel)
-
-                Text("")
-                    .font(.body)
-                    .foregroundColor(tripsSecondaryOnMapChrome)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-
-                // Shown after a scan returns with no results
-                if viewModel.newerTripsResult == .empty {
-                    HStack(spacing: 6) {
-                        Image(systemName: "info.circle.fill")
-                            .foregroundColor(.orange)
-                        Text("No trips found in this period.")
-                            .font(.subheadline)
-                            .foregroundColor(tripsSecondaryOnMapChrome)
-                    }
-                    .padding(.horizontal)
-                    .transition(.opacity)
-                }
-
-                VStack(spacing: 10) {
-                    if photoAuth.status == .limited {
-                        Button {
-                            withAnimation { showLoadNewerPopup = false }
-                            openSettings()
-                        } label: {
-                            Text("Allow Full Access")
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(Color.blue)
-                                .appChromeCornerRadius(10)
-                        }
-
-                        Button {
-                            withAnimation { showLoadNewerPopup = false }
-                            presentLimitedLibraryPicker()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "photo.badge.plus")
-                                    .font(.system(size: 13, weight: .semibold))
-                                Text("Select More Photos")
-                                    .fontWeight(.semibold)
-                            }
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color.white.opacity(0.15))
-                            .appChromeCornerRadius(10)
-                        }
-                    } else {
-                        Button {
-                            withAnimation { showLoadNewerPopup = false }
-                            viewModel.loadNewerTrips()
-                        } label: {
-                            Text("Yes, load more")
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(Color.blue)
-                                .appChromeCornerRadius(10)
-                        }
-                        .disabled(viewModel.newerTripsResult == .empty)
-                    }
-
-                    Button {
-                        withAnimation { showLoadNewerPopup = false }
-                    } label: {
-                        Text("Not now")
-                            .fontWeight(.medium)
-                            .foregroundColor(colorScheme == .dark ? .white.opacity(0.7) : .primary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(colorScheme == .dark ? Color.white.opacity(0.1) : Color(uiColor: .tertiarySystemFill))
-                            .appChromeCornerRadius(10)
-                    }
-                }
-                .padding(.horizontal)
-                .animation(.easeInOut(duration: 0.25), value: viewModel.newerTripsResult)
-            }
-            .padding(.vertical, 24)
-            .background(
-                RoundedRectangle(appChromeBaseRadius: 16)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(appChromeBaseRadius: 16)
-                            .stroke(tripsMaterialHairline, lineWidth: 1)
-                    )
-            )
-            .shadow(radius: 20)
-            .padding(.horizontal, 40)
-            .transition(.opacity)
-        }
-        .zIndex(200)
-    }
 }
 
 // MARK: - CameraCaptureView & Camera Preview
@@ -2073,6 +1813,9 @@ struct CameraCaptureView: View {
     @State private var sessionCapturesForDisplay: [CapturedMoment] = []
     /// Total photos captured this session (all routes) — used for bottom-right counter.
     @State private var photosCapturedThisSession: Int = 0
+    /// True once any photo has been captured in this camera session.
+    /// Used to permanently disable swipe-down dismiss until camera is closed.
+    @State private var hasCapturedPhotoThisSession: Bool = false
     @State private var isShowingSessionGallery = false
     @State private var isShowingCapturesGallery = false
     @State private var latestGalleryThumbnail: UIImage? = nil
@@ -2983,40 +2726,59 @@ struct CameraCaptureView: View {
 
     private var previewActionDock: some View {
         HStack(spacing: 14) {
-            previewActionCircleButton(
-                systemImage: "pencil",
-                tint: .white
-            ) {
-                beginPreviewCaptionEditing()
-            }
-            .accessibilityLabel("Edit caption")
+            if !previewCaptionFocused {
+                previewActionCircleButton(
+                    systemImage: "pencil",
+                    tint: .white
+                ) {
+                    beginPreviewCaptionEditing()
+                }
+                .accessibilityLabel("Edit caption")
 
-            previewActionCircleButton(
-                systemImage: previewVoiceMemoPlayer.isPlaying ? "stop.circle.fill" : "mic.fill",
-                tint: previewChromeHasVoiceMemo ? .cyan : .white
-            ) {
-                showVoiceMemoSheet = true
+                previewActionCircleButton(
+                    systemImage: previewVoiceMemoPlayer.isPlaying ? "stop.circle.fill" : "mic.fill",
+                    tint: previewChromeHasVoiceMemo ? .cyan : .white
+                ) {
+                    showVoiceMemoSheet = true
+                }
+                .accessibilityLabel(previewChromeHasVoiceMemo ? "Edit voice memo" : "Add voice memo")
             }
-            .accessibilityLabel(previewChromeHasVoiceMemo ? "Edit voice memo" : "Add voice memo")
 
             Spacer(minLength: 0)
 
-            Button {
-                dismissPreviewCaptionEditor()
-                commitCaptionModeDone()
-                AppAnalytics.track(.appInAppCameraPreviewSave)
-            } label: {
-                Text("Save")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 11)
-                    .background(Color.blue.opacity(0.9))
-                    .clipShape(Capsule())
-                    .shadow(color: .black.opacity(0.28), radius: 4, y: 2)
+            if previewCaptionFocused {
+                Button {
+                    dismissPreviewCaptionEditor()
+                } label: {
+                    Text("Done")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 28)
+                        .padding(.vertical, 11)
+                        .background(Color.gray.opacity(0.75))
+                        .clipShape(Capsule())
+                        .shadow(color: .black.opacity(0.28), radius: 4, y: 2)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss keyboard")
+            } else {
+                Button {
+                    dismissPreviewCaptionEditor()
+                    commitCaptionModeDone()
+                    AppAnalytics.track(.appInAppCameraPreviewSave)
+                } label: {
+                    Text("Save")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 28)
+                        .padding(.vertical, 11)
+                        .background(Color.blue.opacity(0.9))
+                        .clipShape(Capsule())
+                        .shadow(color: .black.opacity(0.28), radius: 4, y: 2)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Save photo to Bloggo Gallery")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Save photo to Bloggo Gallery")
         }
         .padding(.horizontal, 20)
         .padding(.top, 10)
@@ -3205,11 +2967,8 @@ struct CameraCaptureView: View {
                         if value.translation.height < -50 {
                             isShowingCapturesGallery = true
                         } else if value.translation.height > 50 {
-                            // Swipe-down dismiss is allowed only before any photo is captured.
-                            let hasCapturedPhotos = photosCapturedThisSession > 0
-                                || !sessionCapturesForDisplay.isEmpty
-                                || !sessionMoments.isEmpty
-                            guard !hasCapturedPhotos else { return }
+                            // Swipe-down dismiss is allowed only before the first capture in this session.
+                            guard !hasCapturedPhotoThisSession else { return }
                             closeCamera()
                         }
                     }
@@ -3245,6 +3004,7 @@ struct CameraCaptureView: View {
             sessionMoments = []
             sessionCapturesForDisplay = []
             photosCapturedThisSession = 0
+            hasCapturedPhotoThisSession = false
             attachedCountThisSession = 0
             sessionTripTitle = nil
             sessionSourceTripId = nil
@@ -4114,6 +3874,7 @@ extension CameraCaptureView {
     /// Used after capture when not near home, and when user taps "Keep" on the near-home confirmation.
     /// Only adds to sessionMoments and shows "You are capturing a moment" when it's truly a new trip (no existing blog or draft for this capture).
     private func applyCapturedPhoto(image: UIImage?, timestamp: Date, vibeURL: URL? = nil) {
+        hasCapturedPhotoThisSession = true
         saveCapturedImageToPhotosLibraryIfNeeded(image)
         var persistedLocalId: String?
         var remainingVibeURL = vibeURL
@@ -5521,8 +5282,8 @@ extension TripsView {
         }
         .padding(.top, 8)
         .padding(.trailing, 16)
-        .opacity((showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips) ? 0 : 1)
-        .animation(.easeInOut(duration: 0.2), value: showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips)
+        .opacity((viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips) ? 0 : 1)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips)
     }
 }
 

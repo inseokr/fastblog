@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Onboarding Animation Concepts</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #050A30;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+    padding: 32px 24px;
+  }
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; color: #C8EBFF; }
+  .subtitle { color: rgba(255,255,255,0.55); font-size: 14px; margin-bottom: 32px; }
+
+  .options { display: flex; flex-direction: column; gap: 20px; }
+
+  .option {
+    border: 1.5px solid rgba(255,255,255,0.12);
+    border-radius: 20px;
+    padding: 20px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: rgba(255,255,255,0.03);
+  }
+  .option:hover { border-color: rgba(200,235,255,0.4); background: rgba(255,255,255,0.06); }
+  .option.selected { border-color: #0B84FF; background: rgba(11,132,255,0.08); }
+
+  .option-label {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+  }
+  .letter {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: rgba(200,235,255,0.12);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; color: #C8EBFF;
+    flex-shrink: 0;
+  }
+  .option.selected .letter { background: #0B84FF; color: #fff; }
+  .option-title { font-size: 16px; font-weight: 700; color: #fff; }
+  .option-desc { font-size: 13px; color: rgba(255,255,255,0.5); margin-top: 2px; }
+
+  /* ---- MOCKUP SCREENS ---- */
+  .phone-frame {
+    width: 180px; height: 310px;
+    border-radius: 28px;
+    border: 3px solid rgba(255,255,255,0.15);
+    background: #0a0e28;
+    overflow: hidden;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .mockup-row {
+    display: flex; gap: 16px; align-items: center; justify-content: center;
+    margin-top: 4px;
+    flex-wrap: wrap;
+  }
+  .arrow-label {
+    font-size: 28px; color: rgba(255,255,255,0.3);
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .arrow-label span { font-size: 10px; color: rgba(255,255,255,0.25); text-transform: uppercase; letter-spacing: 1px; }
+
+  /* ======= OPTION A: CHAOS TO ORDER ======= */
+  .chaos-grid {
+    width: 100%; height: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(5, 1fr);
+    gap: 2px;
+    padding: 6px;
+    animation: none;
+  }
+  .chaos-photo {
+    border-radius: 4px;
+    background: var(--c);
+    transform: rotate(var(--r)) scale(var(--s)) translate(var(--tx), var(--ty));
+    opacity: 0.85;
+    transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  /* animate chaos on hover of option */
+  .option:not(.selected) .chaos-photo { transform: rotate(var(--r)) scale(var(--s)) translate(var(--tx), var(--ty)); }
+
+  /* Blog side for A */
+  .blog-preview-a {
+    width: 100%; height: 100%;
+    padding: 8px;
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  .blog-cover { width: 100%; height: 90px; border-radius: 10px; background: linear-gradient(135deg, #2E62E0, #5b3fa0); position: relative; overflow: hidden; }
+  .blog-cover-text { position: absolute; bottom: 8px; left: 8px; }
+  .blog-cover-text .title { font-size: 10px; font-weight: 700; color: #fff; }
+  .blog-cover-text .sub { font-size: 8px; color: rgba(255,255,255,0.6); }
+  .blog-day-row { display: flex; gap: 4px; }
+  .blog-thumb { width: 42px; height: 38px; border-radius: 7px; background: var(--c); flex-shrink: 0; }
+  .blog-day-info { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+  .blog-day-info .line { height: 5px; background: rgba(255,255,255,0.15); border-radius: 3px; }
+  .blog-day-info .line.short { width: 60%; }
+  .blog-badge { font-size: 7px; color: rgba(255,255,255,0.4); background: rgba(255,255,255,0.07); border-radius: 3px; padding: 1px 4px; align-self: flex-start; }
+
+  /* ======= OPTION B: SPLIT REVEAL ======= */
+  .split-phone { display: flex; gap: 10px; align-items: center; }
+  .phone-label { font-size: 9px; color: rgba(255,255,255,0.35); text-align: center; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .camera-roll {
+    width: 100%; height: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2px;
+    padding: 4px;
+    overflow: hidden;
+  }
+  .roll-photo {
+    border-radius: 3px;
+    background: var(--c);
+    aspect-ratio: 1;
+  }
+  /* make some photos "messy" looking with partial overlaps */
+  .roll-photo.big { grid-column: span 2; aspect-ratio: 2/1; }
+  .roll-photo.tall { grid-row: span 2; }
+  .roll-date-header { grid-column: span 3; font-size: 7px; color: rgba(255,255,255,0.3); padding: 2px 0; }
+
+  /* ======= OPTION C: FILMSTRIP ======= */
+  .filmstrip-phone { width: 100%; height: 100%; display: flex; flex-direction: column; }
+  .filmstrip-bar {
+    width: 100%;
+    flex: 0 0 80px;
+    display: flex; align-items: center;
+    overflow: hidden;
+    gap: 4px;
+    padding: 0 4px;
+    background: rgba(0,0,0,0.3);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .film-frame {
+    flex-shrink: 0;
+    width: 64px; height: 64px;
+    border-radius: 6px;
+    background: var(--c);
+    border: 2px solid rgba(255,255,255,0.08);
+    position: relative;
+  }
+  .film-frame.selected-frame { border-color: #0B84FF; }
+  .blog-content-area {
+    flex: 1;
+    padding: 8px;
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  .blog-map-bar { width: 100%; height: 30px; border-radius: 6px; background: linear-gradient(90deg, #1a2a4a, #2a3a6a); display: flex; align-items: center; justify-content: center; }
+  .blog-map-bar span { font-size: 6px; color: rgba(255,255,255,0.3); }
+  .blog-note-line { height: 5px; background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+  /* Colors */
+  .c1 { --c: #e07040; }
+  .c2 { --c: #4070e0; }
+  .c3 { --c: #40a060; }
+  .c4 { --c: #9040b0; }
+  .c5 { --c: #e04060; }
+  .c6 { --c: #40c0a0; }
+  .c7 { --c: #d0a040; }
+  .c8 { --c: #6080d0; }
+  .c9 { --c: #50b070; }
+  .c10 { --c: #b06040; }
+  .c11 { --c: #7040c0; }
+  .c12 { --c: #e08030; }
+  .c13 { --c: #3090c0; }
+  .c14 { --c: #a050a0; }
+  .c15 { --c: #60a050; }
+
+  /* Chaos transforms */
+  .r1 { --r: -8deg; --s: 1.05; --tx: 3px; --ty: -2px; }
+  .r2 { --r: 5deg; --s: 0.95; --tx: -2px; --ty: 4px; }
+  .r3 { --r: -3deg; --s: 1.0; --tx: 5px; --ty: 1px; }
+  .r4 { --r: 12deg; --s: 1.08; --tx: -4px; --ty: -3px; }
+  .r5 { --r: -6deg; --s: 0.92; --tx: 2px; --ty: 5px; }
+  .r6 { --r: 9deg; --s: 1.03; --tx: -3px; --ty: 2px; }
+  .r7 { --r: -11deg; --s: 1.1; --tx: 4px; --ty: -4px; }
+  .r8 { --r: 4deg; --s: 0.98; --tx: -5px; --ty: 3px; }
+  .r9 { --r: -7deg; --s: 1.02; --tx: 1px; --ty: -1px; }
+
+  .tag {
+    display: inline-block;
+    background: rgba(11,132,255,0.15);
+    color: #4db3ff;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 20px;
+    padding: 3px 10px;
+    margin-bottom: 8px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Pick an animation style</h1>
+<p class="subtitle">How should the onboarding page show "messy camera roll → organized blog"?</p>
+
+<div class="options">
+
+  <!-- OPTION A -->
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="option-label">
+      <div class="letter">A</div>
+      <div>
+        <div class="option-title">Chaos to Order</div>
+        <div class="option-desc">Scattered photo tiles fly in messy, then snap into a clean structured blog</div>
+      </div>
+    </div>
+
+    <div class="mockup-row">
+      <!-- BEFORE: chaos -->
+      <div>
+        <div class="phone-frame">
+          <div class="chaos-grid">
+            <div class="chaos-photo c1 r1"></div>
+            <div class="chaos-photo c5 r4"></div>
+            <div class="chaos-photo c3 r7"></div>
+            <div class="chaos-photo c7 r2"></div>
+            <div class="chaos-photo c11 r5"></div>
+            <div class="chaos-photo c2 r8"></div>
+            <div class="chaos-photo c9 r3"></div>
+            <div class="chaos-photo c14 r6"></div>
+            <div class="chaos-photo c6 r9"></div>
+            <div class="chaos-photo c12 r1"></div>
+            <div class="chaos-photo c4 r5"></div>
+            <div class="chaos-photo c8 r2"></div>
+            <div class="chaos-photo c13 r7"></div>
+            <div class="chaos-photo c15 r4"></div>
+            <div class="chaos-photo c10 r6"></div>
+          </div>
+        </div>
+        <div class="phone-label">Your camera roll</div>
+      </div>
+
+      <div class="arrow-label">
+        ✦
+        <span>becomes</span>
+      </div>
+
+      <!-- AFTER: clean blog -->
+      <div>
+        <div class="phone-frame">
+          <div class="blog-preview-a">
+            <div class="blog-cover">
+              <div class="blog-cover-text">
+                <div class="title">Bali Trip 2024</div>
+                <div class="sub">12 places · 6 days</div>
+              </div>
+            </div>
+            <div class="blog-day-row">
+              <div class="blog-thumb c3"></div>
+              <div class="blog-day-info">
+                <div class="blog-badge">Day 1</div>
+                <div class="line"></div>
+                <div class="line short"></div>
+              </div>
+            </div>
+            <div class="blog-day-row">
+              <div class="blog-thumb c7"></div>
+              <div class="blog-day-info">
+                <div class="blog-badge">Day 2</div>
+                <div class="line"></div>
+                <div class="line short"></div>
+              </div>
+            </div>
+            <div class="blog-day-row">
+              <div class="blog-thumb c2"></div>
+              <div class="blog-day-info">
+                <div class="blog-badge">Day 3</div>
+                <div class="line"></div>
+                <div class="line short"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="phone-label">Your Bloggo</div>
+      </div>
+    </div>
+
+    <div style="margin-top:12px; color: rgba(255,255,255,0.4); font-size:12px;">
+      Animation: photos appear scattered with random rotations, then 0.8s spring snap into organized rows
+    </div>
+  </div>
+
+  <!-- OPTION B -->
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="option-label">
+      <div class="letter">B</div>
+      <div>
+        <div class="option-title">Swipe Transform</div>
+        <div class="option-desc">A single phone screen — half camera roll, half blog — with a dramatic wipe reveal</div>
+      </div>
+    </div>
+
+    <div class="mockup-row">
+      <div>
+        <div class="phone-frame" style="display:flex; flex-direction:row; overflow:hidden;">
+          <!-- Left half: camera roll -->
+          <div style="width:50%; height:100%; display:flex; flex-direction:column; gap:2px; padding:4px; overflow:hidden; border-right: 1.5px solid #0B84FF;">
+            <div class="roll-photo c1" style="height:40px;"></div>
+            <div class="roll-photo c5" style="height:32px;"></div>
+            <div class="roll-photo c3" style="height:44px;"></div>
+            <div class="roll-photo c7" style="height:36px;"></div>
+            <div class="roll-photo c11" style="height:40px;"></div>
+            <div class="roll-photo c2" style="height:32px;"></div>
+            <div class="roll-photo c9" style="height:38px;"></div>
+          </div>
+          <!-- Right half: blog -->
+          <div style="width:50%; height:100%; padding:5px; display:flex; flex-direction:column; gap:4px;">
+            <div style="height:60px; border-radius:7px; background: linear-gradient(135deg, #2E62E0, #5b3fa0);"></div>
+            <div style="height:28px; border-radius:5px; background:rgba(255,255,255,0.07); display:flex; align-items:center; padding:0 5px; gap:4px;">
+              <div style="width:20px;height:20px;border-radius:4px;" class="c3"></div>
+              <div style="flex:1; display:flex; flex-direction:column; gap:2px;">
+                <div style="height:4px;background:rgba(255,255,255,0.15);border-radius:2px;"></div>
+                <div style="height:3px;background:rgba(255,255,255,0.08);border-radius:2px;width:70%;"></div>
+              </div>
+            </div>
+            <div style="height:28px; border-radius:5px; background:rgba(255,255,255,0.07); display:flex; align-items:center; padding:0 5px; gap:4px;">
+              <div style="width:20px;height:20px;border-radius:4px;" class="c7"></div>
+              <div style="flex:1; display:flex; flex-direction:column; gap:2px;">
+                <div style="height:4px;background:rgba(255,255,255,0.15);border-radius:2px;"></div>
+                <div style="height:3px;background:rgba(255,255,255,0.08);border-radius:2px;width:60%;"></div>
+              </div>
+            </div>
+            <div style="height:28px; border-radius:5px; background:rgba(255,255,255,0.07); display:flex; align-items:center; padding:0 5px; gap:4px;">
+              <div style="width:20px;height:20px;border-radius:4px;" class="c2"></div>
+              <div style="flex:1; display:flex; flex-direction:column; gap:2px;">
+                <div style="height:4px;background:rgba(255,255,255,0.15);border-radius:2px;"></div>
+                <div style="height:3px;background:rgba(255,255,255,0.08);border-radius:2px;width:75%;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="phone-label" style="text-align:center;">Sliding wipe left → right</div>
+      </div>
+
+      <div style="max-width:200px; color: rgba(255,255,255,0.45); font-size:12px; line-height:1.6;">
+        A vertical divider slides from left to right, revealing the organized blog behind the camera roll — like a curtain pull.
+      </div>
+    </div>
+
+    <div style="margin-top:12px; color: rgba(255,255,255,0.4); font-size:12px;">
+      Animation: wipe from left (0%) → right (100%) over 1.5s, then staggered blog rows fade up
+    </div>
+  </div>
+
+  <!-- OPTION C -->
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="option-label">
+      <div class="letter">C</div>
+      <div>
+        <div class="option-title">Filmstrip + Crystallize</div>
+        <div class="option-desc">A horizontal strip of random photos at top — tap one, it "crystallizes" into a full blog below</div>
+      </div>
+    </div>
+
+    <div class="mockup-row">
+      <div>
+        <div class="phone-frame">
+          <div class="filmstrip-phone">
+            <!-- Top strip -->
+            <div class="filmstrip-bar">
+              <div class="film-frame c5"></div>
+              <div class="film-frame c1"></div>
+              <div class="film-frame c8 selected-frame"></div>
+              <div class="film-frame c3"></div>
+              <div class="film-frame c11"></div>
+            </div>
+            <!-- Bottom: blog content fading in below selected -->
+            <div class="blog-content-area">
+              <div style="display:flex; align-items:center; gap:6px; margin-bottom:2px;">
+                <div style="width:32px;height:32px;border-radius:50%;background:#2E62E0;flex-shrink:0;"></div>
+                <div>
+                  <div style="height:5px;background:rgba(255,255,255,0.2);border-radius:3px;width:80px;margin-bottom:3px;"></div>
+                  <div style="height:4px;background:rgba(255,255,255,0.1);border-radius:3px;width:50px;"></div>
+                </div>
+              </div>
+              <div class="blog-map-bar"><span>MAP VIEW</span></div>
+              <div class="blog-note-line" style="width:100%;"></div>
+              <div class="blog-note-line" style="width:80%;"></div>
+              <div class="blog-note-line" style="width:90%;"></div>
+              <div style="display:flex;gap:4px;margin-top:4px;">
+                <div style="flex:1;height:44px;border-radius:6px;" class="c8"></div>
+                <div style="flex:1;height:44px;border-radius:6px;" class="c3"></div>
+                <div style="flex:1;height:44px;border-radius:6px;" class="c7"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="phone-label">Scroll strip · tap to reveal</div>
+      </div>
+
+      <div style="max-width:200px; color: rgba(255,255,255,0.45); font-size:12px; line-height:1.6;">
+        Auto-scrolling filmstrip of chaotic photos at top. One photo auto-selects and the organized blog "blooms" below it.
+      </div>
+    </div>
+
+    <div style="margin-top:12px; color: rgba(255,255,255,0.4); font-size:12px;">
+      Animation: strip auto-scrolls, then one photo scale-bounces + blog content fades up from bottom in stages
+    </div>
+  </div>
+
+</div>
+
+<script>
+function toggleSelect(el) {
+  document.querySelectorAll('.option').forEach(o => o.classList.remove('selected'));
+  el.classList.add('selected');
+  if (window.recordChoice) recordChoice(el.dataset.choice, el.querySelector('.option-title').textContent);
+}
+</script>
+</body>
+</html>

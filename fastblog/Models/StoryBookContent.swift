@@ -28,6 +28,8 @@ struct StoryBookContent {
 struct CoverContent {
     let title: String
     let subtitle: String        // e.g. "March 12–19, 2025"
+    let dayCount: Int
+    let momentCount: Int
     let coverPhoto: UIImage?    // nil → gradient placeholder (EC-5)
     /// AI trip-opening narrative; shown under the title block when non-empty (matches recap editor).
     let tripNarrative: String?

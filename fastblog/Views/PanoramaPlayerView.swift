@@ -29,6 +29,8 @@ struct PanoramaMapIntroSlide: Equatable {
     let dayID: UUID
     let dayNumber: Int
     let dayDateText: String
+    let placeCount: Int
+    let photoCount: Int
     let placeStops: [PlaceStop]
 
     static let identifierPrefix = "bloggo-map-intro:"
@@ -36,6 +38,17 @@ struct PanoramaMapIntroSlide: Equatable {
     static func identifier(forDayID dayID: UUID) -> String {
         "\(identifierPrefix)\(dayID.uuidString.lowercased())"
     }
+}
+
+struct PanoramaCoverIntroSlide: Equatable {
+    let id: String
+    let coverPhotoID: String
+    let title: String
+    let subtitle: String
+    let dayCount: Int
+    let momentCount: Int
+
+    static let identifier = "bloggo-cover-intro"
 }
 
 // MARK: - Layout variant (solo or top/bottom diptych only)
@@ -63,6 +76,8 @@ struct PanoramaPlayerView: View {
     let photoGroups: [[PanoramaPhotoEntry]]
     /// Optional generated map intro pages inserted into `photoGroups` by ID.
     let mapIntroSlides: [PanoramaMapIntroSlide]
+    /// Optional first slide that mirrors the recap/blog cover hero.
+    let coverIntroSlide: PanoramaCoverIntroSlide?
     /// Mirrors video export option: centered timestamp badges on slideshow frames.
     let includeTimestamps: Bool
     /// Used to persist the chosen slideshow track for this recap (`UserDefaults`, keyed by blog).
@@ -82,6 +97,7 @@ struct PanoramaPlayerView: View {
     init(
         photoGroups: [[PanoramaPhotoEntry]],
         mapIntroSlides: [PanoramaMapIntroSlide] = [],
+        coverIntroSlide: PanoramaCoverIntroSlide? = nil,
         includeTimestamps: Bool = true,
         blogId: UUID,
         blogTitle: String,
@@ -92,6 +108,7 @@ struct PanoramaPlayerView: View {
     ) {
         self.photoGroups = photoGroups
         self.mapIntroSlides = mapIntroSlides
+        self.coverIntroSlide = coverIntroSlide
         self.includeTimestamps = includeTimestamps
         self.blogId = blogId
         self.blogTitle = blogTitle
@@ -387,9 +404,19 @@ struct PanoramaPlayerView: View {
 
         case .solo:
             if let id = topPhotoId, let img = loadedImages[id] {
-                soloZoomView(img: img, size: geo.size)
-                    .transition(.opacity)   // crossfade between photos
-                    .id("solo-\(currentGroupIndex)-\(currentSlideOffset)")
+                if let mapIntro = mapIntroById[id] {
+                    mapIntroView(slide: mapIntro, image: img, size: geo.size)
+                        .transition(.opacity)
+                        .id("map-\(currentGroupIndex)-\(currentSlideOffset)")
+                } else if let coverIntro = coverIntroSlide, id == coverIntro.id {
+                    coverIntroView(slide: coverIntro, image: img, size: geo.size)
+                        .transition(.opacity)
+                        .id("cover-\(currentGroupIndex)-\(currentSlideOffset)")
+                } else {
+                    soloZoomView(img: img, size: geo.size)
+                        .transition(.opacity)   // crossfade between photos
+                        .id("solo-\(currentGroupIndex)-\(currentSlideOffset)")
+                }
             } else {
                 loadingPlaceholder
             }
@@ -424,6 +451,90 @@ struct PanoramaPlayerView: View {
                 startDiptychTimer()
             }
         }
+    }
+
+    @ViewBuilder
+    private func mapIntroView(slide: PanoramaMapIntroSlide, image: UIImage, size: CGSize) -> some View {
+        // Keep map metadata safely above slideshow progress + transport controls.
+        let bottomSafeOffset: CGFloat = 138
+        ZStack(alignment: .bottomLeading) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size.width, height: size.height)
+                .clipped()
+
+            LinearGradient(
+                colors: [.black.opacity(0.05), .black.opacity(0.72)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(width: size.width, height: size.height)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Day \(slide.dayNumber)")
+                    .font(.system(size: 42, weight: .heavy, design: .rounded))
+                    .foregroundColor(.white)
+                if !slide.dayDateText.isEmpty {
+                    Text(slide.dayDateText)
+                        .font(.system(size: 24, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.92))
+                }
+                Text("\(slide.placeCount) places visited • \(slide.photoCount) photos")
+                    .font(.system(size: 20, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.9))
+            }
+            .padding(.horizontal, 26)
+            .padding(.vertical, 24)
+            .padding(.bottom, bottomSafeOffset)
+        }
+        .frame(width: size.width, height: size.height)
+    }
+
+    @ViewBuilder
+    private func coverIntroView(slide: PanoramaCoverIntroSlide, image: UIImage, size: CGSize) -> some View {
+        ZStack {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size.width, height: size.height)
+                .clipped()
+
+            LinearGradient(
+                colors: [.black.opacity(0.56), .black.opacity(0.25), .black.opacity(0.62)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(width: size.width, height: size.height)
+
+            VStack(spacing: 14) {
+                Text(slide.title)
+                    .font(.system(size: 36, weight: .bold))
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+
+                Text(slide.subtitle)
+                    .font(.system(size: 21, weight: .medium))
+                    .foregroundColor(.white.opacity(0.92))
+                    .multilineTextAlignment(.center)
+
+                Text("\(slide.dayCount) \(slide.dayCount == 1 ? "Day" : "Days") • \(slide.momentCount) \(slide.momentCount == 1 ? "Moment" : "Moments")")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.96))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(Color.black.opacity(0.3))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18)
+                            .stroke(Color.white.opacity(0.34), lineWidth: 0.9)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+            .padding(.horizontal, 28)
+            .frame(maxWidth: min(620, size.width - 56))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(width: size.width, height: size.height)
     }
 
     // MARK: - Solo zoom view (Ken Burns style)
@@ -1192,7 +1303,8 @@ struct PanoramaPlayerView: View {
                         for: intro.placeStops,
                         size: targetSize,
                         regionPadding: 0.045,
-                        showPlaceNames: true
+                        showPlaceNames: true,
+                        showSegmentMiles: true
                     )
                     return (intro.id, image)
                 }
@@ -1231,16 +1343,31 @@ struct PanoramaPlayerView: View {
                     for: intro.placeStops,
                     size: CGSize(width: screenSize.width * 2, height: screenSize.height * 2),
                     regionPadding: 0.045,
-                    showPlaceNames: true
+                    showPlaceNames: true,
+                    showSegmentMiles: true
                 ) {
                     await MainActor.run { loadedImages[id] = image }
                 }
                 continue
             }
-            if let img = await ImageLoader.shared.loadImage(assetIdentifier: id, targetSize: targetSize) {
+            if let coverIntro = coverIntroSlide, id == coverIntro.id {
+                if let img = await loadImageForSlideshowIdentifier(coverIntro.coverPhotoID, targetSize: targetSize) {
+                    await MainActor.run { loadedImages[id] = img }
+                }
+                continue
+            }
+            if let img = await loadImageForSlideshowIdentifier(id, targetSize: targetSize) {
                 await MainActor.run { loadedImages[id] = img }
             }
         }
+    }
+
+    private func loadImageForSlideshowIdentifier(_ id: String, targetSize: CGSize) async -> UIImage? {
+        if id.hasPrefix(AppCapturePhotoService.prefix),
+           let img = AppCapturePhotoService.shared.loadImage(identifier: id) {
+            return img
+        }
+        return await ImageLoader.shared.loadImage(assetIdentifier: id, targetSize: targetSize)
     }
 
 }

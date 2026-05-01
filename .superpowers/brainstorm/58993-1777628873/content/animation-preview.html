@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Onboarding Animation Preview</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #050A30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 100vh;
+  padding: 32px 20px 60px;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+  color: #fff;
+}
+
+h1 { font-size: 18px; font-weight: 700; color: #C8EBFF; margin-bottom: 6px; text-align: center; }
+.subtitle { font-size: 13px; color: rgba(255,255,255,0.4); margin-bottom: 28px; text-align: center; }
+
+/* ─── PHONE FRAME ─────────────────────────────── */
+.phone-wrap {
+  position: relative;
+  width: 300px;
+}
+
+.phone-frame {
+  width: 300px;
+  height: 620px;
+  background: #080E38;
+  border-radius: 44px;
+  border: 3px solid rgba(255,255,255,0.14);
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05);
+}
+
+/* Notch */
+.phone-frame::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 50%; transform: translateX(-50%);
+  width: 100px; height: 28px;
+  background: #080E38;
+  border-radius: 0 0 18px 18px;
+  z-index: 100;
+  border: 3px solid rgba(255,255,255,0.08);
+  border-top: none;
+}
+
+/* ─── ANIMATION STAGE ─────────────────────────── */
+.stage {
+  width: 100%; height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ─── BACKGROUND ──────────────────────────────── */
+.bg {
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, #050A30 0%, #080E38 100%);
+  z-index: 0;
+}
+
+/* ─── CAMERA ROLL LABEL (phase 1) ─────────────── */
+.camera-label {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  z-index: 2;
+  opacity: 0;
+  animation: labelAppear 0.5s ease-out 0.3s forwards,
+             labelFade   0.4s ease-in  1.8s forwards;
+}
+.camera-label .icon {
+  font-size: 36px; margin-bottom: 8px;
+  display: block;
+}
+.camera-label .text {
+  font-size: 13px; font-weight: 600;
+  color: rgba(255,255,255,0.4);
+  letter-spacing: 0.5px;
+}
+
+@keyframes labelAppear { to { opacity: 1; } }
+@keyframes labelFade   { to { opacity: 0; } }
+
+/* ─── FALLING PHOTOS ──────────────────────────── */
+.photos-layer {
+  position: absolute; inset: 0; z-index: 3;
+  pointer-events: none;
+}
+
+.photo {
+  position: absolute;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  opacity: 0;
+  border: 1.5px solid rgba(255,255,255,0.08);
+}
+
+/* Each photo: fall from above, end up in messy pile */
+/* Photo dimensions and start/end positions */
+
+/* P1 – large, left-center */
+.p1 { width: 88px; height: 88px; left: 20px; background: linear-gradient(135deg, #e07040, #b04020); }
+.p1 { animation: fall1 0.65s cubic-bezier(.3,0,.6,1) 2.0s both, toDust 0.5s ease-in 4.5s forwards; }
+@keyframes fall1 {
+  0%   { opacity: 0; transform: translateY(-160px) rotate(-14deg) scale(1.05); }
+  60%  { opacity: 1; }
+  85%  { transform: translateY(320px) rotate(-10deg) scale(1.0); }
+  95%  { transform: translateY(310px) rotate(-12deg) scale(1.0); }
+  100% { opacity: 1; transform: translateY(315px) rotate(-11deg) scale(1.0); }
+}
+
+/* P2 – medium, right */
+.p2 { width: 72px; height: 95px; left: 190px; background: linear-gradient(135deg, #4070e0, #2040a0); }
+.p2 { animation: fall2 0.6s cubic-bezier(.3,0,.6,1) 2.2s both, toDust 0.5s ease-in 4.5s forwards; }
+@keyframes fall2 {
+  0%   { opacity: 0; transform: translateY(-140px) rotate(18deg) scale(0.95); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(285px) rotate(15deg) scale(0.95); }
+}
+
+/* P3 – small, center */
+.p3 { width: 60px; height: 60px; left: 120px; background: linear-gradient(135deg, #40a060, #207040); }
+.p3 { animation: fall3 0.55s cubic-bezier(.3,0,.6,1) 2.35s both, toDust 0.5s ease-in 4.5s forwards; }
+@keyframes fall3 {
+  0%   { opacity: 0; transform: translateY(-120px) rotate(-6deg); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(350px) rotate(-4deg); }
+}
+
+/* P4 – wide, top-right */
+.p4 { width: 100px; height: 70px; left: 160px; background: linear-gradient(135deg, #9040b0, #601090); }
+.p4 { animation: fall4 0.7s cubic-bezier(.3,0,.6,1) 2.1s both, toDust 0.5s ease-in 4.5s forwards; }
+@keyframes fall4 {
+  0%   { opacity: 0; transform: translateY(-150px) rotate(22deg); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(230px) rotate(19deg); }
+}
+
+/* P5 – small, far left */
+.p5 { width: 55px; height: 75px; left: 8px; background: linear-gradient(135deg, #e04060, #a01040); }
+.p5 { animation: fall5 0.58s cubic-bezier(.3,0,.6,1) 2.45s both, toDust 0.5s ease-in 4.5s forwards; }
+@keyframes fall5 {
+  0%   { opacity: 0; transform: translateY(-130px) rotate(-20deg); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(390px) rotate(-17deg); }
+}
+
+/* P6 – medium square, center-left */
+.p6 { width: 78px; height: 78px; left: 68px; background: linear-gradient(135deg, #d0a040, #906010); }
+.p6 { animation: fall6 0.62s cubic-bezier(.3,0,.6,1) 2.3s both, toDust 0.5s ease-in 4.5s forwards; }
+@keyframes fall6 {
+  0%   { opacity: 0; transform: translateY(-140px) rotate(8deg); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(260px) rotate(6deg); }
+}
+
+/* P7 – portrait, far right */
+.p7 { width: 65px; height: 90px; left: 225px; background: linear-gradient(135deg, #40c0a0, #108060); }
+.p7 { animation: fall7 0.65s cubic-bezier(.3,0,.6,1) 2.55s both, toDust 0.5s ease-in 4.5s forwards; }
+@keyframes fall7 {
+  0%   { opacity: 0; transform: translateY(-150px) rotate(-12deg); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(330px) rotate(-10deg); }
+}
+
+/* P8 – large landscape, center */
+.p8 { width: 110px; height: 75px; left: 85px; background: linear-gradient(135deg, #6080d0, #3050a0); }
+.p8 { animation: fall8 0.68s cubic-bezier(.3,0,.6,1) 2.15s both, toDust 0.5s ease-in 4.5s forwards; }
+@keyframes fall8 {
+  0%   { opacity: 0; transform: translateY(-160px) rotate(-16deg); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(200px) rotate(-14deg); }
+}
+
+/* P9 – small, center-right */
+.p9 { width: 58px; height: 58px; left: 148px; background: linear-gradient(135deg, #e08030, #a04010); }
+.p9 { animation: fall9 0.52s cubic-bezier(.3,0,.6,1) 2.5s both, toDust 0.5s ease-in 4.5s forwards; }
+@keyframes fall9 {
+  0%   { opacity: 0; transform: translateY(-120px) rotate(10deg); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(420px) rotate(8deg); }
+}
+
+/* P10 – medium, left */
+.p10 { width: 75px; height: 85px; left: 38px; background: linear-gradient(135deg, #3090c0, #105080); }
+.p10 { animation: fall10 0.6s cubic-bezier(.3,0,.6,1) 2.4s both, toDust 0.5s ease-in 4.5s forwards; }
+@keyframes fall10 {
+  0%   { opacity: 0; transform: translateY(-140px) rotate(14deg); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(370px) rotate(12deg); }
+}
+
+/* P11 – tall, center-right */
+.p11 { width: 66px; height: 100px; left: 108px; background: linear-gradient(135deg, #a050a0, #601060); }
+.p11 { animation: fall11 0.7s cubic-bezier(.3,0,.6,1) 2.25s both, toDust 0.5s ease-in 4.5s forwards; }
+@keyframes fall11 {
+  0%   { opacity: 0; transform: translateY(-170px) rotate(-9deg); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(280px) rotate(-7deg); }
+}
+
+/* P12 – small, right-center */
+.p12 { width: 54px; height: 64px; left: 200px; background: linear-gradient(135deg, #60a050, #306030); }
+.p12 { animation: fall12 0.56s cubic-bezier(.3,0,.6,1) 2.6s both, toDust 0.5s ease-in 4.5s forwards; }
+@keyframes fall12 {
+  0%   { opacity: 0; transform: translateY(-130px) rotate(25deg); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: translateY(450px) rotate(22deg); }
+}
+
+/* Photo caption labels */
+.photo-caption {
+  position: absolute;
+  bottom: 5px; left: 5px;
+  font-size: 7px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.8);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+  background: rgba(0,0,0,0.35);
+  padding: 1px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: calc(100% - 10px);
+}
+
+/* Fade out all photos */
+@keyframes toDust {
+  0%   { opacity: 1; }
+  100% { opacity: 0; transform: scale(0.8) translateY(30px); filter: blur(4px); }
+}
+
+/* ─── FLASH / TRANSITION ──────────────────────── */
+.flash {
+  position: absolute; inset: 0; z-index: 20;
+  background: rgba(255,255,255,0);
+  pointer-events: none;
+  animation: flashBurst 0.4s ease-out 4.7s forwards;
+}
+@keyframes flashBurst {
+  0%   { background: rgba(255,255,255,0); }
+  30%  { background: rgba(255,255,255,0.25); }
+  100% { background: rgba(255,255,255,0); }
+}
+
+/* ─── BLOG UI ─────────────────────────────────── */
+.blog-ui {
+  position: absolute; inset: 0; z-index: 10;
+  display: flex; flex-direction: column;
+  opacity: 0;
+  background: #000;
+  animation: blogAppear 0.5s ease-out 4.9s forwards;
+}
+@keyframes blogAppear { to { opacity: 1; } }
+
+/* Cover */
+.blog-cover {
+  width: 100%; height: 260px;
+  position: relative;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: linear-gradient(145deg, #1a2a6c, #2d3561, #6a1a4c);
+}
+
+.cover-photo-grid {
+  position: absolute; inset: 0;
+  display: grid;
+  grid-template-columns: 60% 40%;
+  grid-template-rows: 55% 45%;
+  gap: 2px;
+}
+.cover-photo-grid .cp1 { background: linear-gradient(145deg, #e07040, #903020); }
+.cover-photo-grid .cp2 { background: linear-gradient(145deg, #4070e0, #2030a0); grid-row: span 2; }
+.cover-photo-grid .cp3 { background: linear-gradient(145deg, #40a060, #206040); }
+
+/* Cover inner label */
+.cover-inner-label {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  padding: 16px;
+}
+.cover-scrim {
+  position: absolute; inset: 0;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.25) 50%, rgba(0,0,0,0.75) 100%);
+}
+
+/* Cover text animations */
+.cover-place {
+  position: relative; z-index: 2;
+  font-size: 9px; font-weight: 700;
+  color: rgba(255,255,255,0.6);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  opacity: 0;
+  transform: translateY(8px);
+  animation: slideUp 0.45s ease-out 5.3s forwards;
+}
+.cover-title {
+  position: relative; z-index: 2;
+  font-size: 26px; font-weight: 800;
+  color: #fff;
+  line-height: 1.1;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  opacity: 0;
+  transform: translateY(8px);
+  animation: slideUp 0.45s ease-out 5.5s forwards;
+}
+.cover-subtitle {
+  position: relative; z-index: 2;
+  font-size: 13px; font-weight: 500;
+  color: rgba(255,255,255,0.85);
+  margin-top: 4px;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  opacity: 0;
+  transform: translateY(8px);
+  animation: slideUp 0.45s ease-out 5.65s forwards;
+}
+.cover-pills {
+  position: relative; z-index: 2;
+  display: flex; gap: 7px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+  opacity: 0;
+  transform: translateY(8px);
+  animation: slideUp 0.45s ease-out 5.8s forwards;
+}
+.pill {
+  background: rgba(0,0,0,0.3);
+  border: 0.5px solid rgba(255,255,255,0.3);
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 10px; font-weight: 600;
+  color: #fff;
+}
+
+@keyframes slideUp {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Blog scroll content */
+.blog-scroll {
+  flex: 1;
+  overflow: hidden;
+  background: #000;
+  display: flex; flex-direction: column;
+  gap: 0;
+}
+
+/* Day header */
+.day-header {
+  padding: 14px 16px 8px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 0.5px solid rgba(255,255,255,0.08);
+  opacity: 0;
+  transform: translateY(12px);
+  animation: slideUp 0.4s ease-out 6.1s forwards;
+}
+.day-tag {
+  font-size: 10px; font-weight: 700;
+  background: rgba(255,255,255,0.1);
+  border-radius: 10px;
+  padding: 3px 9px;
+  color: rgba(255,255,255,0.55);
+  letter-spacing: 0.5px;
+}
+.day-date {
+  font-size: 11px; color: rgba(255,255,255,0.35);
+}
+
+/* Place card */
+.place-card {
+  margin: 0 12px 8px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex; gap: 0;
+  border: 0.5px solid rgba(255,255,255,0.07);
+  opacity: 0;
+  transform: translateY(12px);
+}
+.place-card:nth-child(1) { animation: slideUp 0.4s ease-out 6.3s forwards; }
+.place-card:nth-child(2) { animation: slideUp 0.4s ease-out 6.5s forwards; }
+.place-card:nth-child(3) { animation: slideUp 0.4s ease-out 6.7s forwards; }
+
+.place-thumb {
+  width: 70px; height: 70px;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+.place-thumb-img {
+  width: 100%; height: 100%;
+}
+.place-info {
+  flex: 1;
+  padding: 8px 10px;
+  display: flex; flex-direction: column; justify-content: center; gap: 3px;
+}
+.place-name {
+  font-size: 12px; font-weight: 700;
+  color: #fff;
+  line-height: 1.2;
+}
+.place-sub {
+  font-size: 10px;
+  color: rgba(255,255,255,0.45);
+}
+.place-photos-row {
+  display: flex; gap: 3px; margin-top: 4px;
+}
+.place-mini-photo {
+  width: 22px; height: 22px;
+  border-radius: 5px;
+}
+.place-more {
+  width: 22px; height: 22px;
+  border-radius: 5px;
+  background: rgba(255,255,255,0.08);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 8px; color: rgba(255,255,255,0.4);
+}
+
+/* ─── REPLAY BUTTON ───────────────────────────── */
+.replay-btn {
+  margin-top: 24px;
+  background: rgba(200,235,255,0.1);
+  border: 1px solid rgba(200,235,255,0.2);
+  color: #C8EBFF;
+  font-size: 13px; font-weight: 600;
+  padding: 10px 28px;
+  border-radius: 24px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.replay-btn:hover { background: rgba(200,235,255,0.18); }
+
+/* ─── PROGRESS BAR ────────────────────────────── */
+.progress-bar {
+  width: 300px; height: 3px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 2px;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, #2E62E0, #0B84FF);
+  border-radius: 2px;
+  animation: progressAnim 7s linear 0.3s forwards;
+}
+@keyframes progressAnim { to { width: 100%; } }
+
+/* Phase labels */
+.phase-label {
+  font-size: 11px; color: rgba(255,255,255,0.3);
+  margin-bottom: 12px;
+  height: 16px;
+  text-align: center;
+  letter-spacing: 0.3px;
+}
+</style>
+</head>
+<body>
+
+<h1>Animation Preview</h1>
+<p class="subtitle">Onboarding page 2 — "Chaos to Order" sequence</p>
+
+<div class="progress-bar"><div class="progress-fill"></div></div>
+
+<div class="phone-wrap">
+  <div class="phone-frame">
+    <div class="stage">
+      <div class="bg"></div>
+
+      <!-- Camera roll label -->
+      <div class="camera-label">
+        <span class="icon">📷</span>
+        <span class="text">Your Camera Roll</span>
+      </div>
+
+      <!-- Falling photos -->
+      <div class="photos-layer">
+        <div class="photo p1"><span class="photo-caption">IMG_3847</span></div>
+        <div class="photo p2"><span class="photo-caption">IMG_0291</span></div>
+        <div class="photo p3"><span class="photo-caption">IMG_5512</span></div>
+        <div class="photo p4"><span class="photo-caption">IMG_7734</span></div>
+        <div class="photo p5"><span class="photo-caption">IMG_1192</span></div>
+        <div class="photo p6"><span class="photo-caption">IMG_4405</span></div>
+        <div class="photo p7"><span class="photo-caption">IMG_8823</span></div>
+        <div class="photo p8"><span class="photo-caption">IMG_2267</span></div>
+        <div class="photo p9"><span class="photo-caption">IMG_6098</span></div>
+        <div class="photo p10"><span class="photo-caption">IMG_3311</span></div>
+        <div class="photo p11"><span class="photo-caption">IMG_9940</span></div>
+        <div class="photo p12"><span class="photo-caption">IMG_0774</span></div>
+      </div>
+
+      <!-- Flash transition -->
+      <div class="flash"></div>
+
+      <!-- Blog UI -->
+      <div class="blog-ui">
+
+        <!-- Cover -->
+        <div class="blog-cover">
+          <div class="cover-photo-grid">
+            <div class="cp1"></div>
+            <div class="cp2"></div>
+            <div class="cp3"></div>
+          </div>
+          <div class="cover-scrim"></div>
+          <div class="cover-inner-label">
+            <div class="cover-place">Bali, Indonesia</div>
+            <div class="cover-title">Summer Escape<br>2024</div>
+            <div class="cover-subtitle">Ubud · Seminyak · Nusa Penida</div>
+            <div class="cover-pills">
+              <div class="pill">6 Days</div>
+              <div class="pill">14 Places</div>
+              <div class="pill">182 Moments</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Day + Places -->
+        <div class="blog-scroll">
+          <div class="day-header">
+            <div class="day-tag">Day 1</div>
+            <div class="day-date">Jun 12, 2024</div>
+          </div>
+
+          <!-- Place 1 -->
+          <div class="place-card">
+            <div class="place-thumb">
+              <div class="place-thumb-img" style="background: linear-gradient(135deg,#e07040,#903020);"></div>
+            </div>
+            <div class="place-info">
+              <div class="place-name">Tegallalang Rice Terraces</div>
+              <div class="place-sub">Ubud · 2:14 PM</div>
+              <div class="place-photos-row">
+                <div class="place-mini-photo" style="background:linear-gradient(135deg,#e07040,#903020);"></div>
+                <div class="place-mini-photo" style="background:linear-gradient(135deg,#d09030,#805010);"></div>
+                <div class="place-mini-photo" style="background:linear-gradient(135deg,#40a060,#206040);"></div>
+                <div class="place-more">+9</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Place 2 -->
+          <div class="place-card">
+            <div class="place-thumb">
+              <div class="place-thumb-img" style="background: linear-gradient(135deg,#4070e0,#2030a0);"></div>
+            </div>
+            <div class="place-info">
+              <div class="place-name">Tirta Empul Temple</div>
+              <div class="place-sub">Tampaksiring · 4:50 PM</div>
+              <div class="place-photos-row">
+                <div class="place-mini-photo" style="background:linear-gradient(135deg,#4070e0,#2030a0);"></div>
+                <div class="place-mini-photo" style="background:linear-gradient(135deg,#6080d0,#3050a0);"></div>
+                <div class="place-more">+6</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Place 3 -->
+          <div class="place-card">
+            <div class="place-thumb">
+              <div class="place-thumb-img" style="background: linear-gradient(135deg,#9040b0,#601090);"></div>
+            </div>
+            <div class="place-info">
+              <div class="place-name">Kecak Fire Dance</div>
+              <div class="place-sub">Uluwatu · 7:30 PM</div>
+              <div class="place-photos-row">
+                <div class="place-mini-photo" style="background:linear-gradient(135deg,#9040b0,#601090);"></div>
+                <div class="place-mini-photo" style="background:linear-gradient(135deg,#e04060,#a01040);"></div>
+                <div class="place-mini-photo" style="background:linear-gradient(135deg,#d0a040,#906010);"></div>
+                <div class="place-more">+14</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<button class="replay-btn" onclick="replayAnimation()">Replay animation</button>
+
+<script>
+function replayAnimation() {
+  const phone = document.querySelector('.phone-frame');
+  const clone = phone.cloneNode(true);
+  phone.parentNode.replaceChild(clone, phone);
+
+  const pb = document.querySelector('.progress-fill');
+  pb.style.animation = 'none';
+  pb.getBoundingClientRect();
+  pb.style.animation = 'progressAnim 7s linear 0.3s forwards';
+}
+
+// Also wire up the recordChoice if visual companion script injected it
+if (window.recordChoice) {
+  recordChoice('a', 'Chaos to Order — animated preview');
+}
+</script>
+</body>
+</html>

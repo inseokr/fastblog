@@ -7,13 +7,20 @@ enum StoryBookBuilder {
     private static let coverImagePixelSize = CGSize(width: 1200, height: 1200)
 
     static func build(from detail: RecapBlogDetail) async -> StoryBookContent {
-        let coverPhoto = await loadCoverPhoto(identifier: detail.selectedCoverPhotoIdentifier)
+        let coverPhoto = await loadCoverPhoto(detail: detail)
         let dateRange = dateRangeString(from: detail.days)
+        let totalMoments = detail.days
+            .flatMap(\.placeStops)
+            .flatMap(\.photos)
+            .filter(\.isIncluded)
+            .count
         let tripTrimmed = detail.tripNarrative?.trimmingCharacters(in: .whitespacesAndNewlines)
         let tripNarrative: String? = (tripTrimmed?.isEmpty == false) ? tripTrimmed : nil
         let cover = CoverContent(
             title: detail.title,
             subtitle: dateRange,
+            dayCount: detail.days.count,
+            momentCount: totalMoments,
             coverPhoto: coverPhoto,
             tripNarrative: tripNarrative
         )
@@ -170,12 +177,37 @@ enum StoryBookBuilder {
         }
     }
 
-    private static func loadCoverPhoto(identifier: String?) async -> UIImage? {
-        guard let lid = normalizedLocalID(identifier) else { return nil }
-        if lid.hasPrefix(AppCapturePhotoService.prefix) {
-            return AppCapturePhotoService.shared.loadImage(identifier: lid)
+    /// Tries selected cover local identifier first, then falls back to matching recap photo
+    /// so Story slideshow can still show the cover when only cloud URL is available.
+    private static func loadCoverPhoto(detail: RecapBlogDetail) async -> UIImage? {
+        if let lid = normalizedLocalID(detail.selectedCoverPhotoIdentifier) {
+            if lid.hasPrefix(AppCapturePhotoService.prefix),
+               let appCaptureImage = AppCapturePhotoService.shared.loadImage(identifier: lid) {
+                return appCaptureImage
+            }
+
+            if let libraryImage = await ImageLoader.shared.loadImage(assetIdentifier: lid, targetSize: coverImagePixelSize) {
+                return libraryImage
+            }
+
+            if let matchingPhoto = detail.days
+                .flatMap(\.placeStops)
+                .flatMap(\.photos)
+                .first(where: { normalizedLocalID($0.localIdentifier) == lid }),
+               let resolvedPhoto = await loadImageForRecapPhoto(matchingPhoto, targetPixelSize: coverImagePixelSize) {
+                return resolvedPhoto
+            }
         }
-        return await ImageLoader.shared.loadImage(assetIdentifier: lid, targetSize: coverImagePixelSize)
+
+        // Final fallback: first included photo in the blog.
+        if let fallbackPhoto = detail.days
+            .flatMap(\.placeStops)
+            .flatMap(\.photos)
+            .first(where: \.isIncluded) {
+            return await loadImageForRecapPhoto(fallbackPhoto, targetPixelSize: coverImagePixelSize)
+        }
+
+        return nil
     }
 
     private static func formattedTimestamp(_ digitized: String?) -> String? {

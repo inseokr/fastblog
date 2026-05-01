@@ -215,6 +215,7 @@
 		BB000305 /* CameraRollPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000304 /* CameraRollPickerView.swift */; };
 		BB000306 /* AtmosphericWaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000307 /* AtmosphericWaveformView.swift */; };
 		BB000309 /* TripDistanceFromHomeOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000308 /* TripDistanceFromHomeOnboardingView.swift */; };
+		BB0003E5 /* CameraRollToBlogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003E4 /* CameraRollToBlogView.swift */; };
 		BB00030B /* SlideBlockTextEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00030A /* SlideBlockTextEditView.swift */; };
 		BB0003A1 /* PDFExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003A2 /* PDFExportOptionsSheet.swift */; };
 		BB0003B1 /* VisitedCitiesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0003B0 /* VisitedCitiesService.swift */; };
@@ -470,6 +471,7 @@
 		BB000304 /* CameraRollPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollPickerView.swift; sourceTree = "<group>"; };
 		BB000307 /* AtmosphericWaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtmosphericWaveformView.swift; sourceTree = "<group>"; };
 		BB000308 /* TripDistanceFromHomeOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripDistanceFromHomeOnboardingView.swift; sourceTree = "<group>"; };
+		BB0003E4 /* CameraRollToBlogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollToBlogView.swift; sourceTree = "<group>"; };
 		BB00030A /* SlideBlockTextEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideBlockTextEditView.swift; sourceTree = "<group>"; };
 		BB0003A2 /* PDFExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFExportOptionsSheet.swift; sourceTree = "<group>"; };
 		BB0003B0 /* VisitedCitiesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitedCitiesService.swift; sourceTree = "<group>"; };
@@ -766,6 +768,7 @@
 				BB000179 /* OnboardingFlowView.swift */,
 				BB00017B /* OnboardingState.swift */,
 				BB00017D /* SplashView.swift */,
+				BB0003E4 /* CameraRollToBlogView.swift */,
 				3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */,
 				BB000308 /* TripDistanceFromHomeOnboardingView.swift */,
 			);
@@ -1067,6 +1070,7 @@
 				BB00017A /* OnboardingFlowView.swift in Sources */,
 				BB00017C /* OnboardingState.swift in Sources */,
 				BB00017E /* SplashView.swift in Sources */,
+				BB0003E5 /* CameraRollToBlogView.swift in Sources */,
 				BB000180 /* CreatedRecapBlogStore.swift in Sources */,
 				BB0003D3 /* BlogBackupService.swift in Sources */,
 				BB000405 /* BlogDropService.swift in Sources */,

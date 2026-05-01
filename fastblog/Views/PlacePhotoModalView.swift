@@ -710,6 +710,7 @@ struct PlacePhotoModalView: View {
                 safeAreaTop: deviceSafeAreaInsets.top,
                 presentation: presentation,
                 isEditing: isEditing,
+                isCaptionFocused: isCaptionFocused,
                 blogIsEditMode: blogIsEditMode,
                 recapBlogIsReadOnly: recapBlogIsReadOnly,
                 openInCaptionEditor: openInCaptionEditor,
@@ -734,6 +735,9 @@ struct PlacePhotoModalView: View {
                 },
                 onSaveCaptionAndDismiss: {
                     commitCaption()
+                },
+                onDismissCaptionKeyboard: {
+                    isCaptionFocused = false
                 },
                 onDoneBlogEdit: {
                     if hasUnsavedChanges {
@@ -1100,32 +1104,40 @@ struct PlacePhotoModalView: View {
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 } else {
                                     HStack(alignment: .top, spacing: 10) {
-                                        Button {
-                                            isCaptionFocused = false
-                                            showRenameSheet = true
-                                        } label: {
+                                        if isCaptionFocused {
                                             Text(editedPlaceTitle)
                                                 .font(.title3)
                                                 .fontWeight(.bold)
                                                 .foregroundColor(.white)
                                                 .multilineTextAlignment(.leading)
-                                        }
-                                        .buttonStyle(.plain)
-                                        Button {
-                                            isCaptionFocused = false
-                                            showRenameSheet = true
-                                        } label: {
-                                            ZStack {
-                                                Circle()
-                                                    .fill(Color.white.opacity(0.22))
-                                                Image(systemName: "square.and.pencil")
-                                                    .font(.system(size: 14, weight: .semibold))
-                                                    .foregroundStyle(.white)
+                                        } else {
+                                            Button {
+                                                isCaptionFocused = false
+                                                showRenameSheet = true
+                                            } label: {
+                                                Text(editedPlaceTitle)
+                                                    .font(.title3)
+                                                    .fontWeight(.bold)
+                                                    .foregroundColor(.white)
+                                                    .multilineTextAlignment(.leading)
                                             }
-                                            .frame(width: 28, height: 28)
+                                            .buttonStyle(.plain)
+                                            Button {
+                                                isCaptionFocused = false
+                                                showRenameSheet = true
+                                            } label: {
+                                                ZStack {
+                                                    Circle()
+                                                        .fill(Color.white.opacity(0.22))
+                                                    Image(systemName: "square.and.pencil")
+                                                        .font(.system(size: 14, weight: .semibold))
+                                                        .foregroundStyle(.white)
+                                                }
+                                                .frame(width: 28, height: 28)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .accessibilityLabel("Edit place name")
                                         }
-                                        .buttonStyle(.plain)
-                                        .accessibilityLabel("Edit place name")
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 }
@@ -1137,7 +1149,7 @@ struct PlacePhotoModalView: View {
                                         .font(.caption)
                                         .fontWeight(.medium)
                                         .foregroundColor(.white.opacity(0.8))
-                                    if currentVoiceMemoURL != nil {
+                                    if currentVoiceMemoURL != nil && !isCaptionFocused {
                                         Button {
                                             guard let memoURL = currentVoiceMemoURL else { return }
                                             if voiceMemoPlayer.isPlaying {
@@ -1738,6 +1750,7 @@ private struct PlaceDetailTopChrome: View {
     let safeAreaTop: CGFloat
     let presentation: PlaceDetailPresentation
     let isEditing: Bool
+    let isCaptionFocused: Bool
     let blogIsEditMode: Bool
     let recapBlogIsReadOnly: Bool
     let openInCaptionEditor: Bool
@@ -1752,6 +1765,7 @@ private struct PlaceDetailTopChrome: View {
     let onCategoryTap: (() -> Void)?
     let onLeadingPrimary: () -> Void
     let onSaveCaptionAndDismiss: () -> Void
+    let onDismissCaptionKeyboard: () -> Void
     let onDoneBlogEdit: () -> Void
     let onMenuEditPlaceName: () -> Void
     let onMenuBeginCaptionEdit: () -> Void
@@ -1903,10 +1917,27 @@ private struct PlaceDetailTopChrome: View {
                                 }
                             }
                         } else if isEditing && !blogIsEditMode && !openInCaptionEditor {
-                            accentHeaderPill(title: "Save", fill: Color.blue, action: onSaveCaptionAndDismiss)
+                            if isCaptionFocused {
+                                accentHeaderPill(
+                                    title: "Done",
+                                    fill: Color.gray.opacity(0.75),
+                                    action: onDismissCaptionKeyboard
+                                )
+                            } else {
+                                accentHeaderPill(title: "Save", fill: Color.blue, action: onSaveCaptionAndDismiss)
+                            }
                         } else if blogIsEditMode && !openInCaptionEditor {
-                            blogEditPhotoSaveCapsule(action: onDoneBlogEdit)
+                            if isCaptionFocused {
+                                accentHeaderPill(
+                                    title: "Done",
+                                    fill: Color.gray.opacity(0.75),
+                                    action: onDismissCaptionKeyboard
+                                )
                                 .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
+                            } else {
+                                blogEditPhotoSaveCapsule(action: onDoneBlogEdit)
+                                    .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
+                            }
                         } else if openInCaptionEditor && !hideChromeDoneFromCaptionEditorSheet {
                             capsuleButton(title: "Done", action: onDoneBlogEdit)
                                 .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))

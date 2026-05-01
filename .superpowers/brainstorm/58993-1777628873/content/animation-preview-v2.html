@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Onboarding Animation v2 — Real Bloggo UI</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #050A30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  padding: 28px 20px 60px;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+  color: #fff;
+}
+
+h1 { font-size: 18px; font-weight: 700; color: #C8EBFF; margin-bottom: 6px; text-align: center; }
+.subtitle { font-size: 13px; color: rgba(255,255,255,0.4); margin-bottom: 20px; text-align: center; }
+
+.progress-bar {
+  width: 300px; height: 3px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 2px; margin-bottom: 20px; overflow: hidden;
+}
+.progress-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, #2E62E0, #0B84FF);
+  border-radius: 2px;
+  animation: progressAnim 8s linear 0.3s forwards;
+}
+@keyframes progressAnim { to { width: 100%; } }
+
+/* ─── PHONE ───────────────────────────────────── */
+.phone-frame {
+  width: 300px; height: 630px;
+  background: #000;
+  border-radius: 44px;
+  border: 3px solid rgba(255,255,255,0.14);
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05);
+}
+.phone-frame::before {
+  content: '';
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 90px; height: 26px;
+  background: #000;
+  border-radius: 0 0 16px 16px;
+  z-index: 200;
+  border: 3px solid rgba(255,255,255,0.08);
+  border-top: none;
+}
+
+/* ─── ANIMATION STAGE ─────────────────────────── */
+.stage { width: 100%; height: 100%; position: relative; overflow: hidden; background: linear-gradient(180deg, #050A30, #080E38); }
+
+/* ─── CAMERA ROLL LABEL ───────────────────────── */
+.camera-label {
+  position: absolute; top: 48%; left: 50%; transform: translate(-50%, -50%);
+  text-align: center; z-index: 2;
+  opacity: 0;
+  animation: labelFadeIn 0.5s ease-out 0.3s forwards, labelFadeOut 0.4s ease-in 1.9s forwards;
+}
+.camera-label .icon { font-size: 34px; margin-bottom: 8px; display: block; }
+.camera-label .text { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.4); letter-spacing: 0.5px; }
+@keyframes labelFadeIn { to { opacity: 1; } }
+@keyframes labelFadeOut { to { opacity: 0; } }
+
+/* ─── FALLING PHOTOS ──────────────────────────── */
+.photos-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.photo {
+  position: absolute; border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  opacity: 0;
+  border: 1.5px solid rgba(255,255,255,0.08);
+}
+.photo-caption {
+  position: absolute; bottom: 5px; left: 5px;
+  font-size: 7px; font-weight: 600; color: rgba(255,255,255,0.8);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+  background: rgba(0,0,0,0.4); padding: 1px 4px; border-radius: 3px;
+  white-space: nowrap; max-width: calc(100% - 10px);
+}
+
+/* Fall + dissolve keyframes per photo (12 photos, staggered) */
+.p1  { width:88px;height:88px; left:18px;  background:linear-gradient(135deg,#e07040,#b04020); animation:f1  0.65s cubic-bezier(.25,0,.55,1.2) 2.0s both, dis 0.55s ease-in 4.4s forwards; }
+.p2  { width:72px;height:95px; left:192px; background:linear-gradient(135deg,#4070e0,#2040a0); animation:f2  0.60s cubic-bezier(.25,0,.55,1.2) 2.2s both, dis 0.55s ease-in 4.4s forwards; }
+.p3  { width:60px;height:60px; left:118px; background:linear-gradient(135deg,#40a060,#207040); animation:f3  0.55s cubic-bezier(.25,0,.55,1.2) 2.35s both, dis 0.55s ease-in 4.4s forwards; }
+.p4  { width:98px;height:70px; left:162px; background:linear-gradient(135deg,#9040b0,#601090); animation:f4  0.70s cubic-bezier(.25,0,.55,1.2) 2.1s both, dis 0.55s ease-in 4.4s forwards; }
+.p5  { width:55px;height:75px; left:6px;   background:linear-gradient(135deg,#e04060,#a01040); animation:f5  0.58s cubic-bezier(.25,0,.55,1.2) 2.45s both, dis 0.55s ease-in 4.4s forwards; }
+.p6  { width:78px;height:78px; left:66px;  background:linear-gradient(135deg,#d0a040,#906010); animation:f6  0.62s cubic-bezier(.25,0,.55,1.2) 2.3s both, dis 0.55s ease-in 4.4s forwards; }
+.p7  { width:65px;height:90px; left:226px; background:linear-gradient(135deg,#40c0a0,#108060); animation:f7  0.65s cubic-bezier(.25,0,.55,1.2) 2.55s both, dis 0.55s ease-in 4.4s forwards; }
+.p8  { width:108px;height:74px;left:84px;  background:linear-gradient(135deg,#6080d0,#3050a0); animation:f8  0.68s cubic-bezier(.25,0,.55,1.2) 2.15s both, dis 0.55s ease-in 4.4s forwards; }
+.p9  { width:58px;height:58px; left:150px; background:linear-gradient(135deg,#e08030,#a04010); animation:f9  0.52s cubic-bezier(.25,0,.55,1.2) 2.5s both, dis 0.55s ease-in 4.4s forwards; }
+.p10 { width:75px;height:85px; left:36px;  background:linear-gradient(135deg,#3090c0,#105080); animation:f10 0.60s cubic-bezier(.25,0,.55,1.2) 2.4s both, dis 0.55s ease-in 4.4s forwards; }
+.p11 { width:66px;height:100px;left:108px; background:linear-gradient(135deg,#a050a0,#601060); animation:f11 0.70s cubic-bezier(.25,0,.55,1.2) 2.25s both, dis 0.55s ease-in 4.4s forwards; }
+.p12 { width:54px;height:64px; left:204px; background:linear-gradient(135deg,#60a050,#306030); animation:f12 0.56s cubic-bezier(.25,0,.55,1.2) 2.6s both, dis 0.55s ease-in 4.4s forwards; }
+
+@keyframes f1  { 0%{opacity:0;transform:translateY(-160px) rotate(-14deg) scale(1.05)} 60%{opacity:1} 100%{opacity:1;transform:translateY(318px) rotate(-11deg) scale(1.0)} }
+@keyframes f2  { 0%{opacity:0;transform:translateY(-140px) rotate(18deg) scale(.95)} 60%{opacity:1} 100%{opacity:1;transform:translateY(283px) rotate(15deg) scale(.95)} }
+@keyframes f3  { 0%{opacity:0;transform:translateY(-120px) rotate(-6deg)} 60%{opacity:1} 100%{opacity:1;transform:translateY(350px) rotate(-4deg)} }
+@keyframes f4  { 0%{opacity:0;transform:translateY(-150px) rotate(22deg)} 60%{opacity:1} 100%{opacity:1;transform:translateY(228px) rotate(19deg)} }
+@keyframes f5  { 0%{opacity:0;transform:translateY(-130px) rotate(-20deg)} 60%{opacity:1} 100%{opacity:1;transform:translateY(386px) rotate(-17deg)} }
+@keyframes f6  { 0%{opacity:0;transform:translateY(-140px) rotate(8deg)} 60%{opacity:1} 100%{opacity:1;transform:translateY(258px) rotate(6deg)} }
+@keyframes f7  { 0%{opacity:0;transform:translateY(-150px) rotate(-12deg)} 60%{opacity:1} 100%{opacity:1;transform:translateY(328px) rotate(-10deg)} }
+@keyframes f8  { 0%{opacity:0;transform:translateY(-160px) rotate(-16deg)} 60%{opacity:1} 100%{opacity:1;transform:translateY(198px) rotate(-14deg)} }
+@keyframes f9  { 0%{opacity:0;transform:translateY(-120px) rotate(10deg)} 60%{opacity:1} 100%{opacity:1;transform:translateY(415px) rotate(8deg)} }
+@keyframes f10 { 0%{opacity:0;transform:translateY(-140px) rotate(14deg)} 60%{opacity:1} 100%{opacity:1;transform:translateY(365px) rotate(12deg)} }
+@keyframes f11 { 0%{opacity:0;transform:translateY(-170px) rotate(-9deg)} 60%{opacity:1} 100%{opacity:1;transform:translateY(276px) rotate(-7deg)} }
+@keyframes f12 { 0%{opacity:0;transform:translateY(-130px) rotate(25deg)} 60%{opacity:1} 100%{opacity:1;transform:translateY(445px) rotate(22deg)} }
+@keyframes dis  { 0%{opacity:1} 100%{opacity:0;transform:scale(0.75) translateY(20px);filter:blur(3px)} }
+
+/* ─── FLASH ───────────────────────────────────── */
+.flash {
+  position:absolute;inset:0;z-index:20;pointer-events:none;
+  background:rgba(255,255,255,0);
+  animation:flashBurst 0.38s ease-out 4.65s forwards;
+}
+@keyframes flashBurst { 0%{background:rgba(255,255,255,0)} 35%{background:rgba(255,255,255,0.22)} 100%{background:rgba(255,255,255,0)} }
+
+/* ─── BLOG UI ─────────────────────────────────── */
+.blog-ui {
+  position:absolute;
+  top:0;left:0;right:0;
+  /* tall enough to hold all content; stage clips overflow */
+  min-height:100%;
+  z-index:10;
+  background:#000;
+  opacity:0;
+  display:flex;flex-direction:column;
+  will-change:transform;
+  animation:blogFadeIn 0.5s ease-out 4.8s forwards;
+}
+@keyframes blogFadeIn { to { opacity:1; } }
+
+/* ── Cover Photo Hero (matches coverPhotoHero) ── */
+.cover-hero {
+  width:100%; height:180px;
+  position:relative; flex-shrink:0; overflow:hidden;
+  background: linear-gradient(145deg, #1a1a2e 0%, #2d3561 60%, #3a1a50 100%);
+}
+/* Simulate a travel cover photo via gradient */
+.cover-photo-bg {
+  position:absolute;inset:0;
+  background: linear-gradient(160deg,
+    #7a4020 0%, #503010 20%,
+    #2a4060 45%, #1a3050 60%,
+    #101a30 80%, #080E38 100%);
+}
+/* Scrim layers matching the app: black 0.45 + gradient bottom→top */
+.cover-scrim-solid { position:absolute;inset:0;background:rgba(0,0,0,0.38); }
+.cover-scrim-grad  {
+  position:absolute;inset:0;
+  background:linear-gradient(to top, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.12) 50%, rgba(0,0,0,0.45) 100%);
+}
+/* Centered title block (matches view mode layout) */
+.cover-title-block {
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:0 24px;
+  gap:10px;
+  opacity:0;
+}
+/* staggered animations */
+.cover-title-block { animation: blockAppear 0.4s ease-out 5.2s forwards; }
+@keyframes blockAppear { to { opacity:1; } }
+
+.hero-title {
+  font-size:26px;font-weight:800;
+  color:#fff;
+  text-align:center;line-height:1.1;
+  text-shadow:0 2px 8px rgba(0,0,0,0.6);
+  opacity:0;transform:translateY(10px);
+  animation:slideUp 0.4s ease-out 5.3s forwards;
+}
+.hero-dates {
+  font-size:13px;font-weight:400;
+  color:rgba(255,255,255,0.9);
+  text-shadow:0 1px 4px rgba(0,0,0,0.5);
+  opacity:0;transform:translateY(8px);
+  animation:slideUp 0.4s ease-out 5.5s forwards;
+}
+.hero-count {
+  font-size:13px;
+  color:rgba(255,255,255,0.9);
+  text-shadow:0 1px 4px rgba(0,0,0,0.5);
+  opacity:0;transform:translateY(8px);
+  animation:slideUp 0.4s ease-out 5.65s forwards;
+}
+.share-btn {
+  display:flex;align-items:center;gap:6px;
+  background:rgba(255,255,255,0.15);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+  border:0.5px solid rgba(255,255,255,0.25);
+  border-radius:20px;
+  padding:7px 14px;
+  font-size:12px;font-weight:500;color:#fff;
+  opacity:0;transform:translateY(8px);
+  animation:slideUp 0.4s ease-out 5.8s forwards;
+  box-shadow:0 2px 8px rgba(0,0,0,0.3);
+}
+.share-icon { font-size:13px; }
+
+@keyframes slideUp { to { opacity:1; transform:translateY(0); } }
+
+/* ── Scroll body (black bg) ── */
+.blog-scroll {
+  flex:1; overflow-y:auto; overflow-x:hidden;
+  background:#000;
+  display:flex; flex-direction:column;
+  /* subtle top separator */
+  border-top:0.5px solid rgba(255,255,255,0.08);
+  /* hide scrollbar */
+  scrollbar-width:none;
+}
+.blog-scroll::-webkit-scrollbar { display:none; }
+
+/* Map placeholder */
+.map-card {
+  margin:8px 14px 0;
+  height:72px;
+  border-radius:14px;
+  overflow:hidden;
+  position:relative;
+  background: linear-gradient(135deg, #1a2a3a 0%, #263545 40%, #1e2e3e 100%);
+  flex-shrink:0;
+  opacity:0;transform:translateY(10px);
+  animation:slideUp 0.4s ease-out 6.05s forwards;
+  border:0.5px solid rgba(255,255,255,0.07);
+}
+/* Fake map grid lines */
+.map-card::before {
+  content:'';position:absolute;inset:0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size:20px 20px;
+}
+/* Map "roads" */
+.map-road-h { position:absolute;height:2px;background:rgba(255,255,255,0.12);border-radius:1px; }
+.map-road-v { position:absolute;width:2px;background:rgba(255,255,255,0.12);border-radius:1px; }
+/* Map pins */
+.map-pin {
+  position:absolute;
+  width:10px;height:10px;
+  border-radius:50%;
+  border:1.5px solid #fff;
+}
+.map-expand {
+  position:absolute;top:8px;right:8px;
+  width:26px;height:26px;
+  border-radius:50%;
+  background:rgba(0,0,0,0.55);
+  display:flex;align-items:center;justify-content:center;
+  font-size:10px;color:rgba(255,255,255,0.8);
+}
+
+/* Day date header */
+.day-header {
+  padding:12px 14px 6px;
+  display:flex;align-items:center;gap:8px;
+  opacity:0;transform:translateY(8px);
+  animation:slideUp 0.35s ease-out 6.2s forwards;
+}
+.day-date {
+  font-size:18px;font-weight:800;
+  color:#fff;
+  letter-spacing:-0.3px;
+}
+.weather-chip {
+  font-size:12px;color:rgba(255,255,255,0.75);
+}
+
+/* Place stop rows */
+.stop-row {
+  margin:0 10px 10px;
+  padding:12px 12px 10px;
+  background:rgba(255,255,255,0.065);
+  border-radius:16px;
+  border:0.5px solid rgba(255,255,255,0.07);
+  display:flex;gap:10px;align-items:flex-start;
+  flex-shrink:0;
+  opacity:0;transform:translateY(10px);
+}
+.stop-row:nth-child(3) { animation:slideUp 0.38s ease-out 6.4s forwards; }
+.stop-row:nth-child(4) { animation:slideUp 0.38s ease-out 6.65s forwards; }
+
+/* Numbered badge circle */
+.stop-badge {
+  width:28px;height:28px;
+  border-radius:50%;
+  flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:700;color:#fff;
+  margin-top:1px;
+}
+
+/* Place info */
+.stop-info { flex:1; min-width:0; }
+.stop-name {
+  font-size:15px;font-weight:700;
+  color:#fff;
+  line-height:1.2;margin-bottom:2px;
+}
+.stop-sub {
+  font-size:11px;color:rgba(255,255,255,0.45);
+  margin-bottom:7px;
+}
+/* Category chip */
+.cat-chip {
+  display:inline-flex;align-items:center;gap:3px;
+  font-size:10px;font-weight:600;
+  padding:3px 9px;
+  border-radius:20px;
+  margin-bottom:8px;
+}
+/* Photo strip — 80% screen width per photo, horizontal scroll with peek */
+.photo-strip {
+  display:flex;gap:8px;margin-top:6px;
+  overflow-x:auto;
+  /* Show ~80% of phone width (300px * 0.8 = 240px) + peek of next */
+  scroll-snap-type:x mandatory;
+  -webkit-overflow-scrolling:touch;
+  padding-bottom:2px;
+  /* hide scrollbar */
+  scrollbar-width:none;
+}
+.photo-strip::-webkit-scrollbar { display:none; }
+
+.photo-thumb {
+  /* 80% of 300px phone width = 240px, minus stop-row padding */
+  width:214px; height:190px;
+  border-radius:10px;
+  flex-shrink:0;
+  position:relative;
+  overflow:hidden;
+  scroll-snap-align:start;
+}
+.photo-thumb-inner { width:100%;height:100%; }
+.photo-time {
+  position:absolute;top:8px;left:8px;
+  font-size:9px;font-weight:600;
+  color:#fff;
+  background:rgba(0,0,0,0.6);
+  padding:2px 6px;
+  border-radius:6px;
+}
+.more-chip {
+  width:70px; height:190px;
+  border-radius:10px;
+  background:rgba(255,255,255,0.08);
+  display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:600;
+  color:rgba(255,255,255,0.45);
+  flex-shrink:0;
+  scroll-snap-align:start;
+}
+
+/* ── Day pill bar (bottom) ── */
+.day-pill-bar {
+  height:50px;flex-shrink:0;
+  background:#000;
+  border-top:0.5px solid rgba(255,255,255,0.08);
+  display:flex;align-items:center;
+  padding:0 12px;
+  gap:8px;
+  overflow:hidden;
+  opacity:0;
+  animation:slideUp 0.4s ease-out 7.0s forwards;
+}
+.day-pill {
+  padding:7px 16px;
+  border-radius:20px;
+  font-size:12px;font-weight:500;
+  white-space:nowrap;
+  color:rgba(255,255,255,0.55);
+  background:rgba(255,255,255,0.1);
+}
+.day-pill.active {
+  background:#007AFF;
+  color:#fff;
+  font-weight:600;
+}
+
+/* ─── CONTINUE BUTTON (inside phone) ────────── */
+.cta-wrap {
+  position: absolute;
+  bottom: 28px;
+  left: 20px;
+  right: 20px;
+  z-index: 60;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+}
+.cta-wrap.visible { opacity: 1; transform: translateY(0); }
+
+.cta-btn {
+  width: 100%;
+  padding: 15px;
+  background: #007AFF;
+  border: none;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0,122,255,0.5);
+  transition: opacity 0.15s, transform 0.15s;
+  letter-spacing: -0.2px;
+}
+.cta-btn:active { opacity: 0.85; transform: scale(0.98); }
+
+.replay-btn {
+  margin-top: 16px;
+  background:rgba(200,235,255,0.1);
+  border:1px solid rgba(200,235,255,0.2);
+  color:#C8EBFF;
+  font-size:13px;font-weight:600;
+  padding:10px 28px;
+  border-radius:24px;
+  cursor:pointer;
+  transition:background .2s;
+}
+.replay-btn:hover { background:rgba(200,235,255,0.18); }
+
+/* ─── IN-PHONE TAGLINE OVERLAY ───────────────── */
+.phone-tagline {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 28px;
+  background: rgba(0,0,0,0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.8s ease-out;
+}
+.phone-tagline.visible { opacity: 1; }
+
+.tagline-icon {
+  font-size: 36px;
+  margin-bottom: 18px;
+  opacity: 0;
+  transform: scale(0.7);
+  transition: opacity 0.5s ease-out 0.2s, transform 0.5s cubic-bezier(0.34,1.56,0.64,1) 0.2s;
+}
+.phone-tagline.visible .tagline-icon {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.tagline-line1 {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.45);
+  margin-bottom: 12px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.5s ease-out 0.35s, transform 0.5s ease-out 0.35s;
+}
+.phone-tagline.visible .tagline-line1 { opacity: 1; transform: translateY(0); }
+
+.tagline-main {
+  font-size: 22px;
+  font-weight: 800;
+  color: #fff;
+  text-align: center;
+  line-height: 1.25;
+  letter-spacing: -0.4px;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.5);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.55s ease-out 0.5s, transform 0.55s ease-out 0.5s;
+}
+.phone-tagline.visible .tagline-main { opacity: 1; transform: translateY(0); }
+
+.tagline-main em {
+  font-style: normal;
+  background: linear-gradient(90deg, #C8EBFF 0%, #7bb8ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.tagline-sub {
+  margin-top: 14px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.5);
+  text-align: center;
+  line-height: 1.5;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.5s ease-out 0.7s, transform 0.5s ease-out 0.7s;
+}
+.phone-tagline.visible .tagline-sub { opacity: 1; transform: translateY(0); }
+</style>
+</head>
+<body>
+
+<h1>Animation Preview v2</h1>
+<p class="subtitle">Now with real Bloggo blog UI</p>
+
+<div class="progress-bar"><div class="progress-fill"></div></div>
+
+<div class="phone-frame">
+  <div class="stage">
+
+    <!-- Camera roll label -->
+    <div class="camera-label">
+      <span class="icon">📷</span>
+      <span class="text">Your Camera Roll</span>
+    </div>
+
+    <!-- Falling photos -->
+    <div class="photos-layer">
+      <div class="photo p1"><span class="photo-caption">IMG_3847</span></div>
+      <div class="photo p2"><span class="photo-caption">IMG_0291</span></div>
+      <div class="photo p3"><span class="photo-caption">IMG_5512</span></div>
+      <div class="photo p4"><span class="photo-caption">IMG_7734</span></div>
+      <div class="photo p5"><span class="photo-caption">IMG_1192</span></div>
+      <div class="photo p6"><span class="photo-caption">IMG_4405</span></div>
+      <div class="photo p7"><span class="photo-caption">IMG_8823</span></div>
+      <div class="photo p8"><span class="photo-caption">IMG_2267</span></div>
+      <div class="photo p9"><span class="photo-caption">IMG_6098</span></div>
+      <div class="photo p10"><span class="photo-caption">IMG_3311</span></div>
+      <div class="photo p11"><span class="photo-caption">IMG_9940</span></div>
+      <div class="photo p12"><span class="photo-caption">IMG_0774</span></div>
+    </div>
+
+    <!-- Flash -->
+    <div class="flash"></div>
+
+    <!-- Blog UI -->
+    <div class="blog-ui">
+
+      <!-- Cover Hero -->
+      <div class="cover-hero">
+        <div class="cover-photo-bg"></div>
+        <div class="cover-scrim-solid"></div>
+        <div class="cover-scrim-grad"></div>
+        <div class="cover-title-block">
+          <div class="hero-title">Bali 2024</div>
+          <div class="hero-dates">Jun 12 – Jun 17, 2024</div>
+          <div class="hero-count">14 moments</div>
+          <div class="share-btn"><span class="share-icon">📖</span>Share Your Blog</div>
+        </div>
+      </div>
+
+      <!-- Scroll content -->
+      <div class="blog-scroll">
+
+        <!-- Map card -->
+        <div class="map-card">
+          <!-- Road lines -->
+          <div class="map-road-h" style="top:30%;left:0;right:0;"></div>
+          <div class="map-road-h" style="top:65%;left:0;right:0;"></div>
+          <div class="map-road-v" style="left:35%;top:0;bottom:0;"></div>
+          <div class="map-road-v" style="left:68%;top:0;bottom:0;"></div>
+          <!-- Pins -->
+          <div class="map-pin" style="background:#34C759;top:22%;left:28%;"></div>
+          <div class="map-pin" style="background:#007AFF;top:50%;left:58%;"></div>
+          <div class="map-pin" style="background:#FF9500;top:72%;left:44%;"></div>
+          <div class="map-expand">⤢</div>
+        </div>
+
+        <!-- Day header -->
+        <div class="day-header">
+          <div class="day-date">Jun 12</div>
+          <div class="weather-chip">☀️ 84° / 71°F</div>
+        </div>
+
+        <!-- Stop 1 — green badge -->
+        <div class="stop-row">
+          <div class="stop-badge" style="background:#34C759;">1</div>
+          <div class="stop-info">
+            <div class="stop-name">Tegallalang Rice Terraces</div>
+            <div class="stop-sub">Ubud, Bali · 2:14 PM</div>
+            <div class="cat-chip" style="background:rgba(52,199,89,0.18);color:#34C759;">🌿 Nature</div>
+            <div class="photo-strip">
+              <div class="photo-thumb">
+                <div class="photo-thumb-inner" style="background:linear-gradient(135deg,#e07040,#903020);"></div>
+                <div class="photo-time">2:14 PM</div>
+              </div>
+              <div class="photo-thumb">
+                <div class="photo-thumb-inner" style="background:linear-gradient(135deg,#d09030,#805010);"></div>
+                <div class="photo-time">2:21 PM</div>
+              </div>
+              <div class="photo-thumb">
+                <div class="photo-thumb-inner" style="background:linear-gradient(135deg,#40a060,#206040);"></div>
+                <div class="photo-time">2:35 PM</div>
+              </div>
+              <div class="more-chip">+7</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stop 2 — blue badge -->
+        <div class="stop-row">
+          <div class="stop-badge" style="background:#007AFF;">2</div>
+          <div class="stop-info">
+            <div class="stop-name">Tirta Empul Temple</div>
+            <div class="stop-sub">Tampaksiring · 4:50 PM</div>
+            <div class="cat-chip" style="background:rgba(0,122,255,0.18);color:#4db3ff;">⛩ Landmark</div>
+            <div class="photo-strip">
+              <div class="photo-thumb">
+                <div class="photo-thumb-inner" style="background:linear-gradient(135deg,#4070e0,#2030a0);"></div>
+                <div class="photo-time">4:50 PM</div>
+              </div>
+              <div class="photo-thumb">
+                <div class="photo-thumb-inner" style="background:linear-gradient(135deg,#6080d0,#3050a0);"></div>
+                <div class="photo-time">5:02 PM</div>
+              </div>
+              <div class="more-chip">+4</div>
+            </div>
+          </div>
+        </div>
+
+
+      </div><!-- /blog-scroll -->
+
+      <!-- Day pill bar -->
+      <div class="day-pill-bar">
+        <div class="day-pill active">Day 1</div>
+        <div class="day-pill">Day 2</div>
+        <div class="day-pill">Day 3</div>
+        <div class="day-pill">Day 4</div>
+        <div class="day-pill">Day 5</div>
+      </div>
+
+    </div><!-- /blog-ui -->
+
+    <!-- In-phone tagline overlay (appears after scroll) -->
+    <div class="phone-tagline" id="tagline">
+      <div class="tagline-icon">✦</div>
+      <div class="tagline-line1">Introducing Bloggo</div>
+      <div class="tagline-main">Your camera roll,<br>organized into<br>a <em>Blog.</em></div>
+      <div class="tagline-sub">Automatically sorted by day,<br>place & moment.</div>
+    </div>
+
+    <!-- Continue CTA — bottom of phone screen -->
+    <div class="cta-wrap" id="cta">
+      <button class="cta-btn" onclick="showNextScreen()">Continue</button>
+    </div>
+
+  </div>
+</div>
+
+<button class="replay-btn" onclick="replayAnimation()">Replay animation</button>
+
+<script>
+// Timeline:
+// 0–4.8s  : chaos phase (photos fall, flash)
+// 4.8–7.5s: blog UI builds in (cover, map, places stagger)
+// 7.5s    : everything visible — wait 3 seconds
+// 10.5s   : blog smoothly scrolls upward
+// 12.0s   : tagline overlay fades in over the phone screen
+
+function startSequence() {
+  // Step 1: slide the entire blog UI upward so cover + content all move together
+  setTimeout(() => {
+    const blogUI = document.querySelector('.blog-ui');
+    if (!blogUI) return;
+
+    const startPos = 0;
+    const endPos = -220; // px — slides cover off top, reveals place moments
+    const duration = 1600;
+    const startTime = performance.now();
+
+    function easeInOut(t) {
+      return t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+    }
+
+    function animateSlide(now) {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      blogUI.style.transform = `translateY(${startPos + (endPos - startPos) * easeInOut(progress)}px)`;
+      if (progress < 1) requestAnimationFrame(animateSlide);
+    }
+    requestAnimationFrame(animateSlide);
+  }, 8500);
+
+  // Step 2: tagline overlay fades in after scroll settles
+  setTimeout(() => {
+    const tag = document.getElementById('tagline');
+    if (tag) tag.classList.add('visible');
+  }, 10200);
+
+  // Step 3: Continue CTA appears after tagline settles
+  setTimeout(() => {
+    const cta = document.getElementById('cta');
+    if (cta) cta.classList.add('visible');
+  }, 11000);
+}
+
+startSequence();
+
+function showNextScreen() {
+  // Transition to a "Set Your Home Area" placeholder to simulate navigation
+  const stage = document.querySelector('.stage');
+  if (!stage) return;
+
+  // Fade entire phone content to black, then show next screen placeholder
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:absolute;inset:0;z-index:999;background:#000;opacity:0;transition:opacity 0.35s ease-out;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;gap:16px;';
+  overlay.innerHTML = `
+    <div style="font-size:32px">🏠</div>
+    <div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,0.4);">Next Step</div>
+    <div style="font-size:22px;font-weight:800;color:#fff;text-align:center;line-height:1.25;">Set Your<br>Home Area</div>
+    <div style="font-size:13px;color:rgba(255,255,255,0.5);text-align:center;line-height:1.5;">So Bloggo knows which trips<br>are worth turning into a Blog.</div>
+  `;
+  stage.appendChild(overlay);
+  requestAnimationFrame(() => { overlay.style.opacity = '1'; });
+}
+
+function replayAnimation() {
+  const tag = document.getElementById('tagline');
+  if (tag) tag.classList.remove('visible');
+
+  const cta = document.getElementById('cta');
+  if (cta) cta.classList.remove('visible');
+
+  // Reset blog-ui transform before cloning
+  const blogUI = document.querySelector('.blog-ui');
+  if (blogUI) blogUI.style.transform = '';
+
+  const frame = document.querySelector('.phone-frame');
+  const clone = frame.cloneNode(true);
+  frame.parentNode.replaceChild(clone, frame);
+
+  const pb = document.querySelector('.progress-fill');
+  pb.style.animation = 'none';
+  pb.getBoundingClientRect();
+  pb.style.animation = 'progressAnim 11s linear 0.3s forwards';
+
+  startSequence();
+}
+</script>
+</body>
+</html>

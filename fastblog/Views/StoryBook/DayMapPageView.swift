@@ -47,6 +47,17 @@ struct DayMapPageView: View {
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.white)
                     .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 1)
+
+                Text(day.placeCountLine)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.92))
+                    .shadow(color: .black.opacity(0.55), radius: 3, x: 0, y: 1)
+                    .padding(.top, 6)
+
+                Text(day.photoCountLine)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.92))
+                    .shadow(color: .black.opacity(0.55), radius: 3, x: 0, y: 1)
             }
             .padding(.horizontal, 24)
             .padding(.top, 80)
@@ -62,5 +73,15 @@ private extension StoryDay {
         let f = DateFormatter()
         f.dateFormat = "EEEE, MMM d"
         return f.string(from: date)
+    }
+
+    var placeCountLine: String {
+        let count = places.count
+        return "\(count) \(count == 1 ? "Place" : "Places") Visited"
+    }
+
+    var photoCountLine: String {
+        let count = places.reduce(0) { $0 + $1.photos.count }
+        return "\(count) \(count == 1 ? "Photo" : "Photos")"
     }
 }

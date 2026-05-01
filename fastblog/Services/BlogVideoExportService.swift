@@ -331,7 +331,8 @@ enum BlogVideoExportService {
                         for: day.mapStops,
                         size: mapSize,
                         regionPadding: 0.045,
-                        showPlaceNames: true
+                        showPlaceNames: true,
+                        showSegmentMiles: true
                     )
                     return (day.dayID, image)
                 }

@@ -19,6 +19,7 @@ class MapSnapshotHelper {
         size: CGSize = CGSize(width: 600, height: 300),
         regionPadding: Double = 0.01,
         showPlaceNames: Bool = false,
+        showSegmentMiles: Bool = false,
         mapType: MKMapType = .standard
     ) async -> UIImage? {
         // Build (displayNumber, coordinate, title) pairs, preserving original ordering
@@ -35,7 +36,8 @@ class MapSnapshotHelper {
 
         let coords = indexedCoords.map(\.coord)
         let computed = region(for: coords, padding: regionPadding)
-        let region = validatedSnapshotRegion(computed, fallbackCenter: coords[0])
+        let focused = focusedRegionForClusteredStops(base: computed, coords: coords, showPlaceNames: showPlaceNames)
+        let region = validatedSnapshotRegion(focused, fallbackCenter: coords[0])
 
         let options = MKMapSnapshotter.Options()
         options.region = region
@@ -76,6 +78,15 @@ class MapSnapshotHelper {
                 }
                 context.strokePath()
                 context.restoreGState()
+
+                if showSegmentMiles {
+                    drawSegmentDistancePills(
+                        for: coords,
+                        snapshot: snapshot,
+                        context: context,
+                        canvasSize: snapshot.image.size
+                    )
+                }
             }
 
             // 2. Draw Markers with the correct display number (and optional place name)
@@ -306,8 +317,8 @@ class MapSnapshotHelper {
 
     /// MapKit rejects non-finite, non-positive, or absurdly wide spans; clamps to snapshot-safe ranges.
     private static func validatedSnapshotRegion(_ region: MKCoordinateRegion, fallbackCenter: CLLocationCoordinate2D) -> MKCoordinateRegion {
-        let minLatDelta = 0.02
-        let minLonDelta = 0.02
+        let minLatDelta = 0.008
+        let minLonDelta = 0.008
         /// Longitude diff from naive min/max can approach 360° when a route crosses the antimeridian;
         /// `setRegion:` throws far below that; keep the portrait within MapKit limits.
         let maxLatDelta = 160.0
@@ -341,6 +352,59 @@ class MapSnapshotHelper {
 
     private static func clamp(_ value: Double, _ range: ClosedRange<Double>) -> Double {
         Swift.min(Swift.max(value, range.lowerBound), range.upperBound)
+    }
+
+    /// Tightens the snapshot region when POIs are packed into a small area so
+    /// the markers spread out more in slideshow / story map slides.
+    private static func focusedRegionForClusteredStops(
+        base: MKCoordinateRegion,
+        coords: [CLLocationCoordinate2D],
+        showPlaceNames: Bool
+    ) -> MKCoordinateRegion {
+        guard showPlaceNames, !coords.isEmpty else { return base }
+
+        // Single-stop map pages: very close framing for cluster storytelling.
+        if coords.count == 1 {
+            return MKCoordinateRegion(
+                center: base.center,
+                span: MKCoordinateSpan(
+                    latitudeDelta: max(0.0035, base.span.latitudeDelta * 0.12),
+                    longitudeDelta: max(0.0035, base.span.longitudeDelta * 0.12)
+                )
+            )
+        }
+
+        let lats = coords.map(\.latitude)
+        let lons = coords.map(\.longitude)
+        guard let minLat = lats.min(),
+              let maxLat = lats.max(),
+              let minLon = lons.min(),
+              let maxLon = lons.max() else {
+            return base
+        }
+
+        let rawLatRange = maxLat - minLat
+        let rawLonRange = maxLon - minLon
+        let maxRawRange = max(rawLatRange, rawLonRange)
+
+        // Only tighten for clustered routes; wider routes keep the existing framing.
+        let clusterThreshold = 0.25
+        guard maxRawRange < clusterThreshold else { return base }
+
+        // Fit directly to the cluster's raw bounds, then add a compact safety margin
+        // so marker circles remain inside frame without looking overly zoomed out.
+        let markerSafetyMultiplier = 1.18
+        let minClusterSpan = 0.0035
+        let latDelta = max(minClusterSpan, rawLatRange * markerSafetyMultiplier + 0.0018)
+        let lonDelta = max(minClusterSpan, rawLonRange * markerSafetyMultiplier + 0.0018)
+
+        return MKCoordinateRegion(
+            center: base.center,
+            span: MKCoordinateSpan(
+                latitudeDelta: latDelta,
+                longitudeDelta: lonDelta
+            )
+        )
     }
 
     /// Calculates the bounding region for a set of coordinates with padding.
@@ -677,6 +741,83 @@ class MapSnapshotHelper {
             context: nil
         )
 
+        context.restoreGState()
+    }
+
+    private static func drawSegmentDistancePills(
+        for coords: [CLLocationCoordinate2D],
+        snapshot: MKMapSnapshotter.Snapshot,
+        context: CGContext,
+        canvasSize: CGSize
+    ) {
+        guard coords.count >= 2 else { return }
+        for idx in 0..<(coords.count - 1) {
+            let from = coords[idx]
+            let to = coords[idx + 1]
+            let meters = CLLocation(latitude: from.latitude, longitude: from.longitude)
+                .distance(from: CLLocation(latitude: to.latitude, longitude: to.longitude))
+            let miles = meters / 1_609.344
+            guard miles >= 0.05 else { continue }
+
+            let start = snapshot.point(for: from)
+            let end = snapshot.point(for: to)
+            let mid = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+
+            let dx = end.x - start.x
+            let dy = end.y - start.y
+            let length = max(1, hypot(dx, dy))
+            let normal = CGPoint(x: -dy / length, y: dx / length)
+
+            // Nudge off the line so pills don't obscure route/markers.
+            var center = CGPoint(x: mid.x + normal.x * 14, y: mid.y + normal.y * 14)
+            center.x = min(max(center.x, 26), canvasSize.width - 26)
+            center.y = min(max(center.y, 18), canvasSize.height - 18)
+
+            drawDistancePill(
+                text: formattedMilesLabel(miles),
+                center: center,
+                context: context
+            )
+        }
+    }
+
+    private static func formattedMilesLabel(_ miles: Double) -> String {
+        if miles < 10 {
+            return String(format: "%.1f mi", miles)
+        }
+        return String(format: "%.0f mi", miles)
+    }
+
+    private static func drawDistancePill(text: String, center: CGPoint, context: CGContext) {
+        let font = UIFont.systemFont(ofSize: 11, weight: .bold)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: UIColor.white
+        ]
+        let textSize = (text as NSString).size(withAttributes: attrs)
+        let padH: CGFloat = 8
+        let padV: CGFloat = 4
+        let w = textSize.width + padH * 2
+        let h = textSize.height + padV * 2
+        let rect = CGRect(x: center.x - w / 2, y: center.y - h / 2, width: w, height: h)
+        let corner = h / 2
+
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: 1), blur: 2, color: UIColor.black.withAlphaComponent(0.35).cgColor)
+        let path = UIBezierPath(roundedRect: rect, cornerRadius: corner).cgPath
+        context.addPath(path)
+        context.setFillColor(UIColor.black.withAlphaComponent(0.72).cgColor)
+        context.fillPath()
+        context.setShadow(offset: .zero, blur: 0, color: nil)
+        context.addPath(path)
+        context.setStrokeColor(UIColor.white.withAlphaComponent(0.45).cgColor)
+        context.setLineWidth(1)
+        context.strokePath()
+
+        (text as NSString).draw(
+            in: CGRect(x: rect.minX + padH, y: rect.minY + padV, width: textSize.width, height: textSize.height),
+            withAttributes: attrs
+        )
         context.restoreGState()
     }
 }
