@@ -3604,19 +3604,37 @@ struct CameraCaptureView: View {
                         .padding(.horizontal, 24)
                         .padding(.top, 24)
                         .padding(.bottom, 20)
-                    Button("Close") {
-                        showBlogStartedPrompt = false
+                    HStack(spacing: 12) {
+                        Button {
+                            blogStartedPromptAcknowledgeStayInCamera()
+                        } label: {
+                            Text("OK")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.primary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(
+                                    RoundedRectangle(appChromeBaseRadius: 10)
+                                        .fill(Color.white.opacity(0.14))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            blogStartedPromptViewBlog()
+                        } label: {
+                            Text("View")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color.blue, in: RoundedRectangle(appChromeBaseRadius: 10))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.borderless)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.blue, in: RoundedRectangle(appChromeBaseRadius: 10))
                     .padding(.horizontal, 20)
                     .padding(.bottom, 24)
                 }
-                .frame(maxWidth: 300)
+                .frame(maxWidth: 340)
                 .background(
                     RoundedRectangle(appChromeBaseRadius: 20, style: .continuous)
                         .fill(.ultraThinMaterial)
@@ -4050,6 +4068,24 @@ private func momentCount(from moments: [CapturedMoment]) -> Int {
 // MARK: - CameraCaptureView helpers
 
 extension CameraCaptureView {
+    private func blogStartedPromptAcknowledgeStayInCamera() {
+        showBlogStartedPrompt = false
+    }
+
+    /// Opens the blog when presented with `onNavigateToBlog`; otherwise leaves the camera (e.g. recap full-screen cover).
+    private func blogStartedPromptViewBlog() {
+        showBlogStartedPrompt = false
+        if let tripId = sessionSourceTripId, let onNavigateToBlog {
+            onNavigateToBlog(tripId)
+            return
+        }
+        if let onDismissOverlay {
+            onDismissOverlay()
+            return
+        }
+        dismiss()
+    }
+
     /// Saves pixels once to app capture storage and mirrors the same UUID into the Bloggo gallery grid so gallery deletes stay in sync with blog references.
     private func persistInAppCameraCapture(image: UIImage, timestamp: Date, vibeURL: URL?) -> String? {
         let location = cameraController.currentLocation
