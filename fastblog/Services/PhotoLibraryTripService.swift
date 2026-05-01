@@ -647,13 +647,12 @@ final class PhotoLibraryTripService {
         guard !remaining.isEmpty else { return [] }
 
         let sortedByDate = remaining.sorted { effectiveDate(for: $0) < effectiveDate(for: $1) }
-        let dayGroups = await groupAssetsByDay(sortedByDate)
+        let dayGroups = await groupAssetsByDay(sortedByDate, progress: progress)
         let sortedDayGroups = dayGroups.sorted { $0.date < $1.date }
         guard !sortedDayGroups.isEmpty else { return [] }
 #if DEBUG
         await debugLogPhotosPerScanDay(sortedDayGroups, context: "scanInDateRange")
 #endif
-        progress?(0.25)
 
         let dayClusters = await buildDayClusters(from: sortedDayGroups, progress: progress)
         progress?(0.90)
@@ -756,13 +755,12 @@ final class PhotoLibraryTripService {
         guard !remaining.isEmpty else { return [] }
 
         let sortedByDate = remaining.sorted { effectiveDate(for: $0) < effectiveDate(for: $1) }
-        let dayGroups = await groupAssetsByDay(sortedByDate)
+        let dayGroups = await groupAssetsByDay(sortedByDate, progress: progress)
         let sortedDayGroups = dayGroups.sorted { $0.date < $1.date }
         guard !sortedDayGroups.isEmpty else { return [] }
 #if DEBUG
         await debugLogPhotosPerScanDay(sortedDayGroups, context: "scanAllForLimitedAccess")
 #endif
-        progress?(0.25)
 
         let dayClusters = await buildDayClusters(from: sortedDayGroups, progress: progress)
         progress?(0.90)
@@ -1014,23 +1012,49 @@ final class PhotoLibraryTripService {
         asset.creationDate ?? asset.modificationDate ?? .distantPast
     }
 
+    /// Reads EXIF timezone for one asset but never blocks the whole scan indefinitely.
+    /// If metadata extraction is slow (e.g. older cloud-backed originals), we skip timezone
+    /// for that asset and fall back to device calendar timezone in grouping.
+    private func localTimeZoneWithTimeout(for asset: PHAsset, timeoutSeconds: Double = 8.0) async -> TimeZone? {
+        await withTaskGroup(of: TimeZone?.self, returning: TimeZone?.self) { group in
+            group.addTask {
+                await APIManager.getLocalTimeZone(for: asset)
+            }
+            group.addTask {
+                let timeoutNanos = UInt64(max(timeoutSeconds, 0.1) * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: timeoutNanos)
+                return nil
+            }
+            let result = await group.next() ?? nil
+            group.cancelAll()
+            return result
+        }
+    }
+
     /// Groups assets by calendar day, but handles late-night events (midnight bridge).
     /// Uses each photo's EXIF capture timezone (OffsetTimeOriginal) so that photos taken
     /// abroad are bucketed by the local date at the destination, not the device's timezone.
     /// If photos are in early morning (e.g. 00:00-04:00) and within 2 hours of previous day's last photo,
     /// they are conceptually part of the "previous day".
-    private func groupAssetsByDay(_ assets: [PHAsset]) async -> [(date: Date, assets: [PHAsset])] {
+    ///
+    /// When `progress` is set, maps completion through **0.15 → 0.25** (the range that was previously
+    /// silent while timezone metadata loaded) so trip-scan UIs do not appear frozen at 15%.
+    private func groupAssetsByDay(_ assets: [PHAsset], progress: ((Double) -> Void)? = nil) async -> [(date: Date, assets: [PHAsset])] {
         // Fetch EXIF capture timezone for every asset in parallel.
         // Falls back to device timezone when EXIF offset is absent (e.g. screenshots).
         var tzMap: [String: TimeZone] = [:]
+        let totalForProgress = max(assets.count, 1)
+        var tzResolved = 0
         await withTaskGroup(of: (String, TimeZone?).self) { group in
             for asset in assets {
                 group.addTask {
-                    (asset.localIdentifier, await APIManager.getLocalTimeZone(for: asset))
+                    (asset.localIdentifier, await self.localTimeZoneWithTimeout(for: asset))
                 }
             }
             for await (id, tz) in group {
                 if let tz { tzMap[id] = tz }
+                tzResolved += 1
+                progress?(0.15 + 0.10 * Double(tzResolved) / Double(totalForProgress))
             }
         }
 
@@ -1125,6 +1149,7 @@ final class PhotoLibraryTripService {
         }
 #endif
 
+        progress?(0.25)
         return finalGroups
     }
 

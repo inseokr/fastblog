@@ -10,6 +10,12 @@ import Photos
 import SwiftUI
 import UIKit
 
+/// Synthetic `scrollPosition` targets so the carousel can show a “more trips” peek past the newest/oldest real card.
+private enum TripCarouselScrollPeekID {
+    static let olderMore = UUID(uuidString: "F0000000-0000-4000-A000-000000000001")!
+    static let newerMore = UUID(uuidString: "F0000000-0000-4000-A000-000000000002")!
+}
+
 struct TripsView: View {
     @ObservedObject var viewModel: TripsViewModel
     @Binding var selectedCreatedRecap: CreatedRecapBlog?
@@ -142,6 +148,44 @@ struct TripsView: View {
     private var latestTripIsInCurrentMonth: Bool {
         guard let first = allTrips.first, let latest = first.latestDate else { return false }
         return Calendar.current.isDate(latest, equalTo: Date(), toGranularity: .month)
+    }
+
+    /// Leading “more trips” card — same conditions as the right-swipe / load-newer affordance.
+    private var showNewerTripsCarouselPeek: Bool {
+        guard !allTrips.isEmpty, !latestTripIsInCurrentMonth else { return false }
+        if allTrips.count == 1 { return true }
+        return viewModel.canLoadNewerTrips
+    }
+
+    /// Month header + map highlight follow the edge trip when a synthetic peek card is mid-scroll.
+    private var monthTitleSelectionTripID: UUID? {
+        guard let id = selectedTripID else { return nil }
+        switch id {
+        case TripCarouselScrollPeekID.olderMore: return allTrips.last?.id
+        case TripCarouselScrollPeekID.newerMore: return allTrips.first?.id
+        default: return id
+        }
+    }
+
+    private var mapSelectedTripIDBinding: Binding<UUID?> {
+        Binding(
+            get: {
+                guard let id = selectedTripID else { return nil }
+                switch id {
+                case TripCarouselScrollPeekID.olderMore: return allTrips.last?.id
+                case TripCarouselScrollPeekID.newerMore: return allTrips.first?.id
+                default: return id
+                }
+            },
+            set: { selectedTripID = $0 }
+        )
+    }
+
+    private func isTripCarouselCardSelected(_ trip: TripDraft) -> Bool {
+        if trip.id == selectedTripID { return true }
+        if selectedTripID == TripCarouselScrollPeekID.olderMore, trip.id == allTrips.last?.id { return true }
+        if selectedTripID == TripCarouselScrollPeekID.newerMore, trip.id == allTrips.first?.id { return true }
+        return false
     }
 
     /// Restore the user's last visible selection when possible; otherwise fall back to the first trip.
@@ -519,11 +563,69 @@ struct TripsView: View {
                 populatedTripsMainStack
                     // Bi-directional sync: carousel scroll → map camera (map exists only on this branch).
                     .onChange(of: selectedTripID) { _, newID in
-                        if newID != nil {
-                            viewModel.lastSelectedVisibleTripID = newID
+                        if let newID {
+                            switch newID {
+                            case TripCarouselScrollPeekID.olderMore:
+                                viewModel.lastSelectedVisibleTripID = allTrips.last?.id
+                            case TripCarouselScrollPeekID.newerMore:
+                                viewModel.lastSelectedVisibleTripID = allTrips.first?.id
+                            default:
+                                viewModel.lastSelectedVisibleTripID = newID
+                            }
                         }
-                        // Skip popup on the initial programmatic selection that happens in onAppear.
-                        // Only real user carousel swipes (not map-pan or initial load) should trigger it.
+
+                        // Trailing “Trips” peek → load-older sheet, then snap back to the oldest visible trip.
+                        if newID == TripCarouselScrollPeekID.olderMore {
+                            if !didCompleteInitialSelection {
+                                didCompleteInitialSelection = true
+                                suppressMapAnimation = true
+                                if let last = allTrips.last { selectedTripID = last.id }
+                                return
+                            }
+                            if !viewModel.isLoadingOlderTrips, !showLoadMorePopup {
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
+                            }
+                            suppressMapAnimation = true
+                            DispatchQueue.main.async {
+                                if let last = allTrips.last {
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                                        selectedTripID = last.id
+                                    }
+                                }
+                            }
+                            return
+                        }
+
+                        // Leading “Trips” peek → load-newer (or single-trip load-more) sheet, then snap to newest.
+                        if newID == TripCarouselScrollPeekID.newerMore {
+                            if !didCompleteInitialSelection {
+                                didCompleteInitialSelection = true
+                                suppressMapAnimation = true
+                                if let first = allTrips.first { selectedTripID = first.id }
+                                return
+                            }
+                            if !viewModel.isLoadingNewerTrips {
+                                if allTrips.count == 1, !showLoadMorePopup {
+                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                    withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
+                                } else if viewModel.canLoadNewerTrips, !showLoadNewerPopup {
+                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                    withAnimation(.easeOut(duration: 0.3)) { showLoadNewerPopup = true }
+                                }
+                            }
+                            suppressMapAnimation = true
+                            DispatchQueue.main.async {
+                                if let first = allTrips.first {
+                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                                        selectedTripID = first.id
+                                    }
+                                }
+                            }
+                            return
+                        }
+
+                        // Skip map sync on the initial programmatic selection that happens in onAppear.
                         guard didCompleteInitialSelection else {
                             didCompleteInitialSelection = true
                             return
@@ -719,10 +821,10 @@ struct TripsView: View {
     private var mapViewLayer: some View {
         TripsMapView(
             trips: allTrips,
-            selectedTripID: $selectedTripID,
+            selectedTripID: mapSelectedTripIDBinding,
             mapPosition: $mapPosition,
             onTripTapped: { trip in
-                if trip.id == selectedTripID {
+                if isTripCarouselCardSelected(trip) {
                     viewModel.initiateCreateBlogFlow(trip: trip)
                 } else {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
@@ -737,10 +839,15 @@ struct TripsView: View {
                 guard !isAnimatingMapFromCarousel else { return }
                 // Don't let the map's initial auto-fit position override the programmatic selection.
                 guard selectedTripID != nil else { return }
+                // While the user is on a synthetic “more trips” scroll target, ignore pan-driven selection.
+                if selectedTripID == TripCarouselScrollPeekID.olderMore
+                    || selectedTripID == TripCarouselScrollPeekID.newerMore {
+                    return
+                }
                 // Find the trip closest to the map center
                 let center = region.center
                 guard let closest = closestTrip(to: center) else { return }
-                guard closest.id != selectedTripID else { return }
+                guard closest.id != monthTitleSelectionTripID else { return }
                 suppressMapAnimation = true
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
                     selectedTripID = closest.id
@@ -820,7 +927,7 @@ struct TripsView: View {
     // MARK: - Dynamic Month Title
 
     private var currentMonthTitle: String {
-        guard let id = selectedTripID,
+        guard let id = monthTitleSelectionTripID,
               let trip = allTrips.first(where: { $0.id == id }),
               let date = trip.earliestDate else {
             // Fallback to first trip
@@ -951,13 +1058,27 @@ struct TripsView: View {
     private var tripCarousel: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 16) {
+                if showNewerTripsCarouselPeek {
+                    TripCarouselMorePeekCard(
+                        edge: .newer,
+                        isSelected: selectedTripID == TripCarouselScrollPeekID.newerMore,
+                        labelColor: tripsNavLabel,
+                        secondaryColor: tripsSecondaryOnMapChrome
+                    )
+                    .containerRelativeFrame(.horizontal, count: 5, span: 4, spacing: 16)
+                    .id(TripCarouselScrollPeekID.newerMore)
+                    .scrollTransition(.animated(.easeInOut(duration: 0.2))) { content, phase in
+                        content
+                            .opacity(phase.isIdentity ? 1.0 : 0.6)
+                    }
+                }
                 ForEach(allTrips) { trip in
                     TripCarouselCard(
                         trip: trip,
-                        isSelected: trip.id == selectedTripID,
+                        isSelected: isTripCarouselCardSelected(trip),
                         showNewBadge: newTripIDsFromPhotoSelection.contains(trip.id),
                         onTap: {
-                            if trip.id == selectedTripID {
+                            if isTripCarouselCardSelected(trip) {
                                 // Already centered — check for new photos, then open blog creation
                                 viewModel.initiateCreateBlogFlow(trip: trip)
                             } else {
@@ -973,6 +1094,18 @@ struct TripsView: View {
                         content
                             .opacity(phase.isIdentity ? 1.0 : 0.6)
                     }
+                }
+                TripCarouselMorePeekCard(
+                    edge: .older,
+                    isSelected: selectedTripID == TripCarouselScrollPeekID.olderMore,
+                    labelColor: tripsNavLabel,
+                    secondaryColor: tripsSecondaryOnMapChrome
+                )
+                .containerRelativeFrame(.horizontal, count: 5, span: 4, spacing: 16)
+                .id(TripCarouselScrollPeekID.olderMore)
+                .scrollTransition(.animated(.easeInOut(duration: 0.2))) { content, phase in
+                    content
+                        .opacity(phase.isIdentity ? 1.0 : 0.6)
                 }
             }
             .scrollTargetLayout()
@@ -992,7 +1125,7 @@ struct TripsView: View {
 
                     // Left drag → Load older trips (last card when multiple, or the only card when single)
                     if isLeftwardDrag,
-                       selectedTripID == allTrips.last?.id,
+                       selectedTripID == allTrips.last?.id || selectedTripID == TripCarouselScrollPeekID.olderMore,
                        !viewModel.isLoadingOlderTrips,
                        !showLoadMorePopup {
                         withAnimation(.easeOut(duration: 0.3)) { showLoadMorePopup = true }
@@ -1000,7 +1133,7 @@ struct TripsView: View {
 
                     // Right drag → Load newer trips only when latest trip is not in current month; single trip uses load-more popup
                     if isRightwardDrag,
-                       selectedTripID == allTrips.first?.id,
+                       selectedTripID == allTrips.first?.id || selectedTripID == TripCarouselScrollPeekID.newerMore,
                        !viewModel.isLoadingNewerTrips,
                        !showLoadNewerPopup,
                        !latestTripIsInCurrentMonth {
@@ -5354,6 +5487,65 @@ extension TripsView {
         .padding(.trailing, 16)
         .opacity((showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips) ? 0 : 1)
         .animation(.easeInOut(duration: 0.2), value: showLoadMorePopup || showLoadNewerPopup || viewModel.isLoadingOlderTrips || viewModel.isLoadingNewerTrips)
+    }
+}
+
+// MARK: - Trip carousel “more trips” peek (synthetic scroll item)
+
+private struct TripCarouselMorePeekCard: View {
+    enum Edge {
+        case older
+        case newer
+    }
+
+    let edge: Edge
+    var isSelected: Bool = false
+    var labelColor: Color
+    var secondaryColor: Color
+
+    private static let cornerRadius: CGFloat = 18
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(appChromeBaseRadius: Self.cornerRadius, style: .continuous)
+                .fill(.ultraThinMaterial)
+            RoundedRectangle(appChromeBaseRadius: Self.cornerRadius, style: .continuous)
+                .strokeBorder(
+                    style: StrokeStyle(lineWidth: 1.5, dash: [6, 5])
+                )
+                .foregroundStyle(labelColor.opacity(0.32))
+
+            VStack(spacing: 10) {
+                Image(systemName: edge == .older ? "chevron.right" : "chevron.left")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(secondaryColor)
+                Text("Trips")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundStyle(labelColor)
+                Text("Swipe to load more")
+                    .font(.caption)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(secondaryColor)
+            }
+            .padding(20)
+        }
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 220, maxHeight: 220)
+        .overlay {
+            RoundedRectangle(appChromeBaseRadius: Self.cornerRadius, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: isSelected
+                            ? [Color.blue, Color(red: 0.04, green: 0.52, blue: 1.0)]
+                            : [Color.clear, Color.clear],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 2
+                )
+        }
+        .clipShape(RoundedRectangle(appChromeBaseRadius: Self.cornerRadius, style: .continuous))
+        .shadow(color: .black.opacity(0.25), radius: 10, y: 5)
     }
 }
 

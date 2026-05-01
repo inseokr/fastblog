@@ -445,13 +445,6 @@ private struct ProfileMapCardView: View {
             Text("\(blog.totalPlaceVisitCount) Place\(blog.totalPlaceVisitCount == 1 ? "" : "s") • \(blog.tripDurationDays) Day\(blog.tripDurationDays == 1 ? "" : "s")")
                 .font(.subheadline)
                 .foregroundColor(.white.opacity(0.7))
-
-            if let caption = blog.caption, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(caption)
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.6))
-                    .lineLimit(1)
-            }
         }
     }
 

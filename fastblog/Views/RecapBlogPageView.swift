@@ -300,6 +300,8 @@ struct RecapBlogPageView: View {
 
     // MARK: - Panorama
     @State private var showPanorama = false
+    /// Cover and film control both open slideshow playback first; swipe up in `PanoramaPlayerView` opens the grid gallery.
+    @State private var panoramaStartInGallery = false
 
     /// True if the user has saved this blog to the local device at least once (tap Save on recap page).
     /// We only show "X moments found" for blogs that have been saved; camera-originated trips that are still just trips use the timeline only.
@@ -1229,8 +1231,11 @@ struct RecapBlogPageView: View {
                 photoGroups: photoGroups,
                 blogId: blogId,
                 blogTitle: draft.title,
-                startInGallery: true,
-                onDismiss: { showPanorama = false },
+                startInGallery: panoramaStartInGallery,
+                onDismiss: {
+                    showPanorama = false
+                    panoramaStartInGallery = false
+                },
                 onAppCaptureDeletedFromSlideshow: { identifier in
                     removeAppCapturePhotoFromSlideshow(identifier: identifier)
                 }
@@ -2128,6 +2133,7 @@ struct RecapBlogPageView: View {
                         HStack(spacing: 0) {
                             Spacer(minLength: 0)
                             Button {
+                                panoramaStartInGallery = false
                                 showPanorama = true
                             } label: {
                                 ZStack {
@@ -2144,6 +2150,7 @@ struct RecapBlogPageView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Slideshow")
+                            .accessibilityHint("Swipe up for the photo gallery.")
                             .padding(.trailing, 16)
                         }
                         Spacer(minLength: 0)
@@ -2160,6 +2167,7 @@ struct RecapBlogPageView: View {
                     coverPhotoIdentifierBeforeEdit = draft.selectedCoverPhotoIdentifier
                     showCoverPhotoPicker = true
                 } else {
+                    panoramaStartInGallery = false
                     showPanorama = true
                 }
             }

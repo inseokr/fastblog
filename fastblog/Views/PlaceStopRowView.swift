@@ -442,6 +442,9 @@ struct PlaceStopRowView: View {
     /// Horizontal strip thumbnails — ~80% of screen width per item so one photo is prominent with peek like before.
     private var photoStripThumbnailSize: CGFloat { UIScreen.main.bounds.width * 0.8 }
 
+    /// Single-photo hero height. Fixed min/max so tiny PHPhotos placeholders (e.g. iCloud download) don’t collapse the slot before the full image arrives.
+    private static let singleIncludedPhotoHeroHeight: CGFloat = 260
+
     /// Vertical gap between successive horizontal photo rows (each row is its own ScrollView).
     private static let photoStripRowSpacing: CGFloat = 14
 
@@ -853,7 +856,7 @@ struct PlaceStopRowView: View {
                     }
                     VStack(alignment: .leading, spacing: 0) {
                         RecapPhotoThumbnail(photo: photo, cornerRadius: 10, showIcon: false, targetSize: CGSize(width: 960, height: 640))
-                            .frame(maxWidth: .infinity, maxHeight: 260)
+                            .frame(maxWidth: .infinity, minHeight: Self.singleIncludedPhotoHeroHeight, maxHeight: Self.singleIncludedPhotoHeroHeight)
                             .clipped()
                             .appChromeCornerRadius(10)
                             .overlay(alignment: .topLeading) {

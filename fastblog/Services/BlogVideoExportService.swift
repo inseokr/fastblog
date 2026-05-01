@@ -7,8 +7,6 @@ import UIKit
 
 struct BlogVideoExportOptions: Codable, Equatable {
     var secondsPerSlide: Double = 3.0
-    var colorStyle: BlogColor = .white
-    var fontTheme: FontTheme = .classic
     /// Filename of the bundled music track to mix in, or nil for silence.
     var musicFilename: String? = nil
 }
@@ -35,50 +33,88 @@ enum BlogVideoExportService {
         }
     }
 
-    /// Builds a slideshow video from the same `StoryPage` array used by Story Mode.
+    /// Builds a slideshow video from the same **photo** sequence as the recap slideshow (`PanoramaPlayerView`):
+    /// one place per group, solo vs split diptych when a place has two or more photos (deterministic pattern
+    /// so exports are stable; in-app playback randomizes that choice).
     ///
     /// Pipeline:
-    /// 1. Render each slide with `ImageRenderer` at 2× (same approach as storybook / PDF page rendering).
+    /// 1. Load images and render each slide full-bleed on black at 2× with `ImageRenderer`.
     /// 2. Write frames to a silent MP4 via `AVAssetWriter`.
     /// 3. If a music track is set, composite it into the video with `AVMutableComposition`.
     ///
     /// Progress is reported on the **main actor** via `progressHandler` in [0, 1].
     @MainActor
     static func exportVideo(
-        pages: [StoryPage],
         draft: RecapBlogDetail,
         options: BlogVideoExportOptions,
         progressHandler: ((Double) -> Void)? = nil
     ) async throws -> URL {
-        guard !pages.isEmpty else { throw ExportError.noPages }
+        let groups = slideshowPhotoGroups(from: draft)
+        let specs = enumerateSlideshowSlides(groups: groups)
+        guard !specs.isEmpty else { throw ExportError.noPages }
 
-        // Logical size matches the Story Mode slideshow viewport.
         let logicalSize = CGSize(
             width: StoryRenderMetrics.clampedScreenWidth,
-            height: StoryRenderMetrics.effectiveStoryViewportHeight
+            height: StoryRenderMetrics.clampedScreenHeight
         )
-        // Pixel size: 2× logical (matching imageRenderer.scale = 2.0 below).
         let pixelSize = CGSize(width: logicalSize.width * 2, height: logicalSize.height * 2)
+        let loadSize = CGSize(width: logicalSize.width * 3, height: logicalSize.height * 3)
 
-        // Step 1 – Render all pages to UIImage (0 → 60 % of progress).
-        var frames: [UIImage] = []
-        frames.reserveCapacity(pages.count)
-        for (idx, page) in pages.enumerated() {
-            if idx % 2 == 0 { await Task.yield() }
-            let image = try autoreleasepool {
-                try renderPageToImage(page: page, logicalSize: logicalSize, pageIndex: idx, options: options)
+        var idToPhoto: [String: RecapPhoto] = [:]
+        for day in draft.days {
+            for stop in day.placeStops {
+                for p in stop.photos where p.isIncluded {
+                    if let lid = p.localIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines), !lid.isEmpty {
+                        idToPhoto[lid] = p
+                    }
+                }
             }
-            frames.append(image)
-            progressHandler?(Double(idx + 1) / Double(pages.count) * 0.6)
         }
 
-        // Step 2 – Write silent video (60 → 80 %).
+        var loaded: [String: UIImage] = [:]
+        let allIds = Set(specs.flatMap { spec -> [String] in
+            if let b = spec.bottom { return [spec.top.id, b.id] }
+            return [spec.top.id]
+        })
+        let idList = Array(allIds)
+        await withTaskGroup(of: (String, UIImage?).self) { group in
+            for lid in idList {
+                group.addTask {
+                    guard let photo = idToPhoto[lid] else { return (lid, nil) }
+                    let img = await StoryBookBuilder.loadUIImage(for: photo, targetPixelSize: loadSize)
+                    return (lid, img)
+                }
+            }
+            for await (lid, img) in group {
+                if let img { loaded[lid] = img }
+            }
+        }
+        progressHandler?(0.08)
+
+        var zoomIn = true
+        var frames: [UIImage] = []
+        frames.reserveCapacity(specs.count)
+        for (idx, spec) in specs.enumerated() {
+            if idx > 0, spec.layout == .solo { zoomIn.toggle() }
+            if idx % 2 == 0 { await Task.yield() }
+            let image = try autoreleasepool {
+                try renderSlideshowSpecToImage(
+                    spec: spec,
+                    loaded: loaded,
+                    logicalSize: logicalSize,
+                    slideIndex: idx,
+                    zoomIn: zoomIn
+                )
+            }
+            frames.append(image)
+            progressHandler?(0.08 + Double(idx + 1) / Double(specs.count) * 0.52)
+        }
+
         let tempVideoURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString + ".mp4")
         try await writeVideoFrames(frames: frames, to: tempVideoURL, pixelSize: pixelSize, options: options)
         progressHandler?(0.8)
 
-        // Step 3 – Composite audio if requested (80 → 100 %).
         let safeTitle = draft.title.replacingOccurrences(of: "/", with: "-")
         let finalURL = URL.documentsDirectory
             .appendingPathComponent("\(safeTitle) | Blog Video.mp4")
@@ -96,32 +132,138 @@ enum BlogVideoExportService {
         return finalURL
     }
 
-    // MARK: - Page rendering (mirrors storybook slide rendering in StoryModePDFExportService)
+    // MARK: - Slideshow sequencing (matches `RecapBlogPageView` + `PanoramaPlayerView`)
+
+    private static func slideshowPhotoGroups(from draft: RecapBlogDetail) -> [[PanoramaPhotoEntry]] {
+        let groups: [[PanoramaPhotoEntry]] = draft.days
+            .flatMap(\.placeStops)
+            .compactMap { stop -> [PanoramaPhotoEntry]? in
+                let entries = stop.photos
+                    .filter(\.isIncluded)
+                    .compactMap { photo -> PanoramaPhotoEntry? in
+                        guard let id = photo.localIdentifier, !id.isEmpty else { return nil }
+                        return PanoramaPhotoEntry(
+                            id: id,
+                            caption: photo.caption,
+                            placeName: stop.placeTitle,
+                            timestamp: photo.timestamp
+                        )
+                    }
+                return entries.isEmpty ? nil : entries
+            }
+        if !groups.isEmpty { return groups }
+        if let cover = draft.selectedCoverPhotoIdentifier {
+            return [[PanoramaPhotoEntry(id: cover, caption: nil, placeName: nil, timestamp: nil)]]
+        }
+        return []
+    }
+
+    private enum ExportSlideLayout { case solo, diptych }
+
+    private struct ExportSlideSpec {
+        let layout: ExportSlideLayout
+        let top: PanoramaPhotoEntry
+        let bottom: PanoramaPhotoEntry?
+    }
+
+    /// Deterministic stand-in for `PanoramaPlayerView.chooseLayout` (which uses random when ≥2 photos remain).
+    private static func chooseDeterministicLayout(groupIndex: Int, offset: Int, remaining: Int) -> ExportSlideLayout {
+        guard remaining >= 2 else { return .solo }
+        return (groupIndex + offset) % 2 == 0 ? .solo : .diptych
+    }
+
+    private static func advanceAfterStep(
+        groups: [[PanoramaPhotoEntry]],
+        groupIndex: Int,
+        offset: Int,
+        step: Int
+    ) -> (groupIndex: Int, offset: Int)? {
+        let group = groups[groupIndex]
+        let nextOff = offset + step
+        if nextOff < group.count {
+            return (groupIndex, nextOff)
+        }
+        let ng = groupIndex + 1
+        if ng >= groups.count { return nil }
+        return (ng, 0)
+    }
+
+    private static func enumerateSlideshowSlides(groups: [[PanoramaPhotoEntry]]) -> [ExportSlideSpec] {
+        guard !groups.isEmpty else { return [] }
+        var specs: [ExportSlideSpec] = []
+        var gi = 0
+        var off = 0
+        var layout = chooseDeterministicLayout(
+            groupIndex: gi,
+            offset: off,
+            remaining: groups[gi].count - off
+        )
+
+        while true {
+            let group = groups[gi]
+            switch layout {
+            case .solo:
+                guard off < group.count else { return specs }
+                specs.append(ExportSlideSpec(layout: .solo, top: group[off], bottom: nil))
+                guard let next = advanceAfterStep(groups: groups, groupIndex: gi, offset: off, step: 1) else {
+                    return specs
+                }
+                gi = next.groupIndex
+                off = next.offset
+            case .diptych:
+                guard off + 1 < group.count else {
+                    layout = .solo
+                    continue
+                }
+                specs.append(ExportSlideSpec(layout: .diptych, top: group[off], bottom: group[off + 1]))
+                guard let next = advanceAfterStep(groups: groups, groupIndex: gi, offset: off, step: 2) else {
+                    return specs
+                }
+                gi = next.groupIndex
+                off = next.offset
+            }
+            layout = chooseDeterministicLayout(
+                groupIndex: gi,
+                offset: off,
+                remaining: groups[gi].count - off
+            )
+        }
+    }
+
+    // MARK: - Slide rendering (full-bleed photos on black, Ken Burns midpoint for solo)
+
+    private static let exportZoomScale: CGFloat = 1.12
+
+    private static func soloKenBurnsScale(zoomIn: Bool, progress: CGFloat) -> CGFloat {
+        let t = min(max(progress, 0), 1)
+        let start: CGFloat = zoomIn ? 1.0 : exportZoomScale
+        let end: CGFloat = zoomIn ? exportZoomScale : 1.0
+        return start + (end - start) * t
+    }
 
     @MainActor
-    private static func renderPageToImage(
-        page: StoryPage,
+    private static func renderSlideshowSpecToImage(
+        spec: ExportSlideSpec,
+        loaded: [String: UIImage],
         logicalSize: CGSize,
-        pageIndex: Int,
-        options: BlogVideoExportOptions
+        slideIndex: Int,
+        zoomIn: Bool
     ) throws -> UIImage {
-        let bgColor: Color    = options.colorStyle == .black ? .black : .white
-        let colorScheme: ColorScheme = options.colorStyle == .black ? .dark  : .light
-
-        let root = StoryPageView(page: page)
-            .environment(\.colorScheme, colorScheme)
-            .environment(\.storyFontTheme, options.fontTheme)
-            .environment(\.storyBlogColor, options.colorStyle)
-            .environment(\.storyRasterizesForExport, true)
-            .frame(width: logicalSize.width, height: logicalSize.height)
-            .background(bgColor)
+        let root = SlideshowExportFrameView(
+            spec: spec,
+            loaded: loaded,
+            size: logicalSize,
+            zoomIn: zoomIn
+        )
+        .frame(width: logicalSize.width, height: logicalSize.height)
+        .background(Color.black)
 
         let renderer = ImageRenderer(content: root)
         renderer.scale = 2.0
         renderer.proposedSize = ProposedViewSize(width: logicalSize.width, height: logicalSize.height)
 
         guard let image = renderer.uiImage else {
-            throw ExportError.failedToRenderPage(pageIndex)
+            throw ExportError.failedToRenderPage(slideIndex)
         }
         return image
     }
@@ -257,5 +399,50 @@ enum BlogVideoExportService {
         guard let ctx, let cgImage = image.cgImage else { return nil }
         ctx.draw(cgImage, in: CGRect(origin: .zero, size: size))
         return pixelBuffer
+    }
+
+    // MARK: - SwiftUI slideshow frame (export)
+
+    private struct SlideshowExportFrameView: View {
+        let spec: ExportSlideSpec
+        let loaded: [String: UIImage]
+        let size: CGSize
+        let zoomIn: Bool
+
+        var body: some View {
+            switch spec.layout {
+            case .solo:
+                soloExportView(id: spec.top.id)
+            case .diptych:
+                let paneH = (size.height - 2) / 2
+                VStack(spacing: 2) {
+                    photoFill(id: spec.top.id, width: size.width, height: paneH)
+                    photoFill(id: spec.bottom?.id, width: size.width, height: paneH)
+                }
+                .frame(width: size.width, height: size.height)
+                .clipped()
+            }
+        }
+
+        @ViewBuilder
+        private func soloExportView(id: String) -> some View {
+            let scale = BlogVideoExportService.soloKenBurnsScale(zoomIn: zoomIn, progress: 0.5)
+            photoFill(id: id, width: size.width, height: size.height, scale: scale)
+        }
+
+        @ViewBuilder
+        private func photoFill(id: String?, width: CGFloat, height: CGFloat, scale: CGFloat = 1.0) -> some View {
+            if let id, let img = loaded[id] {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: width, height: height)
+                    .scaleEffect(scale)
+                    .clipped()
+            } else {
+                Color.gray.opacity(0.35)
+                    .frame(width: width, height: height)
+            }
+        }
     }
 }

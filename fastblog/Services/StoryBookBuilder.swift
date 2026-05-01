@@ -147,6 +147,11 @@ enum StoryBookBuilder {
     }
 
     /// Same resolution order as `PDFExportService.preloadAssets`: app capture → Photo Library (via `ImageLoader`) → signed cloud URL.
+    /// Used by slideshow video export and story pipeline.
+    static func loadUIImage(for photo: RecapPhoto, targetPixelSize: CGSize) async -> UIImage? {
+        await loadImageForRecapPhoto(photo, targetPixelSize: targetPixelSize)
+    }
+
     private static func loadImageForRecapPhoto(_ photo: RecapPhoto, targetPixelSize: CGSize) async -> UIImage? {
         if let lid = normalizedLocalID(photo.localIdentifier) {
             if lid.hasPrefix(AppCapturePhotoService.prefix) {

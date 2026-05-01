@@ -539,9 +539,9 @@ struct PanoramaPlayerView: View {
     private var topBar: some View {
         HStack(alignment: .center, spacing: 10) {
 
-            // Close (slideshow -> gallery)
+            // Close — leave slideshow and return to the blog
             Button {
-                presentSlideshowGallery()
+                exitSlideshowToBlog()
             } label: {
                 Text("Close")
                     .font(.system(size: 17, weight: .semibold))
@@ -652,10 +652,26 @@ struct PanoramaPlayerView: View {
         }
     }
 
-    private func dismissSlideshowGallery() {
+    /// Dismisses the grid gallery and returns to slideshow playback, restoring play/pause from before the gallery was opened.
+    private func dismissSlideshowGalleryReturningToPlayer() {
         galleryDetailPhotoId = nil
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+        useFadeForGalleryTransition = true
+        withAnimation(.easeInOut(duration: 0.22)) {
             showGallery = false
+        }
+        isPlaying = wasPlayingBeforeGallery
+        if wasPlayingBeforeGallery {
+            resumeSlideshowTimingIfPlaying()
+            Task { await slideshowMusic.resume() }
+        }
+    }
+
+    private func exitSlideshowToBlog() {
+        stopTimer()
+        Task { @MainActor in
+            await slideshowMusic.stopAll()
+            dismiss()
+            onDismiss()
         }
     }
 
@@ -827,14 +843,9 @@ struct PanoramaPlayerView: View {
                     }
                 }
 
-                // Exit slideshow from gallery
+                // Back to slideshow (not the blog)
                 Button {
-                    stopTimer()
-                    Task { @MainActor in
-                        await slideshowMusic.stopAll()
-                        dismiss()
-                        onDismiss()
-                    }
+                    dismissSlideshowGalleryReturningToPlayer()
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 17, weight: .semibold))

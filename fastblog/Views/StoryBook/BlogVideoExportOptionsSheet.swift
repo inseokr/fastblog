@@ -1,10 +1,9 @@
 // fastblog/Views/StoryBook/BlogVideoExportOptionsSheet.swift
 import SwiftUI
 
-/// Options sheet for exporting a blog as a slideshow video.
-/// Mirrors the style of `StoryModePDFOptionsSheet` (storybook options layout).
-/// When the user taps "Export & Share", it builds the story pages, renders each to a video
-/// frame, and calls `onShare(url)` with the finished MP4 on the main actor.
+/// Options sheet for exporting a blog as a slideshow video (same photo sequence as the recap slideshow).
+/// Mirrors the style of `StoryModePDFOptionsSheet` (grouped options layout).
+/// When the user taps "Export & Share", it loads photos, renders each slide full-bleed, and calls `onShare(url)` with the finished MP4 on the main actor.
 struct BlogVideoExportOptionsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -31,8 +30,6 @@ struct BlogVideoExportOptionsSheet: View {
             ScrollView {
                 VStack(spacing: 20) {
                     durationSection
-                    colorStyleSection
-                    fontThemeSection
                     musicSection
                 }
                 .padding(20)
@@ -109,48 +106,6 @@ struct BlogVideoExportOptionsSheet: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Color Style Section
-
-    private var colorStyleSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Color Style", icon: "circle.lefthalf.filled")
-            VStack(spacing: 0) {
-                ForEach(BlogColor.allCases, id: \.self) { style in
-                    optionRow(title: style.label, subtitle: style.subtitle,
-                              isSelected: options.colorStyle == style) {
-                        options.colorStyle = style
-                    }
-                    if style != BlogColor.allCases.last {
-                        Divider().padding(.leading, 52)
-                    }
-                }
-            }
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .appChromeCornerRadius(12)
-        }
-    }
-
-    // MARK: - Font Theme Section
-
-    private var fontThemeSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Font Style", icon: "textformat")
-            VStack(spacing: 0) {
-                ForEach(FontTheme.allCases, id: \.self) { theme in
-                    optionRow(title: theme.label, subtitle: theme.subtitle,
-                              isSelected: options.fontTheme == theme) {
-                        options.fontTheme = theme
-                    }
-                    if theme != FontTheme.allCases.last {
-                        Divider().padding(.leading, 52)
-                    }
-                }
-            }
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
-            .appChromeCornerRadius(12)
-        }
-    }
-
     // MARK: - Music Section
 
     private var musicSection: some View {
@@ -182,8 +137,8 @@ struct BlogVideoExportOptionsSheet: View {
     // MARK: - Export Button
 
     private var progressLabel: String {
-        if progress < 0.1  { return "Building slideshow…" }
-        if progress < 0.62 { return "Rendering slides…" }
+        if progress < 0.1  { return "Loading photos…" }
+        if progress < 0.62 { return "Rendering slideshow…" }
         if progress < 0.82 { return "Writing video…" }
         return "Adding music…"
     }
@@ -229,19 +184,12 @@ struct BlogVideoExportOptionsSheet: View {
 
         Task { @MainActor in
             do {
-                // Build story pages (same pipeline as Story Mode slideshow / storybook export).
-                let content = await StoryBookBuilder.build(from: draft)
-                let pages   = StoryPageLayout.buildPages(from: content, fontTheme: options.fontTheme)
-                guard !pages.isEmpty else { throw BlogVideoExportService.ExportError.noPages }
-                progress = 0.1
-
+                progress = 0.06
                 let url = try await BlogVideoExportService.exportVideo(
-                    pages: pages,
                     draft: draft,
                     options: options,
                     progressHandler: { p in
-                        // Map service 0-1 range into 10-100 % of total progress.
-                        progress = 0.1 + p * 0.9
+                        progress = 0.06 + p * 0.94
                     }
                 )
 
@@ -269,38 +217,5 @@ struct BlogVideoExportOptionsSheet: View {
                     endPoint: .trailing
                 )
             )
-    }
-
-    private func optionRow(
-        title: String,
-        subtitle: String,
-        isSelected: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(isSelected ? Color.accentColor : Color(uiColor: .tertiarySystemGroupedBackground))
-                        .frame(width: 32, height: 32)
-                    Image(systemName: isSelected ? "checkmark" : "circle")
-                        .font(.system(size: 14))
-                        .foregroundColor(isSelected ? .white : .secondary)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundColor(.primary)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 }
