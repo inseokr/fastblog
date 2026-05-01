@@ -1930,7 +1930,6 @@ struct CameraCaptureView: View {
     var postDismissToast: ((String) -> Void)? = nil
     /// When set (ZStack overlay presentation), called instead of dismiss().
     var onDismissOverlay: (() -> Void)? = nil
-    /// When set, "View" in the blog-started modal will call this with the blog's sourceTripId so the parent can open that blog and dismiss the camera.
     var onNavigateToBlog: ((UUID) -> Void)? = nil
 
     @StateObject private var cameraController = CameraController()
@@ -1957,7 +1956,9 @@ struct CameraCaptureView: View {
     @State private var sessionDraftTripId: UUID? = nil
     @State private var hasOfferedStartBlogThisSession: Bool = false
     @State private var hasReportedDismissToast: Bool = false
-    /// When true, show the "Blog has started, your moments will be saved to [name]" modal with Ok / View.
+    /// Set when a NEW blog is just created; triggers the "Blog has started" prompt on next Save.
+    @State private var pendingBlogStartedAlert: Bool = false
+    /// When true, show the "Blog has started, your moments will be saved to [name]" modal after first photo save.
     @State private var showBlogStartedPrompt: Bool = false
     /// When capture is near home, show confirmation before adding. Pending (image, timestamp) to add if user taps Keep.
     @State private var showNearHomeConfirmation: Bool = false
@@ -2299,6 +2300,7 @@ struct CameraCaptureView: View {
             exitInPlaceCaptionMode()
             return
         }
+        let showBlogStartedAfterSave = pendingBlogStartedAlert
         syncSessionCaptionsToBlog()
         let caption = captionModeResolvedMoment?.caption
         if let photoId = moment.injectedPhotoId {
@@ -2313,24 +2315,41 @@ struct CameraCaptureView: View {
             if let idx = sessionMoments.firstIndex(where: { $0.id == moment.id }) {
                 sessionMoments[idx].includedInExitAddedToast = false
             }
-            let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
-            let msg = "1 moment added to \(title)"
-            if let post = postDismissToast {
-                post(msg)
-            } else {
-                showToast(msg)
+            // Avoid stacking a timed toast behind the blog-started modal (toast ignores taps; feels like a second dismissal).
+            if !showBlogStartedAfterSave {
+                let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
+                let msg = "1 moment added to \(title)"
+                if let post = postDismissToast {
+                    post(msg)
+                } else {
+                    showToast(msg)
+                }
             }
             AppAnalytics.track(.appInAppCameraCaption)
         } else {
             let title = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your trip"
-            if sessionSourceTripId != nil || sessionDraftTripId != nil {
-                showToast("Moment saved for \(title)")
-            } else {
-                showToast("Moment saved")
+            if !showBlogStartedAfterSave {
+                if sessionSourceTripId != nil || sessionDraftTripId != nil {
+                    showToast("Moment saved for \(title)")
+                } else {
+                    showToast("Moment saved")
+                }
             }
             AppAnalytics.track(.appInAppCameraCaption)
         }
+        let revealBlogStartedPrompt = showBlogStartedAfterSave
+        if revealBlogStartedPrompt {
+            pendingBlogStartedAlert = false
+        }
+        // Resign keyboard before exit so the modal's first tap isn't eaten by dismissal/focus teardown.
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         exitInPlaceCaptionMode()
+        // Caption preview uses .transition(.opacity) (~0.18s); layering the prompt in the same frame can leave hit-testing fighting the outgoing overlay.
+        if revealBlogStartedPrompt {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
+                showBlogStartedPrompt = true
+            }
+        }
     }
 
     @ViewBuilder
@@ -3096,9 +3115,11 @@ struct CameraCaptureView: View {
             attachedCountThisSession = 0
             sessionTripTitle = nil
             sessionSourceTripId = nil
+            sessionDraftTripId = nil
+            hasOfferedStartBlogThisSession = false
+            pendingBlogStartedAlert = false
             lastCaptureWasVibe = false
             if vibeEnabled { vibeRecorder.start() }
-            sessionDraftTripId = nil
             isCaptionModeActive = false
             captionModeMomentId = nil
             captionModeFrozenImage = nil
@@ -3313,8 +3334,8 @@ struct CameraCaptureView: View {
     /// Secondary overlays and vibe tooltip presentation.
     private var inAppCameraBodyWithLifecycle: some View {
         inAppCameraWithSessionSheets
-            .overlay { blogStartedPromptOverlay }
             .overlay { nearHomeConfirmationOverlay }
+            .overlay { blogStartedPromptOverlay }
             .onChange(of: showNearHomeConfirmation) { _, show in
             if show { nearHomeDoNotShowAgain = false }
             }
@@ -3434,49 +3455,45 @@ struct CameraCaptureView: View {
 
     @ViewBuilder private var blogStartedPromptOverlay: some View {
         if showBlogStartedPrompt {
-            Color.black.opacity(0.4)
-                .ignoresSafeArea()
-                .onTapGesture { }
             let blogName = sessionTripTitle ?? OnTheGoTripStore.activeBlogTitle ?? "your blog"
-            VStack(spacing: 0) {
-                Text("Blog has started, your moments will be saved to \"\(blogName)\"")
-                    .font(.subheadline)
-                    .foregroundColor(.primary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 24)
-                    .padding(.bottom, 20)
-                HStack(spacing: 16) {
-                    Button("Ok") {
+            ZStack {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
                         showBlogStartedPrompt = false
                     }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity)
-                    Button("View") {
+                VStack(spacing: 0) {
+                    Text("Blog has started, your moments will be saved to \"\(blogName)\"")
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 24)
+                        .padding(.bottom, 20)
+                    Button("Close") {
                         showBlogStartedPrompt = false
-                        if let id = sessionSourceTripId {
-                            onNavigateToBlog?(id)
-                        }
                     }
+                    .buttonStyle(.borderless)
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .background(Color.blue, in: RoundedRectangle(appChromeBaseRadius: 10))
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 24)
+                .frame(maxWidth: 300)
+                .background(
+                    RoundedRectangle(appChromeBaseRadius: 20, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .environment(\.colorScheme, .dark)
+                )
+                .clipShape(RoundedRectangle(appChromeBaseRadius: 20, style: .continuous))
+                .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
+                .padding(.horizontal, 36)
             }
-            .frame(maxWidth: 300)
-            .background(
-                RoundedRectangle(appChromeBaseRadius: 20, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .environment(\.colorScheme, .dark)
-            )
-            .clipShape(RoundedRectangle(appChromeBaseRadius: 20, style: .continuous))
-            .shadow(color: .black.opacity(0.35), radius: 20, x: 0, y: 10)
-            .padding(.horizontal, 36)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -4232,7 +4249,7 @@ extension CameraCaptureView {
                 sessionTripTitle = blog.title
             }
         }
-        showBlogStartedPrompt = true
+        pendingBlogStartedAlert = true
         // So exit toast shows "X moments added to [Blog Name]" even if user exits before injection completes.
         attachedCountThisSession = momentCount(from: sessionMoments)
         // Clear sessionMoments so the counter and gallery switch to sessionCapturesForDisplay,
@@ -4285,6 +4302,7 @@ extension CameraCaptureView {
         // Switch UI to blog flow immediately so counter and gallery use sessionCapturesForDisplay.
         attachedCountThisSession = momentCount(from: sessionMoments)
         sessionMoments = []
+        pendingBlogStartedAlert = true
         let location = cameraController.currentLocation
         Task { @MainActor in
             let photoLocation = location.map { PhotoCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude) }
@@ -4356,7 +4374,12 @@ extension CameraCaptureView {
             sessionSourceTripId = tripId
             sessionTripTitle = title
             attachedCountThisSession = photos.count
-            showBlogStartedPrompt = true
+            // Inject any photos captured while this async Task was running (geocoding delay).
+            let lateArrivals = sessionMoments.filter { $0.previewImage != nil }
+            sessionMoments = []
+            for pending in lateArrivals {
+                injectCapturedImageIntoBlog(pending.previewImage, at: pending.timestamp, sourceTripId: tripId, momentId: pending.id, vibeURL: pending.vibeURL)
+            }
         }
     }
 

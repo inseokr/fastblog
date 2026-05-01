@@ -194,17 +194,6 @@ struct LandingView: View {
         }
         .animation(.easeInOut(duration: 0.4), value: tripsViewModel.scanState != .idle)
         .preferredColorScheme(.dark)
-        // Use simultaneousGesture so vertical drags don’t win over the bottom bar buttons (exclusive .gesture can).
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 40)
-                .onEnded { value in
-                    if value.translation.height < -50 && abs(value.translation.height) > abs(value.translation.width) {
-                        withAnimation(.easeInOut(duration: 0.18)) {
-                            showCameraFromHome = true
-                        }
-                    }
-                }
-        )
         .sheet(isPresented: $showSettings) {
             SettingsView()
             .environmentObject(authService)

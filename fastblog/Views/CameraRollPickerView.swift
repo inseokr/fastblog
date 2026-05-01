@@ -34,9 +34,50 @@ struct CameraRollPickerView: UIViewControllerRepresentable {
         init(onComplete: @escaping ([String]) -> Void) { self.onComplete = onComplete }
 
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-            let identifiers = results.compactMap { $0.assetIdentifier }
-            // Do not call `picker.dismiss` — see MultiPhotoLibraryImportPickerView comment (nested SwiftUI sheets).
-            onComplete(identifiers)
+            guard !results.isEmpty else {
+                onComplete([])
+                return
+            }
+
+            // Some system camera flows can return picker results without a PHAsset identifier.
+            // Fall back to app-local capture storage so these photos remain attachable to blogs.
+            let group = DispatchGroup()
+            let lock = NSLock()
+            var identifiers: [String] = []
+            identifiers.reserveCapacity(results.count)
+
+            for result in results {
+                if let assetId = result.assetIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !assetId.isEmpty {
+                    lock.lock()
+                    identifiers.append(assetId)
+                    lock.unlock()
+                    continue
+                }
+
+                let provider = result.itemProvider
+                guard provider.canLoadObject(ofClass: UIImage.self) else { continue }
+                group.enter()
+                provider.loadObject(ofClass: UIImage.self) { object, _ in
+                    defer { group.leave() }
+                    guard let image = object as? UIImage else { return }
+                    let now = Date()
+                    guard let captureId = try? AppCapturePhotoService.shared.saveCapture(
+                        image: image,
+                        timestamp: now,
+                        location: nil
+                    ) else { return }
+                    let localId = AppCapturePhotoService.identifier(for: captureId)
+                    lock.lock()
+                    identifiers.append(localId)
+                    lock.unlock()
+                }
+            }
+
+            group.notify(queue: .main) {
+                // Do not call `picker.dismiss` — see MultiPhotoLibraryImportPickerView comment (nested SwiftUI sheets).
+                self.onComplete(identifiers)
+            }
         }
     }
 }
