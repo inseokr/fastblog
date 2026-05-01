@@ -197,6 +197,7 @@
 		BB0002B5 /* SlideshowBundledMusic.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B4 /* SlideshowBundledMusic.swift */; };
 		BB0002B7 /* BlogVideoExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B6 /* BlogVideoExportService.swift */; };
 		BB0002B9 /* BlogVideoExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B8 /* BlogVideoExportOptionsSheet.swift */; };
+		BB0002BA /* CinematicBlogVideoBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002BB /* CinematicBlogVideoBuilder.swift */; };
 		BB0002C1 /* PlaceStopCategoryPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002C2 /* PlaceStopCategoryPickerSheet.swift */; };
 		BB0002C3 /* PlacePOICategoryPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002C4 /* PlacePOICategoryPresentation.swift */; };
 		BB0002C7 /* PlacePOICategoryCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002C8 /* PlacePOICategoryCatalog.swift */; };
@@ -452,6 +453,7 @@
 		BB0002B4 /* SlideshowBundledMusic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowBundledMusic.swift; sourceTree = "<group>"; };
 		BB0002B6 /* BlogVideoExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogVideoExportService.swift; sourceTree = "<group>"; };
 		BB0002B8 /* BlogVideoExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BlogVideoExportOptionsSheet.swift; path = StoryBook/BlogVideoExportOptionsSheet.swift; sourceTree = "<group>"; };
+		BB0002BB /* CinematicBlogVideoBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CinematicBlogVideoBuilder.swift; sourceTree = "<group>"; };
 		BB0002C2 /* PlaceStopCategoryPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceStopCategoryPickerSheet.swift; sourceTree = "<group>"; };
 		BB0002C4 /* PlacePOICategoryPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacePOICategoryPresentation.swift; sourceTree = "<group>"; };
 		BB0002C8 /* PlacePOICategoryCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacePOICategoryCatalog.swift; sourceTree = "<group>"; };
@@ -820,6 +822,7 @@
 				BB0002B0 /* SlideshowMusicPreference.swift */,
 				BB0002B4 /* SlideshowBundledMusic.swift */,
 				BB0002B6 /* BlogVideoExportService.swift */,
+				BB0002BB /* CinematicBlogVideoBuilder.swift */,
 				BB0002B2 /* SlideshowMusicPlaybackCoordinator.swift */,
 				BB000221 /* PhotoTagService.swift */,
 				BB000197 /* PhotosAuthorizationManager.swift */,
@@ -1105,6 +1108,7 @@
 				BB0002B5 /* SlideshowBundledMusic.swift in Sources */,
 				BB0002B7 /* BlogVideoExportService.swift in Sources */,
 				BB0002B9 /* BlogVideoExportOptionsSheet.swift in Sources */,
+				BB0002BA /* CinematicBlogVideoBuilder.swift in Sources */,
 				BB0002B3 /* SlideshowMusicPlaybackCoordinator.swift in Sources */,
 				BB000220 /* PhotoTagService.swift in Sources */,
 				BB000222 /* StoryCaptionGenerator.swift in Sources */,

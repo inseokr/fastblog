@@ -1,10 +1,10 @@
 // fastblog/Views/StoryBook/BlogVideoExportOptionsSheet.swift
 import SwiftUI
 
-/// Options sheet for exporting a blog as a slideshow video.
-/// Mirrors the style of `StoryModePDFOptionsSheet` (storybook options layout).
-/// When the user taps "Export & Share", it builds the story pages, renders each to a video
-/// frame, and calls `onShare(url)` with the finished MP4 on the main actor.
+/// Options sheet for exporting a blog as a video.
+/// Supports two styles:
+/// - **Cinematic Journey** (default): map animations + full-frame photo slides built from `RecapBlogDetail`.
+/// - **Story Pages**: renders the full blog layout pages (original PDF-page style).
 struct BlogVideoExportOptionsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -14,7 +14,7 @@ struct BlogVideoExportOptionsSheet: View {
 
     @AppStorage("blogVideoExportOptions") private var optionsData: Data =
         (try? JSONEncoder().encode(BlogVideoExportOptions())) ?? Data()
-    @State private var options   = BlogVideoExportOptions()
+    @State private var options      = BlogVideoExportOptions()
     @State private var isExporting  = false
     @State private var progress: Double = 0
     @State private var exportError: String? = nil
@@ -30,9 +30,12 @@ struct BlogVideoExportOptionsSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
+                    videoStyleSection
                     durationSection
-                    colorStyleSection
-                    fontThemeSection
+                    if options.videoStyle == .storyPages {
+                        colorStyleSection
+                        fontThemeSection
+                    }
                     musicSection
                 }
                 .padding(20)
@@ -82,11 +85,40 @@ struct BlogVideoExportOptionsSheet: View {
         }
     }
 
+    // MARK: - Video Style Section
+
+    private var videoStyleSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Video Style", icon: "film.stack")
+            VStack(spacing: 0) {
+                ForEach(VideoStyle.allCases, id: \.self) { style in
+                    optionRow(
+                        title: style.label,
+                        subtitle: style.subtitle,
+                        isSelected: options.videoStyle == style
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            options.videoStyle = style
+                        }
+                    }
+                    if style != VideoStyle.allCases.last {
+                        Divider().padding(.leading, 52)
+                    }
+                }
+            }
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .appChromeCornerRadius(12)
+        }
+    }
+
     // MARK: - Duration Section
 
     private var durationSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Slide Duration", icon: "timer")
+            sectionHeader(
+                options.videoStyle == .cinematic ? "Seconds Per Photo" : "Slide Duration",
+                icon: "timer"
+            )
             HStack(spacing: 8) {
                 ForEach([2.0, 3.0, 5.0], id: \.self) { secs in
                     durationPill(seconds: secs)
@@ -109,7 +141,7 @@ struct BlogVideoExportOptionsSheet: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Color Style Section
+    // MARK: - Color Style Section (Story Pages only)
 
     private var colorStyleSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -130,7 +162,7 @@ struct BlogVideoExportOptionsSheet: View {
         }
     }
 
-    // MARK: - Font Theme Section
+    // MARK: - Font Theme Section (Story Pages only)
 
     private var fontThemeSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -182,17 +214,25 @@ struct BlogVideoExportOptionsSheet: View {
     // MARK: - Export Button
 
     private var progressLabel: String {
-        if progress < 0.1  { return "Building slideshow…" }
-        if progress < 0.62 { return "Rendering slides…" }
-        if progress < 0.82 { return "Writing video…" }
-        return "Adding music…"
+        if options.videoStyle == .cinematic {
+            if progress < 0.1  { return "Building journey…" }
+            if progress < 0.50 { return "Loading places & photos…" }
+            if progress < 0.72 { return "Rendering map frames…" }
+            if progress < 0.86 { return "Writing video…" }
+            return "Adding music…"
+        } else {
+            if progress < 0.1  { return "Building slideshow…" }
+            if progress < 0.72 { return "Rendering slides…" }
+            if progress < 0.86 { return "Writing video…" }
+            return "Adding music…"
+        }
     }
 
     private var exportButton: some View {
         Button { startExport() } label: {
             ZStack {
                 HStack(spacing: 8) {
-                    Image(systemName: "video.badge.checkmark")
+                    Image(systemName: options.videoStyle == .cinematic ? "map.fill" : "video.badge.checkmark")
                     Text("Export & Share")
                         .fontWeight(.semibold)
                 }
@@ -229,10 +269,14 @@ struct BlogVideoExportOptionsSheet: View {
 
         Task { @MainActor in
             do {
-                // Build story pages (same pipeline as Story Mode slideshow / storybook export).
-                let content = await StoryBookBuilder.build(from: draft)
-                let pages   = StoryPageLayout.buildPages(from: content, fontTheme: options.fontTheme)
-                guard !pages.isEmpty else { throw BlogVideoExportService.ExportError.noPages }
+                var pages: [StoryPage] = []
+
+                if options.videoStyle == .storyPages {
+                    // Story-pages mode: build the full page layout (same as story mode / PDF export).
+                    let content = await StoryBookBuilder.build(from: draft)
+                    pages = StoryPageLayout.buildPages(from: content, fontTheme: options.fontTheme)
+                    guard !pages.isEmpty else { throw BlogVideoExportService.ExportError.noPages }
+                }
                 progress = 0.1
 
                 let url = try await BlogVideoExportService.exportVideo(
@@ -240,7 +284,6 @@ struct BlogVideoExportOptionsSheet: View {
                     draft: draft,
                     options: options,
                     progressHandler: { p in
-                        // Map service 0-1 range into 10-100 % of total progress.
                         progress = 0.1 + p * 0.9
                     }
                 )

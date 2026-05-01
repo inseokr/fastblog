@@ -305,8 +305,8 @@ class MapSnapshotHelper {
 
     /// MapKit rejects non-finite, non-positive, or absurdly wide spans; clamps to snapshot-safe ranges.
     private static func validatedSnapshotRegion(_ region: MKCoordinateRegion, fallbackCenter: CLLocationCoordinate2D) -> MKCoordinateRegion {
-        let minLatDelta = 0.02
-        let minLonDelta = 0.02
+        let minLatDelta = 0.002   // allow street-level zoom (~220 m)
+        let minLonDelta = 0.002
         /// Longitude diff from naive min/max can approach 360° when a route crosses the antimeridian;
         /// `setRegion:` throws far below that; keep the portrait within MapKit limits.
         let maxLatDelta = 160.0
@@ -676,6 +676,193 @@ class MapSnapshotHelper {
             context: nil
         )
 
+        context.restoreGState()
+    }
+
+    // MARK: - Cinematic video snapshot helpers
+
+    /// Zoomed-in map snapshot centered on a specific stop. Delegates to `renderMarkedSnapshot`.
+    static func generateFocusedSnapshot(
+        focusedStopIndex: Int,
+        allStops: [PlaceStop],
+        logicalSize: CGSize
+    ) async -> UIImage? {
+        guard focusedStopIndex < allStops.count else { return nil }
+        let focusedStop = allStops[focusedStopIndex]
+        guard let focusedCoord = focusedStop.representativeLocation?.clCoordinate,
+              isReasonableCoordinate(focusedCoord) else { return nil }
+
+        let entries = buildMarkerEntries(allStops: allStops, focusedStopIndex: focusedStopIndex)
+        guard !entries.isEmpty else { return nil }
+
+        let focusedRegion = validatedSnapshotRegion(
+            MKCoordinateRegion(center: focusedCoord, span: MKCoordinateSpan(latitudeDelta: 0.008, longitudeDelta: 0.008)),
+            fallbackCenter: focusedCoord
+        )
+        return await renderMarkedSnapshot(region: focusedRegion, entries: entries, logicalSize: logicalSize)
+    }
+
+    // MARK: - Animated transition / zoom frames (cinematic video)
+
+    /// Interpolates `frameCount` map snapshots from `fromRegion` to `toRegion` using a smooth-step
+    /// curve. Works for both pan-to-destination and progressive zoom-in sequences.
+    static func generateInterpolatedFrames(
+        from fromRegion: MKCoordinateRegion,
+        to toRegion: MKCoordinateRegion,
+        allStops: [PlaceStop],
+        focusedStopIndex: Int,
+        logicalSize: CGSize,
+        frameCount: Int = 6
+    ) async -> [UIImage] {
+        let entries = buildMarkerEntries(allStops: allStops, focusedStopIndex: focusedStopIndex)
+        guard !entries.isEmpty else { return [] }
+
+        var images: [UIImage] = []
+        for i in 0..<frameCount {
+            guard !Task.isCancelled else { break }
+            let t = smoothStep(Double(i + 1) / Double(frameCount))
+            let lat = fromRegion.center.latitude  + (toRegion.center.latitude  - fromRegion.center.latitude)  * t
+            let lon = fromRegion.center.longitude + (toRegion.center.longitude - fromRegion.center.longitude) * t
+            let latΔ = fromRegion.span.latitudeDelta  + (toRegion.span.latitudeDelta  - fromRegion.span.latitudeDelta)  * t
+            let lonΔ = fromRegion.span.longitudeDelta + (toRegion.span.longitudeDelta - fromRegion.span.longitudeDelta) * t
+            let interpRegion = validatedSnapshotRegion(
+                MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: lat, longitude: lon),
+                                   span: MKCoordinateSpan(latitudeDelta: latΔ, longitudeDelta: lonΔ)),
+                fallbackCenter: toRegion.center
+            )
+            if let img = await renderMarkedSnapshot(region: interpRegion, entries: entries, logicalSize: logicalSize) {
+                images.append(img)
+            }
+        }
+        return images
+    }
+
+    /// Convenience wrapper: pan from `fromRegion` toward `focusedCoord` arriving at 0.008° span.
+    static func generateAnimatedTransitionFrames(
+        from fromRegion: MKCoordinateRegion,
+        to focusedCoord: CLLocationCoordinate2D,
+        allStops: [PlaceStop],
+        focusedStopIndex: Int,
+        logicalSize: CGSize,
+        frameCount: Int = 4
+    ) async -> [UIImage] {
+        let toRegion = MKCoordinateRegion(
+            center: focusedCoord,
+            span: MKCoordinateSpan(latitudeDelta: 0.008, longitudeDelta: 0.008)
+        )
+        return await generateInterpolatedFrames(
+            from: fromRegion, to: toRegion,
+            allStops: allStops, focusedStopIndex: focusedStopIndex,
+            logicalSize: logicalSize, frameCount: frameCount
+        )
+    }
+
+    /// Generates a marked map snapshot at a caller-specified region.
+    /// Use this for the progressive zoom-in sequence at a destination.
+    static func generateSnapshotAtRegion(
+        region: MKCoordinateRegion,
+        focusedStopIndex: Int,
+        allStops: [PlaceStop],
+        logicalSize: CGSize
+    ) async -> UIImage? {
+        guard focusedStopIndex < allStops.count else { return nil }
+        let entries = buildMarkerEntries(allStops: allStops, focusedStopIndex: focusedStopIndex)
+        guard !entries.isEmpty else { return nil }
+        let fallback = allStops[focusedStopIndex].representativeLocation?.clCoordinate
+            ?? CLLocationCoordinate2D(latitude: 37.3349, longitude: -122.00902)
+        let validRegion = validatedSnapshotRegion(region, fallbackCenter: fallback)
+        return await renderMarkedSnapshot(region: validRegion, entries: entries, logicalSize: logicalSize)
+    }
+
+    // MARK: - Shared marker snapshot helpers
+
+    private static func buildMarkerEntries(
+        allStops: [PlaceStop],
+        focusedStopIndex: Int
+    ) -> [(displayNumber: Int, coord: CLLocationCoordinate2D, isFocused: Bool)] {
+        var entries: [(displayNumber: Int, coord: CLLocationCoordinate2D, isFocused: Bool)] = []
+        for (i, stop) in allStops.enumerated() {
+            guard let loc = stop.representativeLocation else { continue }
+            let c = loc.clCoordinate
+            guard isReasonableCoordinate(c) else { continue }
+            entries.append((displayNumber: i + 1, coord: c, isFocused: i == focusedStopIndex))
+        }
+        return entries
+    }
+
+    private static func renderMarkedSnapshot(
+        region: MKCoordinateRegion,
+        entries: [(displayNumber: Int, coord: CLLocationCoordinate2D, isFocused: Bool)],
+        logicalSize: CGSize
+    ) async -> UIImage? {
+        let opts = MKMapSnapshotter.Options()
+        opts.region = region
+        opts.size = logicalSize
+        opts.scale = await MainActor.run { UIScreen.main.scale }
+        opts.mapType = .standard
+        opts.traitCollection = UITraitCollection(userInterfaceStyle: .light)
+
+        do {
+            let snapshot = try await MKMapSnapshotter(options: opts).start()
+            UIGraphicsBeginImageContextWithOptions(snapshot.image.size, true, snapshot.image.scale)
+            defer { UIGraphicsEndImageContext() }
+            guard let context = UIGraphicsGetCurrentContext() else { return snapshot.image }
+            snapshot.image.draw(at: .zero)
+
+            // Dashed route polyline
+            let allCoords = entries.map(\.coord)
+            if allCoords.count >= 2 {
+                context.saveGState()
+                context.setStrokeColor(UIColor.systemBlue.withAlphaComponent(0.4).cgColor)
+                context.setLineWidth(3.0)
+                context.setLineDash(phase: 0, lengths: [8, 5])
+                context.beginPath()
+                for (i, coord) in allCoords.enumerated() {
+                    let pt = snapshot.point(for: coord)
+                    if i == 0 { context.move(to: pt) } else { context.addLine(to: pt) }
+                }
+                context.strokePath()
+                context.restoreGState()
+            }
+
+            let totalCount = entries.count
+            for entry in entries {
+                let pt = snapshot.point(for: entry.coord)
+                if entry.isFocused {
+                    let color: UIColor = entry.displayNumber == 1 ? .systemGreen
+                        : (entry.displayNumber == totalCount ? .systemOrange : .systemBlue)
+                    context.saveGState()
+                    context.setStrokeColor(color.withAlphaComponent(0.28).cgColor)
+                    context.setLineWidth(3)
+                    context.strokeEllipse(in: CGRect(x: pt.x - 23, y: pt.y - 23, width: 46, height: 46))
+                    context.restoreGState()
+                    drawMarker(at: pt, number: entry.displayNumber, color: color, context: context)
+                } else {
+                    drawSmallMutedMarker(at: pt, number: entry.displayNumber, context: context)
+                }
+            }
+            return UIGraphicsGetImageFromCurrentImageContext() ?? snapshot.image
+        } catch {
+            debugPrint("[MapSnapshotHelper] renderMarkedSnapshot failed: \(error)")
+            return nil
+        }
+    }
+
+    private static func smoothStep(_ t: Double) -> Double {
+        let c = max(0, min(1, t))
+        return c * c * (3 - 2 * c)
+    }
+
+    private static func drawSmallMutedMarker(at point: CGPoint, number: Int, context: CGContext) {
+        let radius: CGFloat = 8
+        context.saveGState()
+        context.setFillColor(UIColor.systemGray.withAlphaComponent(0.55).cgColor)
+        context.fillEllipse(in: CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2))
+        let numStr = "\(number)" as NSString
+        let font = UIFont.systemFont(ofSize: 9, weight: .bold)
+        let attribs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white]
+        let sz = numStr.size(withAttributes: attribs)
+        numStr.draw(at: CGPoint(x: point.x - sz.width / 2, y: point.y - sz.height / 2), withAttributes: attribs)
         context.restoreGState()
     }
 }

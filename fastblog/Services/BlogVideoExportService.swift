@@ -3,9 +3,31 @@ import AVFoundation
 import SwiftUI
 import UIKit
 
+// MARK: - Video Style
+
+enum VideoStyle: String, Codable, CaseIterable {
+    case cinematic  = "cinematic"
+    case storyPages = "storyPages"
+
+    var label: String {
+        switch self {
+        case .cinematic:  return "Cinematic Journey"
+        case .storyPages: return "Story Pages"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .cinematic:  return "Map animations + full-frame photos"
+        case .storyPages: return "Full blog layout pages"
+        }
+    }
+}
+
 // MARK: - Options
 
 struct BlogVideoExportOptions: Codable, Equatable {
+    var videoStyle: VideoStyle = .cinematic
     var secondsPerSlide: Double = 3.0
     var colorStyle: BlogColor = .white
     var fontTheme: FontTheme = .classic
@@ -35,14 +57,12 @@ enum BlogVideoExportService {
         }
     }
 
-    /// Builds a slideshow video from the same `StoryPage` array used by Story Mode.
+    /// Exports the blog as a video by **streaming** frames directly into `AVAssetWriter`.
     ///
-    /// Pipeline:
-    /// 1. Render each slide with `ImageRenderer` at 2× (same approach as storybook / PDF page rendering).
-    /// 2. Write frames to a silent MP4 via `AVAssetWriter`.
-    /// 3. If a music track is set, composite it into the video with `AVMutableComposition`.
-    ///
-    /// Progress is reported on the **main actor** via `progressHandler` in [0, 1].
+    /// Peak memory = one rendered frame at a time.  The old approach buffered the entire
+    /// frame list (~700 MB+ for a multi-day trip) before writing a single byte, which
+    /// caused OOM crashes.  Now the writer is opened first and each frame is encoded and
+    /// released before the next is generated.
     @MainActor
     static func exportVideo(
         pages: [StoryPage],
@@ -50,35 +70,88 @@ enum BlogVideoExportService {
         options: BlogVideoExportOptions,
         progressHandler: ((Double) -> Void)? = nil
     ) async throws -> URL {
-        guard !pages.isEmpty else { throw ExportError.noPages }
 
-        // Logical size matches the Story Mode slideshow viewport.
         let logicalSize = CGSize(
             width: StoryRenderMetrics.clampedScreenWidth,
             height: StoryRenderMetrics.effectiveStoryViewportHeight
         )
-        // Pixel size: 2× logical (matching imageRenderer.scale = 2.0 below).
         let pixelSize = CGSize(width: logicalSize.width * 2, height: logicalSize.height * 2)
 
-        // Step 1 – Render all pages to UIImage (0 → 60 % of progress).
-        var frames: [UIImage] = []
-        frames.reserveCapacity(pages.count)
-        for (idx, page) in pages.enumerated() {
-            if idx % 2 == 0 { await Task.yield() }
-            let image = try autoreleasepool {
-                try renderPageToImage(page: page, logicalSize: logicalSize, pageIndex: idx, options: options)
-            }
-            frames.append(image)
-            progressHandler?(Double(idx + 1) / Double(pages.count) * 0.6)
-        }
-
-        // Step 2 – Write silent video (60 → 80 %).
+        // Open the writer before generating any frames.
         let tempVideoURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString + ".mp4")
-        try await writeVideoFrames(frames: frames, to: tempVideoURL, pixelSize: pixelSize, options: options)
-        progressHandler?(0.8)
 
-        // Step 3 – Composite audio if requested (80 → 100 %).
+        guard let writer = try? AVAssetWriter(outputURL: tempVideoURL, fileType: .mp4) else {
+            throw ExportError.writerSetupFailed
+        }
+
+        let videoSettings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: Int(pixelSize.width),
+            AVVideoHeightKey: Int(pixelSize.height),
+            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: 16_000_000]
+        ]
+        let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+        videoInput.expectsMediaDataInRealTime = false
+
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+            assetWriterInput: videoInput,
+            sourcePixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: Int(pixelSize.width),
+                kCVPixelBufferHeightKey as String: Int(pixelSize.height)
+            ]
+        )
+        guard writer.canAdd(videoInput) else { throw ExportError.writerSetupFailed }
+        writer.add(videoInput)
+        writer.startWriting()
+        writer.startSession(atSourceTime: .zero)
+
+        let timescale: CMTimeScale = 600
+        var currentPTS  = CMTime.zero
+        var frameIdx    = 0
+
+        // Encode one frame and release the image immediately after the pixel buffer is written.
+        func appendFrame(_ image: UIImage, duration: Double) async throws {
+            while !videoInput.isReadyForMoreMediaData { await Task.yield() }
+            let pb = autoreleasepool { BlogVideoExportService.pixelBuffer(from: image, size: pixelSize) }
+            guard let pb else { throw ExportError.failedToRenderPage(frameIdx) }
+            adaptor.append(pb, withPresentationTime: currentPTS)
+            currentPTS = CMTimeAdd(currentPTS, CMTime(value: CMTimeValue(duration * Double(timescale)), timescale: timescale))
+            frameIdx += 1
+        }
+
+        // Step 1 – Generate + write frames one at a time (0 → 85 %).
+        if options.videoStyle == .cinematic {
+            try await CinematicBlogVideoBuilder.buildFrames(
+                from: draft,
+                logicalSize: logicalSize,
+                secondsPerPhoto: options.secondsPerSlide,
+                progressHandler: { p in progressHandler?(p * 0.85) },
+                frameHandler: { img, dur in try await appendFrame(img, duration: dur) }
+            )
+        } else {
+            guard !pages.isEmpty else { throw ExportError.noPages }
+            for (idx, page) in pages.enumerated() {
+                if idx % 2 == 0 { await Task.yield() }
+                let image = try autoreleasepool {
+                    try renderPageToImage(page: page, logicalSize: logicalSize, pageIndex: idx, options: options)
+                }
+                try await appendFrame(image, duration: options.secondsPerSlide)
+                progressHandler?(Double(idx + 1) / Double(pages.count) * 0.85)
+            }
+        }
+
+        guard frameIdx > 0 else { throw ExportError.noPages }
+
+        videoInput.markAsFinished()
+        await writer.finishWriting()
+        if writer.status == .failed {
+            throw ExportError.writerFailed(writer.error?.localizedDescription ?? "unknown")
+        }
+        progressHandler?(0.85)
+
+        // Step 2 – Composite audio (85 → 100 %).
         let safeTitle = draft.title.replacingOccurrences(of: "/", with: "-")
         let finalURL = URL.documentsDirectory
             .appendingPathComponent("\(safeTitle) | Blog Video.mp4")
@@ -96,7 +169,7 @@ enum BlogVideoExportService {
         return finalURL
     }
 
-    // MARK: - Page rendering (mirrors storybook slide rendering in StoryModePDFExportService)
+    // MARK: - Story-page rendering
 
     @MainActor
     private static func renderPageToImage(
@@ -105,7 +178,7 @@ enum BlogVideoExportService {
         pageIndex: Int,
         options: BlogVideoExportOptions
     ) throws -> UIImage {
-        let bgColor: Color    = options.colorStyle == .black ? .black : .white
+        let bgColor: Color           = options.colorStyle == .black ? .black : .white
         let colorScheme: ColorScheme = options.colorStyle == .black ? .dark  : .light
 
         let root = StoryPageView(page: page)
@@ -126,76 +199,16 @@ enum BlogVideoExportService {
         return image
     }
 
-    // MARK: - AVAssetWriter (video-only, silent)
+    // MARK: - AVMutableComposition (audio track)
 
-    private static func writeVideoFrames(
-        frames: [UIImage],
-        to outputURL: URL,
-        pixelSize: CGSize,
-        options: BlogVideoExportOptions
-    ) async throws {
-        guard let writer = try? AVAssetWriter(outputURL: outputURL, fileType: .mp4) else {
-            throw ExportError.writerSetupFailed
-        }
-
-        let videoSettings: [String: Any] = [
-            AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: Int(pixelSize.width),
-            AVVideoHeightKey: Int(pixelSize.height),
-            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: 8_000_000]
-        ]
-        let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
-        videoInput.expectsMediaDataInRealTime = false
-
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
-            assetWriterInput: videoInput,
-            sourcePixelBufferAttributes: [
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-                kCVPixelBufferWidthKey as String: Int(pixelSize.width),
-                kCVPixelBufferHeightKey as String: Int(pixelSize.height)
-            ]
-        )
-
-        guard writer.canAdd(videoInput) else { throw ExportError.writerSetupFailed }
-        writer.add(videoInput)
-        writer.startWriting()
-        writer.startSession(atSourceTime: .zero)
-
-        let timescale: CMTimeScale = 600
-        let slideTicks = CMTimeValue(options.secondsPerSlide * Double(timescale))
-
-        for (idx, image) in frames.enumerated() {
-            while !videoInput.isReadyForMoreMediaData { await Task.yield() }
-            guard let pb = pixelBuffer(from: image, size: pixelSize) else {
-                throw ExportError.failedToRenderPage(idx)
-            }
-            let pts = CMTime(value: CMTimeValue(idx) * slideTicks, timescale: timescale)
-            adaptor.append(pb, withPresentationTime: pts)
-        }
-
-        videoInput.markAsFinished()
-        await writer.finishWriting()
-
-        if writer.status == .failed {
-            throw ExportError.writerFailed(writer.error?.localizedDescription ?? "unknown")
-        }
-    }
-
-    // MARK: - AVMutableComposition (add audio track)
-
-    private static func compositeAudio(
-        videoURL: URL,
-        musicURL: URL,
-        outputURL: URL
-    ) async throws {
+    private static func compositeAudio(videoURL: URL, musicURL: URL, outputURL: URL) async throws {
         let videoAsset = AVURLAsset(url: videoURL)
         let musicAsset = AVURLAsset(url: musicURL)
         let composition = AVMutableComposition()
 
-        // Add video track.
         guard
-            let videoTrack  = try? await videoAsset.loadTracks(withMediaType: .video).first,
-            let compVideo   = composition.addMutableTrack(withMediaType: .video,
+            let videoTrack = try? await videoAsset.loadTracks(withMediaType: .video).first,
+            let compVideo  = composition.addMutableTrack(withMediaType: .video,
                                                           preferredTrackID: kCMPersistentTrackID_Invalid)
         else { throw ExportError.audioMixFailed }
 
@@ -203,7 +216,6 @@ enum BlogVideoExportService {
         try compVideo.insertTimeRange(CMTimeRange(start: .zero, duration: videoDuration),
                                       of: videoTrack, at: .zero)
 
-        // Add music track, looping to fill the video duration.
         if let musicTrack = try? await musicAsset.loadTracks(withMediaType: .audio).first,
            let compAudio  = composition.addMutableTrack(withMediaType: .audio,
                                                          preferredTrackID: kCMPersistentTrackID_Invalid) {
@@ -221,17 +233,16 @@ enum BlogVideoExportService {
         guard let session = AVAssetExportSession(asset: composition,
                                                   presetName: AVAssetExportPresetHighestQuality)
         else { throw ExportError.audioMixFailed }
-        session.outputURL = outputURL
+        session.outputURL  = outputURL
         session.outputFileType = .mp4
-        session.timeRange = CMTimeRange(start: .zero, duration: videoDuration)
+        session.timeRange  = CMTimeRange(start: .zero, duration: videoDuration)
         await session.export()
-
         if session.status != .completed { throw ExportError.audioMixFailed }
     }
 
     // MARK: - UIImage → CVPixelBuffer
 
-    private static func pixelBuffer(from image: UIImage, size: CGSize) -> CVPixelBuffer? {
+    fileprivate static func pixelBuffer(from image: UIImage, size: CGSize) -> CVPixelBuffer? {
         let attrs = [
             kCVPixelBufferCGImageCompatibilityKey: true,
             kCVPixelBufferCGBitmapContextCompatibilityKey: true
