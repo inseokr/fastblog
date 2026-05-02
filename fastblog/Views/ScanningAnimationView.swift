@@ -14,6 +14,9 @@ struct ScanningAnimationView: View {
     /// The name of the image asset to show at the center. Defaults to "ScanIcon".
     var iconName: String
 
+    // Each ring gets its own speed multiplier so they expand at visibly different rates.
+    private static let durationMultipliers: [Double] = [0.92, 1.08, 0.96, 1.18]
+
     init(ringCount: Int = 4, ringSpacing: CGFloat = 28, pulseDuration: Double = 1.8, showIcon: Bool = true, iconName: String = "ScanIcon") {
         self.ringCount = ringCount
         self.ringSpacing = ringSpacing
@@ -25,9 +28,10 @@ struct ScanningAnimationView: View {
     var body: some View {
         ZStack {
             ForEach(0..<ringCount, id: \.self) { index in
+                let multiplier = Self.durationMultipliers[index % Self.durationMultipliers.count]
                 ScanningRingView(
                     delay: Double(index) * (pulseDuration / Double(ringCount)),
-                    duration: pulseDuration
+                    duration: pulseDuration * multiplier
                 )
                 .scaleEffect(0.4 + CGFloat(index) * 0.2)
             }
@@ -49,17 +53,28 @@ private struct ScanningRingView: View {
 
     var body: some View {
         Circle()
-            .stroke(Color.white.opacity(0.55), lineWidth: 2)
+            .stroke(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.65),
+                        Color.blue.opacity(0.5),
+                        Color.white.opacity(0.2)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 2
+            )
             .scaleEffect(isExpanded ? 1.4 : 0.6)
             .opacity(isExpanded ? 0 : 0.7)
-            .animation(
-                .easeOut(duration: duration)
-                .repeatForever(autoreverses: false)
-                .delay(delay),
-                value: isExpanded
-            )
             .onAppear {
-                isExpanded = true
+                withAnimation(
+                    .easeInOut(duration: duration)
+                    .repeatForever(autoreverses: true)
+                    .delay(delay)
+                ) {
+                    isExpanded = true
+                }
             }
     }
 }
