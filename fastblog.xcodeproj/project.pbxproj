@@ -165,6 +165,7 @@
 		BB00020E /* UnsavedTripCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00020D /* UnsavedTripCard.swift */; };
 		BB000210 /* UnsavedTripPhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00020F /* UnsavedTripPhotosView.swift */; };
 		BB000212 /* NeighborhoodExplainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000211 /* NeighborhoodExplainerView.swift */; };
+		BB00040B /* CameraRollToBlogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00040A /* CameraRollToBlogView.swift */; };
 		BB000214 /* RemovedPlacesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000213 /* RemovedPlacesSheet.swift */; };
 		BB000215 /* UploadingBlogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000216 /* UploadingBlogView.swift */; };
 		BB000217 /* SecureShareToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000218 /* SecureShareToken.swift */; };
@@ -421,6 +422,7 @@
 		BB00020D /* UnsavedTripCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnsavedTripCard.swift; sourceTree = "<group>"; };
 		BB00020F /* UnsavedTripPhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnsavedTripPhotosView.swift; sourceTree = "<group>"; };
 		BB000211 /* NeighborhoodExplainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodExplainerView.swift; sourceTree = "<group>"; };
+		BB00040A /* CameraRollToBlogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollToBlogView.swift; sourceTree = "<group>"; };
 		BB000213 /* RemovedPlacesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemovedPlacesSheet.swift; sourceTree = "<group>"; };
 		BB000216 /* UploadingBlogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadingBlogView.swift; sourceTree = "<group>"; };
 		BB000218 /* SecureShareToken.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureShareToken.swift; sourceTree = "<group>"; };
@@ -762,6 +764,7 @@
 				BB000175 /* NeighborhoodSelectionView.swift */,
 				BB0001C5 /* NeighborhoodIntroView.swift */,
 				BB000211 /* NeighborhoodExplainerView.swift */,
+				BB00040A /* CameraRollToBlogView.swift */,
 				BB0001C7 /* NeighborhoodMapRefinementView.swift */,
 				BB0001C9 /* NeighborhoodSearchView.swift */,
 				BB000177 /* OnboardingConstants.swift */,
@@ -1068,6 +1071,7 @@
 				BB000176 /* NeighborhoodSelectionView.swift in Sources */,
 				BB000178 /* OnboardingConstants.swift in Sources */,
 				BB00017A /* OnboardingFlowView.swift in Sources */,
+				BB00040B /* CameraRollToBlogView.swift in Sources */,
 				BB00017C /* OnboardingState.swift in Sources */,
 				BB00017E /* SplashView.swift in Sources */,
 				BB000180 /* CreatedRecapBlogStore.swift in Sources */,
