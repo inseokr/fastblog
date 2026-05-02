@@ -540,9 +540,29 @@ struct CameraRollToBlogView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 24)
-                .padding(.bottom, 36)
+                .padding(.bottom, 12)
                 .opacity(showContinue ? 1 : 0)
                 .offset(y: showContinue ? 0 : 12)
+                .animation(.spring(response: 0.4, dampingFraction: 0.75), value: showContinue)
+
+                VStack(spacing: 4) {
+                    Text("By continuing, you agree to Bloggo's")
+                        .foregroundColor(.white.opacity(0.35))
+
+                    HStack(spacing: 4) {
+                        Button("Privacy Policy") { }
+                            .foregroundColor(.white.opacity(0.5))
+
+                        Text("and")
+                            .foregroundColor(.white.opacity(0.35))
+
+                        Button("Terms of Service") { }
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                }
+                .font(.caption)
+                .padding(.bottom, 36)
+                .opacity(showContinue ? 1 : 0)
                 .animation(.spring(response: 0.4, dampingFraction: 0.75), value: showContinue)
             }
         }

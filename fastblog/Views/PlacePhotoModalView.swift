@@ -1264,6 +1264,15 @@ struct PlacePhotoModalView: View {
                             .padding(.bottom, 8)
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
+
+                        // Let taps below the caption controls dismiss the keyboard
+                        // without requiring users to tap back on the photo.
+                        Color.clear
+                            .frame(height: 44)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                isCaptionFocused = false
+                            }
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 30)
@@ -1918,21 +1927,13 @@ private struct PlaceDetailTopChrome: View {
                             }
                         } else if isEditing && !blogIsEditMode && !openInCaptionEditor {
                             if isCaptionFocused {
-                                accentHeaderPill(
-                                    title: "Done",
-                                    fill: Color.gray.opacity(0.75),
-                                    action: onDismissCaptionKeyboard
-                                )
+                                keyboardDoneGlassPill(action: onDismissCaptionKeyboard)
                             } else {
                                 accentHeaderPill(title: "Save", fill: Color.blue, action: onSaveCaptionAndDismiss)
                             }
                         } else if blogIsEditMode && !openInCaptionEditor {
                             if isCaptionFocused {
-                                accentHeaderPill(
-                                    title: "Done",
-                                    fill: Color.gray.opacity(0.75),
-                                    action: onDismissCaptionKeyboard
-                                )
+                                keyboardDoneGlassPill(action: onDismissCaptionKeyboard)
                                 .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .trailing)))
                             } else {
                                 blogEditPhotoSaveCapsule(action: onDoneBlogEdit)
@@ -1999,6 +2000,24 @@ private struct PlaceDetailTopChrome: View {
                 .padding(.vertical, PlaceDetailChromeLayout.headerPillVerticalPadding)
                 .background(fill)
                 .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func keyboardDoneGlassPill(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text("Done")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.white)
+                .padding(.horizontal, PlaceDetailChromeLayout.headerPillHorizontalPadding)
+                .padding(.vertical, PlaceDetailChromeLayout.headerPillVerticalPadding)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(
+                    Capsule()
+                        .stroke(Color.white.opacity(0.28), lineWidth: 0.8)
+                )
+                .shadow(color: .black.opacity(0.28), radius: 3, y: 1)
         }
         .buttonStyle(.plain)
     }
