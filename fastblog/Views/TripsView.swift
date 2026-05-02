@@ -2850,30 +2850,36 @@ struct CameraCaptureView: View {
 
     private var previewActionDock: some View {
         HStack(spacing: 14) {
-            previewActionCircleButton(
-                systemImage: "pencil",
-                tint: .white
-            ) {
-                beginPreviewCaptionEditing()
-            }
-            .accessibilityLabel("Edit caption")
+            if !previewCaptionFocused {
+                previewActionCircleButton(
+                    systemImage: "pencil",
+                    tint: .white
+                ) {
+                    beginPreviewCaptionEditing()
+                }
+                .accessibilityLabel("Edit caption")
 
-            previewActionCircleButton(
-                systemImage: previewVoiceMemoPlayer.isPlaying ? "stop.circle.fill" : "mic.fill",
-                tint: previewChromeHasVoiceMemo ? .cyan : .white
-            ) {
-                showVoiceMemoSheet = true
+                previewActionCircleButton(
+                    systemImage: previewVoiceMemoPlayer.isPlaying ? "stop.circle.fill" : "mic.fill",
+                    tint: previewChromeHasVoiceMemo ? .cyan : .white
+                ) {
+                    showVoiceMemoSheet = true
+                }
+                .accessibilityLabel(previewChromeHasVoiceMemo ? "Edit voice memo" : "Add voice memo")
             }
-            .accessibilityLabel(previewChromeHasVoiceMemo ? "Edit voice memo" : "Add voice memo")
 
             Spacer(minLength: 0)
 
             Button {
-                dismissPreviewCaptionEditor()
-                commitCaptionModeDone()
-                AppAnalytics.track(.appInAppCameraPreviewSave)
+                if previewCaptionFocused {
+                    dismissPreviewCaptionEditor()
+                } else {
+                    dismissPreviewCaptionEditor()
+                    commitCaptionModeDone()
+                    AppAnalytics.track(.appInAppCameraPreviewSave)
+                }
             } label: {
-                Text("Save")
+                Text(previewCaptionFocused ? "Done" : "Save")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(.white)
                     .padding(.horizontal, 28)
@@ -2883,7 +2889,7 @@ struct CameraCaptureView: View {
                     .shadow(color: .black.opacity(0.28), radius: 4, y: 2)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Save photo to Bloggo Gallery")
+            .accessibilityLabel(previewCaptionFocused ? "Done editing caption" : "Save photo to Bloggo Gallery")
         }
         .padding(.horizontal, 20)
         .padding(.top, 10)
@@ -2897,30 +2903,36 @@ struct CameraCaptureView: View {
 
     private var previewActionBar: some View {
         HStack(spacing: 14) {
-            previewActionCircleButton(
-                systemImage: "pencil",
-                tint: .white
-            ) {
-                beginPreviewCaptionEditing()
-            }
-            .accessibilityLabel("Edit caption")
+            if !previewCaptionFocused {
+                previewActionCircleButton(
+                    systemImage: "pencil",
+                    tint: .white
+                ) {
+                    beginPreviewCaptionEditing()
+                }
+                .accessibilityLabel("Edit caption")
 
-            previewActionCircleButton(
-                systemImage: previewVoiceMemoPlayer.isPlaying ? "stop.circle.fill" : "mic.fill",
-                tint: previewChromeHasVoiceMemo ? .cyan : .white
-            ) {
-                showVoiceMemoSheet = true
+                previewActionCircleButton(
+                    systemImage: previewVoiceMemoPlayer.isPlaying ? "stop.circle.fill" : "mic.fill",
+                    tint: previewChromeHasVoiceMemo ? .cyan : .white
+                ) {
+                    showVoiceMemoSheet = true
+                }
+                .accessibilityLabel(previewChromeHasVoiceMemo ? "Edit voice memo" : "Add voice memo")
             }
-            .accessibilityLabel(previewChromeHasVoiceMemo ? "Edit voice memo" : "Add voice memo")
 
             Spacer(minLength: 0)
 
             Button {
-                dismissPreviewCaptionEditor()
-                commitCaptionModeDone()
-                AppAnalytics.track(.appInAppCameraPreviewSave)
+                if previewCaptionFocused {
+                    dismissPreviewCaptionEditor()
+                } else {
+                    dismissPreviewCaptionEditor()
+                    commitCaptionModeDone()
+                    AppAnalytics.track(.appInAppCameraPreviewSave)
+                }
             } label: {
-                Text("Save")
+                Text(previewCaptionFocused ? "Done" : "Save")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(.white)
                     .padding(.horizontal, 28)
@@ -2930,7 +2942,7 @@ struct CameraCaptureView: View {
                     .shadow(color: .black.opacity(0.28), radius: 4, y: 2)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Save photo to Bloggo Gallery")
+            .accessibilityLabel(previewCaptionFocused ? "Done editing caption" : "Save photo to Bloggo Gallery")
         }
         .frame(maxWidth: .infinity)
     }
