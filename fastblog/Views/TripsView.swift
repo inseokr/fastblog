@@ -974,6 +974,14 @@ struct TripsView: View {
                             .opacity(phase.isIdentity ? 1.0 : 0.6)
                     }
                 }
+
+                LoadOlderTripsCard(isLoading: viewModel.isLoadingOlderTrips) {
+                    viewModel.loadOlderTrips()
+                }
+                .containerRelativeFrame(.horizontal, count: 5, span: 4, spacing: 16)
+                .scrollTransition(.animated(.easeInOut(duration: 0.2))) { content, phase in
+                    content.opacity(phase.isIdentity ? 1.0 : 0.6)
+                }
             }
             .scrollTargetLayout()
         }
@@ -5484,6 +5492,94 @@ struct TripCarouselCard: View {
             .shadow(color: .black.opacity(0.4), radius: 12, y: 6)
             .contentShape(RoundedRectangle(appChromeBaseRadius: Self.cornerRadius))
             .onTapGesture(perform: onTap)
+    }
+}
+
+// MARK: - LoadOlderTripsCard
+
+struct LoadOlderTripsCard: View {
+    var isLoading: Bool
+    var onTap: () -> Void
+
+    @State private var isPressing = false
+
+    var body: some View {
+        Button(action: {
+            guard !isLoading else { return }
+            onTap()
+        }) {
+            ZStack {
+                // Background: dark gradient matching the app's navy palette
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.08, green: 0.10, blue: 0.26),
+                                Color(red: 0.05, green: 0.07, blue: 0.18)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+
+                // Subtle dashed border to signal "there's more"
+                RoundedRectangle(cornerRadius: 18)
+                    .strokeBorder(
+                        Color.white.opacity(0.18),
+                        style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
+                    )
+
+                if isLoading {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .tint(.white)
+                            .scaleEffect(1.2)
+                        Text("Loading older trips…")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                } else {
+                    VStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.white.opacity(0.10))
+                                .frame(width: 52, height: 52)
+                            Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.85))
+                        }
+
+                        VStack(spacing: 4) {
+                            Text("Load Older Trips")
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+
+                            Text("Tap or swipe to explore")
+                                .font(.caption2)
+                                .foregroundColor(.white.opacity(0.5))
+                        }
+
+                        // Arrow hint
+                        Image(systemName: "chevron.right.2")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.white.opacity(0.35))
+                    }
+                }
+            }
+            .frame(minWidth: 0, maxWidth: .infinity)
+            .frame(height: 220)
+            .scaleEffect(isPressing ? 0.96 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isPressing)
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPressing = true }
+                .onEnded { _ in isPressing = false }
+        )
+        .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
     }
 }
 
