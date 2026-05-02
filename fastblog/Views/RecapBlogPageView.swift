@@ -1213,7 +1213,8 @@ struct RecapBlogPageView: View {
                             id: id,
                             caption: photo.caption,
                             placeName: stop.placeTitle,
-                            timestamp: photo.timestamp
+                            timestamp: photo.timestamp,
+                            location: photo.location
                         )
                     }
                 return entries.isEmpty ? nil : entries
@@ -1221,7 +1222,7 @@ struct RecapBlogPageView: View {
         // Fall back to cover photo when no included photos exist.
         let photoGroups = groups.isEmpty
             ? draft.selectedCoverPhotoIdentifier.map {
-                [[PanoramaPhotoEntry(id: $0, caption: nil, placeName: nil, timestamp: nil)]]
+                [[PanoramaPhotoEntry(id: $0, caption: nil, placeName: nil, timestamp: nil, location: nil)]]
             } ?? []
             : groups
         if !photoGroups.isEmpty {
@@ -1229,7 +1230,7 @@ struct RecapBlogPageView: View {
                 photoGroups: photoGroups,
                 blogId: blogId,
                 blogTitle: draft.title,
-                startInGallery: true,
+                startInGallery: false,
                 onDismiss: { showPanorama = false },
                 onAppCaptureDeletedFromSlideshow: { identifier in
                     removeAppCapturePhotoFromSlideshow(identifier: identifier)

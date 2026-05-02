@@ -22,6 +22,8 @@ struct PanoramaPhotoEntry: Equatable {
     let caption: String?
     let placeName: String?
     let timestamp: Date?
+    /// GPS from the recap photo, when available — used for “open in Maps” in slideshow / gallery detail.
+    let location: PhotoCoordinate?
 }
 
 // MARK: - Layout variant (solo or top/bottom diptych only)
@@ -114,6 +116,8 @@ struct PanoramaPlayerView: View {
     @State private var wasPlayingBeforeGallery: Bool = false
     /// Full-screen photo paging within the gallery overlay (grid tap); `nil` = grid / hero visible.
     @State private var galleryDetailPhotoId: String?
+    /// Toast when saving the current slideshow photo from the paused overlay.
+    @State private var pausedSlideshowDownloadToast: String?
 
     // MARK: - Music
     @State private var showMusicPicker: Bool = false
@@ -150,6 +154,14 @@ struct PanoramaPlayerView: View {
               currentSlideOffset + 1 < currentGroup.count
         else { return nil }
         return currentGroup[currentSlideOffset + 1].id
+    }
+
+    /// Primary visible photo for captions / timestamp / map (top slot, or solo).
+    private var currentPrimaryEntry: PanoramaPhotoEntry? {
+        guard currentGroupIndex < photoGroups.count else { return nil }
+        let group = photoGroups[currentGroupIndex]
+        guard currentSlideOffset < group.count else { return nil }
+        return group[currentSlideOffset]
     }
 
     private var totalPhotos: Int { photoGroups.reduce(0) { $0 + $1.count } }
@@ -240,6 +252,10 @@ struct PanoramaPlayerView: View {
                 VStack(spacing: 10) {
                     progressBar
                         .padding(.horizontal, 24)
+                    if !isPlaying, !showGallery, diptychExpandedHalf == nil, let entry = currentPrimaryEntry {
+                        pausedSlideshowMetadataRow(entry: entry)
+                            .padding(.horizontal, 24)
+                    }
                     bottomControls
                         .padding(.horizontal, 24)
                 }
@@ -259,6 +275,22 @@ struct PanoramaPlayerView: View {
                             : .move(edge: .bottom).combined(with: .opacity)
                     )
                     .zIndex(20)
+            }
+
+            if let pausedSlideshowDownloadToast {
+                VStack {
+                    Spacer()
+                    Text(pausedSlideshowDownloadToast)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(.black.opacity(0.7)))
+                        .padding(.bottom, 120)
+                }
+                .transition(.opacity)
+                .allowsHitTesting(false)
+                .zIndex(25)
             }
         }
         .animation(.easeInOut(duration: 0.28), value: galleryDetailPhotoId)
@@ -539,17 +571,17 @@ struct PanoramaPlayerView: View {
     private var topBar: some View {
         HStack(alignment: .center, spacing: 10) {
 
-            // Close (slideshow -> gallery)
-            Button {
-                presentSlideshowGallery()
-            } label: {
-                Text("Close")
-                    .font(.system(size: 17, weight: .semibold))
+            // Dismiss slideshow → blog (gallery uses text “Close” in `galleryOverlay`).
+            Button(action: dismissSlideshowToBlog) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.white)
-                    .frame(minWidth: 44, minHeight: 44, alignment: .leading)
-                    .contentShape(Rectangle())
+                    .frame(width: 44, height: 44)
+                    .background(Circle().fill(.black.opacity(0.55)))
+                    .overlay(Circle().strokeBorder(.white.opacity(0.22), lineWidth: 0.5))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Close")
 
             Spacer()
 
@@ -638,6 +670,132 @@ struct PanoramaPlayerView: View {
         }
     }
 
+    @ViewBuilder
+    private func pausedSlideshowMetadataRow(entry: PanoramaPhotoEntry) -> some View {
+        let placeTitle: String = {
+            let n = entry.placeName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return n.isEmpty ? "" : n
+        }()
+        let hasText = !placeTitle.isEmpty || entry.timestamp != nil
+            || !(entry.caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+        let hasMap = entry.location != nil
+        if hasText || hasMap {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    if !placeTitle.isEmpty {
+                        Text(placeTitle)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                            .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+                    }
+                    if let ts = entry.timestamp {
+                        Text(Self.captionTimestampFormatter.string(from: ts))
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.88))
+                            .shadow(color: .black.opacity(0.3), radius: 1, y: 1)
+                    }
+                    if let cap = entry.caption?.trimmingCharacters(in: .whitespacesAndNewlines), !cap.isEmpty {
+                        Text(cap)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.78))
+                            .lineLimit(2)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack(spacing: 10) {
+                    if let coord = entry.location {
+                        Button {
+                            openSlideshowLocationInAppleMaps(coordinate: coord)
+                        } label: {
+                            Image(systemName: "map")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .background(.black.opacity(0.55), in: Circle())
+                                .overlay(Circle().strokeBorder(.white.opacity(0.22), lineWidth: 0.5))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Open in Maps")
+                    }
+                    Button {
+                        Task { await downloadSlideshowPhotoFromPausedOverlay(entry: entry) }
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(.black.opacity(0.55), in: Circle())
+                            .overlay(Circle().strokeBorder(.white.opacity(0.22), lineWidth: 0.5))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Download Photo")
+                }
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(.black.opacity(0.42))
+            )
+        } else {
+            HStack {
+                Spacer()
+                Button {
+                    Task { await downloadSlideshowPhotoFromPausedOverlay(entry: entry) }
+                } label: {
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(.black.opacity(0.55), in: Circle())
+                        .overlay(Circle().strokeBorder(.white.opacity(0.22), lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Download Photo")
+                Spacer()
+            }
+            .padding(.vertical, 6)
+        }
+    }
+
+    private func openSlideshowLocationInAppleMaps(coordinate: PhotoCoordinate) {
+        let lat = coordinate.latitude
+        let lon = coordinate.longitude
+        guard let url = URL(string: "http://maps.apple.com/?ll=\(lat),\(lon)") else { return }
+        UIApplication.shared.open(url)
+    }
+
+    private func downloadSlideshowPhotoFromPausedOverlay(entry: PanoramaPhotoEntry) async {
+        let screen = UIScreen.main.bounds.size
+        let target = CGSize(width: screen.width * 3, height: screen.height * 3)
+        let image: UIImage?
+        if let cached = loadedImages[entry.id] ?? AppCapturePhotoService.shared.loadImage(identifier: entry.id) {
+            image = cached
+        } else {
+            image = await ImageLoader.shared.loadImage(assetIdentifier: entry.id, targetSize: target)
+        }
+        guard let image else {
+            await MainActor.run {
+                pausedSlideshowDownloadToast = "Could not load photo"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { pausedSlideshowDownloadToast = nil }
+            }
+            return
+        }
+        let success = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.creationRequestForAsset(from: image)
+            } completionHandler: { ok, _ in
+                DispatchQueue.main.async { cont.resume(returning: ok) }
+            }
+        }
+        await MainActor.run {
+            pausedSlideshowDownloadToast = success ? "1 photo saved to Photos" : "Could not save to Photos"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { pausedSlideshowDownloadToast = nil }
+        }
+    }
+
     // MARK: - Gallery overlay
 
     private func presentSlideshowGallery() {
@@ -656,6 +814,16 @@ struct PanoramaPlayerView: View {
         galleryDetailPhotoId = nil
         withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
             showGallery = false
+        }
+    }
+
+    /// Leave slideshow entirely and return to the recap blog.
+    private func dismissSlideshowToBlog() {
+        stopTimer()
+        Task { @MainActor in
+            await slideshowMusic.stopAll()
+            dismiss()
+            onDismiss()
         }
     }
 
@@ -827,21 +995,14 @@ struct PanoramaPlayerView: View {
                     }
                 }
 
-                // Exit slideshow from gallery
-                Button {
-                    stopTimer()
-                    Task { @MainActor in
-                        await slideshowMusic.stopAll()
-                        dismiss()
-                        onDismiss()
-                    }
-                } label: {
-                    Image(systemName: "xmark")
+                // Exit slideshow from gallery (word “Close” per product copy).
+                Button(action: dismissSlideshowToBlog) {
+                    Text("Close")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 36, height: 36)
-                        .background(Color.black.opacity(0.5))
-                        .clipShape(Circle())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 36)
+                        .background(Capsule().fill(Color.black.opacity(0.5)))
                 }
                 .buttonStyle(.plain)
                 .padding(.leading, 20)
@@ -1297,6 +1458,23 @@ private struct SlideshowGalleryPhotoDetailView: View {
                             .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
                     }
                     .accessibilityLabel("Download Photo")
+
+                    if let coord = entry.location {
+                        Button {
+                            let lat = coord.latitude
+                            let lon = coord.longitude
+                            if let url = URL(string: "http://maps.apple.com/?ll=\(lat),\(lon)") {
+                                UIApplication.shared.open(url)
+                            }
+                        } label: {
+                            Image(systemName: "map")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(width: 56, height: 56)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(appChromeBaseRadius: 12))
+                        }
+                        .accessibilityLabel("Open in Maps")
+                    }
 
                     Spacer()
 

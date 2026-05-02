@@ -1,0 +1,92 @@
+<h2>Design: Photo Finale in CreatingRecapView</h2>
+<p class="subtitle">Animation timeline for the 5-second blog creation screen</p>
+
+<div style="padding: 0 8px;">
+
+  <div style="background: rgba(255,255,255,0.04); border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+    <div style="font-size: 12px; color: #888; margin-bottom: 14px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;">Animation Timeline (5s total)</div>
+
+    <!-- Timeline bar -->
+    <div style="position: relative; height: 48px; margin-bottom: 8px;">
+      <!-- Phase 1: existing rings -->
+      <div style="position: absolute; left: 0; width: 60%; height: 36px; background: linear-gradient(90deg, #3b82f6, #6366f1); border-radius: 6px 0 0 6px; display: flex; align-items: center; padding: 0 10px;">
+        <span style="font-size: 11px; color: white; font-weight: 500;">Rings + nodes + % counter</span>
+      </div>
+      <!-- Fade overlap indicator -->
+      <div style="position: absolute; left: 56%; width: 6%; height: 36px; background: linear-gradient(90deg, #6366f1, transparent); opacity: 0.6;"></div>
+      <!-- Phase 2: falling photos -->
+      <div style="position: absolute; left: 60%; width: 40%; height: 36px; background: linear-gradient(90deg, #f59e0b, #ef4444); border-radius: 0 6px 6px 0; display: flex; align-items: center; padding: 0 10px;">
+        <span style="font-size: 11px; color: white; font-weight: 500;">Real photos fall + dissolve + flash</span>
+      </div>
+    </div>
+
+    <!-- Time markers -->
+    <div style="display: flex; justify-content: space-between; font-size: 10px; color: #555; margin-top: 4px;">
+      <span>0s</span>
+      <span>1s</span>
+      <span>2s</span>
+      <span style="color: #f59e0b; font-weight: 600;">3s ← photos start</span>
+      <span>4s</span>
+      <span>5s → blog</span>
+    </div>
+  </div>
+
+  <!-- Phase breakdown -->
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px;">
+
+    <div style="background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2); border-radius: 10px; padding: 14px;">
+      <div style="font-size: 11px; color: #6366f1; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">0 – 3s (unchanged)</div>
+      <ul style="font-size: 13px; color: #ccc; line-height: 1.7; margin: 0; padding-left: 16px;">
+        <li>Rotating dashed ring</li>
+        <li>Filling progress ring</li>
+        <li>Nodes assemble (photo / text / sparkle)</li>
+        <li>Step labels + % counter</li>
+      </ul>
+      <div style="font-size: 11px; color: #555; margin-top: 8px;">Fades to 0 opacity over 0.4s at 3s mark</div>
+    </div>
+
+    <div style="background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); border-radius: 10px; padding: 14px;">
+      <div style="font-size: 11px; color: #f59e0b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">3 – 5s (new finale)</div>
+      <ul style="font-size: 13px; color: #ccc; line-height: 1.7; margin: 0; padding-left: 16px;">
+        <li>Up to 12 real photos fall from top</li>
+        <li>Staggered 100ms apart</li>
+        <li>Slight rotations, scattered positions</li>
+        <li>Dissolve at 4.3s (blur + scale down)</li>
+        <li>White flash at 4.6s</li>
+      </ul>
+      <div style="font-size: 11px; color: #555; margin-top: 8px;">Blog reveals at 5s via existing goToLanding()</div>
+    </div>
+  </div>
+
+  <!-- What changes -->
+  <div style="background: rgba(255,255,255,0.04); border-radius: 10px; padding: 16px; margin-bottom: 20px;">
+    <div style="font-size: 12px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px;">What changes</div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px; color: #ccc;">
+      <div>
+        <div style="color: #a3a3a3; font-weight: 500; margin-bottom: 6px;">CreatingRecapView.swift</div>
+        <ul style="margin: 0; padding-left: 16px; line-height: 1.8;">
+          <li>New <code style="font-size: 11px; background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 3px;">photoIdentifiers: [String]</code> param</li>
+          <li>PHAsset thumbnail loading on appear</li>
+          <li>Falling photo state vars + animation</li>
+          <li>Phase 1 UI fades at 3s mark</li>
+          <li>Falling photos phase in remaining 2s</li>
+        </ul>
+      </div>
+      <div>
+        <div style="color: #a3a3a3; font-weight: 500; margin-bottom: 6px;">CreateBlogFlowView.swift</div>
+        <ul style="margin: 0; padding-left: 16px; line-height: 1.8;">
+          <li>Extract up to 12 <code style="font-size: 11px; background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 3px;">isSelected</code> photo identifiers from trip</li>
+          <li>Pass to <code style="font-size: 11px; background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 3px;">CreatingRecapView</code></li>
+        </ul>
+        <div style="color: #a3a3a3; font-weight: 500; margin-bottom: 6px; margin-top: 12px;">No new files needed</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Photo loading strategy -->
+  <div style="background: rgba(255,255,255,0.04); border-radius: 10px; padding: 16px;">
+    <div style="font-size: 12px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px;">Photo loading</div>
+    <p style="font-size: 13px; color: #ccc; margin: 0 0 6px 0;">PHAsset thumbnails are loaded via <code style="font-size: 11px; background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 3px;">PHImageManager</code> at view appear (same approach as MockPhotoView). Small delivery size (~200pt) to avoid memory spikes. If a photo hasn't loaded by the time it needs to fall, it shows a gradient tile fallback — so the animation is never blocked.</p>
+  </div>
+
+</div>

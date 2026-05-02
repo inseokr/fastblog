@@ -1,0 +1,122 @@
+<h2>Video Cover Page — Layout Options</h2>
+<p class="subtitle">First frame of the video, shown before Day 1. Cover photo full-bleed with blog info overlaid.</p>
+
+<div class="cards">
+
+  <!-- Option A: Centered stack -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#050A30;padding:0;overflow:hidden;position:relative;height:260px;">
+      <!-- Simulated cover photo -->
+      <div style="position:absolute;inset:0;background:linear-gradient(160deg,#1a3a5c,#0d2340,#050A30);opacity:0.85;"></div>
+      <!-- Subtle image texture -->
+      <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0.2) 0%,rgba(0,0,0,0.6) 60%,rgba(0,0,0,0.85) 100%);"></div>
+      <!-- Top scrim -->
+      <div style="position:absolute;top:0;left:0;right:0;height:60px;background:linear-gradient(to bottom,rgba(0,0,0,0.6),transparent);"></div>
+
+      <!-- Centered content -->
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:20px;">
+        <div style="color:rgba(200,235,255,0.7);font-size:10px;letter-spacing:3px;text-transform:uppercase;font-family:monospace;">TRAVEL BLOG</div>
+        <div style="color:white;font-size:22px;font-weight:900;letter-spacing:1px;text-align:center;line-height:1.2;">Iceland &amp; Northern Lights</div>
+        <div style="width:40px;height:1px;background:rgba(255,255,255,0.3);margin:4px 0;"></div>
+        <div style="color:rgba(255,255,255,0.75);font-size:11px;letter-spacing:1px;">Jan 15 – Jan 22, 2025</div>
+        <!-- Stats row -->
+        <div style="display:flex;gap:18px;margin-top:10px;">
+          <div style="text-align:center;">
+            <div style="color:white;font-size:16px;font-weight:700;">12</div>
+            <div style="color:rgba(255,255,255,0.55);font-size:9px;text-transform:uppercase;letter-spacing:1px;">Moments</div>
+          </div>
+          <div style="width:1px;background:rgba(255,255,255,0.2);"></div>
+          <div style="text-align:center;">
+            <div style="color:white;font-size:16px;font-weight:700;">84</div>
+            <div style="color:rgba(255,255,255,0.55);font-size:9px;text-transform:uppercase;letter-spacing:1px;">Photos</div>
+          </div>
+          <div style="width:1px;background:rgba(255,255,255,0.2);"></div>
+          <div style="text-align:center;">
+            <div style="color:white;font-size:16px;font-weight:700;">7</div>
+            <div style="color:rgba(255,255,255,0.55);font-size:9px;text-transform:uppercase;letter-spacing:1px;">Days</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Centered Stack</h3>
+      <p>All text centered vertically + horizontally. Clean, cinematic. Works well with most cover photos since content avoids edges.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Bottom-left anchor -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#050A30;padding:0;overflow:hidden;position:relative;height:260px;">
+      <div style="position:absolute;inset:0;background:linear-gradient(160deg,#1a3a5c,#0d2340,#050A30);opacity:0.85;"></div>
+      <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0.15) 0%,rgba(0,0,0,0.0) 40%,rgba(0,0,0,0.85) 100%);"></div>
+
+      <!-- Bottom-left content -->
+      <div style="position:absolute;bottom:24px;left:22px;right:22px;">
+        <div style="color:rgba(200,235,255,0.65);font-size:9px;letter-spacing:3px;text-transform:uppercase;font-family:monospace;margin-bottom:5px;">TRAVEL BLOG</div>
+        <div style="color:white;font-size:20px;font-weight:900;letter-spacing:0.5px;line-height:1.2;margin-bottom:6px;">Iceland &amp; Northern Lights</div>
+        <div style="color:rgba(255,255,255,0.7);font-size:10px;margin-bottom:10px;">Jan 15 – Jan 22, 2025</div>
+        <!-- Stats inline -->
+        <div style="display:flex;gap:14px;">
+          <div style="display:flex;align-items:center;gap:5px;">
+            <div style="width:6px;height:6px;border-radius:50%;background:#A6F2B7;"></div>
+            <span style="color:rgba(255,255,255,0.75);font-size:10px;">12 Moments</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;">
+            <div style="width:6px;height:6px;border-radius:50%;background:#A6F2B7;"></div>
+            <span style="color:rgba(255,255,255,0.75);font-size:10px;">84 Photos</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Bottom-Left Anchor</h3>
+      <p>Title + metadata pinned to bottom-left with scrim. Feels editorial/documentary — like a film title card. Consistent with the existing photo slide style.</p>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:28px;">
+  <h3>Map View — Day Info at Bottom-Left</h3>
+  <p class="subtitle">The day number, date, and city are moved from the top-left to the bottom-left of the route overview map — with comfortable padding from the edge.</p>
+
+  <div style="display:flex;gap:16px;margin-top:12px;flex-wrap:wrap;">
+    <!-- Current (top-left) -->
+    <div style="flex:1;min-width:220px;">
+      <div class="label" style="margin-bottom:6px;">Current (top-left)</div>
+      <div style="background:#b8cce0;border-radius:10px;overflow:hidden;position:relative;height:180px;">
+        <!-- Fake map -->
+        <div style="position:absolute;inset:0;background:linear-gradient(135deg,#c8d8e8 0%,#b0c4d8 50%,#a8bcd0 100%);"></div>
+        <!-- Map roads mock -->
+        <div style="position:absolute;top:70px;left:0;right:0;height:2px;background:rgba(255,255,255,0.6);transform:rotate(-8deg);"></div>
+        <div style="position:absolute;top:100px;left:20px;right:20px;height:1px;background:rgba(255,255,255,0.4);transform:rotate(3deg);"></div>
+        <!-- Top scrim -->
+        <div style="position:absolute;top:0;left:0;right:0;height:70px;background:linear-gradient(to bottom,rgba(0,0,0,0.65),transparent);"></div>
+        <!-- Top-left text -->
+        <div style="position:absolute;top:14px;left:14px;">
+          <div style="color:white;font-size:13px;font-weight:700;">DAY 1</div>
+          <div style="color:rgba(255,255,255,0.82);font-size:9px;margin-top:2px;">Saturday Jan-15</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- New (bottom-left) -->
+    <div style="flex:1;min-width:220px;">
+      <div class="label" style="margin-bottom:6px;color:#0B84FF;">New (bottom-left with padding)</div>
+      <div style="background:#b8cce0;border-radius:10px;overflow:hidden;position:relative;height:180px;">
+        <div style="position:absolute;inset:0;background:linear-gradient(135deg,#c8d8e8 0%,#b0c4d8 50%,#a8bcd0 100%);"></div>
+        <div style="position:absolute;top:70px;left:0;right:0;height:2px;background:rgba(255,255,255,0.6);transform:rotate(-8deg);"></div>
+        <div style="position:absolute;top:100px;left:20px;right:20px;height:1px;background:rgba(255,255,255,0.4);transform:rotate(3deg);"></div>
+        <!-- Bottom scrim -->
+        <div style="position:absolute;bottom:0;left:0;right:0;height:80px;background:linear-gradient(to top,rgba(0,0,0,0.75),transparent);"></div>
+        <!-- Bottom-left text WITH padding from edge -->
+        <div style="position:absolute;bottom:20px;left:16px;">
+          <div style="color:white;font-size:13px;font-weight:700;">DAY 1</div>
+          <div style="color:rgba(255,255,255,0.82);font-size:9px;margin-top:2px;">Saturday Jan-15</div>
+          <div style="color:rgba(200,235,255,0.7);font-size:9px;margin-top:1px;">Reykjavik, Iceland</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p style="font-size:12px;color:var(--text-secondary);margin-top:8px;">The city/country line can also move here since it's already in the route map context. Let me know if you want it or not.</p>
+</div>

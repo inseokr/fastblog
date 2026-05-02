@@ -7,12 +7,30 @@ import MapKit
 /// `frameHandler` so memory stays flat (one frame live at a time).
 ///
 /// Per-place visual sequence:
-///   1. Pan animation  — 14 true snapshots × 0.18 s (≈ 5.5 fps) — segment-fit → 0.008° at destination
-///   2. Zoom-in        — 2 snapshots + 12 synthesized cross-dissolve frames × 0.14 s (≈ 7 fps)
-///                       Dissolve from 0.008° → 0.003° looks like a smooth zoom (center is fixed)
+///   1. Pan animation  — 14 true snapshots × cinematicPanFrameDuration (MapKit snapshots; faster than legacy 0.18 s).
+///   2. Zoom-in        — wide snapshot + cross-dissolve at cinematicZoomSegmentTargetFPS; wall-clock set by
+///                       cinematicZoomSegmentDurationSeconds (static image blend — not MKMapView zoom caps).
 ///   3. Focused reveal — 0.003° with place info overlaid at bottom (2.5 s)
 ///   4. Photo slides   — full-pixel images, story panel when caption is non-empty
 enum CinematicBlogVideoBuilder {
+
+    /// Target temporal sampling for the wide→tight zoom dissolve (no extra MapKit work).
+    private static let cinematicZoomSegmentTargetFPS: Double = 30
+    /// Wall-clock for wide frame + dissolve chain. Shorter than legacy ~1.82 s so zoom feels snappier
+    /// (angular change 0.008°→0.003° is subtle; long duration reads as “slow” even at 30 fps).
+    private static let cinematicZoomSegmentDurationSeconds: Double = 0.88
+
+    private static let cinematicPanFrameDurationSeconds: Double = 0.11
+
+    private static var cinematicZoomFrameDurationSeconds: Double {
+        1.0 / cinematicZoomSegmentTargetFPS
+    }
+
+    /// Number of synthesized dissolve steps after the initial wide frame (at least 12).
+    private static var cinematicZoomBlendFrameCount: Int {
+        let fromDuration = Int(round(cinematicZoomSegmentDurationSeconds * cinematicZoomSegmentTargetFPS)) - 1
+        return max(12, fromDuration)
+    }
 
     // MARK: - Entry point
 
@@ -30,14 +48,14 @@ enum CinematicBlogVideoBuilder {
         let days = draft.days.filter { !$0.placeStops.isEmpty }
         let totalDays = Double(max(days.count, 1))
 
+        let coverImage = await loadCoverImageForVideo(draft: draft, pixelSize: pixelSize)
+        try await frameHandler(
+            autoreleasepool { drawCoverPage(draft: draft, pixelSize: pixelSize, coverImage: coverImage) },
+            2.0
+        )
+
         for (dayIdx, day) in days.enumerated() {
             guard !Task.isCancelled else { return }
-
-            // Day intro card
-            try await frameHandler(
-                autoreleasepool { drawDayIntroCard(day: day, dayNumber: dayIdx + 1, pixelSize: pixelSize) },
-                2.0
-            )
 
             let stops = day.placeStops
 
@@ -65,23 +83,24 @@ enum CinematicBlogVideoBuilder {
                     let tightRegion = MKCoordinateRegion(center: focusedCoord,
                                                          span: MKCoordinateSpan(latitudeDelta: 0.003, longitudeDelta: 0.003))
 
-                    // 1. Pan: 14 true snapshots × 0.18 s ≈ 5.5 fps
+                    // 1. Pan: 14 true snapshots (MapKit cost); shorter per-frame hold than legacy 0.18 s.
                     let panFrames = await MapSnapshotHelper.generateInterpolatedFrames(
                         from: panFromRegion, to: wideRegion,
                         allStops: stops, focusedStopIndex: placeIdx,
                         logicalSize: logicalSize, frameCount: 14
                     )
+                    let panDt = cinematicPanFrameDurationSeconds
                     for img in panFrames {
                         guard !Task.isCancelled else { return }
-                        try await frameHandler(img, 0.18)
+                        try await frameHandler(img, panDt)
                     }
 
-                    // 2. Zoom-in: 2 snapshots + 12 synthesized cross-dissolve frames ≈ 7 fps
-                    //    Dissolving from 0.008° → 0.003° (same center) looks like a smooth zoom.
+                    // 2. Zoom-in: wide + per-frame cross-dissolve at cinematicZoomSegmentTargetFPS (flat memory).
                     if let wideImg = await MapSnapshotHelper.generateSnapshotAtRegion(
                         region: wideRegion, focusedStopIndex: placeIdx, allStops: stops, logicalSize: logicalSize
                     ) {
-                        try await frameHandler(wideImg, 0.14)
+                        let zoomDt = cinematicZoomFrameDurationSeconds
+                        try await frameHandler(wideImg, zoomDt)
 
                         var tightBase = await MapSnapshotHelper.generateSnapshotAtRegion(
                             region: tightRegion, focusedStopIndex: placeIdx, allStops: stops, logicalSize: logicalSize
@@ -93,12 +112,16 @@ enum CinematicBlogVideoBuilder {
                         }
 
                         if let tightBase {
-                            // 12 free synthesized frames — no snapshotter calls
-                            let blends = synthesizeBlendFrames(from: wideImg, to: tightBase,
-                                                               count: 12, size: pixelSize)
-                            for img in blends {
+                            let blendCount = cinematicZoomBlendFrameCount
+                            for step in 1...blendCount {
                                 guard !Task.isCancelled else { return }
-                                try await frameHandler(img, 0.14)
+                                let blended = autoreleasepool {
+                                    synthesizeBlendFrame(
+                                        from: wideImg, to: tightBase,
+                                        stepIndex: step, blendStepCount: blendCount, size: pixelSize
+                                    )
+                                }
+                                try await frameHandler(blended, zoomDt)
                             }
 
                             // 3. Tight reveal with place overlay (hold 2.5 s)
@@ -157,52 +180,189 @@ enum CinematicBlogVideoBuilder {
         )
     }
 
-    // MARK: - Day Intro Card
+    // MARK: - Cover page
 
-    private static func drawDayIntroCard(day: RecapBlogDay, dayNumber: Int, pixelSize: CGSize) -> UIImage {
+    private static func loadCoverImageForVideo(draft: RecapBlogDetail, pixelSize: CGSize) async -> UIImage? {
+        guard let lid = draft.selectedCoverPhotoIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !lid.isEmpty else { return nil }
+        let dummy = RecapPhoto(timestamp: Date(), imageName: "cover", localIdentifier: lid)
+        return await loadPhoto(dummy, targetSize: pixelSize)
+    }
+
+    private static func videoCoverDateRangeString(from days: [RecapBlogDay]) -> String {
+        guard let first = days.first, let last = days.last else { return "" }
+        return "\(first.monthDayStringForStoryBookRange()) – \(last.monthDayStringForStoryBookRange())\(last.yearSuffixForStoryBookRange())"
+    }
+
+    private static func drawCoverPage(
+        draft: RecapBlogDetail, pixelSize: CGSize, coverImage: UIImage?
+    ) -> UIImage {
         let format = UIGraphicsImageRendererFormat(); format.scale = 1
         return UIGraphicsImageRenderer(size: pixelSize, format: format).image { ctx in
             let cg = ctx.cgContext
             let w = pixelSize.width, h = pixelSize.height
             let cs = CGColorSpaceCreateDeviceRGB()
 
-            cg.drawLinearGradient(
-                CGGradient(colorsSpace: cs, colors: [
-                    UIColor(red: 5/255, green: 10/255, blue: 48/255, alpha: 1).cgColor,
-                    UIColor(red: 2/255, green: 5/255, blue: 30/255, alpha: 1).cgColor
-                ] as CFArray, locations: [0, 1])!,
-                start: .zero, end: CGPoint(x: 0, y: h), options: []
+            if let photo = coverImage {
+                let photoAR = photo.size.width / max(photo.size.height, 1)
+                let frameAR = w / h
+                let drawRect: CGRect
+                if photoAR > frameAR {
+                    let dh = h, dw = dh * photoAR
+                    drawRect = CGRect(x: (w - dw) / 2, y: 0, width: dw, height: dh)
+                } else {
+                    let dw = w, dh = dw / photoAR
+                    drawRect = CGRect(x: 0, y: (h - dh) / 2, width: dw, height: dh)
+                }
+                photo.draw(in: drawRect)
+
+                cg.drawLinearGradient(
+                    CGGradient(colorsSpace: cs, colors: [
+                        UIColor.black.withAlphaComponent(0.58).cgColor, UIColor.clear.cgColor
+                    ] as CFArray, locations: [0, 1])!,
+                    start: .zero, end: CGPoint(x: 0, y: h * 0.24), options: []
+                )
+                cg.drawLinearGradient(
+                    CGGradient(colorsSpace: cs, colors: [
+                        UIColor.clear.cgColor, UIColor.black.withAlphaComponent(0.78).cgColor
+                    ] as CFArray, locations: [0, 1])!,
+                    start: CGPoint(x: 0, y: h * 0.48), end: CGPoint(x: 0, y: h), options: []
+                )
+                // Extra lift for centered type on bright cover photos
+                cg.setFillColor(UIColor.black.withAlphaComponent(0.18).cgColor)
+                cg.fill(CGRect(origin: .zero, size: pixelSize))
+            } else {
+                cg.drawLinearGradient(
+                    CGGradient(colorsSpace: cs, colors: [
+                        UIColor(red: 5/255, green: 10/255, blue: 48/255, alpha: 1).cgColor,
+                        UIColor(red: 2/255, green: 5/255, blue: 30/255, alpha: 1).cgColor
+                    ] as CFArray, locations: [0, 1])!,
+                    start: .zero, end: CGPoint(x: 0, y: h), options: []
+                )
+            }
+
+            let iceBlue = UIColor(red: 200/255, green: 235/255, blue: 255/255, alpha: 0.70)
+            let labelFont = UIFont.monospacedSystemFont(ofSize: w * 0.028, weight: .medium)
+            let labelStr = "TRAVEL BLOG" as NSString
+            let labelAttribs: [NSAttributedString.Key: Any] = [
+                .font: labelFont, .foregroundColor: iceBlue, .kern: w * 0.006
+            ]
+            let labelSize = labelStr.size(withAttributes: labelAttribs)
+
+            let titleFont = UIFont.systemFont(ofSize: w * 0.072, weight: .black)
+            let titlePara = NSMutableParagraphStyle()
+            titlePara.alignment = .center
+            let titleAttribs: [NSAttributedString.Key: Any] = [
+                .font: titleFont, .foregroundColor: UIColor.white, .paragraphStyle: titlePara
+            ]
+            let titleStr = draft.title as NSString
+            let titleMaxW = w - 80
+            let titleMeasured = titleStr.boundingRect(
+                with: CGSize(width: titleMaxW, height: h * 0.45),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: titleAttribs, context: nil
+            ).integral.size
+
+            let dateFont = UIFont.systemFont(ofSize: w * 0.036, weight: .medium)
+            let dateAttribs: [NSAttributedString.Key: Any] = [
+                .font: dateFont, .foregroundColor: UIColor.white.withAlphaComponent(0.75)
+            ]
+            let dateStr = videoCoverDateRangeString(from: draft.days) as NSString
+            let dateSize = dateStr.size(withAttributes: dateAttribs)
+
+            let momentsCount = draft.days.filter { !$0.placeStops.isEmpty }.flatMap(\.placeStops).count
+            let daysCount = draft.days.count
+            let photosCount = draft.allIncludedPhotos.count
+            let numFont = UIFont.systemFont(ofSize: w * 0.034, weight: .semibold)
+            let capFont = UIFont.systemFont(ofSize: w * 0.026, weight: .regular)
+            let sepColor = UIColor.white.withAlphaComponent(0.20)
+
+            let momentsNum = "\(momentsCount)" as NSString
+            let momentsCap = "Moments" as NSString
+            let daysNum = "\(daysCount)" as NSString
+            let daysCap = (daysCount == 1 ? "Day" : "Days") as NSString
+            let photosNum = "\(photosCount)" as NSString
+            let photosCap = "Photos" as NSString
+            let mNumSize = momentsNum.size(withAttributes: [.font: numFont])
+            let mCapSize = momentsCap.size(withAttributes: [.font: capFont])
+            let dNumSize = daysNum.size(withAttributes: [.font: numFont])
+            let dCapSize = daysCap.size(withAttributes: [.font: capFont])
+            let pNumSize = photosNum.size(withAttributes: [.font: numFont])
+            let pCapSize = photosCap.size(withAttributes: [.font: capFont])
+            let col1W = max(mNumSize.width, mCapSize.width)
+            let col2W = max(dNumSize.width, dCapSize.width)
+            let col3W = max(pNumSize.width, pCapSize.width)
+            let statsGap: CGFloat = 14
+            let sepW: CGFloat = 1
+            let statsRowW = col1W + statsGap + sepW + statsGap + col2W + statsGap + sepW + statsGap + col3W
+            let statsRowH = max(
+                mNumSize.height + 2 + mCapSize.height,
+                dNumSize.height + 2 + dCapSize.height,
+                pNumSize.height + 2 + pCapSize.height
             )
 
-            cg.setStrokeColor(UIColor.white.withAlphaComponent(0.18).cgColor)
-            cg.setLineWidth(1)
-            cg.move(to: CGPoint(x: w * 0.15, y: h * 0.45))
-            cg.addLine(to: CGPoint(x: w * 0.85, y: h * 0.45))
+            let dividerW: CGFloat = min(200, w * 0.22)
+            let dividerMargin: CGFloat = 8
+            let lineGap: CGFloat = 10
+            let stackH = labelSize.height + lineGap + titleMeasured.height + dividerMargin + 1.5 + dividerMargin
+                + lineGap + dateSize.height + lineGap + statsRowH
+            var y = (h - stackH) / 2
+
+            labelStr.draw(at: CGPoint(x: (w - labelSize.width) / 2, y: y), withAttributes: labelAttribs)
+            y += labelSize.height + lineGap
+            titleStr.draw(
+                with: CGRect(x: 40, y: y, width: titleMaxW, height: titleMeasured.height),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: titleAttribs, context: nil
+            )
+            y += titleMeasured.height + dividerMargin
+            cg.setStrokeColor(UIColor.white.withAlphaComponent(0.42).cgColor)
+            cg.setLineWidth(1.5)
+            cg.move(to: CGPoint(x: (w - dividerW) / 2, y: y))
+            cg.addLine(to: CGPoint(x: (w + dividerW) / 2, y: y))
             cg.strokePath()
+            y += 1.5 + dividerMargin + lineGap
+            dateStr.draw(at: CGPoint(x: (w - dateSize.width) / 2, y: y), withAttributes: dateAttribs)
+            y += dateSize.height + lineGap
 
-            let dayStr = "DAY \(dayNumber)" as NSString
-            let dayFont = UIFont.systemFont(ofSize: w * 0.082, weight: .black)
-            let dayAttribs: [NSAttributedString.Key: Any] = [.font: dayFont, .foregroundColor: UIColor.white, .kern: w * 0.008]
-            let daySize = dayStr.size(withAttributes: dayAttribs)
-            dayStr.draw(at: CGPoint(x: (w - daySize.width) / 2, y: h * 0.36), withAttributes: dayAttribs)
-
-            let dateFont = UIFont.systemFont(ofSize: w * 0.04, weight: .medium)
-            let dateAttribs: [NSAttributedString.Key: Any] = [.font: dateFont,
-                                                               .foregroundColor: UIColor.white.withAlphaComponent(0.65)]
-            let dateStr = day.dayStoryDateLine as NSString
-            let dateSize = dateStr.size(withAttributes: dateAttribs)
-            dateStr.draw(at: CGPoint(x: (w - dateSize.width) / 2, y: h * 0.50), withAttributes: dateAttribs)
-
-            if let subtitle = day.placeStops.first?.placeSubtitle, !subtitle.isEmpty {
-                let cityFont = UIFont.systemFont(ofSize: w * 0.034, weight: .regular)
-                let cityAttribs: [NSAttributedString.Key: Any] = [
-                    .font: cityFont,
-                    .foregroundColor: UIColor(red: 200/255, green: 235/255, blue: 255/255, alpha: 0.75)
-                ]
-                let cityStr = subtitle as NSString
-                let citySize = cityStr.size(withAttributes: cityAttribs)
-                cityStr.draw(at: CGPoint(x: (w - citySize.width) / 2, y: h * 0.565), withAttributes: cityAttribs)
-            }
+            let statsX = (w - statsRowW) / 2
+            let col1CenterX = statsX + col1W / 2
+            let col2CenterX = statsX + col1W + statsGap + sepW + statsGap + col2W / 2
+            let col3CenterX = statsX + col1W + statsGap + sepW + statsGap + col2W + statsGap + sepW + statsGap + col3W / 2
+            momentsNum.draw(
+                at: CGPoint(x: col1CenterX - mNumSize.width / 2, y: y),
+                withAttributes: [.font: numFont, .foregroundColor: UIColor.white]
+            )
+            momentsCap.draw(
+                at: CGPoint(x: col1CenterX - mCapSize.width / 2, y: y + mNumSize.height + 2),
+                withAttributes: [.font: capFont, .foregroundColor: UIColor.white]
+            )
+            daysNum.draw(
+                at: CGPoint(x: col2CenterX - dNumSize.width / 2, y: y),
+                withAttributes: [.font: numFont, .foregroundColor: UIColor.white]
+            )
+            daysCap.draw(
+                at: CGPoint(x: col2CenterX - dCapSize.width / 2, y: y + dNumSize.height + 2),
+                withAttributes: [.font: capFont, .foregroundColor: UIColor.white]
+            )
+            photosNum.draw(
+                at: CGPoint(x: col3CenterX - pNumSize.width / 2, y: y),
+                withAttributes: [.font: numFont, .foregroundColor: UIColor.white]
+            )
+            photosCap.draw(
+                at: CGPoint(x: col3CenterX - pCapSize.width / 2, y: y + pNumSize.height + 2),
+                withAttributes: [.font: capFont, .foregroundColor: UIColor.white]
+            )
+            cg.setStrokeColor(sepColor.cgColor)
+            cg.setLineWidth(1)
+            let sep1X = statsX + col1W + statsGap + sepW / 2
+            cg.move(to: CGPoint(x: sep1X, y: y))
+            cg.addLine(to: CGPoint(x: sep1X, y: y + statsRowH))
+            cg.strokePath()
+            let sep2X = statsX + col1W + statsGap + sepW + statsGap + col2W + statsGap + sepW / 2
+            cg.move(to: CGPoint(x: sep2X, y: y))
+            cg.addLine(to: CGPoint(x: sep2X, y: y + statsRowH))
+            cg.strokePath()
         }
     }
 
@@ -219,24 +379,62 @@ enum CinematicBlogVideoBuilder {
 
             mapImage.draw(in: CGRect(origin: .zero, size: pixelSize))
 
+            // Top scrim so the day header stays readable; text sits top-leading with extra left inset
+            // so preview UIs (e.g. Instagram back control) do not overlap export captions.
+            // Taller scrim so the header stays legible after we push the text below in-app preview chrome.
+            let scrimBottom = h * 0.32
             cg.drawLinearGradient(
                 CGGradient(colorsSpace: cs, colors: [
-                    UIColor.black.withAlphaComponent(0.65).cgColor, UIColor.clear.cgColor
-                ] as CFArray, locations: [0, 1])!,
-                start: .zero, end: CGPoint(x: 0, y: h * 0.28), options: []
+                    UIColor.black.withAlphaComponent(0.48).cgColor,
+                    UIColor.black.withAlphaComponent(0.14).cgColor,
+                    UIColor.clear.cgColor
+                ] as CFArray, locations: [0, 0.55, 1])!,
+                start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: scrimBottom), options: []
             )
 
-            let dayFont = UIFont.systemFont(ofSize: w * 0.058, weight: .bold)
-            let dayAttribs: [NSAttributedString.Key: Any] = [.font: dayFont, .foregroundColor: UIColor.white]
+            let padX = max(56, w * 0.072)
+            // Extra ~50pt downward shift so preview chrome (e.g. Instagram) clears the header block.
+            let padY = max(88, h * 0.052) + 50
+            let lineGap: CGFloat = 5
+
+            let shadow = NSShadow()
+            shadow.shadowColor = UIColor.black.withAlphaComponent(0.55)
+            shadow.shadowBlurRadius = 4
+            shadow.shadowOffset = CGSize(width: 0, height: 1)
+
+            let dayFont = UIFont.systemFont(ofSize: w * 0.052, weight: .bold)
+            let dayAttribs: [NSAttributedString.Key: Any] = [
+                .font: dayFont, .foregroundColor: UIColor.white, .shadow: shadow
+            ]
             let dayStr = "DAY \(dayNumber)" as NSString
             let daySize = dayStr.size(withAttributes: dayAttribs)
-            dayStr.draw(at: CGPoint(x: 22, y: 28), withAttributes: dayAttribs)
 
-            let dateFont = UIFont.systemFont(ofSize: w * 0.036, weight: .regular)
-            let dateAttribs: [NSAttributedString.Key: Any] = [.font: dateFont,
-                                                               .foregroundColor: UIColor.white.withAlphaComponent(0.82)]
-            (day.shortDateText as NSString).draw(at: CGPoint(x: 22, y: 28 + daySize.height + 4),
-                                                 withAttributes: dateAttribs)
+            let dateFont = UIFont.systemFont(ofSize: w * 0.034, weight: .regular)
+            let dateAttribs: [NSAttributedString.Key: Any] = [
+                .font: dateFont,
+                .foregroundColor: UIColor.white.withAlphaComponent(0.82),
+                .shadow: shadow
+            ]
+            let dateStr = day.shortDateText as NSString
+            let dateSize = dateStr.size(withAttributes: dateAttribs)
+
+            let subtitle = day.placeStops.first?.placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let cityFont = UIFont.systemFont(ofSize: w * 0.030, weight: .regular)
+            let cityAttribs: [NSAttributedString.Key: Any] = [
+                .font: cityFont,
+                .foregroundColor: UIColor(red: 200/255, green: 235/255, blue: 255/255, alpha: 0.70),
+                .shadow: shadow
+            ]
+            let cityStr = subtitle as NSString
+
+            var y = padY
+            dayStr.draw(at: CGPoint(x: padX, y: y), withAttributes: dayAttribs)
+            y += daySize.height + lineGap
+            dateStr.draw(at: CGPoint(x: padX, y: y), withAttributes: dateAttribs)
+            y += dateSize.height + lineGap
+            if !subtitle.isEmpty {
+                cityStr.draw(at: CGPoint(x: padX, y: y), withAttributes: cityAttribs)
+            }
         }
     }
 
@@ -426,26 +624,23 @@ enum CinematicBlogVideoBuilder {
 
     // MARK: - Helpers
 
-    /// Synthesizes `count` cross-dissolve frames between two already-rendered images.
+    /// One cross-dissolve frame between two already-rendered images (`stepIndex` is 1...`blendStepCount`).
     /// No MKMapSnapshotter calls — pure pixel blending with smooth-step easing.
     /// When `imageA` and `imageB` share the same center (zoom-in), this looks like a smooth zoom.
-    private static func synthesizeBlendFrames(
+    private static func synthesizeBlendFrame(
         from imageA: UIImage,
         to imageB: UIImage,
-        count: Int,
+        stepIndex: Int,
+        blendStepCount: Int,
         size: CGSize
-    ) -> [UIImage] {
+    ) -> UIImage {
+        let t = CGFloat(stepIndex) / CGFloat(blendStepCount + 1)
+        let alpha = t * t * (3 - 2 * t) // smooth-step ease
         let format = UIGraphicsImageRendererFormat(); format.scale = 1
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        return (1...count).map { i in
-            let t  = CGFloat(i) / CGFloat(count + 1)
-            let alpha = t * t * (3 - 2 * t)           // smooth-step ease
-            return autoreleasepool {
-                renderer.image { _ in
-                    imageA.draw(in: CGRect(origin: .zero, size: size))
-                    imageB.draw(in: CGRect(origin: .zero, size: size), blendMode: .normal, alpha: alpha)
-                }
-            }
+        return renderer.image { _ in
+            imageA.draw(in: CGRect(origin: .zero, size: size))
+            imageB.draw(in: CGRect(origin: .zero, size: size), blendMode: .normal, alpha: alpha)
         }
     }
 
