@@ -1090,14 +1090,60 @@ struct PlacePhotoModalView: View {
     private var photoModalBlogInlineCaptionEditingPanel: some View {
                     VStack(alignment: .leading, spacing: 8) {
                         VStack(alignment: .leading, spacing: 4) {
+                            if !dateTimeTextForCurrentPhoto.isEmpty {
+                                VStack(spacing: 6) {
+                                    HStack {
+                                        Spacer(minLength: 0)
+                                        Text(dateTimeTextForCurrentPhoto)
+                                            .font(.caption)
+                                            .fontWeight(.medium)
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 6)
+                                            .background(
+                                                Capsule(style: .continuous)
+                                                    .fill(Color.black.opacity(0.52))
+                                            )
+                                        Spacer(minLength: 0)
+                                    }
+                                    if currentVoiceMemoURL != nil {
+                                        HStack {
+                                            Spacer(minLength: 0)
+                                            Button {
+                                                guard let memoURL = currentVoiceMemoURL else { return }
+                                                if voiceMemoPlayer.isPlaying {
+                                                    voiceMemoPlayer.stop()
+                                                } else {
+                                                    vibePlayer.stop()
+                                                    isVibeEnabled = false
+                                                    voiceMemoPlayer.play(url: memoURL)
+                                                }
+                                            } label: {
+                                                Label(voiceMemoPlayer.isPlaying ? "Stop voice memo" : "Play voice memo", systemImage: voiceMemoPlayer.isPlaying ? "stop.circle.fill" : "mic.fill")
+                                                    .font(.caption2.weight(.semibold))
+                                                    .foregroundStyle(.white)
+                                                    .padding(.horizontal, 10)
+                                                    .padding(.vertical, 5)
+                                                    .background(
+                                                        Capsule(style: .continuous)
+                                                            .fill(Color.blue.opacity(0.85))
+                                                    )
+                                            }
+                                            .buttonStyle(.plain)
+                                            Spacer(minLength: 0)
+                                        }
+                                    }
+                                }
+                            }
+
                             Group {
                                 if recapBlogIsReadOnly {
                                     Text(editedPlaceTitle)
                                         .font(.title3)
                                         .fontWeight(.bold)
                                         .foregroundColor(.white)
-                                        .multilineTextAlignment(.leading)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .multilineTextAlignment(.center)
+                                        .frame(maxWidth: .infinity, alignment: .center)
                                 } else {
                                     HStack(alignment: .top, spacing: 10) {
                                         Button {
@@ -1108,7 +1154,7 @@ struct PlacePhotoModalView: View {
                                                 .font(.title3)
                                                 .fontWeight(.bold)
                                                 .foregroundColor(.white)
-                                                .multilineTextAlignment(.leading)
+                                                .multilineTextAlignment(.center)
                                         }
                                         .buttonStyle(.plain)
                                         Button {
@@ -1127,39 +1173,7 @@ struct PlacePhotoModalView: View {
                                         .buttonStyle(.plain)
                                         .accessibilityLabel("Edit place name")
                                     }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                            }
-
-                            if !dateTimeTextForCurrentPhoto.isEmpty {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(dateTimeTextForCurrentPhoto)
-                                        .font(.caption)
-                                        .fontWeight(.medium)
-                                        .foregroundColor(.white.opacity(0.8))
-                                    if currentVoiceMemoURL != nil {
-                                        Button {
-                                            guard let memoURL = currentVoiceMemoURL else { return }
-                                            if voiceMemoPlayer.isPlaying {
-                                                voiceMemoPlayer.stop()
-                                            } else {
-                                                vibePlayer.stop()
-                                                isVibeEnabled = false
-                                                voiceMemoPlayer.play(url: memoURL)
-                                            }
-                                        } label: {
-                                            Label(voiceMemoPlayer.isPlaying ? "Stop voice memo" : "Play voice memo", systemImage: voiceMemoPlayer.isPlaying ? "stop.circle.fill" : "mic.fill")
-                                                .font(.caption2.weight(.semibold))
-                                                .foregroundStyle(.white)
-                                                .padding(.horizontal, 10)
-                                                .padding(.vertical, 5)
-                                                .background(
-                                                    Capsule(style: .continuous)
-                                                        .fill(Color.blue.opacity(0.85))
-                                                )
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
+                                    .frame(maxWidth: .infinity, alignment: .center)
                                 }
                             }
                         }

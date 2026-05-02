@@ -1,0 +1,14 @@
+{
+  "files.exclude": {
+    "**/.derivedData": true,
+    "**/.derivedDataAgent": true,
+    "**/.derivedDataAgent2": true,
+    "**/.derivedDataAgentBuild": true
+  },
+  "search.exclude": {
+    "**/.derivedData/**": true,
+    "**/.derivedDataAgent/**": true,
+    "**/.derivedDataAgent2/**": true,
+    "**/.derivedDataAgentBuild/**": true
+  }
+}

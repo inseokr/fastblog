@@ -7,8 +7,8 @@
 # Xcode
 build/
 DerivedData/
-# Cursor / local agent build output (can be 10k+ files — do not commit)
-.derivedDataAgent/
+# Cursor / local Xcode+agent build trees (10k+ files — do not commit)
+.derivedData*
 *.pbxuser
 !default.pbxuser
 *.mode1v3

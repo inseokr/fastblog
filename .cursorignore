@@ -1,0 +1,3 @@
+# Local build / SPM caches — huge trees, not app source
+.derivedData*
+DerivedData/

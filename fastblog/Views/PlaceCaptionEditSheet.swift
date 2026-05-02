@@ -182,7 +182,7 @@ struct PlaceCaptionEditSheet: View {
                         .font(.title3.weight(.semibold))
                         .foregroundColor(titleAndEditIconForeground)
                         .lineLimit(2)
-                        .multilineTextAlignment(.leading)
+                        .multilineTextAlignment(.center)
                 }
                 .buttonStyle(.plain)
                 Button {
@@ -200,14 +200,14 @@ struct PlaceCaptionEditSheet: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Edit place name")
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
         } else {
             Text(placeTitle)
                 .font(.title3.weight(.semibold))
                 .foregroundColor(.primary)
                 .lineLimit(2)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 
@@ -217,17 +217,18 @@ struct PlaceCaptionEditSheet: View {
             Text(placeSubtitle)
                 .font(.subheadline)
                 .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
         }
     }
 
     private var placeCaptionTitleHeader: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .center, spacing: 4) {
                 placeTitleRowWithEditNameControl
                 placeSubtitleIfAny
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     var body: some View {

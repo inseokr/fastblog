@@ -412,12 +412,12 @@ class MapSnapshotHelper {
         
         let stringSize = text.size(withAttributes: attributes)
         let textRect = CGRect(
-            x: rect.midX - stringSize.width / 2,
-            y: rect.midY - stringSize.height / 2,
+            x: (rect.midX - stringSize.width / 2).rounded(),
+            y: (rect.midY - stringSize.height / 2).rounded(),
             width: stringSize.width,
             height: stringSize.height
         )
-        
+
         text.draw(in: textRect, withAttributes: attributes)
         
         context.restoreGState()
@@ -616,7 +616,7 @@ class MapSnapshotHelper {
 
         // Scale typography and spacing proportionally with the marker so everything
         // looks consistent whether rendering a small preview or a full 1080 px export.
-        let fontSize = max(13, markerRadius * 0.42)
+        let fontSize = max(13, markerRadius * 0.42).rounded()
         let padH = max(10, markerRadius * 0.34)
         let padV = max(5, markerRadius * 0.22)
         let maxLabelWidth = min(canvasSize.width * 0.44, markerRadius * 10)
@@ -654,14 +654,19 @@ class MapSnapshotHelper {
             originY = markerCenter.y - markerRadius - verticalGap - labelH
         }
 
-        let pillRect = CGRect(x: originX, y: originY, width: labelW, height: labelH)
+        let pillRect = CGRect(
+            x: originX.rounded(),
+            y: originY.rounded(),
+            width: labelW.rounded(),
+            height: labelH.rounded()
+        )
 
         context.saveGState()
 
         // White pill with a pronounced drop shadow for pop against the map.
         context.setShadow(
             offset: CGSize(width: 0, height: max(1, markerRadius * 0.1)),
-            blur: max(4, markerRadius * 0.35),
+            blur: max(3, markerRadius * 0.28),
             color: UIColor.black.withAlphaComponent(0.42).cgColor
         )
         let bgPath = UIBezierPath(roundedRect: pillRect, cornerRadius: cornerRadius).cgPath
@@ -919,6 +924,7 @@ class MapSnapshotHelper {
             UIGraphicsBeginImageContextWithOptions(snapshot.image.size, true, snapshot.image.scale)
             defer { UIGraphicsEndImageContext() }
             guard let context = UIGraphicsGetCurrentContext() else { return snapshot.image }
+            context.interpolationQuality = .high
             snapshot.image.draw(at: .zero)
 
             // Dashed route polyline
@@ -983,7 +989,10 @@ class MapSnapshotHelper {
         let font = UIFont.systemFont(ofSize: 9, weight: .bold)
         let attribs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white]
         let sz = numStr.size(withAttributes: attribs)
-        numStr.draw(at: CGPoint(x: point.x - sz.width / 2, y: point.y - sz.height / 2), withAttributes: attribs)
+        numStr.draw(
+            at: CGPoint(x: (point.x - sz.width / 2).rounded(), y: (point.y - sz.height / 2).rounded()),
+            withAttributes: attribs
+        )
         context.restoreGState()
     }
 }

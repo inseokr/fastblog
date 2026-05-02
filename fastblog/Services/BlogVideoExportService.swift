@@ -65,6 +65,16 @@ struct BlogVideoExportOptions: Codable, Equatable {
 
 enum BlogVideoExportService {
 
+    /// Short-form vertical video must match **9:16** pixel aspect. Using `UIScreen` width ×
+    /// safe-area-clamped height skews taller than 9:16 → pillarboxing in some players and
+    /// Instagram filling the frame with a center crop (“zoomed”). Export uses a fixed canvas
+    /// at **1080×1920** (@2× from 540×960 logical) regardless of device or orientation.
+    private enum SocialVerticalVideoExportMetrics {
+        static let logicalWidth: CGFloat = 540
+        static let logicalHeight: CGFloat = 960
+        static var logicalSize: CGSize { CGSize(width: logicalWidth, height: logicalHeight) }
+    }
+
     enum ExportError: Error, LocalizedError {
         case noPages
         case failedToRenderPage(Int)
@@ -97,10 +107,7 @@ enum BlogVideoExportService {
         progressHandler: ((Double) -> Void)? = nil
     ) async throws -> URL {
 
-        let logicalSize = CGSize(
-            width: StoryRenderMetrics.clampedScreenWidth,
-            height: StoryRenderMetrics.effectiveStoryViewportHeight
-        )
+        let logicalSize = SocialVerticalVideoExportMetrics.logicalSize
         let pixelSize = CGSize(width: logicalSize.width * 2, height: logicalSize.height * 2)
 
         // Open the writer before generating any frames.
@@ -111,11 +118,19 @@ enum BlogVideoExportService {
             throw ExportError.writerSetupFailed
         }
 
+        // TikTok and some other transcoders mishandle very long per-sample durations (one frame
+        // held for 2–3s). Instagram tends to cope; splitting static holds into ~30fps slices keeps
+        // timestamps closer to what short-form pipelines expect and improves cover-frame extraction.
         let videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: Int(pixelSize.width),
             AVVideoHeightKey: Int(pixelSize.height),
-            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: 16_000_000]
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: 16_000_000,
+                AVVideoMaxKeyFrameIntervalKey: 60,
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+                AVVideoAllowFrameReorderingKey: false
+            ] as [String: Any]
         ]
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         videoInput.expectsMediaDataInRealTime = false
@@ -141,20 +156,44 @@ enum BlogVideoExportService {
         }
 
         let timescale: CMTimeScale = 600
+        /// Slice long static segments at this rate so downstream transcoders see ~CFR timing.
+        let staticSegmentTimelineFPS: Double = 30
         var currentPTS  = CMTime.zero
         var frameIdx    = 0
+        /// With `appendPixelBuffer(..., presentationTime:)`, each frame’s visible length is the **delta to the next PTS**.
+        /// The final sample has no successor, so decoders often treat its duration as ~0 — the last photo (or page) flashes away.
+        /// We append one extra duplicate at the end so the real last frame keeps its intended duration.
+        var lastImageWritten: UIImage?
 
-        // Encode one frame and release the image immediately after the pixel buffer is written.
+        // Encode one logical "hold" as one or more samples so very long display durations are not
+        // a single frame (problematic for some social transcoders / cover extraction).
         func appendFrame(_ image: UIImage, duration: Double) async throws {
-            while !videoInput.isReadyForMoreMediaData {
-                try Task.checkCancellation()
-                await Task.yield()
+            let minSlice = 1.0 / staticSegmentTimelineFPS
+            let sliceCount: Int
+            let sliceDuration: Double
+            if duration <= minSlice * 1.000_001 {
+                sliceCount = 1
+                sliceDuration = duration
+            } else {
+                sliceCount = max(1, Int((duration * staticSegmentTimelineFPS).rounded()))
+                sliceDuration = duration / Double(sliceCount)
             }
-            let pb = autoreleasepool { BlogVideoExportService.pixelBuffer(from: image, size: pixelSize) }
-            guard let pb else { throw ExportError.failedToRenderPage(frameIdx) }
-            adaptor.append(pb, withPresentationTime: currentPTS)
-            currentPTS = CMTimeAdd(currentPTS, CMTime(value: CMTimeValue(duration * Double(timescale)), timescale: timescale))
-            frameIdx += 1
+            for _ in 0..<sliceCount {
+                while !videoInput.isReadyForMoreMediaData {
+                    try Task.checkCancellation()
+                    await Task.yield()
+                }
+                let pb = autoreleasepool { BlogVideoExportService.pixelBuffer(from: image, size: pixelSize) }
+                guard let pb else { throw ExportError.failedToRenderPage(frameIdx) }
+                adaptor.append(pb, withPresentationTime: currentPTS)
+                let delta = CMTime(
+                    value: CMTimeValue((sliceDuration * Double(timescale)).rounded()),
+                    timescale: timescale
+                )
+                currentPTS = CMTimeAdd(currentPTS, delta)
+                frameIdx += 1
+            }
+            lastImageWritten = image
         }
 
         // Step 1 – Generate + write frames one at a time (0 → 85 %).
@@ -183,6 +222,12 @@ enum BlogVideoExportService {
         if frameIdx == 0 {
             try Task.checkCancellation()
             throw ExportError.noPages
+        }
+
+        // One-tick successor PTS so the last content frame isn’t encoded with ~0 display duration (see `lastImageWritten`).
+        let endPadSeconds = 1.0 / 30.0
+        if let padImage = lastImageWritten {
+            try await appendFrame(padImage, duration: endPadSeconds)
         }
 
         videoInput.markAsFinished()
@@ -339,6 +384,8 @@ enum BlogVideoExportService {
             bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
         )
         guard let ctx, let cgImage = image.cgImage else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.setShouldAntialias(true)
         ctx.draw(cgImage, in: CGRect(origin: .zero, size: size))
         return pixelBuffer
     }
