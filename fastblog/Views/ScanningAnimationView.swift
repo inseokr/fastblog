@@ -49,23 +49,12 @@ private struct ScanningRingView: View {
 
     var body: some View {
         Circle()
-            .stroke(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.6),
-                        Color.blue.opacity(0.5),
-                        Color.white.opacity(0.2)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: 2
-            )
+            .stroke(Color.white.opacity(0.55), lineWidth: 2)
             .scaleEffect(isExpanded ? 1.4 : 0.6)
             .opacity(isExpanded ? 0 : 0.7)
             .animation(
                 .easeOut(duration: duration)
-                .repeatForever(autoreverses: true)
+                .repeatForever(autoreverses: false)
                 .delay(delay),
                 value: isExpanded
             )

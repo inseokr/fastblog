@@ -7,8 +7,9 @@ import MapKit
 /// `frameHandler` so memory stays flat (one frame live at a time).
 ///
 /// Per-place visual sequence:
-///   1. Pan animation  — segment-fit region → 0.008° at destination (8 frames × 0.25 s ≈ 4 fps)
-///   2. Zoom-in        — 0.008° → 0.003° animated (4 frames × 0.30 s, smooth-step)
+///   1. Pan animation  — 14 true snapshots × 0.18 s (≈ 5.5 fps) — segment-fit → 0.008° at destination
+///   2. Zoom-in        — 2 snapshots + 12 synthesized cross-dissolve frames × 0.14 s (≈ 7 fps)
+///                       Dissolve from 0.008° → 0.003° looks like a smooth zoom (center is fixed)
 ///   3. Focused reveal — 0.003° with place info overlaid at bottom (2.5 s)
 ///   4. Photo slides   — full-pixel images, story panel when caption is non-empty
 enum CinematicBlogVideoBuilder {
@@ -59,52 +60,55 @@ enum CinematicBlogVideoBuilder {
                    focusedCoord.latitude.isFinite, focusedCoord.longitude.isFinite {
 
                     let panFromRegion = segmentRegion(from: previousCoord, to: focusedCoord, padding: 0.04)
-                    let wideRegion   = MKCoordinateRegion(center: focusedCoord,
-                                                          span: MKCoordinateSpan(latitudeDelta: 0.008, longitudeDelta: 0.008))
-                    let tightRegion  = MKCoordinateRegion(center: focusedCoord,
-                                                          span: MKCoordinateSpan(latitudeDelta: 0.003, longitudeDelta: 0.003))
+                    let wideRegion  = MKCoordinateRegion(center: focusedCoord,
+                                                         span: MKCoordinateSpan(latitudeDelta: 0.008, longitudeDelta: 0.008))
+                    let tightRegion = MKCoordinateRegion(center: focusedCoord,
+                                                         span: MKCoordinateSpan(latitudeDelta: 0.003, longitudeDelta: 0.003))
 
-                    // 1. Pan animation: segment-fit → 0.008° (8 frames × 0.25 s ≈ 4 fps)
+                    // 1. Pan: 14 true snapshots × 0.18 s ≈ 5.5 fps
                     let panFrames = await MapSnapshotHelper.generateInterpolatedFrames(
                         from: panFromRegion, to: wideRegion,
                         allStops: stops, focusedStopIndex: placeIdx,
-                        logicalSize: logicalSize, frameCount: 8
+                        logicalSize: logicalSize, frameCount: 14
                     )
                     for img in panFrames {
                         guard !Task.isCancelled else { return }
-                        try await frameHandler(img, 0.25)
+                        try await frameHandler(img, 0.18)
                     }
 
-                    // 2. Zoom-in animation: 0.008° → 0.003° (4 frames × 0.30 s, smooth deceleration)
-                    let zoomFrames = await MapSnapshotHelper.generateInterpolatedFrames(
-                        from: wideRegion, to: tightRegion,
-                        allStops: stops, focusedStopIndex: placeIdx,
-                        logicalSize: logicalSize, frameCount: 4
-                    )
-                    for img in zoomFrames {
-                        guard !Task.isCancelled else { return }
-                        try await frameHandler(img, 0.30)
-                    }
-
-                    // 3. Tight reveal with place info overlay (hold 2.5 s)
-                    let tightMap: UIImage?
-                    if let tight = await MapSnapshotHelper.generateSnapshotAtRegion(
-                        region: tightRegion,
-                        focusedStopIndex: placeIdx, allStops: stops, logicalSize: logicalSize
+                    // 2. Zoom-in: 2 snapshots + 12 synthesized cross-dissolve frames ≈ 7 fps
+                    //    Dissolving from 0.008° → 0.003° (same center) looks like a smooth zoom.
+                    if let wideImg = await MapSnapshotHelper.generateSnapshotAtRegion(
+                        region: wideRegion, focusedStopIndex: placeIdx, allStops: stops, logicalSize: logicalSize
                     ) {
-                        tightMap = tight
-                    } else {
-                        tightMap = await MapSnapshotHelper.generateFocusedSnapshot(
-                            focusedStopIndex: placeIdx, allStops: stops, logicalSize: logicalSize
+                        try await frameHandler(wideImg, 0.14)
+
+                        var tightBase = await MapSnapshotHelper.generateSnapshotAtRegion(
+                            region: tightRegion, focusedStopIndex: placeIdx, allStops: stops, logicalSize: logicalSize
                         )
-                    }
-                    if let mapImg = tightMap {
-                        let overlaid = autoreleasepool {
-                            drawPlaceOverlayOnMap(mapImage: mapImg, stop: stop,
-                                                  markerNumber: placeIdx + 1, totalStops: stops.count,
-                                                  pixelSize: pixelSize)
+                        if tightBase == nil {
+                            tightBase = await MapSnapshotHelper.generateFocusedSnapshot(
+                                focusedStopIndex: placeIdx, allStops: stops, logicalSize: logicalSize
+                            )
                         }
-                        try await frameHandler(overlaid, 2.5)
+
+                        if let tightBase {
+                            // 12 free synthesized frames — no snapshotter calls
+                            let blends = synthesizeBlendFrames(from: wideImg, to: tightBase,
+                                                               count: 12, size: pixelSize)
+                            for img in blends {
+                                guard !Task.isCancelled else { return }
+                                try await frameHandler(img, 0.14)
+                            }
+
+                            // 3. Tight reveal with place overlay (hold 2.5 s)
+                            let overlaid = autoreleasepool {
+                                drawPlaceOverlayOnMap(mapImage: tightBase, stop: stop,
+                                                      markerNumber: placeIdx + 1, totalStops: stops.count,
+                                                      pixelSize: pixelSize)
+                            }
+                            try await frameHandler(overlaid, 2.5)
+                        }
                     }
 
                     previousCoord = focusedCoord
@@ -251,16 +255,16 @@ enum CinematicBlogVideoBuilder {
 
             cg.drawLinearGradient(
                 CGGradient(colorsSpace: cs, colors: [
-                    UIColor.black.withAlphaComponent(0.90).cgColor,
-                    UIColor.black.withAlphaComponent(0.72).cgColor,
+                    UIColor.black.withAlphaComponent(0.92).cgColor,
+                    UIColor.black.withAlphaComponent(0.75).cgColor,
                     UIColor.clear.cgColor
-                ] as CFArray, locations: [0, 0.4, 1])!,
-                start: CGPoint(x: 0, y: h), end: CGPoint(x: 0, y: h * 0.45), options: []
+                ] as CFArray, locations: [0, 0.45, 1])!,
+                start: CGPoint(x: 0, y: h), end: CGPoint(x: 0, y: h * 0.38), options: []
             )
 
             let padX: CGFloat = 28
             let markerR: CGFloat = w * 0.052
-            let contentY: CGFloat = h * 0.68
+            let contentY: CGFloat = h * 0.63
 
             let markerColor: UIColor = markerNumber == 1 ? .systemGreen
                 : (markerNumber == totalStops ? .systemOrange : .systemBlue)
@@ -310,6 +314,28 @@ enum CinematicBlogVideoBuilder {
                 UIColor.white.withAlphaComponent(0.15).setFill()
                 UIBezierPath(roundedRect: pillRect, cornerRadius: pillRect.height / 2).fill()
                 tsStr.draw(at: CGPoint(x: pillRect.minX + pH, y: pillRect.minY + pV), withAttributes: tsAttribs)
+                nextY += pillRect.height + 12
+            }
+
+            // Place story / notes
+            let storyText = stop.noteText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !storyText.isEmpty {
+                let storyFont = UIFont.systemFont(ofSize: w * 0.031, weight: .regular)
+                let para = NSMutableParagraphStyle()
+                para.lineSpacing = 4
+                para.lineBreakMode = .byTruncatingTail
+                let storyAttribs: [NSAttributedString.Key: Any] = [
+                    .font: storyFont,
+                    .foregroundColor: UIColor.white.withAlphaComponent(0.82),
+                    .paragraphStyle: para
+                ]
+                let maxW = w - titleX - padX
+                let maxH = storyFont.lineHeight * 3 + 8
+                (storyText as NSString).draw(
+                    with: CGRect(x: titleX, y: nextY, width: maxW, height: maxH),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine],
+                    attributes: storyAttribs, context: nil
+                )
             }
         }
     }
@@ -339,43 +365,57 @@ enum CinematicBlogVideoBuilder {
             }
             photo.draw(in: drawRect)
 
-            // Bottom gradient — taller when story caption is present
-            let gradEndFrac: CGFloat = hasStory ? 0.40 : 0.52
+            // Top gradient — contrast backing for place name pill
             cg.drawLinearGradient(
                 CGGradient(colorsSpace: cs, colors: [
-                    UIColor.black.withAlphaComponent(0.72).cgColor, UIColor.clear.cgColor
+                    UIColor.black.withAlphaComponent(0.55).cgColor, UIColor.clear.cgColor
+                ] as CFArray, locations: [0, 1])!,
+                start: .zero, end: CGPoint(x: 0, y: h * 0.22), options: []
+            )
+
+            // Bottom gradient — taller when story caption is present
+            let gradEndFrac: CGFloat = hasStory ? 0.38 : 0.52
+            cg.drawLinearGradient(
+                CGGradient(colorsSpace: cs, colors: [
+                    UIColor.black.withAlphaComponent(0.75).cgColor, UIColor.clear.cgColor
                 ] as CFArray, locations: [0, 1])!,
                 start: CGPoint(x: 0, y: h), end: CGPoint(x: 0, y: h * gradEndFrac), options: []
             )
 
-            // Place name pill (top-left)
-            let placeFont = UIFont.systemFont(ofSize: w * 0.03, weight: .semibold)
+            // Place name pill — centered at top, clear of status bar / crop
+            let placeFont = UIFont.systemFont(ofSize: w * 0.038, weight: .semibold)
             let placeStr = placeName as NSString
             let placeAttribs: [NSAttributedString.Key: Any] = [.font: placeFont, .foregroundColor: UIColor.white]
             let placeSize = placeStr.size(withAttributes: placeAttribs)
-            let pPX: CGFloat = 12, pPY: CGFloat = 7
-            let pillRect = CGRect(x: 16, y: 24,
-                                   width: placeSize.width + pPX * 2, height: placeSize.height + pPY * 2)
-            UIColor.black.withAlphaComponent(0.48).setFill()
+            let pPX: CGFloat = 16, pPY: CGFloat = 9
+            let pillW = min(placeSize.width + pPX * 2, w - 64)
+            let pillRect = CGRect(x: (w - pillW) / 2, y: 72,
+                                   width: pillW, height: placeSize.height + pPY * 2)
+            UIColor.black.withAlphaComponent(0.52).setFill()
             UIBezierPath(roundedRect: pillRect, cornerRadius: pillRect.height / 2).fill()
-            placeStr.draw(at: CGPoint(x: pillRect.minX + pPX, y: pillRect.minY + pPY), withAttributes: placeAttribs)
+            placeStr.draw(in: CGRect(x: pillRect.minX + pPX, y: pillRect.minY + pPY,
+                                      width: pillW - pPX * 2, height: placeSize.height + 2),
+                          withAttributes: placeAttribs)
 
-            // Story caption panel — larger, prominent text anchored near the bottom
+            // Story caption — centered, with 14% bottom safe margin (clears social platform UI chrome)
             if hasStory, let cap = caption?.trimmingCharacters(in: .whitespacesAndNewlines), !cap.isEmpty {
-                let storyFont = UIFont.systemFont(ofSize: w * 0.040, weight: .medium)
+                let storyFont = UIFont.systemFont(ofSize: w * 0.042, weight: .medium)
                 let para = NSMutableParagraphStyle()
-                para.lineSpacing = 4
+                para.lineSpacing = 5
                 para.lineBreakMode = .byWordWrapping
+                para.alignment = .center
                 let storyAttribs: [NSAttributedString.Key: Any] = [
                     .font: storyFont, .foregroundColor: UIColor.white, .paragraphStyle: para
                 ]
-                let maxW = w - 48
+                let maxW = w - 80
                 let measured = (cap as NSString).boundingRect(
-                    with: CGSize(width: maxW, height: storyFont.lineHeight * 4 + 12),
+                    with: CGSize(width: maxW, height: storyFont.lineHeight * 4 + 16),
                     options: [.usesLineFragmentOrigin, .usesFontLeading],
                     attributes: storyAttribs, context: nil
                 )
-                let capRect = CGRect(x: 24, y: h - 40 - ceil(measured.height),
+                let bottomSafeMargin: CGFloat = h * 0.14
+                let capRect = CGRect(x: (w - maxW) / 2,
+                                      y: h - bottomSafeMargin - ceil(measured.height),
                                       width: maxW, height: ceil(measured.height))
                 (cap as NSString).draw(with: capRect,
                                         options: [.usesLineFragmentOrigin, .usesFontLeading],
@@ -385,6 +425,29 @@ enum CinematicBlogVideoBuilder {
     }
 
     // MARK: - Helpers
+
+    /// Synthesizes `count` cross-dissolve frames between two already-rendered images.
+    /// No MKMapSnapshotter calls — pure pixel blending with smooth-step easing.
+    /// When `imageA` and `imageB` share the same center (zoom-in), this looks like a smooth zoom.
+    private static func synthesizeBlendFrames(
+        from imageA: UIImage,
+        to imageB: UIImage,
+        count: Int,
+        size: CGSize
+    ) -> [UIImage] {
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return (1...count).map { i in
+            let t  = CGFloat(i) / CGFloat(count + 1)
+            let alpha = t * t * (3 - 2 * t)           // smooth-step ease
+            return autoreleasepool {
+                renderer.image { _ in
+                    imageA.draw(in: CGRect(origin: .zero, size: size))
+                    imageB.draw(in: CGRect(origin: .zero, size: size), blendMode: .normal, alpha: alpha)
+                }
+            }
+        }
+    }
 
     private static func formattedTimestamp(_ digitized: String?) -> String? {
         guard let digitized else { return nil }
