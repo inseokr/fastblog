@@ -8,9 +8,18 @@ import SwiftUI
 private let loadingBackground = Color(red: 5/255, green: 10/255, blue: 48/255)
 
 struct LoadingScanView: View {
+    /// Tint layered on top of `Material` when ``isOverlay`` is true. ``modalGrayGlass`` is for in-modal
+    /// loading (e.g. video export); ``tripNavy`` matches the trip scanner overlay.
+    enum OverlayTint {
+        case tripNavy
+        case modalGrayGlass
+    }
+
     var message: String = "Finding your trips…"
     /// When true, renders with a semi-transparent blurred background instead of solid navy.
     var isOverlay: Bool = false
+    /// When ``isOverlay`` is true, controls the color wash on top of ``ultraThinMaterial``.
+    var overlayTint: OverlayTint = .tripNavy
     /// When non-nil, shows a percentage and drives step labels from real progress instead of timer.
     var progress: Double? = nil
     /// When non-nil, shows a gray Cancel button at the bottom.
@@ -100,12 +109,20 @@ struct LoadingScanView: View {
     var body: some View {
         ZStack {
             if isOverlay {
-                // Blur the content behind, then tint with semi-transparent navy
+                // Blur the content behind, then tint for legibility
                 Rectangle()
                     .fill(.ultraThinMaterial)
                     .ignoresSafeArea()
-                loadingBackground.opacity(0.65)
-                    .ignoresSafeArea()
+                switch overlayTint {
+                case .tripNavy:
+                    loadingBackground.opacity(0.65)
+                        .ignoresSafeArea()
+                case .modalGrayGlass:
+                    Color.black.opacity(0.38)
+                        .ignoresSafeArea()
+                    Color.white.opacity(0.06)
+                        .ignoresSafeArea()
+                }
             } else {
                 (backgroundColorOverride ?? loadingBackground)
                     .ignoresSafeArea()

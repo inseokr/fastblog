@@ -26,6 +26,30 @@ enum VideoStyle: String, Codable, CaseIterable {
 
 // MARK: - Options
 
+/// Map motion quality for **cinematic** export only (story pages ignore this).
+enum MapAnimationQuality: String, Codable, CaseIterable, Equatable {
+    /// Wide→tight zoom uses a fast cross-dissolve between two snapshots (lighter export).
+    case efficient = "efficient"
+    /// Wide→tight zoom uses interpolated `MKMapSnapshotter` frames (slower, true map scaling).
+    case highFidelity = "highFidelity"
+
+    var label: String {
+        switch self {
+        case .efficient:     return "Balanced"
+        case .highFidelity: return "High detail map"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .efficient:
+            return "Faster export; zoom uses a smooth blend between map snapshots."
+        case .highFidelity:
+            return "Slower export; zoom replays real map tiles frame by frame."
+        }
+    }
+}
+
 struct BlogVideoExportOptions: Codable, Equatable {
     var videoStyle: VideoStyle = .cinematic
     var secondsPerSlide: Double = 3.0
@@ -33,6 +57,8 @@ struct BlogVideoExportOptions: Codable, Equatable {
     var fontTheme: FontTheme = .classic
     /// Filename of the bundled music track to mix in, or nil for silence.
     var musicFilename: String? = nil
+    /// Cinematic style only: how map zoom-in to a stop is generated.
+    var mapAnimationQuality: MapAnimationQuality = .efficient
 }
 
 // MARK: - Service
@@ -107,13 +133,23 @@ enum BlogVideoExportService {
         writer.startWriting()
         writer.startSession(atSourceTime: .zero)
 
+        defer {
+            if writer.status == .writing {
+                writer.cancelWriting()
+            }
+            try? FileManager.default.removeItem(at: tempVideoURL)
+        }
+
         let timescale: CMTimeScale = 600
         var currentPTS  = CMTime.zero
         var frameIdx    = 0
 
         // Encode one frame and release the image immediately after the pixel buffer is written.
         func appendFrame(_ image: UIImage, duration: Double) async throws {
-            while !videoInput.isReadyForMoreMediaData { await Task.yield() }
+            while !videoInput.isReadyForMoreMediaData {
+                try Task.checkCancellation()
+                await Task.yield()
+            }
             let pb = autoreleasepool { BlogVideoExportService.pixelBuffer(from: image, size: pixelSize) }
             guard let pb else { throw ExportError.failedToRenderPage(frameIdx) }
             adaptor.append(pb, withPresentationTime: currentPTS)
@@ -127,12 +163,14 @@ enum BlogVideoExportService {
                 from: draft,
                 logicalSize: logicalSize,
                 secondsPerPhoto: options.secondsPerSlide,
+                mapAnimationQuality: options.mapAnimationQuality,
                 progressHandler: { p in progressHandler?(p * 0.85) },
                 frameHandler: { img, dur in try await appendFrame(img, duration: dur) }
             )
         } else {
             guard !pages.isEmpty else { throw ExportError.noPages }
             for (idx, page) in pages.enumerated() {
+                try Task.checkCancellation()
                 if idx % 2 == 0 { await Task.yield() }
                 let image = try autoreleasepool {
                     try renderPageToImage(page: page, logicalSize: logicalSize, pageIndex: idx, options: options)
@@ -142,7 +180,10 @@ enum BlogVideoExportService {
             }
         }
 
-        guard frameIdx > 0 else { throw ExportError.noPages }
+        if frameIdx == 0 {
+            try Task.checkCancellation()
+            throw ExportError.noPages
+        }
 
         videoInput.markAsFinished()
         await writer.finishWriting()
@@ -150,6 +191,7 @@ enum BlogVideoExportService {
             throw ExportError.writerFailed(writer.error?.localizedDescription ?? "unknown")
         }
         progressHandler?(0.85)
+        try Task.checkCancellation()
 
         // Step 2 – Composite audio (85 → 100 %).
         let safeTitle = draft.title.replacingOccurrences(of: "/", with: "-")
@@ -203,12 +245,15 @@ enum BlogVideoExportService {
 
     private static func compositeAudio(videoURL: URL, musicURL: URL, outputURL: URL) async throws {
         let videoAsset = AVURLAsset(url: videoURL)
-        let musicAsset = AVURLAsset(url: musicURL)
+        let musicAsset = AVURLAsset(
+            url: musicURL,
+            options: [AVURLAssetPreferPreciseDurationAndTimingKey: true]
+        )
         let composition = AVMutableComposition()
 
-        guard
-            let videoTrack = try? await videoAsset.loadTracks(withMediaType: .video).first,
-            let compVideo  = composition.addMutableTrack(withMediaType: .video,
+        let videoTracks = try await videoAsset.loadTracks(withMediaType: .video)
+        guard let videoTrack = videoTracks.first,
+              let compVideo = composition.addMutableTrack(withMediaType: .video,
                                                           preferredTrackID: kCMPersistentTrackID_Invalid)
         else { throw ExportError.audioMixFailed }
 
@@ -216,28 +261,56 @@ enum BlogVideoExportService {
         try compVideo.insertTimeRange(CMTimeRange(start: .zero, duration: videoDuration),
                                       of: videoTrack, at: .zero)
 
-        if let musicTrack = try? await musicAsset.loadTracks(withMediaType: .audio).first,
-           let compAudio  = composition.addMutableTrack(withMediaType: .audio,
-                                                         preferredTrackID: kCMPersistentTrackID_Invalid) {
-            let musicDuration = try await musicAsset.load(.duration)
-            var insertAt = CMTime.zero
-            while insertAt < videoDuration {
-                let remaining = CMTimeSubtract(videoDuration, insertAt)
-                let chunk = CMTimeMinimum(musicDuration, remaining)
-                try compAudio.insertTimeRange(CMTimeRange(start: .zero, duration: chunk),
-                                              of: musicTrack, at: insertAt)
-                insertAt = CMTimeAdd(insertAt, musicDuration)
-            }
+        try await musicAsset.load(.isReadable)
+        let musicTrackList = try await musicAsset.loadTracks(withMediaType: .audio)
+        guard let musicTrack = musicTrackList.first,
+              let compAudio = composition.addMutableTrack(withMediaType: .audio,
+                                                          preferredTrackID: kCMPersistentTrackID_Invalid)
+        else { throw ExportError.audioMixFailed }
+
+        try await musicTrack.load(.timeRange)
+        let sourceStart = musicTrack.timeRange.start
+        let musicDuration = musicTrack.timeRange.duration
+        guard CMTimeCompare(musicDuration, .zero) > 0 else { throw ExportError.audioMixFailed }
+
+        var insertAt = CMTime.zero
+        while CMTimeCompare(insertAt, videoDuration) < 0 {
+            let remaining = CMTimeSubtract(videoDuration, insertAt)
+            let chunk = CMTimeMinimum(musicDuration, remaining)
+            if CMTimeCompare(chunk, .zero) <= 0 { break }
+            try compAudio.insertTimeRange(CMTimeRange(start: sourceStart, duration: chunk),
+                                          of: musicTrack, at: insertAt)
+            insertAt = CMTimeAdd(insertAt, chunk)
+        }
+
+        guard !composition.tracks(withMediaType: .audio).isEmpty else {
+            throw ExportError.audioMixFailed
         }
 
         guard let session = AVAssetExportSession(asset: composition,
                                                   presetName: AVAssetExportPresetHighestQuality)
         else { throw ExportError.audioMixFailed }
-        session.outputURL  = outputURL
+        session.outputURL = outputURL
         session.outputFileType = .mp4
-        session.timeRange  = CMTimeRange(start: .zero, duration: videoDuration)
-        await session.export()
-        if session.status != .completed { throw ExportError.audioMixFailed }
+        session.timeRange = CMTimeRange(start: .zero, duration: videoDuration)
+        session.shouldOptimizeForNetworkUse = true
+        try Task.checkCancellation()
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            session.exportAsynchronously {
+                switch session.status {
+                case .completed:
+                    continuation.resume()
+                case .failed:
+                    continuation.resume(throwing: session.error ?? ExportError.audioMixFailed)
+                case .cancelled:
+                    continuation.resume(throwing: CancellationError())
+                default:
+                    continuation.resume(throwing: ExportError.audioMixFailed)
+                }
+            }
+        }
+        try Task.checkCancellation()
     }
 
     // MARK: - UIImage → CVPixelBuffer

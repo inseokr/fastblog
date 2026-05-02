@@ -20,6 +20,7 @@ struct BlogVideoExportOptionsSheet: View {
     @State private var exportError: String? = nil
     @State private var showError = false
     @State private var showMusicPicker = false
+    @State private var exportTask: Task<Void, Never>?
 
     private var selectedTrack: SlideshowBundledTrack? {
         guard let fn = options.musicFilename else { return nil }
@@ -27,56 +28,77 @@ struct BlogVideoExportOptionsSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    videoStyleSection
-                    durationSection
-                    if options.videoStyle == .storyPages {
-                        colorStyleSection
-                        fontThemeSection
+        ZStack {
+            NavigationStack {
+                ScrollView {
+                    VStack(spacing: 20) {
+                        videoStyleSection
+                        if options.videoStyle == .cinematic {
+                            mapAnimationQualitySection
+                        }
+                        durationSection
+                        if options.videoStyle == .storyPages {
+                            colorStyleSection
+                            fontThemeSection
+                        }
+                        musicSection
                     }
-                    musicSection
-                }
-                .padding(20)
-                .padding(.bottom, 8)
-            }
-            .background(Color(uiColor: .systemGroupedBackground))
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                VStack(spacing: 0) {
-                    Divider().opacity(0.35)
-                    exportButton
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
+                    .padding(20)
+                    .padding(.bottom, 8)
                 }
                 .background(Color(uiColor: .systemGroupedBackground))
-            }
-            .navigationTitle("Video Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14))
-                            .foregroundColor(.white)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    VStack(spacing: 0) {
+                        Divider().opacity(0.35)
+                        exportButton
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
                     }
-                    .disabled(isExporting)
+                    .background(Color(uiColor: .systemGroupedBackground))
+                }
+                .navigationTitle("Video Settings")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button { dismiss() } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14))
+                                .foregroundColor(.white)
+                        }
+                        .disabled(isExporting)
+                    }
+                }
+                .preferredColorScheme(.dark)
+                .sheet(isPresented: $showMusicPicker) {
+                    SlideshowBundledTrackPickerSheet(
+                        tracks: SlideshowBundledMusicLibrary.tracksInAppBundle(),
+                        selectedFilename: options.musicFilename,
+                        onPickTrack: { options.musicFilename = $0.filename },
+                        onPickNone: { options.musicFilename = nil },
+                        onCancel: {}
+                    )
+                }
+                .alert("Export Failed", isPresented: $showError) {
+                    Button("OK") {}
+                } message: {
+                    Text(exportError ?? "Unknown error.")
                 }
             }
-            .preferredColorScheme(.dark)
-            .sheet(isPresented: $showMusicPicker) {
-                SlideshowBundledTrackPickerSheet(
-                    tracks: SlideshowBundledMusicLibrary.tracksInAppBundle(),
-                    selectedFilename: options.musicFilename,
-                    onPickTrack: { options.musicFilename = $0.filename },
-                    onPickNone: { options.musicFilename = nil },
-                    onCancel: {}
+
+            if isExporting {
+                LoadingScanView(
+                    message: "Creating Video…",
+                    isOverlay: true,
+                    overlayTint: .modalGrayGlass,
+                    progress: progress,
+                    onCancel: { cancelExport() },
+                    progressStepLabelOverride: { p in Self.exportProgressSubtitle(progress: p, videoStyle: options.videoStyle) },
+                    useCenteredLayout: true,
+                    showsTopTrailingActions: false
                 )
-            }
-            .alert("Export Failed", isPresented: $showError) {
-                Button("OK") {}
-            } message: {
-                Text(exportError ?? "Unknown error.")
+                .transition(.opacity.animation(.easeInOut(duration: 0.22)))
+                .allowsHitTesting(true)
+                .zIndex(1)
             }
         }
         .onAppear {
@@ -102,6 +124,32 @@ struct BlogVideoExportOptionsSheet: View {
                         }
                     }
                     if style != VideoStyle.allCases.last {
+                        Divider().padding(.leading, 52)
+                    }
+                }
+            }
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .appChromeCornerRadius(12)
+        }
+    }
+
+    // MARK: - Map motion (Cinematic only)
+
+    private var mapAnimationQualitySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Map motion", icon: "map")
+            VStack(spacing: 0) {
+                ForEach(MapAnimationQuality.allCases, id: \.self) { quality in
+                    optionRow(
+                        title: quality.label,
+                        subtitle: quality.subtitle,
+                        isSelected: options.mapAnimationQuality == quality
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            options.mapAnimationQuality = quality
+                        }
+                    }
+                    if quality != MapAnimationQuality.allCases.last {
                         Divider().padding(.leading, 52)
                     }
                 }
@@ -213,45 +261,32 @@ struct BlogVideoExportOptionsSheet: View {
 
     // MARK: - Export Button
 
-    private var progressLabel: String {
-        if options.videoStyle == .cinematic {
-            if progress < 0.1  { return "Building journey…" }
-            if progress < 0.50 { return "Loading places & photos…" }
-            if progress < 0.72 { return "Rendering map frames…" }
-            if progress < 0.86 { return "Writing video…" }
+    /// Subtitle under “Creating Video…” — matches trip-style progress bands (driven by 0…1 export progress).
+    private static func exportProgressSubtitle(progress p: Double, videoStyle: VideoStyle) -> String {
+        if videoStyle == .cinematic {
+            if p < 0.1  { return "Building journey…" }
+            if p < 0.50 { return "Loading places & photos…" }
+            if p < 0.72 { return "Rendering map frames…" }
+            if p < 0.86 { return "Writing video…" }
             return "Adding music…"
         } else {
-            if progress < 0.1  { return "Building slideshow…" }
-            if progress < 0.72 { return "Rendering slides…" }
-            if progress < 0.86 { return "Writing video…" }
+            if p < 0.1  { return "Building slideshow…" }
+            if p < 0.72 { return "Rendering slides…" }
+            if p < 0.86 { return "Writing video…" }
             return "Adding music…"
         }
     }
 
     private var exportButton: some View {
         Button { startExport() } label: {
-            ZStack {
-                HStack(spacing: 8) {
-                    Image(systemName: options.videoStyle == .cinematic ? "map.fill" : "video.badge.checkmark")
-                    Text("Export & Share")
-                        .fontWeight(.semibold)
-                }
-                .opacity(isExporting ? 0 : 1)
-
-                if isExporting {
-                    HStack(spacing: 10) {
-                        ProgressView(value: progress)
-                            .progressViewStyle(.circular)
-                            .tint(.white)
-                            .frame(width: 20, height: 20)
-                        Text(progressLabel)
-                            .font(.subheadline.weight(.medium))
-                    }
-                }
+            HStack(spacing: 8) {
+                Image(systemName: options.videoStyle == .cinematic ? "map.fill" : "video.badge.checkmark")
+                Text("Export & Share")
+                    .fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
-            .background(isExporting ? Color.accentColor.opacity(0.6) : Color.accentColor)
+            .background(Color.accentColor.opacity(isExporting ? 0.45 : 1))
             .foregroundColor(.white)
             .appChromeCornerRadius(12)
         }
@@ -262,18 +297,30 @@ struct BlogVideoExportOptionsSheet: View {
     // MARK: - Export Action
 
     @MainActor
+    private func cancelExport() {
+        exportTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.22)) {
+            isExporting = false
+            progress = 0
+        }
+    }
+
+    @MainActor
     private func startExport() {
         if let data = try? JSONEncoder().encode(options) { optionsData = data }
+        exportTask?.cancel()
         isExporting = true
         progress = 0.02
 
-        Task { @MainActor in
+        exportTask = Task { @MainActor in
+            defer { exportTask = nil }
             do {
                 var pages: [StoryPage] = []
 
                 if options.videoStyle == .storyPages {
                     // Story-pages mode: build the full page layout (same as story mode / PDF export).
                     let content = await StoryBookBuilder.build(from: draft)
+                    try Task.checkCancellation()
                     pages = StoryPageLayout.buildPages(from: content, fontTheme: options.fontTheme)
                     guard !pages.isEmpty else { throw BlogVideoExportService.ExportError.noPages }
                 }
@@ -291,6 +338,9 @@ struct BlogVideoExportOptionsSheet: View {
                 isExporting = false
                 dismiss()
                 onShare(url)
+            } catch is CancellationError {
+                isExporting = false
+                progress = 0
             } catch {
                 isExporting = false
                 exportError = error.localizedDescription

@@ -7,9 +7,10 @@ import MapKit
 /// `frameHandler` so memory stays flat (one frame live at a time).
 ///
 /// Per-place visual sequence:
-///   1. Pan animation  — 14 true snapshots × cinematicPanFrameDuration (MapKit snapshots; faster than legacy 0.18 s).
-///   2. Zoom-in        — wide snapshot + cross-dissolve at cinematicZoomSegmentTargetFPS; wall-clock set by
-///                       cinematicZoomSegmentDurationSeconds (static image blend — not MKMapView zoom caps).
+///   1. Pan animation  — 14 true snapshots: first stop of each day from day-wide map → neighborhood;
+///      later stops pan neighborhood→neighborhood (retains secondary zoom, no zoom-out reset).
+///   2. Zoom-in        — `MapAnimationQuality.efficient`: cross-dissolve at cinematicZoomSegmentTargetFPS.
+///                       `.highFidelity`: interpolated MKMapSnapshotter frames (true tile zoom; slower export).
 ///   3. Focused reveal — 0.003° with place info overlaid at bottom (2.5 s)
 ///   4. Photo slides   — full-pixel images, story panel when caption is non-empty
 enum CinematicBlogVideoBuilder {
@@ -21,6 +22,16 @@ enum CinematicBlogVideoBuilder {
     private static let cinematicZoomSegmentDurationSeconds: Double = 0.88
 
     private static let cinematicPanFrameDurationSeconds: Double = 0.11
+
+    /// Aligns map bitmap pixels with `BlogVideoExportService` / `ImageRenderer(scale: 2)`.
+    private static let exportMapDisplayScale: CGFloat = 2
+    private static let cinematicPanFrameCount = 14
+    /// After the first place on a day, the map “hands off” from the previous marker (still highlighted)
+    /// → brief all-muted beat → new marker + optional on-map place pill for the rest of the pan.
+    private static let cinematicPanHandoffPreviousHighlightFrames = 5
+    private static let cinematicPanHandoffAllMutedFrames = 3
+    /// Snapshot-based wide→tight zoom when using `MapAnimationQuality.highFidelity`.
+    private static let cinematicHighFidelityZoomFrameCount = 22
 
     private static var cinematicZoomFrameDurationSeconds: Double {
         1.0 / cinematicZoomSegmentTargetFPS
@@ -41,6 +52,7 @@ enum CinematicBlogVideoBuilder {
         from draft: RecapBlogDetail,
         logicalSize: CGSize,
         secondsPerPhoto: Double,
+        mapAnimationQuality: MapAnimationQuality = .efficient,
         progressHandler: ((Double) -> Void)? = nil,
         frameHandler: (UIImage, Double) async throws -> Void
     ) async throws {
@@ -55,66 +67,134 @@ enum CinematicBlogVideoBuilder {
         )
 
         for (dayIdx, day) in days.enumerated() {
-            guard !Task.isCancelled else { return }
+            try Task.checkCancellation()
 
             let stops = day.placeStops
 
-            // Full route overview map
-            if let routeMap = await MapSnapshotHelper.generateSnapshot(
-                for: stops, size: logicalSize, regionPadding: 0.05, showPlaceNames: true
-            ) {
-                let annotated = autoreleasepool {
-                    drawDayHeaderOverlay(on: routeMap, day: day, dayNumber: dayIdx + 1, pixelSize: pixelSize)
-                }
-                try await frameHandler(annotated, 2.5)
-            }
-
-            var previousCoord: CLLocationCoordinate2D? = nil
+            let dayOverviewRegion: MKCoordinateRegion = {
+                if let r = MapSnapshotHelper.regionBoundingAllStops(stops, padding: 0.16) { return r }
+                let c = stops.compactMap { $0.representativeLocation?.clCoordinate }
+                    .first { $0.latitude.isFinite && $0.longitude.isFinite }
+                    ?? CLLocationCoordinate2D(latitude: 37.3349, longitude: -122.00902)
+                return MKCoordinateRegion(
+                    center: c,
+                    span: MKCoordinateSpan(latitudeDelta: 0.06, longitudeDelta: 0.06)
+                )
+            }()
 
             for (placeIdx, stop) in stops.enumerated() {
-                guard !Task.isCancelled else { return }
+                try Task.checkCancellation()
 
                 if let focusedCoord = stop.representativeLocation?.clCoordinate,
                    focusedCoord.latitude.isFinite, focusedCoord.longitude.isFinite {
 
-                    let panFromRegion = segmentRegion(from: previousCoord, to: focusedCoord, padding: 0.04)
-                    let wideRegion  = MKCoordinateRegion(center: focusedCoord,
-                                                         span: MKCoordinateSpan(latitudeDelta: 0.008, longitudeDelta: 0.008))
+                    let neighborhoodSpan = MKCoordinateSpan(latitudeDelta: 0.008, longitudeDelta: 0.008)
+                    let wideRegion  = MKCoordinateRegion(center: focusedCoord, span: neighborhoodSpan)
                     let tightRegion = MKCoordinateRegion(center: focusedCoord,
                                                          span: MKCoordinateSpan(latitudeDelta: 0.003, longitudeDelta: 0.003))
 
-                    // 1. Pan: 14 true snapshots (MapKit cost); shorter per-frame hold than legacy 0.18 s.
-                    let panFrames = await MapSnapshotHelper.generateInterpolatedFrames(
-                        from: panFromRegion, to: wideRegion,
-                        allStops: stops, focusedStopIndex: placeIdx,
-                        logicalSize: logicalSize, frameCount: 14
-                    )
+                    let previousIdx = placeIdx - 1
+                    let previousHasMapPin: Bool = {
+                        guard placeIdx > 0,
+                              let loc = stops[previousIdx].representativeLocation else { return false }
+                        let c = loc.clCoordinate
+                        return c.latitude.isFinite && c.longitude.isFinite
+                    }()
+                    /// First stop of the day: pan from full-day overview into neighborhood. Later stops: stay at
+                    /// neighborhood zoom and pan from the previous marker’s frame so export does not zoom out again.
+                    let panFromRegion: MKCoordinateRegion = {
+                        guard placeIdx > 0, previousHasMapPin,
+                              let prevCoord = stops[previousIdx].representativeLocation?.clCoordinate,
+                              prevCoord.latitude.isFinite, prevCoord.longitude.isFinite else {
+                            return dayOverviewRegion
+                        }
+                        return MKCoordinateRegion(center: prevCoord, span: neighborhoodSpan)
+                    }()
+
+                    // 1. Pan: day-wide (first stop only) or neighborhood → neighborhood around the focus.
                     let panDt = cinematicPanFrameDurationSeconds
-                    for img in panFrames {
-                        guard !Task.isCancelled else { return }
-                        try await frameHandler(img, panDt)
+                    var isFirstPanFrameThisDay = (placeIdx == 0)
+                    let handoffEnd = cinematicPanHandoffPreviousHighlightFrames + cinematicPanHandoffAllMutedFrames
+                    try await MapSnapshotHelper.forEachInterpolatedFrame(
+                        from: panFromRegion, to: wideRegion,
+                        allStops: stops,
+                        focusedStopIndexForFrame: { frameIdx in
+                            if placeIdx == 0 { return 0 }
+                            guard previousHasMapPin else { return placeIdx }
+                            if frameIdx < cinematicPanHandoffPreviousHighlightFrames { return previousIdx }
+                            if frameIdx < handoffEnd { return nil }
+                            return placeIdx
+                        },
+                        showPlaceNamePillForFrame: { frameIdx in
+                            guard frameIdx >= handoffEnd else { return false }
+                            if placeIdx == 0 { return true }
+                            return previousHasMapPin
+                        },
+                        logicalSize: logicalSize, displayScale: exportMapDisplayScale,
+                        frameCount: cinematicPanFrameCount, inclusiveEndpoints: true
+                    ) { img in
+                        if isFirstPanFrameThisDay {
+                            isFirstPanFrameThisDay = false
+                            let withHeader = autoreleasepool {
+                                drawDayHeaderOverlay(on: img, day: day, dayNumber: dayIdx + 1, pixelSize: pixelSize)
+                            }
+                            try await frameHandler(withHeader, panDt)
+                        } else {
+                            try await frameHandler(img, panDt)
+                        }
                     }
 
-                    // 2. Zoom-in: wide + per-frame cross-dissolve at cinematicZoomSegmentTargetFPS (flat memory).
-                    if let wideImg = await MapSnapshotHelper.generateSnapshotAtRegion(
-                        region: wideRegion, focusedStopIndex: placeIdx, allStops: stops, logicalSize: logicalSize
+                    let zoomDt = cinematicZoomFrameDurationSeconds
+
+                    // 2. Zoom-in to POI
+                    if mapAnimationQuality == .highFidelity {
+                        var lastZoomFrame: UIImage?
+                        try await MapSnapshotHelper.forEachInterpolatedFrame(
+                            from: wideRegion, to: tightRegion,
+                            allStops: stops,
+                            focusedStopIndexForFrame: { _ in placeIdx },
+                            showPlaceNamePillForFrame: { _ in true },
+                            logicalSize: logicalSize, displayScale: exportMapDisplayScale,
+                            frameCount: cinematicHighFidelityZoomFrameCount, inclusiveEndpoints: true
+                        ) { img in
+                            lastZoomFrame = img
+                            try await frameHandler(img, zoomDt)
+                        }
+                        if let tightMap = lastZoomFrame {
+                            let photoThumbs = await loadThumbnailsForPlaceMapOverlay(stop: stop)
+                            let overlaid = autoreleasepool {
+                                drawPlaceOverlayOnMap(
+                                    mapImage: tightMap, stop: stop,
+                                    markerNumber: placeIdx + 1, totalStops: stops.count,
+                                    pixelSize: pixelSize,
+                                    photoThumbnails: photoThumbs
+                                )
+                            }
+                            try await frameHandler(overlaid, 2.5)
+                        }
+                    } else if let wideImg = await MapSnapshotHelper.generateSnapshotAtRegion(
+                        region: wideRegion, focusedStopIndex: placeIdx, allStops: stops, logicalSize: logicalSize,
+                        displayScale: exportMapDisplayScale, showPlaceNamePillForFocused: false
                     ) {
-                        let zoomDt = cinematicZoomFrameDurationSeconds
                         try await frameHandler(wideImg, zoomDt)
 
                         var tightBase = await MapSnapshotHelper.generateSnapshotAtRegion(
-                            region: tightRegion, focusedStopIndex: placeIdx, allStops: stops, logicalSize: logicalSize
+                            region: tightRegion, focusedStopIndex: placeIdx, allStops: stops, logicalSize: logicalSize,
+                            displayScale: exportMapDisplayScale,
+                            showPlaceNamePillForFocused: true
                         )
                         if tightBase == nil {
                             tightBase = await MapSnapshotHelper.generateFocusedSnapshot(
-                                focusedStopIndex: placeIdx, allStops: stops, logicalSize: logicalSize
+                                focusedStopIndex: placeIdx, allStops: stops, logicalSize: logicalSize,
+                                displayScale: exportMapDisplayScale,
+                                showPlaceNamePillForFocused: true
                             )
                         }
 
                         if let tightBase {
                             let blendCount = cinematicZoomBlendFrameCount
                             for step in 1...blendCount {
-                                guard !Task.isCancelled else { return }
+                                try Task.checkCancellation()
                                 let blended = autoreleasepool {
                                     synthesizeBlendFrame(
                                         from: wideImg, to: tightBase,
@@ -124,26 +204,37 @@ enum CinematicBlogVideoBuilder {
                                 try await frameHandler(blended, zoomDt)
                             }
 
-                            // 3. Tight reveal with place overlay (hold 2.5 s)
+                            let photoThumbs = await loadThumbnailsForPlaceMapOverlay(stop: stop)
                             let overlaid = autoreleasepool {
-                                drawPlaceOverlayOnMap(mapImage: tightBase, stop: stop,
-                                                      markerNumber: placeIdx + 1, totalStops: stops.count,
-                                                      pixelSize: pixelSize)
+                                drawPlaceOverlayOnMap(
+                                    mapImage: tightBase, stop: stop,
+                                    markerNumber: placeIdx + 1, totalStops: stops.count,
+                                    pixelSize: pixelSize,
+                                    photoThumbnails: photoThumbs
+                                )
                             }
                             try await frameHandler(overlaid, 2.5)
                         }
                     }
 
-                    previousCoord = focusedCoord
+                    let stopCount = Double(max(stops.count, 1))
+                    progressHandler?((Double(dayIdx) + Double(placeIdx + 1) / stopCount) / totalDays)
                 }
 
                 // 4. Photo slides — one at a time, released after each write
+                let placeTZ = await PlaceLibraryPhotoImport.placeTimeZone(for: stop)
                 for photo in stop.includedPhotos.prefix(5) {
-                    guard !Task.isCancelled else { return }
+                    try Task.checkCancellation()
                     if let img = await loadPhoto(photo, targetSize: pixelSize) {
+                        let timeLabel = militaryTimeDisplayString(photo: photo, placeTimeZone: placeTZ)
                         let slide = autoreleasepool {
-                            drawPhotoSlide(img, caption: photo.caption,
-                                           placeName: stop.placeTitle, pixelSize: pixelSize)
+                            drawPhotoSlide(
+                                img,
+                                caption: photo.caption,
+                                placeName: stop.placeTitle,
+                                timestampText: timeLabel,
+                                pixelSize: pixelSize
+                            )
                         }
                         try await frameHandler(slide, secondsPerPhoto)
                     }
@@ -152,32 +243,6 @@ enum CinematicBlogVideoBuilder {
 
             progressHandler?(Double(dayIdx + 1) / totalDays)
         }
-    }
-
-    // MARK: - Segment region
-
-    /// Bounding region for the A→B travel segment, capped at 0.20° to stay city-scale.
-    private static func segmentRegion(
-        from fromCoord: CLLocationCoordinate2D?,
-        to toCoord: CLLocationCoordinate2D,
-        padding: Double = 0.04
-    ) -> MKCoordinateRegion {
-        guard let from = fromCoord else {
-            return MKCoordinateRegion(center: toCoord,
-                                      span: MKCoordinateSpan(latitudeDelta: 0.06, longitudeDelta: 0.06))
-        }
-        let minLat = min(from.latitude, toCoord.latitude)
-        let maxLat = max(from.latitude, toCoord.latitude)
-        let minLon = min(from.longitude, toCoord.longitude)
-        let maxLon = max(from.longitude, toCoord.longitude)
-        return MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2,
-                                           longitude: (minLon + maxLon) / 2),
-            span: MKCoordinateSpan(
-                latitudeDelta: min(0.20, max(0.03, (maxLat - minLat) + padding * 2)),
-                longitudeDelta: min(0.20, max(0.03, (maxLon - minLon) + padding * 2))
-            )
-        )
     }
 
     // MARK: - Cover page
@@ -440,8 +505,122 @@ enum CinematicBlogVideoBuilder {
 
     // MARK: - Focused Map with Place Info Overlay
 
+    /// Loads images for the in-map thumbnail strip (large enough to stay sharp when tiles are scaled up on export).
+    /// At most three tiles are drawn; `stop.includedPhotos.count` supplies the overflow `+N` hint.
+    private static func loadThumbnailsForPlaceMapOverlay(stop: PlaceStop, maxCount: Int = 3) async -> [UIImage] {
+        let photos = stop.includedPhotos.prefix(maxCount)
+        let target = CGSize(width: 1200, height: 1200)
+        var images: [UIImage] = []
+        images.reserveCapacity(photos.count)
+        for photo in photos {
+            try? Task.checkCancellation()
+            if let img = await loadPhoto(photo, targetSize: target) {
+                images.append(img)
+            }
+        }
+        return images
+    }
+
+    /// Aspect-fill rect for drawing a bitmap into a square cell.
+    private static func mapOverlayAspectFillRect(imageSize: CGSize, bounds: CGRect) -> CGRect {
+        guard imageSize.width > 1, imageSize.height > 1 else { return bounds }
+        let scale = max(bounds.width / imageSize.width, bounds.height / imageSize.height)
+        let sw = imageSize.width * scale
+        let sh = imageSize.height * scale
+        return CGRect(x: bounds.midX - sw / 2, y: bounds.midY - sh / 2, width: sw, height: sh)
+    }
+
+    /// One row of thumbnails: at most **three** tiles, generous spacing, `+N` on the dimmed third when this place has more than three photos.
+    @discardableResult
+    private static func drawMapOverlayThumbnailRow(
+        images: [UIImage],
+        totalPhotoCount: Int,
+        origin: CGPoint,
+        rowWidth: CGFloat,
+        context: UIGraphicsImageRendererContext
+    ) -> CGFloat {
+        guard !images.isEmpty, rowWidth > 8 else { return 0 }
+
+        let cg = context.cgContext
+        let maxSlots = 3
+        let displayCount = min(maxSlots, images.count)
+        let overflowPastSlots = max(0, totalPhotoCount - maxSlots)
+        let needsTrailingPill = overflowPastSlots > 0 && displayCount < maxSlots
+
+        let spacing: CGFloat = max(12, min(20, rowWidth * 0.028))
+        let gapBeforeBadge: CGFloat = needsTrailingPill ? 10 : 0
+        let pillW: CGFloat = needsTrailingPill ? min(80, rowWidth * 0.18) : 0
+        let availForThumbs = rowWidth - gapBeforeBadge - pillW
+        guard availForThumbs > 8 else { return 0 }
+
+        let minSide = max(72, rowWidth * 0.096)
+        let maxSide = min(220, rowWidth * 0.28)
+        let rawFit = (availForThumbs - CGFloat(displayCount - 1) * spacing) / CGFloat(displayCount)
+        var side = min(maxSide, max(minSide, rawFit))
+        let thumbsWidthCheck = CGFloat(displayCount) * side + CGFloat(displayCount - 1) * spacing
+        if thumbsWidthCheck > availForThumbs + 0.5 {
+            side = max(44, (availForThumbs - CGFloat(displayCount - 1) * spacing) / CGFloat(displayCount))
+        }
+        let thumbsWidth = CGFloat(displayCount) * side + CGFloat(displayCount - 1) * spacing
+
+        let cornerR = side * 0.2
+        let dimThird = displayCount >= maxSlots && overflowPastSlots > 0
+
+        for i in 0..<displayCount {
+            let x = origin.x + CGFloat(i) * (side + spacing)
+            let cell = CGRect(x: x, y: origin.y, width: side, height: side)
+            let img = images[i]
+            cg.saveGState()
+            UIBezierPath(roundedRect: cell, cornerRadius: cornerR).addClip()
+            img.draw(in: mapOverlayAspectFillRect(imageSize: img.size, bounds: cell))
+            cg.restoreGState()
+
+            if dimThird, i == displayCount - 1 {
+                UIColor.black.withAlphaComponent(0.42).setFill()
+                UIBezierPath(roundedRect: cell, cornerRadius: cornerR).fill()
+                let badgeFont = UIFont.systemFont(ofSize: min(22, max(13, side * 0.36)), weight: .bold)
+                let str = "+\(overflowPastSlots)" as NSString
+                let attrs: [NSAttributedString.Key: Any] = [.font: badgeFont, .foregroundColor: UIColor.white]
+                let sz = str.size(withAttributes: attrs)
+                str.draw(
+                    at: CGPoint(x: cell.midX - sz.width / 2, y: cell.midY - sz.height / 2),
+                    withAttributes: attrs
+                )
+            }
+
+            UIColor.white.withAlphaComponent(dimThird && i == displayCount - 1 ? 0.65 : 0.45).setStroke()
+            let border = UIBezierPath(roundedRect: cell, cornerRadius: cornerR)
+            border.lineWidth = max(1, side * 0.04)
+            border.stroke()
+        }
+
+        if needsTrailingPill {
+            let pillFont = UIFont.systemFont(ofSize: min(15, max(11, side * 0.34)), weight: .bold)
+            let str = "+\(overflowPastSlots)" as NSString
+            let attrs: [NSAttributedString.Key: Any] = [.font: pillFont, .foregroundColor: UIColor.white]
+            let sz = str.size(withAttributes: attrs)
+            let bx = origin.x + thumbsWidth + gapBeforeBadge
+            let pillH = min(side, sz.height + 10)
+            let pillDrawW = min(max(sz.width + 16, pillH * 1.55), pillW)
+            let pill = CGRect(x: bx, y: origin.y + (side - pillH) / 2, width: pillDrawW, height: pillH)
+            UIColor.white.withAlphaComponent(0.22).setFill()
+            UIBezierPath(roundedRect: pill, cornerRadius: pillH * 0.35).fill()
+            UIColor.white.withAlphaComponent(0.5).setStroke()
+            let outline = UIBezierPath(roundedRect: pill, cornerRadius: pillH * 0.35)
+            outline.lineWidth = 1
+            outline.stroke()
+            str.draw(
+                at: CGPoint(x: pill.midX - sz.width / 2, y: pill.midY - sz.height / 2),
+                withAttributes: attrs
+            )
+        }
+
+        return side + 6
+    }
+
     private static func drawPlaceOverlayOnMap(
-        mapImage: UIImage, stop: PlaceStop, markerNumber: Int, totalStops: Int, pixelSize: CGSize
+        mapImage: UIImage, stop: PlaceStop, markerNumber: Int, totalStops: Int, pixelSize: CGSize,
+        photoThumbnails: [UIImage]
     ) -> UIImage {
         let format = UIGraphicsImageRendererFormat(); format.scale = 1
         return UIGraphicsImageRenderer(size: pixelSize, format: format).image { ctx in
@@ -515,7 +694,7 @@ enum CinematicBlogVideoBuilder {
                 nextY += pillRect.height + 12
             }
 
-            // Place story / notes
+            // Place caption / notes — below time stamp, above photo strip (when present).
             let storyText = stop.noteText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if !storyText.isEmpty {
                 let storyFont = UIFont.systemFont(ofSize: w * 0.031, weight: .regular)
@@ -529,11 +708,32 @@ enum CinematicBlogVideoBuilder {
                 ]
                 let maxW = w - titleX - padX
                 let maxH = storyFont.lineHeight * 3 + 8
-                (storyText as NSString).draw(
-                    with: CGRect(x: titleX, y: nextY, width: maxW, height: maxH),
-                    options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine],
-                    attributes: storyAttribs, context: nil
+                let fitted = (storyText as NSString).boundingRect(
+                    with: CGSize(width: maxW, height: 10_000),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    attributes: storyAttribs,
+                    context: nil
                 )
+                let drawH = min(ceil(fitted.height), maxH)
+                (storyText as NSString).draw(
+                    with: CGRect(x: titleX, y: nextY, width: maxW, height: drawH),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine],
+                    attributes: storyAttribs,
+                    context: nil
+                )
+                nextY += drawH + 10
+            }
+
+            if !photoThumbnails.isEmpty {
+                let rowWidth = w - titleX - padX
+                let rowH = drawMapOverlayThumbnailRow(
+                    images: photoThumbnails,
+                    totalPhotoCount: stop.includedPhotos.count,
+                    origin: CGPoint(x: titleX, y: nextY),
+                    rowWidth: rowWidth,
+                    context: ctx
+                )
+                nextY += rowH + 8
             }
         }
     }
@@ -541,7 +741,11 @@ enum CinematicBlogVideoBuilder {
     // MARK: - Photo Slide
 
     private static func drawPhotoSlide(
-        _ photo: UIImage, caption: String?, placeName: String, pixelSize: CGSize
+        _ photo: UIImage,
+        caption: String?,
+        placeName: String,
+        timestampText: String,
+        pixelSize: CGSize
     ) -> UIImage {
         let hasStory = !(caption?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         let format = UIGraphicsImageRendererFormat(); format.scale = 1
@@ -563,12 +767,12 @@ enum CinematicBlogVideoBuilder {
             }
             photo.draw(in: drawRect)
 
-            // Top gradient — contrast backing for place name pill
+            // Light top scrim — keeps the fixed-position clock readable on bright skies
             cg.drawLinearGradient(
                 CGGradient(colorsSpace: cs, colors: [
-                    UIColor.black.withAlphaComponent(0.55).cgColor, UIColor.clear.cgColor
+                    UIColor.black.withAlphaComponent(0.42).cgColor, UIColor.clear.cgColor
                 ] as CFArray, locations: [0, 1])!,
-                start: .zero, end: CGPoint(x: 0, y: h * 0.22), options: []
+                start: .zero, end: CGPoint(x: 0, y: h * 0.16), options: []
             )
 
             // Bottom gradient — taller when story caption is present
@@ -580,46 +784,109 @@ enum CinematicBlogVideoBuilder {
                 start: CGPoint(x: 0, y: h), end: CGPoint(x: 0, y: h * gradEndFrac), options: []
             )
 
-            // Place name pill — centered at top, clear of status bar / crop
+            // Optional mid scrim when the place title sits over the image (no caption)
+            if !hasStory {
+                cg.drawLinearGradient(
+                    CGGradient(colorsSpace: cs, colors: [
+                        UIColor.clear.cgColor,
+                        UIColor.black.withAlphaComponent(0.28).cgColor,
+                        UIColor.clear.cgColor
+                    ] as CFArray, locations: [0, 0.55, 1])!,
+                    start: CGPoint(x: 0, y: h * 0.48),
+                    end: CGPoint(x: 0, y: h * 0.78),
+                    options: []
+                )
+            }
+
+            let bottomSafeMargin: CGFloat = h * 0.14
+            let maxW = w - 80
+            let capTrimmed = caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let storyFont = UIFont.systemFont(ofSize: w * 0.042, weight: .medium)
+            let para = NSMutableParagraphStyle()
+            para.lineSpacing = 5
+            para.lineBreakMode = .byWordWrapping
+            para.alignment = .center
+            let storyAttribs: [NSAttributedString.Key: Any] = [
+                .font: storyFont, .foregroundColor: UIColor.white, .paragraphStyle: para
+            ]
+            let capHeight: CGFloat = {
+                guard hasStory, !capTrimmed.isEmpty else { return 0 }
+                let measured = (capTrimmed as NSString).boundingRect(
+                    with: CGSize(width: maxW, height: storyFont.lineHeight * 4 + 16),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    attributes: storyAttribs, context: nil
+                )
+                return ceil(measured.height)
+            }()
+
+            // Place + timestamp — top center stack, a bit lower than the old single timestamp (y ≈ 56)
             let placeFont = UIFont.systemFont(ofSize: w * 0.038, weight: .semibold)
             let placeStr = placeName as NSString
             let placeAttribs: [NSAttributedString.Key: Any] = [.font: placeFont, .foregroundColor: UIColor.white]
             let placeSize = placeStr.size(withAttributes: placeAttribs)
             let pPX: CGFloat = 16, pPY: CGFloat = 9
-            let pillW = min(placeSize.width + pPX * 2, w - 64)
-            let pillRect = CGRect(x: (w - pillW) / 2, y: 72,
-                                   width: pillW, height: placeSize.height + pPY * 2)
-            UIColor.black.withAlphaComponent(0.52).setFill()
-            UIBezierPath(roundedRect: pillRect, cornerRadius: pillRect.height / 2).fill()
-            placeStr.draw(in: CGRect(x: pillRect.minX + pPX, y: pillRect.minY + pPY,
-                                      width: pillW - pPX * 2, height: placeSize.height + 2),
-                          withAttributes: placeAttribs)
+            let placePillW = min(placeSize.width + pPX * 2, w - 64)
+            let placePillH = placeSize.height + pPY * 2
+            let placePillX = (w - placePillW) / 2
 
-            // Story caption — centered, with 14% bottom safe margin (clears social platform UI chrome)
-            if hasStory, let cap = caption?.trimmingCharacters(in: .whitespacesAndNewlines), !cap.isEmpty {
-                let storyFont = UIFont.systemFont(ofSize: w * 0.042, weight: .medium)
-                let para = NSMutableParagraphStyle()
-                para.lineSpacing = 5
-                para.lineBreakMode = .byWordWrapping
-                para.alignment = .center
-                let storyAttribs: [NSAttributedString.Key: Any] = [
-                    .font: storyFont, .foregroundColor: UIColor.white, .paragraphStyle: para
-                ]
-                let maxW = w - 80
-                let measured = (cap as NSString).boundingRect(
-                    with: CGSize(width: maxW, height: storyFont.lineHeight * 4 + 16),
-                    options: [.usesLineFragmentOrigin, .usesFontLeading],
-                    attributes: storyAttribs, context: nil
+            let tsFont = UIFont.monospacedDigitSystemFont(ofSize: w * 0.034, weight: .semibold)
+            let tsStr = timestampText as NSString
+            let tsAttribs: [NSAttributedString.Key: Any] = [.font: tsFont, .foregroundColor: UIColor.white]
+            let tsSize = tsStr.size(withAttributes: tsAttribs)
+            let tsPadH: CGFloat = 18, tsPadV: CGFloat = 10
+            let tsPillW = min(tsSize.width + tsPadH * 2, w - 64)
+            let tsPillH = tsSize.height + tsPadV * 2
+
+            let pillStackGap: CGFloat = 10
+            let reelTopChromePad: CGFloat = 50
+            let topStackOriginY = max(72, h * 0.048) + reelTopChromePad
+            let placePillY = topStackOriginY
+            let placePillRect = CGRect(x: placePillX, y: placePillY, width: placePillW, height: placePillH)
+            UIColor.black.withAlphaComponent(0.52).setFill()
+            UIBezierPath(roundedRect: placePillRect, cornerRadius: placePillRect.height / 2).fill()
+            placeStr.draw(
+                in: CGRect(
+                    x: placePillRect.minX + pPX,
+                    y: placePillRect.minY + pPY,
+                    width: placePillW - pPX * 2,
+                    height: placeSize.height + 2
+                ),
+                withAttributes: placeAttribs
+            )
+
+            let tsPillRect = CGRect(x: (w - tsPillW) / 2, y: placePillRect.maxY + pillStackGap, width: tsPillW, height: tsPillH)
+            drawGlassPillBackground(in: tsPillRect, cornerRadius: tsPillH * 0.5)
+            tsStr.draw(
+                at: CGPoint(x: tsPillRect.midX - tsSize.width / 2, y: tsPillRect.midY - tsSize.height / 2),
+                withAttributes: tsAttribs
+            )
+
+            // Story caption last so it paints above the place pill when stacks are tight
+            if hasStory, !capTrimmed.isEmpty, capHeight > 0 {
+                let capRect = CGRect(
+                    x: (w - maxW) / 2,
+                    y: h - bottomSafeMargin - capHeight,
+                    width: maxW,
+                    height: capHeight
                 )
-                let bottomSafeMargin: CGFloat = h * 0.14
-                let capRect = CGRect(x: (w - maxW) / 2,
-                                      y: h - bottomSafeMargin - ceil(measured.height),
-                                      width: maxW, height: ceil(measured.height))
-                (cap as NSString).draw(with: capRect,
-                                        options: [.usesLineFragmentOrigin, .usesFontLeading],
-                                        attributes: storyAttribs, context: nil)
+                (capTrimmed as NSString).draw(
+                    with: capRect,
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    attributes: storyAttribs,
+                    context: nil
+                )
             }
         }
+    }
+
+    /// Frosted “glass” capsule: light fill + hairline edge (matches map-overlay pill language).
+    private static func drawGlassPillBackground(in rect: CGRect, cornerRadius: CGFloat) {
+        let path = UIBezierPath(roundedRect: rect, cornerRadius: cornerRadius)
+        UIColor.white.withAlphaComponent(0.22).setFill()
+        path.fill()
+        UIColor.white.withAlphaComponent(0.38).setStroke()
+        path.lineWidth = 1
+        path.stroke()
     }
 
     // MARK: - Helpers
@@ -654,6 +921,32 @@ enum CinematicBlogVideoBuilder {
         let ampm = hour >= 12 ? "PM" : "AM"
         let h = hour % 12 == 0 ? 12 : hour % 12
         return String(format: "%d:%02d %@", h, minute, ampm)
+    }
+
+    /// `HH:mm` in the photo’s capture timezone: prefers stored EXIF-style `digitizedTime` wall clock,
+    /// else formats `photo.timestamp` in the stop’s resolved place timezone (same rules as library import).
+    private static func militaryTimeDisplayString(photo: RecapPhoto, placeTimeZone: TimeZone) -> String {
+        if let hm = militaryHMFromDigitizedString(photo.digitizedTime) { return hm }
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = placeTimeZone
+        return f.string(from: photo.timestamp)
+    }
+
+    /// Parses `"yyyy:MM:dd HH:mm:ss"` and returns `HH:mm` using the hour/minute from the string (already local wall time).
+    private static func militaryHMFromDigitizedString(_ digitized: String?) -> String? {
+        guard let digitized else { return nil }
+        let parts = digitized.split(separator: " ")
+        guard parts.count == 2 else { return nil }
+        let timePart = String(parts[1])
+        let components = timePart.split(separator: ":")
+        guard components.count >= 2,
+              let hour = Int(String(components[0])),
+              let minute = Int(String(components[1])),
+              hour >= 0, hour < 24,
+              minute >= 0, minute < 60 else { return nil }
+        return String(format: "%02d:%02d", hour, minute)
     }
 
     /// `targetSize` is in pixels so `PHImageManager` returns a full-resolution image.
