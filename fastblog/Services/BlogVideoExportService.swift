@@ -26,30 +26,6 @@ enum VideoStyle: String, Codable, CaseIterable {
 
 // MARK: - Options
 
-/// Map motion quality for **cinematic** export only (story pages ignore this).
-enum MapAnimationQuality: String, Codable, CaseIterable, Equatable {
-    /// Wide→tight zoom uses a fast cross-dissolve between two snapshots (lighter export).
-    case efficient = "efficient"
-    /// Wide→tight zoom uses interpolated `MKMapSnapshotter` frames (slower, true map scaling).
-    case highFidelity = "highFidelity"
-
-    var label: String {
-        switch self {
-        case .efficient:     return "Balanced"
-        case .highFidelity: return "High detail map"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .efficient:
-            return "Faster export; zoom uses a smooth blend between map snapshots."
-        case .highFidelity:
-            return "Slower export; zoom replays real map tiles frame by frame."
-        }
-    }
-}
-
 struct BlogVideoExportOptions: Codable, Equatable {
     var videoStyle: VideoStyle = .cinematic
     var secondsPerSlide: Double = 3.0
@@ -57,8 +33,8 @@ struct BlogVideoExportOptions: Codable, Equatable {
     var fontTheme: FontTheme = .classic
     /// Filename of the bundled music track to mix in, or nil for silence.
     var musicFilename: String? = nil
-    /// Cinematic style only: how map zoom-in to a stop is generated.
-    var mapAnimationQuality: MapAnimationQuality = .efficient
+    /// Cinematic style only: whether photo captions are shown on photo slides.
+    var showPhotoCaptions: Bool = true
 }
 
 // MARK: - Service
@@ -202,7 +178,7 @@ enum BlogVideoExportService {
                 from: draft,
                 logicalSize: logicalSize,
                 secondsPerPhoto: options.secondsPerSlide,
-                mapAnimationQuality: options.mapAnimationQuality,
+                showPhotoCaptions: options.showPhotoCaptions,
                 progressHandler: { p in progressHandler?(p * 0.85) },
                 frameHandler: { img, dur in try await appendFrame(img, duration: dur) }
             )

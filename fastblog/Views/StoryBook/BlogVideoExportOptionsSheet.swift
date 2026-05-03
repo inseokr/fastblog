@@ -34,7 +34,7 @@ struct BlogVideoExportOptionsSheet: View {
                     VStack(spacing: 20) {
                         videoStyleSection
                         if options.videoStyle == .cinematic {
-                            mapAnimationQualitySection
+                            photoCaptionsSection
                         }
                         durationSection
                         if options.videoStyle == .storyPages {
@@ -133,27 +133,25 @@ struct BlogVideoExportOptionsSheet: View {
         }
     }
 
-    // MARK: - Map motion (Cinematic only)
+    // MARK: - Photo Captions Section (Cinematic only)
 
-    private var mapAnimationQualitySection: some View {
+    private var photoCaptionsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Map motion", icon: "map")
-            VStack(spacing: 0) {
-                ForEach(MapAnimationQuality.allCases, id: \.self) { quality in
-                    optionRow(
-                        title: quality.label,
-                        subtitle: quality.subtitle,
-                        isSelected: options.mapAnimationQuality == quality
-                    ) {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            options.mapAnimationQuality = quality
-                        }
-                    }
-                    if quality != MapAnimationQuality.allCases.last {
-                        Divider().padding(.leading, 52)
-                    }
+            sectionHeader("Photo Captions", icon: "text.bubble")
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Show captions on photos")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.primary)
+                    Text("Display photo captions as text overlays on slides")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
+                Spacer()
+                Toggle("", isOn: $options.showPhotoCaptions)
+                    .labelsHidden()
             }
+            .padding(14)
             .background(Color(uiColor: .secondarySystemGroupedBackground))
             .appChromeCornerRadius(12)
         }

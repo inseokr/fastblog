@@ -941,6 +941,23 @@ class MapSnapshotHelper {
                 }
                 context.strokePath()
                 context.restoreGState()
+
+                // Distance pills — one per segment, centred on the midpoint of each polyline leg
+                for i in 0..<(allCoords.count - 1) {
+                    let ptA = snapshot.point(for: allCoords[i])
+                    let ptB = snapshot.point(for: allCoords[i + 1])
+                    let mid = CGPoint(x: (ptA.x + ptB.x) / 2, y: (ptA.y + ptB.y) / 2)
+                    let distMeters = CLLocation(latitude: allCoords[i].latitude, longitude: allCoords[i].longitude)
+                        .distance(from: CLLocation(latitude: allCoords[i + 1].latitude, longitude: allCoords[i + 1].longitude))
+                    let distMiles = distMeters / 1609.344
+                    let distText: String
+                    if distMiles < 0.1 {
+                        distText = String(format: "%.0f ft", distMeters * 3.28084)
+                    } else {
+                        distText = String(format: "%.1f mi", distMiles)
+                    }
+                    drawDistancePill(at: mid, text: distText, context: context, canvasSize: snapshot.image.size)
+                }
             }
 
             let totalCount = entries.count
@@ -978,6 +995,39 @@ class MapSnapshotHelper {
     private static func smoothStep(_ t: Double) -> Double {
         let c = max(0, min(1, t))
         return c * c * (3 - 2 * c)
+    }
+
+    /// Small black capsule pill with white text, centred at `point`. Used for per-segment distances.
+    private static func drawDistancePill(at point: CGPoint, text: String, context: CGContext, canvasSize: CGSize) {
+        let font = UIFont.systemFont(ofSize: 14, weight: .semibold)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white]
+        let textSize = (text as NSString).size(withAttributes: attrs)
+        let padH: CGFloat = 9
+        let padV: CGFloat = 5
+        let pillW = (textSize.width + padH * 2).rounded()
+        let pillH = (textSize.height + padV * 2).rounded()
+        let cornerRadius = pillH / 2
+
+        let originX = (point.x - pillW / 2).rounded()
+        let originY = (point.y - pillH / 2).rounded()
+
+        let pillRect = CGRect(x: originX, y: originY, width: pillW, height: pillH)
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: 1), blur: 4,
+                          color: UIColor.black.withAlphaComponent(0.35).cgColor)
+        let path = UIBezierPath(roundedRect: pillRect, cornerRadius: cornerRadius).cgPath
+        context.addPath(path)
+        context.setFillColor(UIColor.black.withAlphaComponent(0.72).cgColor)
+        context.fillPath()
+        context.setShadow(offset: .zero, blur: 0, color: nil)
+        let textRect = CGRect(
+            x: pillRect.minX + padH,
+            y: pillRect.minY + padV,
+            width: textSize.width,
+            height: textSize.height
+        )
+        (text as NSString).draw(in: textRect, withAttributes: attrs)
+        context.restoreGState()
     }
 
     private static func drawSmallMutedMarker(at point: CGPoint, number: Int, context: CGContext) {

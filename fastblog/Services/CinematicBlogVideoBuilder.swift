@@ -35,14 +35,18 @@ enum CinematicBlogVideoBuilder {
     private static let cinematicHighFidelityZoomFrameCount = 22
 
     /// Tight map + place overlay hold before photo slides (includes bottom-chrome fade-in).
-    private static let cinematicFocusedMapHoldSeconds: Double = 2.5
+    private static let cinematicFocusedMapHoldSeconds: Double = 1.5
     /// Bottom place chrome (gradient, pin, title, time, thumbs) eases in over the held tight map.
     private static let cinematicPlaceOverlayFadeInSeconds: Double = 0.5
     private static let cinematicPlaceOverlayFadeInFPS: Double = 30
 
     /// Map hold → first photo: hero zoom from the in-map thumbnail cell to the slide aspect-fill rect.
-    private static let mapToFirstPhotoTransitionSeconds: Double = 0.70
+    private static let mapToFirstPhotoTransitionSeconds: Double = 0.50
     private static let mapToFirstPhotoTransitionFPS: Double = 30
+
+    /// Last photo slide → next place's map: cross-dissolve out.
+    private static let lastPhotoToMapFadeSeconds: Double = 0.50
+    private static let lastPhotoToMapFadeFPS: Double = 30
 
     /// After the cover hold, cross-dissolve into the first day’s overview map (same frame as pan start).
     private static let coverToMapTransitionSeconds: Double = 0.72
@@ -67,7 +71,7 @@ enum CinematicBlogVideoBuilder {
         from draft: RecapBlogDetail,
         logicalSize: CGSize,
         secondsPerPhoto: Double,
-        mapAnimationQuality: MapAnimationQuality = .efficient,
+        showPhotoCaptions: Bool = true,
         progressHandler: ((Double) -> Void)? = nil,
         frameHandler: (UIImage, Double) async throws -> Void
     ) async throws {
@@ -191,9 +195,8 @@ enum CinematicBlogVideoBuilder {
                     let zoomDt = cinematicZoomFrameDurationSeconds
 
                     // 2. Zoom-in to POI
-                    if mapAnimationQuality == .highFidelity {
-                        var lastZoomFrame: UIImage?
-                        try await MapSnapshotHelper.forEachInterpolatedFrame(
+                    var lastZoomFrame: UIImage?
+                    try await MapSnapshotHelper.forEachInterpolatedFrame(
                             from: wideRegion, to: tightRegion,
                             allStops: stops,
                             focusedStopIndexForFrame: { _ in placeIdx },
@@ -237,79 +240,6 @@ enum CinematicBlogVideoBuilder {
                                 mapToPhotoThumbCorner = thumb.cornerRadius
                             }
                         }
-                    } else if let wideImg = await MapSnapshotHelper.generateSnapshotAtRegion(
-                        region: wideRegion, focusedStopIndex: placeIdx, allStops: stops, logicalSize: logicalSize,
-                        displayScale: exportMapDisplayScale, showPlaceNamePillForFocused: false
-                    ) {
-                        let wideOut = autoreleasepool {
-                            let withHeader = mapSnapshotWithFirstPlaceDayHeaderIfNeeded(
-                                placeIdx: placeIdx, mapImage: wideImg, day: day, dayNumber: dayIdx + 1, pixelSize: pixelSize
-                            )
-                            return applyingPoweredByBloggoWatermarkIfNeeded(
-                                to: withHeader, pixelSize: pixelSize, show: isFirstMapSegmentInVideo
-                            )
-                        }
-                        try await frameHandler(wideOut, zoomDt)
-
-                        var tightBase = await MapSnapshotHelper.generateSnapshotAtRegion(
-                            region: tightRegion, focusedStopIndex: placeIdx, allStops: stops, logicalSize: logicalSize,
-                            displayScale: exportMapDisplayScale,
-                            showPlaceNamePillForFocused: true
-                        )
-                        if tightBase == nil {
-                            tightBase = await MapSnapshotHelper.generateFocusedSnapshot(
-                                focusedStopIndex: placeIdx, allStops: stops, logicalSize: logicalSize,
-                                displayScale: exportMapDisplayScale,
-                                showPlaceNamePillForFocused: true
-                            )
-                        }
-
-                        if let tightBase {
-                            let blendCount = cinematicZoomBlendFrameCount
-                            for step in 1...blendCount {
-                                try Task.checkCancellation()
-                                let blended = autoreleasepool {
-                                    synthesizeBlendFrame(
-                                        from: wideImg, to: tightBase,
-                                        stepIndex: step, blendStepCount: blendCount, size: pixelSize
-                                    )
-                                }
-                                let blendedOut = autoreleasepool {
-                                    let withHeader = mapSnapshotWithFirstPlaceDayHeaderIfNeeded(
-                                        placeIdx: placeIdx, mapImage: blended, day: day, dayNumber: dayIdx + 1, pixelSize: pixelSize
-                                    )
-                                    return applyingPoweredByBloggoWatermarkIfNeeded(
-                                        to: withHeader, pixelSize: pixelSize, show: isFirstMapSegmentInVideo
-                                    )
-                                }
-                                try await frameHandler(blendedOut, zoomDt)
-                            }
-
-                            let photoThumbs = await loadThumbnailsForPlaceMapOverlay(stop: stop)
-                            let mapForPlaceOverlay = autoreleasepool {
-                                mapSnapshotWithFirstPlaceDayHeaderIfNeeded(
-                                    placeIdx: placeIdx, mapImage: tightBase, day: day, dayNumber: dayIdx + 1, pixelSize: pixelSize
-                                )
-                            }
-                            let overlaid = try await emitFocusedPlaceOverlayReveal(
-                                mapImageWithHeader: mapForPlaceOverlay,
-                                stop: stop,
-                                focusedPlaceIndex: placeIdx,
-                                allStops: stops,
-                                pixelSize: pixelSize,
-                                photoThumbnails: photoThumbs,
-                                isFirstMapSegmentInVideo: isFirstMapSegmentInVideo,
-                                frameHandler: frameHandler
-                            )
-                            lastFocusedMapCompositeForPhotoTransition = overlaid
-                            if let thumb = firstThumbnailCellOnFocusedPlaceMap(
-                                pixelSize: pixelSize, stop: stop, photoThumbnails: photoThumbs
-                            ) {
-                                mapToPhotoThumbCell = thumb.rect
-                                mapToPhotoThumbCorner = thumb.cornerRadius
-                            }
-                        }
-                    }
 
                     let stopCount = Double(max(stops.count, 1))
                     progressHandler?((Double(dayIdx) + Double(placeIdx + 1) / stopCount) / totalDays)
@@ -317,6 +247,7 @@ enum CinematicBlogVideoBuilder {
 
                 // 4. Photo slides — one at a time, released after each write
                 let placeTZ = await PlaceLibraryPhotoImport.placeTimeZone(for: stop)
+                var lastPhotoSlide: UIImage?
                 for (photoIdx, photo) in stop.includedPhotos.prefix(5).enumerated() {
                     try Task.checkCancellation()
                     if let img = await loadPhoto(photo, targetSize: pixelSize) {
@@ -353,13 +284,72 @@ enum CinematicBlogVideoBuilder {
                         let slide = autoreleasepool {
                             drawPhotoSlide(
                                 img,
-                                caption: photo.caption,
+                                caption: showPhotoCaptions ? photo.caption : nil,
                                 placeName: stop.placeTitle,
                                 timestampText: timeLabel,
                                 pixelSize: pixelSize
                             )
                         }
+                        lastPhotoSlide = slide
                         try await frameHandler(slide, secondsPerPhoto)
+                    }
+                }
+
+                // Fade last photo into the next map segment's starting frame
+                let isLastPlaceOverall = (dayIdx == days.count - 1) && (placeIdx == stops.count - 1)
+                if !isLastPlaceOverall, let lastSlide = lastPhotoSlide {
+                    let neighborhoodSpanForFade = MKCoordinateSpan(latitudeDelta: 0.008, longitudeDelta: 0.008)
+                    let nextPanFromRegion: MKCoordinateRegion?
+                    if placeIdx + 1 < stops.count {
+                        // Next stop in same day — pan starts from neighbourhood around current stop
+                        if let coord = stop.representativeLocation?.clCoordinate,
+                           coord.latitude.isFinite, coord.longitude.isFinite {
+                            nextPanFromRegion = MKCoordinateRegion(center: coord, span: neighborhoodSpanForFade)
+                        } else {
+                            nextPanFromRegion = nil
+                        }
+                    } else if dayIdx + 1 < days.count {
+                        // First stop of the next day — pan starts from the day overview
+                        nextPanFromRegion = Self.dayOverviewRegion(for: days[dayIdx + 1].placeStops)
+                    } else {
+                        nextPanFromRegion = nil
+                    }
+                    let fadeStops: [PlaceStop]
+                    let fadeFocusIdx: Int
+                    if placeIdx + 1 < stops.count {
+                        fadeStops = stops
+                        fadeFocusIdx = placeIdx + 1
+                    } else if dayIdx + 1 < days.count {
+                        fadeStops = days[dayIdx + 1].placeStops
+                        fadeFocusIdx = 0
+                    } else {
+                        fadeStops = stops
+                        fadeFocusIdx = placeIdx
+                    }
+                    if let region = nextPanFromRegion,
+                       let nextMapBase = await MapSnapshotHelper.generateSnapshotAtRegion(
+                           region: region,
+                           focusedStopIndex: fadeFocusIdx,
+                           allStops: fadeStops,
+                           logicalSize: logicalSize,
+                           displayScale: exportMapDisplayScale,
+                           showPlaceNamePillForFocused: false
+                       ) {
+                        let nextMapOut = autoreleasepool {
+                            applyingPoweredByBloggoWatermarkIfNeeded(to: nextMapBase, pixelSize: pixelSize, show: false)
+                        }
+                        let nFadeFrames = max(14, Int(round(lastPhotoToMapFadeSeconds * lastPhotoToMapFadeFPS)))
+                        let fadeDt = lastPhotoToMapFadeSeconds / Double(nFadeFrames)
+                        let denom = max(nFadeFrames - 1, 1)
+                        for fi in 0..<nFadeFrames {
+                            try Task.checkCancellation()
+                            let rawT = CGFloat(fi) / CGFloat(denom)
+                            let eased = easeInOutCubic(rawT)
+                            let blended = autoreleasepool {
+                                blendCoverToMap(from: lastSlide, to: nextMapOut, progress: eased, size: pixelSize)
+                            }
+                            try await frameHandler(blended, fadeDt)
+                        }
                     }
                 }
             }
@@ -439,14 +429,14 @@ enum CinematicBlogVideoBuilder {
             ]
             let labelSize = labelStr.size(withAttributes: labelAttribs)
 
-            let titleFont = UIFont.systemFont(ofSize: (w * 0.072).rounded(), weight: .black)
+            let titleFont = UIFont.systemFont(ofSize: (w * 0.062).rounded(), weight: .black)
             let titlePara = NSMutableParagraphStyle()
             titlePara.alignment = .center
             let titleAttribs: [NSAttributedString.Key: Any] = [
                 .font: titleFont, .foregroundColor: UIColor.white, .paragraphStyle: titlePara
             ]
             let titleStr = draft.title as NSString
-            let titleMaxW = w - 80
+            let titleMaxW = w - 100
             let titleMeasured = titleStr.boundingRect(
                 with: CGSize(width: titleMaxW, height: h * 0.45),
                 options: [.usesLineFragmentOrigin, .usesFontLeading],
@@ -628,7 +618,7 @@ enum CinematicBlogVideoBuilder {
         let chipW = chipPadH * 2 + iconBlockW + iconGap + innerTextW
         let chipH = chipPadV * 2 + max(iconSide, textRowH)
         let chipRect = CGRect(
-            x: w - margin - chipW,
+            x: w - margin - chipW - 20,
             y: h - margin - chipH,
             width: chipW,
             height: chipH
@@ -1264,31 +1254,8 @@ enum CinematicBlogVideoBuilder {
                 start: .zero, end: CGPoint(x: 0, y: h * 0.16), options: []
             )
 
-            // Bottom gradient — taller when story caption is present
-            let gradEndFrac: CGFloat = hasStory ? 0.38 : 0.52
-            cg.drawLinearGradient(
-                CGGradient(colorsSpace: cs, colors: [
-                    UIColor.black.withAlphaComponent(0.75).cgColor, UIColor.clear.cgColor
-                ] as CFArray, locations: [0, 1])!,
-                start: CGPoint(x: 0, y: h), end: CGPoint(x: 0, y: h * gradEndFrac), options: []
-            )
-
-            // Optional mid scrim when the place title sits over the image (no caption)
-            if !hasStory {
-                cg.drawLinearGradient(
-                    CGGradient(colorsSpace: cs, colors: [
-                        UIColor.clear.cgColor,
-                        UIColor.black.withAlphaComponent(0.28).cgColor,
-                        UIColor.clear.cgColor
-                    ] as CFArray, locations: [0, 0.55, 1])!,
-                    start: CGPoint(x: 0, y: h * 0.48),
-                    end: CGPoint(x: 0, y: h * 0.78),
-                    options: []
-                )
-            }
-
             let bottomSafeMargin: CGFloat = h * 0.14
-            let maxW = w - 80
+            let maxW = w - 120
             let capTrimmed = caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let storyFont = UIFont.systemFont(ofSize: (w * 0.042).rounded(), weight: .medium)
             let para = NSMutableParagraphStyle()
@@ -1313,12 +1280,19 @@ enum CinematicBlogVideoBuilder {
             let placeStr = placeName as NSString
             let placePara = NSMutableParagraphStyle()
             placePara.alignment = .center
-            placePara.lineBreakMode = .byTruncatingTail
-            let placeMeasureAttribs: [NSAttributedString.Key: Any] = [.font: placeFont, .foregroundColor: UIColor.white]
-            let placeSize = placeStr.size(withAttributes: placeMeasureAttribs)
-            let pPX: CGFloat = 16, pPY: CGFloat = 9
-            let placePillW = min(placeSize.width + pPX * 2, w - 64)
-            let placePillH = placeSize.height + pPY * 2
+            placePara.lineBreakMode = .byWordWrapping
+            let pPX: CGFloat = 22, pPY: CGFloat = 11
+            let maxPlacePillW: CGFloat = w - 32
+            let placeMeasureAttribs: [NSAttributedString.Key: Any] = [
+                .font: placeFont, .foregroundColor: UIColor.white, .paragraphStyle: placePara
+            ]
+            let placeMeasured = placeStr.boundingRect(
+                with: CGSize(width: maxPlacePillW - pPX * 2, height: placeFont.lineHeight * 2 + 4),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: placeMeasureAttribs, context: nil
+            )
+            let placePillW = min(ceil(placeMeasured.width) + pPX * 2, maxPlacePillW)
+            let placePillH = ceil(placeMeasured.height) + pPY * 2
             let placePillX = (w - placePillW) / 2
 
             let tsFont = UIFont.monospacedDigitSystemFont(ofSize: (w * 0.034).rounded(), weight: .semibold)
@@ -1338,11 +1312,7 @@ enum CinematicBlogVideoBuilder {
             )
             UIColor.black.withAlphaComponent(0.52).setFill()
             UIBezierPath(roundedRect: placePillRect, cornerRadius: placePillRect.height / 2).fill()
-            let placeDrawAttribs: [NSAttributedString.Key: Any] = [
-                .font: placeFont,
-                .foregroundColor: UIColor.white,
-                .paragraphStyle: placePara
-            ]
+            let placeDrawAttribs = placeMeasureAttribs
             let placeTextRect = integralRect(
                 CGRect(
                     x: placePillRect.minX + pPX,
