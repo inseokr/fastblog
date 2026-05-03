@@ -618,7 +618,7 @@ enum CinematicBlogVideoBuilder {
         let chipW = chipPadH * 2 + iconBlockW + iconGap + innerTextW
         let chipH = chipPadV * 2 + max(iconSide, textRowH)
         let chipRect = CGRect(
-            x: w - margin - chipW - 65,
+            x: w - margin - chipW - 95,
             y: h - margin - chipH,
             width: chipW,
             height: chipH
