@@ -21,11 +21,6 @@
 		03B8B65F2F7CD9D90088C39F /* kings_and_queens.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 03B8B65A2F7CD9D90088C39F /* kings_and_queens.mp3 */; };
 		03B8B6602F7CD9D90088C39F /* all_season.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 03B8B6582F7CD9D90088C39F /* all_season.mp3 */; };
 		03B8B6612F7CD9D90088C39F /* let_you_go.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 03B8B65B2F7CD9D90088C39F /* let_you_go.mp3 */; };
-		B1E500012F7E00010088C411 /* Ambient Electronica.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A1E500012F7E00010088C401 /* Ambient Electronica.mp3 */; };
-		B1E500022F7E00010088C412 /* Afterhours.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A1E500022F7E00010088C402 /* Afterhours.mp3 */; };
-		B1E500032F7E00010088C413 /* Echoes Through Midnight Streets.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A1E500032F7E00010088C403 /* Echoes Through Midnight Streets.mp3 */; };
-		B1E500042F7E00010088C414 /* Mortals Funk Remix.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A1E500042F7E00010088C404 /* Mortals Funk Remix.mp3 */; };
-		B1E500052F7E00010088C415 /* Royalty.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A1E500052F7E00010088C405 /* Royalty.mp3 */; };
 		0B1189F592CFDEDAF3305FAB /* PhotoPermissionOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B46CB18E70656456B8A90C5 /* PhotoPermissionOnboardingView.swift */; };
 		0C30D67375CF715A0AE52995 /* MapSnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A586130A3384B2A62AC27350 /* MapSnapshotHelper.swift */; };
 		285D83E64056D6DBF8E9894F /* StoryPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = E27CCA2B392AD6D7D60A651A /* StoryPage.swift */; };
@@ -47,6 +42,11 @@
 		A31B7C85BABD6199A2A43BB7 /* PDFExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F5C55E3E5D4C283468EF581 /* PDFExportService.swift */; };
 		AC413CC9DFEB2B2939B89DA5 /* StoryBookContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67D919F737961D65785318BA /* StoryBookContent.swift */; };
 		ACC2FF7BA930277126E43C96 /* StoryPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0733072C4EA957FE04A03752 /* StoryPageView.swift */; };
+		B1E500012F7E00010088C411 /* Ambient Electronica.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A1E500012F7E00010088C401 /* Ambient Electronica.mp3 */; };
+		B1E500022F7E00010088C412 /* Afterhours.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A1E500022F7E00010088C402 /* Afterhours.mp3 */; };
+		B1E500032F7E00010088C413 /* Echoes Through Midnight Streets.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A1E500032F7E00010088C403 /* Echoes Through Midnight Streets.mp3 */; };
+		B1E500042F7E00010088C414 /* Mortals Funk Remix.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A1E500042F7E00010088C404 /* Mortals Funk Remix.mp3 */; };
+		B1E500052F7E00010088C415 /* Royalty.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A1E500052F7E00010088C405 /* Royalty.mp3 */; };
 		BB000102 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000101 /* ContentView.swift */; };
 		BB000104 /* fastblogApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000103 /* fastblogApp.swift */; };
 		BB000106 /* MyBlogsProfileViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000105 /* MyBlogsProfileViewModel.swift */; };
@@ -170,7 +170,6 @@
 		BB00020E /* UnsavedTripCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00020D /* UnsavedTripCard.swift */; };
 		BB000210 /* UnsavedTripPhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00020F /* UnsavedTripPhotosView.swift */; };
 		BB000212 /* NeighborhoodExplainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000211 /* NeighborhoodExplainerView.swift */; };
-		BB00040B /* CameraRollToBlogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00040A /* CameraRollToBlogView.swift */; };
 		BB000214 /* RemovedPlacesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000213 /* RemovedPlacesSheet.swift */; };
 		BB000215 /* UploadingBlogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000216 /* UploadingBlogView.swift */; };
 		BB000217 /* SecureShareToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000218 /* SecureShareToken.swift */; };
@@ -238,6 +237,7 @@
 		BB000405 /* BlogDropService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000404 /* BlogDropService.swift */; };
 		BB000407 /* BlogDropSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000406 /* BlogDropSheet.swift */; };
 		BB000409 /* EditBlogPhotoFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000408 /* EditBlogPhotoFlowView.swift */; };
+		BB00040B /* CameraRollToBlogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00040A /* CameraRollToBlogView.swift */; };
 		BB00A001 /* Analytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00A002 /* Analytics.swift */; };
 		BB00AE01 /* AnalyticsEventType.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00AE02 /* AnalyticsEventType.swift */; };
 		BB00AI01 /* AnalyticsIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00AI02 /* AnalyticsIdentity.swift */; };
@@ -281,11 +281,6 @@
 		03B8B65A2F7CD9D90088C39F /* kings_and_queens.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = kings_and_queens.mp3; sourceTree = "<group>"; };
 		03B8B65B2F7CD9D90088C39F /* let_you_go.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = let_you_go.mp3; sourceTree = "<group>"; };
 		03B8B65C2F7CD9D90088C39F /* vantage_point.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = vantage_point.mp3; sourceTree = "<group>"; };
-		A1E500012F7E00010088C401 /* Ambient Electronica.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "Ambient Electronica.mp3"; sourceTree = "<group>"; };
-		A1E500022F7E00010088C402 /* Afterhours.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = Afterhours.mp3; sourceTree = "<group>"; };
-		A1E500032F7E00010088C403 /* Echoes Through Midnight Streets.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "Echoes Through Midnight Streets.mp3"; sourceTree = "<group>"; };
-		A1E500042F7E00010088C404 /* Mortals Funk Remix.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "Mortals Funk Remix.mp3"; sourceTree = "<group>"; };
-		A1E500052F7E00010088C405 /* Royalty.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = Royalty.mp3; sourceTree = "<group>"; };
 		0733072C4EA957FE04A03752 /* StoryPageView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StoryPageView.swift; path = StoryBook/StoryPageView.swift; sourceTree = "<group>"; };
 		0D31200382275E7A7520CD4F /* PlaceBlockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PlaceBlockView.swift; path = StoryBook/PlaceBlockView.swift; sourceTree = "<group>"; };
 		2C198E17B0447F89CC98721F /* DayCaptionEditSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DayCaptionEditSheet.swift; sourceTree = "<group>"; };
@@ -304,6 +299,11 @@
 		7EE07F9D5505A841A5CD7CAE /* StoryPageLayout.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryPageLayout.swift; sourceTree = "<group>"; };
 		A1B2C3D52F9E1000010001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A1C4M3R22F9E1000010003 /* PhotosUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PhotosUI.framework; path = System/Library/Frameworks/PhotosUI.framework; sourceTree = SDKROOT; };
+		A1E500012F7E00010088C401 /* Ambient Electronica.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "Ambient Electronica.mp3"; sourceTree = "<group>"; };
+		A1E500022F7E00010088C402 /* Afterhours.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = Afterhours.mp3; sourceTree = "<group>"; };
+		A1E500032F7E00010088C403 /* Echoes Through Midnight Streets.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "Echoes Through Midnight Streets.mp3"; sourceTree = "<group>"; };
+		A1E500042F7E00010088C404 /* Mortals Funk Remix.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "Mortals Funk Remix.mp3"; sourceTree = "<group>"; };
+		A1E500052F7E00010088C405 /* Royalty.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = Royalty.mp3; sourceTree = "<group>"; };
 		A586130A3384B2A62AC27350 /* MapSnapshotHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MapSnapshotHelper.swift; sourceTree = "<group>"; };
 		A8B39A532FFD631E0B9D8312 /* StoryBookViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StoryBookViewModel.swift; sourceTree = "<group>"; };
 		AA000003 /* Bloggo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Bloggo.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -432,7 +432,6 @@
 		BB00020D /* UnsavedTripCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnsavedTripCard.swift; sourceTree = "<group>"; };
 		BB00020F /* UnsavedTripPhotosView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnsavedTripPhotosView.swift; sourceTree = "<group>"; };
 		BB000211 /* NeighborhoodExplainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodExplainerView.swift; sourceTree = "<group>"; };
-		BB00040A /* CameraRollToBlogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollToBlogView.swift; sourceTree = "<group>"; };
 		BB000213 /* RemovedPlacesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemovedPlacesSheet.swift; sourceTree = "<group>"; };
 		BB000216 /* UploadingBlogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadingBlogView.swift; sourceTree = "<group>"; };
 		BB000218 /* SecureShareToken.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureShareToken.swift; sourceTree = "<group>"; };
@@ -499,6 +498,7 @@
 		BB000404 /* BlogDropService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogDropService.swift; sourceTree = "<group>"; };
 		BB000406 /* BlogDropSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogDropSheet.swift; sourceTree = "<group>"; };
 		BB000408 /* EditBlogPhotoFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditBlogPhotoFlowView.swift; sourceTree = "<group>"; };
+		BB00040A /* CameraRollToBlogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollToBlogView.swift; sourceTree = "<group>"; };
 		BB00A002 /* Analytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Analytics.swift; sourceTree = "<group>"; };
 		BB00AE02 /* AnalyticsEventType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsEventType.swift; sourceTree = "<group>"; };
 		BB00AI02 /* AnalyticsIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsIdentity.swift; sourceTree = "<group>"; };
@@ -1338,7 +1338,7 @@
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Debug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;
@@ -1374,7 +1374,7 @@
 				CODE_SIGN_ENTITLEMENTS = Bloggo.Release.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				DEVELOPMENT_TEAM = N3L5LBGNK2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = fastblog/Info.plist;

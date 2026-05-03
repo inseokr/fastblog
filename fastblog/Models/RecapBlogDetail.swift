@@ -209,6 +209,9 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
     var visitedTimeDigitized: String?
     /// Raw MKPointOfInterestCategory.rawValue set when user picks from Maps autocomplete (e.g. "MKPOICategoryRestaurant").
     var placeCategory: String?
+    /// IANA timezone identifier (e.g. "America/Los_Angeles") for the place's location.
+    /// Stored during blog creation so video export never needs to re-geocode for timestamps.
+    var timeZoneIdentifier: String?
 
     /// True when the user has manually typed the overall story (disables AI auto-cascade).
     var overallStoryIsManual: Bool
@@ -231,6 +234,7 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         cloudPlaceIndex: Int? = nil,
         visitedTimeDigitized: String? = nil,
         placeCategory: String? = nil,
+        timeZoneIdentifier: String? = nil,
         sentiment: Int = 2
     ) {
         self.id = id
@@ -247,6 +251,7 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         self.cloudPlaceIndex = cloudPlaceIndex
         self.visitedTimeDigitized = visitedTimeDigitized
         self.placeCategory = placeCategory
+        self.timeZoneIdentifier = timeZoneIdentifier
         self.sentiment = sentiment
     }
 
@@ -267,12 +272,13 @@ struct PlaceStop: Identifiable, Equatable, Codable, Sendable {
         visitedTimeDigitized = try c.decodeIfPresent(String.self, forKey: .visitedTimeDigitized)
         placeCategory = try c.decodeIfPresent(String.self, forKey: .placeCategory)
         sentiment = try c.decodeIfPresent(Int.self, forKey: .sentiment) ?? 2
+        timeZoneIdentifier = try c.decodeIfPresent(String.self, forKey: .timeZoneIdentifier)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, orderIndex, placeTitle, placeSubtitle, placeTitleIsManual, representativeLocation
         case photos, noteText, overallStory, placeNarrative, overallStoryIsManual
-        case cloudPlaceIndex, visitedTimeDigitized, placeCategory, sentiment
+        case cloudPlaceIndex, visitedTimeDigitized, placeCategory, timeZoneIdentifier, sentiment
     }
 
     /// Display-ready place title. Cleans up raw system-generated highway names like

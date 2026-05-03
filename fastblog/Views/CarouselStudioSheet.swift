@@ -3571,6 +3571,7 @@ struct SlideTextEditorView: View {
     /// Carousel Studio: download icon opens a bottom sheet (Share / Download / PDF).
     @State private var showCarouselStudioExportHub = false
     @State private var carouselStudioExportHubPhase: CarouselStudioExportHubPhase = .actions
+    @State private var exportHubDetent: PresentationDetent = .medium
     /// Indices selected in the download-only picker (subset of `studioDownloadCandidateIndices`).
     @State private var downloadSlidePickSelection: Set<Int> = []
     /// Download modal output type; trailing toolbar menu shows the active format icon (photo vs PDF).
@@ -5876,9 +5877,10 @@ struct SlideTextEditorView: View {
                 }
             }
         }
-        .presentationDetents(
-            carouselStudioExportHubPhase == .actions ? [.medium] : [.large]
-        )
+        .presentationDetents([.medium, .large], selection: $exportHubDetent)
+        .onChange(of: carouselStudioExportHubPhase) { _, phase in
+            exportHubDetent = phase == .actions ? .medium : .large
+        }
         .presentationDragIndicator(.visible)
     }
 
@@ -6115,6 +6117,7 @@ struct SlideTextEditorView: View {
             })
             .sheet(isPresented: $showCarouselStudioExportHub, onDismiss: {
                 carouselStudioExportHubPhase = .actions
+                exportHubDetent = .medium
             }, content: {
                 carouselStudioExportHubSheetContent
             })

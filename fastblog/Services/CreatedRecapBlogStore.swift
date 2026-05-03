@@ -1993,6 +1993,8 @@ final class CreatedRecapBlogStore: ObservableObject {
                 if let coord = stop.representativeLocation {
                     let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
                     let place = await GeocodingService.shared.place(for: loc)
+                    // timeZone is now in cache (place() populates it) — grab it and persist it
+                    let tz = await GeocodingService.shared.timeZone(for: loc)
                     cityCandidates.append((place.cityName, order))
                     countryCandidates.append((place.countryName, order))
                     order += 1
@@ -2002,6 +2004,7 @@ final class CreatedRecapBlogStore: ObservableObject {
                         stopCopy.placeTitle = "Near \(place.areaName)"
                         stopCopy.placeSubtitle = place.subtitle.isEmpty ? nil : place.subtitle
                     }
+                    stopCopy.timeZoneIdentifier = tz?.identifier
                     updated.placeStops[stopIdx] = stopCopy
                     detail.days[dayIdx] = updated
                 }

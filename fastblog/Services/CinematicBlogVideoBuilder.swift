@@ -17,9 +17,10 @@ enum CinematicBlogVideoBuilder {
 
     /// Target temporal sampling for the wide→tight zoom dissolve (no extra MapKit work).
     private static let cinematicZoomSegmentTargetFPS: Double = 30
-    /// Wall-clock for wide frame + dissolve chain. Shorter than legacy ~1.82 s so zoom feels snappier
-    /// (angular change 0.008°→0.003° is subtle; long duration reads as “slow” even at 30 fps).
-    private static let cinematicZoomSegmentDurationSeconds: Double = 0.88
+    /// Wall-clock for the zoom segment. Split into two phases: pure crop-scale (0→65 %) then a
+    /// dissolve to sharp tight tiles (65→100 %). 1.1 s gives the physical zoom enough screen time
+    /// before the sharpening dissolve.
+    private static let cinematicZoomSegmentDurationSeconds: Double = 1.1
 
     private static let cinematicPanFrameDurationSeconds: Double = 0.11
 
@@ -160,6 +161,28 @@ enum CinematicBlogVideoBuilder {
                         return MKCoordinateRegion(center: prevCoord, span: neighborhoodSpan)
                     }()
 
+                    // Pre-fetch zoom snapshots and thumbnails concurrently with the pan.
+                    // The pan takes ~1.5 s (14 real MapKit calls); starting these here means they
+                    // will be ready (or near-ready) the moment the zoom loop finishes, so no
+                    // stall freezes the last zoom frame before the overlay reveal begins.
+                    async let wideSnapFetch = MapSnapshotHelper.generateSnapshotAtRegion(
+                        region: wideRegion,
+                        focusedStopIndex: placeIdx,
+                        allStops: stops,
+                        logicalSize: logicalSize,
+                        displayScale: exportMapDisplayScale,
+                        showPlaceNamePillForFocused: true
+                    )
+                    async let tightSnapFetch = MapSnapshotHelper.generateSnapshotAtRegion(
+                        region: tightRegion,
+                        focusedStopIndex: placeIdx,
+                        allStops: stops,
+                        logicalSize: logicalSize,
+                        displayScale: exportMapDisplayScale,
+                        showPlaceNamePillForFocused: true
+                    )
+                    async let photoThumbsFetch = loadThumbnailsForPlaceMapOverlay(stop: stop)
+
                     // 1. Pan: day-wide (first stop only) or neighborhood → neighborhood around the focus.
                     let panDt = cinematicPanFrameDurationSeconds
                     let handoffEnd = cinematicPanHandoffPreviousHighlightFrames + cinematicPanHandoffAllMutedFrames
@@ -194,20 +217,29 @@ enum CinematicBlogVideoBuilder {
 
                     let zoomDt = cinematicZoomFrameDurationSeconds
 
-                    // 2. Zoom-in to POI
+                    // 2. Zoom-in to POI — await pre-fetched snapshots (ran concurrently with pan).
                     var lastZoomFrame: UIImage?
-                    try await MapSnapshotHelper.forEachInterpolatedFrame(
-                            from: wideRegion, to: tightRegion,
-                            allStops: stops,
-                            focusedStopIndexForFrame: { _ in placeIdx },
-                            showPlaceNamePillForFrame: { _ in true },
-                            logicalSize: logicalSize, displayScale: exportMapDisplayScale,
-                            frameCount: cinematicHighFidelityZoomFrameCount, inclusiveEndpoints: true
-                        ) { img in
-                            lastZoomFrame = img
+                    let wideSnap = await wideSnapFetch
+                    let tightSnap = await tightSnapFetch
+                    let photoThumbs = await photoThumbsFetch
+                    if let wideSnap, let tightSnap {
+                        lastZoomFrame = tightSnap
+                        let blendCount = cinematicZoomBlendFrameCount
+                        let zoomRatio = CGFloat(wideRegion.span.latitudeDelta / tightRegion.span.latitudeDelta)
+                        for fi in 0..<blendCount {
+                            try Task.checkCancellation()
+                            let rawT = blendCount > 1 ? CGFloat(fi) / CGFloat(blendCount - 1) : 1
+                            let blended = autoreleasepool {
+                                drawZoomBlendFrame(
+                                    wideImage: wideSnap, tightImage: tightSnap,
+                                    progress: rawT,
+                                    zoomRatio: zoomRatio,
+                                    size: pixelSize
+                                )
+                            }
                             let out = autoreleasepool {
                                 let withHeader = mapSnapshotWithFirstPlaceDayHeaderIfNeeded(
-                                    placeIdx: placeIdx, mapImage: img, day: day, dayNumber: dayIdx + 1, pixelSize: pixelSize
+                                    placeIdx: placeIdx, mapImage: blended, day: day, dayNumber: dayIdx + 1, pixelSize: pixelSize
                                 )
                                 return applyingPoweredByBloggoWatermarkIfNeeded(
                                     to: withHeader, pixelSize: pixelSize, show: isFirstMapSegmentInVideo
@@ -215,8 +247,8 @@ enum CinematicBlogVideoBuilder {
                             }
                             try await frameHandler(out, zoomDt)
                         }
+                    }
                         if let tightMap = lastZoomFrame {
-                            let photoThumbs = await loadThumbnailsForPlaceMapOverlay(stop: stop)
                             let mapForPlaceOverlay = autoreleasepool {
                                 mapSnapshotWithFirstPlaceDayHeaderIfNeeded(
                                     placeIdx: placeIdx, mapImage: tightMap, day: day, dayNumber: dayIdx + 1, pixelSize: pixelSize
@@ -246,7 +278,12 @@ enum CinematicBlogVideoBuilder {
                 }
 
                 // 4. Photo slides — one at a time, released after each write
-                let placeTZ = await PlaceLibraryPhotoImport.placeTimeZone(for: stop)
+                let placeTZ: TimeZone
+                if let id = stop.timeZoneIdentifier, let stored = TimeZone(identifier: id) {
+                    placeTZ = stored
+                } else {
+                    placeTZ = await PlaceLibraryPhotoImport.placeTimeZone(for: stop)
+                }
                 var lastPhotoSlide: UIImage?
                 for (photoIdx, photo) in stop.includedPhotos.prefix(5).enumerated() {
                     try Task.checkCancellation()
@@ -1394,6 +1431,42 @@ enum CinematicBlogVideoBuilder {
             prepareContextForSharpBitmapCompositing(ctx.cgContext)
             cover.draw(in: CGRect(origin: .zero, size: size), blendMode: .normal, alpha: 1 - u)
             map.draw(in: CGRect(origin: .zero, size: size), blendMode: .normal, alpha: u)
+        }
+    }
+
+    /// Zoom-blend frame: wide image scales up from center while fading out; tight image fades in at full size.
+    /// `progress` is 0…1 (linear — easing is applied internally). `zoomRatio` = wideSpan / tightSpan (~2.67).
+    ///
+    /// Draws the visible center crop of `wideImage` (1/scale of its pixel dimensions) at full canvas size
+    /// rather than drawing into an oversized destination rect. This avoids Core Graphics allocating a
+    /// ~(scale²) intermediate buffer that can exceed 50 MB per frame at zoomRatio ≈ 2.67.
+    private static func drawZoomBlendFrame(
+        wideImage: UIImage,
+        tightImage: UIImage,
+        progress: CGFloat,
+        zoomRatio: CGFloat,
+        size: CGSize
+    ) -> UIImage {
+        let u = easeInOutCubic(min(1, max(0, progress)))
+        let scale = 1.0 + (zoomRatio - 1.0) * u
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { ctx in
+            prepareContextForSharpBitmapCompositing(ctx.cgContext)
+            // Crop the center (1/scale × 1/scale) of the wide image and stretch it to full canvas.
+            // CGImage.cropping is zero-copy for contiguous bitmaps; no large intermediate is created.
+            if let cgWide = wideImage.cgImage {
+                let pw = CGFloat(cgWide.width), ph = CGFloat(cgWide.height)
+                let cw = pw / scale, ch = ph / scale
+                let cropRect = CGRect(x: (pw - cw) / 2, y: (ph - ch) / 2, width: cw, height: ch)
+                if let cropped = cgWide.cropping(to: cropRect) {
+                    let croppedUI = UIImage(cgImage: cropped, scale: wideImage.scale,
+                                           orientation: wideImage.imageOrientation)
+                    croppedUI.draw(in: CGRect(origin: .zero, size: size), blendMode: .normal, alpha: 1 - u)
+                }
+            } else {
+                wideImage.draw(in: CGRect(origin: .zero, size: size), blendMode: .normal, alpha: 1 - u)
+            }
+            tightImage.draw(in: CGRect(origin: .zero, size: size), blendMode: .normal, alpha: u)
         }
     }
 
