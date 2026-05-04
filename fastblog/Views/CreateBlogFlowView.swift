@@ -57,9 +57,15 @@ struct CreateBlogFlowView: View {
                         // Determine the trip to build from
                         let tripForBuild: TripDraft
                         if startDirectlyCreating {
-                            let selectedTrip = await TripPhotoSelectionService.shared.selectTopPhotosPerCluster(trip: trip)
-                            createdRecapStore.addCreatedBlog(trip: selectedTrip)
-                            tripForBuild = selectedTrip
+                            // All photos are already marked isSelected=true by the caller
+                            // (createTripFromVisitedCitiesSelection). Skip TripPhotoSelectionService
+                            // so that every place stop reaches buildBlogDetail with at least one
+                            // included photo — otherwise stops where none of the hardcoded top-3
+                            // land get dropped entirely and their photos disappear from the blog.
+                            // applyPhotoQualitySelection inside buildBlogDetailFirstDayOnly will
+                            // score all photos and pick the best ones per stop.
+                            createdRecapStore.addCreatedBlog(trip: trip)
+                            tripForBuild = trip
                         } else {
                             tripForBuild = createdRecapStore.tripDraft(for: trip.id) ?? trip
                         }

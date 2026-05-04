@@ -294,7 +294,7 @@ final class VisitedCitiesService {
         if Task.isCancelled { return [] }
 
         // ── Phase 4c: Build dayEntries by mapping each day to its cell's result ──
-        var dayEntries: [(dateKey: String, city: String, country: String, assetId: String, timeZoneIdentifier: String?)] = []
+        var dayEntries: [(dateKey: String, city: String, country: String, assetId: String, timeZoneIdentifier: String?, coord: CLLocationCoordinate2D?)] = []
         for dateKey in sortedDays {
             guard
                 let info   = dayCell[dateKey],
@@ -302,7 +302,8 @@ final class VisitedCitiesService {
                 !result.city.isEmpty || !result.country.isEmpty
             else { continue }
             let tzId = result.timeZone?.identifier ?? tzByAssetId[info.assetId]?.identifier
-            dayEntries.append((dateKey: dateKey, city: result.city, country: result.country, assetId: info.assetId, timeZoneIdentifier: tzId))
+            let coord = dayMap[dateKey]?.first(where: { $0.location != nil })?.location?.coordinate
+            dayEntries.append((dateKey: dateKey, city: result.city, country: result.country, assetId: info.assetId, timeZoneIdentifier: tzId, coord: coord))
             print("[VisitedCities] day \(dateKey) → \(result.city), \(result.country)")
         }
 
@@ -319,22 +320,27 @@ final class VisitedCitiesService {
     // MARK: - Grouping
 
     private func groupIntoTrips(
-        dayEntries: [(dateKey: String, city: String, country: String, assetId: String, timeZoneIdentifier: String?)],
+        dayEntries: [(dateKey: String, city: String, country: String, assetId: String, timeZoneIdentifier: String?, coord: CLLocationCoordinate2D?)],
         dayMap: [String: [PHAsset]]
     ) -> [VisitedCityTrip] {
         guard !dayEntries.isEmpty else { return [] }
 
         let maxGapDays = 3  // bridge gaps up to 3 days in the same city
+        // Nearby areas in the same metro region (e.g. Fremont → Menlo Park, ~35 km) should be
+        // treated as one trip even when geocoding returns different city names.
+        let nearbyThresholdMeters: CLLocationDistance = 55_000 // ~1 grid cell (0.5°)
 
         var trips: [VisitedCityTrip] = []
-        var startKey   = dayEntries[0].dateKey
-        var endKey     = dayEntries[0].dateKey
-        var curCity    = dayEntries[0].city
-        var curCtry    = dayEntries[0].country
-        var coverAsset = dayEntries[0].assetId
-        var curTzId    = dayEntries[0].timeZoneIdentifier
-        var dayCount   = 1
-        var photoCount = dayMap[dayEntries[0].dateKey]?.count ?? 0
+        var startKey        = dayEntries[0].dateKey
+        var endKey          = dayEntries[0].dateKey
+        var curCity         = dayEntries[0].city
+        var curCtry         = dayEntries[0].country
+        var curCoord        = dayEntries[0].coord
+        var coverAsset      = dayEntries[0].assetId
+        var curTzId         = dayEntries[0].timeZoneIdentifier
+        var dayCount        = 1
+        var photoCount      = dayMap[dayEntries[0].dateKey]?.count ?? 0
+        var curMaxDayPhotos = photoCount
 
         func flush() {
             let tz = (curTzId.flatMap { TimeZone(identifier: $0) }) ?? TimeZone.current
@@ -357,22 +363,44 @@ final class VisitedCitiesService {
 
             let gap = Self.gregorianCalendarDaysBetween(prev.dateKey, cur.dateKey) ?? 999
 
-            let samePlace = cur.city == curCity && cur.country == curCtry
+            let sameCityCountry = cur.city == curCity && cur.country == curCtry
+
+            // Same country + within nearby threshold → treat as the same destination even if
+            // geocoding returned different city names (e.g. driving around the same metro area).
+            let nearbyInSameCountry: Bool = {
+                guard !sameCityCountry, cur.country == curCtry,
+                      let a = curCoord, let b = cur.coord else { return false }
+                let dist = CLLocation(latitude: a.latitude, longitude: a.longitude)
+                    .distance(from: CLLocation(latitude: b.latitude, longitude: b.longitude))
+                return dist <= nearbyThresholdMeters
+            }()
+
+            let samePlace = sameCityCountry || nearbyInSameCountry
 
             if samePlace && gap <= maxGapDays {
                 endKey      = cur.dateKey
                 dayCount   += 1
-                photoCount += dayMap[cur.dateKey]?.count ?? 0
+                let dayPhotos = dayMap[cur.dateKey]?.count ?? 0
+                photoCount += dayPhotos
+                // When merging nearby-but-differently-named days, use the city that has the most
+                // photos so the trip label reflects where the user actually spent the most time.
+                if nearbyInSameCountry && dayPhotos > curMaxDayPhotos {
+                    curCity         = cur.city
+                    curTzId         = cur.timeZoneIdentifier ?? curTzId
+                    curMaxDayPhotos = dayPhotos
+                }
             } else {
                 flush()
-                startKey   = cur.dateKey
-                endKey     = cur.dateKey
-                curCity    = cur.city
-                curCtry    = cur.country
-                coverAsset = cur.assetId
-                curTzId    = cur.timeZoneIdentifier
-                dayCount   = 1
-                photoCount = dayMap[cur.dateKey]?.count ?? 0
+                startKey        = cur.dateKey
+                endKey          = cur.dateKey
+                curCity         = cur.city
+                curCtry         = cur.country
+                curCoord        = cur.coord
+                coverAsset      = cur.assetId
+                curTzId         = cur.timeZoneIdentifier
+                dayCount        = 1
+                photoCount      = dayMap[cur.dateKey]?.count ?? 0
+                curMaxDayPhotos = photoCount
             }
         }
         flush()
