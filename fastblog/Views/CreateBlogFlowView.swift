@@ -57,15 +57,18 @@ struct CreateBlogFlowView: View {
                         // Determine the trip to build from
                         let tripForBuild: TripDraft
                         if startDirectlyCreating {
-                            // All photos are already marked isSelected=true by the caller
-                            // (createTripFromVisitedCitiesSelection). Skip TripPhotoSelectionService
-                            // so that every place stop reaches buildBlogDetail with at least one
-                            // included photo — otherwise stops where none of the hardcoded top-3
-                            // land get dropped entirely and their photos disappear from the blog.
-                            // applyPhotoQualitySelection inside buildBlogDetailFirstDayOnly will
-                            // score all photos and pick the best ones per stop.
-                            createdRecapStore.addCreatedBlog(trip: trip)
-                            tripForBuild = trip
+                            // Ensure all photos are selected so buildBlogDetail doesn't drop any
+                            // place stops. applyPhotoQualitySelection will score and smart-select
+                            // the best photos per stop — TripPhotoSelectionService is not needed.
+                            // (VisitedCitiesSheet already does this; TripsView does not.)
+                            var tripAllSelected = trip
+                            for dayIdx in tripAllSelected.days.indices {
+                                for photoIdx in tripAllSelected.days[dayIdx].photos.indices {
+                                    tripAllSelected.days[dayIdx].photos[photoIdx].isSelected = true
+                                }
+                            }
+                            createdRecapStore.addCreatedBlog(trip: tripAllSelected)
+                            tripForBuild = tripAllSelected
                         } else {
                             tripForBuild = createdRecapStore.tripDraft(for: trip.id) ?? trip
                         }
