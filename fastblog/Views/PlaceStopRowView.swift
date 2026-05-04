@@ -608,6 +608,41 @@ struct PlaceStopRowView: View {
         )
     }
 
+    private var categoryPresentForRow: PlacePOICategoryPresentation.Info? {
+        PlacePOICategoryPresentation.presentationForPlaceRow(
+            storedCategory: stop.placeCategory,
+            placeTitle: stop.placeTitle
+        )
+    }
+
+    private var hasResolvedPlaceNameForCategory: Bool {
+        day.isPlaceNamesResolved
+            && !stop.placeTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var hasCaptionTextForCategoryRow: Bool {
+        !(overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            || stop.photos.contains(where: { !($0.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+    }
+
+    /// Shown when edit mode allows picking a category and none is set yet (excluding inferred-from-title presentation).
+    private var showAddCategoryPlaceholder: Bool {
+        isEditMode
+            && onEditCategory != nil
+            && hasResolvedPlaceNameForCategory
+            && categoryPresentForRow == nil
+    }
+
+    /// Inline beside "Tap to rename"; once the title is manual, the chip stays in the category row only.
+    private var showAddCategoryBesideTapToRename: Bool {
+        showAddCategoryPlaceholder && !stop.placeTitleIsManual
+    }
+
+    /// Category row still shows the placeholder when the title was renamed but category is still unset.
+    private var showAddCategoryInCategoryRow: Bool {
+        showAddCategoryPlaceholder && stop.placeTitleIsManual
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Row 1: badge + title, subtitle, time
@@ -617,18 +652,43 @@ struct PlaceStopRowView: View {
                     HStack(alignment: .top) {
                         if isEditMode {
                             HStack(alignment: .top, spacing: 10) {
-                                Button { onEditName?() } label: {
-                                    VStack(alignment: .leading, spacing: 5) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Button { onEditName?() } label: {
                                         Text(stop.cleanedPlaceTitle)
                                             .font(Font.blog(selectedBlogFont, size: 22, bold: true))
                                             .foregroundColor(rowTitle)
-                                        if !stop.placeTitleIsManual {
-                                            tapToRenamePill
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(!stop.placeTitleIsManual ? "Tap to rename" : stop.cleanedPlaceTitle)
+
+                                    if !stop.placeTitleIsManual,
+                                       let subtitle = stop.placeSubtitle,
+                                       !subtitle.isEmpty {
+                                        Text(subtitle)
+                                            .font(.footnote)
+                                            .foregroundColor(.secondary)
+                                    }
+
+                                    if !stop.placeTitleIsManual {
+                                        HStack(alignment: .center, spacing: 8) {
+                                            Button { onEditName?() } label: {
+                                                tapToRenamePill
+                                            }
+                                            .buttonStyle(.plain)
+                                            .accessibilityLabel("Tap to rename")
+
+                                            if showAddCategoryBesideTapToRename, let pickCategory = onEditCategory {
+                                                Button {
+                                                    pickCategory()
+                                                } label: {
+                                                    AddPlaceCategoryPlaceholderChip(verticalPadding: isEditMode ? 6 : 5)
+                                                }
+                                                .buttonStyle(.plain)
+                                                .accessibilityLabel("Add place category")
+                                            }
                                         }
                                     }
                                 }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel(!stop.placeTitleIsManual ? "Tap to rename" : stop.cleanedPlaceTitle)
                                 if stop.placeTitleIsManual {
                                     Button { onEditName?() } label: {
                                         ZStack {
@@ -703,7 +763,9 @@ struct PlaceStopRowView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    if let subtitle = stop.placeSubtitle, !subtitle.isEmpty {
+                    if !(isEditMode && !stop.placeTitleIsManual),
+                       let subtitle = stop.placeSubtitle,
+                       !subtitle.isEmpty {
                         Text(subtitle)
                             .font(.footnote)
                             .foregroundColor(.secondary)
@@ -715,23 +777,13 @@ struct PlaceStopRowView: View {
             .padding(.bottom, 4)
 
             // Category chip + sentiment — aligned with photo section edges (same POI presentation as My Places / map).
-            let categoryPresent = PlacePOICategoryPresentation.presentationForPlaceRow(
-                storedCategory: stop.placeCategory,
-                placeTitle: stop.placeTitle
-            )
-            let hasResolvedPlaceName = day.isPlaceNamesResolved
-                && !stop.placeTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            let hasCaptionText = !(overallStory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                || stop.photos.contains(where: { !($0.caption ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-            let showAddCategoryPlaceholder = isEditMode
-                && onEditCategory != nil
-                && hasResolvedPlaceName
-                && categoryPresent == nil
-            if categoryPresent != nil || showAddCategoryPlaceholder || hasCaptionText {
+            let categoryPresent = categoryPresentForRow
+            let hasCaptionText = hasCaptionTextForCategoryRow
+            if categoryPresent != nil || showAddCategoryInCategoryRow || hasCaptionText {
                 HStack(alignment: .center, spacing: 8) {
                     if let cat = categoryPresent {
                         let categoryAccent = cat.color
-                        if hasResolvedPlaceName, let pickCategory = onEditCategory {
+                        if hasResolvedPlaceNameForCategory, let pickCategory = onEditCategory {
                             Button {
                                 pickCategory()
                             } label: {
@@ -754,7 +806,7 @@ struct PlaceStopRowView: View {
                                 verticalPadding: isEditMode ? 6 : 5
                             )
                         }
-                    } else if showAddCategoryPlaceholder, let pickCategory = onEditCategory {
+                    } else if showAddCategoryInCategoryRow, let pickCategory = onEditCategory {
                         Button {
                             pickCategory()
                         } label: {
