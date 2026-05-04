@@ -379,7 +379,7 @@ private struct ManagePhotoGridCell: View {
                 }
                 .aspectRatio(1, contentMode: .fit)
 
-                // AI rank badge
+                // AI rank badge (top-left)
                 if let rank = rank {
                     HStack(spacing: 2) {
                         Image(systemName: "star.fill")
@@ -393,6 +393,16 @@ private struct ManagePhotoGridCell: View {
                     .background(Color.black.opacity(0.72))
                     .appChromeCornerRadius(4)
                     .padding(4)
+                }
+
+                // Favorite badge (top-right)
+                if photo.isFavorite {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.red)
+                        .shadow(color: .black.opacity(0.5), radius: 2)
+                        .padding(6)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 }
 
                 // Dim unselected photos in select mode
@@ -490,18 +500,29 @@ private struct ManagePhotoDetailView: View {
                                 showIcon: false,
                                 targetSize: detailMainPixelSize
                             )
-                            .aspectRatio(contentMode: .fit)
+                            .aspectRatio(contentMode: .fill)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .clipped()
                             .scaleEffect(zoomScale)
 
+                            // Subtle in-blog badge — bottom-left pill, no overlay
                             if photo.isIncluded {
-                                Color.black.opacity(0.4)
-                                    .allowsHitTesting(false)
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 72))
-                                    .foregroundStyle(.white)
-                                    .shadow(color: .black.opacity(0.4), radius: 6)
-                                    .transaction { $0.animation = nil }
+                                HStack(spacing: 4) {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 10, weight: .bold))
+                                    Text("In Blog")
+                                        .font(.system(size: 12, weight: .semibold))
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.blue.opacity(0.85))
+                                .appChromeCornerRadius(12)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                                .padding(.leading, 12)
+                                .padding(.bottom, 12)
+                                .allowsHitTesting(false)
+                                .transaction { $0.animation = nil }
                             }
                         }
                         .contentShape(Rectangle())
@@ -535,20 +556,35 @@ private struct ManagePhotoDetailView: View {
                 .tabViewStyle(.page(indexDisplayMode: .never))
 
                 VStack(spacing: 4) {
-                    if let rank = aiRanks[currentPhotoId] {
-                        HStack(spacing: 4) {
-                            Image(systemName: "star.fill")
-                                .font(.system(size: 11, weight: .bold))
-                            Text("AI rank #\(rank)")
-                                .font(.system(size: 12, weight: .semibold))
+                    HStack(spacing: 6) {
+                        if let rank = aiRanks[currentPhotoId] {
+                            HStack(spacing: 4) {
+                                Image(systemName: "star.fill")
+                                    .font(.system(size: 11, weight: .bold))
+                                Text("AI rank #\(rank)")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .foregroundColor(Color(red: 1.0, green: 0.84, blue: 0.0))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.black.opacity(0.6))
+                            .appChromeCornerRadius(6)
                         }
-                        .foregroundColor(Color(red: 1.0, green: 0.84, blue: 0.0))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.black.opacity(0.6))
-                        .appChromeCornerRadius(6)
+                        if currentPhoto?.isFavorite == true {
+                            HStack(spacing: 4) {
+                                Image(systemName: "heart.fill")
+                                    .font(.system(size: 11, weight: .bold))
+                                Text("Favorited")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .foregroundColor(.red)
+                            .shadow(color: .black.opacity(0.5), radius: 2)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .appChromeCornerRadius(6)
+                        }
                     }
-                    Text("Tap to \(currentPhoto?.isIncluded == true ? "remove" : "include")")
+                    Text(currentPhoto?.isIncluded == true ? "Tap to hide from blog" : "Tap to add to blog")
                         .font(.caption)
                         .foregroundColor(.white.opacity(0.7))
                 }
@@ -575,6 +611,24 @@ private struct ManagePhotoDetailView: View {
                                         RoundedRectangle(appChromeBaseRadius: 8)
                                             .stroke(isCurrent ? Color.white : Color.clear, lineWidth: 2)
                                     )
+                                    .overlay(alignment: .topTrailing) {
+                                        if photo.isFavorite {
+                                            Image(systemName: "heart.fill")
+                                                .font(.system(size: 8))
+                                                .foregroundColor(.red)
+                                                .shadow(color: .black.opacity(0.5), radius: 2)
+                                                .padding(4)
+                                        }
+                                    }
+                                    .overlay(alignment: .bottomTrailing) {
+                                        if photo.isIncluded {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.system(size: 14))
+                                                .foregroundStyle(Color.white)
+                                                .shadow(color: .black.opacity(0.4), radius: 2)
+                                                .padding(3)
+                                        }
+                                    }
                                     .opacity(photo.isIncluded ? 1.0 : 0.55)
                                 }
                                 .buttonStyle(.plain)

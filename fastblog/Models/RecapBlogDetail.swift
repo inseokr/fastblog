@@ -344,8 +344,11 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
     /// photo's capture-location timezone. Stored so that subsequent updatePhoto calls send the exact same
     /// value the backend recorded — avoids divergence from re-computing with a different TZ fallback.
     var digitizedTime: String?
+    /// True when the underlying PHAsset is marked as a Favorite in the user's photo library.
+    /// Populated during photo quality scoring; always false for in-app camera captures.
+    var isFavorite: Bool
 
-    init(id: UUID = UUID(), timestamp: Date, location: PhotoCoordinate? = nil, imageName: String, isIncluded: Bool = true, localIdentifier: String? = nil, caption: String? = nil, qualityScore: PhotoScore? = nil, cloudURL: String? = nil, captionIsManual: Bool = false, sentiment: Int = 2, digitizedTime: String? = nil) {
+    init(id: UUID = UUID(), timestamp: Date, location: PhotoCoordinate? = nil, imageName: String, isIncluded: Bool = true, localIdentifier: String? = nil, caption: String? = nil, qualityScore: PhotoScore? = nil, cloudURL: String? = nil, captionIsManual: Bool = false, sentiment: Int = 2, digitizedTime: String? = nil, isFavorite: Bool = false) {
         self.id = id
         self.timestamp = timestamp
         self.location = location
@@ -358,6 +361,7 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
         self.captionIsManual = captionIsManual
         self.sentiment = sentiment
         self.digitizedTime = digitizedTime
+        self.isFavorite = isFavorite
     }
 
     init(from decoder: Decoder) throws {
@@ -374,11 +378,12 @@ struct RecapPhoto: Identifiable, Equatable, Codable, Sendable {
         captionIsManual = try c.decodeIfPresent(Bool.self, forKey: .captionIsManual) ?? false
         sentiment = try c.decodeIfPresent(Int.self, forKey: .sentiment) ?? 2
         digitizedTime = try c.decodeIfPresent(String.self, forKey: .digitizedTime)
+        isFavorite = try c.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, timestamp, location, imageName, isIncluded, localIdentifier
-        case caption, qualityScore, cloudURL, captionIsManual, sentiment, digitizedTime
+        case caption, qualityScore, cloudURL, captionIsManual, sentiment, digitizedTime, isFavorite
     }
 }
 

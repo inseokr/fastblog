@@ -2347,10 +2347,19 @@ final class CreatedRecapBlogStore: ObservableObject {
 
                 let scores = await scorer.scorePhotos(identifiers: identifiers)
 
+                let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
+                var favoriteIdentifiers: Set<String> = []
+                fetchResult.enumerateObjects { asset, _, _ in
+                    if asset.isFavorite { favoriteIdentifiers.insert(asset.localIdentifier) }
+                }
+
                 for photoIdx in updated.days[dayIdx].placeStops[stopIdx].photos.indices {
                     let photo = updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
                     if let id = photo.localIdentifier, let score = scores[id] {
                         updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].qualityScore = score
+                    }
+                    if let id = photo.localIdentifier {
+                        updated.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isFavorite = favoriteIdentifiers.contains(id)
                     }
                 }
 
@@ -2689,10 +2698,20 @@ final class CreatedRecapBlogStore: ObservableObject {
                 guard !identifiers.isEmpty else { continue }
 
                 let scores = await scorer.scorePhotos(identifiers: identifiers)
+
+                let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
+                var favoriteIdentifiers: Set<String> = []
+                fetchResult.enumerateObjects { asset, _, _ in
+                    if asset.isFavorite { favoriteIdentifiers.insert(asset.localIdentifier) }
+                }
+
                 for photoIdx in detail.days[dayIdx].placeStops[stopIdx].photos.indices {
                     let photo = detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx]
                     if let id = photo.localIdentifier, let score = scores[id] {
                         detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].qualityScore = score
+                    }
+                    if let id = photo.localIdentifier {
+                        detail.days[dayIdx].placeStops[stopIdx].photos[photoIdx].isFavorite = favoriteIdentifiers.contains(id)
                     }
                 }
 
