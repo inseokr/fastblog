@@ -868,7 +868,8 @@ class MapSnapshotHelper {
         allStops: [PlaceStop],
         logicalSize: CGSize,
         displayScale: CGFloat? = nil,
-        showPlaceNamePillForFocused: Bool = false
+        showPlaceNamePillForFocused: Bool = false,
+        showFocusedMarker: Bool = true
     ) async -> UIImage? {
         guard focusedStopIndex < allStops.count else { return nil }
         let entries = buildMarkerEntries(allStops: allStops, focusedStopIndex: focusedStopIndex)
@@ -878,8 +879,40 @@ class MapSnapshotHelper {
         let validRegion = validatedSnapshotRegion(region, fallbackCenter: fallback)
         return await renderMarkedSnapshot(
             region: validRegion, entries: entries, logicalSize: logicalSize, displayScale: displayScale,
-            showPlaceNamePillForFocused: showPlaceNamePillForFocused
+            showPlaceNamePillForFocused: showPlaceNamePillForFocused,
+            showFocusedMarker: showFocusedMarker
         )
+    }
+
+    /// Generates a transparent overlay image (same logical size/scale as a snapshot) containing only
+    /// the focused-stop circle halo, coloured marker dot, and place-name pill — all drawn at a fixed
+    /// size centered on the canvas.  Composite this over a map base during zoom frames so the overlay
+    /// does not grow as the map is crop-scaled.
+    static func generateFocusedMarkerOverlay(
+        displayNumber: Int,
+        totalCount: Int,
+        title: String,
+        logicalSize: CGSize,
+        displayScale: CGFloat
+    ) -> UIImage {
+        UIGraphicsBeginImageContextWithOptions(logicalSize, false, displayScale)
+        defer { UIGraphicsEndImageContext() }
+        guard let context = UIGraphicsGetCurrentContext() else {
+            return UIImage()
+        }
+        let center = CGPoint(x: logicalSize.width / 2, y: logicalSize.height / 2)
+        let color: UIColor = displayNumber == 1 ? .systemGreen
+            : (displayNumber == totalCount ? .systemOrange : .systemBlue)
+        context.saveGState()
+        context.setStrokeColor(color.withAlphaComponent(0.28).cgColor)
+        context.setLineWidth(3)
+        context.strokeEllipse(in: CGRect(x: center.x - 23, y: center.y - 23, width: 46, height: 46))
+        context.restoreGState()
+        drawMarker(at: center, number: displayNumber, color: color, context: context)
+        drawPlaceNamePillUnderMarker(
+            at: center, markerRadius: 14, title: title, context: context, canvasSize: logicalSize
+        )
+        return UIGraphicsGetImageFromCurrentImageContext() ?? UIImage()
     }
 
     // MARK: - Shared marker snapshot helpers
@@ -904,7 +937,8 @@ class MapSnapshotHelper {
         entries: [(displayNumber: Int, coord: CLLocationCoordinate2D, placeTitle: String, isFocused: Bool)],
         logicalSize: CGSize,
         displayScale: CGFloat? = nil,
-        showPlaceNamePillForFocused: Bool = false
+        showPlaceNamePillForFocused: Bool = false,
+        showFocusedMarker: Bool = true
     ) async -> UIImage? {
         let resolvedScale: CGFloat
         if let displayScale {
@@ -963,7 +997,7 @@ class MapSnapshotHelper {
             let totalCount = entries.count
             for entry in entries {
                 let pt = snapshot.point(for: entry.coord)
-                if entry.isFocused {
+                if entry.isFocused && showFocusedMarker {
                     let color: UIColor = entry.displayNumber == 1 ? .systemGreen
                         : (entry.displayNumber == totalCount ? .systemOrange : .systemBlue)
                     context.saveGState()

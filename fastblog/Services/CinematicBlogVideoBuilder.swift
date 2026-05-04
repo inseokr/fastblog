@@ -49,6 +49,13 @@ enum CinematicBlogVideoBuilder {
     private static let lastPhotoToMapFadeSeconds: Double = 0.50
     private static let lastPhotoToMapFadeFPS: Double = 30
 
+    /// Ken Burns slow zoom on each photo hold.  Even-indexed photos zoom in, odd zoom out.
+    private static let cinematicPhotoKenBurnsFactor: CGFloat = 0.06
+    private static let cinematicPhotoKenBurnsFPS: Double = 15
+    /// Cross-dissolve between consecutive photo slides within a place stop.
+    private static let cinematicPhotoToPhotoDissolveDurationSeconds: Double = 0.40
+    private static let cinematicPhotoToPhotoDissolveTargetFPS: Double = 30
+
     /// After the cover hold, cross-dissolve into the first day’s overview map (same frame as pan start).
     private static let coverToMapTransitionSeconds: Double = 0.72
     private static let coverToMapTransitionFPS: Double = 30
@@ -171,7 +178,8 @@ enum CinematicBlogVideoBuilder {
                         allStops: stops,
                         logicalSize: logicalSize,
                         displayScale: exportMapDisplayScale,
-                        showPlaceNamePillForFocused: true
+                        showPlaceNamePillForFocused: false,
+                        showFocusedMarker: false
                     )
                     async let tightSnapFetch = MapSnapshotHelper.generateSnapshotAtRegion(
                         region: tightRegion,
@@ -226,12 +234,22 @@ enum CinematicBlogVideoBuilder {
                         lastZoomFrame = tightSnap
                         let blendCount = cinematicZoomBlendFrameCount
                         let zoomRatio = CGFloat(wideRegion.span.latitudeDelta / tightRegion.span.latitudeDelta)
+                        // Fixed-size overlay (circle halo + colored pin + name pill) composited over the
+                        // zoom frames at a constant size — not crop-scaled with the map tiles.
+                        let focusedOverlay = MapSnapshotHelper.generateFocusedMarkerOverlay(
+                            displayNumber: placeIdx + 1,
+                            totalCount: stops.count,
+                            title: stop.placeTitle,
+                            logicalSize: logicalSize,
+                            displayScale: exportMapDisplayScale
+                        )
                         for fi in 0..<blendCount {
                             try Task.checkCancellation()
                             let rawT = blendCount > 1 ? CGFloat(fi) / CGFloat(blendCount - 1) : 1
                             let blended = autoreleasepool {
                                 drawZoomBlendFrame(
                                     wideImage: wideSnap, tightImage: tightSnap,
+                                    overlayImage: focusedOverlay,
                                     progress: rawT,
                                     zoomRatio: zoomRatio,
                                     size: pixelSize
@@ -285,6 +303,7 @@ enum CinematicBlogVideoBuilder {
                     placeTZ = await PlaceLibraryPhotoImport.placeTimeZone(for: stop)
                 }
                 var lastPhotoSlide: UIImage?
+                var lastPhotoKBLastFrame: UIImage?
                 for (photoIdx, photo) in stop.includedPhotos.prefix(5).enumerated() {
                     try Task.checkCancellation()
                     if let img = await loadPhoto(photo, targetSize: pixelSize) {
@@ -318,17 +337,62 @@ enum CinematicBlogVideoBuilder {
                                 try await frameHandler(frame, transitionDt)
                             }
                         }
-                        let slide = autoreleasepool {
+
+                        // Ken Burns: even photos zoom in (1.0 → 1+factor), odd zoom out (1+factor → 1.0).
+                        let kbZoomsIn = photoIdx % 2 == 0
+                        let kbStart: CGFloat = kbZoomsIn ? 1.0 : (1.0 + cinematicPhotoKenBurnsFactor)
+                        let kbEnd: CGFloat   = kbZoomsIn ? (1.0 + cinematicPhotoKenBurnsFactor) : 1.0
+                        let kbFrameCount = max(8, Int(round(secondsPerPhoto * cinematicPhotoKenBurnsFPS)))
+                        let kbDt = secondsPerPhoto / Double(kbFrameCount)
+
+                        // Build the first KB frame up-front — used as dissolve target.
+                        let firstKBFrame = autoreleasepool {
                             drawPhotoSlide(
                                 img,
                                 caption: showPhotoCaptions ? photo.caption : nil,
                                 placeName: stop.placeTitle,
                                 timestampText: timeLabel,
-                                pixelSize: pixelSize
+                                pixelSize: pixelSize,
+                                kbScale: kbStart
                             )
                         }
-                        lastPhotoSlide = slide
-                        try await frameHandler(slide, secondsPerPhoto)
+
+                        // Cross-dissolve from the previous photo's last KB frame.
+                        if let prevLast = lastPhotoKBLastFrame {
+                            let nD = max(8, Int(round(cinematicPhotoToPhotoDissolveDurationSeconds * cinematicPhotoToPhotoDissolveTargetFPS)))
+                            let dDt = cinematicPhotoToPhotoDissolveDurationSeconds / Double(nD)
+                            let dDenom = max(nD - 1, 1)
+                            for fi in 0..<nD {
+                                try Task.checkCancellation()
+                                let t = easeInOutCubic(CGFloat(fi) / CGFloat(dDenom))
+                                let blended = autoreleasepool {
+                                    blendCoverToMap(from: prevLast, to: firstKBFrame, progress: t, size: pixelSize)
+                                }
+                                try await frameHandler(blended, dDt)
+                            }
+                        }
+
+                        // Ken Burns sequence.
+                        var kbLastFrame = firstKBFrame
+                        for fi in 0..<kbFrameCount {
+                            try Task.checkCancellation()
+                            let t = kbFrameCount > 1 ? CGFloat(fi) / CGFloat(kbFrameCount - 1) : 0
+                            let kbScale = kbStart + (kbEnd - kbStart) * t
+                            let frame = autoreleasepool {
+                                drawPhotoSlide(
+                                    img,
+                                    caption: showPhotoCaptions ? photo.caption : nil,
+                                    placeName: stop.placeTitle,
+                                    timestampText: timeLabel,
+                                    pixelSize: pixelSize,
+                                    kbScale: kbScale
+                                )
+                            }
+                            kbLastFrame = frame
+                            try await frameHandler(frame, kbDt)
+                        }
+                        lastPhotoKBLastFrame = kbLastFrame
+                        lastPhotoSlide = kbLastFrame
                     }
                 }
 
@@ -1259,7 +1323,8 @@ enum CinematicBlogVideoBuilder {
         caption: String?,
         placeName: String,
         timestampText: String,
-        pixelSize: CGSize
+        pixelSize: CGSize,
+        kbScale: CGFloat = 1.0
     ) -> UIImage {
         let hasStory = !(caption?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         let format = UIGraphicsImageRendererFormat(); format.scale = 1
@@ -1268,18 +1333,22 @@ enum CinematicBlogVideoBuilder {
             let w = pixelSize.width, h = pixelSize.height
             let cs = CGColorSpaceCreateDeviceRGB()
 
-            // Aspect-fill
+            // Aspect-fill, then expand from the center for Ken Burns.
             let photoAR = photo.size.width / max(photo.size.height, 1)
             let frameAR = w / h
-            let drawRect: CGRect
+            let baseRect: CGRect
             if photoAR > frameAR {
                 let dh = h; let dw = dh * photoAR
-                drawRect = CGRect(x: (w - dw) / 2, y: 0, width: dw, height: dh)
+                baseRect = CGRect(x: (w - dw) / 2, y: 0, width: dw, height: dh)
             } else {
                 let dw = w; let dh = dw / photoAR
-                drawRect = CGRect(x: 0, y: (h - dh) / 2, width: dw, height: dh)
+                baseRect = CGRect(x: 0, y: (h - dh) / 2, width: dw, height: dh)
             }
-            let photoRect = integralRect(drawRect)
+            let kbW = baseRect.width * kbScale, kbH = baseRect.height * kbScale
+            let photoRect = integralRect(CGRect(
+                x: baseRect.midX - kbW / 2, y: baseRect.midY - kbH / 2,
+                width: kbW, height: kbH
+            ))
             prepareContextForSharpBitmapCompositing(cg)
             photo.draw(in: photoRect)
 
@@ -1434,39 +1503,66 @@ enum CinematicBlogVideoBuilder {
         }
     }
 
-    /// Zoom-blend frame: wide image scales up from center while fading out; tight image fades in at full size.
-    /// `progress` is 0…1 (linear — easing is applied internally). `zoomRatio` = wideSpan / tightSpan (~2.67).
+    /// Zoom-blend frame: two distinct phases so the motion reads as a real zoom-in.
     ///
-    /// Draws the visible center crop of `wideImage` (1/scale of its pixel dimensions) at full canvas size
-    /// rather than drawing into an oversized destination rect. This avoids Core Graphics allocating a
-    /// ~(scale²) intermediate buffer that can exceed 50 MB per frame at zoomRatio ≈ 2.67.
+    /// **Phase 1 (progress 0 → `zoomPhaseSplit`)** — pure crop-based zoom of `wideImage`.
+    ///   The center (1/scale × 1/scale) of the wide snapshot is cropped and stretched to fill the
+    ///   canvas, producing continuous motion with no competing dissolve.  CGImage.cropping is
+    ///   zero-copy for contiguous bitmaps so no large intermediate is allocated.
+    ///
+    /// **Phase 2 (`zoomPhaseSplit` → 1)** — cross-dissolve from the fully-zoomed wide image to the
+    ///   crisp tile set of `tightImage`.  The map is already at the right zoom level; this phase only
+    ///   sharpens the tiles.
+    ///
+    /// `zoomRatio` = wideSpan / tightSpan (~2.67 for 0.008° → 0.003°).
+    /// `overlayImage` contains the focused-stop circle halo + coloured pin + name pill on a transparent
+    /// background, at the same logical size/scale as `wideImage`.  It is drawn at a fixed canvas rect
+    /// (no crop-scale) so the marker visually stays the same size while the map tiles zoom underneath.
     private static func drawZoomBlendFrame(
         wideImage: UIImage,
         tightImage: UIImage,
+        overlayImage: UIImage,
         progress: CGFloat,
         zoomRatio: CGFloat,
         size: CGSize
     ) -> UIImage {
-        let u = easeInOutCubic(min(1, max(0, progress)))
-        let scale = 1.0 + (zoomRatio - 1.0) * u
+        let p = min(1, max(0, progress))
+        let zoomPhaseSplit: CGFloat = 0.65
+        let fullRect = CGRect(origin: .zero, size: size)
+
         let format = UIGraphicsImageRendererFormat(); format.scale = 1
         return UIGraphicsImageRenderer(size: size, format: format).image { ctx in
             prepareContextForSharpBitmapCompositing(ctx.cgContext)
-            // Crop the center (1/scale × 1/scale) of the wide image and stretch it to full canvas.
-            // CGImage.cropping is zero-copy for contiguous bitmaps; no large intermediate is created.
-            if let cgWide = wideImage.cgImage {
+            let cgWide = wideImage.cgImage
+
+            func drawWideCropped(scale: CGFloat, alpha: CGFloat) {
+                guard let cgWide else {
+                    wideImage.draw(in: fullRect, blendMode: .normal, alpha: alpha)
+                    return
+                }
                 let pw = CGFloat(cgWide.width), ph = CGFloat(cgWide.height)
                 let cw = pw / scale, ch = ph / scale
                 let cropRect = CGRect(x: (pw - cw) / 2, y: (ph - ch) / 2, width: cw, height: ch)
                 if let cropped = cgWide.cropping(to: cropRect) {
-                    let croppedUI = UIImage(cgImage: cropped, scale: wideImage.scale,
-                                           orientation: wideImage.imageOrientation)
-                    croppedUI.draw(in: CGRect(origin: .zero, size: size), blendMode: .normal, alpha: 1 - u)
+                    UIImage(cgImage: cropped, scale: wideImage.scale, orientation: wideImage.imageOrientation)
+                        .draw(in: fullRect, blendMode: .normal, alpha: alpha)
                 }
-            } else {
-                wideImage.draw(in: CGRect(origin: .zero, size: size), blendMode: .normal, alpha: 1 - u)
             }
-            tightImage.draw(in: CGRect(origin: .zero, size: size), blendMode: .normal, alpha: u)
+
+            if p <= zoomPhaseSplit {
+                // Phase 1: pure crop-zoom of the wide map base (no baked overlay) + fixed-size overlay.
+                let u = easeInOutCubic(p / zoomPhaseSplit)
+                let scale = 1.0 + (zoomRatio - 1.0) * u
+                drawWideCropped(scale: scale, alpha: 1.0)
+                overlayImage.draw(in: fullRect, blendMode: .normal, alpha: 1.0)
+            } else {
+                // Phase 2: dissolve from fully-zoomed wide to sharp tight tiles.
+                // Fixed overlay fades out as tightImage (with baked overlay) fades in — no jump.
+                let u = easeInOutCubic((p - zoomPhaseSplit) / (1.0 - zoomPhaseSplit))
+                drawWideCropped(scale: zoomRatio, alpha: 1.0 - u)
+                overlayImage.draw(in: fullRect, blendMode: .normal, alpha: 1.0 - u)
+                tightImage.draw(in: fullRect, blendMode: .normal, alpha: u)
+            }
         }
     }
 
