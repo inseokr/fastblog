@@ -2252,7 +2252,6 @@ struct CarouselSlideView: View {
                             onSelect: { onSelectPIPPhoto?(i) },
                             image: slide.effectivePIPImages[i],
                             imageIndex: i,
-                            slot: i,
                             framing: i < slide.pipThumbnailFramings.count ? slide.pipThumbnailFramings[i] : nil,
                             slideWidth: width,
                             pipBorderEnabled: photoStyle.borderEnabled && slide.effectivePIPInsetBorderEnabled(at: i),
@@ -2891,7 +2890,6 @@ private struct DraggablePIPThumb: View {
     var onSelect: () -> Void = {}
     let image: UIImage
     let imageIndex: Int
-    let slot: Int
     var framing: StudioImageFraming? = nil
     let slideWidth: CGFloat
     var pipBorderEnabled: Bool = true
@@ -2915,7 +2913,6 @@ private struct DraggablePIPThumb: View {
     @State private var pinchClusterActive = false
     @State private var pinchClusterLastRaw: CGFloat = 1.0
 
-    private let rotations: [Double] = [1.5, -1.0, 1.8]
     private var thumbW: CGFloat { slideWidth * 0.30 * sizeScale }
     private var slotW: CGFloat { thumbW }
     private var slotH: CGFloat { thumbMaskStyle == .circle ? thumbW : thumbW * 0.72 }
@@ -2960,7 +2957,6 @@ private struct DraggablePIPThumb: View {
             }
         }
         .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
-        .rotationEffect(.degrees(rotations[slot % rotations.count]))
         .overlay(selectionRing)
         .overlay(alignment: .center) {
             if showsBackgroundRemovalLoading {
