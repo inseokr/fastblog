@@ -323,6 +323,115 @@ enum CarouselSplitDividerStyle: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Where place-stop **subtitle / title+caption** blocks sit relative to the inset photo cluster (PIP).
+/// Hero imagery is unchanged; only overlay anchors and default offsets move.
+enum CarouselPlaceZoneLayout: String, CaseIterable, Identifiable {
+    /// Subtitle top-leading, name+caption bottom-leading; inset photos top-trailing (classic).
+    case textLeadingPhotosTrailing
+    /// Mirror: subtitle top-trailing, primary bottom-trailing; inset photos top-leading.
+    case textTrailingPhotosLeading
+    /// Subtitle top-center, primary bottom-center; inset photos top-trailing.
+    case textCenterPhotosTrailing
+    /// Like `textCenterPhotosTrailing`, but the bottom block sits slightly higher toward the frame center.
+    case textCenterPhotosTrailingRaisedPrimary
+
+    var id: String { rawValue }
+
+    var pickerTitle: String {
+        switch self {
+        case .textLeadingPhotosTrailing:
+            return "Text left, photos right"
+        case .textTrailingPhotosLeading:
+            return "Text right, photos left"
+        case .textCenterPhotosTrailing:
+            return "Centered text, photos right"
+        case .textCenterPhotosTrailingRaisedPrimary:
+            return "Centered (raised bottom)"
+        }
+    }
+
+    var pickerSubtitle: String {
+        switch self {
+        case .textLeadingPhotosTrailing:
+            return "Subtitle top left · title bottom left · stack top right"
+        case .textTrailingPhotosLeading:
+            return "Subtitle top right · title bottom right · stack top left"
+        case .textCenterPhotosTrailing:
+            return "Subtitle top center · title bottom center · stack top right"
+        case .textCenterPhotosTrailingRaisedPrimary:
+            return "Like centered, with the bottom block nudged toward the middle"
+        }
+    }
+
+    /// Normalized primary offset applied when the user picks this layout (fractions of slide size).
+    var templatePrimaryOffset: CGSize {
+        switch self {
+        case .textCenterPhotosTrailingRaisedPrimary:
+            return CGSize(width: 0, height: -0.08)
+        default:
+            return .zero
+        }
+    }
+
+    fileprivate var secondaryOverlayAlignment: Alignment {
+        switch self {
+        case .textLeadingPhotosTrailing: return .topLeading
+        case .textTrailingPhotosLeading: return .topTrailing
+        case .textCenterPhotosTrailing, .textCenterPhotosTrailingRaisedPrimary: return .top
+        }
+    }
+
+    fileprivate var primaryOverlayAlignment: Alignment {
+        switch self {
+        case .textLeadingPhotosTrailing: return .bottomLeading
+        case .textTrailingPhotosLeading: return .bottomTrailing
+        case .textCenterPhotosTrailing, .textCenterPhotosTrailingRaisedPrimary: return .bottom
+        }
+    }
+
+    fileprivate var pipOverlayAlignment: Alignment {
+        switch self {
+        case .textTrailingPhotosLeading: return .topLeading
+        default: return .topTrailing
+        }
+    }
+
+    /// Ungrouped PIP thumbnails stack from this corner inside the cluster `ZStack`.
+    fileprivate var pipZStackAlignment: Alignment {
+        pipOverlayAlignment
+    }
+
+    fileprivate func primaryHorizontalFallback(for style: TextBlockStyle) -> HorizontalAlignment {
+        switch self {
+        case .textLeadingPhotosTrailing:
+            return style.alignment.stackAlignment(fallback: .leading)
+        case .textTrailingPhotosLeading:
+            return style.alignment.stackAlignment(fallback: .trailing)
+        case .textCenterPhotosTrailing, .textCenterPhotosTrailingRaisedPrimary:
+            return style.alignment.stackAlignment(fallback: .center)
+        }
+    }
+
+    fileprivate func secondaryHorizontalFallback(for style: TextBlockStyle) -> HorizontalAlignment {
+        primaryHorizontalFallback(for: style)
+    }
+
+    fileprivate func primaryTextAlignmentFallback(for style: TextBlockStyle) -> TextAlignment {
+        switch self {
+        case .textLeadingPhotosTrailing:
+            return style.resolvedMultilineAlignment(fallback: .leading)
+        case .textTrailingPhotosLeading:
+            return style.resolvedMultilineAlignment(fallback: .trailing)
+        case .textCenterPhotosTrailing, .textCenterPhotosTrailingRaisedPrimary:
+            return style.resolvedMultilineAlignment(fallback: .center)
+        }
+    }
+
+    fileprivate func secondaryTextAlignmentFallback(for style: TextBlockStyle) -> TextAlignment {
+        primaryTextAlignmentFallback(for: style)
+    }
+}
+
 /// Pan/zoom for a photo in a fixed slot (split top/bottom). Values are resolution‑independent:
 /// `fillScale` ≥ 1 multiplies the minimum aspect‑fill scale; pans are −1…1 of the range at that scale.
 struct StudioImageFraming: Equatable {
@@ -846,6 +955,8 @@ struct CarouselSlide: Identifiable {
     var isSecondaryHidden: Bool = false
     /// Layout variant — only meaningful for `.placeStop` slides.
     var layout: CarouselSlideLayout = .single
+    /// Text block anchors vs PIP cluster for `.placeStop` slides (single / pip / split hero).
+    var placeZoneLayout: CarouselPlaceZoneLayout = .textLeadingPhotosTrailing
     /// Additional photo thumbnails used when `layout == .pip`. Pre-loaded at export size.
     var pipImages: [UIImage] = []
     /// Parallel array to `pipImages` holding the `RecapPhoto.id` of each thumbnail.
@@ -2081,8 +2192,8 @@ struct CarouselSlideView: View {
                 .padding(width * 0.042)
             }
         }
-        // Place name + caption — bottom-leading
-        .overlay(alignment: .bottomLeading) {
+        // Place name + caption — anchor driven by `placeZoneLayout`
+        .overlay(alignment: slide.placeZoneLayout.primaryOverlayAlignment) {
             if !showsBackgroundOnly, slide.kind == .placeStop, !slide.isPrimaryHidden {
                 if let placeStop = slide.placeStop {
                     DraggableTextBlock(
@@ -2097,7 +2208,7 @@ struct CarouselSlideView: View {
                         onDragEnd: { onBlockDragEnd?() },
                         onTap: { onBlockTap?(.primary) },
                         content: {
-                        VStack(alignment: slide.textStyle.primary.alignment.stackAlignment(fallback: .leading),
+                        VStack(alignment: slide.placeZoneLayout.primaryHorizontalFallback(for: slide.textStyle.primary),
                                spacing: 4) {
                             HStack(alignment: .center, spacing: 6) {
                                 if slide.stopIndex != nil {
@@ -2115,7 +2226,7 @@ struct CarouselSlideView: View {
                                     .foregroundColor(studioEffectiveForegroundColor(slide.textStyle.primary))
                                     .lineLimit(2)
                                     .multilineTextAlignment(
-                                        slide.textStyle.primary.resolvedMultilineAlignment(fallback: .leading))
+                                        slide.placeZoneLayout.primaryTextAlignmentFallback(for: slide.textStyle.primary))
                                     .studioTextFormat(slide.textStyle.primary)
                             }
                             let primaryCaption = (slide.caption ?? "")
@@ -2130,7 +2241,7 @@ struct CarouselSlideView: View {
                                                                                     naturalOpacity: 0.85))
                                     .lineLimit(3)
                                     .multilineTextAlignment(
-                                        slide.textStyle.primary.resolvedMultilineAlignment(fallback: .leading))
+                                        slide.placeZoneLayout.primaryTextAlignmentFallback(for: slide.textStyle.primary))
                                     .studioTextFormat(slide.textStyle.primary)
                             }
                         }
@@ -2154,8 +2265,8 @@ struct CarouselSlideView: View {
                 }
             }
         }
-        // Place subtitle (city, country) — top-leading
-        .overlay(alignment: .topLeading) {
+        // Place subtitle (city, country) — top anchor from `placeZoneLayout`
+        .overlay(alignment: slide.placeZoneLayout.secondaryOverlayAlignment) {
             let subtitleText = (slide.placeStop?.placeSubtitle ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if !showsBackgroundOnly, slide.kind == .placeStop, !slide.isSecondaryHidden, !subtitleText.isEmpty {
@@ -2180,7 +2291,7 @@ struct CarouselSlideView: View {
                                                                         naturalOpacity: 0.85))
                         .lineLimit(1)
                         .multilineTextAlignment(
-                            slide.textStyle.secondary.resolvedMultilineAlignment(fallback: .leading))
+                            slide.placeZoneLayout.secondaryTextAlignmentFallback(for: slide.textStyle.secondary))
                         .studioTextFormat(slide.textStyle.secondary)
                         .studioTextPill(slide.textStyle.secondary,
                                         cornerRadius: width * 0.038,
@@ -2195,8 +2306,8 @@ struct CarouselSlideView: View {
                 .padding(studioTextBlockEdgeInset)
             }
         }
-        // PIP thumbnail cluster — top-trailing (same anchor in Edit Slides + Social Post Studio)
-        .overlay(alignment: .topTrailing) {
+        // PIP thumbnail cluster — top corner from `placeZoneLayout` (trailing or leading)
+        .overlay(alignment: slide.kind == .placeStop ? slide.placeZoneLayout.pipOverlayAlignment : .topTrailing) {
             pipThumbnailClusterOverlay
         }
         // ── Chrome ────────────────────────────────────────────────────
@@ -2247,7 +2358,7 @@ struct CarouselSlideView: View {
         if !showsBackgroundOnly, slide.kind == .placeStop, slide.layout == .pip, !slide.pipImages.isEmpty {
             if slide.pipIsUngrouped {
                 let clamped = max(0, min(slide.pipVisibleCount, min(slide.effectivePIPImages.count, 3)))
-                ZStack(alignment: .topTrailing) {
+                ZStack(alignment: slide.placeZoneLayout.pipZStackAlignment) {
                     ForEach(slide.pipUngroupedDrawOrder(visibleCount: clamped), id: \.self) { i in
                         let photoStyle = slide.effectivePIPPhotoStyle(at: i)
                         DraggablePIPThumb(
@@ -3922,6 +4033,12 @@ struct SlideTextEditorView: View {
     @AppStorage("blogify.studioSkipExcludeConfirm") private var skipExcludeConfirm = false
     /// True while the slide-exclusion confirmation overlay is visible.
     @State private var showExcludeConfirmOverlay = false
+    /// First session in Carousel Studio: offer place text/photo zone layout before editing.
+    @AppStorage("carouselStudio.hasSeenPlaceLayoutPicker") private var hasSeenPlaceLayoutPicker = false
+    @State private var showPlaceZoneLayoutSheet = false
+    @State private var placeZoneLayoutAppliesToAllPlaceSlides = false
+    @State private var selectedPlaceZoneLayoutInSheet: CarouselPlaceZoneLayout = .textLeadingPhotosTrailing
+    @State private var didOfferFirstRunPlaceLayout = false
     /// Carousel Studio: download icon opens a bottom sheet (Share / Download / PDF).
     @State private var showCarouselStudioExportHub = false
     @State private var carouselStudioExportHubPhase: CarouselStudioExportHubPhase = .actions
@@ -4000,7 +4117,11 @@ struct SlideTextEditorView: View {
     /// can leave blocks in awkward/stale positions on the new canvas.
     private func reinitializeTextBoxPositionsAfterAspectChange() {
         for idx in slides.indices {
-            slides[idx].textStyle.primary.offset = .zero
+            if slides[idx].kind == .placeStop {
+                slides[idx].textStyle.primary.offset = slides[idx].placeZoneLayout.templatePrimaryOffset
+            } else {
+                slides[idx].textStyle.primary.offset = .zero
+            }
             slides[idx].textStyle.secondary.offset = .zero
             slides[idx].pipOffset = .zero
             slides[idx].pipPhotoOffsets = []
@@ -4381,6 +4502,35 @@ struct SlideTextEditorView: View {
         }
     }
 
+    /// Text + inset-photo zones for place slides (`CarouselPlaceZoneLayout`).
+    private func applyPlaceZoneLayout(_ layout: CarouselPlaceZoneLayout, to index: Int) {
+        guard slides.indices.contains(index), slides[index].kind == .placeStop else { return }
+        slides[index].placeZoneLayout = layout
+        slides[index].textStyle.primary.offset = layout.templatePrimaryOffset
+        slides[index].textStyle.secondary.offset = .zero
+        slides[index].pipOffset = .zero
+        slides[index].pipPhotoOffsets = []
+    }
+
+    private func commitPlaceZoneLayoutFromSheet(_ layout: CarouselPlaceZoneLayout) {
+        pushUndoSnapshot()
+        if placeZoneLayoutAppliesToAllPlaceSlides {
+            for i in slides.indices where slides[i].kind == .placeStop {
+                applyPlaceZoneLayout(layout, to: i)
+            }
+        } else {
+            let idx = editorPagerFocusedSlideIndex
+            applyPlaceZoneLayout(layout, to: idx)
+        }
+        hasSeenPlaceLayoutPicker = true
+        showPlaceZoneLayoutSheet = false
+    }
+
+    private var editorFocusedSlideIsPlaceStop: Bool {
+        slides.indices.contains(editorPagerFocusedSlideIndex)
+            && slides[editorPagerFocusedSlideIndex].kind == .placeStop
+    }
+
     /// Single vs multi-photo layout for the current place-stop slide. Keeps sibling
     /// slide `isSelected` flags aligned with `SocialPostStudioSheet.setLayout` so
     /// export and the preview strip stay consistent.
@@ -4647,16 +4797,21 @@ struct SlideTextEditorView: View {
     /// For the PIP cluster this reverts the slide to the single-hero layout, which also
     /// re-selects sibling slides that were deselected when the cluster was created.
     private func deleteSelectedBlock() {
-        guard let selectedBlock, hasValidCurrentIndex else { return }
+        guard let selectedBlock else { return }
+        // Must match the slide the pager is actually showing — `scrollPageID` can lead
+        // `currentIndex` for a frame after swiping; mutating `slides[currentIndex]` hid
+        // the wrong slide or felt like a no-op on the visible card.
+        let idx = editorMutationSlideIndex
+        guard slides.indices.contains(idx) else { return }
         pushUndoSnapshot()
         withAnimation(.easeInOut(duration: 0.25)) {
             switch selectedBlock {
             case .primary:
-                slides[currentIndex].isPrimaryHidden = true
+                slides[idx].isPrimaryHidden = true
             case .secondary:
-                slides[currentIndex].isSecondaryHidden = true
+                slides[idx].isSecondaryHidden = true
             case .pipCluster:
-                revertPIPClusterToSingle(slideIndex: currentIndex)
+                revertPIPClusterToSingle(slideIndex: idx)
             }
         }
         // Clear selection after deleting the block.
@@ -6511,6 +6666,20 @@ struct SlideTextEditorView: View {
             }
             .disabled(!canUndo)
             .accessibilityLabel("Undo")
+
+            Button {
+                guard editorFocusedSlideIsPlaceStop else { return }
+                selectedPlaceZoneLayoutInSheet = slides[editorPagerFocusedSlideIndex].placeZoneLayout
+                placeZoneLayoutAppliesToAllPlaceSlides = false
+                showPlaceZoneLayoutSheet = true
+            } label: {
+                Image(systemName: "rectangle.split.2x1")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundColor(.white)
+                    .opacity(editorFocusedSlideIsPlaceStop ? 1 : 0.32)
+            }
+            .disabled(!editorFocusedSlideIsPlaceStop)
+            .accessibilityLabel("Text and photo layout")
         }
 
         ToolbarItemGroup(placement: .topBarTrailing) {
@@ -6550,6 +6719,74 @@ struct SlideTextEditorView: View {
                 if onDismissEditor != nil {
                     embeddedEditorHeader
                 }
+            }
+            .onAppear {
+                guard !didOfferFirstRunPlaceLayout else { return }
+                didOfferFirstRunPlaceLayout = true
+                if !hasSeenPlaceLayoutPicker,
+                   slides.contains(where: { $0.kind == .placeStop }) {
+                    if let idx = slides.firstIndex(where: { $0.kind == .placeStop }) {
+                        selectedPlaceZoneLayoutInSheet = slides[idx].placeZoneLayout
+                    }
+                    placeZoneLayoutAppliesToAllPlaceSlides = true
+                    showPlaceZoneLayoutSheet = true
+                }
+            }
+            .sheet(isPresented: $showPlaceZoneLayoutSheet) {
+                NavigationStack {
+                    List {
+                        Section {
+                            ForEach(CarouselPlaceZoneLayout.allCases) { layout in
+                                Button {
+                                    selectedPlaceZoneLayoutInSheet = layout
+                                } label: {
+                                    HStack(alignment: .top, spacing: 12) {
+                                        Image(systemName: selectedPlaceZoneLayoutInSheet == layout
+                                               ? "largecircle.fill.circle"
+                                               : "circle")
+                                            .font(.title3)
+                                            .foregroundStyle(selectedPlaceZoneLayoutInSheet == layout
+                                                             ? CarouselStudioChrome.accent
+                                                             : Color.secondary)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(layout.pickerTitle)
+                                                .font(.body.weight(.semibold))
+                                                .foregroundStyle(.primary)
+                                            Text(layout.pickerSubtitle)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
+                                        Spacer(minLength: 0)
+                                    }
+                                    .padding(.vertical, 4)
+                                }
+                            }
+                        } footer: {
+                            Text(placeZoneLayoutAppliesToAllPlaceSlides
+                                 ? "Applies to every place photo slide in this carousel."
+                                 : "Applies to the place slide you’re editing.")
+                                .font(.footnote)
+                        }
+                    }
+                    .navigationTitle("Text & photo layout")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Not now") {
+                                hasSeenPlaceLayoutPicker = true
+                                showPlaceZoneLayoutSheet = false
+                            }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Apply") {
+                                commitPlaceZoneLayoutFromSheet(selectedPlaceZoneLayoutInSheet)
+                            }
+                            .fontWeight(.semibold)
+                        }
+                    }
+                }
+                .presentationDetents([.medium, .large])
             }
             .onChange(of: scrollPageID) { _, newID in
                 guard let newID else { return }
