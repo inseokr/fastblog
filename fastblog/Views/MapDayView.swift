@@ -90,6 +90,8 @@ struct MapDayView: View {
                 }
             }
         }
+        // Match onboarding's native Apple Maps look (less 3D terrain-heavy than realistic elevation).
+        .mapStyle(.standard(elevation: .flat))
         .frame(height: height)
         .clipShape(RoundedRectangle(appChromeBaseRadius: 12))
         .contentShape(Rectangle())
