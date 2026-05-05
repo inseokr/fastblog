@@ -360,7 +360,7 @@ struct EditPlaceStopNameSheet: View {
                         .appChromeCornerRadius(24)
                         .shadow(color: .black.opacity(0.45), radius: 12, x: 0, y: 6)
                     }
-                } else if selectedCoordinate == nil {
+                } else if selectedCoordinate == nil, !mapTapCoachmarkSeen {
                     VStack(spacing: 0) {
                         Spacer(minLength: 0)
                         mapTapPlaceNameHint

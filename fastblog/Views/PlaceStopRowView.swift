@@ -578,6 +578,7 @@ struct PlaceStopRowView: View {
                     .buttonStyle(.plain)
 
                     voiceMemoButton(for: photo)
+                        .frame(height: 36)
                 }
             } else {
                 photoReadSecondaryContent(for: photo, width: thumb)
@@ -1002,7 +1003,7 @@ struct PlaceStopRowView: View {
                                     }
                                     .padding(.trailing, 16)
                                 }
-                                .frame(minHeight: isEditMode ? photoStripThumbnailSize + 56 : photoStripThumbnailSize + 28)
+                                .frame(minHeight: isEditMode ? photoStripThumbnailSize + 78 : photoStripThumbnailSize + 28)
                             }
                         }
                     }

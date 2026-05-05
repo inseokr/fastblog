@@ -8,12 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		01B2787FA0EA66741089467C /* CoverPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72929F115FE37110FB2BE7BF /* CoverPageView.swift */; };
-		037E251F2F70FACD00C7E8B8 /* burtysounds-happy-124917.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E251E2F70FACD00C7E8B8 /* burtysounds-happy-124917.mp3 */; };
-		037E25282F70FD0600C7E8B8 /* nastelbom-travel-437814.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E25252F70FD0600C7E8B8 /* nastelbom-travel-437814.mp3 */; };
-		037E25292F70FD0600C7E8B8 /* burtysounds-uplifting-pop-181963.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E25222F70FD0600C7E8B8 /* burtysounds-uplifting-pop-181963.mp3 */; };
-		037E252A2F70FD0600C7E8B8 /* alexgrohl-travel-478797.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E25202F70FD0600C7E8B8 /* alexgrohl-travel-478797.mp3 */; };
 		037E252C2F70FD0600C7E8B8 /* freemusicforvideo-vlogs-travel-youtube-462854.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E25242F70FD0600C7E8B8 /* freemusicforvideo-vlogs-travel-youtube-462854.mp3 */; };
-		037E252D2F70FD0600C7E8B8 /* paulyudin-travel-159836.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E25262F70FD0600C7E8B8 /* paulyudin-travel-159836.mp3 */; };
 		037E252E2F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf in Resources */ = {isa = PBXBuildFile; fileRef = 037E25272F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf */; };
 		037E252F2F70FD0600C7E8B8 /* delosound-trap-travel-378471.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 037E25232F70FD0600C7E8B8 /* delosound-trap-travel-378471.mp3 */; };
 		03B8B65D2F7CD9D90088C39F /* vantage_point.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 03B8B65C2F7CD9D90088C39F /* vantage_point.mp3 */; };
@@ -202,6 +197,7 @@
 		BB0002B5 /* SlideshowBundledMusic.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B4 /* SlideshowBundledMusic.swift */; };
 		BB0002B7 /* BlogVideoExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B6 /* BlogVideoExportService.swift */; };
 		BB0002B9 /* BlogVideoExportOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002B8 /* BlogVideoExportOptionsSheet.swift */; };
+		BB00030C /* BlogVideoPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00030D /* BlogVideoPreviewView.swift */; };
 		BB0002BA /* CinematicBlogVideoBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002BB /* CinematicBlogVideoBuilder.swift */; };
 		BB0002C1 /* PlaceStopCategoryPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002C2 /* PlaceStopCategoryPickerSheet.swift */; };
 		BB0002C3 /* PlacePOICategoryPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0002C4 /* PlacePOICategoryPresentation.swift */; };
@@ -268,13 +264,8 @@
 /* Begin PBXFileReference section */
 		0354AFB52F6737A300C41BAA /* Bloggo.Debug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Bloggo.Debug.entitlements; sourceTree = "<group>"; };
 		0354AFB72F6737A300C41BAA /* Bloggo.Release.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Bloggo.Release.entitlements; sourceTree = "<group>"; };
-		037E251E2F70FACD00C7E8B8 /* burtysounds-happy-124917.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "burtysounds-happy-124917.mp3"; sourceTree = "<group>"; };
-		037E25202F70FD0600C7E8B8 /* alexgrohl-travel-478797.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "alexgrohl-travel-478797.mp3"; sourceTree = "<group>"; };
-		037E25222F70FD0600C7E8B8 /* burtysounds-uplifting-pop-181963.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "burtysounds-uplifting-pop-181963.mp3"; sourceTree = "<group>"; };
 		037E25232F70FD0600C7E8B8 /* delosound-trap-travel-378471.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "delosound-trap-travel-378471.mp3"; sourceTree = "<group>"; };
 		037E25242F70FD0600C7E8B8 /* freemusicforvideo-vlogs-travel-youtube-462854.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "freemusicforvideo-vlogs-travel-youtube-462854.mp3"; sourceTree = "<group>"; };
-		037E25252F70FD0600C7E8B8 /* nastelbom-travel-437814.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "nastelbom-travel-437814.mp3"; sourceTree = "<group>"; };
-		037E25262F70FD0600C7E8B8 /* paulyudin-travel-159836.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = "paulyudin-travel-159836.mp3"; sourceTree = "<group>"; };
 		037E25272F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = "Trip To Daegu in Winter | Storybook.pdf"; sourceTree = "<group>"; };
 		03B8B6582F7CD9D90088C39F /* all_season.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = all_season.mp3; sourceTree = "<group>"; };
 		03B8B6592F7CD9D90088C39F /* high_beams.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = high_beams.mp3; sourceTree = "<group>"; };
@@ -464,6 +455,7 @@
 		BB0002B4 /* SlideshowBundledMusic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlideshowBundledMusic.swift; sourceTree = "<group>"; };
 		BB0002B6 /* BlogVideoExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogVideoExportService.swift; sourceTree = "<group>"; };
 		BB0002B8 /* BlogVideoExportOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BlogVideoExportOptionsSheet.swift; path = StoryBook/BlogVideoExportOptionsSheet.swift; sourceTree = "<group>"; };
+		BB00030D /* BlogVideoPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BlogVideoPreviewView.swift; path = StoryBook/BlogVideoPreviewView.swift; sourceTree = "<group>"; };
 		BB0002BB /* CinematicBlogVideoBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CinematicBlogVideoBuilder.swift; sourceTree = "<group>"; };
 		BB0002C2 /* PlaceStopCategoryPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceStopCategoryPickerSheet.swift; sourceTree = "<group>"; };
 		BB0002C4 /* PlacePOICategoryPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacePOICategoryPresentation.swift; sourceTree = "<group>"; };
@@ -567,6 +559,7 @@
 				SB00SB01 /* StatusBarStyleApplier.swift */,
 				SM00SM01 /* StoryModePDFOptionsSheet.swift */,
 				BB0002B8 /* BlogVideoExportOptionsSheet.swift */,
+				BB00030D /* BlogVideoPreviewView.swift */,
 			);
 			name = StoryBook;
 			sourceTree = "<group>";
@@ -584,14 +577,9 @@
 				A1E500032F7E00010088C403 /* Echoes Through Midnight Streets.mp3 */,
 				A1E500042F7E00010088C404 /* Mortals Funk Remix.mp3 */,
 				A1E500052F7E00010088C405 /* Royalty.mp3 */,
-				037E25202F70FD0600C7E8B8 /* alexgrohl-travel-478797.mp3 */,
-				037E25222F70FD0600C7E8B8 /* burtysounds-uplifting-pop-181963.mp3 */,
 				037E25232F70FD0600C7E8B8 /* delosound-trap-travel-378471.mp3 */,
 				037E25242F70FD0600C7E8B8 /* freemusicforvideo-vlogs-travel-youtube-462854.mp3 */,
-				037E25252F70FD0600C7E8B8 /* nastelbom-travel-437814.mp3 */,
-				037E25262F70FD0600C7E8B8 /* paulyudin-travel-159836.mp3 */,
 				037E25272F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf */,
-				037E251E2F70FACD00C7E8B8 /* burtysounds-happy-124917.mp3 */,
 				0354AFB52F6737A300C41BAA /* Bloggo.Debug.entitlements */,
 				0354AFB72F6737A300C41BAA /* Bloggo.Release.entitlements */,
 				BB0001AE /* fastblog */,
@@ -971,14 +959,9 @@
 				B1E500032F7E00010088C413 /* Echoes Through Midnight Streets.mp3 in Resources */,
 				B1E500042F7E00010088C414 /* Mortals Funk Remix.mp3 in Resources */,
 				B1E500052F7E00010088C415 /* Royalty.mp3 in Resources */,
-				037E25282F70FD0600C7E8B8 /* nastelbom-travel-437814.mp3 in Resources */,
-				037E25292F70FD0600C7E8B8 /* burtysounds-uplifting-pop-181963.mp3 in Resources */,
-				037E252A2F70FD0600C7E8B8 /* alexgrohl-travel-478797.mp3 in Resources */,
 				037E252C2F70FD0600C7E8B8 /* freemusicforvideo-vlogs-travel-youtube-462854.mp3 in Resources */,
-				037E252D2F70FD0600C7E8B8 /* paulyudin-travel-159836.mp3 in Resources */,
 				037E252E2F70FD0600C7E8B8 /* Trip To Daegu in Winter | Storybook.pdf in Resources */,
 				037E252F2F70FD0600C7E8B8 /* delosound-trap-travel-378471.mp3 in Resources */,
-				037E251F2F70FACD00C7E8B8 /* burtysounds-happy-124917.mp3 in Resources */,
 				A1B2C3D52F9E1000010002 /* PrivacyInfo.xcprivacy in Resources */,
 				BB0001AC /* Assets.xcassets in Resources */,
 			);
@@ -1132,6 +1115,7 @@
 				BB0002B5 /* SlideshowBundledMusic.swift in Sources */,
 				BB0002B7 /* BlogVideoExportService.swift in Sources */,
 				BB0002B9 /* BlogVideoExportOptionsSheet.swift in Sources */,
+				BB00030C /* BlogVideoPreviewView.swift in Sources */,
 				BB0002BA /* CinematicBlogVideoBuilder.swift in Sources */,
 				BB0002B3 /* SlideshowMusicPlaybackCoordinator.swift in Sources */,
 				BB000220 /* PhotoTagService.swift in Sources */,

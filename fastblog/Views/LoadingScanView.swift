@@ -75,7 +75,7 @@ struct LoadingScanView: View {
     /// When the slow-scan hint is shown, replaces cycling/progress step text so we do not stack two messages.
     private var displayedSecondaryLabel: String {
         showSlowScanHint
-            ? "Taking a little longer than expected. Please wait…"
+            ? "Fetching from iCloud. Please wait…"
             : progressStepLabel
     }
 

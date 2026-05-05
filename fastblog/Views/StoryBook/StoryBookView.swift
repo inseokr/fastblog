@@ -293,7 +293,7 @@ struct StoryBookView: View {
     }
 
     /// Opacity while horizontally paging so outgoing and incoming pages overlap in a soft crossfade.
-    private static func storyPagingInterPageOpacity(phase: ScrollTransitionPhase) -> CGFloat {
+    nonisolated private static func storyPagingInterPageOpacity(phase: ScrollTransitionPhase) -> CGFloat {
         max(0, min(1, 1 - abs(phase.value)))
     }
 

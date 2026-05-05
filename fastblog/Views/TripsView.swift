@@ -2189,12 +2189,12 @@ struct CameraCaptureView: View {
 
             // Snapshot the store/state needed for background scanning (now *after* preview is on-screen).
             let blogDetailSnapshot: RecapBlogDetail? = {
-                guard let tripId, let injectedPhotoId else { return nil }
+                guard let tripId else { return nil }
                 return self.createdRecapStore.getBlogDetail(blogId: tripId)
             }()
 
             let draftSnapshot: TripDraft? = {
-                guard let draftId, let injectedPhotoId else { return nil }
+                guard let draftId else { return nil }
                 return self.tripsViewModel.tripDrafts.first(where: { $0.id == draftId })
             }()
 
@@ -4755,26 +4755,6 @@ private struct InAppPhotoGalleryView: View {
                         .padding(.bottom, 88)
                 }
 
-                if showDownloadTooltip {
-                    VStack(spacing: 4) {
-                        Text("Download")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white)
-                        Text("Captured photos here are also saved to your device Photos.")
-                            .font(.footnote)
-                            .foregroundStyle(.white.opacity(0.9))
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.black.opacity(0.82))
-                    )
-                    .padding(.horizontal, 32)
-                    .padding(.bottom, 164)
-                    .transition(.opacity)
-                }
             }
             .alert("Remove selected photos?", isPresented: $showRemoveConfirmation) {
                 Button("Cancel", role: .cancel) { }
@@ -4789,7 +4769,57 @@ private struct InAppPhotoGalleryView: View {
         }
         .interactiveDismissDisabled(isSelectMode)
         .preferredColorScheme(.dark)
-        .animation(.easeInOut(duration: 0.2), value: showDownloadTooltip)
+        .sheet(isPresented: $showDownloadTooltip) {
+            downloadTooltipContent
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .preferredColorScheme(.dark)
+        }
+    }
+
+    @ViewBuilder
+    private var downloadTooltipContent: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 20) {
+                Image(systemName: "square.and.arrow.down.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 50, height: 50)
+                    .foregroundColor(.blue)
+                    .padding(.top, 8)
+
+                VStack(spacing: 8) {
+                    Text("Save to Photos")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.primary)
+
+                    Text("Selected Bloggo photos can also be saved to your device's Photo Library.")
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+
+            Button {
+                showDownloadTooltip = false
+            } label: {
+                Text("Continue")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .appChromeCornerRadius(12)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+        .padding(.top, 24)
     }
 
     private func inAppScrollGrid(proxy: ScrollViewProxy) -> some View {
@@ -4988,9 +5018,6 @@ private struct InAppPhotoGalleryView: View {
         guard !hasSeenDownloadTooltip else { return }
         hasSeenDownloadTooltip = true
         showDownloadTooltip = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
-            showDownloadTooltip = false
-        }
     }
 
     private func galleryCell(_ entry: InAppCameraPhotoEntry) -> some View {

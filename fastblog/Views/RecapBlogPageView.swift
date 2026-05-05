@@ -25,6 +25,16 @@ private struct CoverHeroTitleHeightPreferenceKey: PreferenceKey {
     }
 }
 
+/// Global-frame anchor for the Blog Settings (gear) toolbar control — used by the first-save spotlight.
+private struct BlogSettingsGearFramePreferenceKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        guard next.width > 0.5, next.height > 0.5 else { return }
+        value = next
+    }
+}
+
 // MARK: - Caption Edit Sheet Item Types
 
 /// Carries the day identity + header lines for the full-screen day caption editor overlay.
@@ -196,6 +206,10 @@ struct RecapBlogPageView: View {
     @State private var newlyUploadedBlogKey: Int? = nil
     @State private var showSaveTipAlert = false
     @State private var showFirstSaveBanner = false
+    /// One-time coachmark after the very first toolbar Save, highlighting Blog Settings (gear).
+    @AppStorage("bloggo.hasSeenFirstSaveBlogSettingsCoachmark") private var hasSeenFirstSaveBlogSettingsCoachmark = false
+    @State private var showFirstSaveBlogSettingsSpotlight = false
+    @State private var blogSettingsGearFrameGlobal: CGRect = .zero
     @State private var showNewBlogExitConfirmation = false
     /// Overlay presentation (e.g. ContentView blog layer from Places visited): back with unsaved edits.
     @State private var showOverlayDraftExitConfirmation = false
@@ -514,6 +528,15 @@ struct RecapBlogPageView: View {
                 .zIndex(158)
             }
 
+            if showFirstSaveBlogSettingsSpotlight {
+                FirstSaveBlogSettingsSpotlightOverlay(
+                    holeInGlobal: blogSettingsGearFrameGlobal,
+                    onOpenBlogSettings: { showBlogSettings = true }
+                )
+                .transition(.opacity)
+                .zIndex(165)
+            }
+
         }
         // When Story Mode is open, drive the entire hierarchy’s color scheme (including status bar) from the story.
         .preferredColorScheme(showStoryMode ? storyStatusBarColorScheme : nil)
@@ -527,6 +550,16 @@ struct RecapBlogPageView: View {
         .animation(.easeOut(duration: 0.22), value: photoCaptionEditItem?.id)
         .animation(.spring(response: 0.38, dampingFraction: 0.88), value: earlyAccessSheetPresented)
         .animation(.easeInOut(duration: 0.28), value: showMissingPhotosTooltip)
+        .animation(.easeOut(duration: 0.22), value: showFirstSaveBlogSettingsSpotlight)
+        .onPreferenceChange(BlogSettingsGearFramePreferenceKey.self) { rect in
+            if rect.width > 0.5, rect.height > 0.5 {
+                blogSettingsGearFrameGlobal = rect
+            }
+        }
+        .onChange(of: showBlogSettings) { _, isPresented in
+            guard isPresented, showFirstSaveBlogSettingsSpotlight else { return }
+            dismissFirstSaveBlogSettingsSpotlight(markedSeen: true)
+        }
         .onAppear {
             refreshMissingPhotosTooltipVisibility()
         }
@@ -569,7 +602,7 @@ struct RecapBlogPageView: View {
                         if pendingSecondSaveCommitAfterAuth {
                             pendingSecondSaveCommitAfterAuth = false
                             showAuth = false
-                            if saveDraft() {
+                            if saveDraft(suppressPostSaveOnboarding: true) {
                                 performDismiss()
                             }
                         } else if pendingEarlyAccessAfterAuth {
@@ -1347,7 +1380,7 @@ struct RecapBlogPageView: View {
             isKeyboardVisible: $isKeyboardVisible,
             isEditMode: $isEditMode,
             draft: $draft,
-            saveDraft: { saveDraft() },
+            saveDraft: { saveDraft(suppressPostSaveOnboarding: $0) },
             loadDraftIfNeeded: loadDraftIfNeeded,
             checkFirstTimeTip: checkFirstTimeTip,
             createdRecapStore: createdRecapStore,
@@ -3862,7 +3895,7 @@ Your blog remains private unless you choose to share it.
     }
 
     @discardableResult
-    private func saveDraft() -> Bool {
+    private func saveDraft(suppressPostSaveOnboarding: Bool = false) -> Bool {
         // Check if this is the first save before saving
         let isFirstSave = createdRecapStore.recents.first(where: { $0.sourceTripId == blogId })?.lastEditedAt == nil
 
@@ -3878,9 +3911,19 @@ Your blog remains private unless you choose to share it.
             withAnimation {
                 showFirstSaveBanner = true
             }
-            // Guarantee first-time split/merge onboarding appears even when the
-            // initial on-appear sheet presentation is skipped (e.g. camera-first flow).
-            presentPhotoGroupingTipIfNeeded(afterNanoseconds: 800_000_000)
+            let shouldShowSettingsSpotlight = !suppressPostSaveOnboarding
+                && !hasSeenFirstSaveBlogSettingsCoachmark
+            if shouldShowSettingsSpotlight {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        showFirstSaveBlogSettingsSpotlight = true
+                    }
+                }
+            } else {
+                // Guarantee first-time split/merge onboarding appears even when the
+                // initial on-appear sheet presentation is skipped (e.g. camera-first flow).
+                presentPhotoGroupingTipIfNeeded(afterNanoseconds: 800_000_000)
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                 withAnimation {
                     showFirstSaveBanner = false
@@ -5182,9 +5225,18 @@ Your blog remains private unless you choose to share it.
         guard !hasSeenPhotoGroupingTip else { return }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: delay)
-            guard !hasSeenPhotoGroupingTip, !showSaveTipAlert else { return }
+            guard !hasSeenPhotoGroupingTip, !showSaveTipAlert, !showFirstSaveBlogSettingsSpotlight else { return }
             showSaveTipAlert = true
         }
+    }
+
+    private func dismissFirstSaveBlogSettingsSpotlight(markedSeen: Bool) {
+        withAnimation(.easeOut(duration: 0.22)) {
+            showFirstSaveBlogSettingsSpotlight = false
+        }
+        guard markedSeen else { return }
+        hasSeenFirstSaveBlogSettingsCoachmark = true
+        presentPhotoGroupingTipIfNeeded(afterNanoseconds: 600_000_000)
     }
 
     // MARK: - Extracted Body Helpers
@@ -5303,6 +5355,14 @@ Your blog remains private unless you choose to share it.
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Blog Settings")
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(
+                            key: BlogSettingsGearFramePreferenceKey.self,
+                            value: geo.frame(in: .global)
+                        )
+                    }
+                )
             }
         }
     }
@@ -6394,7 +6454,8 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
     @Binding var isKeyboardVisible: Bool
     @Binding var isEditMode: Bool
     @Binding var draft: RecapBlogDetail
-    var saveDraft: () -> Bool
+    /// Pass `true` to skip first-save spotlight / deferred tips when saving immediately before dismiss.
+    var saveDraft: (_ suppressPostSaveOnboarding: Bool) -> Bool
     var loadDraftIfNeeded: () -> Void
     var checkFirstTimeTip: () -> Void
     var createdRecapStore: CreatedRecapBlogStore
@@ -6420,7 +6481,7 @@ private struct CoreContentAlertsAndLifecycleModifier: ViewModifier {
                     .alert("Unsaved Changes", isPresented: $showUnsavedChangesAlert) {
                         Button("Yes") {
                             let leavingUncommittedDraft = needsCommittedRecapToolbarSave()
-                            if saveDraft() {
+                            if saveDraft(leavingUncommittedDraft) {
                                 if leavingUncommittedDraft {
                                     performRecapDismiss()
                                 } else {
@@ -7098,6 +7159,125 @@ private struct NewMomentsReviewSheet: View {
             index += chunkSize
         }
         return rows
+    }
+}
+
+// MARK: - First-save Blog Settings spotlight
+
+/// Dims the recap except a cutout over the Blog Settings (gear) control; dismisses when settings open or via the primary CTA.
+private struct FirstSaveBlogSettingsSpotlightOverlay: View {
+    let holeInGlobal: CGRect
+    let onOpenBlogSettings: () -> Void
+
+    private let dimOverlayOpacity: Double = 0.5
+
+    var body: some View {
+        GeometryReader { proxy in
+            let containerGlobal = proxy.frame(in: .global)
+            let w = proxy.size.width
+            let h = proxy.size.height
+            let hasHole = holeInGlobal.width > 0.5 && holeInGlobal.height > 0.5
+            let paddedHole = holeInGlobal.insetBy(dx: -10, dy: -10)
+            let holeLocal = CGRect(
+                x: paddedHole.minX - containerGlobal.minX,
+                y: paddedHole.minY - containerGlobal.minY,
+                width: paddedHole.width,
+                height: paddedHole.height
+            )
+
+            ZStack {
+                if hasHole {
+                    ZStack(alignment: .topLeading) {
+                        dimStrip
+                            .frame(width: w, height: max(0, holeLocal.minY))
+                        dimStrip
+                            .frame(width: w, height: max(0, h - holeLocal.maxY))
+                            .offset(x: 0, y: holeLocal.maxY)
+                        dimStrip
+                            .frame(width: max(0, holeLocal.minX), height: holeLocal.height)
+                            .offset(x: 0, y: holeLocal.minY)
+                        dimStrip
+                            .frame(width: max(0, w - holeLocal.maxX), height: holeLocal.height)
+                            .offset(x: holeLocal.maxX, y: holeLocal.minY)
+
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.white.opacity(0.42), lineWidth: 2)
+                            .frame(width: holeLocal.width, height: holeLocal.height)
+                            .position(x: holeLocal.midX, y: holeLocal.midY)
+                            .allowsHitTesting(false)
+                    }
+                } else {
+                    dimStrip
+                        .frame(width: w, height: h)
+                }
+
+                tooltipCard
+                    .frame(maxWidth: 300)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 20)
+            }
+            .frame(width: w, height: h)
+        }
+        .ignoresSafeArea()
+    }
+
+    private var dimStrip: some View {
+        Rectangle()
+            .fill(Color.black.opacity(dimOverlayOpacity))
+        .contentShape(Rectangle())
+    }
+
+    private var tooltipCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "gearshape.fill")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.white)
+                Text("Blog Settings")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Draft saved")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+
+                (Text("Cover, title, fonts, backups, and more live behind the ") +
+                    Text("gear").fontWeight(.semibold) +
+                    Text("."))
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.92))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                (Text("Places, photos, and captions: open Blog Settings, then tap ") +
+                    Text("Edit Blog").fontWeight(.semibold) +
+                    Text("."))
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.88))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Button(action: onOpenBlogSettings) {
+                Text("Open Blog Settings")
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.white.opacity(0.2), in: RoundedRectangle(appChromeBaseRadius: 14, style: .continuous))
+                    .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+        }
+        .padding(22)
+        .background(
+            RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(appChromeBaseRadius: 22, style: .continuous)
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+        )
     }
 }
 
