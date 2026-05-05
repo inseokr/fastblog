@@ -104,7 +104,8 @@ enum CinematicBlogVideoBuilder {
                    allStops: firstStops,
                    logicalSize: logicalSize,
                    displayScale: exportMapDisplayScale,
-                   showPlaceNamePillForFocused: false
+                   showPlaceNamePillForFocused: false,
+                   showDistancePills: false  // crossfade transition frame — not stable
                ) {
                 let firstMapWithHeader = autoreleasepool {
                     drawDayHeaderOverlay(on: mapBase, day: firstDay, dayNumber: 1, pixelSize: pixelSize)
@@ -179,7 +180,8 @@ enum CinematicBlogVideoBuilder {
                         logicalSize: logicalSize,
                         displayScale: exportMapDisplayScale,
                         showPlaceNamePillForFocused: false,
-                        showFocusedMarker: false
+                        showFocusedMarker: false,
+                        showDistancePills: false  // crop-scaled during zoom animation — pills must not be baked in
                     )
                     async let tightSnapFetch = MapSnapshotHelper.generateSnapshotAtRegion(
                         region: tightRegion,
@@ -187,7 +189,8 @@ enum CinematicBlogVideoBuilder {
                         allStops: stops,
                         logicalSize: logicalSize,
                         displayScale: exportMapDisplayScale,
-                        showPlaceNamePillForFocused: true
+                        showPlaceNamePillForFocused: true,
+                        showDistancePills: false  // tight view (0.003°) — adjacent stops are out of frame
                     )
                     async let photoThumbsFetch = loadThumbnailsForPlaceMapOverlay(stop: stop)
 
@@ -210,7 +213,8 @@ enum CinematicBlogVideoBuilder {
                             return previousHasMapPin
                         },
                         logicalSize: logicalSize, displayScale: exportMapDisplayScale,
-                        frameCount: cinematicPanFrameCount, inclusiveEndpoints: true
+                        frameCount: cinematicPanFrameCount, inclusiveEndpoints: true,
+                        showDistancePills: false  // pan frames change zoom level — pills would scale with the map
                     ) { img in
                         let out = autoreleasepool {
                             let withHeader = mapSnapshotWithFirstPlaceDayHeaderIfNeeded(
@@ -434,7 +438,8 @@ enum CinematicBlogVideoBuilder {
                            allStops: fadeStops,
                            logicalSize: logicalSize,
                            displayScale: exportMapDisplayScale,
-                           showPlaceNamePillForFocused: false
+                           showPlaceNamePillForFocused: false,
+                           showDistancePills: false  // transition frame — not stable, pills would scale
                        ) {
                         let nextMapOut = autoreleasepool {
                             applyingPoweredByBloggoWatermarkIfNeeded(to: nextMapBase, pixelSize: pixelSize, show: false)
@@ -1360,12 +1365,11 @@ enum CinematicBlogVideoBuilder {
                 start: .zero, end: CGPoint(x: 0, y: h * 0.16), options: []
             )
 
-            let bottomSafeMargin: CGFloat = h * 0.14
-            let maxW = w - 120
+            let maxW = w - 80
             let capTrimmed = caption?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let storyFont = UIFont.systemFont(ofSize: (w * 0.042).rounded(), weight: .medium)
+            let storyFont = UIFont.systemFont(ofSize: (w * 0.042).rounded(), weight: .semibold)
             let para = NSMutableParagraphStyle()
-            para.lineSpacing = 5
+            para.lineSpacing = 7
             para.lineBreakMode = .byWordWrapping
             para.alignment = .center
             let storyAttribs: [NSAttributedString.Key: Any] = [
@@ -1446,18 +1450,51 @@ enum CinematicBlogVideoBuilder {
             )
             tsStr.draw(at: tsDraw, withAttributes: tsAttribs)
 
-            // Story caption last so it paints above the pills when stacks are tight
+            // Story caption — vertically centered (~62 % down) so it clears both the top
+            // place/time pills and the bottom chrome on TikTok / Facebook / Instagram.
             if hasStory, !capTrimmed.isEmpty, capHeight > 0 {
-                let capRect = CGRect(
-                    x: (w - maxW) / 2,
-                    y: h - bottomSafeMargin - capHeight,
-                    width: maxW,
-                    height: capHeight
-                )
+                // Measure the true single-line width so we can CENTER the draw rect on the
+                // canvas directly — never rely on paragraph .center alignment for positioning
+                // (it doesn't work when the container is wider than the text content).
+                let singleLineW = ceil((capTrimmed as NSString).size(withAttributes: storyAttribs).width)
+                let capWidth = min(singleLineW, maxW)
+                let capX = ((w - capWidth) / 2).rounded()
+                let capY  = (h * 0.62 - capHeight / 2).rounded()
+                let capRect = CGRect(x: capX, y: capY, width: capWidth, height: capHeight)
+
+                // Single rounded panel (matches top place/time pills) — avoids multi-axis
+                // gradient bands that read as muddy or uneven on photos.
+                let bandPadH: CGFloat = 44
+                let bandPadV: CGFloat = 28
+                let bandX = (capX - bandPadH).rounded()
+                let bandW = capWidth + bandPadH * 2
+                let bandY = capY - bandPadV
+                let bandH = capHeight + bandPadV * 2
+                let panelRect = integralRect(CGRect(x: bandX, y: bandY, width: bandW, height: bandH))
+                let panelCorner = min(26, max(14, panelRect.height * 0.22))
+                let panelPath = UIBezierPath(roundedRect: panelRect, cornerRadius: panelCorner)
+                UIColor.black.withAlphaComponent(0.44).setFill()
+                panelPath.fill()
+                UIColor.white.withAlphaComponent(0.14).setStroke()
+                panelPath.lineWidth = 1
+                panelPath.stroke()
+
+                // Stroke + light shadow so type stays readable even at panel edges.
+                let shadowAttribs: [NSAttributedString.Key: Any] = {
+                    var a = storyAttribs
+                    a[.strokeColor] = UIColor.black.withAlphaComponent(0.55)
+                    a[.strokeWidth] = -3
+                    let shadow = NSShadow()
+                    shadow.shadowColor = UIColor.black.withAlphaComponent(0.45)
+                    shadow.shadowOffset = CGSize(width: 0, height: 1)
+                    shadow.shadowBlurRadius = 4
+                    a[.shadow] = shadow
+                    return a
+                }()
                 (capTrimmed as NSString).draw(
                     with: capRect,
                     options: [.usesLineFragmentOrigin, .usesFontLeading],
-                    attributes: storyAttribs,
+                    attributes: shadowAttribs,
                     context: nil
                 )
             }

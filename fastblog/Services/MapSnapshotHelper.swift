@@ -749,6 +749,7 @@ class MapSnapshotHelper {
         frameCount: Int,
         /// When true, first frame matches `fromRegion` and last matches `toRegion` (good for zoom-in export).
         inclusiveEndpoints: Bool = false,
+        showDistancePills: Bool = true,
         onFrame: (UIImage) async throws -> Void
     ) async throws {
         try await forEachInterpolatedFrame(
@@ -758,6 +759,7 @@ class MapSnapshotHelper {
             showPlaceNamePillForFrame: { _ in false },
             logicalSize: logicalSize, displayScale: displayScale,
             frameCount: frameCount, inclusiveEndpoints: inclusiveEndpoints,
+            showDistancePills: showDistancePills,
             onFrame: onFrame
         )
     }
@@ -774,6 +776,7 @@ class MapSnapshotHelper {
         displayScale: CGFloat?,
         frameCount: Int,
         inclusiveEndpoints: Bool = false,
+        showDistancePills: Bool = true,
         onFrame: (UIImage) async throws -> Void
     ) async throws {
         guard !buildMarkerEntries(allStops: allStops, focusedStopIndex: nil).isEmpty else { return }
@@ -801,7 +804,8 @@ class MapSnapshotHelper {
             let showPill = showPlaceNamePillForFrame(i)
             if let img = await renderMarkedSnapshot(
                 region: interpRegion, entries: entries, logicalSize: logicalSize, displayScale: displayScale,
-                showPlaceNamePillForFocused: showPill
+                showPlaceNamePillForFocused: showPill,
+                showDistancePills: showDistancePills
             ) {
                 try await onFrame(img)
             }
@@ -869,7 +873,8 @@ class MapSnapshotHelper {
         logicalSize: CGSize,
         displayScale: CGFloat? = nil,
         showPlaceNamePillForFocused: Bool = false,
-        showFocusedMarker: Bool = true
+        showFocusedMarker: Bool = true,
+        showDistancePills: Bool = true
     ) async -> UIImage? {
         guard focusedStopIndex < allStops.count else { return nil }
         let entries = buildMarkerEntries(allStops: allStops, focusedStopIndex: focusedStopIndex)
@@ -880,7 +885,8 @@ class MapSnapshotHelper {
         return await renderMarkedSnapshot(
             region: validRegion, entries: entries, logicalSize: logicalSize, displayScale: displayScale,
             showPlaceNamePillForFocused: showPlaceNamePillForFocused,
-            showFocusedMarker: showFocusedMarker
+            showFocusedMarker: showFocusedMarker,
+            showDistancePills: showDistancePills
         )
     }
 
@@ -938,7 +944,8 @@ class MapSnapshotHelper {
         logicalSize: CGSize,
         displayScale: CGFloat? = nil,
         showPlaceNamePillForFocused: Bool = false,
-        showFocusedMarker: Bool = true
+        showFocusedMarker: Bool = true,
+        showDistancePills: Bool = true
     ) async -> UIImage? {
         let resolvedScale: CGFloat
         if let displayScale {
@@ -976,21 +983,20 @@ class MapSnapshotHelper {
                 context.strokePath()
                 context.restoreGState()
 
-                // Distance pills — one per segment, centred on the midpoint of each polyline leg
-                for i in 0..<(allCoords.count - 1) {
-                    let ptA = snapshot.point(for: allCoords[i])
-                    let ptB = snapshot.point(for: allCoords[i + 1])
-                    let mid = CGPoint(x: (ptA.x + ptB.x) / 2, y: (ptA.y + ptB.y) / 2)
-                    let distMeters = CLLocation(latitude: allCoords[i].latitude, longitude: allCoords[i].longitude)
-                        .distance(from: CLLocation(latitude: allCoords[i + 1].latitude, longitude: allCoords[i + 1].longitude))
-                    let distMiles = distMeters / 1609.344
-                    let distText: String
-                    if distMiles < 0.1 {
-                        distText = String(format: "%.0f ft", distMeters * 3.28084)
-                    } else {
-                        distText = String(format: "%.1f mi", distMiles)
+                // Distance pills — one per segment, centred on the midpoint of each polyline leg.
+                // Hidden when showDistancePills is false (animated video frames) or distance < 1 mile.
+                if showDistancePills {
+                    for i in 0..<(allCoords.count - 1) {
+                        let distMeters = CLLocation(latitude: allCoords[i].latitude, longitude: allCoords[i].longitude)
+                            .distance(from: CLLocation(latitude: allCoords[i + 1].latitude, longitude: allCoords[i + 1].longitude))
+                        let distMiles = distMeters / 1609.344
+                        guard distMiles >= 1.0 else { continue }
+                        let ptA = snapshot.point(for: allCoords[i])
+                        let ptB = snapshot.point(for: allCoords[i + 1])
+                        let mid = CGPoint(x: (ptA.x + ptB.x) / 2, y: (ptA.y + ptB.y) / 2)
+                        let distText = String(format: "%.1f mi", distMiles)
+                        drawDistancePill(at: mid, text: distText, context: context, canvasSize: snapshot.image.size)
                     }
-                    drawDistancePill(at: mid, text: distText, context: context, canvasSize: snapshot.image.size)
                 }
             }
 

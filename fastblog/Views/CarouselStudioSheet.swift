@@ -1336,7 +1336,8 @@ private enum StudioPIPClusterSize {
     static let minScale: CGFloat = 0.55
     /// Upper clamp for inset thumbnail pinch / Size strip (~60% larger than default footprint vs 1.45).
     static let maxScale: CGFloat = 2.0
-    static let step: CGFloat = 0.02
+    /// Finer than before so pinch release and the Size strip snap with smaller jumps.
+    static let step: CGFloat = 0.01
 
     static func clampOnly(_ raw: CGFloat) -> CGFloat {
         min(max(raw, minScale), maxScale)
@@ -1347,6 +1348,10 @@ private enum StudioPIPClusterSize {
         return (clamped / step).rounded() * step
     }
 }
+
+/// Per-frame exponential smoothing for pinch scale (`MagnificationGesture` can feel jittery).
+/// Higher = follows the finger more tightly; lower = smoother motion.
+private let studioPIPClusterPinchSmoothingBlend: CGFloat = 0.42
 
 /// Text block font-size pinch range (matches Size toolbar / `setSizeScaleLive`).
 private enum StudioTextBlockSize {
@@ -1706,7 +1711,8 @@ struct CarouselSlideView: View {
     /// Grouped Multi: tap an inset thumbnail to replace that slot (picker).
     var onPIPClusterThumbTap: ((Int) -> Void)? = nil
     /// Pinch-to-resize inset cluster footprint while the cluster block is selected.
-    var onPIPClusterPinchScale: ((CGFloat) -> Void)? = nil
+    /// Second argument is `true` only for the final snapped value when the gesture ends.
+    var onPIPClusterPinchScale: ((CGFloat, Bool) -> Void)? = nil
     var onPIPClusterPinchBegan: () -> Void = {}
     /// Pinch to resize text `sizeScale` for primary/secondary blocks when selected.
     var onUpdateTextSizeScale: ((SlideBlockID, CGFloat) -> Void)? = nil
@@ -2264,7 +2270,7 @@ struct CarouselSlideView: View {
                             onThumbDoubleTapReplace: (isEditingText ? onPIPClusterThumbTap : nil),
                             showsBackgroundRemovalLoading: pipBackgroundRemovalLoadingSlots.contains(i),
                             onClusterPinchScale: (isEditingText && selectedPIPPhotoIndex == i)
-                                ? onPIPClusterPinchScale
+                                ? { scale, isCommit in onPIPClusterPinchScale?(scale, isCommit) }
                                 : nil,
                             onClusterPinchBegan: onPIPClusterPinchBegan
                         )
@@ -2298,7 +2304,7 @@ struct CarouselSlideView: View {
                         ? onPIPClusterThumbTap
                         : nil),
                     onClusterPinchScale: (isEditingText && selectedBlockID == .pipCluster
-                        ? onPIPClusterPinchScale
+                        ? { scale, isCommit in onPIPClusterPinchScale?(scale, isCommit) }
                         : nil),
                     onClusterPinchBegan: onPIPClusterPinchBegan
                 )
@@ -2714,7 +2720,8 @@ private struct DraggablePIPCluster: View {
     /// Grouped cluster: tap a small photo to replace that inset slot (picker).
     var onClusterThumbTap: ((Int) -> Void)? = nil
     /// Pinch-to-resize cluster footprint (only when `isSelected`); `nil` disables pinch.
-    var onClusterPinchScale: ((CGFloat) -> Void)? = nil
+    /// Second bool: `true` when committing the snapped scale at gesture end.
+    var onClusterPinchScale: ((CGFloat, Bool) -> Void)? = nil
     var onClusterPinchBegan: () -> Void = {}
 
     @GestureState private var liveDrag: CGSize = .zero
@@ -2723,7 +2730,7 @@ private struct DraggablePIPCluster: View {
     @State private var didBeginPIPClusterDrag = false
     @State private var pinchClusterBase: CGFloat = 1.0
     @State private var pinchClusterActive = false
-    @State private var pinchClusterLastRaw: CGFloat = 1.0
+    @State private var pinchSmoothedScale: CGFloat = 1.0
 
     private var savedPointOffset: CGSize {
         CGSize(width: savedOffset.width * slideBounds.width,
@@ -2803,17 +2810,27 @@ private struct DraggablePIPCluster: View {
                 if !pinchClusterActive {
                     pinchClusterActive = true
                     pinchClusterBase = pipSizeScale
+                    pinchSmoothedScale = pipSizeScale
                     onClusterPinchBegan()
                 }
                 let raw = pinchClusterBase * magnitude
-                pinchClusterLastRaw = raw
-                onScale(StudioPIPClusterSize.clampOnly(raw))
+                let target = StudioPIPClusterSize.clampOnly(raw)
+                pinchSmoothedScale += (target - pinchSmoothedScale) * studioPIPClusterPinchSmoothingBlend
+                onScale(pinchSmoothedScale, false)
             }
             .onEnded { _ in
+                let didPinch = pinchClusterActive
                 if pinchClusterActive, isSelected, let onScale = onClusterPinchScale {
-                    onScale(StudioPIPClusterSize.clampAndSnap(pinchClusterLastRaw))
+                    let committed = StudioPIPClusterSize.clampAndSnap(pinchSmoothedScale)
+                    onScale(committed, true)
                 }
                 pinchClusterActive = false
+                // Pinch is simultaneous with `DragGesture`; multi-touch can omit drag `onEnded`,
+                // leaving `locksHorizontalSlidePaging` stuck after zoom — release it here.
+                if didPinch {
+                    didBeginPIPClusterDrag = false
+                    onDragEnd()
+                }
             }
     }
 
@@ -2903,7 +2920,7 @@ private struct DraggablePIPThumb: View {
     var onThumbDoubleTapReplace: ((Int) -> Void)? = nil
     /// True while Vision is removing the background for this stack slot.
     var showsBackgroundRemovalLoading: Bool = false
-    var onClusterPinchScale: ((CGFloat) -> Void)? = nil
+    var onClusterPinchScale: ((CGFloat, Bool) -> Void)? = nil
     var onClusterPinchBegan: () -> Void = {}
 
     @GestureState private var liveDrag: CGSize = .zero
@@ -2911,7 +2928,7 @@ private struct DraggablePIPThumb: View {
     @State private var didBeginPIPThumbDrag = false
     @State private var pinchClusterBase: CGFloat = 1.0
     @State private var pinchClusterActive = false
-    @State private var pinchClusterLastRaw: CGFloat = 1.0
+    @State private var pinchSmoothedScale: CGFloat = 1.0
 
     private var thumbW: CGFloat { slideWidth * 0.30 * sizeScale }
     private var slotW: CGFloat { thumbW }
@@ -3018,17 +3035,25 @@ private struct DraggablePIPThumb: View {
                 if !pinchClusterActive {
                     pinchClusterActive = true
                     pinchClusterBase = sizeScale
+                    pinchSmoothedScale = sizeScale
                     onClusterPinchBegan()
                 }
                 let raw = pinchClusterBase * magnitude
-                pinchClusterLastRaw = raw
-                onScale(StudioPIPClusterSize.clampOnly(raw))
+                let target = StudioPIPClusterSize.clampOnly(raw)
+                pinchSmoothedScale += (target - pinchSmoothedScale) * studioPIPClusterPinchSmoothingBlend
+                onScale(pinchSmoothedScale, false)
             }
             .onEnded { _ in
+                let didPinch = pinchClusterActive
                 if pinchClusterActive, isSelected, let onScale = onClusterPinchScale {
-                    onScale(StudioPIPClusterSize.clampAndSnap(pinchClusterLastRaw))
+                    let committed = StudioPIPClusterSize.clampAndSnap(pinchSmoothedScale)
+                    onScale(committed, true)
                 }
                 pinchClusterActive = false
+                if didPinch {
+                    didBeginPIPThumbDrag = false
+                    onDragEnd()
+                }
             }
     }
 
@@ -3204,21 +3229,30 @@ private struct SlideEditPage: View {
                 ? { onRequestPIPInsetReplace(slidePageIndex, $0) }
                 : nil,
             onPIPClusterPinchScale: slide.layout == .pip
-                ? { newScale in
-                    let clamped = StudioPIPClusterSize.clampOnly(newScale)
-                    if slide.pipIsUngrouped, let photoIdx = selectedPIPPhotoIndex {
-                        if slide.pipPhotoStyles.count <= photoIdx {
-                            slide.pipPhotoStyles.append(contentsOf: Array(
-                                repeating: nil,
-                                count: photoIdx + 1 - slide.pipPhotoStyles.count
-                            ))
+                ? { newScale, isCommit in
+                    func apply(_ value: CGFloat) {
+                        if slide.pipIsUngrouped, let photoIdx = selectedPIPPhotoIndex {
+                            if slide.pipPhotoStyles.count <= photoIdx {
+                                slide.pipPhotoStyles.append(contentsOf: Array(
+                                    repeating: nil,
+                                    count: photoIdx + 1 - slide.pipPhotoStyles.count
+                                ))
+                            }
+                            if slide.pipPhotoStyles[photoIdx] == nil {
+                                slide.pipPhotoStyles[photoIdx] = slide.effectivePIPPhotoStyle(at: photoIdx)
+                            }
+                            slide.pipPhotoStyles[photoIdx]?.sizeScale = value
+                        } else {
+                            slide.pipClusterSizeScale = value
                         }
-                        if slide.pipPhotoStyles[photoIdx] == nil {
-                            slide.pipPhotoStyles[photoIdx] = slide.effectivePIPPhotoStyle(at: photoIdx)
+                    }
+                    if isCommit {
+                        // Gesture already sends snapped scale; ease the last step onto the Size-strip grid.
+                        withAnimation(.spring(response: 0.48, dampingFraction: 0.91)) {
+                            apply(newScale)
                         }
-                        slide.pipPhotoStyles[photoIdx]?.sizeScale = clamped
                     } else {
-                        slide.pipClusterSizeScale = clamped
+                        apply(StudioPIPClusterSize.clampOnly(newScale))
                     }
                 }
                 : nil,
