@@ -248,7 +248,13 @@ private func loadRecapPhotoUIImage(photo: RecapPhoto, size: CGSize) async -> UII
 enum CarouselSlideKind {
     case cover
     case mapRoute
+    /// Zoomed map beat before each place’s photos (cinematic-video style focus + muted sibling pins).
+    case placeIntroMap
     case placeStop
+}
+
+private func isCarouselStudioMapKind(_ kind: CarouselSlideKind) -> Bool {
+    kind == .mapRoute || kind == .placeIntroMap
 }
 
 // MARK: - Text Style Models
@@ -429,6 +435,166 @@ enum CarouselPlaceZoneLayout: String, CaseIterable, Identifiable {
 
     fileprivate func secondaryTextAlignmentFallback(for style: TextBlockStyle) -> TextAlignment {
         primaryTextAlignmentFallback(for: style)
+    }
+
+    /// Text zone presets shown when bulk-applying by photo layout mode (`CarouselSlideLayout`).
+    static func bulkZonePresets(for slidePhotoLayout: CarouselSlideLayout) -> [CarouselPlaceZoneLayout] {
+        switch slidePhotoLayout {
+        case .single:
+            return [.textLeadingPhotosTrailing, .textTrailingPhotosLeading,
+                    .textCenterPhotosTrailing, .textCenterPhotosTrailingRaisedPrimary]
+        case .pip:
+            return CarouselPlaceZoneLayout.allCases
+        case .split:
+            // Split seams: list centered stacks first, then corner anchors.
+            return [.textCenterPhotosTrailing, .textCenterPhotosTrailingRaisedPrimary,
+                    .textLeadingPhotosTrailing, .textTrailingPhotosLeading]
+        }
+    }
+}
+
+// MARK: - Place zone preset thumbnails (strip + sheets)
+
+/// Schematic postcard for choosing `CarouselPlaceZoneLayout` without long text lists.
+private struct PlaceZoneLayoutDiagramThumb: View {
+    let zone: CarouselPlaceZoneLayout
+    /// Drives whether the inset stack glyph is drawn.
+    let slidePhotoLayout: CarouselSlideLayout
+    var isSelected: Bool = false
+    var width: CGFloat = 52
+    var height: CGFloat = 66
+
+    private var cornerR: CGFloat { min(width, height) * 0.11 }
+
+    private var photoLayoutShort: String {
+        switch slidePhotoLayout {
+        case .single: return "Single"
+        case .pip: return "Multi"
+        case .split: return "Split"
+        }
+    }
+
+    private func subtitlePill(width W: CGFloat, height H: CGFloat) -> some View {
+        let w = max(14, W * 0.4)
+        let h = max(8, H * 0.1)
+        return RoundedRectangle(cornerRadius: h * 0.45, style: .continuous)
+            .fill(Color.clear)
+            .frame(width: w, height: h)
+            .overlay(
+                RoundedRectangle(cornerRadius: h * 0.45, style: .continuous)
+                    .stroke(Color.white.opacity(0.88), lineWidth: 0.95)
+            )
+    }
+
+    private func primaryPill(width W: CGFloat, height H: CGFloat) -> some View {
+        let w = max(18, W * 0.56)
+        let h = max(10, H * 0.13)
+        return RoundedRectangle(cornerRadius: h * 0.35, style: .continuous)
+            .fill(Color.clear)
+            .frame(width: w, height: h)
+            .overlay(
+                RoundedRectangle(cornerRadius: h * 0.35, style: .continuous)
+                    .stroke(Color.white.opacity(0.88), lineWidth: 1.0)
+            )
+    }
+
+    @ViewBuilder
+    private func pipStackGlyphs(W: CGFloat, H: CGFloat) -> some View {
+        let cw = max(12, W * 0.19)
+        let ch = max(11, H * 0.12)
+        VStack(spacing: 2) {
+            ForEach(0..<3, id: \.self) { _ in
+                RoundedRectangle(cornerRadius: cw * 0.15, style: .continuous)
+                    .fill(Color.clear)
+                    .frame(width: cw, height: ch * 0.88)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: cw * 0.15, style: .continuous)
+                            .stroke(Color.white.opacity(0.9), lineWidth: 0.95)
+                    )
+            }
+        }
+        .padding(W * 0.055)
+        .allowsHitTesting(false)
+    }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerR, style: .continuous)
+                .fill(isSelected ? CarouselStudioChrome.accent.opacity(0.12) : Color.white.opacity(0.04))
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerR, style: .continuous)
+                        .strokeBorder(
+                            isSelected ? CarouselStudioChrome.accent : Color.white.opacity(0.42),
+                            lineWidth: isSelected ? 2 : 1
+                        )
+                )
+
+            GeometryReader { geo in
+                let W = geo.size.width
+                let H = geo.size.height
+                ZStack {
+                    RoundedRectangle(cornerRadius: cornerR * 0.75, style: .continuous)
+                        .fill(Color.white.opacity(0.02))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: cornerR * 0.75, style: .continuous)
+                                .stroke(Color.white.opacity(0.28), lineWidth: 0.9)
+                        )
+                        .padding(W * 0.045)
+                        .allowsHitTesting(false)
+
+                    // Subtitle
+                    switch zone {
+                    case .textLeadingPhotosTrailing:
+                        subtitlePill(width: W, height: H)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .padding(.leading, W * 0.07)
+                            .padding(.top, H * 0.07)
+                    case .textTrailingPhotosLeading:
+                        subtitlePill(width: W, height: H)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                            .padding(.trailing, W * 0.07)
+                            .padding(.top, H * 0.07)
+                    case .textCenterPhotosTrailing, .textCenterPhotosTrailingRaisedPrimary:
+                        subtitlePill(width: W, height: H)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                            .padding(.top, H * 0.07)
+                    }
+
+                    // Primary
+                    switch zone {
+                    case .textLeadingPhotosTrailing:
+                        primaryPill(width: W, height: H)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                            .padding(.leading, W * 0.07)
+                            .padding(.bottom, H * 0.22)
+                    case .textTrailingPhotosLeading:
+                        primaryPill(width: W, height: H)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                            .padding(.trailing, W * 0.07)
+                            .padding(.bottom, H * 0.22)
+                    case .textCenterPhotosTrailing:
+                        primaryPill(width: W, height: H)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                            .padding(.bottom, H * 0.22)
+                    case .textCenterPhotosTrailingRaisedPrimary:
+                        primaryPill(width: W, height: H)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                            .padding(.bottom, H * 0.32)
+                    }
+
+                    if slidePhotoLayout == .pip {
+                        let pipTopOffset: CGFloat = (zone == .textCenterPhotosTrailing || zone == .textCenterPhotosTrailingRaisedPrimary) ? H * 0.22 : 0
+                        pipStackGlyphs(W: W, H: H)
+                            .padding(.top, pipTopOffset)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: zone.pipOverlayAlignment)
+                    }
+                }
+            }
+        }
+        .frame(width: width, height: height)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(zone.pickerTitle), \(photoLayoutShort) mode")
+        .accessibilityHint(zone.pickerSubtitle)
     }
 }
 
@@ -1181,6 +1347,26 @@ private func expectedPlaceTuples(day: RecapBlogDay, excludedKeys: Set<String>) -
     return out
 }
 
+/// Non‑nil when this stop belongs on a Studio map slide (included photos minus session exclusions).
+private func carouselStudioCoordinateForStop(stop: PlaceStop, includedPhotos: [RecapPhoto]) -> CLLocationCoordinate2D? {
+    let c = stop.representativeLocation?.clCoordinate
+        ?? includedPhotos.first(where: { $0.location != nil })?.location?.clCoordinate
+    guard let c, c.latitude.isFinite, c.longitude.isFinite else { return nil }
+    guard (-89.999...89.999).contains(c.latitude),
+          (-179.999...179.999).contains(c.longitude) else { return nil }
+    return c
+}
+
+/// Drawable stops for a day map / place-intro snapshots — same exclusion filter as hero slides.
+private func carouselDrawableStopsForStudioDay(day: RecapBlogDay, excludedKeys: Set<String>) -> [PlaceStop] {
+    day.placeStops.filter { stop in
+        let included = stop.photos.filter { $0.isIncluded }
+            .filter { !excludedKeys.contains(studioExclusionKey(stop: stop.id, photo: $0.id)) }
+        guard !included.isEmpty else { return false }
+        return carouselStudioCoordinateForStop(stop: stop, includedPhotos: included) != nil
+    }
+}
+
 private func insertIndexForPlacePhotoInDay(
     day: RecapBlogDay,
     stopID: UUID,
@@ -1189,45 +1375,53 @@ private func insertIndexForPlacePhotoInDay(
     excludedKeys: Set<String>
 ) -> Int {
     let expected = expectedPlaceTuples(day: day, excludedKeys: excludedKeys)
-    guard let targetSlot = expected.firstIndex(where: { $0.stop == stopID && $0.photo == photoID }) else {
+    guard let tupIdx = expected.firstIndex(where: { $0.stop == stopID && $0.photo == photoID }) else {
         return slides.count
     }
     let mapSlideId = "map-\(day.id.uuidString)"
     guard let mapIdx = slides.firstIndex(where: { $0.id == mapSlideId }) else { return slides.count }
     let afterMap = slides.index(after: mapIdx)
-    let nextMap = slides[afterMap...].firstIndex(where: { $0.kind == .mapRoute }) ?? slides.endIndex
-    let dayPlaceRange = afterMap..<nextMap
-    var matched = 0
-    for s in 0..<targetSlot {
-        let slot = expected[s]
-        if slides[dayPlaceRange].contains(where: {
-            $0.kind == .placeStop && $0.placeStop?.id == slot.stop && $0.heroPhotoID == slot.photo
-        }) {
-            matched += 1
+    let boundary = slides[afterMap...].firstIndex(where: { $0.kind == .mapRoute }) ?? slides.endIndex
+
+    var consumedPhotos = 0
+    var i = afterMap
+    while consumedPhotos < tupIdx && i < boundary {
+        switch slides[i].kind {
+        case .placeIntroMap:
+            i = slides.index(after: i)
+        case .placeStop:
+            consumedPhotos += 1
+            i = slides.index(after: i)
+        case .cover, .mapRoute:
+            i = slides.index(after: i)
         }
     }
-    return afterMap + matched
+    let isFirstTupleOfItsStop = tupIdx == 0 || expected[tupIdx - 1].stop != expected[tupIdx].stop
+    if isFirstTupleOfItsStop, i < boundary, slides[i].kind == .placeIntroMap {
+        i = slides.index(after: i)
+    }
+    return i
 }
 
 // MARK: - Slides Management (unified grid: in-deck + session-excluded place photos)
 
-/// One row in **Slides Management**: cover, a day map, a place still in the deck, or a place
-/// photo only in the session exclusion set (dimmed, restorable with the In carousel checkbox).
+/// One row in **Slides Management**: cover, a day map, optional place-intro maps, a place photo
+/// still in the deck, or a place photo only in the session exclusion set (dimmed, restorable).
 private struct SlidesManagementItem: Identifiable {
     let id: String
     let ordinal: Int
     enum Payload {
         case cover(rawIndex: Int)
         case map(rawIndex: Int)
+        case placeMap(rawIndex: Int)
         case placeInDeck(rawIndex: Int, slide: CarouselSlide)
         case placeRemovedFromDeck(stop: PlaceStop, photo: RecapPhoto)
     }
     let payload: Payload
 }
 
-/// Build the management grid in **loadSlides** order: cover, then per day: map, then that day’s
-/// place photos in `placeStops` order (and each stop’s `isIncluded` photos in array order), including
-/// session-removed place photos as separate dimmed cells.
+/// Build the management grid in **loadSlides** order: cover, then per day: day map → (per stop:
+/// focused place map if present) → place-photo slides…, including session-excluded photos as dimmed rows.
 private func makeSlidesManagementItems(
     blog: RecapBlogDetail,
     slides: [CarouselSlide],
@@ -1246,6 +1440,11 @@ private func makeSlidesManagementItems(
             out.append(SlidesManagementItem(id: mapId, ordinal: ord, payload: .map(rawIndex: mIdx)))
         }
         for stop in day.placeStops {
+            let pmId = "place-map-\(stop.id.uuidString)"
+            if let pmIdx = slides.firstIndex(where: { $0.id == pmId }) {
+                ord += 1
+                out.append(SlidesManagementItem(id: pmId, ordinal: ord, payload: .placeMap(rawIndex: pmIdx)))
+            }
             for photo in stop.photos where photo.isIncluded {
                 let key = studioExclusionKey(stop: stop.id, photo: photo.id)
                 if excludedKeys.contains(key) {
@@ -1715,7 +1914,8 @@ private struct DraggableTextBlock<Content: View>: View {
 }
 
 private func mapRouteStoryVisible(_ slide: CarouselSlide) -> Bool {
-    !(slide.dayStory ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    guard isCarouselStudioMapKind(slide.kind) else { return false }
+    return !(slide.dayStory ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 }
 
 /// Whether the place-stop slide has any top-leading secondary text to show.
@@ -1917,7 +2117,7 @@ struct CarouselSlideView: View {
                         )
                 }
 
-            case .mapRoute:
+            case .mapRoute, .placeIntroMap:
                 mapRouteBackground
                 if !showsBackgroundOnly {
                     if !slide.isPrimaryHidden {
@@ -2061,7 +2261,7 @@ struct CarouselSlideView: View {
         }
         // Map heading — top-leading
         .overlay(alignment: .topLeading) {
-            if !showsBackgroundOnly, slide.kind == .mapRoute, !slide.isPrimaryHidden {
+            if !showsBackgroundOnly, isCarouselStudioMapKind(slide.kind), !slide.isPrimaryHidden {
                 DraggableTextBlock(
                     id: .primary,
                     isEditingText: isEditingText,
@@ -2076,7 +2276,7 @@ struct CarouselSlideView: View {
                     content: {
                     VStack(alignment: slide.textStyle.primary.alignment.stackAlignment(fallback: .leading),
                            spacing: 4) {
-                        // Must match `currentBlockText` / `commitInlineTextEdit` for `.mapRoute` `.primary`:
+                        // Must match `currentBlockText` / `commitInlineTextEdit` for map-style slides `.primary`:
                         // `loadSlides` seeds the heading in `dayInfoLine1` with `dayTitle` nil, so edits
                         // that only set `dayTitle` would otherwise not change what we paint here.
                         if let l1 = slide.dayTitle ?? slide.dayInfoLine1 {
@@ -2123,7 +2323,7 @@ struct CarouselSlideView: View {
         // Map story — bottom-leading
         .overlay(alignment: .bottomLeading) {
             let storyText = (slide.dayStory ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !showsBackgroundOnly, slide.kind == .mapRoute, !slide.isSecondaryHidden, !storyText.isEmpty {
+            if !showsBackgroundOnly, isCarouselStudioMapKind(slide.kind), !slide.isSecondaryHidden, !storyText.isEmpty {
                 DraggableTextBlock(
                     id: .secondary,
                     isEditingText: isEditingText,
@@ -2162,7 +2362,7 @@ struct CarouselSlideView: View {
         }
         // Bloggo watermark — bottom-trailing on map slides
         .overlay(alignment: .bottomTrailing) {
-            if !showsBackgroundOnly, slide.kind == .mapRoute {
+            if !showsBackgroundOnly, isCarouselStudioMapKind(slide.kind) {
                 HStack(spacing: width * 0.025) {
                     Image("AppIconMark")
                         .resizable()
@@ -2356,6 +2556,12 @@ struct CarouselSlideView: View {
     @ViewBuilder
     private var pipThumbnailClusterOverlay: some View {
         if !showsBackgroundOnly, slide.kind == .placeStop, slide.layout == .pip, !slide.pipImages.isEmpty {
+            // For centered-text layouts the subtitle spans the full top edge, so push
+            // the cluster down enough to clear it (~0.16w tall). Side-text layouts place
+            // the subtitle on the opposite corner from the cluster, so a small inset suffices.
+            let isCenteredText = slide.placeZoneLayout == .textCenterPhotosTrailing
+                || slide.placeZoneLayout == .textCenterPhotosTrailingRaisedPrimary
+            let extraTopInset = isCenteredText ? max(22, width * 0.22) : max(14, width * 0.085)
             if slide.pipIsUngrouped {
                 let clamped = max(0, min(slide.pipVisibleCount, min(slide.effectivePIPImages.count, 3)))
                 ZStack(alignment: slide.placeZoneLayout.pipZStackAlignment) {
@@ -2385,7 +2591,9 @@ struct CarouselSlideView: View {
                                 : nil,
                             onClusterPinchBegan: onPIPClusterPinchBegan
                         )
-                        .padding(studioPIPClusterEdgeInset)
+                        .padding(.horizontal, studioPIPClusterEdgeInset)
+                        .padding(.bottom, studioPIPClusterEdgeInset)
+                        .padding(.top, studioPIPClusterEdgeInset + extraTopInset)
                     }
                 }
                 .transition(.scale(scale: 0.85).combined(with: .opacity))
@@ -2419,7 +2627,9 @@ struct CarouselSlideView: View {
                         : nil),
                     onClusterPinchBegan: onPIPClusterPinchBegan
                 )
-                .padding(studioPIPClusterEdgeInset)
+                .padding(.horizontal, studioPIPClusterEdgeInset)
+                .padding(.bottom, studioPIPClusterEdgeInset)
+                .padding(.top, studioPIPClusterEdgeInset + extraTopInset)
                 .transition(.scale(scale: 0.85).combined(with: .opacity))
             }
         }
@@ -2758,7 +2968,7 @@ private struct PIPClusterView: View {
                     .padding(4)
             }
         }
-        .rotationEffect(.degrees(rotations[tile.slot % rotations.count]))
+        .rotationEffect(.degrees(shownThumbnails.count > 1 ? rotations[tile.slot % rotations.count] : 0))
         .modifier(PIPClusterThumbTapModifier(
             imageIndex: tile.imageIndex,
             onSingleTap: nil,
@@ -4039,6 +4249,8 @@ struct SlideTextEditorView: View {
     @State private var placeZoneLayoutAppliesToAllPlaceSlides = false
     @State private var selectedPlaceZoneLayoutInSheet: CarouselPlaceZoneLayout = .textLeadingPhotosTrailing
     @State private var didOfferFirstRunPlaceLayout = false
+    /// Whole-carousel text zones by Single / Multi / Split (`CarouselSlideLayout`).
+    @State private var showCarouselWidePlaceZoneSheet = false
     /// Carousel Studio: download icon opens a bottom sheet (Share / Download / PDF).
     @State private var showCarouselStudioExportHub = false
     @State private var carouselStudioExportHubPhase: CarouselStudioExportHubPhase = .actions
@@ -4166,6 +4378,7 @@ struct SlideTextEditorView: View {
         switch slides[idx].kind {
         case .cover: return "Cover photo"
         case .mapRoute: return "Map"
+        case .placeIntroMap: return "Place map"
         case .placeStop:
             let raw = slides[idx].placeStop?.placeTitle ?? ""
             let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4362,7 +4575,7 @@ struct SlideTextEditorView: View {
         switch slide.kind {
         case .cover:
             if !slide.isPrimaryHidden { blocks.append(.primary) }
-        case .mapRoute:
+        case .mapRoute, .placeIntroMap:
             if !slide.isPrimaryHidden { blocks.append(.primary) }
             if !slide.isSecondaryHidden { blocks.append(.secondary) }
         case .placeStop:
@@ -4449,7 +4662,7 @@ struct SlideTextEditorView: View {
         guard hasValidCurrentIndex else { return false }
         let kind = slides[currentIndex].kind
         return (kind == .placeStop && onExcludePlaceFromStudio != nil) ||
-               (kind == .mapRoute && onExcludeMapFromStudio != nil)
+               (isCarouselStudioMapKind(kind) && onExcludeMapFromStudio != nil)
     }
 
     /// Initiates exclusion of the current slide: shows confirmation unless the user opted out.
@@ -4471,7 +4684,7 @@ struct SlideTextEditorView: View {
         pushUndoSnapshot()
         if kind == .placeStop, let onExclude = onExcludePlaceFromStudio {
             onExclude(idx)
-        } else if kind == .mapRoute, let onExclude = onExcludeMapFromStudio {
+        } else if isCarouselStudioMapKind(kind), let onExclude = onExcludeMapFromStudio {
             onExclude(idx)
         } else {
             return
@@ -4512,6 +4725,104 @@ struct SlideTextEditorView: View {
         slides[index].pipPhotoOffsets = []
     }
 
+    /// Applies one text/photo zone preset to every place slide using `slidePhotoLayout`.
+    private func applyCarouselWidePlaceZone(_ zone: CarouselPlaceZoneLayout, slidePhotoLayout: CarouselSlideLayout) {
+        clampCurrentIndexIfNeeded()
+        pushUndoSnapshot()
+        var txn = Transaction()
+        txn.disablesAnimations = true
+        withTransaction(txn) {
+            for i in slides.indices where slides[i].kind == .placeStop && slides[i].layout == slidePhotoLayout {
+                applyPlaceZoneLayout(zone, to: i)
+            }
+        }
+        showCarouselWidePlaceZoneSheet = false
+        flashAppliedConfirmation()
+    }
+
+    private func placeSlideCount(for slidePhotoLayout: CarouselSlideLayout) -> Int {
+        slides.filter { $0.kind == .placeStop && $0.layout == slidePhotoLayout }.count
+    }
+
+    private func carouselPhotoLayoutSectionTitle(_ layout: CarouselSlideLayout) -> String {
+        switch layout {
+        case .single: return "Single — full-width hero"
+        case .pip: return "Multi — hero + inset photos"
+        case .split: return "Split — top & bottom photos"
+        }
+    }
+
+    /// Preset chips anchored above the postcard (consistent position for all decks with place slides).
+    @ViewBuilder
+    private func placeZoneVisualPresetStrip(editorContentWidth slideContentW: CGFloat,
+                                            slideSlotHeight slotH: CGFloat) -> some View {
+        let aspect = editorPreviewAspectRatio
+        let editorSlideRenderW = min(max(220, slideContentW), slotH * aspect)
+        let sideInset = max(0, (slideContentW - editorSlideRenderW) * 0.5)
+
+        let focusedPlaceZone: CarouselPlaceZoneLayout? = slides.indices.contains(editorMutationSlideIndex)
+            && slides[editorMutationSlideIndex].kind == .placeStop
+            ? slides[editorMutationSlideIndex].placeZoneLayout
+            : nil
+
+        HStack(alignment: .center, spacing: 10) {
+            if editorFocusedSlideIsPlaceStop,
+               let slide = currentSlide,
+               slide.kind == .placeStop {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(CarouselPlaceZoneLayout.bulkZonePresets(for: slide.layout)) { zone in
+                            Button {
+                                pushUndoSnapshot()
+                                applyPlaceZoneLayout(zone, to: editorMutationSlideIndex)
+                            } label: {
+                                PlaceZoneLayoutDiagramThumb(
+                                    zone: zone,
+                                    slidePhotoLayout: slide.layout,
+                                    isSelected: focusedPlaceZone == zone,
+                                    width: 54,
+                                    height: 68
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.leading, max(16, sideInset + 8))
+                    .padding(.trailing, 6)
+                    .padding(.vertical, 2)
+                }
+            } else {
+                Spacer(minLength: sideInset + 8)
+                Text("Place slides: pick a postcard to edit presets")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white.opacity(0.38))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Spacer(minLength: 12)
+            }
+
+            Button {
+                showCarouselWidePlaceZoneSheet = true
+            } label: {
+                Image(systemName: "square.stack.3d.forward.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.92))
+                    .frame(width: 40, height: 38)
+                    .background(Color.white.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, max(14, sideInset + 10))
+            .accessibilityLabel("Whole carousel presets by Single, Multi, or Split layout")
+        }
+        .frame(height: 54)
+        .padding(.bottom, 6)
+    }
+
     private func commitPlaceZoneLayoutFromSheet(_ layout: CarouselPlaceZoneLayout) {
         pushUndoSnapshot()
         if placeZoneLayoutAppliesToAllPlaceSlides {
@@ -4529,6 +4840,30 @@ struct SlideTextEditorView: View {
     private var editorFocusedSlideIsPlaceStop: Bool {
         slides.indices.contains(editorPagerFocusedSlideIndex)
             && slides[editorPagerFocusedSlideIndex].kind == .placeStop
+    }
+
+    private var deckHasPlaceSlides: Bool {
+        slides.contains { $0.kind == .placeStop }
+    }
+
+    /// Active place slide in the editor (nil for cover/map).
+    private var currentPlaceSlide: CarouselSlide? {
+        guard editorFocusedSlideIsPlaceStop,
+              slides.indices.contains(editorMutationSlideIndex) else { return nil }
+        let slide = slides[editorMutationSlideIndex]
+        guard slide.kind == .placeStop else { return nil }
+        return slide
+    }
+
+    private var currentSlideZoneLayoutTitle: String {
+        currentPlaceSlide?.placeZoneLayout.pickerTitle ?? "Layout"
+    }
+
+    private func presentCurrentSlideLayoutSheet() {
+        guard slides.indices.contains(editorMutationSlideIndex) else { return }
+        selectedPlaceZoneLayoutInSheet = slides[editorMutationSlideIndex].placeZoneLayout
+        placeZoneLayoutAppliesToAllPlaceSlides = false
+        showPlaceZoneLayoutSheet = true
     }
 
     /// Single vs multi-photo layout for the current place-stop slide. Keeps sibling
@@ -4658,7 +4993,7 @@ struct SlideTextEditorView: View {
                     Color.clear
                         .frame(height: modeSelectorReservedHeight)
                 }
-            case .cover, .mapRoute:
+            case .cover, .mapRoute, .placeIntroMap:
                 Color.clear
                     .frame(height: modeSelectorReservedHeight)
             }
@@ -4765,7 +5100,7 @@ struct SlideTextEditorView: View {
                     transaction.animation = nil
                     transaction.disablesAnimations = true
                 }
-            case .cover, .mapRoute:
+            case .cover, .mapRoute, .placeIntroMap:
                 Color.clear
                     .frame(height: splitToolsReservedHeight)
             }
@@ -4827,8 +5162,10 @@ struct SlideTextEditorView: View {
         guard let slide = currentSlide else { return "" }
         switch (slide.kind, selectedBlock) {
         case (.cover, .primary):      return slide.coverTitle ?? ""
-        case (.mapRoute, .primary):   return slide.dayTitle ?? slide.dayInfoLine1 ?? ""
-        case (.mapRoute, .secondary): return slide.dayStory ?? ""
+        case (.mapRoute, .primary), (.placeIntroMap, .primary):
+            return slide.dayTitle ?? slide.dayInfoLine1 ?? ""
+        case (.mapRoute, .secondary), (.placeIntroMap, .secondary):
+            return slide.dayStory ?? ""
         case (.placeStop, .primary):  return slide.placeStop?.placeTitle ?? ""
         case (.placeStop, .secondary): return slide.placeStop?.placeSubtitle ?? ""
         default: return ""
@@ -4843,8 +5180,10 @@ struct SlideTextEditorView: View {
         let slide = slides[textEditSlideIndexCapture]
         switch (slide.kind, block) {
         case (.cover, .primary):       return slide.coverTitle ?? ""
-        case (.mapRoute, .primary):    return slide.dayTitle ?? slide.dayInfoLine1 ?? ""
-        case (.mapRoute, .secondary):  return slide.dayStory ?? ""
+        case (.mapRoute, .primary), (.placeIntroMap, .primary):
+            return slide.dayTitle ?? slide.dayInfoLine1 ?? ""
+        case (.mapRoute, .secondary), (.placeIntroMap, .secondary):
+            return slide.dayStory ?? ""
         case (.placeStop, .primary):   return slide.placeStop?.placeTitle ?? ""
         case (.placeStop, .secondary): return slide.placeStop?.placeSubtitle ?? ""
         default: return ""
@@ -4870,6 +5209,8 @@ struct SlideTextEditorView: View {
         case (.cover, .primary): return "Cover title"
         case (.mapRoute, .primary): return "Day heading"
         case (.mapRoute, .secondary): return "Day story"
+        case (.placeIntroMap, .primary): return "Place heading"
+        case (.placeIntroMap, .secondary): return "Place story"
         case (.placeStop, .primary): return "Place name"
         case (.placeStop, .secondary): return "Subtitle"
         default: return "Text"
@@ -4886,6 +5227,10 @@ struct SlideTextEditorView: View {
         case (.mapRoute, .primary):
             return "The large line at the top of the day map slide."
         case (.mapRoute, .secondary):
+            return "Optional. Shown along the bottom of the map when this block has text."
+        case (.placeIntroMap, .primary):
+            return "The headline on this focused-place map slide."
+        case (.placeIntroMap, .secondary):
             return "Optional. Shown along the bottom of the map when this block has text."
         case (.placeStop, .primary):
             return "The bold place title at the bottom of this photo."
@@ -4924,12 +5269,16 @@ struct SlideTextEditorView: View {
         let text = inlineTextDraft
         switch (slides[idx].kind, block) {
         case (.cover, .primary):      slides[idx].coverTitle = text
-        case (.mapRoute, .primary):
+        case (.mapRoute, .primary), (.placeIntroMap, .primary):
             // Keep line 1 fields aligned so studio preview, export, and any reader of
             // `dayInfoLine1` (loaded map slides use it when `dayTitle` is nil) stay consistent.
             slides[idx].dayTitle = text
             slides[idx].dayInfoLine1 = text
-        case (.mapRoute, .secondary): slides[idx].dayStory = text
+            if var s = slides[idx].placeStop {
+                s.placeTitle = text
+                slides[idx].placeStop = s
+            }
+        case (.mapRoute, .secondary), (.placeIntroMap, .secondary): slides[idx].dayStory = text
         case (.placeStop, .primary):
             var slide = slides[idx]
             if var stop = slide.placeStop {
@@ -5981,7 +6330,8 @@ struct SlideTextEditorView: View {
                 // Style drop-ups use `bottomChromeExpanded` in this reserve so `slotH`
                 // stays constant when toggling Color / Font / Size panels (toolbar tap,
                 // not slide gesture). Spacers absorb the difference vs collapsed chrome.
-                let maxSlotH = max(260, outerH - navRowReserve - slotSizingBottomReserve)
+                let maxSlotH = max(260,
+                                    outerH - navRowReserve - slotSizingBottomReserve)
                 let slotH = min(idealSlotH, maxSlotH)
 
                 VStack(spacing: 0) {
@@ -6370,12 +6720,16 @@ struct SlideTextEditorView: View {
                 }
             VStack(spacing: 20) {
                 VStack(spacing: 6) {
-                    let isMap = slides.indices.contains(currentIndex) && slides[currentIndex].kind == .mapRoute
-                    Text(isMap ? "Remove map slide?" : "Remove this slide?")
+                    let k = slides.indices.contains(currentIndex) ? slides[currentIndex].kind : nil
+                    let isDayOverviewMap = k == .mapRoute
+                    let isAnyMapSlide = k.map { isCarouselStudioMapKind($0) } ?? false
+                    Text(isAnyMapSlide ? "Remove map slide?" : "Remove this slide?")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(.white)
-                    Text(isMap
+                    Text(isDayOverviewMap
                          ? "The day map will be excluded from the carousel."
+                         : (isAnyMapSlide)
+                         ? "This focused place map will be excluded from the carousel."
                          : "This photo slide will be excluded from the carousel.")
                         .font(.system(size: 14))
                         .foregroundColor(.white.opacity(0.65))
@@ -6666,23 +7020,20 @@ struct SlideTextEditorView: View {
             }
             .disabled(!canUndo)
             .accessibilityLabel("Undo")
-
-            Button {
-                guard editorFocusedSlideIsPlaceStop else { return }
-                selectedPlaceZoneLayoutInSheet = slides[editorPagerFocusedSlideIndex].placeZoneLayout
-                placeZoneLayoutAppliesToAllPlaceSlides = false
-                showPlaceZoneLayoutSheet = true
-            } label: {
-                Image(systemName: "rectangle.split.2x1")
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundColor(.white)
-                    .opacity(editorFocusedSlideIsPlaceStop ? 1 : 0.32)
-            }
-            .disabled(!editorFocusedSlideIsPlaceStop)
-            .accessibilityLabel("Text and photo layout")
         }
 
         ToolbarItemGroup(placement: .topBarTrailing) {
+            if currentPlaceSlide != nil {
+                Button {
+                    presentCurrentSlideLayoutSheet()
+                } label: {
+                    Image(systemName: "rectangle.split.2x1")
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                .accessibilityLabel("Layout selection")
+            }
+
             Button {
                 carouselStudioExportHubPhase = .actions
                 showCarouselStudioExportHub = true
@@ -6734,55 +7085,122 @@ struct SlideTextEditorView: View {
             }
             .sheet(isPresented: $showPlaceZoneLayoutSheet) {
                 NavigationStack {
-                    List {
-                        Section {
-                            ForEach(CarouselPlaceZoneLayout.allCases) { layout in
-                                Button {
-                                    selectedPlaceZoneLayoutInSheet = layout
-                                } label: {
-                                    HStack(alignment: .top, spacing: 12) {
-                                        Image(systemName: selectedPlaceZoneLayoutInSheet == layout
-                                               ? "largecircle.fill.circle"
-                                               : "circle")
-                                            .font(.title3)
-                                            .foregroundStyle(selectedPlaceZoneLayoutInSheet == layout
-                                                             ? CarouselStudioChrome.accent
-                                                             : Color.secondary)
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(layout.pickerTitle)
-                                                .font(.body.weight(.semibold))
-                                                .foregroundStyle(.primary)
-                                            Text(layout.pickerSubtitle)
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                                .fixedSize(horizontal: false, vertical: true)
+                    VStack(spacing: 0) {
+                        Picker("Apply to", selection: $placeZoneLayoutAppliesToAllPlaceSlides) {
+                            Text("This slide").tag(false)
+                            Text("All slides").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal, 22)
+                        .padding(.top, 16)
+                        .padding(.bottom, 4)
+
+                        ScrollView {
+                            LazyVGrid(
+                                columns: [
+                                    GridItem(.flexible(), spacing: 16),
+                                    GridItem(.flexible(), spacing: 16)
+                                ],
+                                spacing: 16
+                            ) {
+                                let activeMode = currentPlaceSlide?.layout ?? .single
+                                ForEach(CarouselPlaceZoneLayout.bulkZonePresets(for: activeMode)) { layout in
+                                    Button {
+                                        selectedPlaceZoneLayoutInSheet = layout
+                                        if !placeZoneLayoutAppliesToAllPlaceSlides {
+                                            commitPlaceZoneLayoutFromSheet(layout)
                                         }
-                                        Spacer(minLength: 0)
+                                    } label: {
+                                        PlaceZoneLayoutDiagramThumb(
+                                            zone: layout,
+                                            slidePhotoLayout: activeMode,
+                                            isSelected: selectedPlaceZoneLayoutInSheet == layout,
+                                            width: 124,
+                                            height: 154
+                                        )
+                                        .frame(maxWidth: .infinity)
                                     }
-                                    .padding(.vertical, 4)
+                                    .buttonStyle(.plain)
                                 }
                             }
-                        } footer: {
-                            Text(placeZoneLayoutAppliesToAllPlaceSlides
-                                 ? "Applies to every place photo slide in this carousel."
-                                 : "Applies to the place slide you’re editing.")
-                                .font(.footnote)
+                            .padding(.horizontal, 22)
+                            .padding(.vertical, 12)
                         }
                     }
                     .navigationTitle("Text & photo layout")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
-                            Button("Not now") {
+                            Button("Done") {
                                 hasSeenPlaceLayoutPicker = true
                                 showPlaceZoneLayoutSheet = false
                             }
                         }
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Apply") {
-                                commitPlaceZoneLayoutFromSheet(selectedPlaceZoneLayoutInSheet)
+                        if placeZoneLayoutAppliesToAllPlaceSlides {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Apply") {
+                                    commitPlaceZoneLayoutFromSheet(selectedPlaceZoneLayoutInSheet)
+                                }
+                                .fontWeight(.semibold)
                             }
-                            .fontWeight(.semibold)
+                        }
+                    }
+                }
+                .presentationDetents([.medium, .large])
+            }
+            .sheet(isPresented: $showCarouselWidePlaceZoneSheet) {
+                NavigationStack {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 20) {
+                            ForEach(CarouselSlideLayout.allCases) { slidePhotoLayout in
+                                let rowCount = placeSlideCount(for: slidePhotoLayout)
+                                if rowCount > 0 {
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        HStack(spacing: 8) {
+                                            Image(systemName: layoutIcon(slidePhotoLayout))
+                                                .font(.system(size: 15, weight: .semibold))
+                                                .foregroundStyle(CarouselStudioChrome.accent)
+                                            Text(carouselPhotoLayoutSectionTitle(slidePhotoLayout))
+                                                .font(.subheadline.weight(.bold))
+                                                .foregroundStyle(.primary)
+                                        }
+                                        .padding(.horizontal, 4)
+
+                                        LazyVGrid(
+                                            columns: [
+                                                GridItem(.flexible(), spacing: 14),
+                                                GridItem(.flexible(), spacing: 14)
+                                            ],
+                                            spacing: 14
+                                        ) {
+                                            ForEach(CarouselPlaceZoneLayout.bulkZonePresets(for: slidePhotoLayout)) { zone in
+                                                Button {
+                                                    applyCarouselWidePlaceZone(zone, slidePhotoLayout: slidePhotoLayout)
+                                                } label: {
+                                                    PlaceZoneLayoutDiagramThumb(
+                                                        zone: zone,
+                                                        slidePhotoLayout: slidePhotoLayout,
+                                                        isSelected: false,
+                                                        width: 118,
+                                                        height: 146
+                                                    )
+                                                    .frame(maxWidth: .infinity)
+                                                }
+                                                .buttonStyle(.plain)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
+                    }
+                    .navigationTitle("Carousel text layout")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showCarouselWidePlaceZoneSheet = false }
                         }
                     }
                 }
@@ -7203,7 +7621,20 @@ struct SlideTextEditorView: View {
                 .allowsHitTesting(false)
                 .layoutPriority(1)
 
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
+                if currentPlaceSlide != nil {
+                    Button {
+                        presentCurrentSlideLayoutSheet()
+                    } label: {
+                        Image(systemName: "rectangle.split.2x1")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Layout selection")
+                }
+
                 Button {
                     carouselStudioExportHubPhase = .actions
                     showCarouselStudioExportHub = true
@@ -7438,7 +7869,7 @@ struct SlideTextEditorView: View {
                         initialClusterIndex: 0
                     )
                 } label: {
-                    Label("Reposition", systemImage: "crop")
+                    Label("Crop", systemImage: "crop")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.white.opacity(0.88))
                         .lineLimit(1)
@@ -8828,6 +9259,8 @@ struct SocialPostStudioSheet: View {
             return "Cover photo slide saved to Photos."
         case .mapRoute:
             return "Map slide saved to Photos."
+        case .placeIntroMap:
+            return "Place map slide saved to Photos."
         case .placeStop:
             let raw = slide.placeStop?.placeTitle ?? ""
             let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -9107,8 +9540,14 @@ struct SocialPostStudioSheet: View {
         VStack(spacing: 10) {
             SwipeUpToRemoveCard(
                 slideKey: slide.id,
-                isEnabled: slide.kind == .placeStop,
-                onRemove: { excludePlaceSlide(at: index) }
+                isEnabled: slide.kind == .placeStop || isCarouselStudioMapKind(slide.kind),
+                onRemove: {
+                    if slide.kind == .placeStop {
+                        excludePlaceSlide(at: index)
+                    } else if isCarouselStudioMapKind(slide.kind) {
+                        excludeMapSlide(at: index)
+                    }
+                }
             ) {
                 CarouselSlideView(
                     slide: slide,
@@ -9154,6 +9593,23 @@ struct SocialPostStudioSheet: View {
                     Menu {
                         Button(role: .destructive) {
                             excludePlaceSlide(at: index)
+                        } label: {
+                            Label("Remove from carousel", systemImage: "minus.circle")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.9))
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .background(Color.white.opacity(0.12))
+                            .clipShape(Capsule())
+                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.22), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                } else if isCarouselStudioMapKind(slide.kind) {
+                    Menu {
+                        Button(role: .destructive) {
+                            excludeMapSlide(at: index)
                         } label: {
                             Label("Remove from carousel", systemImage: "minus.circle")
                         }
@@ -9320,7 +9776,7 @@ struct SocialPostStudioSheet: View {
     @MainActor
     private func excludeMapSlide(at index: Int) {
         guard slides.indices.contains(index),
-              slides[index].kind == .mapRoute else { return }
+              isCarouselStudioMapKind(slides[index].kind) else { return }
         slides.remove(at: index)
     }
 
@@ -9478,8 +9934,10 @@ struct SocialPostStudioSheet: View {
 
         for (dayIdx, day) in blog.days.enumerated() {
             let dayNumber = dayIdx + 1
+            let exportSize = CGSize(width: exportWidth, height: exportHeight)
             var markerImages: [UUID: UIImage] = [:]
             var placeSlides: [CarouselSlide] = []
+            let drawableForMap = carouselDrawableStopsForStudioDay(day: day, excludedKeys: excludedSnapshot)
 
             for stop in day.placeStops {
                 let included = stop.photos.filter { $0.isIncluded }
@@ -9494,7 +9952,6 @@ struct SocialPostStudioSheet: View {
                 // when `localIdentifier` is missing — `loadSlides` previously only called Photos for
                 // local assets, which blanked place slides and map markers on some devices/sync states.
                 var stopImages: [UIImage?] = []
-                let exportSize = CGSize(width: exportWidth, height: exportHeight)
                 for photo in included {
                     let img = await loadRecapPhotoUIImage(photo: photo, size: exportSize)
                     #if DEBUG
@@ -9513,6 +9970,29 @@ struct SocialPostStudioSheet: View {
                     #if DEBUG
                     print("[CarouselStudio] loadSlides: no marker image for stop=\(stop.id) place=\(stop.placeTitle) (all \(included.count) loads nil)")
                     #endif
+                }
+
+                if let dIdx = drawableForMap.firstIndex(where: { $0.id == stop.id }),
+                   let introSnap = await MapSnapshotHelper.generateCarouselPlaceIntroSnapshot(
+                    drawableDayStops: drawableForMap,
+                    focusedDrawableIndex: dIdx,
+                    logicalSize: exportSize
+                   ) {
+                    let subtitle = stop.placeSubtitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let teaser = [stop.placeNarrative, stop.overallStory, stop.noteText]
+                        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                        .first { !$0.isEmpty }
+                    placeSlides.append(CarouselSlide(
+                        id: "place-map-\(stop.id.uuidString)",
+                        kind: .placeIntroMap,
+                        isSelected: true,
+                        mapSnapshot: introSnap,
+                        mapShortDateLine: day.monthDayStringForStoryBookRange(),
+                        dayInfoLine1: stop.placeTitle,
+                        dayInfoLine2: (subtitle?.isEmpty == false) ? subtitle : nil,
+                        placeStop: stop,
+                        dayStory: teaser
+                    ))
                 }
 
                 for (photoIdx, photo) in included.enumerated() {
@@ -10399,7 +10879,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
         guard slides.indices.contains(rawIndex) else { return false }
         switch slides[rawIndex].kind {
         case .placeStop: return onExcludePlaceFromStudio != nil
-        case .mapRoute: return onExcludeMapFromStudio != nil
+        case .mapRoute, .placeIntroMap: return onExcludeMapFromStudio != nil
         case .cover: return false
         }
     }
@@ -10418,7 +10898,7 @@ private struct CarouselPhotoGroupPickerSheet: View {
         switch slides[rawIndex].kind {
         case .placeStop:
             onExcludePlaceFromStudio?(rawIndex)
-        case .mapRoute:
+        case .mapRoute, .placeIntroMap:
             onExcludeMapFromStudio?(rawIndex)
         case .cover:
             break
@@ -10442,6 +10922,12 @@ private struct CarouselPhotoGroupPickerSheet: View {
             let d = slide.mapShortDateLine?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if d.isEmpty { return "Map" }
             return "Map - \(d)"
+        case .placeIntroMap:
+            let d = slide.mapShortDateLine?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let raw = slide.placeStop?.placeTitle ?? slide.dayInfoLine1 ?? ""
+            let t = slidesManagementFirstTextLine(raw)
+            if d.isEmpty { return t.isEmpty ? "Place map" : "Place map — \(t)" }
+            return t.isEmpty ? "Place map - \(d)" : "Place map — \(t) · \(d)"
         case .placeStop:
             let raw = slide.placeStop?.placeTitle ?? ""
             let t = slidesManagementFirstTextLine(raw)
@@ -10580,6 +11066,8 @@ private struct CarouselPhotoGroupPickerSheet: View {
             slidesManagementDeckItemRow(ordinal1Based: ord, rawIndex: i, slide: slides[i])
         case .map(rawIndex: let i):
             slidesManagementDeckItemRow(ordinal1Based: ord, rawIndex: i, slide: slides[i])
+        case .placeMap(rawIndex: let i):
+            slidesManagementDeckItemRow(ordinal1Based: ord, rawIndex: i, slide: slides[i])
         case .placeInDeck(rawIndex: let i, slide: _):
             slidesManagementDeckItemRow(ordinal1Based: ord, rawIndex: i, slide: slides[i])
         case .placeRemovedFromDeck(stop: let stop, photo: let photo):
@@ -10713,8 +11201,15 @@ private struct CarouselPhotoGroupPickerSheet: View {
                     pendingExcludeRawIndex = nil
                 }
             } message: {
-                if let i = pendingExcludeRawIndex, slides.indices.contains(i), slides[i].kind == .mapRoute {
-                    Text("The day map will be excluded from the carousel.")
+                if let i = pendingExcludeRawIndex, slides.indices.contains(i) {
+                    switch slides[i].kind {
+                    case .mapRoute:
+                        Text("The day map will be excluded from the carousel.")
+                    case .placeIntroMap:
+                        Text("This focused place map will be excluded from the carousel.")
+                    default:
+                        Text("This photo slide will be excluded from the carousel.")
+                    }
                 } else {
                     Text("This photo slide will be excluded from the carousel.")
                 }

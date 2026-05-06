@@ -303,7 +303,65 @@ class MapSnapshotHelper {
             return nil
         }
     }
-    
+
+    // MARK: - Carousel Studio — place intro (matches cinematic focused-map framing)
+
+    /// Included-photo coordinate for Carousel Studio snapshots when `representativeLocation` is missing.
+    private static func coordinateForCarouselIncludedStop(stop: PlaceStop) -> CLLocationCoordinate2D? {
+        let included = stop.photos.filter(\.isIncluded)
+        guard !included.isEmpty else { return nil }
+        guard let coord = stop.representativeLocation?.clCoordinate
+            ?? included.first(where: { $0.location != nil })?.location?.clCoordinate
+        else { return nil }
+        guard isReasonableCoordinate(coord) else { return nil }
+        return coord
+    }
+
+    private static func buildCarouselStudioMarkerEntries(
+        drawableStops: [PlaceStop],
+        focusedIndex: Int?
+    ) -> [(displayNumber: Int, coord: CLLocationCoordinate2D, placeTitle: String, isFocused: Bool)] {
+        var entries: [(displayNumber: Int, coord: CLLocationCoordinate2D, placeTitle: String, isFocused: Bool)] = []
+        for (i, stop) in drawableStops.enumerated() {
+            guard let coord = coordinateForCarouselIncludedStop(stop: stop) else { continue }
+            let focused = focusedIndex.map { $0 == i } ?? false
+            entries.append((displayNumber: i + 1, coord: coord, placeTitle: stop.placeTitle, isFocused: focused))
+        }
+        return entries
+    }
+
+    /// Tight neighbourhood map highlighting one drawable stop (`UIScreen` scale). Other stops render as muted dots;
+    /// the focused marker gets the cinematic halo plus an under-pin place-title pill — same decoration path as video export.
+    static func generateCarouselPlaceIntroSnapshot(
+        drawableDayStops: [PlaceStop],
+        focusedDrawableIndex: Int,
+        logicalSize: CGSize,
+        displayScale: CGFloat? = nil
+    ) async -> UIImage? {
+        guard drawableDayStops.indices.contains(focusedDrawableIndex) else { return nil }
+        guard let fc = coordinateForCarouselIncludedStop(stop: drawableDayStops[focusedDrawableIndex]) else {
+            return nil
+        }
+        let entries = buildCarouselStudioMarkerEntries(
+            drawableStops: drawableDayStops,
+            focusedIndex: focusedDrawableIndex
+        )
+        guard !entries.isEmpty else { return nil }
+        let tight = MKCoordinateRegion(
+            center: fc,
+            span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012)
+        )
+        let region = validatedSnapshotRegion(tight, fallbackCenter: fc)
+        return await renderMarkedSnapshot(
+            region: region,
+            entries: entries,
+            logicalSize: logicalSize,
+            displayScale: displayScale,
+            showPlaceNamePillForFocused: true,
+            showDistancePills: false
+        )
+    }
+
     /// Degenerate / corrupt EXIF coords (NaN, non-finite lat/lon) or antimeridian spans will make
     /// `MKMapSnapshotOptions.setRegion` throw NSException — reject bad points up front.
     private static func isReasonableCoordinate(_ c: CLLocationCoordinate2D) -> Bool {
