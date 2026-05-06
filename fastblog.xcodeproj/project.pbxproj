@@ -485,7 +485,7 @@
 		BB0003C4 /* AppChromeMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppChromeMetrics.swift; sourceTree = "<group>"; };
 		BB0003D2 /* BlogBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlogBackupService.swift; sourceTree = "<group>"; };
 		BB0003E0 /* GoogleSearchEmbeddedWebView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GoogleSearchEmbeddedWebView.swift; sourceTree = "<group>"; };
-		BB00040C /* POIInfoSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = POIInfoSheet.swift; sourceTree = "<group>"; };
+		BB00040C /* POIInfoSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = POIInfoSheet.swift; sourceTree = "<group>"; };
 		BB0003E2 /* UndoToastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoToastView.swift; sourceTree = "<group>"; };
 		BB000400 /* TripCluster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCluster.swift; sourceTree = "<group>"; };
 		BB000402 /* TripClusterAnnotationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripClusterAnnotationView.swift; sourceTree = "<group>"; };

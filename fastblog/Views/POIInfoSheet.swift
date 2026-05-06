@@ -11,6 +11,7 @@ import SwiftUI
 struct POIInfoSheet: View {
     let feature: MapFeature
     @Environment(\.dismiss) private var dismiss
+    // Satisfies GoogleSearchEmbeddedWebView's binding contract; not read by this view.
     @State private var currentPageURL: URL? = nil
 
     private var placeName: String {
